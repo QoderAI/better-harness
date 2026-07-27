@@ -343,7 +343,9 @@ test("Cursor facts distinguish absent, terminal-only, and unreadable transcripts
   assert.equal(incomplete.sourceCoverage.transcript.unreadable, 1);
   assert.ok(incomplete.warningCodes.includes("cursor-transcript-content-unobserved"));
   assert.ok(incomplete.diagnosticFlags.includes("source-coverage-unobserved"));
-  assert.doesNotMatch(JSON.stringify(incomplete), new RegExp(`${terminalId}|${invalidId}|${root}`, "u"));
+  const serialized = JSON.stringify(incomplete);
+  assert.doesNotMatch(serialized, new RegExp(`${terminalId}|${invalidId}`, "u"));
+  assert.equal(serialized.includes(root), false);
 });
 
 test("Cursor time filters use metadata before excluding out-of-window transcripts", async () => {

@@ -772,8 +772,8 @@ test("validate-canvas CLI resolves relative run paths", async () => {
     const payload = JSON.parse(stdout);
     const realRoot = await realpath(root);
     assert.equal(payload.status, "pass", JSON.stringify(payload.errors, null, 2));
-    assert.equal(payload.canvasPath, path.join(realRoot, "insights.canvas.tsx"));
-    assert.equal(payload.findingsPath, path.join(realRoot, "findings.json"));
+    assert.equal(await realpath(payload.canvasPath), path.join(realRoot, "insights.canvas.tsx"));
+    assert.equal(await realpath(payload.findingsPath), path.join(realRoot, "findings.json"));
   });
 });
 

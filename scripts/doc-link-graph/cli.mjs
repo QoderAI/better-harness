@@ -99,7 +99,7 @@ export function classify(token, fromFile) {
 }
 
 export function relId(file) {
-  return path.relative(repoRoot, file);
+  return path.relative(repoRoot, file).split(path.sep).join("/");
 }
 
 function nodeId(rel) {
@@ -153,7 +153,7 @@ export function buildGraph(seedFiles, { follow }) {
 }
 
 function groupOf(rel) {
-  const dir = path.dirname(rel);
+  const dir = path.posix.dirname(rel);
   return dir === "." ? "(repo root)" : dir;
 }
 
@@ -211,7 +211,7 @@ function main() {
     console.error(`Target directory not found: ${targetDir}`);
     process.exit(1);
   }
-  const targetRel = path.relative(repoRoot, targetDir);
+  const targetRel = relId(targetDir);
   const seeds = markdownFilesUnder(targetDir);
   if (seeds.length === 0) {
     console.error(`No markdown files under ${targetRel}`);
@@ -230,7 +230,7 @@ function main() {
 
   const missing = [...graph.nodes].filter(([, meta]) => meta.kind === "missing");
   console.log(`Parsed ${seeds.length} seed docs under ${targetRel}${args.follow ? " (+transitive)" : ""}`);
-  console.log(`Graph: ${graph.nodes.size} files, ${graph.edges.size} links -> ${path.relative(repoRoot, outPath)}`);
+  console.log(`Graph: ${graph.nodes.size} files, ${graph.edges.size} links -> ${relId(outPath)}`);
   if (missing.length > 0) {
     console.log(`Missing link targets (${missing.length}):`);
     for (const [rel] of missing) {

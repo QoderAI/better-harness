@@ -398,6 +398,7 @@ test("Qoder inventory CLI keeps project Memory semantic scope while emitting a h
       env: {
         ...process.env,
         HOME: fixture.root,
+        USERPROFILE: fixture.root,
       },
     });
     const json = JSON.parse(stdout);
@@ -458,6 +459,7 @@ test("Qoder inventory separates a SharedClientCache QODER_HOME from ~/.qoder ass
       env: {
         ...process.env,
         HOME: fixture.root,
+        USERPROFILE: fixture.root,
         QODER_HOME: path.dirname(fixture.sharedCache),
       },
     });

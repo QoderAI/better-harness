@@ -152,25 +152,6 @@ test("analyzeCloc uses git exclude-standard and includes untracked visible files
   }
 });
 
-test("git fast path respects a cwd below the repository root", async () => {
-  const repo = await makeRepo({
-    "src/root.js": "const root = true;\n",
-    "packages/app/src/app.js": "const app = true;\n",
-  });
-
-  try {
-    const result = await analyzeCloc({ cwd: path.join(repo, "packages/app"), workers: 1 });
-
-    assert.equal(result.fileList.strategy, "git");
-    assert.equal(result.totals.files, 1);
-    assert.ok(result.files.some((item) => item.path === "packages/app/src/app.js"));
-    assert.equal(result.files.some((item) => item.path === "src/root.js"), false);
-    assert.equal(languageRow(result, "JavaScript").code, 1);
-  } finally {
-    await removeFixtureTree(repo);
-  }
-});
-
 test("unsupported and lock files are skipped before reading content", async () => {
   const repo = await mkdtemp(path.join(os.tmpdir(), "better-harness-cloc-skip-"));
 

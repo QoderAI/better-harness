@@ -1995,7 +1995,7 @@ test("Codex file-reads use the shared diagnostics contract", async () => {
         type: "function_call",
         name: "exec_command",
         arguments: JSON.stringify({
-          cmd: `cat ${path.join(workspace, "src", "component.ts")}`,
+          cmd: "cat src/component.ts",
         }),
       },
     },
@@ -2016,7 +2016,7 @@ test("Codex file-reads use the shared diagnostics contract", async () => {
         type: "function_call",
         name: "exec_command",
         arguments: JSON.stringify({
-          cmd: `cat ${path.join(workspace, "src", "components.ts")}`,
+          cmd: "cat src/components.ts",
         }),
       },
     },

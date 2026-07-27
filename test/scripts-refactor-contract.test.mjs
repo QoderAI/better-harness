@@ -22,7 +22,7 @@ function runBetterHarness(args) {
 }
 
 function readFixture(name) {
-  return readFileSync(path.join(FIXTURES, name), "utf8");
+  return readFileSync(path.join(FIXTURES, name), "utf8").replaceAll("\r\n", "\n");
 }
 
 function sha256(value) {

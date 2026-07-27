@@ -165,10 +165,10 @@ async function makeCursorFixture() {
 }
 
 async function makeQoderFixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-qoder-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "bh-qoder-"));
   const qoderHome = path.join(root, ".qoder");
   const sharedClientCacheRoot = path.join(root, "SharedClientCache");
-  const workspace = path.join(root, "workspace", "better-harness");
+  const workspace = path.join(root, "workspace");
 
   const betterHarnessRoot = path.join(
     qoderHome,

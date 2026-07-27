@@ -527,7 +527,7 @@ test("tracked credential scan includes common dotfiles and rejects links outside
       isSymbolicLink: () => target.endsWith("linked.json"),
       isFile: () => true,
     }),
-    realpath: async (target) => target.endsWith("junction/config.json")
+    realpath: async (target) => target.replaceAll("\\", "/").endsWith("junction/config.json")
       ? "/outside/config.json"
       : target,
   };
