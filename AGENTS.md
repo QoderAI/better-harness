@@ -34,6 +34,15 @@ Architecture, directory routing, and template ownership live in
 - Every reference doc shipped under `skills/better-harness/references/` must stay reachable from `SKILL.md` routing,
   otherwise agents can never load it.
 
+## Branch Names
+
+- Name branches `<type>/<short-kebab-case-description>`, using the same intent-based types as Conventional Commits:
+  `feat`, `fix`, `test`, `docs`, `refactor`, or `chore`.
+- Choose the type from the purpose of the change, not only the files it touches. For example, a test-only change that fixes
+  a CI failure uses `fix/<description>`.
+- Do not add tool- or agent-specific prefixes such as `codex/` or `agent/` unless a maintainer explicitly requests one.
+- Keep the description concise and portable across filesystems and shells; use lowercase ASCII words separated by hyphens.
+
 ## Commit Messages
 
 - Use Conventional Commits: `<type>(<scope>): <summary>`, blank line, then a prose body when non-trivial.
