@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
@@ -10,8 +10,6 @@ import { createBundle } from "./create-bundle.mjs";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentDir, "..", "..");
-const NPM_COMMAND = process.platform === "win32" ? "npm.cmd" : "npm";
-
 function fail(message) {
   process.stderr.write(`pack verification failed: ${message}\n`);
   process.exit(1);
@@ -24,9 +22,23 @@ function run(command, args) {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.status !== 0) {
-    fail(`${command} ${args.join(" ")} exited ${result.status}\n${result.stderr}`);
+    fail(`${command} ${args.join(" ")} exited ${result.status}\n${result.error?.message ?? result.stderr}`);
   }
   return result.stdout;
+}
+
+function npmInvocation(args) {
+  const npmCliCandidates = [
+    process.env.npm_execpath,
+    process.platform === "win32"
+      ? path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")
+      : null,
+  ];
+  const npmCli = npmCliCandidates.find((candidate) => candidate && existsSync(candidate));
+  if (npmCli) {
+    return { command: process.execPath, args: [npmCli, ...args] };
+  }
+  return { command: "npm", args };
 }
 
 function readJson(relativePath) {
@@ -107,7 +119,8 @@ function verifyPreviewScriptTarget(entries, packageJson, scriptName, prefix = "p
 const keep = process.argv.includes("--keep");
 verifyReleaseVersionAlignment();
 const packageJson = readJson("package.json");
-const pack = parsePackOutput(run(NPM_COMMAND, ["pack", "--json"]));
+const npmPack = npmInvocation(["pack", "--json"]);
+const pack = parsePackOutput(run(npmPack.command, npmPack.args));
 const entries = pack.entries;
 
 const required = [
