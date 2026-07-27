@@ -109,7 +109,7 @@ test("generated mermaid graph in docs/ is current and parseable shape", () => {
   const expected = renderMermaid(graph, "skills/better-harness");
   const generatedPath = path.join(repoRoot, "docs/better-harness-doc-links.mmd");
   assert.ok(existsSync(generatedPath), "docs/better-harness-doc-links.mmd is missing; run: node scripts/doc-link-graph/cli.mjs skills/better-harness");
-  const actual = readFileSync(generatedPath, "utf8");
+  const actual = readFileSync(generatedPath, "utf8").replaceAll("\r\n", "\n");
   assert.equal(
     actual,
     expected,

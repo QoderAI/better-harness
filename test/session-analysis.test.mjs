@@ -2026,7 +2026,7 @@ test("Codex file-reads use the shared diagnostics contract", async () => {
       payload: {
         type: "function_call",
         name: "write",
-        arguments: JSON.stringify({ file_path: path.join(workspace, "report.canvas.tsx") }),
+        arguments: JSON.stringify({ file_path: "report.canvas.tsx" }),
       },
     },
     {
@@ -2036,7 +2036,7 @@ test("Codex file-reads use the shared diagnostics contract", async () => {
         type: "function_call",
         name: "read",
         success: false,
-        arguments: JSON.stringify({ file_path: path.join(workspace, "report.canvas.tsx") }),
+        arguments: JSON.stringify({ file_path: "report.canvas.tsx" }),
       },
     },
     {
