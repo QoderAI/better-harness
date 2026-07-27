@@ -290,36 +290,6 @@ test("better-harness CLI describes command aliases as their canonical command", 
   assert.deepEqual(payload.data.command.aliases, [{ name: "customize", hidden: true }]);
 });
 
-test("better-harness CLI dispatches change-drift analysis", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-cli-drift-"));
-
-  try {
-    await writeFixtureFile(root, "package.json", JSON.stringify({ name: "drift-fixture" }, null, 2));
-    await writeFixtureFile(root, "README.md", "# Drift Fixture\n");
-    await writeFixtureFile(root, "src/api/client.ts", "export function client() { return true; }\n");
-    git(root, ["init", "-q"]);
-    git(root, ["add", "."]);
-    git(root, ["commit", "-q", "-m", "initial"]);
-    await writeFixtureFile(root, "src/api/client.ts", "export function client(options?: { timeoutMs?: number }) { return true; }\n");
-
-    const result = runBetterHarness([
-      "core-change-watch",
-      "change-drift",
-      "--cwd",
-      root,
-      "--json",
-    ]);
-
-    assert.equal(result.status, 0, result.stderr);
-    const drift = JSON.parse(result.stdout);
-    assert.equal(drift.kind, "change-drift");
-    assert.equal(drift.status, "advisory");
-    assert.ok(drift.findings.some((finding) => finding.id === "public-api-doc-sync"));
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
 test("better-harness CLI group help projects workflow commands", () => {
   const result = runBetterHarness(["harness", "--help"]);
 

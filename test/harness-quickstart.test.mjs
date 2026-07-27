@@ -39,7 +39,6 @@ async function makeRepoFixture({ withSession = false } = {}) {
   await writeFixtureFile(root, "src/app.mjs", "export function app() { return true; }\n");
   git(root, ["init", "-q"]);
   git(root, ["add", "."]);
-  git(root, ["commit", "-q", "-m", "initial"]);
   if (withSession) {
     await writeFixtureFile(qoderHome, path.join("projects", workspaceToQoderSlug(root), "bavi-session.jsonl"), `${JSON.stringify({
       type: "user",
