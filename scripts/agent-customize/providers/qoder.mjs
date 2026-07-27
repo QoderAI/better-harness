@@ -77,8 +77,15 @@ function resolveQoderSharedClientCacheRoot(options = {}) {
   return defaultQoderSharedClientCacheRoot();
 }
 
-function qoderWorkspaceSlug(workspace) {
-  return normalizeWorkspace(workspace).replace(/[\\/]+/gu, "-");
+export function qoderWorkspaceSlugs(workspace) {
+  const expanded = expandHome(workspace ?? process.cwd());
+  const normalized = path.win32.isAbsolute(expanded)
+    ? path.win32.normalize(expanded)
+    : normalizeWorkspace(expanded);
+  return [...new Set([
+    normalized.replace(/:/gu, "-").replace(/[\\/]+/gu, "-"),
+    normalized.replace(/:/gu, "").replace(/[\\/]+/gu, "-"),
+  ])];
 }
 
 function splitQoderPluginKey(key) {
@@ -465,7 +472,7 @@ async function collectQoderWorkspacePrimitives(workspace, sharedClientCacheRoot,
   const sourceLabel = await workspaceSourceLabel(workspace);
   const qoderRoot = path.join(workspace, ".qoder");
   const agentRoot = path.join(workspace, ".agents");
-  const slug = qoderWorkspaceSlug(workspace);
+  const slugs = qoderWorkspaceSlugs(workspace);
   const settingsHooks = [
     ...(await collectHooksFromFile(path.join(qoderRoot, "settings.json"), "project", sourceLabel, workspace)),
     ...(await collectHooksFromFile(path.join(qoderRoot, "settings.local.json"), "project", sourceLabel, workspace)),
@@ -476,14 +483,18 @@ async function collectQoderWorkspacePrimitives(workspace, sharedClientCacheRoot,
     { filePath: projectQoderMcpPath, rootForEvidence: workspace },
     { filePath: projectFallbackMcpPath, rootForEvidence: workspace },
   ], "project", sourceLabel);
-  const runtimeMcps = includeRuntime
-    ? await collectQoderRuntimeMcpItems(
+  let runtimeMcps = [];
+  if (includeRuntime) {
+    for (const slug of slugs) {
+      runtimeMcps = await collectQoderRuntimeMcpItems(
         path.join(sharedClientCacheRoot, "projects", slug, "mcps"),
         "project",
         sourceLabel,
         sharedClientCacheRoot,
-      )
-    : [];
+      );
+      if (runtimeMcps.length > 0) break;
+    }
+  }
   const skills = await uniqueAssetsByRealPath([
     ...(await collectSkillFiles(path.join(qoderRoot, "skills"), "project", sourceLabel, workspace)),
     ...(await collectSkillFiles(path.join(agentRoot, "skills"), "project", sourceLabel, workspace)),
