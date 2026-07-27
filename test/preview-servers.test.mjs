@@ -122,8 +122,15 @@ test("Canvas preview serves health and a transformed module from media runtime f
 
 test("default Canvas preview fixture exercises the canonical v23 Learning Capture template", async () => {
   const fixture = await createDefaultCanvasPreviewFixture();
+  const mediaDir = path.join(fixture.root, "media");
+  await writeFixture(path.join(mediaDir, "canvas-sdk.js"), "export function mountCanvas() {}\n");
+  await writeFixture(
+    path.join(mediaDir, "index-canvas.html"),
+    '<html data-theme="__CANVAS_THEME_KIND__"><body><div id="root"></div></body></html>\n',
+  );
   const preview = await createCanvasPreviewServer({
     canvasPath: fixture.canvasPath,
+    sdkMedia: mediaDir,
     host: "127.0.0.1",
     port: 0,
     watch: false,
