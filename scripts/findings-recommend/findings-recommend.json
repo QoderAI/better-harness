@@ -1,0 +1,341 @@
+{
+  "summary": {
+    "kind": "better-harness.findings-recommend",
+    "schemaVersion": 1,
+    "defaultLocale": "zh-CN",
+    "locales": ["zh-CN", "en"],
+    "idStrategy": "canonical-id-map",
+    "aliases": {
+      "no-agent-entrypoint": "agent-lint.agents-md-review.no-agent-entrypoint",
+      "no-canonical-agents-md": "agent-lint.agents-md-review.no-canonical-agents-md",
+      "multi-entrypoint-review": "agent-lint.agents-md-review.multi-entrypoint-review",
+      "root-length-hard-cap": "agent-lint.agents-md-review.root-length-hard-cap",
+      "root-length-overloaded": "agent-lint.agents-md-review.root-length-overloaded",
+      "root-length-borderline": "agent-lint.agents-md-review.root-length-borderline",
+      "root-length-acceptable": "agent-lint.agents-md-review.root-length-acceptable",
+      "missing-local-reference": "agent-lint.agents-md-review.missing-local-reference",
+      "long-root-without-progressive-references": "agent-lint.agents-md-review.long-root-without-progressive-references",
+      "missing-verification-command": "agent-lint.agents-md-review.missing-verification-command",
+      "missing-risk-controls": "agent-lint.agents-md-review.missing-risk-controls",
+      "missing-project-facts": "agent-lint.agents-md-review.missing-project-facts",
+      "missing-decision-rules": "agent-lint.agents-md-review.missing-decision-rules",
+      "agent-instructions.no-agent-entrypoint": "agent-lint.agents-md-review.no-agent-entrypoint",
+      "agent-instructions.no-canonical-agents-md": "agent-lint.agents-md-review.no-canonical-agents-md",
+      "agent-instructions.multi-entrypoint-review": "agent-lint.agents-md-review.multi-entrypoint-review",
+      "agent-instructions.root-length-hard-cap": "agent-lint.agents-md-review.root-length-hard-cap",
+      "agent-instructions.root-length-overloaded": "agent-lint.agents-md-review.root-length-overloaded",
+      "agent-instructions.root-length-borderline": "agent-lint.agents-md-review.root-length-borderline",
+      "agent-instructions.root-length-acceptable": "agent-lint.agents-md-review.root-length-acceptable",
+      "agent-instructions.missing-local-reference": "agent-lint.agents-md-review.missing-local-reference",
+      "agent-instructions.long-root-without-progressive-references": "agent-lint.agents-md-review.long-root-without-progressive-references",
+      "agent-instructions.missing-verification-command": "agent-lint.agents-md-review.missing-verification-command",
+      "agent-instructions.missing-risk-controls": "agent-lint.agents-md-review.missing-risk-controls",
+      "agent-instructions.missing-project-facts": "agent-lint.agents-md-review.missing-project-facts",
+      "agent-instructions.missing-decision-rules": "agent-lint.agents-md-review.missing-decision-rules",
+      "change-test-evidence.large-change-without-tests": "review-trigger.change-test-evidence.large-change-without-tests",
+      "change-test-evidence.missing-mapped-tests": "review-trigger.change-test-evidence.missing-mapped-tests"
+    }
+  },
+  "findings": {
+    "agent-lint.agents-md-review.no-agent-entrypoint": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Medium", "timing": "Now", "impact": "Medium" },
+      "title": { "zh-CN": "代理容易失去项目入口指引", "en": "Agent instruction entrypoint is missing" },
+      "why": {
+        "zh-CN": "Agent 如果没有稳定入口，就会靠猜测理解项目事实、命令和风险边界，后续修改更容易偏离真实约束。",
+        "en": "Without AGENTS.md or an equivalent entrypoint, agents have to infer project facts, commands, and risk boundaries from the file tree."
+      },
+      "recommendation": {
+        "zh-CN": "添加一个简短的根 AGENTS.md，写清项目事实、常用验证命令、决策规则和高风险操作边界。",
+        "en": "Add a short root AGENTS.md that names project facts, common validation commands, decision rules, and high-risk operation boundaries."
+      },
+      "passCheck": {
+        "zh-CN": "重新运行 agent-lint 后，不再报告 no-agent-entrypoint，且根指引能被直接发现。",
+        "en": "Re-run agent-lint and confirm no-agent-entrypoint is gone and the root guide is directly discoverable."
+      },
+      "aiFixLabel": { "zh-CN": "创建根指引", "en": "Create root guide" }
+    },
+    "agent-lint.agents-md-review.no-canonical-agents-md": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Medium", "timing": "Next", "impact": "Medium" },
+      "title": { "zh-CN": "多代理共享规则容易持续漂移", "en": "Canonical AGENTS.md wrapper is missing" },
+      "why": {
+        "zh-CN": "共同规则如果只散落在工具专属文件里，不同 agent 会读取到不同边界，协作结果容易持续漂移。",
+        "en": "When guidance only lives in tool-specific files, different agents may read different rules and shared project boundaries can drift."
+      },
+      "recommendation": {
+        "zh-CN": "添加简短的标准 AGENTS.md，保留共同规则；把 Claude、Cursor、Qoder 等工具专属细节留在各自文件中。",
+        "en": "Add a short canonical AGENTS.md for shared rules and keep Claude, Cursor, Qoder, or other tool-specific details in their own files."
+      },
+      "passCheck": {
+        "zh-CN": "根目录存在 AGENTS.md，且工具专属文件不再是唯一的项目级规则来源。",
+        "en": "A root AGENTS.md exists and tool-specific files are no longer the only project-level policy source."
+      },
+      "aiFixLabel": { "zh-CN": "补 AGENTS.md 包装层", "en": "Add AGENTS.md wrapper" }
+    },
+    "agent-lint.agents-md-review.multi-entrypoint-review": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Medium", "timing": "Next", "impact": "Medium" },
+      "title": { "zh-CN": "多入口让规则优先级不清楚", "en": "Multiple agent guides need alignment" },
+      "why": {
+        "zh-CN": "多入口本身可以接受，但重复或冲突规则会让 agent 不确定哪个约束优先执行。",
+        "en": "Multiple entrypoints are acceptable, but duplicated or conflicting rules make priority unclear for agents."
+      },
+      "recommendation": {
+        "zh-CN": "检查 AGENTS.md、CLAUDE.md 和工具规则中的重复内容，明确根指引是共同来源，工具文件只保留差异化规则。",
+        "en": "Review AGENTS.md, CLAUDE.md, and tool rules for duplicates; make the root guide the shared source and keep only tool-specific deltas elsewhere."
+      },
+      "passCheck": {
+        "zh-CN": "每个入口的职责清楚，重复规则被合并或互相链接，不再出现互相冲突的约束。",
+        "en": "Each entrypoint has a clear role, repeated rules are merged or linked, and conflicting constraints are removed."
+      },
+      "aiFixLabel": { "zh-CN": "校准多入口指引", "en": "Align guide entrypoints" }
+    },
+    "agent-lint.agents-md-review.root-length-hard-cap": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "High", "timing": "Now", "impact": "Medium" },
+      "title": { "zh-CN": "根指引过长导致关键规则难以快速找到", "en": "The root agent guide is too long to scan reliably" },
+      "why": {
+        "zh-CN": "根指引过长会让必须遵守的规则被背景细节淹没，agent 在收尾或高风险操作前更容易漏读。",
+        "en": "When the root AGENTS.md is too long, it is hard to scan and agents can miss the rules that actually must be followed."
+      },
+      "recommendation": {
+        "zh-CN": "保留始终需要的项目事实、命令和风险边界，把长流程、示例和背景说明移到链接文档或 skill。",
+        "en": "Keep always-needed facts, commands, and risk boundaries in the root; move long workflows, examples, and background into linked docs or skills."
+      },
+      "passCheck": {
+        "zh-CN": "根指引降到硬上限以下，并且长流程都有明确链接入口。",
+        "en": "The root guide is below the hard cap, and long workflows have explicit linked entrypoints."
+      },
+      "aiFixLabel": { "zh-CN": "拆分根指引", "en": "Split root guide" }
+    },
+    "agent-lint.agents-md-review.root-length-overloaded": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Medium", "timing": "Next", "impact": "Medium" },
+      "title": { "zh-CN": "根指引过长会拖慢快速执行", "en": "Root agent guide is overloaded" },
+      "why": {
+        "zh-CN": "根指引应该帮助 agent 快速启动；内容过长会增加读取成本，也会压低关键规则的可见度。",
+        "en": "The root AGENTS.md should help agents start quickly; long roots increase reading cost and bury mandatory rules."
+      },
+      "recommendation": {
+        "zh-CN": "保留始终需要的项目事实、命令和风险边界，把场景化流程、示例和背景说明移到链接文档或 skill。",
+        "en": "Keep always-needed facts, commands, and risk boundaries in the root; move workflows, examples, and background into linked docs or skills."
+      },
+      "passCheck": {
+        "zh-CN": "根指引降到可扫描长度，并且长流程都有明确链接入口。",
+        "en": "The root guide is scannable, and long workflows have explicit linked entrypoints."
+      },
+      "aiFixLabel": { "zh-CN": "拆分根指引", "en": "Split root guide" }
+    },
+    "agent-lint.agents-md-review.root-length-borderline": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Low", "timing": "Later", "impact": "Low" },
+      "title": { "zh-CN": "根指引继续膨胀会逐步失控", "en": "Root guide is near the length threshold" },
+      "why": {
+        "zh-CN": "这个长度还可以工作，但继续内联细节会让根指引逐步变成难维护的长文档。",
+        "en": "This length can still work, but adding more inline detail will gradually turn the root guide into a hard-to-maintain long document."
+      },
+      "recommendation": {
+        "zh-CN": "检查较长章节，把只在特定任务需要的流程、示例和背景改成链接引用。",
+        "en": "Review the long sections and move task-specific workflows, examples, and background into linked references."
+      },
+      "passCheck": {
+        "zh-CN": "根指引只保留常用规则，条件性细节可以通过清晰链接进入。",
+        "en": "The root keeps common rules, and conditional detail is reachable through clear links."
+      },
+      "aiFixLabel": { "zh-CN": "整理长章节", "en": "Review long sections" }
+    },
+    "agent-lint.agents-md-review.root-length-acceptable": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Low", "timing": "Later", "impact": "Low" },
+      "title": { "zh-CN": "根指引需要长期维持可扫描性", "en": "Root guide length is acceptable" },
+      "why": {
+        "zh-CN": "当前长度适合多工具项目，但后续新增规则时仍需要避免把场景化细节持续塞回根文档。",
+        "en": "The current length is acceptable for a multi-tool project, but new rules should not keep pushing scenario-specific detail back into the root."
+      },
+      "recommendation": {
+        "zh-CN": "继续把根指引当成启动索引；新增长流程时优先写到链接文档、skill 或命令参考中。",
+        "en": "Keep the root guide as a launch index; place new long workflows in linked docs, skills, or command references first."
+      },
+      "passCheck": {
+        "zh-CN": "新增规则后根指引仍可快速扫描，长流程继续有独立入口。",
+        "en": "After adding rules, the root remains scannable and long workflows still have separate entrypoints."
+      },
+      "aiFixLabel": { "zh-CN": "保持根指引精简", "en": "Keep root concise" }
+    },
+    "agent-lint.agents-md-review.missing-local-reference": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "High", "timing": "Now", "impact": "Medium" },
+      "title": { "zh-CN": "关键指引链接会在执行时断开", "en": "Broken local instruction link" },
+      "why": {
+        "zh-CN": "Agent 会沿着指引链接加载上下文；链接断开时，关键约束或验证命令会在真正执行时缺席。",
+        "en": "Agents follow AGENTS.md/CLAUDE.md links for context; broken links can hide required constraints or commands."
+      },
+      "recommendation": {
+        "zh-CN": "修复这个链接，或补齐目标 Markdown 文件；如果这段指引已经过期，就删除链接和对应说明。",
+        "en": "Repair the link, add the referenced Markdown file, or remove the stale guidance if it is no longer valid."
+      },
+      "passCheck": {
+        "zh-CN": "重新运行 agent-lint 后，本地 Markdown 引用不再报告 missing-local-reference。",
+        "en": "Re-run agent-lint and confirm local Markdown references no longer report missing-local-reference."
+      },
+      "aiFixLabel": { "zh-CN": "修复指引链接", "en": "Fix instruction link" }
+    },
+    "agent-lint.agents-md-review.long-root-without-progressive-references": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Low", "timing": "Next", "impact": "Medium" },
+      "title": { "zh-CN": "长根指引会阻断渐进加载路径", "en": "Long root guide lacks progressive links" },
+      "why": {
+        "zh-CN": "长根指引如果没有链接出口，agent 只能一次性读取全部细节，维护者也很难判断细节归属。",
+        "en": "A long root without linked exits forces agents to read all detail at once and makes ownership harder to maintain."
+      },
+      "recommendation": {
+        "zh-CN": "把任务专属流程移到链接文档、skills、commands 或 hooks；根指引只保留何时进入这些入口。",
+        "en": "Move task-specific workflows into linked docs, skills, commands, or hooks; keep only the routing rules in the root."
+      },
+      "passCheck": {
+        "zh-CN": "根指引包含本地 Markdown 链接，且每个长流程都有清楚的目标文档或能力入口。",
+        "en": "The root guide contains local Markdown links, and each long workflow has a clear target doc or capability entrypoint."
+      },
+      "aiFixLabel": { "zh-CN": "补渐进式链接", "en": "Add progressive links" }
+    },
+    "agent-lint.agents-md-review.missing-verification-command": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Medium", "timing": "Now", "impact": "Medium" },
+      "title": { "zh-CN": "验证路径不清会削弱收尾质量", "en": "Verification command is missing" },
+      "why": {
+        "zh-CN": "Agent 修改代码后需要知道最小验证路径；路径不清会让任务收尾依赖猜测，复核也难以复现。",
+        "en": "After editing code, agents need the smallest valid verification command; without it, completion depends on guessing."
+      },
+      "recommendation": {
+        "zh-CN": "在指引里补充当前项目认可的 build/test/lint/typecheck 命令，并说明何时使用聚焦验证。",
+        "en": "Add the project-approved build/test/lint/typecheck commands and state when focused validation is enough."
+      },
+      "passCheck": {
+        "zh-CN": "AGENTS.md 或链接文档能直接找到至少一个可执行验证命令。",
+        "en": "AGENTS.md or a linked doc exposes at least one runnable validation command."
+      },
+      "aiFixLabel": { "zh-CN": "补充验证命令", "en": "Add validation command" }
+    },
+    "agent-lint.agents-md-review.missing-risk-controls": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Medium", "timing": "Next", "impact": "Medium" },
+      "title": { "zh-CN": "高风险操作边界容易被越过", "en": "Risk controls are missing" },
+      "why": {
+        "zh-CN": "Agent 需要提前知道哪些操作必须停下来确认；边界不清时，密钥、生产环境、迁移或删除动作更容易被误触。",
+        "en": "Agents need to know upfront which actions require a stop or confirmation, such as secrets, production, migrations, deletes, or generated files."
+      },
+      "recommendation": {
+        "zh-CN": "补充一段简短风险边界，说明破坏性命令、密钥、生成物、生产环境和迁移相关操作的处理规则。",
+        "en": "Add a short risk-boundary section for destructive commands, secrets, generated files, production paths, and migration work."
+      },
+      "passCheck": {
+        "zh-CN": "根指引明确列出高风险操作的停止、确认或避免规则。",
+        "en": "The root guide clearly names stop, confirmation, or avoid rules for high-risk operations."
+      },
+      "aiFixLabel": { "zh-CN": "补风险边界", "en": "Add risk controls" }
+    },
+    "agent-lint.agents-md-review.missing-project-facts": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Low", "timing": "Next", "impact": "Medium" },
+      "title": { "zh-CN": "项目事实不清会让改动错位", "en": "Project facts are missing" },
+      "why": {
+        "zh-CN": "运行时、包管理器、架构边界和工作区形态不能靠猜；猜错会浪费验证时间，也可能把改动放错位置。",
+        "en": "Runtime, package manager, architecture boundaries, and workspace shape should not be guessed; wrong guesses waste validation time or send edits to the wrong place."
+      },
+      "recommendation": {
+        "zh-CN": "补充不可猜测的项目事实，例如运行时版本、包管理器、主要服务、源码入口和工作区边界。",
+        "en": "Add non-guessable project facts such as runtime version, package manager, main services, source entrypoints, and workspace boundaries."
+      },
+      "passCheck": {
+        "zh-CN": "Agent 不读 package 细节也能从指引中知道基础运行环境和主要目录边界。",
+        "en": "An agent can identify the basic runtime environment and main directory boundaries from the guide without inferring them from package files."
+      },
+      "aiFixLabel": { "zh-CN": "补项目事实", "en": "Add project facts" }
+    },
+    "agent-lint.agents-md-review.missing-decision-rules": {
+      "source": "agent-lint:agents-md-review",
+      "category": "agent-instructions",
+      "domain": "ai-agent-practice",
+      "defaults": { "severity": "Low", "timing": "Next", "impact": "Medium" },
+      "title": { "zh-CN": "决策规则不清会拖慢协作节奏", "en": "Decision rules are missing" },
+      "why": {
+        "zh-CN": "Agent 需要知道何时直接执行、何时先规划或提问；规则不清会让协作反复停顿。",
+        "en": "Agents need to know when to act, when to plan, when to ask, and which files or operations to avoid."
+      },
+      "recommendation": {
+        "zh-CN": "补充简短决策规则，说明何时提问、规划、使用工具、避开文件或在高风险操作前停止。",
+        "en": "Add concise decision rules for when to ask, plan, use tools, avoid files, or stop before high-risk actions."
+      },
+      "passCheck": {
+        "zh-CN": "根指引包含可执行的决策规则，而不只是笼统的协作偏好。",
+        "en": "The root guide contains actionable decision rules, not only generic collaboration preferences."
+      },
+      "aiFixLabel": { "zh-CN": "补决策规则", "en": "Add decision rules" }
+    },
+    "review-trigger.change-test-evidence.large-change-without-tests": {
+      "source": "review-trigger:change-test-evidence",
+      "category": "change-test-evidence",
+      "domain": "engineering-implementation",
+      "defaults": { "severity": "Medium", "timing": "Now", "impact": "Medium" },
+      "title": { "zh-CN": "大变更验证证据不足会阻断复核", "en": "Large change has no test evidence" },
+      "why": {
+        "zh-CN": "大变更需要可复核的验证线索，否则 reviewer 和后续 agent 很难判断行为是否真的被覆盖。",
+        "en": "The change exceeds the review threshold, but the diff has no test files; reviewers cannot easily see behavior coverage."
+      },
+      "recommendation": {
+        "zh-CN": "优先补一个覆盖本次行为变化的聚焦测试；如果确实不需要测试，在变更说明里写清原因和替代验证命令。",
+        "en": "Prefer a focused test for the changed behavior; if no test is needed, document why and cite the alternative validation command."
+      },
+      "passCheck": {
+        "zh-CN": "diff 包含相关测试，或 review 说明里有明确的免测理由和验证输出。",
+        "en": "The diff includes relevant tests, or the review notes include a clear no-test rationale and validation output."
+      },
+      "aiFixLabel": { "zh-CN": "补测试证据", "en": "Add test evidence" }
+    },
+    "review-trigger.change-test-evidence.missing-mapped-tests": {
+      "source": "review-trigger:change-test-evidence",
+      "category": "change-test-evidence",
+      "domain": "engineering-implementation",
+      "defaults": { "severity": "High", "timing": "Now", "impact": "Medium" },
+      "title": { "zh-CN": "候选测试路径没有形成证据", "en": "Mapped candidate tests were not updated" },
+      "why": {
+        "zh-CN": "测试映射已经指向可能覆盖本次改动的入口；如果这些路径没有形成证据，reviewer 会失去最直接的复核线索。",
+        "en": "The analyzer found likely tests for the changed source, but none were touched; this is usually the cheapest evidence path."
+      },
+      "recommendation": {
+        "zh-CN": "从候选测试里选最贴近本次行为的一项更新；如果候选测试不适用，在 review 说明里标注原因。",
+        "en": "Update the closest candidate test for this behavior; if the mapped tests do not apply, state why in the review notes."
+      },
+      "passCheck": {
+        "zh-CN": "候选测试之一被更新并通过，或说明里记录了候选测试不适用的具体原因。",
+        "en": "One candidate test is updated and passes, or the notes explain why the candidates do not apply."
+      },
+      "aiFixLabel": { "zh-CN": "检查候选测试", "en": "Check candidate tests" }
+    }
+  }
+}

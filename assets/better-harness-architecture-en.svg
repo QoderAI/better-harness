@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1360" viewBox="0 0 1800 1360" role="img" aria-labelledby="title desc">
+  <title id="title">Better Harness architecture</title>
+  <desc id="desc">A six-stage architecture showing host integration, the Better Harness workflow, three independent evidence agents, unified analysis by one lead agent, rendered host outputs, and repair.</desc>
+
+  <defs>
+    <style>
+      text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .section { fill: #8e9a94; font-size: 18px; font-weight: 700; letter-spacing: 2px; }
+      .label { fill: #f4f7f5; font-size: 25px; font-weight: 700; }
+      .label-sm { fill: #f4f7f5; font-size: 21px; font-weight: 700; }
+      .hint-sm { fill: #aeb9b3; font-size: 16px; font-weight: 400; }
+      .host { fill: #171b1d; stroke: #59655f; stroke-width: 2; }
+      .control { fill: #17231c; stroke: #72c77c; stroke-width: 2.5; }
+      .lane { fill: #151f27; stroke: #669fd0; stroke-width: 2.2; }
+      .artifact { fill: #1a1d1c; stroke: #6f7a75; stroke-width: 2; }
+      .green { fill: none; stroke: #79cf83; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .blue { fill: none; stroke: #77b7f2; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .gray { fill: none; stroke: #68756e; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+
+    <marker id="arrow-green" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L10 6L1 11" fill="none" stroke="#79cf83" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L10 6L1 11" fill="none" stroke="#77b7f2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L10 6L1 11" fill="none" stroke="#68756e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1800" height="1360" fill="#101415"/>
+
+  <!-- 1 · Host Integration -->
+  <text x="80" y="58" class="section">1 · HOST INTEGRATION</text>
+
+  <rect x="150" y="82" width="300" height="68" rx="14" class="host"/>
+  <text x="300" y="125" class="label-sm" text-anchor="middle">Claude Code</text>
+  <rect x="550" y="82" width="300" height="68" rx="14" class="host"/>
+  <text x="700" y="125" class="label-sm" text-anchor="middle">Codex</text>
+  <rect x="950" y="82" width="300" height="68" rx="14" class="host"/>
+  <text x="1100" y="125" class="label-sm" text-anchor="middle">Qoder</text>
+  <rect x="1350" y="82" width="300" height="68" rx="14" class="host"/>
+  <text x="1500" y="125" class="label-sm" text-anchor="middle">Cursor</text>
+
+  <path d="M300 150V180H900" class="gray"/>
+  <path d="M700 150V180" class="gray"/>
+  <path d="M1100 150V180" class="gray"/>
+  <path d="M1500 150V180H900" class="gray"/>
+  <path d="M900 180V205" class="green" marker-end="url(#arrow-green)"/>
+
+  <rect x="460" y="224" width="880" height="74" rx="16" class="control"/>
+  <text x="900" y="269" class="label" text-anchor="middle">Better Harness Plugin &amp; Host Adapters</text>
+
+  <path d="M900 298V357" class="green" marker-end="url(#arrow-green)"/>
+
+  <!-- 2 · Skill workflow -->
+  <text x="80" y="342" class="section">2 · SKILL WORKFLOW</text>
+
+  <rect x="460" y="376" width="880" height="78" rx="16" class="control"/>
+  <text x="900" y="424" class="label" text-anchor="middle">/better-harness</text>
+
+  <path d="M900 454V550" class="green"/>
+
+  <!-- 3 · Independent evidence agents -->
+  <text x="80" y="500" class="section">3 · INDEPENDENT EVIDENCE AGENTS</text>
+  <path d="M320 550H1480" class="green"/>
+
+  <path d="M320 550V580" class="blue" marker-end="url(#arrow-blue)"/>
+  <path d="M900 550V580" class="blue" marker-end="url(#arrow-blue)"/>
+  <path d="M1480 550V580" class="blue" marker-end="url(#arrow-blue)"/>
+
+  <rect x="70" y="600" width="500" height="108" rx="15" class="lane"/>
+  <text x="320" y="638" class="label-sm" text-anchor="middle">Session Evidence</text>
+  <text x="320" y="670" class="hint-sm" text-anchor="middle">session-analysis facts</text>
+  <text x="320" y="693" class="hint-sm" text-anchor="middle">bounded Episodes &amp; outcomes</text>
+
+  <rect x="650" y="600" width="500" height="108" rx="15" class="lane"/>
+  <text x="900" y="638" class="label-sm" text-anchor="middle">Project Harness</text>
+  <text x="900" y="670" class="hint-sm" text-anchor="middle">core-change-watch</text>
+  <text x="900" y="693" class="hint-sm" text-anchor="middle">project &amp; delivery evidence</text>
+
+  <rect x="1230" y="600" width="500" height="108" rx="15" class="lane"/>
+  <text x="1480" y="638" class="label-sm" text-anchor="middle">Agent Customize</text>
+  <text x="1480" y="670" class="hint-sm" text-anchor="middle">lint · inventory · integrity</text>
+  <text x="1480" y="693" class="hint-sm" text-anchor="middle">one shared asset snapshot</text>
+
+  <path d="M320 708V748H900" class="blue"/>
+  <path d="M900 708V748" class="blue"/>
+  <path d="M1480 708V748H900" class="blue"/>
+  <path d="M900 748V776" class="blue" marker-end="url(#arrow-blue)"/>
+
+  <!-- 4 · Unified lead analysis -->
+  <text x="80" y="766" class="section">4 · UNIFIED LEAD ANALYSIS</text>
+
+  <rect x="410" y="796" width="960" height="84" rx="18" class="control"/>
+  <text x="890" y="848" class="label" text-anchor="middle">Lead Agent</text>
+
+  <path d="M890 880V996H340V1006" class="green" marker-end="url(#arrow-green)"/>
+
+  <!-- 5 · Artifacts and outputs -->
+  <text x="80" y="976" class="section">5 · ARTIFACTS &amp; HOST OUTPUTS</text>
+
+  <rect x="130" y="1016" width="420" height="88" rx="15" class="artifact"/>
+  <text x="340" y="1069" class="label" text-anchor="middle">Findings</text>
+  <path d="M550 1060H658" class="gray" marker-end="url(#arrow-gray)"/>
+  <rect x="680" y="1016" width="440" height="88" rx="15" class="artifact"/>
+  <text x="900" y="1054" class="label" text-anchor="middle">Render &amp; Validate</text>
+  <text x="900" y="1083" class="hint-sm" text-anchor="middle">Canvas or HTML</text>
+  <path d="M1120 1060H1228" class="gray" marker-end="url(#arrow-gray)"/>
+  <rect x="1250" y="1016" width="420" height="88" rx="15" class="artifact"/>
+  <text x="1460" y="1054" class="label" text-anchor="middle">Host Outputs</text>
+  <text x="1460" y="1083" class="hint-sm" text-anchor="middle">Claude · Codex · Qoder · Cursor</text>
+
+  <path d="M340 1104V1158H420V1192" class="green" marker-end="url(#arrow-green)"/>
+
+  <!-- 6 · Repair -->
+  <text x="80" y="1178" class="section">6 · REPAIR</text>
+
+  <rect x="220" y="1212" width="400" height="82" rx="15" class="control"/>
+  <text x="420" y="1263" class="label" text-anchor="middle">Repair</text>
+  <path d="M620 1253H680" class="green" marker-end="url(#arrow-green)"/>
+  <rect x="700" y="1212" width="400" height="82" rx="15" class="control"/>
+  <text x="900" y="1263" class="label" text-anchor="middle">Validate</text>
+  <path d="M1100 1253H1160" class="green" marker-end="url(#arrow-green)"/>
+  <rect x="1180" y="1212" width="400" height="82" rx="15" class="control"/>
+  <text x="1380" y="1263" class="label" text-anchor="middle">Record</text>
+</svg>

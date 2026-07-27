@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reproduce Frontend Bug"
+  short_description: "Build an evidence-backed browser bug reproduction"
+  default_prompt: "Use $reproduce-frontend-bug to turn this issue and its attachments into a replayable browser reproduction."

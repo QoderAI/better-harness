@@ -1,0 +1,72 @@
+{
+  "summary": {
+    "projectName": "example-project",
+    "locale": "en",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 25,
+    "overview": "The project has a clear validation route, while one delivery control still needs an explicit owner.",
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "Task Understanding",
+        "score": 72,
+        "summary": "Project guidance makes the intended task boundary clear."
+      },
+      {
+        "id": "controlled-execution",
+        "label": "Controlled Execution",
+        "score": 68,
+        "summary": "Supported commands are visible, while permission behavior remains partly implicit."
+      },
+      {
+        "id": "change-validation",
+        "label": "Change Validation",
+        "score": 76,
+        "summary": "Focused checks cover the main change path and retain actionable failures."
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "Reliable Delivery",
+        "score": 48,
+        "summary": "Acceptance is documented, but the recovery owner is not explicit."
+      },
+      {
+        "id": "learning-capture",
+        "label": "Learning Capture",
+        "score": 35,
+        "summary": "No comparable later outcome has validated a reusable improvement yet."
+      }
+    ],
+    "aiAgentPractice": {
+      "inspectedSurfaces": ["Rules", "Skills"],
+      "coverageRows": [
+        {
+          "surface": "Rules",
+          "scopes": ["Project"],
+          "count": 1,
+          "paths": ["AGENTS.md"]
+        },
+        {
+          "surface": "Skills",
+          "scopes": ["Project"],
+          "count": 1,
+          "paths": [".qoder/skills/delivery-check/SKILL.md"]
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "delivery-recovery-owner",
+      "title": "Failed deliveries have no clear recovery step",
+      "severity": "Medium",
+      "reason": "The project can detect a failed delivery, but it does not name who restores service, where to start, or how to confirm recovery.",
+      "dimensionRefs": ["reliable-delivery"],
+      "aiFixPrompt": "/better-harness fix this issue\n\nAdd the smallest owned recovery route for failed delivery and keep the existing acceptance boundary.\n\n## Validation\n\n- Run the focused delivery check\n- Confirm the recovery owner and rollback result are recorded",
+      "expectedArtifact": "Runbook",
+      "expectedOutput": [
+        "Give the next operator one owned recovery route and a focused check that confirms service is restored."
+      ]
+    }
+  ]
+}

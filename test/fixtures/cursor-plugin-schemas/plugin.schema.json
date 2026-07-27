@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cursor.com/schemas/cursor-plugin/plugin.json",
+  "title": "Cursor Plugin Manifest",
+  "description": "Schema for .cursor-plugin/plugin.json — defines a single Cursor plugin's metadata, components, and configuration.",
+  "type": "object",
+  "required": ["name"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$" },
+    "displayName": { "type": "string" },
+    "description": { "type": "string" },
+    "version": { "type": "string" },
+    "author": { "$ref": "#/$defs/author" },
+    "publisher": { "type": "string", "minLength": 1 },
+    "homepage": { "type": "string", "format": "uri" },
+    "repository": { "type": "string", "format": "uri" },
+    "license": { "type": "string" },
+    "logo": { "type": "string" },
+    "keywords": { "type": "array", "items": { "type": "string" } },
+    "category": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "commands": { "$ref": "#/$defs/stringOrStringArray" },
+    "agents": { "$ref": "#/$defs/stringOrStringArray" },
+    "skills": { "$ref": "#/$defs/stringOrStringArray" },
+    "rules": { "$ref": "#/$defs/stringOrStringArray" },
+    "hooks": { "oneOf": [{ "type": "string" }, { "type": "object" }] },
+    "mcpServers": { "$ref": "#/$defs/mcpServers" }
+  },
+  "$defs": {
+    "author": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "email": { "type": "string", "format": "email" }
+      }
+    },
+    "stringOrStringArray": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "mcpServers": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "object" },
+        { "type": "array", "items": { "oneOf": [{ "type": "string" }, { "type": "object" }] } }
+      ]
+    }
+  }
+}

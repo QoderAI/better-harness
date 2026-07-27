@@ -1,0 +1,17 @@
+.DS_Store
+.qoder/
+node_modules/
+dist/
+outputs/
+.qoder-cache/
+.harness/state/
+.codex-plugin/skills/
+skills/**/.plugin-eval/
+.codex-plugin/hooks/
+.codex-plugin/scripts/
+*.log
+*.tmp
+*.tgz
+.idea
+assets/wasm
+dev/terminal-demo/*.cast

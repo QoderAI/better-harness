@@ -1,0 +1,4 @@
+interface:
+  display_name: "Diagnose Backend Bug"
+  short_description: "Trace backend failures through existing observability"
+  default_prompt: "Use $diagnose-backend-bug to correlate this issue with existing logs or traces and produce a bounded diagnosis."

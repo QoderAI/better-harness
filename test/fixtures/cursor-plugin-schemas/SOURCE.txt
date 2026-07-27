@@ -1,0 +1,5 @@
+Cursor official schemas pinned for offline validation.
+
+Commit: 3fe2823ce17c1656c222d4b7c59d3f82fbf20143
+Plugin: https://raw.githubusercontent.com/cursor/plugins/3fe2823ce17c1656c222d4b7c59d3f82fbf20143/schemas/plugin.schema.json
+Marketplace: https://raw.githubusercontent.com/cursor/plugins/3fe2823ce17c1656c222d4b7c59d3f82fbf20143/schemas/marketplace.schema.json

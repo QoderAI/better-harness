@@ -1,0 +1,32 @@
+{
+  "name": "better-harness",
+  "displayName": "Better Harness",
+  "version": "0.3.0",
+  "description": "Build an AI-ready engineering system for safe coding-agent delivery and continuous software improvement.",
+  "descriptionZh": "构建面向 AI 的工程体系，让编码智能体安全地理解、变更、评审、报告并持续改进软件。",
+  "author": {
+    "name": "Qoder",
+    "email": "dev@qoder.com",
+    "url": "https://qoder.com/"
+  },
+  "homepage": "https://github.com/QoderAI/better-harness",
+  "repository": "https://github.com/QoderAI/better-harness",
+  "license": "MIT",
+  "keywords": [
+    "qoder-plugin",
+    "better-harness",
+    "ai-delivery",
+    "continuous-improvement",
+    "agent-harness",
+    "change-confidence"
+  ],
+  "category": "Coding",
+  "tags": [
+    "better-harness",
+    "project-harness",
+    "engineering-fluency",
+    "agent-guardrails",
+    "continuous-improvement"
+  ],
+  "skills": "./skills/"
+}

@@ -1,0 +1,72 @@
+{
+  "name": "@qoderai/better-harness",
+  "version": "0.3.0",
+  "description": "Better Harness CLI, skills, templates, and guardrails for coding-agent workflows.",
+  "license": "MIT",
+  "author": {
+    "name": "Qoder",
+    "email": "dev@qoder.com",
+    "url": "https://qoder.com/"
+  },
+  "homepage": "https://github.com/QoderAI/better-harness#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/QoderAI/better-harness.git"
+  },
+  "bugs": {
+    "url": "https://github.com/QoderAI/better-harness/issues"
+  },
+  "keywords": [
+    "coding-agent",
+    "qoder",
+    "better-harness",
+    "ai-delivery",
+    "continuous-improvement",
+    "agent-harness"
+  ],
+  "type": "module",
+  "files": [
+    ".qoder-plugin/",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "case-studies/",
+    "docs/",
+    "hooks/",
+    "models/",
+    "references/",
+    "scripts/",
+    "!scripts/packaging/",
+    "skills/",
+    "!skills/**/.plugin-eval/",
+    "templates/"
+  ],
+  "bin": {
+    "better-harness": "scripts/better-harness.mjs"
+  },
+  "scripts": {
+    "bundle:zip": "node scripts/npm-package/create-bundle.mjs",
+    "check": "npm test && npm run pack:verify",
+    "pack:verify": "node scripts/npm-package/verify-pack.mjs",
+    "publish:dry-run": "npm publish --dry-run --access public --registry https://registry.npmjs.org",
+    "prepublishOnly": "npm run check",
+    "preview": "node scripts/harness-analysis/canvas-preview-server.mjs",
+    "preview:canvas": "node scripts/harness-analysis/canvas-preview-server.mjs",
+    "test": "node --test"
+  },
+  "packageManager": "npm@10.9.3",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=22.20.0 <25.0.0",
+    "npm": ">=10.9.3 <12.0.0"
+  },
+  "dependencies": {
+    "@vscode/tree-sitter-wasm": "0.3.1",
+    "esbuild-wasm": "0.28.1"
+  }
+}

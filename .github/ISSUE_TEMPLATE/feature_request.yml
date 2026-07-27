@@ -1,0 +1,105 @@
+name: Feature request
+description: Propose an outcome, extension, or compatibility improvement for Better Harness.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user or maintainer outcome before the implementation. Read `docs/community.md` when proposing a Skill, model, detector, hook, adapter, report mode, or style.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and current extension surfaces.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What recurring task, failure, or missing capability creates the need?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: State observable acceptance conditions without prescribing unnecessary implementation detail.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Likely extension surface
+      options:
+        - Existing Skill guidance or references
+        - New or extended Skill workflow
+        - Model, detector, or analysis capability
+        - Hook or lifecycle enforcement
+        - Host adapter or packaging
+        - Report mode, template, or visual style
+        - Documentation or community process
+        - Unsure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: host
+    attributes:
+      label: Host scope
+      options:
+        - Host-neutral
+        - Claude Code
+        - Codex
+        - Qoder
+        - Cursor
+        - Multiple hosts
+        - Other or unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and frequency
+      description: Provide bounded examples, issue links, or a synthetic fixture showing why this should become a durable project capability.
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Name the canonical owner, activation path, validation evidence, and compatibility boundary if known.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Explain why existing guidance, a one-off command, or another extension surface is insufficient.
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: Compatibility and delivery impact
+      description: Note host coupling, generated-artifact changes, migration needs, or breaking behavior. Write "None known" only after considering each boundary.
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: What fixture, test, preview, package check, or cross-platform evidence would prove the outcome?
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to help refine a spec or acceptance scenarios.
+        - label: I am willing to submit a focused implementation after maintainers confirm the owner and scope.

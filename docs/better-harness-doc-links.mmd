@@ -1,0 +1,112 @@
+---
+title: Doc link graph for skills/better-harness
+---
+flowchart LR
+  subgraph sg0["case-studies/agent-customize/"]
+    n_case_studies_agent_customize_agents_md_good_examples_md["agents-md-good-examples.md"]
+  end
+  subgraph sg1["case-studies/agent-customize/bug-diagnosis-skills/diagnose-backend-bug/"]
+    n_case_studies_agent_customize_bug_diagnosis_skills_diagnose_backend_bug_SKILL_md["SKILL.md"]
+  end
+  subgraph sg2["case-studies/agent-customize/bug-diagnosis-skills/reproduce-frontend-bug/"]
+    n_case_studies_agent_customize_bug_diagnosis_skills_reproduce_frontend_bug_SKILL_md["SKILL.md"]
+  end
+  subgraph sg3["case-studies/project-harness/"]
+    n_case_studies_project_harness_design_md_complete_example_md["design-md-complete-example.md"]
+    n_case_studies_project_harness_project_capability_artifact_examples_md["project-capability-artifact-examples.md"]
+  end
+  subgraph sg4["models/"]
+    n_models_agent_work_loop_md["agent-work-loop.md"]
+    n_models_software_fluency_md["software-fluency.md"]
+  end
+  subgraph sg5["references/agent-customize/"]
+    n_references_agent_customize_agents_md_review_md["agents-md-review.md"]
+    n_references_agent_customize_custom_agents_review_md["custom-agents-review.md"]
+    n_references_agent_customize_global_assets_md["global-assets.md"]
+    n_references_agent_customize_hooks_review_md["hooks-review.md"]
+    n_references_agent_customize_knowledge_assets_review_md["knowledge-assets-review.md"]
+    n_references_agent_customize_mcp_review_md["mcp-review.md"]
+    n_references_agent_customize_memory_review_md["memory-review.md"]
+    n_references_agent_customize_routing_md["routing.md"]
+    n_references_agent_customize_skill_discovery_md["skill-discovery.md"]
+    n_references_agent_customize_skill_review_md["skill-review.md"]
+  end
+  subgraph sg6["references/loop-engineering/"]
+    n_references_loop_engineering_loop_discovery_md["loop-discovery.md"]
+  end
+  subgraph sg7["references/project-harness/"]
+    n_references_project_harness_core_change_watch_md["core-change-watch.md"]
+    n_references_project_harness_design_md_contract_md["design-md-contract.md"]
+    n_references_project_harness_observability_md["observability.md"]
+  end
+  subgraph sg8["references/session-evidence/"]
+    n_references_session_evidence_sessions_diagnostics_md["sessions-diagnostics.md"]
+  end
+  subgraph sg9["skills/better-harness/"]
+    n_skills_better_harness_SKILL_md["SKILL.md"]
+  end
+  subgraph sg10["skills/better-harness/references/"]
+    n_skills_better_harness_references_agent_customize_md["agent-customize.md"]
+    n_skills_better_harness_references_asset_demand_reconciliation_md["asset-demand-reconciliation.md"]
+    n_skills_better_harness_references_finding_bound_fix_md["finding-bound-fix.md"]
+    n_skills_better_harness_references_findings_review_md["findings-review.md"]
+    n_skills_better_harness_references_project_harness_md["project-harness.md"]
+    n_skills_better_harness_references_session_evidence_md["session-evidence.md"]
+    n_skills_better_harness_references_session_repeated_workflows_md["session-repeated-workflows.md"]
+    n_skills_better_harness_references_support_bootstrap_md["support-bootstrap.md"]
+    n_skills_better_harness_references_support_operationalize_md["support-operationalize.md"]
+    n_skills_better_harness_references_support_optimize_md["support-optimize.md"]
+  end
+  subgraph sg11["templates/reporting/"]
+    n_templates_reporting_routing_md["routing.md"]
+  end
+  n_skills_better_harness_SKILL_md --> n_models_agent_work_loop_md
+  n_skills_better_harness_SKILL_md --> n_references_agent_customize_routing_md
+  n_skills_better_harness_SKILL_md --> n_references_loop_engineering_loop_discovery_md
+  n_skills_better_harness_SKILL_md --> n_references_project_harness_core_change_watch_md
+  n_skills_better_harness_SKILL_md --> n_references_session_evidence_sessions_diagnostics_md
+  n_skills_better_harness_SKILL_md --> n_skills_better_harness_references_agent_customize_md
+  n_skills_better_harness_SKILL_md --> n_skills_better_harness_references_asset_demand_reconciliation_md
+  n_skills_better_harness_SKILL_md --> n_skills_better_harness_references_finding_bound_fix_md
+  n_skills_better_harness_SKILL_md --> n_skills_better_harness_references_findings_review_md
+  n_skills_better_harness_SKILL_md --> n_skills_better_harness_references_project_harness_md
+  n_skills_better_harness_SKILL_md --> n_skills_better_harness_references_session_evidence_md
+  n_skills_better_harness_SKILL_md --> n_skills_better_harness_references_session_repeated_workflows_md
+  n_skills_better_harness_SKILL_md --> n_skills_better_harness_references_support_bootstrap_md
+  n_skills_better_harness_SKILL_md --> n_skills_better_harness_references_support_operationalize_md
+  n_skills_better_harness_SKILL_md --> n_skills_better_harness_references_support_optimize_md
+  n_skills_better_harness_SKILL_md --> n_templates_reporting_routing_md
+  n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_agents_md_review_md
+  n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_custom_agents_review_md
+  n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_global_assets_md
+  n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_hooks_review_md
+  n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_knowledge_assets_review_md
+  n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_mcp_review_md
+  n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_memory_review_md
+  n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_skill_discovery_md
+  n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_skill_review_md
+  n_skills_better_harness_references_asset_demand_reconciliation_md --> n_references_agent_customize_memory_review_md
+  n_skills_better_harness_references_asset_demand_reconciliation_md --> n_references_agent_customize_skill_discovery_md
+  n_skills_better_harness_references_asset_demand_reconciliation_md --> n_references_loop_engineering_loop_discovery_md
+  n_skills_better_harness_references_finding_bound_fix_md --> n_case_studies_project_harness_design_md_complete_example_md
+  n_skills_better_harness_references_finding_bound_fix_md --> n_models_agent_work_loop_md
+  n_skills_better_harness_references_finding_bound_fix_md --> n_references_agent_customize_routing_md
+  n_skills_better_harness_references_finding_bound_fix_md --> n_references_project_harness_design_md_contract_md
+  n_skills_better_harness_references_project_harness_md --> n_models_software_fluency_md
+  n_skills_better_harness_references_project_harness_md --> n_references_project_harness_observability_md
+  n_skills_better_harness_references_session_evidence_md --> n_skills_better_harness_references_session_repeated_workflows_md
+  n_skills_better_harness_references_support_bootstrap_md --> n_case_studies_agent_customize_agents_md_good_examples_md
+  n_skills_better_harness_references_support_bootstrap_md --> n_references_agent_customize_agents_md_review_md
+  n_skills_better_harness_references_support_bootstrap_md --> n_skills_better_harness_references_agent_customize_md
+  n_skills_better_harness_references_support_bootstrap_md --> n_skills_better_harness_references_findings_review_md
+  n_skills_better_harness_references_support_operationalize_md --> n_case_studies_project_harness_project_capability_artifact_examples_md
+  n_skills_better_harness_references_support_operationalize_md --> n_skills_better_harness_references_agent_customize_md
+  n_skills_better_harness_references_support_operationalize_md --> n_skills_better_harness_references_finding_bound_fix_md
+  n_skills_better_harness_references_support_operationalize_md --> n_skills_better_harness_references_findings_review_md
+  n_skills_better_harness_references_support_operationalize_md --> n_skills_better_harness_references_project_harness_md
+  n_skills_better_harness_references_support_optimize_md --> n_case_studies_agent_customize_bug_diagnosis_skills_diagnose_backend_bug_SKILL_md
+  n_skills_better_harness_references_support_optimize_md --> n_case_studies_agent_customize_bug_diagnosis_skills_reproduce_frontend_bug_SKILL_md
+  n_skills_better_harness_references_support_optimize_md --> n_references_loop_engineering_loop_discovery_md
+  n_skills_better_harness_references_support_optimize_md --> n_skills_better_harness_references_asset_demand_reconciliation_md
+  n_skills_better_harness_references_support_optimize_md --> n_skills_better_harness_references_session_evidence_md
+  n_skills_better_harness_references_support_optimize_md --> n_skills_better_harness_references_session_repeated_workflows_md

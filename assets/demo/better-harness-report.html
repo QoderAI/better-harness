@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="generator" content="better-harness codex-html">
+  <title>Harness Insights · harness-expert</title>
+  <style>
+    :root { color-scheme: dark; --bg:#111315; --panel:#1a1d20; --panel-2:#21252a; --line:#31363d; --text:#f5f7fa; --muted:#9aa3ad; --blue:#6cb8ff; --blue-2:#1b6ca8; --orange:#ff9a5a; --green:#53d69b; --red:#ff6b6b; }
+    * { box-sizing:border-box; }
+    html { background:var(--bg); scroll-behavior:smooth; }
+    body { margin:0; min-width:320px; font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--text); background:radial-gradient(circle at 12% -10%,#22364a 0,transparent 34rem),var(--bg); line-height:1.55; }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; opacity:.22; background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px); background-size:28px 28px; }
+    main { position:relative; width:min(1180px,calc(100% - 40px)); margin:0 auto; padding:52px 0 88px; }
+    h1,h2,h3,p { margin-top:0; }
+    .eyebrow,.label { color:var(--blue); font-size:12px; font-weight:700; letter-spacing:.11em; text-transform:uppercase; }
+    .hero { display:grid; grid-template-columns:minmax(0,1fr) 190px; gap:36px; align-items:end; min-height:270px; padding:42px; border:1px solid var(--line); border-radius:28px; background:linear-gradient(135deg,rgba(36,43,51,.96),rgba(21,24,27,.94)); box-shadow:0 28px 70px rgba(0,0,0,.28); }
+    .hero h1 { margin:12px 0 10px; font-size:clamp(42px,7vw,82px); line-height:.96; letter-spacing:-.055em; }
+    .hero p { max-width:760px; margin-bottom:22px; color:#c9d0d8; font-size:18px; }
+    .hero-tags { display:flex; flex-wrap:wrap; gap:8px; }
+    .score-orbit { width:174px; aspect-ratio:1; display:grid; place-content:center; text-align:center; border:14px solid #343a41; border-top-color:var(--blue); border-right-color:var(--blue-2); border-radius:50%; background:#1a2026; box-shadow:inset 0 0 0 1px var(--line); }
+    .score-orbit strong { font-size:44px; line-height:1; }
+    .score-orbit span { width:110px; margin-top:7px; color:var(--muted); font-size:12px; }
+    .pill { display:inline-flex; align-items:center; min-height:26px; padding:3px 10px; border-radius:999px; color:#d4dae0; background:#30353b; font-size:12px; font-weight:700; }
+    .pill.accent { color:#c9e8ff; background:#164e75; }.pill.good { color:#c9f9e5; background:#165c43; }.pill.warning { color:#ffe1c8; background:#754322; }.pill.danger { color:#ffd4d4; background:#762e31; }.pill.muted,.pill.neutral { color:#c8cdd3; background:#34383d; }
+    .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:18px 0 54px; }
+    .metric { min-height:126px; padding:22px 24px; border:1px solid var(--line); border-radius:20px; background:rgba(30,34,38,.9); }
+    .metric span,.metric small { display:block; color:var(--muted); }.metric strong { display:block; margin:5px 0 2px; font-size:34px; line-height:1.1; }.metric small { font-size:12px; }
+    .section { margin-top:64px; scroll-margin-top:24px; }.section-heading { display:flex; justify-content:space-between; gap:30px; align-items:end; margin-bottom:20px; }.section-heading h2 { margin:5px 0 0; font-size:30px; letter-spacing:-.025em; }.section-heading > p { max-width:420px; margin:0; color:var(--muted); text-align:right; font-size:14px; }
+    .dimension-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; }.dimension-card { min-height:230px; padding:19px; border:1px solid var(--line); border-radius:19px; background:linear-gradient(180deg,var(--panel-2),var(--panel)); }.dimension-top { display:flex; min-height:52px; justify-content:space-between; gap:8px; align-items:flex-start; font-weight:700; }.score-line { display:flex; align-items:baseline; gap:4px; margin-top:14px; }.score-line strong { font-size:34px; }.score-line span { color:var(--muted); font-size:12px; }.track { height:8px; margin:8px 0 16px; overflow:hidden; border-radius:999px; background:#30353a; }.track i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--blue-2),var(--blue)); }.dimension-card p { margin:0; color:var(--muted); font-size:13px; }
+    .activity-layout { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(230px,.7fr); gap:14px; }.activity-panel,.subpanel,.finding,.custom-grid article,.evidence-grid,.evidence-note { border:1px solid var(--line); border-radius:19px; background:var(--panel); }.activity-panel { padding:22px; overflow:hidden; }.heatmap { display:grid; grid-template-rows:repeat(7,13px); grid-auto-flow:column; grid-auto-columns:13px; gap:4px; min-height:115px; overflow-x:auto; padding-bottom:8px; }.heat-cell { border-radius:3px; background:#2b3035; }.heat-cell.l1{background:#174d70}.heat-cell.l2{background:#206f9e}.heat-cell.l3{background:#319bd1}.heat-cell.l4{background:#70c9ff}.heat-legend { display:flex; justify-content:space-between; color:var(--muted); font-size:11px; }.stacked-metrics { display:grid; gap:14px; }.stacked-metrics .metric { min-height:0; }
+    .two-column { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }.subpanel { padding:22px; }.subpanel h3 { font-size:15px; }.usage-list { display:grid; gap:12px; }.usage-row { display:grid; grid-template-columns:minmax(100px,.75fr) 1fr 52px; gap:12px; align-items:center; font-size:12px; }.usage-row > span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.usage-row i { height:7px; overflow:hidden; border-radius:999px; background:#30353a; }.usage-row b { display:block; height:100%; background:linear-gradient(90deg,var(--blue-2),var(--blue)); }.usage-row strong { text-align:right; }
+    .finding-list { display:grid; gap:12px; }.finding { overflow:hidden; }.finding summary { display:grid; grid-template-columns:44px minmax(0,1fr) auto; gap:14px; align-items:center; padding:20px 22px; cursor:pointer; list-style:none; }.finding summary::-webkit-details-marker { display:none; }.finding-index { color:var(--muted); font-variant-numeric:tabular-nums; }.finding-title strong,.finding-title small { display:block; }.finding-title small { margin-top:3px; color:var(--muted); font-weight:400; }.finding-body { display:grid; gap:18px; padding:6px 22px 22px 80px; border-top:1px solid var(--line); }.finding-body p { margin:6px 0 0; color:#c7ced6; }.finding-body ul { margin:8px 0 0; padding-left:20px; }.fix-box { padding:16px; border-radius:14px; background:#152b3a; }.acceptance { margin-top:13px; color:#c7d8e4; font-size:13px; }
+    .suggestion-block { margin-top:28px; padding-top:24px; border-top:1px solid var(--line); }.suggestion-heading { display:flex; justify-content:space-between; gap:20px; align-items:end; margin-bottom:14px; }.suggestion-heading h3 { margin:4px 0 0; font-size:20px; }.suggestion-heading p { margin:0; color:var(--muted); font-size:12px; }.suggestion-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }.suggestion { padding:18px; border:1px solid var(--line); border-radius:17px; background:linear-gradient(180deg,#1b252d,var(--panel)); }.suggestion-top { display:flex; justify-content:space-between; gap:8px; }.suggestion h3 { margin:13px 0 7px; font-size:16px; }.suggestion > p { color:#c7ced6; font-size:13px; }.suggestion dl { display:grid; gap:9px; margin:14px 0 0; }.suggestion dl div { display:grid; gap:2px; }.suggestion dt { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }.suggestion dd { margin:0; color:#d7dde4; font-size:12px; }
+    .custom-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; }.custom-grid article { display:flex; gap:14px; align-items:center; padding:18px; }.custom-grid h3 { margin:0; font-size:15px; }.custom-grid p { margin:3px 0 0; color:var(--muted); font-size:12px; }.custom-mark { display:grid; flex:0 0 38px; aspect-ratio:1; place-content:center; border-radius:12px; color:#d9efff; background:#164e75; font-weight:800; }
+    .evidence-grid { display:grid; grid-template-columns:repeat(3,1fr); overflow:hidden; }.evidence-grid div { padding:20px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }.evidence-grid span,.evidence-grid strong { display:block; }.evidence-grid span { color:var(--muted); font-size:12px; }.evidence-grid strong { margin-top:4px; }.evidence-note { margin-top:14px; padding:20px; }.method-note,.empty { color:var(--muted); }.method-note { max-width:800px; margin:18px 0 0; font-size:13px; }
+    footer { margin-top:64px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+    @media (max-width:900px) { .metrics,.dimension-grid{grid-template-columns:repeat(2,1fr)}.activity-layout,.two-column{grid-template-columns:1fr}.evidence-grid{grid-template-columns:repeat(2,1fr)} }
+    @media (max-width:620px) { main{width:min(100% - 24px,1180px);padding-top:18px}.hero{grid-template-columns:1fr;min-height:0;padding:25px;border-radius:22px}.hero h1{font-size:44px}.hero p{font-size:15px}.score-orbit{width:126px}.score-orbit strong{font-size:34px}.metrics{grid-template-columns:1fr;margin-bottom:42px}.metric{min-height:0}.section{margin-top:46px}.section-heading,.suggestion-heading{display:block}.section-heading > p,.suggestion-heading > p{text-align:left;margin-top:8px}.dimension-grid{grid-template-columns:1fr}.dimension-card{min-height:0}.finding summary{grid-template-columns:34px minmax(0,1fr)}.finding summary .pill{grid-column:2;justify-self:start}.finding-body{padding:16px}.evidence-grid{grid-template-columns:1fr}.usage-row{grid-template-columns:minmax(92px,.7fr) 1fr 44px} }
+    @media print { :root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-2:#f6f8fa;--line:#d8dee4;--text:#111;--muted:#59636e}body{background:#fff}body::before{display:none}.hero{box-shadow:none}.section{break-inside:avoid} }
+  </style>
+</head>
+<body>
+<main id="harness-report" data-report-mode="codex-html">
+<header class="hero" data-section="overview">
+    <div class="hero-copy">
+      <span class="eyebrow">Harness Insights · Codex HTML</span>
+      <h1>harness-expert</h1>
+      <p>The project already provides clear architecture routing, project-level agent instructions, a broad validation command surface, and multi-host installation guidance. The main current risks are that two reusable workflows do not cover their declared host or failure boundaries, and plugin installation lacks a project-owned recovery path. Recent behavior evidence covers only one short session with no edits or delivery, while the independent Session Evidence lane contains no eligible Task Episode; this report therefore makes no claims about repeated work, actual Skill use, or longitudinal effectiveness.</p>
+      <div class="hero-tags"><span class="pill accent">agent-work-loop-v4</span><span class="pill muted">Evidence-bound</span></div>
+    </div>
+    <div class="score-orbit"><strong>5</strong><span>reviewed dimensions</span></div>
+  </header>
+  <div class="metrics">
+    <div class="metric">
+    <span>Codex Evidence Score (Loop Effectiveness)</span>
+    <strong>58 / 100</strong>
+    <small>Changes after later task outcomes</small>
+  </div>
+    <div class="metric">
+    <span>Asset Health / Repair Progress</span>
+    <strong>0 / 100</strong>
+    <small>0 verified · 0 partial · 3 pending</small>
+  </div>
+    <div class="metric">
+    <span>Sessions analyzed</span>
+    <strong>1 / 1</strong>
+
+  </div>
+    <div class="metric">
+    <span>Findings</span>
+    <strong>3</strong>
+    <small>0 High · 2 Medium</small>
+  </div>
+  </div>
+  <section class="section" data-section="fluency" aria-labelledby="section-fluency">
+    <div class="section-heading">
+      <div><span class="eyebrow">01 · Readiness</span><h2 id="section-fluency">Five-dimension fluency</h2></div>
+      <p>Scores and states come from the reviewed source.</p>
+    </div>
+    <div class="dimension-grid">
+    <article class="dimension-card" data-dimension-id="task-understanding">
+        <div class="dimension-top"><span>Task Understanding</span><span class="pill muted">Reviewed</span></div>
+        <div class="score-line"><strong>78</strong><span>/ 100</span></div>
+        <div class="track" aria-label="Task Understanding 78 of 100"><i style="width:78%"></i></div>
+        <p>The root rules, architecture documentation, and current installation spec provide clear scope, ownership, and acceptance entry points; adoption and correction outcomes in a real Task Episode were not observed.</p>
+      </article>
+<article class="dimension-card" data-dimension-id="controlled-execution">
+        <div class="dimension-top"><span>Controlled Execution</span><span class="pill muted">Reviewed</span></div>
+        <div class="score-line"><strong>56</strong><span>/ 100</span></div>
+        <div class="track" aria-label="Controlled Execution 56 of 100"><i style="width:56%"></i></div>
+        <p>The project has discoverable commands and Skill routes, but Codex Skill forward validation and the terminal state for an unavailable reviewer still lack supported execution paths.</p>
+      </article>
+<article class="dimension-card" data-dimension-id="change-validation">
+        <div class="dimension-top"><span>Change Validation</span><span class="pill muted">Reviewed</span></div>
+        <div class="score-line"><strong>72</strong><span>/ 100</span></div>
+        <div class="track" aria-label="Change Validation 72 of 100"><i style="width:72%"></i></div>
+        <p>A broad set of focused tests and machine validators covers the main artifact boundaries; this run did not execute tests, preview, CI, or host-runtime validation against the current worktree.</p>
+      </article>
+<article class="dimension-card" data-dimension-id="reliable-delivery">
+        <div class="dimension-top"><span>Reliable Delivery</span><span class="pill muted">Reviewed</span></div>
+        <div class="score-line"><strong>48</strong><span>/ 100</span></div>
+        <div class="track" aria-label="Reliable Delivery 48 of 100"><i style="width:48%"></i></div>
+        <p>Installation and discovery boundaries are documented, but current delivery acceptance evidence is absent and persistent marketplace/plugin state lacks a project-owned recovery path.</p>
+      </article>
+<article class="dimension-card" data-dimension-id="learning-capture">
+        <div class="dimension-top"><span>Learning Capture</span><span class="pill muted">Reviewed</span></div>
+        <div class="score-line"><strong>35</strong><span>/ 100</span></div>
+        <div class="track" aria-label="Learning Capture 35 of 100"><i style="width:35%"></i></div>
+        <p>The current window is insufficient to identify two comparable Task Episodes or validate a longitudinal improvement; asset presence and counts are not treated as evidence of use or effectiveness.</p>
+      </article>
+  </div>
+  </section>
+  <section class="section" data-section="activity" aria-labelledby="section-activity">
+    <div class="section-heading">
+      <div><span class="eyebrow">02 · Signals</span><h2 id="section-activity">Project usage</h2></div>
+      <p>Volume is context, not an outcome claim.</p>
+    </div>
+    <div class="activity-layout">
+    <div class="activity-panel">
+      <div class="heatmap" role="img" aria-label="Session activity heatmap"><span class="heat-cell l4" title="2026-07-27: 1.4 active minutes" aria-label="2026-07-27: 1.4 active minutes"></span></div>
+      <div class="heat-legend"><span>2026-07-27</span><span>2026-07-27</span></div>
+    </div>
+    <div class="stacked-metrics">
+      <div class="metric">
+    <span>Sessions reviewed</span>
+    <strong>1 / 1</strong>
+    <small>all-eligible usage census</small>
+  </div>
+      <div class="metric">
+    <span>Long-session leads</span>
+    <strong>0</strong>
+    <small>longest 0 min</small>
+  </div>
+    </div>
+  </div><div class="two-column">
+    <article class="subpanel"><h3>Model usage</h3><p class="empty">No attributed rows were retained.</p></article>
+    <article class="subpanel"><h3>Skill usage</h3><p class="empty">No attributed rows were retained.</p></article>
+  </div>
+  </section>
+  <section class="section" data-section="findings" aria-labelledby="section-findings">
+    <div class="section-heading">
+      <div><span class="eyebrow">03 · Action</span><h2 id="section-findings">Findings and recommendations</h2></div>
+      <p>3 findings · 0 suggestions</p>
+    </div>
+    <div class="finding-list"><details class="finding" open data-finding-id="codex-skill-forward-test-gap">
+      <summary>
+        <span class="finding-index">01</span>
+        <span class="finding-title"><strong>Codex Skills can be delivered without a Codex forward test</strong><small>Controlled Execution</small></span>
+        <span class="pill warning">Medium</span>
+      </summary>
+      <div class="finding-body">
+        <div><span class="label">Why it matters</span><p>The Skill creator explicitly targets Qoder and Codex, but every provided forward-test and plugin-validation command invokes qodercli. A Codex-targeted Skill that passes the current flow proves only the Qoder path, so users may encounter compatibility failures only during Codex discovery, triggering, or execution. The smallest owner is the validation section in .agents/skills/harness-skill-creator; no host test was run in this review, so this finding does not claim that current Codex behavior already fails.</p></div>
+        <div><span class="label">Expected output</span><ul><li>A Codex-targeted Skill is described as usable only after Codex itself passes discovery, triggering, and output-contract validation.</li></ul></div>
+        <div class="fix-box"><span class="label">AI fix</span><p>Add a Codex forward-validation path to harness-skill-creator that matches its stated Codex scope. First inspect local Codex help for the supported non-interactive entry point; do not hard-code unverified flags. Keep the existing quick_validate.py and qodercli gates, and record discovery, triggering, the output contract, and failure boundaries separately for Qoder and Codex.</p>
+          <div class="acceptance"><strong>Acceptance checks</strong><ul><li>Run quick_validate.py for the target Skill</li><li>Run the existing qodercli forward test and plugin validation</li><li>Run the Codex forward test with the same fixture and output assertions</li><li>Confirm that an unavailable host produces an explicit unavailable or blocked result, not success</li></ul></div>
+        </div>
+      </div>
+    </details>
+<details class="finding"  data-finding-id="triad-review-unavailable-reviewer">
+      <summary>
+        <span class="finding-index">02</span>
+        <span class="finding-title"><strong>One unavailable reviewer leaves Spec Review without a completable state</strong><small>Controlled Execution</small></span>
+        <span class="pill warning">Medium</span>
+      </summary>
+      <div class="finding-body">
+        <div><span class="label">Why it matters</span><p>triangulate-spec-review requires every required reviewer to return p1_p2_clear before it stops. The script treats a missing command, timeout, or unparseable output as a non-pass and exits with code 2, but the Skill and review-loop define only an all-clear result or a manual user stop; they provide no acceptance or handoff state for unavailable or blocked reviewers. External reviewer failure and real P1/P2 findings are therefore collapsed into the same result, leaving the agent unable to decide whether to amend the spec, retry the tool, or escalate the blocker.</p></div>
+        <div><span class="label">Expected output</span><ul><li>When a reviewer fails, Spec Review returns a bounded, handoff-ready blocked result instead of presenting a tool failure as an unresolved design finding.</li></ul></div>
+        <div class="fix-box"><span class="label">AI fix</span><p>Add consistent reviewer unavailable and blocked states across the triangulate-spec-review Skill, the review-loop contract, and run-triad-review output. Distinguish real P1/P2 findings from a missing reviewer command, timeout, and unparseable output. Define bounded stop, retry, and user-handoff behavior for each state without weakening the normal requirement for at least two independent reviewers.</p>
+          <div class="acceptance"><strong>Acceptance checks</strong><ul><li>Run the script with one missing reviewer command and confirm the output distinguishes unavailable from P1/P2</li><li>Use a timeout fixture to confirm bounded retries and a final blocked state</li><li>Use two successful reviewers to confirm the existing p1_p2_clear acceptance path still passes</li><li>Verify consistent argv and exit-code behavior on Windows, macOS, and Linux</li></ul></div>
+        </div>
+      </div>
+    </details>
+<details class="finding"  data-finding-id="plugin-install-recovery-gap">
+      <summary>
+        <span class="finding-index">03</span>
+        <span class="finding-title"><strong>Failed plugin installation has no project-owned recovery steps</strong><small>Reliable Delivery</small></span>
+        <span class="pill neutral">Low</span>
+      </summary>
+      <div class="finding-body">
+        <div><span class="label">Why it matters</span><p>The current installation guide covers marketplace add, plugin install, task refresh, and discovery, but it does not explain how to identify and clean up persistent host state introduced by this project after a failed installation, mirror switch, or version conflict, nor does it define a recovery postcondition. The hosts may provide uninstall capabilities, but the project owners opened in this review expose no discoverable route; after installation failure, users must leave the project documentation to determine what state remains.</p></div>
+        <div><span class="label">Expected output</span><ul><li>After a failed installation or source switch, users can identify residual state from the project documentation and safely restore the host inventory to its pre-installation state.</li></ul></div>
+        <div class="fix-box"><span class="label">AI fix</span><p>Add the smallest recovery boundary beside each host installation path in the README. First inspect current host help for supported list, remove, or uninstall operations; do not invent commands. Explain how to identify marketplace/plugin state created by this project after a failed installation, mirror switch, or version conflict, when user confirmation is required, and how to verify the recovered inventory. Any real uninstall requires separate user authorization.</p>
+          <div class="acceptance"><strong>Acceptance checks</strong><ul><li>Confirm the current CLI or UI recovery entry point for every documented host</li><li>Rehearse one failed installation or version conflict in an isolated configuration directory without changing the user&#39;s real configuration</li><li>Confirm that the recovered inventory contains no state left by this project&#39;s installation</li><li>Run the Markdown link check and the relevant host-plugin documentation tests</li></ul></div>
+        </div>
+      </div>
+    </details></div>
+  </section>
+  <section class="section" data-section="customize" aria-labelledby="section-customize">
+    <div class="section-heading">
+      <div><span class="eyebrow">04 · Capability</span><h2 id="section-customize">Agent Customize</h2></div>
+      <p>Inspected project and authorized host surfaces.</p>
+    </div>
+    <div class="custom-grid"><article><span class="custom-mark">R</span><div><h3>Rules</h3><p>Project · 1</p></div></article><article><span class="custom-mark">S</span><div><h3>Skills</h3><p>Project · 4</p></div></article><article><span class="custom-mark">W</span><div><h3>Workflows</h3><p>Project · 2</p></div></article><article><span class="custom-mark">C</span><div><h3>Custom Agents</h3><p>Project · 0</p></div></article></div>
+  </section>
+  <section class="section" data-section="methodology" aria-labelledby="section-methodology">
+    <div class="section-heading">
+      <div><span class="eyebrow">05 · Boundary</span><h2 id="section-methodology">Evidence and methodology</h2></div>
+      <p>Reader-safe evidence only.</p>
+    </div>
+    <div class="evidence-grid"><div><span>Evidence mode</span><strong>session-rich</strong></div><div><span>Task episodes</span><strong>0</strong></div><div><span>Edited episodes</span><strong>0</strong></div><div><span>Sampling</span><strong>1 / 1</strong></div><div><span>Confidence</span><strong>High</strong></div><div><span>Learning state</span><strong>N/A</strong></div></div>
+
+    <p class="method-note">Activity totals describe volume, not quality or savings. Fluency conclusions come from the reviewed task sample and remain bounded by the retained evidence.</p>
+  </section>
+<footer>Generated from one reviewed Harness source · self-contained Codex HTML</footer>
+</main>
+<script id="harness-report-data" type="application/json">{"mode":"html","language":"en","dataPath":"embedded-report-data","target":{"name":"harness-expert","path":"harness-expert"},"summary":{"projectName":"harness-expert","locale":"en","modelId":"agent-work-loop-v4","reportContractVersion":25,"overview":"The project already provides clear architecture routing, project-level agent instructions, a broad validation command surface, and multi-host installation guidance. The main current risks are that two reusable workflows do not cover their declared host or failure boundaries, and plugin installation lacks a project-owned recovery path. Recent behavior evidence covers only one short session with no edits or delivery, while the independent Session Evidence lane contains no eligible Task Episode; this report therefore makes no claims about repeated work, actual Skill use, or longitudinal effectiveness.","strengths":["Architecture documentation assigns product judgment, host adapters, packaging, and evidence collection to clear owners.","The project exposes focused and full tests, preview commands, package verification, and a publication dry run.","The Codex plugin artifact verifier has machine-readable output, negative test cases, and ownership-boundary protection."],"dimensions":[{"id":"task-understanding","label":"Task Understanding","score":78,"summary":"The root rules, architecture documentation, and current installation spec provide clear scope, ownership, and acceptance entry points; adoption and correction outcomes in a real Task Episode were not observed.","findingRefs":[]},{"id":"controlled-execution","label":"Controlled Execution","score":56,"summary":"The project has discoverable commands and Skill routes, but Codex Skill forward validation and the terminal state for an unavailable reviewer still lack supported execution paths.","findingRefs":["codex-skill-forward-test-gap","triad-review-unavailable-reviewer"]},{"id":"change-validation","label":"Change Validation","score":72,"summary":"A broad set of focused tests and machine validators covers the main artifact boundaries; this run did not execute tests, preview, CI, or host-runtime validation against the current worktree.","findingRefs":[]},{"id":"reliable-delivery","label":"Reliable Delivery","score":48,"summary":"Installation and discovery boundaries are documented, but current delivery acceptance evidence is absent and persistent marketplace/plugin state lacks a project-owned recovery path.","findingRefs":["plugin-install-recovery-gap"]},{"id":"learning-capture","label":"Learning Capture","score":35,"summary":"The current window is insufficient to identify two comparable Task Episodes or validate a longitudinal improvement; asset presence and counts are not treated as evidence of use or effectiveness.","findingRefs":[]}],"evidenceMode":"session-rich","evidenceBoundary":{"manifest":{"schemaVersion":2,"sourceFingerprint":"78dd6a56d3d695dc","adapterVersion":"codex-task-loop-source-v2","platform":"codex","selection":{"strategy":"all-eligible","eligibleCount":1,"analyzedCount":1,"confidence":"High"}},"episodeCoverage":{"episodeCount":1,"editedEpisodeCount":0,"closedEpisodeCount":0,"recoveredEpisodeCount":0},"deliveryEvidenceLevels":[],"sourceGaps":[]},"semanticFacets":{"schemaVersion":1,"status":"supplementary","entries":[{"id":"session-insight:source-coverage","kind":"redacted-summary","episodeRef":null,"status":"candidate","labels":["source-coverage","High"],"summary":"Analyzed 1 of 1 sessions; 5/5 enabled source roots exist. Use this as the current workspace evidence boundary for final insight cards.","evidenceRefs":[],"modelVersion":"session-insights-v1"},{"id":"session-insight:validation-behavior","kind":"redacted-summary","episodeRef":null,"status":"candidate","labels":["validation-behavior","Low"],"summary":"Validation was mentioned by the user, but no matching command execution was observed: node --test (1). Treat this as a validation execution gap until a matching tool command is found in bounded evidence.","evidenceRefs":[{"kind":"codex-session-jsonl","id":"session-insight-2-1","type":"user","line":6}],"modelVersion":"session-insights-v1"},{"id":"session-insight:post-edit-validation","kind":"rework-correction","episodeRef":null,"status":"candidate","labels":["post-edit-validation","Low"],"summary":"No edit event was observed in the analyzed sample. Inspect more sessions before making claims about edit or validation habits.","evidenceRefs":[],"modelVersion":"session-insights-v1"},{"id":"session-insight:execution-friction","kind":"friction-taxonomy","episodeRef":null,"status":"candidate","labels":["execution-friction","Low"],"summary":"No strong execution friction signal in the analyzed sample. Keep friction claims narrow unless additional failed commands, rejected actions, or warnings are inspected.","evidenceRefs":[],"modelVersion":"session-insights-v1"},{"id":"session-insight:tool-mix","kind":"redacted-summary","episodeRef":null,"status":"candidate","labels":["tool-mix","High"],"summary":"Most observed tool: exec (4). Use this as workflow evidence, then inspect bounded sessions before claiming user intent.","evidenceRefs":[{"kind":"codex-session-jsonl","id":"session-insight-5-1","type":"tool.call","line":15}],"modelVersion":"session-insights-v1"},{"id":"session-insight:planning-workflow","kind":"goal-workflow","episodeRef":null,"status":"candidate","labels":["planning-workflow","Medium"],"summary":"Observed codex plan-mode: plan-mode (1, workspace). Use this as workspace session evidence for Goal/Plan/Spec workflow behavior.","evidenceRefs":[{"kind":"codex-session-jsonl","id":"session-insight-6-1","type":"assistant","line":3}],"modelVersion":"session-insights-v1"},{"id":"session-insight:session-usage-efficiency","kind":"redacted-summary","episodeRef":null,"status":"candidate","labels":["session-usage-efficiency","High"],"summary":"This analysis covered one session and found no active long session above the threshold. These activity signals describe effort only; the available token or credit evidence is insufficient to infer model preference, quality, or savings.","evidenceRefs":[],"modelVersion":"session-insights-v1"}]},"learningCapture":{"schemaVersion":1,"state":"N/A","summary":"Not applicable yet — two comparable observation windows and one improvement comparison are required.","interventions":[]},"aiAgentPractice":{"inspectedSurfaces":["Rules","Skills"],"coverageRows":[{"surface":"Rules","scopes":["Project"],"count":1,"paths":["AGENTS.md"]},{"surface":"Skills","scopes":["Project"],"count":4,"paths":[".agents/skills/change-traceability-review/SKILL.md",".agents/skills/harness-skill-creator/SKILL.md",".agents/skills/skill-review/SKILL.md",".agents/skills/triangulate-spec-review/SKILL.md"]},{"surface":"Workflows","scopes":["Project"],"count":2,"paths":[".github/workflows/ci.yml",".github/workflows/release.yml"]},{"surface":"Custom Agents","scopes":["Project"],"count":0}]},"usageActivity":{"schemaVersion":2,"dateBasis":"UTC","measurementBasis":"session-starts-active-estimate-model-active-session-days-skill-invocations-and-loads","truncated":false,"dates":["2026-07-27"],"sessions":{"total":1,"starts":[1],"activeMinutes":[1.4]},"models":[],"skills":[]},"usageEfficiency":{"schemaVersion":2,"selection":{"strategy":"all-eligible","eligibleSessionCount":1,"analyzedSessionCount":1,"complete":true},"roles":{"userThreadCandidateCount":1,"childAgentCandidateCount":0},"longSessions":{"activeCount":0,"wallOnlyCount":0,"longestActiveMinutes":0,"activeRatio":0,"estimate":{"method":"capped-event-gap","activeThresholdMinutes":45,"gapCapMinutes":5,"idleGapMinutes":30},"samples":[]},"accounting":{"mode":"effort-proxy","responseCount":0,"modelAttributedResponseCount":0,"unattributedResponseCount":0,"usageFieldObservedCount":0,"nonZeroUsageCount":0,"exactCreditsAvailable":false,"pricingVersion":null},"modelUsage":[],"outcomeReview":{"status":"not-applicable","reviewedCandidateCount":0,"reviewedActiveLongCount":0,"comparableModelOutcomeEvidence":false,"recommendation":"controlled-a-b-required"}},"assignmentSummaries":[]},"findings":[{"id":"codex-skill-forward-test-gap","title":"Codex Skills can be delivered without a Codex forward test","severity":"Medium","reason":"The Skill creator explicitly targets Qoder and Codex, but every provided forward-test and plugin-validation command invokes qodercli. A Codex-targeted Skill that passes the current flow proves only the Qoder path, so users may encounter compatibility failures only during Codex discovery, triggering, or execution. The smallest owner is the validation section in .agents/skills/harness-skill-creator; no host test was run in this review, so this finding does not claim that current Codex behavior already fails.","dimensionRefs":["controlled-execution"],"aiFixPrompt":"/better-harness fix this issue\n\nAdd a Codex forward-validation path to harness-skill-creator that matches its stated Codex scope. First inspect local Codex help for the supported non-interactive entry point; do not hard-code unverified flags. Keep the existing quick_validate.py and qodercli gates, and record discovery, triggering, the output contract, and failure boundaries separately for Qoder and Codex.\n\n## Validation\n\n- Run quick_validate.py for the target Skill\n- Run the existing qodercli forward test and plugin validation\n- Run the Codex forward test with the same fixture and output assertions\n- Confirm that an unavailable host produces an explicit unavailable or blocked result, not success","expectedArtifact":"Skill","expectedOutput":["A Codex-targeted Skill is described as usable only after Codex itself passes discovery, triggering, and output-contract validation."]},{"id":"triad-review-unavailable-reviewer","title":"One unavailable reviewer leaves Spec Review without a completable state","severity":"Medium","reason":"triangulate-spec-review requires every required reviewer to return p1_p2_clear before it stops. The script treats a missing command, timeout, or unparseable output as a non-pass and exits with code 2, but the Skill and review-loop define only an all-clear result or a manual user stop; they provide no acceptance or handoff state for unavailable or blocked reviewers. External reviewer failure and real P1/P2 findings are therefore collapsed into the same result, leaving the agent unable to decide whether to amend the spec, retry the tool, or escalate the blocker.","dimensionRefs":["controlled-execution"],"aiFixPrompt":"/better-harness fix this issue\n\nAdd consistent reviewer unavailable and blocked states across the triangulate-spec-review Skill, the review-loop contract, and run-triad-review output. Distinguish real P1/P2 findings from a missing reviewer command, timeout, and unparseable output. Define bounded stop, retry, and user-handoff behavior for each state without weakening the normal requirement for at least two independent reviewers.\n\n## Validation\n\n- Run the script with one missing reviewer command and confirm the output distinguishes unavailable from P1/P2\n- Use a timeout fixture to confirm bounded retries and a final blocked state\n- Use two successful reviewers to confirm the existing p1_p2_clear acceptance path still passes\n- Verify consistent argv and exit-code behavior on Windows, macOS, and Linux","expectedArtifact":"Workflow","expectedOutput":["When a reviewer fails, Spec Review returns a bounded, handoff-ready blocked result instead of presenting a tool failure as an unresolved design finding."]},{"id":"plugin-install-recovery-gap","title":"Failed plugin installation has no project-owned recovery steps","severity":"Low","reason":"The current installation guide covers marketplace add, plugin install, task refresh, and discovery, but it does not explain how to identify and clean up persistent host state introduced by this project after a failed installation, mirror switch, or version conflict, nor does it define a recovery postcondition. The hosts may provide uninstall capabilities, but the project owners opened in this review expose no discoverable route; after installation failure, users must leave the project documentation to determine what state remains.","dimensionRefs":["reliable-delivery"],"aiFixPrompt":"/better-harness fix this issue\n\nAdd the smallest recovery boundary beside each host installation path in the README. First inspect current host help for supported list, remove, or uninstall operations; do not invent commands. Explain how to identify marketplace/plugin state created by this project after a failed installation, mirror switch, or version conflict, when user confirmation is required, and how to verify the recovered inventory. Any real uninstall requires separate user authorization.\n\n## Validation\n\n- Confirm the current CLI or UI recovery entry point for every documented host\n- Rehearse one failed installation or version conflict in an isolated configuration directory without changing the user's real configuration\n- Confirm that the recovered inventory contains no state left by this project's installation\n- Run the Markdown link check and the relevant host-plugin documentation tests","expectedArtifact":"Document","expectedOutput":["After a failed installation or source switch, users can identify residual state from the project documentation and safely restore the host inventory to its pre-installation state."]}]}</script>
+</body>
+</html>

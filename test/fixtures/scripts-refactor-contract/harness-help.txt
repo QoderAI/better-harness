@@ -1,0 +1,39 @@
+Better Harness harness
+
+Collect privacy-safe project and session evidence for AI interpretation by the Better Harness skill, then validate AI-authored findings and derived Markdown, HTML, or Qoder Canvas reports while keeping AI Agent Practices visible.
+
+Usage:
+  better-harness harness <SUBCOMMAND> [ARGS]
+
+Subcommands:
+  Audience: maintainer
+  evidence-bundle          Collect the three specialist lanes and lead evidence in one
+                           frozen-context bundle
+  analyze                  Return a neutral, budgeted Harness evidence brief
+  checkup                  Scan agent customizations and produce a read-only cleanup plan
+  selection-profile        Build a privacy-safe session selection profile
+  source                   Build the deterministic Agent Work Loop source envelope
+  task-loop-report         Project deterministic task-loop findings from report.source.json
+  render                   Render reviewed findings data into report artifacts
+  preview-canvas           Preview a Qoder Canvas report on this machine
+  report-quality           Validate Markdown report and findings JSON readiness contracts
+  repair-findings          Normalize findings JSON schema drift
+  record-fix-output        Record the latest verified output and Assignment Summary for one
+                           finding
+  validate-canvas          Validate Qoder Canvas output parity and runtime boundaries
+
+Examples:
+  better-harness harness analyze --workspace . --language en --format json
+  better-harness harness checkup --phase scan --provider qoder --workspace . --json
+  better-harness harness source --workspace . --source <scratch>/report.source.json --language en
+  better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json
+  better-harness harness preview-canvas <run>/report.canvas.tsx --open
+  better-harness harness report-quality --report <run>/report.md
+  better-harness harness validate-canvas --canvas <run>/report.canvas.tsx
+
+Discovery:
+  better-harness harness --help --audience advanced
+  better-harness harness --help --audience maintainer
+
+Options:
+  -h, --help              Print help

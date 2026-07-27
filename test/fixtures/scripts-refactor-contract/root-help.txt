@@ -1,0 +1,65 @@
+Better Harness CLI
+
+Repository-local AI delivery harness tools.
+
+Usage:
+  better-harness <command> [args]
+  better-harness <command> <subcommand> [args]
+
+Commands:
+  Audience: maintainer
+
+  Quickstart
+    report                   Gather static evidence and hand off to the Better Harness skill for
+                             a five-minute readiness report
+
+  Workflows
+    harness                  Check Better Harness readiness reports and Canvas outputs
+                             subcommands: evidence-bundle, analyze, checkup, selection-profile,
+                             source, task-loop-report, render, preview-canvas, report-quality,
+                             repair-findings, record-fix-output, validate-canvas
+
+  Project Evidence
+    session-analysis         Collect and normalize Qoder, Codex, Claude, and Cursor session
+                             evidence
+    dependency-governance    Detect dependency governance files, automation, audit signals, and
+                             stale dependency evidence
+    cloc                     Count code, comments, and blank lines
+
+  Agent Assets
+    agent-customize          Inspect agent-facing Skills, MCPs, hooks, plugins, settings, and
+                             memory surfaces
+    agent-lint               Parse AGENTS.md and local Markdown references for agent-instruction
+                             linting
+    coding-agent-practices   Inspect coding-agent assets and practice evidence
+                             subcommands: asset-baseline, inventory, asset-integrity
+
+  Maintainer Diagnostics
+    core-change-watch        Build static project, history, core-path, and diff evidence
+                             subcommands: change-drift, core-candidates, diff-impact,
+                             evidence-pack, git-history-profile, project-profile,
+                             qoder-consistency-schema
+
+Examples:
+  better-harness report
+  better-harness harness analyze --workspace . --language en --format json
+  better-harness harness checkup --phase scan --provider qoder --workspace . --json
+  better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json
+  better-harness harness report-quality --report <run>/report.md
+  better-harness harness validate-canvas --canvas <run>/report.canvas.tsx
+  better-harness core-change-watch project-profile --json
+  better-harness core-change-watch change-drift --json
+  better-harness dependency-governance --json --benchmark
+  better-harness agent-lint --json
+  better-harness commands --json
+
+Discovery:
+  commands                 List available commands; add --json for machine-readable inventory
+  command describe         Describe one command; add --json for the command contract
+  schema                   Emit the OpenCLI schema as JSON
+  --help --audience advanced Include workflow and advanced commands
+  --help --audience maintainer Include every registered command
+
+Options:
+  -h, --help              Print help
+  -V, --version           Print version
