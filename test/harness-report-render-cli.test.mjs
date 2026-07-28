@@ -638,6 +638,18 @@ test("HTML validator rejects incomplete finding action contracts", () => {
     ["manual copy fallback", html.replace(/<dialog id="manual-copy-dialog"[\s\S]*?<\/dialog>/u, "")],
     ["finding copy action", html.replace(/<button[^>]+data-copy-finding=[\s\S]*?<\/button>/u, "")],
     ["finding detail action", html.replace(/<button[^>]+data-view-finding-dialog=[\s\S]*?<\/button>/u, "")],
+    ["cross-bound finding copy action", html.replace(
+      'data-copy-finding="ff-runtime-validation"',
+      'data-copy-finding="aia-workflow-evidence"',
+    )],
+    ["cross-bound finding dialog", html.replace(
+      'data-finding-dialog-id="ff-runtime-validation"',
+      'data-finding-dialog-id="aia-workflow-evidence"',
+    )],
+    ["mismatched finding detail action", html.replace(
+      'data-view-finding-dialog="finding-dialog-1"',
+      'data-view-finding-dialog="finding-dialog-2"',
+    )],
     ["host bridge", html.replace(
       '<script id="harness-report-interactions">',
       '<script id="harness-report-interactions">window.openai;',

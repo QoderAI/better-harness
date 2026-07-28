@@ -119,6 +119,10 @@ function interactionFixture({ clipboardWrite, legacyCopyResult = true } = {}) {
     dataset: { closeFindingDialog: "finding-dialog-1" },
     textContent: "Close",
   });
+  const manualCloseButton = new FakeElement({
+    dataset: { closeFindingDialog: "manual-copy-dialog" },
+    textContent: "Close",
+  });
   const created = [];
   const scheduled = [];
   const byId = new Map([
@@ -131,7 +135,7 @@ function interactionFixture({ clipboardWrite, legacyCopyResult = true } = {}) {
   const selectors = new Map([
     ["[data-copy-finding]", [copyButton]],
     ["[data-view-finding-dialog]", [viewButton]],
-    ["[data-close-finding-dialog]", [closeButton]],
+    ["[data-close-finding-dialog]", [closeButton, manualCloseButton]],
     ["dialog[data-finding-dialog-id]", [findingDialog]],
   ]);
   const document = {
@@ -184,6 +188,7 @@ function interactionFixture({ clipboardWrite, legacyCopyResult = true } = {}) {
     copyButton,
     viewButton,
     closeButton,
+    manualCloseButton,
     created,
     scheduled,
     writes,
@@ -241,6 +246,10 @@ test("copy action exposes selected manual text when all copy paths fail", async 
   assert.equal(fixture.status.textContent, LABELS.manualCopy);
   assert.equal(fixture.status.dataset.state, "error");
   assert.notEqual(fixture.status.textContent, LABELS.copySuccess);
+
+  await fixture.manualCloseButton.dispatch("click");
+  assert.equal(fixture.manualDialog.open, false);
+  assert.equal(fixture.copyButton.focused, true);
 });
 
 test("detail actions stay bound to one dialog and restore trigger focus", async () => {

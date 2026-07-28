@@ -174,7 +174,8 @@ guarantee: copy the repair prompt for the reader to paste into Codex.
   test/harness-report-render-cli.test.mjs` passed 19/19 tests. Coverage includes
   exact special-character prompt copy, Clipboard API rejection, legacy local
   copy, selected manual fallback, truthful status, Chinese labels, action
-  mutation failures, and rejected host bridge/deep-link coupling.
+  mutation failures, cross-finding binding rejection, manual-fallback focus
+  return, and rejected host bridge/deep-link coupling.
 - CRA-AC-3/CRA-AC-5: Playwright opened the finding-scoped dialog and observed
   Cause, Expected Output, Acceptance Checks, and the scoped copy action.
   Closing it restored focus to the matching `View details` trigger; focused
@@ -191,6 +192,13 @@ guarantee: copy the repair prompt for the reader to paste into Codex.
     entries.
   - `node --test test/doc-link-graph.test.mjs`: 6/6 passed.
   - `git diff --check`: passed.
+- PR #8 maintainer follow-up on macOS with supported Node 24.15.0:
+  - `node --test`: 833/833 passed with a generated `/.codex/` report present.
+  - `node scripts/npm-package/verify-pack.mjs`: passed with 302 npm entries and
+    330 runtime zip entries.
+  - `node --test test/doc-link-graph.test.mjs`: 6/6 passed.
+  - The retired-name repository scan now excludes ignored `/.codex/` runtime
+    output, so embedded absolute report paths do not become source violations.
 - Environment limitations:
   - `npm run preview` could not start because this environment has no Canvas
     SDK runtime; `/health` and `/canvas-module.js` therefore could not be

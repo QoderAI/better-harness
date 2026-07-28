@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const skippedDirectories = new Set([
+  ".codex",
   ".git",
   ".idea",
   ".qoder",

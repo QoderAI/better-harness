@@ -494,6 +494,23 @@ export function evaluateHtmlReport(htmlText, reportData) {
   if (detailActions !== list(reportData?.findings).length) {
     errors.push(`report.html detail action count ${detailActions} does not match reviewed findings ${list(reportData?.findings).length}`);
   }
+  for (const [index, finding] of list(reportData?.findings).entries()) {
+    const findingId = escapeHtml(String(finding?.id ?? index));
+    const dialogId = `finding-dialog-${index + 1}`;
+    const bindings = [
+      ["card", `data-finding-id="${findingId}"`, 1],
+      ["dialog", `data-finding-dialog-id="${findingId}"`, 1],
+      ["copy action", `data-copy-finding="${findingId}"`, 2],
+      ["detail action", `data-view-finding-dialog="${dialogId}"`, 1],
+      ["close action", `data-close-finding-dialog="${dialogId}"`, 1],
+    ];
+    for (const [label, marker, expected] of bindings) {
+      const actual = text.split(marker).length - 1;
+      if (actual !== expected) {
+        errors.push(`report.html finding ${findingId} ${label} binding count ${actual} does not match expected ${expected}`);
+      }
+    }
+  }
   const suggestionRows = (text.match(/data-suggestion-id=/gu) ?? []).length;
   if (suggestionRows !== list(reportData?.summary?.suggestions).length) {
     errors.push(`report.html suggestion row count ${suggestionRows} does not match reviewed suggestions ${list(reportData?.summary?.suggestions).length}`);

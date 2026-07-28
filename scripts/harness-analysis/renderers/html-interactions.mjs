@@ -69,13 +69,14 @@ export function installHtmlReportInteractions({
       if (legacyCopy(prompt)) return copied(trigger);
     }
 
+    if (manualDialog && typeof manualDialog.showModal === "function") {
+      dialogTriggers.set(manualDialog.id, trigger);
+      if (!manualDialog.open) manualDialog.showModal();
+    }
     if (manualText) {
       manualText.value = prompt;
       manualText.focus();
       manualText.select();
-    }
-    if (manualDialog && typeof manualDialog.showModal === "function") {
-      manualDialog.showModal();
     }
     report(labels.manualCopy, "error");
     return false;
@@ -105,7 +106,11 @@ export function installHtmlReportInteractions({
   for (const trigger of document.querySelectorAll("[data-close-finding-dialog]")) {
     trigger.addEventListener("click", () => closeDialog(trigger.dataset.closeFindingDialog));
   }
-  for (const dialog of document.querySelectorAll("dialog[data-finding-dialog-id]")) {
+  const interactiveDialogs = [
+    ...document.querySelectorAll("dialog[data-finding-dialog-id]"),
+    manualDialog,
+  ].filter(Boolean);
+  for (const dialog of interactiveDialogs) {
     dialog.addEventListener("close", () => {
       const trigger = dialogTriggers.get(dialog.id);
       dialogTriggers.delete(dialog.id);
