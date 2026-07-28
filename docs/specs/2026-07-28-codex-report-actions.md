@@ -3,7 +3,7 @@
 ## Traceability
 
 - Spec ID: codex-report-actions
-- Status: Draft
+- Status: Accepted
 
 ## Intent
 
