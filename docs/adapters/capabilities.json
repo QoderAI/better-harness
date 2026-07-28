@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "statusVocabulary": ["yes", "partial", "no"],
+  "capabilities": [
+    "configuredAssetInventory",
+    "sessionEvidence",
+    "portableDurableReport"
+  ],
+  "hosts": {
+    "qoder": {
+      "configuredAssetInventory": "yes",
+      "sessionEvidence": "yes",
+      "portableDurableReport": "yes"
+    },
+    "codex": {
+      "configuredAssetInventory": "yes",
+      "sessionEvidence": "yes",
+      "portableDurableReport": "yes"
+    },
+    "claude": {
+      "configuredAssetInventory": "yes",
+      "sessionEvidence": "yes",
+      "portableDurableReport": "yes"
+    },
+    "cursor": {
+      "configuredAssetInventory": "yes",
+      "sessionEvidence": "yes",
+      "portableDurableReport": "yes"
+    }
+  }
+}

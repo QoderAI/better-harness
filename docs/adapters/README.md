@@ -5,6 +5,12 @@ boundaries. Do not create `docs/adapters/claude-code.md`,
 `docs/adapters/codex.md`, `docs/adapters/qoder.md`, or
 `docs/adapters/cursor.md` by default.
 
+The checked-in [host capability declaration](capabilities.json) is the
+machine-readable source for configured-asset inventory, session evidence, and
+portable durable-report support. It records implementation support only;
+per-workspace evidence availability and installed-host smoke coverage remain
+separate boundaries.
+
 Host differences enter only this matrix, capability-local configured-asset
 providers, real session-evidence adapters, and output modes. Canonical product
 judgment stays in `skills/`, `models/`, `references/`, `templates/`, and

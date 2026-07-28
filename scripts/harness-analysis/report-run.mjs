@@ -34,7 +34,7 @@ function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
-function reportPlatform(value = "qoder") {
+export function reportPlatform(value = "qoder") {
   const platform = String(value || "qoder").toLowerCase();
   if (!["qoder", "codex", "claude", "cursor"].includes(platform)) {
     throw Object.assign(new Error(`unsupported Harness report platform: ${platform}`), {
