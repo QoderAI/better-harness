@@ -31,6 +31,8 @@ acceptance, change safeguards, and recovery boundaries.
   applicability, and validation evidence.
 - `review-trigger.md`: recommendation and review-trigger policy.
 - `sensitive-code.md`: sensitive-code review and reporting boundaries.
+- `sensitive-write-boundary.md`: pre-write confirmation gate for
+  project-control surfaces.
 
 ## Does Not Own
 
@@ -52,4 +54,6 @@ acceptance, change safeguards, and recovery boundaries.
 - Use `friendly-cli.md` for command interface design.
 - Use `recovery-evidence.md` for rollback and recovery inspection.
 - Use `sensitive-code.md` for sensitive-code review boundaries.
+- Use `sensitive-write-boundary.md` for pre-write confirmation on
+  project-control surfaces.
 - Use `git-hooks.md` for Git hook lifecycle placement and evidence.
