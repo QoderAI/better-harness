@@ -3,7 +3,7 @@
 ## Traceability
 
 - Spec ID: codex-report-actions
-- Status: Accepted
+- Status: Implemented
 
 ## Intent
 
@@ -150,9 +150,55 @@ guarantee: copy the repair prompt for the reader to paste into Codex.
   backed by focused inspection.
 - Risk: an interaction script can bind the wrong finding or expose unsafe
   content. Resolve only exact finding ids from the embedded reviewed source,
-  keep visible data escaped, write fallback prompt text through `textContent`,
-  and test multi-row and special-character cases.
+  keep visible data escaped, write fallback prompt text through the textarea
+  `value` property, and test multi-row and special-character cases.
 - Risk: visual parity work can accidentally change analysis semantics. Keep
   this change in the HTML contract, renderer, validator, and focused tests; do
   not edit report-source projection, schemas, Markdown, Canvas, or finding
   authoring owners.
+
+## Implementation Evidence
+
+- Implemented on `feat/codex-report-actions-implementation` in:
+  - `scripts/harness-analysis/renderers/html.mjs`
+  - `scripts/harness-analysis/renderers/html-interactions.mjs`
+  - `templates/reporting/html-visual.md`
+  - `test/harness-report-render-cli.test.mjs`
+  - `test/html-report-interactions.test.mjs`
+- CRA-AC-1..CRA-AC-3/CRA-AC-6/CRA-AC-9: a fresh render from the historical
+  reviewed `findings.json` passed validation with three finding cards, three
+  finding dialogs, six copy actions, three detail actions, and exactly
+  `findings.json`, `report.md`, and `report.html`.
+- CRA-AC-2/CRA-AC-4/CRA-AC-8/CRA-AC-10:
+  `node --test test/html-report-interactions.test.mjs
+  test/harness-report-render-cli.test.mjs` passed 19/19 tests. Coverage includes
+  exact special-character prompt copy, Clipboard API rejection, legacy local
+  copy, selected manual fallback, truthful status, Chinese labels, action
+  mutation failures, and rejected host bridge/deep-link coupling.
+- CRA-AC-3/CRA-AC-5: Playwright opened the finding-scoped dialog and observed
+  Cause, Expected Output, Acceptance Checks, and the scoped copy action.
+  Closing it restored focus to the matching `View details` trigger; focused
+  unit coverage also exercised backdrop dismissal.
+- CRA-AC-6/CRA-AC-7: Playwright confirmed a three-column desktop finding grid,
+  a one-column 320 px grid with `scrollWidth === innerWidth === 320`, and
+  readable desktop, dialog, and mobile screenshots. Computed no-JavaScript and
+  print styles both hid action controls and the manual-copy dialog while
+  exposing each full finding dialog.
+- Repository validation:
+  - `npm test`: 831 tests, 829 passed, 2 skipped because Windows denied fixture
+    symlink creation with `EPERM`, 0 failed.
+  - `npm run pack:verify`: passed with 303 npm entries and 330 runtime zip
+    entries.
+  - `node --test test/doc-link-graph.test.mjs`: 6/6 passed.
+  - `git diff --check`: passed.
+- Environment limitations:
+  - `npm run preview` could not start because this environment has no Canvas
+    SDK runtime; `/health` and `/canvas-module.js` therefore could not be
+    smoke-tested. This does not affect the self-contained HTML runtime.
+  - Playwright CLI blocks the `file:` protocol, so its direct-disk navigation
+    was not available. The generated file passed the deterministic
+    self-contained validator and the existing disk-openable renderer test;
+    interactive browser checks used loopback HTTP.
+  - The loopback preview logged only automatic browser requests for missing
+    `favicon.ico` and Chrome DevTools metadata; the report controller emitted
+    no console error.

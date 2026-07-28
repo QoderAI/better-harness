@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { installHtmlReportInteractions } from "../scripts/harness-analysis/renderers/html-interactions.mjs";
+import {
+  installHtmlReportInteractions,
+  renderHtmlInteractionScript,
+} from "../scripts/harness-analysis/renderers/html-interactions.mjs";
 
 const PROMPT = `/better-harness fix this issue
 
@@ -255,4 +258,13 @@ test("detail actions stay bound to one dialog and restore trigger focus", async 
   await fixture.findingDialog.dispatch("click", { target: fixture.findingDialog, clientX: 0, clientY: 0 });
   assert.equal(fixture.findingDialog.open, false);
   assert.equal(fixture.viewButton.focused, true);
+});
+
+test("rendered interaction controller localizes labels without host coupling", () => {
+  const script = renderHtmlInteractionScript("zh-CN");
+
+  assert.match(script, /id="harness-report-interactions"/u);
+  assert.match(script, /复制 AI 修复/u);
+  assert.match(script, /已复制，请粘贴到 Codex 输入框。/u);
+  assert.doesNotMatch(script, /window\.openai|codex:\/\/|chatgpt:\/\//iu);
 });
