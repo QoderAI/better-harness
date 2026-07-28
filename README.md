@@ -1,6 +1,10 @@
 <h1 align="center">Better Harness</h1>
 
 <p align="center">
+  English · <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
   <strong>See how your AI coding workflow works—and make it better, one step at a time.</strong>
 </p>
 
