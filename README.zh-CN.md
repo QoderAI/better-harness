@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  Better Harness 审查编码智能体如何理解任务、实施变更、验证结果、安全交付并沉淀经验，
-  然后指出下一步该改进什么；每项发现都与可见证据关联。
+  Better Harness 审视编码智能体理解任务、实施变更、验证结果、安全交付和沉淀经验的全过程，
+  再指出下一步的改进方向；每项发现都有可见证据作为依据。
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
   <a href="#quick-start">快速开始</a> ·
   <a href="#see-it-in-action">实际效果</a> ·
   <a href="#why-better-harness">为什么选择 Better Harness</a> ·
-  <a href="#what-is-open">开放内容</a> ·
+  <a href="#what-is-open">开放了什么</a> ·
   <a href="#installation">安装</a> ·
   <a href="docs/adapters/README.md">宿主支持</a> ·
   <a href="roadmap.md">路线图</a> ·
@@ -33,14 +33,14 @@
 
 ## 看看实际效果
 
-让 `/better-harness` 审查当前任务及其所在项目的 Harness，并生成一份可持久保存的报告：
+让 `/better-harness` 审查当前任务及其所在项目的 Harness，并生成一份可留存的报告：
 
 ```text
 /better-harness 审查此项目的 AI 编码工作流并生成报告
 ```
 
-报告会明确标注缺失的证据，并把有证据支持的差距转化为按优先级排列的发现；
-每项发现都包含影响、预期输出、范围明确的修复方案和验收检查。
+报告会明确标注证据缺口，并将有证据支撑的问题整理成按优先级排列的发现；
+每项发现都包含影响、预期输出、范围明确的修复方案与验收检查。
 
 <p align="center">
   <a href="assets/demo/better-harness-report.html"><img src="assets/demo/better-harness-findings-report.png" alt="Better Harness HTML 报告，展示一项由证据支持的发现及其影响、预期输出、范围明确的 AI 修复方案和验收检查" width="900"></a>
@@ -66,10 +66,10 @@
 AI 编码智能体修改代码很快，但围绕它们的工作流往往才是薄弱环节：
 
 - 🎯 **目标模糊** —— 智能体信心十足地解决了错误的问题。
-- 🧩 **步骤随意** —— 工作沿着无人能够复现的路径推进。
+- 🧭 **执行路径随意** —— 工作沿着他人无法复现的路径推进。
 - ✅ **只有“能运行”，没有证据** —— 验证不完整或完全缺失。
 - 🚀 **速度压过保障措施** —— 审查与交付检查被绕过。
-- 🧠 **经验没有沉淀** —— 同样的阻力在下一个任务中再次出现。
+- 🧠 **经验没有沉淀** —— 同样的问题在下一个任务中再次出现。
 
 只审查最终 diff 会遗漏这些系统层面的问题。Better Harness 审查的是工作流本身：
 它收集项目证据（以及宿主支持时的会话证据），评估五个相互关联的维度，
@@ -97,18 +97,18 @@ Better Harness 使用
 | **受控执行（Controlled Execution）** | 工作是否沿着受支持且可重复的路径进行？ | Skill、命令、MCP 工具、沙箱边界 |
 | **变更验证（Change Validation）** | 是否有证据表明变更确实有效？ | 测试、lint、Hook、可观察的诊断信息 |
 | **可靠交付（Reliable Delivery）** | AI 的速度是否绕过了质量检查或验收？ | 人工审查、审批、CI/CD、恢复路径 |
-| **经验沉淀（Learning Capture）** | 下一个任务能否从本次任务中受益？ | 闭环发现、可复用的 SDLC Skill、Memory |
+| **经验沉淀（Learning Capture）** | 下一个任务能否从本次任务中受益？ | Loop Discovery、可复用的 SDLC Skill、Memory |
 
 运行 `/better-harness` 会建立一个以任务为边界的基线，并根据宿主生成可视化报告、
 Markdown 报告或两者兼有。报告会整合五维概览、按优先级排列的发现、检测到的智能体资产和证据摘要。
 每项发现都包含一个修复动作，用于起草范围明确、可供审查的修复计划。
 
 Better Harness 坚持如实呈现：未观察到的行为会被明确标注，而不会被转化为缺乏依据的评分或断言。
-当前检查通过，只能证明干预措施得到了执行；只有后续可比较的结果才能证明闭环确实有所改进。
+当前检查通过，只能证明改进措施确实执行过；只有后续可比较的结果才能证明闭环确实有所改进。
 
 <a id="what-is-open"></a>
 
-## 开放了哪些内容
+## 开放了什么
 
 Better Harness 开放了三个相互关联的层次，而不只是一个斜杠命令提示词：
 
@@ -131,7 +131,7 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 [![Better Harness 架构：宿主集成、三个独立证据智能体、一个主智能体进行统一分析、输出发现、生成宿主产物并实施修复](assets/better-harness-architecture-en.svg)](docs/ARCHITECTURE.md)
 
 该架构让三个证据域保持独立，直到主智能体进行统一分析。
-每个结果都会保留可见的证据来源、负责人和验证路径。
+每个结果都会保留可见的证据来源、责任归属和验证路径。
 
 <a id="quick-start"></a>
 
@@ -153,8 +153,8 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 /better-harness 审查此项目的 AI 编码工作流并生成报告
 ```
 
-Better Harness 会将行为断言限定在相关的任务片段（Task Episode）及其周边项目机制内。
-Qoder 生成 Canvas 报告；Claude Code、Codex 和 Cursor 生成自包含 HTML 及配套 Markdown。
+Better Harness 会将行为断言限定在相关的任务过程片段（Task Episode）及其周边项目机制内。
+Qoder 生成 Canvas 报告；Claude Code、Codex 和 Cursor 生成自包含的 HTML 报告及配套 Markdown。
 缺失或不完整的证据会被明确标注。有关当前覆盖范围和输出差异，请参阅
 [宿主适配器矩阵](docs/adapters/README.md)。
 
@@ -180,7 +180,7 @@ Qoder 生成 Canvas 报告；Claude Code、Codex 和 Cursor 生成自包含 HTML
 /plugin install better-harness@better-harness
 ```
 
-在 shell 中验证插件发现情况：
+通过 shell 验证插件是否已被发现：
 
 ```bash
 claude plugin details better-harness@better-harness
@@ -283,14 +283,14 @@ qodercli plugin list
 
 ### Cursor
 
-Cursor 插件尚未发布到 Marketplace。可以为一次 Cursor Agent 会话加载源码中的本地插件：
+Cursor 插件尚未发布到 Marketplace。可以在单次 Cursor Agent 会话中从源码加载本地插件：
 
 ```bash
 git clone https://github.com/QoderAI/better-harness.git
 cursor-agent --plugin-dir /path/to/better-harness
 ```
 
-Cursor 会话证据通过与工作区匹配的转录、元数据和审计日志提供支持。
+Cursor 会话证据来自与工作区匹配的会话记录、元数据和审计日志。
 覆盖范围不完整或不可用时会被明确标注。
 
 <a id="develop-and-package-from-source"></a>
@@ -320,27 +320,27 @@ node scripts/packaging/build-host-plugin.mjs
 node scripts/better-harness.mjs report --no-sessions
 ```
 
-在源码检出目录中，`npm run preview -- --open` 会提供一个内置 fixture。
-Canvas 预览需要已安装的 Qoder runtime，或显式指定 `--sdk-media`/`--sdk-root` 路径。
+在源码检出目录中，`npm run preview -- --open` 会提供一个内置测试样例（fixture）。
+Canvas 预览需要已安装的 Qoder 运行时，或显式指定 `--sdk-media`/`--sdk-root` 路径。
 服务默认监听 `127.0.0.1`；它是本地检查工具，不是带身份验证的共享服务。
 
 <a id="contribute"></a>
 
 ## 参与贡献
 
-你无需理解整个 runtime 即可参与贡献。请从与你希望改进的内容最匹配的最小范围入手：
+你无需理解整个运行时即可参与贡献。请从与你希望改进的内容最匹配的最小范围入手：
 
 | 可贡献的内容 | 从这里开始 | 示例 |
 | --- | --- | --- |
-| 工作流指导与工程实践 | [`skills/`](skills/) 或 [`references/`](references/) | 为某种语言、框架、审查模式或重复出现的智能体工作流添加有来源依据的指南。 |
+| 工作流指导与工程实践 | [`skills/`](skills/) 或 [`references/`](references/) | 为某种语言、框架、审查模式或重复出现的智能体工作流添加有来源支撑的指南。 |
 | 审查模型与可执行分析 | [`models/`](models/) 或 [`scripts/`](scripts/) | 添加由证据支持的审查视角、检测器，或带 fixture 和测试的智能体友好分析命令。 |
 | 交付控制与宿主支持 | [`hooks/`](hooks/) 或[宿主适配器矩阵](docs/adapters/README.md) | 添加范围明确的生命周期检查，或记录并验证另一种编码智能体宿主的证据支持情况。 |
-| 报告与视觉语言 | [`templates/reporting/`](templates/reporting/) 或 [`templates/style/`](templates/style/) | 添加报告模式、可复用的报告契约，或带验证证据的纯指令视觉样式。 |
+| 报告与视觉语言 | [`templates/reporting/`](templates/reporting/) 或 [`templates/style/`](templates/style/) | 添加报告模式、可复用的报告契约，或带验证证据的纯指令式视觉样式。 |
 | 示例与运行模型 | [`case-studies/`](case-studies/) | 分享经过脱敏且以证据为边界的示例，展示团队如何应用智能体审查与交付实践。 |
 
 开始贡献：
 
-1. 阅读[社区扩展地图](docs/community.md)，选择规范的归属位置并了解其契约。
+1. 阅读[社区扩展地图](docs/community.md)，找到规范的归属位置并了解相应契约。
 2. 按照[贡献指南](CONTRIBUTING.md)设置项目并确定变更范围。
 3. 当贡献会改变运行时行为或渲染输出时，添加测试、fixture 或预览证据。
 4. 提交一个聚焦的 Pull Request，说明改了什么、为什么修改以及如何验证。
