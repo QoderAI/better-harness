@@ -553,6 +553,18 @@ test("render command writes disk-openable HTML artifacts", async () => {
     assert.match(html, /data-section="methodology"/u);
     assert.doesNotMatch(html, /<script[^>]+src=/u);
     assert.doesNotMatch(html, /<link[^>]+href=/u);
+    const findingCards = html.match(/class="finding-card"/gu) ?? [];
+    const findingDialogs = html.match(/data-finding-dialog-id=/gu) ?? [];
+    const copyActions = html.match(/data-copy-finding=/gu) ?? [];
+    const detailActions = html.match(/data-view-finding-dialog=/gu) ?? [];
+    assert.equal(findingCards.length, 2);
+    assert.equal(findingDialogs.length, 2);
+    assert.equal(copyActions.length, 4);
+    assert.equal(detailActions.length, 2);
+    assert.match(html, /Copy AI Fix/u);
+    assert.match(html, /View details/u);
+    assert.doesNotMatch(html, /<details class="finding"/u);
+    assert.doesNotMatch(html, /<details class="finding" open/u);
   });
 });
 

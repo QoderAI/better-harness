@@ -216,20 +216,40 @@ function renderFindings(reportData, language) {
     const prompt = findingPromptParts(row.aiFixPrompt, language);
     const expected = textLines(row.expectedOutput ?? row.expectedOutcome);
     const refs = list(row.dimensionRefs).map((ref) => dimensions.get(ref) ?? ref);
-    return `<details class="finding" ${index === 0 ? "open" : ""} data-finding-id="${escapeHtml(row.id ?? index)}">
-      <summary>
-        <span class="finding-index">${String(index + 1).padStart(2, "0")}</span>
-        <span class="finding-title"><strong>${escapeHtml(row.title ?? row.id ?? "Finding")}</strong><small>${escapeHtml(refs.join(" · "))}</small></span>
-        <span class="pill ${severityTone(row.severity)}">${escapeHtml(row.severity ?? "Low")}</span>
-      </summary>
-      <div class="finding-body">
-        <div><span class="label">${copy(language, "Why it matters", "为什么重要")}</span><p>${escapeHtml(row.reason ?? "")}</p></div>
-        ${expected.length ? `<div><span class="label">${copy(language, "Expected output", "预期产出")}</span><ul>${expected.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
-        <div class="fix-box"><span class="label">${copy(language, "AI fix", "AI 修复")}</span><p>${escapeHtml(prompt.summary)}</p>
-          ${prompt.checks.length ? `<div class="acceptance"><strong>${copy(language, "Acceptance checks", "验收检查")}</strong><ul>${prompt.checks.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+    const findingId = String(row.id ?? index);
+    const title = row.title ?? row.id ?? copy(language, "Finding", "Finding");
+    const dialogId = `finding-dialog-${index + 1}`;
+    const dialogTitleId = `${dialogId}-title`;
+    const copyLabel = copy(language, "Copy AI Fix", "复制 AI 修复");
+    const detailsLabel = copy(language, "View details", "查看详情");
+    const closeLabel = copy(language, "Close", "关闭");
+    return `<article class="finding-card" data-finding-id="${escapeHtml(findingId)}">
+      <div class="finding-card-main">
+        <div class="finding-meta">
+          <span class="pill ${severityTone(row.severity)}">${escapeHtml(row.severity ?? "Low")}</span>
+          ${refs[0] ? `<span class="pill neutral">${escapeHtml(refs[0])}</span>` : ""}
         </div>
+        <h3>${escapeHtml(title)}</h3>
+        <p class="finding-preview">${escapeHtml(row.reason ?? "")}</p>
       </div>
-    </details>`;
+      <div class="finding-actions">
+        <button type="button" class="action-button secondary" data-copy-finding="${escapeHtml(findingId)}" aria-label="${escapeHtml(`${copyLabel}: ${title}`)}">${copyLabel}</button>
+        <button type="button" class="action-button ghost" data-view-finding-dialog="${dialogId}" aria-label="${escapeHtml(`${detailsLabel}: ${title}`)}">${detailsLabel}</button>
+      </div>
+      <dialog class="finding-dialog" id="${dialogId}" data-finding-dialog-id="${escapeHtml(findingId)}" aria-labelledby="${dialogTitleId}">
+        <div class="dialog-heading">
+          <div><span class="label">${copy(language, "Finding details", "Finding 详情")}</span><h3 id="${dialogTitleId}">${escapeHtml(title)}</h3></div>
+          <span class="pill ${severityTone(row.severity)}">${escapeHtml(row.severity ?? "Low")}</span>
+        </div>
+        <div class="dialog-section"><span class="label">${copy(language, "Cause", "原因")}</span><p>${escapeHtml(row.reason ?? "")}</p></div>
+        ${expected.length ? `<div class="dialog-section"><span class="label">${copy(language, "Expected Output", "预期结果")}</span><ol>${expected.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol></div>` : ""}
+        ${prompt.checks.length ? `<div class="dialog-section"><span class="label">${copy(language, "Acceptance Checks", "验收检查")}</span><ul>${prompt.checks.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+        <div class="dialog-actions">
+          <button type="button" class="action-button secondary" data-copy-finding="${escapeHtml(findingId)}" aria-label="${escapeHtml(`${copyLabel}: ${title}`)}">${copyLabel}</button>
+          <button type="button" class="action-button ghost" data-close-finding-dialog="${dialogId}">${closeLabel}</button>
+        </div>
+      </dialog>
+    </article>`;
   }).join("\n")}</div>`;
 }
 
@@ -369,14 +389,16 @@ export function renderHtml(reportData) {
     .dimension-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; }.dimension-card { min-height:230px; padding:19px; border:1px solid var(--line); border-radius:19px; background:linear-gradient(180deg,var(--panel-2),var(--panel)); }.dimension-top { display:flex; min-height:52px; justify-content:space-between; gap:8px; align-items:flex-start; font-weight:700; }.score-line { display:flex; align-items:baseline; gap:4px; margin-top:14px; }.score-line strong { font-size:34px; }.score-line span { color:var(--muted); font-size:12px; }.track { height:8px; margin:8px 0 16px; overflow:hidden; border-radius:999px; background:#30353a; }.track i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--blue-2),var(--blue)); }.dimension-card p { margin:0; color:var(--muted); font-size:13px; }
     .activity-layout { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(230px,.7fr); gap:14px; }.activity-panel,.subpanel,.finding,.custom-grid article,.evidence-grid,.evidence-note { border:1px solid var(--line); border-radius:19px; background:var(--panel); }.activity-panel { padding:22px; overflow:hidden; }.heatmap { display:grid; grid-template-rows:repeat(7,13px); grid-auto-flow:column; grid-auto-columns:13px; gap:4px; min-height:115px; overflow-x:auto; padding-bottom:8px; }.heat-cell { border-radius:3px; background:#2b3035; }.heat-cell.l1{background:#174d70}.heat-cell.l2{background:#206f9e}.heat-cell.l3{background:#319bd1}.heat-cell.l4{background:#70c9ff}.heat-legend { display:flex; justify-content:space-between; color:var(--muted); font-size:11px; }.stacked-metrics { display:grid; gap:14px; }.stacked-metrics .metric { min-height:0; }
     .two-column { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }.subpanel { padding:22px; }.subpanel h3 { font-size:15px; }.usage-list { display:grid; gap:12px; }.usage-row { display:grid; grid-template-columns:minmax(100px,.75fr) 1fr 52px; gap:12px; align-items:center; font-size:12px; }.usage-row > span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.usage-row i { height:7px; overflow:hidden; border-radius:999px; background:#30353a; }.usage-row b { display:block; height:100%; background:linear-gradient(90deg,var(--blue-2),var(--blue)); }.usage-row strong { text-align:right; }
-    .finding-list { display:grid; gap:12px; }.finding { overflow:hidden; }.finding summary { display:grid; grid-template-columns:44px minmax(0,1fr) auto; gap:14px; align-items:center; padding:20px 22px; cursor:pointer; list-style:none; }.finding summary::-webkit-details-marker { display:none; }.finding-index { color:var(--muted); font-variant-numeric:tabular-nums; }.finding-title strong,.finding-title small { display:block; }.finding-title small { margin-top:3px; color:var(--muted); font-weight:400; }.finding-body { display:grid; gap:18px; padding:6px 22px 22px 80px; border-top:1px solid var(--line); }.finding-body p { margin:6px 0 0; color:#c7ced6; }.finding-body ul { margin:8px 0 0; padding-left:20px; }.fix-box { padding:16px; border-radius:14px; background:#152b3a; }.acceptance { margin-top:13px; color:#c7d8e4; font-size:13px; }
+    .finding-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.finding-card { min-width:0; min-height:220px; display:flex; flex-direction:column; padding:18px; border:1px solid var(--line); border-radius:19px; background:linear-gradient(180deg,#1c2329,var(--panel)); }.finding-card-main { display:grid; gap:10px; }.finding-meta { display:flex; flex-wrap:wrap; gap:7px; }.finding-card h3 { min-height:2.8em; margin:0; display:-webkit-box; overflow:hidden; font-size:17px; line-height:1.4; -webkit-box-orient:vertical; -webkit-line-clamp:2; }.finding-preview { margin:0; color:#c7ced6; display:-webkit-box; overflow:hidden; font-size:13px; line-height:1.55; -webkit-box-orient:vertical; -webkit-line-clamp:2; }.finding-actions,.dialog-actions { display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; margin-top:auto; padding-top:16px; }.action-button { min-height:38px; padding:8px 13px; border:1px solid transparent; border-radius:10px; color:var(--text); background:#30363d; font:inherit; font-size:13px; font-weight:700; cursor:pointer; }.action-button:hover { filter:brightness(1.12); }.action-button:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }.action-button.secondary { color:#cceaff; border-color:#286d9b; background:#164e75; }.action-button.ghost { color:#d4dae0; border-color:var(--line); background:transparent; }.finding-dialog { width:min(880px,calc(100vw - 32px)); max-height:calc(100vh - 32px); overflow:auto; padding:24px; border:1px solid var(--line); border-radius:20px; color:var(--text); background:var(--panel); box-shadow:0 30px 90px rgba(0,0,0,.55); }.finding-dialog::backdrop { background:rgba(4,8,12,.72); }.dialog-heading { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }.dialog-heading h3 { margin:6px 0 0; font-size:24px; }.dialog-section { margin-top:18px; }.dialog-section p { margin:7px 0 0; color:#d1d7de; }.dialog-section ol,.dialog-section ul { margin:8px 0 0; padding-left:22px; color:#d1d7de; }.no-js .finding-actions { display:none; }.no-js .finding-dialog:not([open]) { display:block; position:static; width:auto; max-height:none; margin-top:16px; box-shadow:none; }
     .suggestion-block { margin-top:28px; padding-top:24px; border-top:1px solid var(--line); }.suggestion-heading { display:flex; justify-content:space-between; gap:20px; align-items:end; margin-bottom:14px; }.suggestion-heading h3 { margin:4px 0 0; font-size:20px; }.suggestion-heading p { margin:0; color:var(--muted); font-size:12px; }.suggestion-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }.suggestion { padding:18px; border:1px solid var(--line); border-radius:17px; background:linear-gradient(180deg,#1b252d,var(--panel)); }.suggestion-top { display:flex; justify-content:space-between; gap:8px; }.suggestion h3 { margin:13px 0 7px; font-size:16px; }.suggestion > p { color:#c7ced6; font-size:13px; }.suggestion dl { display:grid; gap:9px; margin:14px 0 0; }.suggestion dl div { display:grid; gap:2px; }.suggestion dt { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }.suggestion dd { margin:0; color:#d7dde4; font-size:12px; }
     .custom-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; }.custom-grid article { display:flex; gap:14px; align-items:center; padding:18px; }.custom-grid h3 { margin:0; font-size:15px; }.custom-grid p { margin:3px 0 0; color:var(--muted); font-size:12px; }.custom-mark { display:grid; flex:0 0 38px; aspect-ratio:1; place-content:center; border-radius:12px; color:#d9efff; background:#164e75; font-weight:800; }
     .evidence-grid { display:grid; grid-template-columns:repeat(3,1fr); overflow:hidden; }.evidence-grid div { padding:20px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }.evidence-grid span,.evidence-grid strong { display:block; }.evidence-grid span { color:var(--muted); font-size:12px; }.evidence-grid strong { margin-top:4px; }.evidence-note { margin-top:14px; padding:20px; }.method-note,.empty { color:var(--muted); }.method-note { max-width:800px; margin:18px 0 0; font-size:13px; }
     footer { margin-top:64px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+    @media (max-width:1000px) { .finding-list{grid-template-columns:repeat(2,minmax(0,1fr))} }
     @media (max-width:900px) { .metrics,.dimension-grid{grid-template-columns:repeat(2,1fr)}.activity-layout,.two-column{grid-template-columns:1fr}.evidence-grid{grid-template-columns:repeat(2,1fr)} }
-    @media (max-width:620px) { main{width:min(100% - 24px,1180px);padding-top:18px}.hero{grid-template-columns:1fr;min-height:0;padding:25px;border-radius:22px}.hero h1{font-size:44px}.hero p{font-size:15px}.score-orbit{width:126px}.score-orbit strong{font-size:34px}.metrics{grid-template-columns:1fr;margin-bottom:42px}.metric{min-height:0}.section{margin-top:46px}.section-heading,.suggestion-heading{display:block}.section-heading > p,.suggestion-heading > p{text-align:left;margin-top:8px}.dimension-grid{grid-template-columns:1fr}.dimension-card{min-height:0}.finding summary{grid-template-columns:34px minmax(0,1fr)}.finding summary .pill{grid-column:2;justify-self:start}.finding-body{padding:16px}.evidence-grid{grid-template-columns:1fr}.usage-row{grid-template-columns:minmax(92px,.7fr) 1fr 44px} }
-    @media print { :root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-2:#f6f8fa;--line:#d8dee4;--text:#111;--muted:#59636e}body{background:#fff}body::before{display:none}.hero{box-shadow:none}.section{break-inside:avoid} }
+    @media (max-width:680px) { .finding-list{grid-template-columns:1fr}.finding-card{min-height:0} }
+    @media (max-width:620px) { main{width:min(100% - 24px,1180px);padding-top:18px}.hero{grid-template-columns:1fr;min-height:0;padding:25px;border-radius:22px}.hero h1{font-size:44px}.hero p{font-size:15px}.score-orbit{width:126px}.score-orbit strong{font-size:34px}.metrics{grid-template-columns:1fr;margin-bottom:42px}.metric{min-height:0}.section{margin-top:46px}.section-heading,.suggestion-heading{display:block}.section-heading > p,.suggestion-heading > p{text-align:left;margin-top:8px}.dimension-grid{grid-template-columns:1fr}.dimension-card{min-height:0}.evidence-grid{grid-template-columns:1fr}.usage-row{grid-template-columns:minmax(92px,.7fr) 1fr 44px}.finding-dialog{padding:18px}.dialog-heading{display:grid} }
+    @media print { :root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-2:#f6f8fa;--line:#d8dee4;--text:#111;--muted:#59636e}body{background:#fff}body::before{display:none}.hero{box-shadow:none}.section{break-inside:avoid}.finding-list{display:block}.finding-card{margin-bottom:16px;break-inside:avoid}.finding-actions,.dialog-actions{display:none!important}.finding-dialog:not([open]){display:block!important;position:static;width:auto;max-height:none;margin-top:16px;box-shadow:none} }
   </style>
 </head>
 <body>
@@ -425,6 +447,18 @@ export function evaluateHtmlReport(htmlText, reportData) {
   if (findingRows !== list(reportData?.findings).length) {
     errors.push(`report.html finding row count ${findingRows} does not match reviewed findings ${list(reportData?.findings).length}`);
   }
+  const findingDialogs = (text.match(/data-finding-dialog-id=/gu) ?? []).length;
+  if (findingDialogs !== list(reportData?.findings).length) {
+    errors.push(`report.html finding dialog count ${findingDialogs} does not match reviewed findings ${list(reportData?.findings).length}`);
+  }
+  const copyActions = (text.match(/data-copy-finding=/gu) ?? []).length;
+  if (copyActions !== list(reportData?.findings).length * 2) {
+    errors.push(`report.html copy action count ${copyActions} does not match expected ${list(reportData?.findings).length * 2}`);
+  }
+  const detailActions = (text.match(/data-view-finding-dialog=/gu) ?? []).length;
+  if (detailActions !== list(reportData?.findings).length) {
+    errors.push(`report.html detail action count ${detailActions} does not match reviewed findings ${list(reportData?.findings).length}`);
+  }
   const suggestionRows = (text.match(/data-suggestion-id=/gu) ?? []).length;
   if (suggestionRows !== list(reportData?.summary?.suggestions).length) {
     errors.push(`report.html suggestion row count ${suggestionRows} does not match reviewed suggestions ${list(reportData?.summary?.suggestions).length}`);
@@ -442,6 +476,9 @@ export function evaluateHtmlReport(htmlText, reportData) {
     summary: {
       selfContained: errors.every((error) => !error.includes("forbidden")),
       findingCount: findingRows,
+      findingDialogCount: findingDialogs,
+      copyActionCount: copyActions,
+      detailActionCount: detailActions,
       suggestionCount: suggestionRows,
       dimensionCount: dimensionRows,
       requiredSectionCount: required.length,
