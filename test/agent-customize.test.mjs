@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -1372,4 +1373,40 @@ test("tab availability matches Cursor Customize manage scope rules", () => {
   assert.equal(tabAvailableForScope("hooks", "team"), false);
   assert.equal(tabAvailableForScope("skills", "workspace"), true);
   assert.equal(tabAvailableForScope("hooks", "user"), true);
+});
+
+const agentCustomizeCliPath = path.join(process.cwd(), "scripts", "agent-customize", "cli.mjs");
+const betterHarnessCliPath = path.join(process.cwd(), "scripts", "better-harness.mjs");
+
+function runAgentCustomizeCli(args, entry = agentCustomizeCliPath) {
+  return spawnSync(process.execPath, [entry, ...args], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+}
+
+test("agent-customize --help returns before reading provider inventory sources", () => {
+  // An unsupported provider fails in the collector, so exit 0 with --help
+  // proves the help-only path returned before any inventory access.
+  for (const args of [
+    ["--help"],
+    ["-h"],
+    ["help"],
+    ["--provider", "does-not-exist", "--help"],
+    ["inventory", "--provider", "does-not-exist", "--help"],
+  ]) {
+    const result = runAgentCustomizeCli(args);
+    assert.equal(result.status, 0, `${args.join(" ")}: ${result.stderr}`);
+    assert.match(result.stdout, /Usage: better-harness agent-customize/u);
+  }
+
+  const failing = runAgentCustomizeCli(["--provider", "does-not-exist"]);
+  assert.equal(failing.status, 1);
+  assert.match(failing.stderr, /Unsupported agent-customize provider/u);
+});
+
+test("agent-customize --help stays help-only through the root facade", () => {
+  const result = runAgentCustomizeCli(["agent-customize", "--help"], betterHarnessCliPath);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Usage: better-harness agent-customize/u);
 });

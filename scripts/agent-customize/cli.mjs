@@ -3,6 +3,22 @@
 import { parseArgs } from "../session-analysis/cli.mjs";
 import { collectAgentCustomizeInventory, filterManageItems, groupManageItems } from "./index.mjs";
 
+function usage() {
+  return [
+    "Usage: better-harness agent-customize [inventory|manage] --provider <cursor|qoder|codex|claude> [--workspace <path>]",
+    "       better-harness agent-customize manage --provider <provider> [--tab <tab>] [--query <text>] [--scope <scope>] [--group-by <key>]",
+    "",
+    "Collect configured agent-customize inventory for one provider as JSON.",
+    "Provider home overrides: --cursor-home, --qoder-home, --codex-home, --claude-home,",
+    "--claude-state, --codex-app-path, --qoder-shared-client-cache-root.",
+    "",
+  ].join("\n");
+}
+
+function wantsHelp(argv) {
+  return argv[0] === "help" || argv.includes("--help") || argv.includes("-h");
+}
+
 function summarize(inventory, options) {
   const tab = options.tab ?? "plugins";
   const items = filterManageItems(inventory, options);
@@ -37,7 +53,14 @@ function summarize(inventory, options) {
 }
 
 async function main() {
-  const { command = "inventory", options } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  // Help-only path: return before any HOME, workspace, SQLite, or plugin
+  // cache access (roadmap A-04).
+  if (wantsHelp(argv)) {
+    process.stdout.write(usage());
+    return;
+  }
+  const { command = "inventory", options } = parseArgs(argv);
   if (command !== "inventory" && command !== "manage") {
     throw new Error(`Unknown command: ${command}`);
   }

@@ -44,7 +44,7 @@ platform depth.
 | [ ] | P0 | A-01 | Add `full-session`, `inventory-only`, and `unsupported` checkup capability states. | Cursor inventory scan succeeds without session evidence and produces no cleanup candidates. |
 | [ ] | P0 | A-02 | Make checkup plan/apply provider-aware and fail closed by default. | Codex and Cursor plans never contain `qodercli` actions. |
 | [ ] | P0 | A-03 | Bind source references and provider-home paths to an explicit provider. | A patch cannot resolve into another host's configuration root. |
-| [ ] | P0 | A-04 | Add a help-only path to `agent-customize`. | `--help` returns before reading HOME, workspace, SQLite, or plugin caches. |
+| [x] | P0 | A-04 | Add a help-only path to `agent-customize`. | `--help` returns before reading HOME, workspace, SQLite, or plugin caches. |
 | [ ] | P0 | A-05 | Fix stale adapter documentation and smoke commands. | The matrix uses current `harness analyze` / `harness render` commands and does not overstate Cursor output support. |
 | [ ] | P0 | A-06 | Add support-declaration consistency tests. | CLI help, provider registry, session platforms, report platforms, and docs agree. |
 | [ ] | P1 | C-01 | Add Codex-specific configuration source precedence. | Checkup distinguishes editable sources from cache, audit, and session data. |
