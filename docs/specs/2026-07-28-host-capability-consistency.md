@@ -57,9 +57,9 @@ smoke claims.
 2. Add a focused test that compares the declaration against the configured-asset
    provider registry, session-platform registry, and Harness report platform
    validation. (AC-2, AC-4)
-3. Correct only the stale Roadmap rows and summary statements that contradict
-   the declaration; retain honest partial and unsupported states. Add a small
-   adapter-matrix reference to the declaration. (AC-3)
+3. Correct only the stale Roadmap rows, summary statements, and Open Decisions
+   that contradict the declaration; retain honest partial and unsupported
+   states. Add a small adapter-matrix reference to the declaration. (AC-3)
 4. Regenerate the documentation graph, run focused checks and the full test
    suite, then perform a Review Readiness Check on the final local diff.
    (AC-1--AC-4)
@@ -94,6 +94,10 @@ smoke claims.
 - **AC-4:** `git diff --check` passed. No provider, session, checkup, package,
   or host-shell implementation changed; exporting the existing report platform
   validator only makes its unchanged acceptance rule testable.
+- **AC-3 follow-up:** the Roadmap Open Decisions retain the explicit
+  local-coverage boundary for Cursor and Claude session evidence rather than
+  calling those implemented paths unsupported. The focused consistency test
+  rejects the obsolete unsupported wording.
 - **Regression boundary:** `npm test` was run after `npm ci`, but the local
   Node `v26.5.0` is outside the declared `>=22.20.0 <25.0.0` range. The suite
   still lacks the locked `esbuild-wasm` and `@vscode/tree-sitter-wasm` runtime

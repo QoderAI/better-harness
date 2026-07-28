@@ -91,6 +91,6 @@ An adapter capability is complete only when:
 | Decision | Default until resolved |
 | --- | --- |
 | Should Codex checkup support automatic apply? | Keep it read-only / manual-review. |
-| Is there a stable, workspace-bound Cursor session source? | Keep session evidence unsupported. |
+| Should Cursor session evidence expand beyond its current local coverage? | Keep the current local coverage explicit; do not claim a stable, workspace-bound source without provenance and privacy review. |
 | Does Claude Code need a standalone artifact? | Prefer native marketplace installation. |
-| Is there a supported Claude session source? | Keep session evidence unsupported. |
+| Should Claude session evidence expand beyond its current local coverage? | Keep the current local coverage explicit; do not claim a stable, supported source without provenance and privacy review. |

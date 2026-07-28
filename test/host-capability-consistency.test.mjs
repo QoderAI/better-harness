@@ -57,4 +57,5 @@ test("adapter matrix and Roadmap point to the capability declaration and describ
   assert.match(roadmap, /\| Configured asset inventory \| Yes \| Yes \| Yes: unmatched plugin IDs remain unknown \| Yes \|/u);
   assert.match(roadmap, /\| Session evidence \| Yes \| Yes \| Yes: local coverage remains explicit \| Yes: local coverage remains explicit \|/u);
   assert.match(roadmap, /\| Durable report \| Qoder Canvas \| Markdown \+ HTML \| Markdown \+ HTML \| Markdown \+ HTML \|/u);
+  assert.doesNotMatch(roadmap, /Keep session evidence unsupported\./u);
 });
