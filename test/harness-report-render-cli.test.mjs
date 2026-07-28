@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { evaluateHtmlReport, renderHtml } from "../scripts/harness-analysis/renderers/html.mjs";
 import { renderCanvasTsx } from "../scripts/harness-analysis/renderers/qoder-canvas.mjs";
 import { buildTaskLoopSourceCandidate } from "../scripts/harness-analysis/task-loop-source.mjs";
 import { applyEpisodeReviews } from "../scripts/harness-analysis/episode-evidence-review.mjs";
@@ -620,4 +621,35 @@ test("HTML mode mirrors the reviewed Agent Work Loop reader sections without Can
     assert.equal(existsSync(path.join(runDir, "canvas.json")), false);
     assert.equal(existsSync(path.join(runDir, "report.canvas.tsx")), false);
   });
+});
+
+test("HTML validator rejects incomplete finding action contracts", () => {
+  const reportData = {
+    ...sampleFindings(),
+    language: "en",
+    target: { name: "render-fixture", path: "/tmp/render-fixture" },
+  };
+  const html = renderHtml(reportData);
+  assert.equal(evaluateHtmlReport(html, reportData).status, "pass");
+
+  const mutations = [
+    ["interaction controller", html.replace(/<script id="harness-report-interactions">[\s\S]*?<\/script>/u, "")],
+    ["copy status", html.replace(/<div id="copy-status"[\s\S]*?<\/div>/u, "")],
+    ["manual copy fallback", html.replace(/<dialog id="manual-copy-dialog"[\s\S]*?<\/dialog>/u, "")],
+    ["finding copy action", html.replace(/<button[^>]+data-copy-finding=[\s\S]*?<\/button>/u, "")],
+    ["finding detail action", html.replace(/<button[^>]+data-view-finding-dialog=[\s\S]*?<\/button>/u, "")],
+    ["host bridge", html.replace(
+      '<script id="harness-report-interactions">',
+      '<script id="harness-report-interactions">window.openai;',
+    )],
+    ["host deep link", html.replace(
+      '<script id="harness-report-interactions">',
+      '<script id="harness-report-interactions">const unsupportedRoute="codex://prompt";',
+    )],
+  ];
+
+  for (const [label, mutatedHtml] of mutations) {
+    const result = evaluateHtmlReport(mutatedHtml, reportData);
+    assert.equal(result.status, "fail", `${label} mutation must fail validation`);
+  }
 });

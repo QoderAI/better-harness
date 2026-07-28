@@ -438,6 +438,10 @@ export function evaluateHtmlReport(htmlText, reportData) {
     ["viewport", /<meta\s+name="viewport"/iu],
     ["report landmark", /<main\s+id="harness-report"/iu],
     ["embedded report data", /<script\s+id="harness-report-data"\s+type="application\/json">/iu],
+    ["interaction controller", /<script\s+id="harness-report-interactions">/iu],
+    ["copy status", /id="copy-status"[^>]+role="status"[^>]+aria-live="polite"/iu],
+    ["manual copy fallback", /<dialog\s+id="manual-copy-dialog"/iu],
+    ["manual copy text", /<textarea\s+id="manual-copy-text"/iu],
     ["overview", /data-section="overview"/u],
     ["fluency", /data-section="fluency"/u],
     ["findings", /data-section="findings"/u],
@@ -459,6 +463,20 @@ export function evaluateHtmlReport(htmlText, reportData) {
   ];
   for (const [label, pattern] of forbidden) {
     if (pattern.test(text)) errors.push(`report.html contains forbidden ${label}`);
+  }
+  const interactionController = text.match(
+    /<script\s+id="harness-report-interactions">([\s\S]*?)<\/script>/iu,
+  )?.[1] ?? "";
+  const forbiddenControllerCapabilities = [
+    ["host bridge", /\bwindow\.openai\b/u],
+    ["host deep link", /(?:codex|chatgpt):\/\//iu],
+    ["dynamic import", /\bimport\s*\(/u],
+    ["network transport", /\b(?:XMLHttpRequest|WebSocket)\b/u],
+  ];
+  for (const [label, pattern] of forbiddenControllerCapabilities) {
+    if (pattern.test(interactionController)) {
+      errors.push(`report.html interaction controller contains forbidden ${label}`);
+    }
   }
   const findingRows = (text.match(/data-finding-id=/gu) ?? []).length;
   if (findingRows !== list(reportData?.findings).length) {

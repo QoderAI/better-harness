@@ -16,16 +16,16 @@ HTML titles, notes, and labels.
 
 For Agent Work Loop, mirror the canonical reader order without importing or
 emulating another host runtime: project introduction, five-dimension fluency,
-project activity and bounded model/Skill usage, complete findings with plain
-text AI fix and acceptance checks, Agent Customize, then evidence and
-methodology. This is semantic parity over one reviewed source, not a second
-analysis or a byte-for-byte host visual clone.
+project activity and bounded model/Skill usage, compact finding cards with
+local AI-fix copy actions and scoped details, Agent Customize, then evidence
+and methodology. This is semantic parity over one reviewed source, not a
+second analysis or a byte-for-byte host visual clone.
 
 Use the selected style's primary visual family as the first meaningful visual
 surface. Then mirror the compact Markdown report sections and the semantic
 source parts from `report-output.md`: style-selected dimensions or fluency
-framing, shared finding/action rows with AI fix fallback text,
-recommendations, and notes. Do
+framing, shared finding/action rows with local AI fix handoff and fallback
+text, recommendations, and notes. Do
 not copy one generic dashboard skeleton across all styles.
 
 Treat fixed source parts as reading order, not prose layout. When numeric or
@@ -61,9 +61,13 @@ conclusions.
 Keep first-screen labels short. Put long paths, command output, screenshots, and
 raw evidence anchors in an evidence table or appendix.
 
-HTML cannot assume chat action controls. For each shared finding/action row, render the
-reader-facing AI fix label, prompt summary, and acceptance check as plain text
-beside that issue when those fields exist.
+HTML cannot assume a host chat API, native prompt injection, or host-specific
+deep links. For each shared finding/action row, render compact `Copy AI Fix`
+and `View details` controls when an AI fix exists. Copy the exact reviewed
+prompt locally, report copy success truthfully, and fall back to selected
+manual-copy text when browser clipboard paths fail. Keep the full cause,
+expected output, and acceptance checks available in the scoped details dialog
+and as readable no-JavaScript and print content.
 
 ## Markdown Report Addendum
 
