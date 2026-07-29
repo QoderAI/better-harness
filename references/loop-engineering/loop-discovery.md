@@ -18,7 +18,7 @@ already obvious.
   session signal, report row, local entropy hint, or repeated-work suspicion
   that still needs an evidence pack.
 - Use `../session-evidence/sessions-diagnostics.md` to gather or inspect
-  Qoder, Codex, Claude, or Cursor session evidence.
+  Qoder, Codex, Claude, Cursor, or Qwen session evidence.
 - Return here only to decide whether the evidence proves a loop and who owns it.
 - Use `../agent-customize/skill-discovery.md` only after the decision is `Create Skill` or
   `Extend Skill`.

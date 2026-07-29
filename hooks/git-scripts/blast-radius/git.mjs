@@ -6,6 +6,28 @@ import path from "node:path";
 import { SECURITY_REMOVAL_RE } from "./config.mjs";
 import { countLines } from "./utils.mjs";
 
+export class GitFailureError extends Error {
+  constructor(message, details) {
+    super(message);
+    this.name = "GitFailureError";
+    this.code = details.code ?? "GIT_COMMAND_FAILED";
+    this.command = details.command;
+    this.status = details.status;
+    this.signal = details.signal;
+    this.stdout = details.stdout;
+    this.stderr = details.stderr;
+    this.ref = details.ref;
+  }
+}
+
+export function isGitFailureError(error) {
+  return error instanceof GitFailureError;
+}
+
+function trimOutput(output) {
+  return String(output ?? "").trim().slice(0, 600);
+}
+
 function runGit(repoRoot, args, options = {}) {
   const result = spawnSync("git", args, {
     cwd: repoRoot,
@@ -18,10 +40,42 @@ function runGit(repoRoot, args, options = {}) {
     if (options.allowFailure) {
       return "";
     }
-    throw new Error(`git ${args.join(" ")} failed: ${result.stderr.trim()}`);
+    throw new GitFailureError(
+      options.message ?? `git ${args.join(" ")} failed`,
+      {
+        code: options.code,
+        command: ["git", ...args],
+        status: result.status,
+        signal: result.signal,
+        stdout: trimOutput(result.stdout),
+        stderr: trimOutput(result.stderr),
+        ref: options.ref,
+      },
+    );
   }
 
   return result.stdout;
+}
+
+function verifyBaseRef(repoRoot, baseRef) {
+  const ref = String(baseRef ?? "");
+  if (!ref.trim()) {
+    throw new GitFailureError("Blast radius git base ref is empty or unavailable", {
+      code: "GIT_BASE_REF_UNAVAILABLE",
+      command: ["git", "rev-parse", "--verify", "<empty>^{commit}"],
+      status: 1,
+      signal: null,
+      stdout: "",
+      stderr: "",
+      ref,
+    });
+  }
+
+  return runGit(repoRoot, ["rev-parse", "--verify", `${ref}^{commit}`], {
+    code: "GIT_BASE_REF_UNAVAILABLE",
+    message: `Blast radius git base ref is unavailable: ${ref}`,
+    ref,
+  }).trim();
 }
 
 export function parseUnifiedDiff(diffText) {
@@ -118,22 +172,24 @@ function parseNumstat(numstatText) {
 
 export async function collectGitChanges(repoRoot, config) {
   const baseRef = process.env.BETTER_HARNESS_BLAST_RADIUS_BASE ?? config.baseRef ?? "HEAD";
+  const baseCommit = verifyBaseRef(repoRoot, baseRef);
+
   const diffText = runGit(
     repoRoot,
-    ["diff", "--unified=0", "--no-ext-diff", "--find-renames", baseRef, "--"],
-    { allowFailure: true },
+    ["diff", "--unified=0", "--no-ext-diff", "--find-renames", baseCommit, "--"],
+    { code: "GIT_DIFF_FAILED", ref: baseRef },
   );
   const numstat = runGit(
     repoRoot,
-    ["diff", "--numstat", "--no-ext-diff", "--find-renames", baseRef, "--"],
-    { allowFailure: true },
+    ["diff", "--numstat", "--no-ext-diff", "--find-renames", baseCommit, "--"],
+    { code: "GIT_DIFF_FAILED", ref: baseRef },
   );
 
   const files = parseNumstat(numstat);
   const diffDetails = parseUnifiedDiffDetails(diffText);
   const ranges = diffDetails.ranges;
   const untracked = runGit(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"], {
-    allowFailure: true,
+    code: "GIT_UNTRACKED_FAILED",
   })
     .split("\0")
     .filter(Boolean);

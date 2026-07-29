@@ -19,7 +19,7 @@ an explicit Qoder Canvas output is requested.
 
 Options:
   --workspace <path>       Target workspace (required)
-  --platform <name>        qoder, codex, claude, or cursor (default: qoder)
+  --platform <name>        qoder, codex, claude, cursor, or qwen (default: qoder)
   --language <locale>      en or zh-CN (default: en)
   --since <ISO timestamp>  Include sessions at or after the frozen window start
   --until <ISO timestamp>  Include sessions at or before the frozen window end
@@ -36,7 +36,7 @@ function clone(value) {
 
 function reportPlatform(value = "qoder") {
   const platform = String(value || "qoder").toLowerCase();
-  if (!["qoder", "codex", "claude", "cursor"].includes(platform)) {
+  if (!["qoder", "codex", "claude", "cursor", "qwen"].includes(platform)) {
     throw Object.assign(new Error(`unsupported Harness report platform: ${platform}`), {
       code: "UNSUPPORTED_REPORT_PLATFORM",
     });
@@ -51,7 +51,7 @@ function flagEnabled(value) {
 function assertCliOptions(options) {
   const allowed = new Set([
     "workspace", "platform", "language", "since", "until", "format", "canvas-out", "replace-canvas", "include-global-capabilities",
-    "qoder-home", "codex-home", "claude-home", "cursor-home",
+    "qoder-home", "codex-home", "claude-home", "cursor-home", "qwen-home",
   ]);
   const positional = Array.isArray(options._) ? options._ : [];
   const unknown = Object.keys(options).filter((key) => key !== "_" && !allowed.has(key));
@@ -160,6 +160,7 @@ export async function analyzeHarnessEvidence(options = {}) {
         codexHome: options["codex-home"],
         claudeHome: options["claude-home"],
         cursorHome: options["cursor-home"],
+        qwenHome: options["qwen-home"],
       })).source;
   const sourceErrors = validateHarnessReportSource(source);
   if (sourceErrors.length > 0) {

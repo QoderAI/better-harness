@@ -257,3 +257,34 @@ test("Claude asset baseline completes from a native project fixture", async () =
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Qwen asset baseline completes from a native project fixture", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-asset-baseline-qwen-"));
+  const workspace = path.join(root, "project");
+  const qwenHome = path.join(root, ".qwen-home");
+  try {
+    await mkdir(qwenHome, { recursive: true });
+    await mkdir(path.join(workspace, ".qwen", "skills", "review"), { recursive: true });
+    await writeFile(path.join(workspace, "QWEN.md"), "# Qwen project\n\nRun npm test.\n");
+    await writeFile(
+      path.join(workspace, ".qwen", "skills", "review", "SKILL.md"),
+      "---\nname: review\ndescription: Review a bounded Qwen project change.\n---\n",
+    );
+
+    const result = await collectAssetBaseline({
+      provider: "qwen",
+      workspace,
+      qwenHome,
+      includeUserHome: false,
+    });
+
+    assert.equal(result.status, "complete");
+    assert.equal(result.scope.provider, "qwen");
+    assert.equal(result.envelopes.inventory.status, "available");
+    assert.equal(result.envelopes.lint.data.assetInventory.summary.skills, 1);
+    assert.equal(result.envelopes.inventory.data.ownerRoutes.items.some((item) =>
+      item.kind === "skills" && item.name === "review"), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

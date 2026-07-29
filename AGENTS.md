@@ -43,6 +43,19 @@ Architecture, directory routing, and template ownership live in
 - Do not add tool- or agent-specific prefixes such as `codex/` or `agent/` unless a maintainer explicitly requests one.
 - Keep the description concise and portable across filesystems and shells; use lowercase ASCII words separated by hyphens.
 
+### Co-Author Format
+
+- Always add co-author information. If closing an issue in commit text, verify against `main` first: `gh issue view <issue-id>`.
+- Only ONE co-author line is allowed. If multiple agents contributed, aggregate into ONE entry
+
+Format example: `Co-authored-by: <AgentName> (<You-Model>) <Email>`
+
+Valid examples (choose EXACTLY ONE):
+
+Co-authored-by: GitHub Copilot Agent (GPT 5.5) <198982749+copilot@users.noreply.github.com>
+Co-authored-by: Codex (GPT 5.6 Sol) <codex@openai.com>
+Co-authored-by: QoderAI (Qwen 3.8 Max) <qoder_ai@qoder.com>
+
 ## Commit Messages
 
 - Use Conventional Commits: `<type>(<scope>): <summary>`, blank line, then a prose body when non-trivial.

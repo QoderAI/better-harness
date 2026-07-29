@@ -615,6 +615,232 @@ test("Qoder analyzer discovers source roots and merges source coverage by sessio
   }
 });
 
+test("Qoder workspace analysis excludes unrelated home-only sessions", async () => {
+  const fixture = await makeQoderFixture();
+  const analyzer = new QoderSessionAnalyzer();
+  const unrelatedSessionId = "unrelated-home-only";
+  const retainedHomePath = path.join(fixture.home, "sessions", `${fixture.sessionId}.jsonl`);
+  const unrelatedHomePath = path.join(fixture.home, "sessions", `${unrelatedSessionId}.jsonl`);
+
+  await writeJsonl(retainedHomePath, [
+    {
+      type: "tool.requested",
+      sessionId: fixture.sessionId,
+      timestamp: "2026-06-18T10:00:11.000Z",
+      cwd: fixture.workspace,
+      data: { tool_name: "Read", args: { file_path: "src/retained.ts" } },
+    },
+    {
+      type: "model.response.completed",
+      sessionId: fixture.sessionId,
+      timestamp: "2026-06-18T10:00:12.000Z",
+      cwd: fixture.workspace,
+      model: "workspace-model",
+      usage: { input_tokens: 10, output_tokens: 5 },
+    },
+    {
+      type: "tool.requested",
+      sessionId: fixture.sessionId,
+      timestamp: "2026-06-18T10:00:13.000Z",
+      data: { tool_name: "Read", args: { file_path: "src/linked-without-cwd.ts" } },
+    },
+  ]);
+  await writeJsonl(unrelatedHomePath, [
+    {
+      type: "user",
+      sessionId: unrelatedSessionId,
+      timestamp: "2026-06-18T10:00:12.000Z",
+      cwd: path.join(fixture.root, "other-workspace"),
+      message: "/plan unrelated private project",
+    },
+    {
+      type: "tool.requested",
+      sessionId: unrelatedSessionId,
+      timestamp: "2026-06-18T10:00:13.000Z",
+      cwd: path.join(fixture.root, "other-workspace"),
+      data: { tool_name: "Read", args: { file_path: "src/unrelated-secret.ts" } },
+    },
+    {
+      type: "model.response.completed",
+      sessionId: unrelatedSessionId,
+      timestamp: "2026-06-18T10:00:14.000Z",
+      cwd: path.join(fixture.root, "other-workspace"),
+      model: "unrelated-model",
+      usage: { input_tokens: 10, output_tokens: 5 },
+    },
+  ]);
+
+  try {
+    const sessions = await analyzer.analyze({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "sessions",
+    });
+    assert.deepEqual(sessions.sessions.map((item) => item.sessionId), [fixture.sessionId]);
+    assert.equal(
+      sessions.sessions[0].sourceRefs.some((ref) => ref.kind === "home-session" && ref.path === retainedHomePath),
+      true,
+    );
+    assert.equal(JSON.stringify(sessions).includes(unrelatedSessionId), false);
+
+    const show = await analyzer.analyze({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "show",
+      "session-id": unrelatedSessionId,
+      "include-events": true,
+    });
+    assert.equal(show.sessions.length, 0);
+
+    const facets = await analyzer.analyze({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "facets",
+      limit: 10,
+    });
+    assert.equal(facets.sessions.some((session) => session.sessionId === unrelatedSessionId), false);
+    assert.equal(facets.facets.sourceCoverage["home-session"], 1);
+    assert.equal(facets.facets.topTools.some((item) => item.name === "Read"), true);
+    assert.equal(facets.facets.planningSignals.some((item) => item.name === "/plan"), false);
+
+    const insights = await analyzer.analyze({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "insights",
+      selection: "all-eligible",
+      limit: 10,
+    });
+    assert.equal(JSON.stringify(insights).includes(unrelatedSessionId), false);
+    assert.equal(insights.facets.topModels.some((item) => item.name === "unrelated-model"), false);
+    assert.equal(insights.insights.keySignals.usageEfficiency.coverage.responseCount, 1);
+
+    const fileReads = await analyzer.analyze({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "file-reads",
+      limit: 10,
+    });
+    assert.equal(JSON.stringify(fileReads.fileReads).includes("src/retained.ts"), true);
+    assert.equal(JSON.stringify(fileReads.fileReads).includes("src/linked-without-cwd.ts"), true);
+    assert.equal(JSON.stringify(fileReads.fileReads).includes("src/unrelated-secret.ts"), false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qoder home-session hydration filters foreign and unverified cwd-less records", async () => {
+  const fixture = await makeQoderFixture();
+  const analyzer = new QoderSessionAnalyzer();
+  const sessionId = "mixed-home-session";
+  const otherWorkspace = path.join(fixture.root, "other-workspace");
+
+  await writeJsonl(path.join(fixture.home, "sessions", `${sessionId}.jsonl`), [
+    {
+      type: "user",
+      sessionId,
+      timestamp: "2026-06-18T10:00:00.000Z",
+      cwd: fixture.workspace,
+      message: "workspace request",
+    },
+    {
+      type: "user",
+      sessionId,
+      timestamp: "2026-06-18T10:00:01.000Z",
+      cwd: otherWorkspace,
+      message: "foreign private request",
+    },
+    {
+      type: "user",
+      sessionId,
+      timestamp: "2026-06-18T10:00:02.000Z",
+      message: "unverified private request",
+    },
+  ]);
+
+  try {
+    const scope = await analyzer.resolveScope({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "events",
+      "session-id": sessionId,
+    });
+    const roots = await analyzer.discoverSourceRoots(scope);
+    const sessions = await analyzer.discoverSessions(scope, roots);
+    const session = sessions.find((candidate) => candidate.sessionId === sessionId);
+    assert.ok(session);
+
+    const events = await analyzer.readSession(session, scope, {
+      includeContent: true,
+      includeUserText: true,
+    });
+    assert.deepEqual(events.map((event) => event.userText), ["workspace request"]);
+    assert.deepEqual(events.map((event) => event.cwd), [fixture.workspace]);
+    assert.equal(JSON.stringify(events).includes("foreign private request"), false);
+    assert.equal(JSON.stringify(events).includes("unverified private request"), false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qoder explicit global analysis retains home-only sessions as user-global", async () => {
+  const fixture = await makeQoderFixture();
+  const analyzer = new QoderSessionAnalyzer();
+  const sessionId = "global-home-only";
+  const otherWorkspace = path.join(fixture.root, "other-workspace");
+
+  await writeJsonl(path.join(fixture.home, "sessions", `${sessionId}.jsonl`), [
+    {
+      type: "user",
+      sessionId,
+      timestamp: "2026-06-18T10:00:00.000Z",
+      cwd: otherWorkspace,
+      message: "explicit global request",
+    },
+    {
+      type: "user",
+      sessionId,
+      timestamp: "2026-06-18T10:00:01.000Z",
+      message: "global request without cwd",
+    },
+  ]);
+
+  try {
+    const defaultResult = await analyzer.analyze({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "sessions",
+    });
+    assert.equal(defaultResult.sessions.some((session) => session.sessionId === sessionId), false);
+
+    const scope = await analyzer.resolveScope({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "events",
+      "session-id": sessionId,
+      includeGlobalCapabilities: true,
+    });
+    const roots = await analyzer.discoverSourceRoots(scope);
+    const sessions = await analyzer.discoverSessions(scope, roots);
+    const session = sessions.find((candidate) => candidate.sessionId === sessionId);
+    assert.ok(session);
+    assert.equal(session.sourceRefs.find((ref) => ref.kind === "home-session")?.planningScope, "user-global");
+
+    const events = await analyzer.readSession(session, scope, {
+      includeContent: true,
+      includeUserText: true,
+    });
+    assert.deepEqual(events.map((event) => event.userText), [
+      "explicit global request",
+      "global request without cwd",
+    ]);
+    assert.equal(events.every((event) => event.planningScope === "user-global"), true);
+    assert.equal(events[0].cwd, otherWorkspace);
+    assert.equal(Object.hasOwn(events[1], "cwd"), false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("Qoder facts route returns only a compact privacy-safe envelope", async () => {
   const fixture = await makeQoderFixture();
   const analyzer = new QoderSessionAnalyzer();
@@ -686,7 +912,7 @@ test("Qoder facts route returns only a compact privacy-safe envelope", async () 
     assert.equal(result.candidateSelection.strategy, "agent-work-loop-portfolio-v1");
     assert.equal(result.candidateSelection.emittedClasses["validation-repair"], 1);
     assert.equal(result.candidates.length <= 3, true);
-    assert.equal(result.omitted.homeSessionOnly >= 1, true);
+    assert.equal(result.omitted.homeSessionOnly, 0);
     assert.equal(result.cost.serializedBytes <= 8_192, true);
     assert.equal(result.cost.estimatedTokens <= 2_000, true);
     assert.deepEqual(result.candidates[0].changes, { edits: 1, files: 1 });
@@ -1708,6 +1934,41 @@ test("Qoder file-reads rank suspected wrong-file reads without raw commands", as
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
+});
+
+test("Codex analyzer preserves large session event counts without overflowing the stack", async () => {
+  const { CodexSessionAnalyzer } = await import("../scripts/session-analysis/platforms/codex.mjs");
+  const analyzer = new CodexSessionAnalyzer();
+  const eventCount = 150_000;
+  const sessionId = "codex-large-session";
+  const workspace = path.join(os.tmpdir(), "better-harness-codex-large-workspace");
+  const session = {
+    sessionId,
+    workspace,
+    sourceKinds: ["codex-session-jsonl"],
+    sourceRefs: [],
+    firstSeen: null,
+    lastSeen: null,
+  };
+  const event = {
+    sessionId,
+    type: "synthetic",
+    sourceKind: "codex-session-jsonl",
+    timestamp: null,
+  };
+
+  analyzer.discoverSourceRoots = async () => [];
+  analyzer.readSession = async () => new Array(eventCount).fill(event);
+
+  const result = await analyzer.analyze({
+    home: path.join(os.tmpdir(), "better-harness-codex-large-home"),
+    workspace,
+    command: "facets",
+    sessionInventory: [session],
+  });
+
+  assert.equal(result.sessions[0].eventCounts.synthetic, eventCount);
+  assert.equal(result.facets.topEventTypes.find((item) => item.name === "synthetic")?.count, eventCount);
 });
 
 test("Codex insights summarize function calls and inferred skill reads", async () => {

@@ -19,7 +19,7 @@ import { createCodexCliJsonModelClient } from "./codex-json-model.mjs";
 
 export const SESSION_ANALYSIS_HELP = `Usage: better-harness session-analysis [command] [options]
 
-Inspect local Qoder, Codex, Claude, or Cursor session evidence. The default
+Inspect local Qoder, Codex, Claude, Cursor, or Qwen session evidence. The default
 command is sessions and the default platform is qoder. Help exits before
 reading HOME or workspace.
 
@@ -35,7 +35,7 @@ Commands:
   events        Show normalized events selected with --session-id
 
 Options:
-  --platform <qoder|codex|claude|cursor>
+  --platform <qoder|codex|claude|cursor|qwen>
                             Session host (default: qoder)
   --workspace <dir>         Workspace scope (default: current directory)
   --qoder-home <dir>        Qoder data root (default: ~/.qoder)
@@ -257,7 +257,14 @@ async function loadPlatform(platform = "qoder") {
       main: module.main,
     };
   }
-  throw new Error(`Unsupported platform: ${platform}. Supported platforms: qoder, codex, claude, cursor.`);
+  if (platform === "qwen") {
+    const module = await import("./platforms/qwen.mjs");
+    return {
+      Analyzer: module.QwenSessionAnalyzer,
+      main: module.main,
+    };
+  }
+  throw new Error(`Unsupported platform: ${platform}. Supported platforms: qoder, codex, claude, cursor, qwen.`);
 }
 
 export async function createAnalyzer(platform = "qoder") {
@@ -271,7 +278,7 @@ export async function main(argv = process.argv.slice(2), dependencies = {}) {
   if (command === "claude-facets") {
     if (options.help === true) {
       stdout.write([
-        "Usage: session-analysis claude-facets --platform <qoder|codex|claude|cursor> --workspace <path> [options]",
+        "Usage: session-analysis claude-facets --platform <qoder|codex|claude|cursor|qwen> --workspace <path> [options]",
         "",
         "Options:",
         "  --limit <1-5>                 Maximum semantic facets (default: 5)",

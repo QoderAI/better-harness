@@ -44,6 +44,18 @@ async function makeRepo(files) {
   return repo;
 }
 
+function runCli(args, options = {}) {
+  return spawnSync(process.execPath, [
+    path.join(process.cwd(), "scripts/review-trigger/cli.mjs"),
+    ...args,
+  ], {
+    encoding: "utf8",
+    env: options.env ? { ...process.env, ...options.env } : process.env,
+    input: options.input,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+}
+
 test("normalizes AGENTS.md review findings for proactive payloads", () => {
   const findings = normalizeAgentInstructionFindings({
     findings: [{
@@ -211,6 +223,85 @@ test("CLI JSON output does not expose host-open fields", async () => {
     assert.equal(payload.dryRun, true);
     assert.equal(Object.hasOwn(payload, "deeplink"), false);
     assert.equal(Object.hasOwn(payload, "opened"), false);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("CLI argument failures exit non-zero without exposing input", () => {
+  for (const args of [["--cwd", "--json"], ["--mode", "--json"], ["--cwd=", "--json"], ["--mode=", "--json"]]) {
+    const result = runCli(args, {
+      input: JSON.stringify({ prompt: "private user prompt" }),
+    });
+    assert.notEqual(result.status, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.kind, "better-harness.review-trigger");
+    assert.equal(payload.status, "error");
+    assert.equal(payload.error.code, "invalid-arguments");
+    assert.doesNotMatch(result.stdout, /private user prompt/u);
+    assert.doesNotMatch(result.stderr, /private user prompt/u);
+  }
+});
+
+test("CLI runtime failures exit non-zero without exposing cwd input", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-review-trigger-missing-"));
+  const missingCwd = path.join(root, "does-not-exist");
+
+  try {
+    const result = runCli(["--cwd", missingCwd, "--json"]);
+    assert.notEqual(result.status, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.kind, "better-harness.review-trigger");
+    assert.equal(payload.status, "error");
+    assert.equal(payload.error.code, "runtime-failure");
+    assert.doesNotMatch(result.stdout, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.doesNotMatch(result.stderr, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("CLI fails closed when Git worktree inspection fails", async () => {
+  const nonGitCwd = await mkdtemp(path.join(os.tmpdir(), "better-harness-review-trigger-non-git-"));
+
+  try {
+    const result = runCli(["--cwd", nonGitCwd, "--json"]);
+    assert.notEqual(result.status, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.status, "error");
+    assert.equal(payload.error.code, "runtime-failure");
+    assert.doesNotMatch(result.stdout, new RegExp(nonGitCwd.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.equal(result.stderr, "");
+  } finally {
+    await rm(nonGitCwd, { recursive: true, force: true });
+  }
+});
+
+test("CLI fails closed when the blast-radius base ref is unavailable", async () => {
+  const repo = await makeRepo({
+    "src/app.ts": "export const value = 1;\n",
+  });
+  const unavailableRef = "refs/heads/private-missing-review-base";
+
+  try {
+    await writeFile(path.join(repo, "src/app.ts"), "export const value = 2;\n");
+    const result = runCli(["--cwd", repo, "--json"], {
+      env: {
+        BETTER_HARNESS_BLAST_RADIUS_BASE: unavailableRef,
+      },
+    });
+
+    assert.notEqual(result.status, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.status, "error");
+    assert.equal(payload.error.code, "runtime-failure");
+    assert.doesNotMatch(result.stdout, new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.doesNotMatch(result.stdout, new RegExp(unavailableRef.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.equal(result.stderr, "");
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

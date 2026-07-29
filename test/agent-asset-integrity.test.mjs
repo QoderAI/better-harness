@@ -159,6 +159,39 @@ test("public asset-integrity CLI stays read-only and omits Memory body text and 
   }
 });
 
+test("public asset-integrity CLI reviews Qwen asset metadata without reading bodies", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-qwen-integrity-"));
+  const workspace = path.join(root, "workspace");
+  const qwenHome = path.join(root, ".qwen");
+  try {
+    await mkdir(workspace, { recursive: true });
+    await mkdir(path.join(qwenHome, "skills", "audit"), { recursive: true });
+    await writeFile(
+      path.join(qwenHome, "skills", "audit", "SKILL.md"),
+      "---\nname: audit\ndescription: Audit assets.\n---\n",
+    );
+    await writeFile(path.join(workspace, "QWEN.md"), "# Qwen project\n");
+    const script = path.join(process.cwd(), "scripts", "better-harness.mjs");
+    const { stdout } = await execFileAsync(process.execPath, [
+      script,
+      "coding-agent-practices",
+      "asset-integrity",
+      "qwen",
+      "--workspace",
+      workspace,
+      "--qwen-home",
+      qwenHome,
+      "--include-user-home",
+      "--json",
+    ]);
+    const result = JSON.parse(stdout);
+    assert.ok(result.summary);
+    assert.doesNotMatch(stdout, /better-harness-qwen-integrity-/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("public asset-integrity CLI reviews Codex Memory metadata without reading bodies", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-codex-integrity-"));
   const workspace = path.join(root, "workspace");

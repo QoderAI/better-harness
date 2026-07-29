@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
+import { workspaceToQoderSlug } from "../scripts/session-analysis/platforms/qoder.mjs";
 import { buildUsageSummary } from "../scripts/session-analysis/usage-summary.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -16,6 +17,11 @@ function runCli(args) {
     cwd: ROOT,
     encoding: "utf8",
   });
+}
+
+async function writeJsonl(filePath, rows) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
 }
 
 test("usage summary keeps the decision boundary and removes private detail", () => {
@@ -101,6 +107,58 @@ test("public usage summary is read-only and emits compact JSON", async () => {
     assert.notEqual(refused.status, 0);
     assert.match(refused.stderr, /does not accept --output/);
     assert.equal(existsSync(refusedPath), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("public usage summary excludes unrelated Qoder home-only sessions", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-usage-boundary-"));
+  const workspace = path.join(root, "workspace");
+  const otherWorkspace = path.join(root, "other-workspace");
+  const home = path.join(root, "qoder-home");
+  const workspaceSessionId = "workspace-session";
+  const unrelatedSessionId = "unrelated-home-only";
+  const slug = workspaceToQoderSlug(workspace);
+  await mkdir(workspace, { recursive: true });
+
+  await writeJsonl(path.join(home, "projects", slug, `${workspaceSessionId}.jsonl`), [
+    {
+      type: "model.response.completed",
+      sessionId: workspaceSessionId,
+      timestamp: "2026-06-18T10:00:00.000Z",
+      cwd: workspace,
+      model: "workspace-model",
+      usage: { input_tokens: 20, output_tokens: 4 },
+    },
+  ]);
+  await writeJsonl(path.join(home, "sessions", `${unrelatedSessionId}.jsonl`), [
+    {
+      type: "model.response.completed",
+      sessionId: unrelatedSessionId,
+      timestamp: "2026-06-18T10:01:00.000Z",
+      cwd: otherWorkspace,
+      model: "unrelated-model",
+      usage: { input_tokens: 200, output_tokens: 40 },
+    },
+  ]);
+
+  try {
+    const result = runCli([
+      "session-analysis",
+      "usage-summary",
+      "--platform", "qoder",
+      "--workspace", workspace,
+      "--home", home,
+      "--format", "json",
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.selection.eligibleCount, 1);
+    assert.equal(payload.usageEfficiency.coverage.responseCount, 1);
+    assert.equal(payload.usageEfficiency.coverage.nonZeroUsageCount, 1);
+    assert.equal(payload.usageEfficiency.modelUsage.some((item) => item.model === "workspace-model"), true);
+    assert.equal(payload.usageEfficiency.modelUsage.some((item) => item.model === "unrelated-model"), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

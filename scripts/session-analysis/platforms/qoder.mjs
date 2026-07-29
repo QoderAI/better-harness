@@ -623,6 +623,29 @@ async function readSessionIdFromJsonl(filePath, fallbackRef) {
   return { sessionId: found, timestamp: firstTimestamp };
 }
 
+async function readHomeSessionProbe(filePath, fallbackRef, scope) {
+  const probe = { sessionId: fallbackRef.sessionId ?? null, timestamp: null, workspaceMatched: false };
+  const observe = (raw) => {
+    probe.sessionId = probe.sessionId ?? inferSessionId(raw, fallbackRef);
+    probe.timestamp = probe.timestamp ?? inferTimestamp(raw, fallbackRef);
+    if (isWorkspaceMatch(inferCwd(raw), scope.workspace)) {
+      probe.workspaceMatched = true;
+    }
+    return probe.sessionId && probe.timestamp && probe.workspaceMatched ? false : undefined;
+  };
+
+  if (filePath.endsWith(JSONL_EXT)) {
+    await forEachJsonLine(filePath, observe, { maxLines: 200 });
+    return probe;
+  }
+
+  const raw = await readJson(filePath).catch(() => null);
+  if (raw) {
+    observe(raw);
+  }
+  return probe;
+}
+
 function createSessionRecord(sessionId, workspace) {
   return {
     sessionId,
@@ -633,6 +656,11 @@ function createSessionRecord(sessionId, workspace) {
     lastSeen: null,
     indexedEventCounts: new Map(),
   };
+}
+
+function sessionHasWorkspaceEvidence(session) {
+  return (session?.sourceRefMap ? [...session.sourceRefMap.values()] : [])
+    .some((ref) => ref.kind !== "home-session" && ref.planningScope !== "user-global");
 }
 
 function sourceKey(ref) {
@@ -1157,17 +1185,24 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
     });
     for (const filePath of files) {
       const fallbackId = path.basename(filePath).replace(/\.(jsonl|json)$/u, "");
-      const probe = filePath.endsWith(JSONL_EXT)
-        ? await readSessionIdFromJsonl(filePath, { sessionId: fallbackId, kind: "home-session", path: filePath })
-        : { sessionId: fallbackId, timestamp: null };
+      const fallbackRef = { sessionId: fallbackId, kind: "home-session", path: filePath };
+      const probe = await readHomeSessionProbe(filePath, fallbackRef, scope);
       if (!withinTimeRange(probe.timestamp, scope)) {
         continue;
       }
-      addSessionRef(sessions, probe.sessionId ?? fallbackId, scope.workspace, {
+      const sessionId = probe.sessionId ?? fallbackId;
+      const existingSession = sessions.get(sessionId);
+      const verifiedWorkspaceSession = sessionHasWorkspaceEvidence(existingSession);
+      const planningScope = probe.workspaceMatched || verifiedWorkspaceSession ? "workspace" : "user-global";
+      if (planningScope === "user-global" && !scope.includeGlobalCapabilities) {
+        continue;
+      }
+      addSessionRef(sessions, sessionId, scope.workspace, {
         kind: "home-session",
         path: filePath,
         eventType: "home-session",
         timestamp: probe.timestamp,
+        planningScope,
       });
     }
   }
@@ -1413,6 +1448,9 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
     const includeCommandText = parseBooleanFlag(options["include-command-text"] ?? options.includeCommandText ?? false);
     const includeUserText = parseBooleanFlag(options["include-user-text"] ?? options.includeUserText ?? false);
     const refs = session.sourceRefs ?? [];
+    const workspaceLinked = refs.some(
+      (ref) => ref.kind !== "home-session" && ref.planningScope !== "user-global",
+    );
 
     for (const ref of refs) {
       if (ref.kind === "audit-jsonl") {
@@ -1420,12 +1458,21 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
       } else if (ref.kind === "project-state") {
         await this.readStateEvent(session.sessionId, ref, events, { includeContent, includeCommandText, includeUserText });
       } else if (ref.path.endsWith(JSONL_EXT)) {
-        await this.readJsonlEvents(session.sessionId, ref, events, { includeContent, includeCommandText, includeUserText });
+        await this.readJsonlEvents(
+          session.sessionId,
+          scope,
+          ref,
+          events,
+          { includeContent, includeCommandText, includeUserText },
+          { workspaceLinked },
+        );
       }
     }
 
     return events
-      .map((event) => event.cwd ? event : { ...event, cwd: scope.workspace })
+      .map((event) => event.cwd || event.planningScope === "user-global"
+        ? event
+        : { ...event, cwd: scope.workspace })
       .filter((event) => withinTimeRange(event.timestamp, scope))
       .sort((a, b) => {
         const left = timestampMillis(a.timestamp) ?? 0;
@@ -1437,12 +1484,24 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
       });
   }
 
-  async readJsonlEvents(sessionId, ref, events, options) {
+  async readJsonlEvents(sessionId, scope, ref, events, options, { workspaceLinked = false } = {}) {
     await forEachJsonLine(ref.path, (raw, line) => {
       const sourceRef = { ...ref, line, sessionId };
       const rawSessionId = inferSessionId(raw, sourceRef);
       if (rawSessionId && rawSessionId !== sessionId && ref.kind !== "logs-session") {
         return;
+      }
+      if (ref.kind === "home-session") {
+        if (ref.planningScope === "user-global") {
+          if (!scope.includeGlobalCapabilities) {
+            return;
+          }
+        } else {
+          const recordCwd = inferCwd(raw);
+          if (recordCwd ? !isWorkspaceMatch(recordCwd, scope.workspace) : !workspaceLinked) {
+            return;
+          }
+        }
       }
       events.push(this.normalizeEvent(raw, sourceRef, options));
     });

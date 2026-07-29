@@ -97,6 +97,103 @@ test("Better Harness report uses Software Fluency only when no sessions are avai
   }
 });
 
+test("Better Harness report --no-sessions ignores real session fixtures and uses static route", async () => {
+  const fixture = await makeRepoFixture({ withSession: true });
+
+  try {
+    const result = runBetterHarness([
+      "report",
+      "--cwd",
+      fixture.root,
+      "--qoder-home",
+      fixture.qoderHome,
+      "--no-sessions",
+      "--json",
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.evidence.sessions.usableSessionCount, 0);
+    assert.equal(payload.evidence.sessions.route, "static-fallback");
+    assert.equal(payload.nextStep.modelId, "software-fluency");
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+    await rm(fixture.qoderHome, { recursive: true, force: true });
+  }
+});
+
+test("Better Harness report rejects a missing cwd before collecting evidence", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-quickstart-missing-cwd-"));
+  const missing = path.join(root, "missing");
+
+  try {
+    const result = runBetterHarness(["report", "--cwd", missing, "--json"]);
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, "");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, "INVALID_CWD");
+    assert.match(payload.error.message, /Repository cwd does not exist/u);
+    assert.match(payload.error.message, /missing/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Better Harness report rejects an explicitly empty cwd", () => {
+  const machine = runBetterHarness(["report", "--cwd=", "--json"]);
+  assert.equal(machine.status, 1);
+  assert.equal(machine.stderr, "");
+  const payload = JSON.parse(machine.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, "INVALID_CWD");
+  assert.match(payload.error.message, /requires a non-empty directory value/u);
+
+  const human = runBetterHarness(["report", "--cwd="]);
+  assert.equal(human.status, 1);
+  assert.equal(human.stdout, "");
+  assert.match(human.stderr, /requires a non-empty directory value/u);
+});
+
+test("Better Harness report rejects a regular-file cwd before collecting evidence", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-quickstart-file-cwd-"));
+  const filePath = path.join(root, "not-a-directory");
+
+  try {
+    await writeFile(filePath, "not a directory\n");
+    const result = runBetterHarness(["report", "--cwd", filePath, "--json"]);
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, "");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, "INVALID_CWD");
+    assert.match(payload.error.message, /Repository cwd is not a directory/u);
+    assert.match(payload.error.message, /not-a-directory/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Better Harness report preserves partial fallback for valid directories", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-quickstart-partial-"));
+
+  try {
+    const result = runBetterHarness(["report", "--cwd", root, "--no-sessions", "--json"]);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.kind, "quickstart");
+    assert.equal(payload.status, "ok");
+    assert.equal(payload.evidence.sessions.route, "static-fallback");
+    assert.equal(payload.nextStep.modelId, "software-fluency");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Better Harness report prints a human two-step handoff by default", async () => {
   const fixture = await makeRepoFixture({ withSession: true });
 

@@ -142,8 +142,8 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 | 编码智能体 | 设置方式 |
 | --- | --- |
 | **Claude Code** | 添加本仓库 Marketplace，安装 `better-harness@better-harness`，启动新会话，然后使用下方的报告提示词。 |
-| **Codex Desktop** | 在 **Settings > Plugins > + Add > From Marketplace** 中添加本仓库，安装 Better Harness，启动新任务，然后使用下方的报告提示词。 |
-| **Codex CLI** | 添加 Git Marketplace，然后运行 `codex plugin add better-harness@better-harness`。 |
+| **Codex Desktop** | 在 **Settings > Plugins > + Add > From Marketplace** 中添加本仓库，安装 Better Harness，启动新任务，然后调用 `@better-harness`。 |
+| **Codex CLI** | 添加 Git Marketplace，运行 `codex plugin add better-harness@better-harness`，然后调用 `$better-harness:better-harness`。 |
 | **Qoder Desktop / CLI** | 安装 Qoder Desktop 后无需额外安装——Better Harness 已内置，并可在桌面端和 CLI 中使用。打开仓库并使用下方的报告提示词。 |
 | **Cursor** | 从源码加载插件——参见[安装](#installation)。 |
 
@@ -207,7 +207,11 @@ Claude Code 默认会在仓库的 `.claude/better-harness` 报告根目录下生
 2. 选择 **+ Add > From Marketplace**。
 3. 输入 Git 仓库 URL，设置 Git ref；对于这个单插件仓库，**Sparse paths** 留空。
 4. 选择 **Add marketplace**，然后从新 Marketplace 中安装 **Better Harness**。
-5. 在需要审查的仓库中启动新任务，并使用[快速开始](#quick-start)中的报告提示词。
+5. 在需要审查的仓库中启动新任务，并运行报告提示词：
+
+```text
+@better-harness 审查此项目的 AI 编码工作流并生成报告
+```
 
 仓库 URL 使用 `https://github.com/QoderAI/better-harness.git`，Git ref 使用 `main`。
 
@@ -233,7 +237,7 @@ codex plugin add better-harness@better-harness
 在需要审查的仓库中启动新的 Codex 任务，并运行报告提示词：
 
 ```text
-/better-harness 审查此项目的 AI 编码工作流并生成报告
+$better-harness:better-harness 审查此项目的 AI 编码工作流并生成报告
 ```
 
 使用 `marketplace add` 时应传入仓库 URL，而不是原始 `marketplace.json` URL。

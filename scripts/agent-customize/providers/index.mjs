@@ -2,12 +2,14 @@ import { collectClaudeCustomizeInventory } from "./claude.mjs";
 import { collectCodexCustomizeInventory } from "./codex.mjs";
 import { collectCursorCustomizeInventory } from "./cursor.mjs";
 import { collectQoderCustomizeInventory } from "./qoder.mjs";
+import { collectQwenCustomizeInventory } from "./qwen.mjs";
 
 export const PROVIDER_COLLECTORS = new Map([
   ["cursor", collectCursorCustomizeInventory],
   ["qoder", collectQoderCustomizeInventory],
   ["codex", collectCodexCustomizeInventory],
   ["claude", collectClaudeCustomizeInventory],
+  ["qwen", collectQwenCustomizeInventory],
 ]);
 
 export async function collectProviderInventory(provider, options = {}) {

@@ -310,3 +310,29 @@ Inspect configured surfaces before projecting readiness evidence:
   `memory-review.md` before treating it as a user preference, applied lesson,
   or current project fact.
 - Session, diff, test, build, and review evidence for observed execution.
+
+## Qwen Asset Route
+
+For Qwen Code-specific actions, use `platforms/qwen.md` as the operating
+practice reference for prompt shape, `QWEN.md`, `.qwen` config, testing and
+review loops, MCP, Skills, automations, worktrees, and subagents. Presence is
+not execution proof.
+
+Inspect configured surfaces before projecting readiness evidence:
+
+- `QWEN.md` and `AGENTS.md` for durable repo context.
+- `.qwen/settings.json` and user settings for model, approval, sandbox, MCP
+  servers, and defaults.
+- `.qwen/skills`, project skills, user skills, and extension skills for
+  repeatable workflows.
+- MCP configuration (`~/.mcp.json` and project `.mcp.json`) and connector
+  availability for external context.
+- Qwen extensions under `~/.qwen/extensions/` for installed plugin metadata;
+  each extension carries a `.qwen-extension-install.json` marker with a
+  `source` pointer to the real plugin root.
+- Session, diff, test, build, and review evidence for observed execution.
+
+Use the Global/User Asset Pass from `global-assets.md` when the user asks about
+Qwen global assets such as `~/.qwen/skills` or `~/.qwen/hooks`, installed
+extensions, or memories. Keep configured inventory evidence separate from
+observed session behavior.

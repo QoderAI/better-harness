@@ -690,6 +690,122 @@ async function makeClaudeFixture() {
   return { root, claudeHome, claudeStatePath, workspace, enabledPluginId, disabledPluginId };
 }
 
+async function makeQwenFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-qwen-"));
+  const qwenHome = path.join(root, ".qwen");
+  const workspace = path.join(root, "workspace", "better-harness");
+
+  const deliveryPluginName = "delivery";
+  const deliveryPluginSource = path.join(qwenHome, "extension-store", deliveryPluginName);
+  await writeJson(path.join(qwenHome, "extensions", deliveryPluginName, ".qwen-extension-install.json"), {
+    source: deliveryPluginSource,
+    type: "link",
+    originSource: "QwenCode",
+  });
+  await writeJson(path.join(deliveryPluginSource, "qwen-extension.json"), {
+    name: deliveryPluginName,
+    version: "1.0.0",
+    displayName: "Delivery",
+    description: "Delivery workflow plugin.",
+    skills: "./skills/",
+  });
+  await writeText(
+    path.join(deliveryPluginSource, "skills", "ship-release", "SKILL.md"),
+    "---\nname: ship-release\ndescription: Ship a release.\n---\n",
+  );
+  await writeJson(path.join(deliveryPluginSource, ".mcp.json"), {
+    mcpServers: {
+      deliveryMcp: { command: "node", args: ["mcp/server.cjs"] },
+    },
+  });
+  await writeJson(path.join(deliveryPluginSource, "hooks.json"), {
+    hooks: {
+      PostToolUse: [
+        {
+          matcher: "Write",
+          hooks: [{ type: "command", command: "node hooks/audit-delivery.mjs" }],
+        },
+      ],
+    },
+  });
+
+  const disabledPluginName = "disabled-ext";
+  const disabledPluginSource = path.join(qwenHome, "extension-store", disabledPluginName);
+  await writeJson(path.join(qwenHome, "extensions", disabledPluginName, ".qwen-extension-install.json"), {
+    source: disabledPluginSource,
+    type: "link",
+    originSource: "QwenCode",
+  });
+  await writeJson(path.join(disabledPluginSource, "qwen-extension.json"), {
+    name: disabledPluginName,
+    version: "0.1.0",
+    displayName: "Disabled Extension",
+    description: "Disabled extension.",
+  });
+  await writeText(
+    path.join(disabledPluginSource, "skills", "disabled-skill", "SKILL.md"),
+    "---\nname: disabled-skill\ndescription: This disabled Skill must not enter public surfaces.\n---\n",
+  );
+
+  await writeJson(path.join(qwenHome, "extensions", "extension-enablement.json"), {
+    [disabledPluginName]: { overrides: ["!/*"] },
+  });
+
+  await writeText(
+    path.join(qwenHome, "skills", "local-review", "SKILL.md"),
+    "---\nname: local-review\ndescription: Review locally.\n---\n",
+  );
+  await writeText(path.join(qwenHome, "agents", "user-reviewer.md"), "---\nname: user-reviewer\ndescription: Review code.\ntools: Read\n---\n");
+  await writeText(path.join(qwenHome, "commands", "user-check.md"), "# User Check\n");
+  await writeText(path.join(qwenHome, "rules", "user-rule.md"), "# User Rule\n");
+  await writeJson(path.join(qwenHome, "hooks.json"), {
+    hooks: {
+      UserPromptSubmit: [
+        {
+          hooks: [{ type: "command", command: "~/.qwen/hooks/guard-prompt.sh" }],
+        },
+      ],
+    },
+  });
+  await writeJson(path.join(qwenHome, "settings.json"), {
+    mcpServers: {
+      localMcp: { command: "node", args: ["server.mjs"] },
+    },
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "^Bash$",
+          hooks: [{ type: "command", command: "~/.qwen/hooks/guard-bash.sh" }],
+        },
+      ],
+    },
+  });
+
+  await writeText(
+    path.join(workspace, ".qwen", "skills", "qwen-workflow", "SKILL.md"),
+    "---\nname: qwen-workflow\ndescription: Qwen workflow.\n---\n",
+  );
+  await writeText(path.join(workspace, ".qwen", "rules", "always.md"), "# Always Qwen\n");
+  await writeText(path.join(workspace, "QWEN.md"), "# Qwen Project Instructions\n");
+  await writeText(path.join(workspace, "AGENTS.md"), "# Project Agent Rules\n");
+  await writeText(path.join(workspace, "DESIGN.md"), "# Product Design Contract\n");
+  await writeJson(path.join(workspace, ".qwen", "hooks.json"), {
+    hooks: {
+      Stop: [
+        {
+          hooks: [{ type: "command", command: "node hooks/check-stop.mjs" }],
+        },
+      ],
+    },
+  });
+  await writeText(
+    path.join(workspace, ".git", "config"),
+    "[remote \"origin\"]\n\turl = https://github.com/example/better-harness.git\n",
+  );
+
+  return { root, qwenHome, workspace };
+}
+
 test("collectAgentCustomizeInventory returns Cursor-style manage tabs and scoped sources", async () => {
   const fixture = await makeCursorFixture();
 
@@ -1409,4 +1525,104 @@ test("agent-customize --help stays help-only through the root facade", () => {
   const result = runAgentCustomizeCli(["agent-customize", "--help"], betterHarnessCliPath);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage: better-harness agent-customize/u);
+});
+
+test("collectAgentCustomizeInventory returns Qwen installed plugins from extension evidence", async () => {
+  const fixture = await makeQwenFixture();
+
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "qwen",
+      qwenHome: fixture.qwenHome,
+      workspace: fixture.workspace,
+    });
+
+    assert.equal(inventory.provider, "qwen");
+    assert.equal(inventory.qwenHome, fixture.qwenHome);
+    assert.deepEqual(
+      inventory.plugins.map((plugin) => plugin.displayName),
+      ["Delivery", "Disabled Extension"],
+    );
+
+    const delivery = inventory.plugins.find((plugin) => plugin.name === "delivery");
+    assert.ok(delivery);
+    assert.equal(delivery.installMatch, "qwen-extension-install");
+    assert.equal(delivery.skills[0].name, "ship-release");
+    assert.equal(delivery.mcpServers[0].name, "deliveryMcp");
+    assert.equal(delivery.hooks[0].command, "node hooks/audit-delivery.mjs");
+    assert.equal(
+      delivery.evidence.path,
+      path.join(delivery.rootPath, "qwen-extension.json"),
+    );
+    assert.equal(delivery.enabled, true);
+
+    const disabled = inventory.plugins.find((plugin) => plugin.name === "disabled-ext");
+    assert.ok(disabled);
+    assert.equal(disabled.enabled, false);
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "plugins", scopeKind: "user" }).map(
+        (item) => item.displayName,
+      ),
+      ["Delivery", "Disabled Extension"],
+    );
+    assert.equal(inventory.diagnostics.installedPluginState, "qwen-extensions");
+    assert.equal(inventory.diagnostics.remotePluginInstallMarkersRequired, true);
+    assert.deepEqual(inventory.diagnostics.installedPluginRecordFiles.map((file) => path.basename(file)), [
+      ".qwen-extension-install.json",
+      ".qwen-extension-install.json",
+    ]);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qwen provider collects user and project MCPs, skills, hooks, and rules", async () => {
+  const fixture = await makeQwenFixture();
+
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "qwen",
+      qwenHome: fixture.qwenHome,
+      workspace: fixture.workspace,
+    });
+
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "mcps", scopeKind: "user" }).map((item) => item.name).sort(),
+      ["deliveryMcp", "localMcp"],
+    );
+    assert.ok(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "user" })
+        .some((item) => item.name === "local-review" && item.scope === "user"),
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "project" }).map((item) => item.name),
+      ["qwen-workflow"],
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "hooks", scopeKind: "user" })
+        .map((item) => item.command)
+        .sort(),
+      ["node hooks/audit-delivery.mjs", "~/.qwen/hooks/guard-bash.sh", "~/.qwen/hooks/guard-prompt.sh"],
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "hooks", scopeKind: "project" }).map((item) => item.command),
+      ["node hooks/check-stop.mjs"],
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "rules", scopeKind: "project" }).map(
+        (item) => `${item.name}:${item.sourceKind ?? "native"}`,
+      ).sort(),
+      ["AGENTS.md:agents-md-compat", "DESIGN.md:design-md-contract", "QWEN.md:qwen-md-context", "always:native"].sort(),
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "commands", scopeKind: "user" }).map((item) => item.name),
+      ["user-check"],
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "agents", scopeKind: "user" }).map((item) => item.name),
+      ["user-reviewer"],
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
 });

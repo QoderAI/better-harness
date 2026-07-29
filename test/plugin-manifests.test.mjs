@@ -104,6 +104,7 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   const claudeMarketplace = readJson(".claude-plugin/marketplace.json");
   const cursor = readJson(".cursor-plugin/plugin.json");
   const codex = readJson(".codex-plugin/plugin.json");
+  const qwen = readJson("qwen-extension.json");
   const cursorMarketplace = readJson(".cursor-plugin/marketplace.json");
   const packageJson = readJson("package.json");
   const packageLock = readJson("package-lock.json");
@@ -151,6 +152,13 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   assert.equal(codex.interface.category, qoder.category);
   assert.equal(codex.hooks, undefined);
   assert.equal(codex.license, "MIT");
+
+  assert.equal(qwen.name, qoder.name);
+  assert.equal(qwen.version, qoder.version);
+  assert.equal(qwen.description, qoder.description);
+  assert.equal(qwen.displayName, qoder.displayName);
+  assert.equal(qwen.contextFileName, "QWEN.md");
+  assert.equal(qwen.skills, "./skills/");
   assert.equal(cursor.license, "MIT");
   assert.equal(qoder.license, "MIT");
   assert.equal(packageJson.license, "MIT");
@@ -203,6 +211,7 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
     ".codex-plugin/",
     ".cursor-plugin/",
     ".qoder-plugin/",
+    "qwen-extension.json",
     "AGENTS.md",
     "CHANGELOG.md",
     "CODE_OF_CONDUCT.md",
@@ -248,14 +257,17 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
   assert.match(verifyScript, /package\/\.codex-plugin\/plugin\.json/u);
   assert.match(verifyScript, /package\/\.cursor-plugin\/plugin\.json/u);
   assert.match(verifyScript, /package\/\.cursor-plugin\/marketplace\.json/u);
+  assert.match(verifyScript, /package\/qwen-extension\.json/u);
   assert.doesNotMatch(verifyScript, /package\/schemas\/proactive-trigger\.v1\.schema\.json/u);
   assert.doesNotMatch(verifyScript, /package\/scripts\/proactive\/trigger\.mjs/u);
   assert.match(verifyScript, /package\/scripts\/review-trigger\/cli\.mjs/u);
   assert.match(verifyScript, /package\/hooks\/hooks\.json/u);
   assert.match(verifyScript, /\.qoder-plugin\/plugin\.json/u);
+  assert.match(verifyScript, /qwen-extension\.json/u);
   assert.match(verifyScript, /"\.claude-plugin\/"/u);
   assert.match(verifyScript, /"\.codex-plugin\/"/u);
   assert.match(verifyScript, /"\.cursor-plugin\/"/u);
+  assert.match(verifyScript, /"qwen-extension\.json"/u);
   assert.match(verifyScript, /package\/scripts\/packaging\//u);
   assert.match(verifyScript, /"scripts\/packaging\/"/u);
   assert.doesNotMatch(verifyScript, /schemas\/proactive-event\.v1\.schema\.json/u);

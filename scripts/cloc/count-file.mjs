@@ -1,4 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+  realpathSync,
+} from "node:fs";
 import path from "node:path";
 
 import {
@@ -28,6 +36,33 @@ const LOCK_FILE_NAMES = new Set([
   "poetry.lock",
   "yarn.lock",
 ]);
+const DEFAULT_MAX_FILE_BYTES = 16 * 1024 * 1024;
+const READ_CHUNK_BYTES = 64 * 1024;
+
+function maxFileBytes(options = {}) {
+  const configured = Number(options.maxFileBytes);
+  return Number.isSafeInteger(configured) && configured > 0
+    ? configured
+    : DEFAULT_MAX_FILE_BYTES;
+}
+
+function readBoundedFile(descriptor, limit) {
+  const chunks = [];
+  let total = 0;
+  while (total <= limit) {
+    const chunk = Buffer.allocUnsafe(Math.min(READ_CHUNK_BYTES, limit - total + 1));
+    const bytesRead = readSync(descriptor, chunk, 0, chunk.length, null);
+    if (bytesRead === 0) {
+      return Buffer.concat(chunks, total);
+    }
+    total += bytesRead;
+    if (total > limit) {
+      return null;
+    }
+    chunks.push(chunk.subarray(0, bytesRead));
+  }
+  return null;
+}
 
 function emptyTotals() {
   return {
@@ -75,6 +110,12 @@ function pushRecord(records, filePath, languageId, text, segment = "") {
   if (counts && counts.lines > 0) {
     records.push(makeRecord(filePath, languageId, counts, segment));
   }
+}
+
+function isPathInside(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === ""
+    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 export function isCountablePath(filePath) {
@@ -253,20 +294,66 @@ export function countKnownFileBuffer(buffer, filePath, options = {}) {
 
 export function countFile(repoRoot, filePath, options = {}) {
   const normalized = toPosix(filePath);
+  const fileSizeLimit = maxFileBytes(options);
   if (!isCountablePath(normalized)) {
     return { path: normalized, skipped: true, reason: "unsupported" };
   }
 
-  const absolutePath = path.join(repoRoot, normalized);
-  if (!existsSync(absolutePath)) {
-    return { path: normalized, skipped: true, reason: "missing" };
+  const root = path.resolve(repoRoot);
+  const absolutePath = path.resolve(root, normalized);
+  if (!isPathInside(root, absolutePath)) {
+    return { path: normalized, skipped: true, reason: "outside-repo" };
   }
 
-  let buffer;
+  let stat;
   try {
-    buffer = readFileSync(absolutePath);
+    stat = lstatSync(absolutePath);
+  } catch {
+    return { path: normalized, skipped: true, reason: "missing" };
+  }
+  if (!stat.isFile()) {
+    return { path: normalized, skipped: true, reason: "non-regular" };
+  }
+  if (stat.size > fileSizeLimit) {
+    return { path: normalized, skipped: true, reason: "too-large" };
+  }
+
+  try {
+    const realRoot = realpathSync(root);
+    const realPath = realpathSync(absolutePath);
+    if (!isPathInside(realRoot, realPath)) {
+      return { path: normalized, skipped: true, reason: "outside-repo" };
+    }
   } catch {
     return { path: normalized, skipped: true, reason: "unreadable" };
+  }
+
+  let descriptor;
+  let buffer;
+  try {
+    const noFollow = fsConstants.O_NOFOLLOW ?? 0;
+    descriptor = openSync(absolutePath, fsConstants.O_RDONLY | noFollow);
+    const openedStat = fstatSync(descriptor);
+    if (!openedStat.isFile()) {
+      return { path: normalized, skipped: true, reason: "non-regular" };
+    }
+    if (openedStat.size > fileSizeLimit) {
+      return { path: normalized, skipped: true, reason: "too-large" };
+    }
+    buffer = readBoundedFile(descriptor, fileSizeLimit);
+    if (buffer === null) {
+      return { path: normalized, skipped: true, reason: "too-large" };
+    }
+  } catch {
+    return { path: normalized, skipped: true, reason: "unreadable" };
+  } finally {
+    if (descriptor !== undefined) {
+      try {
+        closeSync(descriptor);
+      } catch {
+        // The read result already captures the useful failure boundary.
+      }
+    }
   }
 
   const records = countKnownFileBuffer(buffer, normalized, options);

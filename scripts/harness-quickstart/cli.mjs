@@ -6,6 +6,7 @@
 // the skill, keeping product judgment in the skill and not in code.
 
 import { spawnSync } from "node:child_process";
+import { statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +28,7 @@ hands off to the Better Harness skill, which synthesizes the report.
 Options:
   --cwd <dir>     Repository to inspect (default: current directory)
   --qoder-home <dir>  Qoder data root for the session-source probe (default: ~/.qoder)
+  --no-sessions   Skip session probing and use the static Software Fluency route
   --json          Emit machine-readable evidence and handoff as JSON
   -h, --help      Print this help
 `;
@@ -107,6 +109,67 @@ function runSessionProbe(cwd, qoderHome) {
   }
 }
 
+function staticSessionRoute() {
+  return { available: false, usableSessionCount: 0, modelId: "software-fluency", route: "static-fallback" };
+}
+
+function cwdValidationError(cwd) {
+  try {
+    const stat = statSync(cwd);
+    if (!stat.isDirectory()) {
+      return {
+        code: "INVALID_CWD",
+        message: `Repository cwd is not a directory: ${cwd}`,
+        hint: "Pass --cwd with an existing repository directory.",
+      };
+    }
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return {
+        code: "INVALID_CWD",
+        message: `Repository cwd does not exist: ${cwd}`,
+        hint: "Pass --cwd with an existing repository directory.",
+      };
+    }
+    return {
+      code: "INVALID_CWD",
+      message: `Repository cwd is unavailable: ${cwd}`,
+      hint: "Pass --cwd with an existing repository directory.",
+    };
+  }
+  return null;
+}
+
+function explicitCwdValidationError(options) {
+  if (!Object.prototype.hasOwnProperty.call(options, "cwd")) {
+    return null;
+  }
+  if (typeof options.cwd === "string" && options.cwd.trim()) {
+    return null;
+  }
+  return {
+    code: "INVALID_CWD",
+    message: "Repository cwd requires a non-empty directory value.",
+    hint: "Pass --cwd with an existing repository directory.",
+  };
+}
+
+function errorPayload(error) {
+  return {
+    ok: false,
+    format_version: "1.0",
+    error,
+  };
+}
+
+function renderError(error, machine) {
+  if (machine) {
+    process.stdout.write(`${JSON.stringify(errorPayload(error), null, 2)}\n`);
+  } else {
+    process.stderr.write(`${error.message}\n\n${error.hint}\n`);
+  }
+}
+
 function summarizeProject(evidence) {
   if (!evidence.available) {
     return { available: false, hint: evidence.hint };
@@ -149,7 +212,7 @@ function summarizeWorktree(evidence) {
 }
 
 function buildResult(cwd, options = {}) {
-  const sessions = runSessionProbe(cwd, options["qoder-home"]);
+  const sessions = options["no-sessions"] ? staticSessionRoute() : runSessionProbe(cwd, options["qoder-home"]);
   return {
     schemaVersion: 1,
     kind: "quickstart",
@@ -232,7 +295,17 @@ export function main(argv = process.argv.slice(2)) {
     return 0;
   }
   const options = parseArgs(argv);
+  const optionError = explicitCwdValidationError(options);
+  if (optionError) {
+    renderError(optionError, Boolean(options.json));
+    return 1;
+  }
   const cwd = options.cwd ? path.resolve(String(options.cwd)) : process.cwd();
+  const validationError = cwdValidationError(cwd);
+  if (validationError) {
+    renderError(validationError, Boolean(options.json));
+    return 1;
+  }
   const result = buildResult(cwd, options);
   if (options.json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

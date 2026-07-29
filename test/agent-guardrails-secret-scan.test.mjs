@@ -293,6 +293,164 @@ test("PreToolUse hook blocks credential file reads and avoids full command echo"
   assert.doesNotMatch(result.stdout, /OPENAI_API_KEY/);
 });
 
+test("PreToolUse hook scans write tool content without echoing secrets", async () => {
+  const cases = [
+    {
+      name: "Write.content",
+      tool_name: "Write",
+      tool_input: {
+        file_path: "notes.txt",
+        content: `OPENAI_API_KEY=${syntheticOpenAiKey()}`,
+      },
+    },
+    {
+      name: "Edit.new_string",
+      tool_name: "Edit",
+      tool_input: {
+        file_path: "notes.txt",
+        old_string: "OPENAI_API_KEY=<redacted>",
+        new_string: `OPENAI_API_KEY=${syntheticOpenAiKey()}`,
+      },
+    },
+    {
+      name: "apply_patch patch",
+      tool_name: "apply_patch",
+      tool_input: {
+        patch: [
+          "*** Begin Patch",
+          "*** Add File: notes.txt",
+          `+OPENAI_API_KEY=${syntheticOpenAiKey()}`,
+          "*** End Patch",
+        ].join("\n"),
+      },
+    },
+  ];
+
+  for (const row of cases) {
+    const secret = row.tool_input.content
+      ?? row.tool_input.new_string
+      ?? row.tool_input.patch.match(/sk-proj-[A-Za-z0-9_-]+/u)[0];
+    const result = await handleHookEvent({
+      mode: "pre-tool",
+      platform: "codex",
+      event: row,
+    });
+
+    assert.equal(result.blocked, true, row.name);
+    assert.equal(result.exitCode, 0, row.name);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.decision, "block", row.name);
+    assert.match(payload.reason, /credential|secret|凭据/i, row.name);
+    assert.doesNotMatch(result.stdout, new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), row.name);
+  }
+});
+
+test("PreToolUse hook scans freeform apply_patch payloads", async () => {
+  const secret = syntheticOpenAiKey();
+  const patch = [
+    "*** Begin Patch",
+    "*** Add File: notes.txt",
+    `+OPENAI_API_KEY=${secret}`,
+    "*** End Patch",
+  ].join("\n");
+  const events = [
+    {
+      tool_name: "apply_patch",
+      tool_input: patch,
+    },
+    {
+      toolName: "apply_patch",
+      toolInput: patch,
+    },
+  ];
+
+  for (const event of events) {
+    const result = await handleHookEvent({
+      mode: "pre-tool",
+      platform: "codex",
+      event,
+    });
+
+    assert.equal(result.blocked, true);
+    assert.equal(JSON.parse(result.stdout).reasonCode, "secret-in-tool-content");
+    assert.doesNotMatch(result.stdout, new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
+test("PreToolUse hook normalizes camelCase Bash and Read payloads", async () => {
+  const bashResult = await handleHookEvent({
+    mode: "pre-tool",
+    platform: "codex",
+    event: {
+      hookEventName: "PreToolUse",
+      toolName: "Bash",
+      toolInput: {
+        command: "cat .env && printenv OPENAI_API_KEY",
+      },
+    },
+  });
+
+  assert.equal(bashResult.blocked, true);
+  assert.equal(JSON.parse(bashResult.stdout).reasonCode, "read-env-file");
+  assert.doesNotMatch(bashResult.stdout, /cat \.env/);
+  assert.doesNotMatch(bashResult.stdout, /OPENAI_API_KEY/);
+
+  const readResult = await handleHookEvent({
+    mode: "pre-tool",
+    platform: "codex",
+    event: {
+      hookEventName: "PreToolUse",
+      toolName: "Read",
+      toolInput: {
+        filePath: ".env.local",
+      },
+    },
+  });
+
+  assert.equal(readResult.blocked, true);
+  assert.equal(JSON.parse(readResult.stdout).reasonCode, "protected-credential-path");
+  assert.doesNotMatch(readResult.stdout, /\.env\.local/);
+});
+
+test("PreToolUse hook normalizes args and nested data payloads", async () => {
+  const argsResult = await handleHookEvent({
+    mode: "pre-tool",
+    platform: "codex",
+    event: {
+      name: "Write",
+      args: {
+        filePath: "notes.txt",
+        content: `OPENAI_API_KEY=${syntheticOpenAiKey()}`,
+      },
+    },
+  });
+
+  assert.equal(argsResult.blocked, true);
+  assert.equal(JSON.parse(argsResult.stdout).reasonCode, "secret-in-tool-content");
+  assert.doesNotMatch(argsResult.stdout, /OPENAI_API_KEY/);
+
+  const nestedResult = await handleHookEvent({
+    mode: "pre-tool",
+    platform: "codex",
+    event: {
+      name: "PreToolUse",
+      input: {
+        eventId: "outer-envelope",
+      },
+      data: {
+        toolName: "Read",
+        toolInput: {
+          filePath: ".env.local",
+        },
+      },
+    },
+  });
+
+  assert.equal(nestedResult.blocked, true);
+  assert.equal(JSON.parse(nestedResult.stdout).reasonCode, "protected-credential-path");
+  assert.doesNotMatch(nestedResult.stdout, /\.env\.local/);
+});
+
 test("installSecretGuard merges Qoder settings and is idempotent", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-secret-guard-qoder-"));
   const target = path.join(root, "project");

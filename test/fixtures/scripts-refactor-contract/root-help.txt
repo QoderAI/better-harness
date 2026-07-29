@@ -20,8 +20,8 @@ Commands:
                              repair-findings, record-fix-output, validate-canvas
 
   Project Evidence
-    session-analysis         Collect and normalize Qoder, Codex, Claude, and Cursor session
-                             evidence
+    session-analysis         Collect and normalize Qoder, Codex, Claude, Cursor, and Qwen
+                             session evidence
     dependency-governance    Detect dependency governance files, automation, audit signals, and
                              stale dependency evidence
     cloc                     Count code, comments, and blank lines

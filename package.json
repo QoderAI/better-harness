@@ -30,6 +30,7 @@
     ".codex-plugin/",
     ".cursor-plugin/",
     ".qoder-plugin/",
+    "qwen-extension.json",
     "AGENTS.md",
     "CHANGELOG.md",
     "CODE_OF_CONDUCT.md",

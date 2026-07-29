@@ -1,9 +1,9 @@
 # Host Adapter Matrix
 
-This is the single entry point for Claude Code, Codex, Qoder, and Cursor host
-boundaries. Do not create `docs/adapters/claude-code.md`,
-`docs/adapters/codex.md`, `docs/adapters/qoder.md`, or
-`docs/adapters/cursor.md` by default.
+This is the single entry point for Claude Code, Codex, Qoder, Cursor, and Qwen
+host boundaries. Do not create `docs/adapters/claude-code.md`,
+`docs/adapters/codex.md`, `docs/adapters/qoder.md`, `docs/adapters/cursor.md`,
+or `docs/adapters/qwen.md` by default.
 
 Host differences enter only this matrix, capability-local configured-asset
 providers, real session-evidence adapters, and output modes. Canonical product
@@ -11,8 +11,8 @@ judgment stays in `skills/`, `models/`, `references/`, `templates/`, and
 `scripts/<capability>/`.
 
 The `@qoderai/better-harness` npm package includes the Qoder, Claude Code,
-Codex, and Cursor plugin metadata roots. The generated Qoder runtime bundle
-includes only the Qoder shell, `.qoder-plugin/`; non-Qoder generated host
+Codex, Cursor, and Qwen plugin metadata roots. The generated Qoder runtime
+bundle includes only the Qoder shell, `.qoder-plugin/`; non-Qoder generated host
 artifacts remain source-local. Claude Code installs its shell through the
 repository's native marketplace manifest.
 
@@ -22,6 +22,7 @@ repository's native marketplace manifest.
 | Codex | Analysis-capable source-local host | `.codex-plugin/` | `scripts/agent-customize/providers/codex.mjs` | `scripts/session-analysis/platforms/codex.mjs` | self-contained HTML + Markdown | `.codex` + `.agents` + `AGENTS.md` | `harness analyze --platform codex` -> `harness render --mode html --validate` |
 | Qoder | First-class product host | `.qoder-plugin/` | `scripts/agent-customize/providers/qoder.mjs` | `scripts/session-analysis/platforms/qoder.mjs` | `better-harness` | `.qoder/rules` + `AGENTS.md` + output templates | `better-harness harness render --mode qoder-canvas --validate` |
 | Cursor | Analysis-capable source-local host | `.cursor-plugin/` | `scripts/agent-customize/providers/cursor.mjs` | `scripts/session-analysis/platforms/cursor.mjs` | no supported durable-report pipeline yet (roadmap U-03) | `.cursor` + `.codex` compatibility + `AGENTS.md` | packaged `cursor-agent --plugin-dir` runtime smoke is not yet available (roadmap U-04) |
+| Qwen Code | Analysis-capable source-local host | `qwen-extension.json` | `scripts/agent-customize/providers/qwen.mjs` | `scripts/session-analysis/platforms/qwen.mjs` | self-contained HTML + Markdown | `.qwen` + `QWEN.md` + `AGENTS.md` | `harness analyze --platform qwen` -> `harness render --mode html --validate` |
 
 ## Discovery And Evidence
 
@@ -48,6 +49,12 @@ repository's native marketplace manifest.
   evidence comes from
   `scripts/session-analysis/platforms/cursor.mjs`, which keeps transcript,
   metadata, and audit coverage explicit when local identities do not join.
+- Qwen Code configured assets are inventoried through
+  `scripts/agent-customize/providers/qwen.mjs`. Session evidence comes from
+  `scripts/session-analysis/platforms/qwen.mjs`, which reads workspace-matching
+  JSONL transcripts under `~/.qwen/projects/<slug>/chats/`. The `qwen-extension.json`
+  manifest is native Qwen install/discovery metadata included in the public npm package; it
+  does not own Qwen evidence collection.
 
 ## Output Modes
 
@@ -55,7 +62,7 @@ Canonical templates live under `templates/reporting/`.
 
 - `qoder-canvas.md`: Qoder Canvas output contract, covering renderer-owned
   `findings.json`, Canvas-only `canvas.json`, and `report.canvas.tsx`.
-- `html-visual.md`: portable Claude Code/Codex/Cursor visual output contract, covering
+- `html-visual.md`: portable Claude Code/Codex/Cursor/Qwen visual output contract, covering
   `findings.json`, `report.md`, and `report.html`.
 - Markdown-only output has no visual companion.
 

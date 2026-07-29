@@ -66,7 +66,7 @@ reference is `docs/adrs/directory-structure.md`.
   in the capability-owned agent-customize and session-analysis providers. The Codex shell
   owns local install/discovery metadata only; Codex evidence collection remains
   in the capability-owned provider and session-analysis modules. The public npm
-  package ships all four plugin metadata roots, while the Qoder runtime bundle
+  package ships all five plugin metadata roots, while the Qoder runtime bundle
   includes only `.qoder-plugin/`.
 
 ## Template Boundaries

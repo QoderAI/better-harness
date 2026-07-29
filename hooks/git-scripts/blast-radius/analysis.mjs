@@ -1,10 +1,55 @@
 import path from "node:path";
 
 import { CONFIG_PATH, isIgnored, loadConfig } from "./config.mjs";
-import { collectGitChanges } from "./git.mjs";
+import { collectGitChanges, isGitFailureError } from "./git.mjs";
 import { buildCodeGraph, mapChangedSymbols } from "./graph.mjs";
 import { isTestFile } from "./parser.mjs";
 import { matchesAnyPattern, normalizeRelativePath, unique } from "./utils.mjs";
+
+function emptyMetrics() {
+  return {
+    changedFiles: 0,
+    changedLines: 0,
+    changedSymbols: 0,
+    impactedSymbols: 0,
+    impactedFiles: 0,
+    testGaps: 0,
+    securityRemovals: 0,
+    parsedFiles: 0,
+  };
+}
+
+function gitFailureReport(error) {
+  const message = error.code === "GIT_BASE_REF_UNAVAILABLE"
+    ? `Blast radius could not verify git base ref "${error.ref}"; failing closed because changed files cannot be distinguished from a real empty diff.`
+    : `Blast radius git collection failed (${error.code}); failing closed because changed files cannot be distinguished from a real empty diff.`;
+
+  return {
+    status: "error",
+    shouldReview: true,
+    score: 100,
+    severity: "critical",
+    reasons: [message],
+    metrics: emptyMetrics(),
+    changedFiles: [],
+    changedSymbols: [],
+    affectedSymbols: [],
+    affectedFiles: [],
+    coreHits: [],
+    testGaps: [],
+    securityRemovals: [],
+    error: {
+      type: "git",
+      code: error.code,
+      message: error.message,
+      ref: error.ref,
+      command: error.command,
+      status: error.status,
+      stderr: error.stderr,
+    },
+    configPath: CONFIG_PATH,
+  };
+}
 function enrichCallers(changedSymbols, graph, config) {
   return changedSymbols.map((symbol) => {
     const callerIds = graph.reverseEdges.get(symbol.id) ?? [];
@@ -264,7 +309,15 @@ function computeScore(metrics, changedSymbols, impact, coreHits, testGaps, secur
 export async function analyzeRepository(repoRoot, options = {}) {
   const root = path.resolve(repoRoot || process.cwd());
   const config = options.config ?? (await loadConfig(root, options.configPath));
-  const changes = options.changes ?? (await collectGitChanges(root, config));
+  let changes;
+  try {
+    changes = options.changes ?? (await collectGitChanges(root, config));
+  } catch (error) {
+    if (isGitFailureError(error)) {
+      return gitFailureReport(error);
+    }
+    throw error;
+  }
   const changedFiles = changes.files
     .map((file) => ({
       ...file,
@@ -279,16 +332,7 @@ export async function analyzeRepository(repoRoot, options = {}) {
   );
 
   if (changedFiles.length === 0) {
-    const metrics = {
-      changedFiles: 0,
-      changedLines: 0,
-      changedSymbols: 0,
-      impactedSymbols: 0,
-      impactedFiles: 0,
-      testGaps: 0,
-      securityRemovals: 0,
-      parsedFiles: 0,
-    };
+    const metrics = emptyMetrics();
     return {
       status: "ok",
       shouldReview: false,

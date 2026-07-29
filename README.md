@@ -146,8 +146,8 @@ Pick your coding agent — you can be looking at your first report in minutes:
 | Coding agent | Setup |
 | --- | --- |
 | **Claude Code** | Add the repository marketplace, install `better-harness@better-harness`, start a new session, then use the report prompt below. |
-| **Codex Desktop** | Add the repository under **Settings > Plugins > + Add > From Marketplace**, install Better Harness, start a new task, then use the report prompt below. |
-| **Codex CLI** | Add the Git marketplace, then run `codex plugin add better-harness@better-harness`. |
+| **Codex Desktop** | Add the repository under **Settings > Plugins > + Add > From Marketplace**, install Better Harness, start a new task, then invoke `@better-harness`. |
+| **Codex CLI** | Add the Git marketplace, run `codex plugin add better-harness@better-harness`, then invoke `$better-harness:better-harness`. |
 | **Qoder Desktop / CLI** | Nothing to install when Qoder Desktop is installed — Better Harness is built in and available to both. Open your repository and use the report prompt below. |
 | **Cursor** | Load the plugin from source — see [Installation](#installation). |
 
@@ -214,8 +214,12 @@ stays explicit rather than being inferred.
    empty for this single-plugin repository.
 4. Select **Add marketplace**, then install **Better Harness** from the new
    marketplace.
-5. Start a new task in the repository you want to review and use the report
-   prompt from [Quick start](#quick-start).
+5. Start a new task in the repository you want to review and run the report
+   prompt:
+
+```text
+@better-harness review this project's AI coding workflow and generate a report
+```
 
 Use `https://github.com/QoderAI/better-harness.git` with Git ref `main`.
 
@@ -242,7 +246,7 @@ Start a new Codex task in the repository you want to review and run the report
 prompt:
 
 ```text
-/better-harness review this project's AI coding workflow and generate a report
+$better-harness:better-harness review this project's AI coding workflow and generate a report
 ```
 
 Use the repository URL with `marketplace add`, not a raw `marketplace.json`

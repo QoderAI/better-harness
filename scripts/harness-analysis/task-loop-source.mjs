@@ -66,13 +66,13 @@ const REQUIRED_SOFTWARE_FLUENCY_CAPABILITIES = Object.freeze([
 const HELP = `Usage: node scripts/harness-analysis/task-loop-source.mjs --workspace <target> --source <report.source.json> [options]
 
 Create a conservative Agent Work Loop report-source candidate from normalized
-Qoder, Codex, Claude, or Cursor sessions. It retains privacy-safe episode, change, validation,
+Qoder, Codex, Claude, Cursor, or Qwen sessions. It retains privacy-safe episode, change, validation,
 repair-candidate, and explicit host-decision identities. Task understanding,
 validation relevance, repair, delivery, recovery, and Learning Capture remain
 unobserved until the prepared source-bound review resolves them.
 
 Options:
-  --platform <qoder|codex|claude|cursor>
+  --platform <qoder|codex|claude|cursor|qwen>
                                   Session platform (default: qoder)
   --workspace <path>            Target workspace (required)
   --source <path>               Candidate report.source.json path (required)
@@ -813,7 +813,7 @@ export function buildTaskLoopSourceCandidate({
 
 export async function collectAgentLintPracticeEvidence(options = {}) {
   const provider = options.platform ?? "qoder";
-  const assetReviewSupported = ["qoder", "codex", "claude", "cursor"].includes(provider);
+  const assetReviewSupported = ["qoder", "codex", "claude", "cursor", "qwen"].includes(provider);
   const common = {
     workspace: options.workspace,
     provider,
@@ -821,6 +821,7 @@ export async function collectAgentLintPracticeEvidence(options = {}) {
     codexHome: options.codexHome ?? options["codex-home"],
     claudeHome: options.claudeHome ?? options["claude-home"],
     cursorHome: options.cursorHome ?? options["cursor-home"],
+    qwenHome: options.qwenHome ?? options["qwen-home"],
   };
   const [instructionReview, assetReview, practiceInventory] = await Promise.all([
     runAgentLint({ ...common, profile: "agents-md-review" }),
@@ -906,6 +907,16 @@ export function collectTaskLoopPracticeInventory(options = {}, platform = option
       includeMemories: false,
       claudeHome: options.claudeHome ?? options["claude-home"],
       claudeStatePath: options.claudeStatePath ?? options["claude-state"],
+    });
+  }
+  if (platform === "qwen") {
+    return collectProviderInventory({
+      platform,
+      workspace: options.workspace,
+      includeUserHome: includeGlobalCapabilities,
+      includeGlobalHooks: true,
+      includeMemories: false,
+      qwenHome: options.qwenHome ?? options["qwen-home"],
     });
   }
   return Promise.resolve(null);

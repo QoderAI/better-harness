@@ -1,0 +1,8 @@
+{
+  "name": "better-harness",
+  "version": "0.3.0",
+  "displayName": "Better Harness",
+  "description": "Build an AI-ready engineering system for safe coding-agent delivery and continuous software improvement.",
+  "contextFileName": "QWEN.md",
+  "skills": "./skills/"
+}

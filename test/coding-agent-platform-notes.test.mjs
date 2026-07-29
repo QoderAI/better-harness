@@ -42,7 +42,8 @@ test("session diagnostics keeps the shared workflow before platform source roots
   assertAfter(content, "~/.codex/audit-logs", "## Platform Notes", "Sessions Diagnostics");
   assertAfter(content, "~/.claude/projects", "## Platform Notes", "Sessions Diagnostics");
   assertAfter(content, "~/.cursor/projects", "## Platform Notes", "Sessions Diagnostics");
-  assert.match(content, /Supported platforms: `qoder`, `codex`, `claude`, and `cursor`/);
+  assertAfter(content, "~/.qwen/projects", "## Platform Notes", "Sessions Diagnostics");
+  assert.match(content, /Supported platforms: `qoder`, `codex`, `claude`, `cursor`, and `qwen`/);
   assert.match(content, /Never decode Cursor `store\.db`/);
   assert.ok(content.indexOf("session-analysis.mjs sources") < content.indexOf("## Platform Notes"));
 });

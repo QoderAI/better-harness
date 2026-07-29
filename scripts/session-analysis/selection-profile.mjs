@@ -19,7 +19,7 @@ a declarative session selection plan. Raw prompts, commands, paths, and session
 identifiers never enter the profile.
 
 Options:
-  --platform <qoder|codex|claude|cursor>
+  --platform <qoder|codex|claude|cursor|qwen>
                             Session platform (default: qoder)
   --workspace <path>        Target workspace (required)
   --since <ISO timestamp>   Exclude earlier sessions

@@ -53,6 +53,7 @@ function verifyReleaseVersionAlignment() {
     [".claude-plugin/marketplace.json", readJson(".claude-plugin/marketplace.json").plugins?.[0]?.version],
     [".codex-plugin/plugin.json", readJson(".codex-plugin/plugin.json").version],
     [".cursor-plugin/plugin.json", readJson(".cursor-plugin/plugin.json").version],
+    ["qwen-extension.json", readJson("qwen-extension.json").version],
   ];
   for (const [source, version] of versions) {
     if (version !== packageVersion) {
@@ -137,6 +138,7 @@ const required = [
   "package/.cursor-plugin/plugin.json",
   "package/.cursor-plugin/marketplace.json",
   "package/.qoder-plugin/plugin.json",
+  "package/qwen-extension.json",
   "package/case-studies/factory/model/factory-readiness.md",
   "package/docs/glossary.md",
   "package/scripts/better-harness.mjs",
@@ -315,6 +317,7 @@ const forbiddenBundlePrefixes = [
   ".claude-plugin/",
   ".codex-plugin/",
   ".cursor-plugin/",
+  "qwen-extension.json",
   "test/",
   "dev/",
   ".idea/",

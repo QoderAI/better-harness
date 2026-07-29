@@ -14,6 +14,10 @@ import {
   CursorSessionAnalyzer,
   workspaceToCursorSlugVariants,
 } from "../scripts/session-analysis/platforms/cursor.mjs";
+import {
+  QwenSessionAnalyzer,
+  workspaceToQwenSlugVariants,
+} from "../scripts/session-analysis/platforms/qwen.mjs";
 import { measureLongSessionRows } from "../scripts/session-analysis/long-sessions.mjs";
 
 async function fixtureRoot(prefix) {
@@ -28,15 +32,19 @@ async function writeJsonl(filePath, rows) {
 test("root dispatcher creates Claude and Cursor provider analyzers", async () => {
   assert.ok(await createAnalyzer("claude") instanceof ClaudeSessionAnalyzer);
   assert.ok(await createAnalyzer("cursor") instanceof CursorSessionAnalyzer);
+  assert.ok(await createAnalyzer("qwen") instanceof QwenSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("claude") instanceof ClaudeSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("cursor") instanceof CursorSessionAnalyzer);
+  assert.ok(await createCapabilityAnalyzer("qwen") instanceof QwenSessionAnalyzer);
 });
 
-test("Claude and Cursor workspace slugs cover Unix and Windows layouts", () => {
+test("Claude, Cursor, and Qwen workspace slugs cover Unix and Windows layouts", () => {
   assert.ok(workspaceToClaudeSlugVariants("/workspace/project").includes("-workspace-project"));
   assert.ok(workspaceToCursorSlugVariants("/workspace/project").includes("workspace-project"));
+  assert.ok(workspaceToQwenSlugVariants("/workspace/project").includes("-workspace-project"));
   assert.ok(workspaceToClaudeSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToCursorSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
+  assert.ok(workspaceToQwenSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
 });
 
 test("Claude provider expands nested tool requests and results without using generated facets", async () => {
@@ -387,4 +395,94 @@ test("Cursor time filters use metadata before excluding out-of-window transcript
   assert.equal(facts.sourceCoverage.transcript.inWindowSessions, 0);
   assert.equal(facts.sourceCoverage.transcript.outOfWindowSessions, 1);
   assert.equal(facts.sourceCoverage.transcript.relevantSessions, 0);
+});
+
+test("Qwen provider expands function calls and tool results from parts", async () => {
+  const root = await fixtureRoot("session-qwen-provider-");
+  const home = path.join(root, ".qwen");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "33333333-3333-4333-8333-333333333333";
+  const slug = workspaceToQwenSlugVariants(workspace)[0];
+  await writeJsonl(path.join(home, "projects", slug, "chats", `${sessionId}.jsonl`), [
+    {
+      type: "user",
+      sessionId,
+      cwd: workspace,
+      timestamp: "2026-07-20T01:00:00.000Z",
+      message: { role: "user", parts: [{ text: "Implement the provider and run tests" }] },
+    },
+    {
+      type: "assistant",
+      sessionId,
+      cwd: workspace,
+      timestamp: "2026-07-20T01:01:00.000Z",
+      model: "qwen-fixture",
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 4, totalTokenCount: 14, cachedContentTokenCount: 0 },
+      contextWindowSize: 131072,
+      message: {
+        role: "model",
+        parts: [
+          { text: "I will inspect and validate it." },
+          { functionCall: { id: "tool-1", name: "Bash", args: { command: "npm test" } } },
+          { functionCall: { id: "tool-2", name: "Read", args: { file_path: path.join(workspace, "package.json") } } },
+        ],
+      },
+    },
+    {
+      type: "tool_result",
+      sessionId,
+      cwd: workspace,
+      timestamp: "2026-07-20T01:02:00.000Z",
+      message: { role: "tool", parts: [{ functionResponse: { id: "tool-1", name: "Bash", response: { output: "3 tests passed" } } }] },
+      toolCallResult: { callId: "tool-1", status: "success", resultDisplay: "3 tests passed" },
+    },
+    {
+      type: "tool_result",
+      sessionId,
+      cwd: workspace,
+      timestamp: "2026-07-20T01:03:00.000Z",
+      message: { role: "tool", parts: [{ functionResponse: { id: "tool-2", name: "Read", response: { error: "not found" } } }] },
+      toolCallResult: { callId: "tool-2", status: "error", resultDisplay: "not found", errorType: "FileNotFound" },
+    },
+  ]);
+
+  const analyzer = new QwenSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  assert.deepEqual(discovery.sources.map((source) => source.kind), ["qwen-project-jsonl"]);
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {
+    includeCommandText: true,
+    includeUserText: true,
+    includeContent: true,
+  });
+  assert.equal(events.filter((event) => event.type === "tool.call").length, 2);
+  assert.equal(events.filter((event) => event.type === "tool.result").length, 2);
+  assert.equal(events.find((event) => event.model === "qwen-fixture")?.modelUsage.inputTokens, 10);
+  assert.equal(events.find((event) => event.toolInvocationId === "tool-2")?.filePath, path.join(workspace, "package.json"));
+  assert.equal(events.find((event) => event.toolInvocationId === "tool-2" && event.type === "tool.result")?.success, false);
+  const insights = await analyzer.analyze({ command: "insights", workspace, home, selection: "all-eligible" });
+  assert.equal(insights.insights.keySignals.usageEfficiency.coverage.responseCount, 1);
+  assert.equal(insights.insights.keySignals.usageEfficiency.tokenTotals.inputTokens, 10);
+  const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
+  assert.equal(facts.kind, "session-core-facts");
+  assert.equal(facts.scope.platform, "qwen");
+  assert.doesNotMatch(JSON.stringify(facts), new RegExp(sessionId, "u"));
+  assert.doesNotMatch(JSON.stringify(facts), new RegExp(home.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+});
+
+test("Qwen provider rejects a transcript whose embedded cwd belongs to another workspace", async () => {
+  const root = await fixtureRoot("session-qwen-isolation-");
+  const home = path.join(root, ".qwen");
+  const workspace = path.join(root, "workspace", "target");
+  const slug = workspaceToQwenSlugVariants(workspace)[0];
+  await writeJsonl(path.join(home, "projects", slug, "chats", "foreign.jsonl"), [{
+    type: "user",
+    sessionId: "foreign",
+    cwd: path.join(root, "workspace", "other"),
+    timestamp: "2026-07-20T01:00:00.000Z",
+    message: { role: "user", parts: [{ text: "foreign" }] },
+  }]);
+  const result = await new QwenSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 0);
 });

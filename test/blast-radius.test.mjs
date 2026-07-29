@@ -107,6 +107,90 @@ test("analyzeRepository short-circuits clean worktrees without parsing source fi
   }
 });
 
+test("analyzeRepository stays clean with a valid clean base ref", async () => {
+  const repo = await makeRepo({
+    "src/app.ts": "export function app() {\n  return 1;\n}\n",
+  });
+
+  try {
+    const report = await analyzeRepository(repo, {
+      config: {
+        baseRef: "HEAD",
+        ignore: [],
+        core: [],
+        thresholds: {
+          reviewScore: 10,
+          changedFiles: { warn: 5, high: 10, critical: 20 },
+          changedLines: { warn: 50, high: 100, critical: 200 },
+          changedSymbols: { warn: 5, high: 10, critical: 20 },
+          impactedSymbols: { warn: 5, high: 10, critical: 20 },
+          impactedFiles: { warn: 5, high: 10, critical: 20 },
+          callerCount: { warn: 5, high: 10, critical: 20 },
+        },
+        limits: { maxSourceFiles: 100, blastRadiusDepth: 2, maxImpactSymbols: 100 },
+      },
+    });
+
+    assert.equal(report.status, "ok");
+    assert.equal(report.shouldReview, false);
+    assert.equal(report.metrics.changedFiles, 0);
+    assert.deepEqual(report.changedFiles, []);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("analyzeRepository fails closed when base ref is unavailable", async () => {
+  const repo = await makeRepo({
+    "src/core/payment.ts": [
+      "export function charge(amount: number) {",
+      "  if (amount <= 0) throw new Error('invalid');",
+      "  return amount;",
+      "}",
+      "",
+    ].join("\n"),
+  });
+
+  try {
+    await writeFile(
+      path.join(repo, "src/core/payment.ts"),
+      [
+        "export function charge(amount: number) {",
+        "  return Math.abs(amount);",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const report = await analyzeRepository(repo, {
+      config: {
+        baseRef: "origin/main",
+        ignore: [],
+        core: [{ name: "payment core", paths: ["src/core/**"], symbols: [], risk: "critical" }],
+        thresholds: {
+          reviewScore: 10,
+          changedFiles: { warn: 5, high: 10, critical: 20 },
+          changedLines: { warn: 50, high: 100, critical: 200 },
+          changedSymbols: { warn: 5, high: 10, critical: 20 },
+          impactedSymbols: { warn: 5, high: 10, critical: 20 },
+          impactedFiles: { warn: 5, high: 10, critical: 20 },
+          callerCount: { warn: 5, high: 10, critical: 20 },
+        },
+        limits: { maxSourceFiles: 100, blastRadiusDepth: 2, maxImpactSymbols: 100 },
+      },
+    });
+
+    assert.equal(report.status, "error");
+    assert.equal(report.shouldReview, true);
+    assert.equal(report.severity, "critical");
+    assert.match(report.error.message, /base ref/i);
+    assert.match(report.error.ref, /origin\/main/);
+    assert.match(report.reasons.join("\n"), /Blast radius could not verify git base ref/);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test("core path rules and change-size thresholds trigger review guidance", async () => {
   const repo = await makeRepo({
     "src/core/payment.ts": [

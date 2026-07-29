@@ -50,8 +50,8 @@ test("host architecture docs keep matrix, providers, and thin shells separate", 
   assert.match(adapterReadme, /# Host Adapter Matrix/u);
   assert.match(adapterReadme, /`docs\/adapters\/qoder\.md`/u);
   assert.match(adapterReadme, /Codex \| Analysis-capable source-local host \| `\.codex-plugin\/`/u);
-  assert.match(adapterReadme, /npm package includes the Qoder, Claude Code,\s+Codex, and Cursor plugin metadata roots/u);
-  assert.match(adapterReadme, /generated Qoder runtime bundle\s+includes only the Qoder shell/u);
+  assert.match(adapterReadme, /npm package includes the Qoder, Claude Code,\s+Codex, Cursor, and Qwen plugin metadata roots/u);
+  assert.match(adapterReadme, /generated Qoder runtime\s+bundle\s+includes only the Qoder shell/u);
   assert.match(adapterReadme, /Cursor \| Analysis-capable source-local host[^\n]+platforms\/cursor\.mjs/u);
   assert.doesNotMatch(adapterReadme, /Cursor has no session-evidence adapter/u);
   assert.match(adapterReadme, /Split a host into `docs\/adapters\/<host>\.md` only when/u);
@@ -67,12 +67,12 @@ test("host architecture docs keep matrix, providers, and thin shells separate", 
   assert.match(directoryAdr, /scripts\/packaging\/` owns source-local[\s\S]*excluded from public package\/runtime/u);
 
   assert.match(architecture, /The Codex shell\s+owns local install\/discovery metadata only/u);
-  assert.match(architecture, /public npm\s+package ships all four plugin metadata roots[\s\S]*Qoder runtime bundle\s+includes only `\.qoder-plugin\/`/u);
+  assert.match(architecture, /public npm\s+package ships all five plugin metadata roots[\s\S]*Qoder runtime bundle\s+includes only `\.qoder-plugin\/`/u);
   assert.match(architecture, /do not create a generic detector or signal umbrella/u);
   assert.match(community, /`docs\/adapters\/README\.md` matrix row/u);
-  assert.match(community, /Public npm package includes all four current metadata roots[\s\S]*Qoder runtime bundle includes only `\.qoder-plugin\/`/u);
+  assert.match(community, /Public npm package includes all five current metadata roots[\s\S]*Qoder runtime bundle includes only `\.qoder-plugin\/`/u);
   assert.match(community, /owning `models\/<model>\.md`, `scripts\/<business-capability>\/`, or `skills\/<skill>\/references\/`/u);
-  assert.match(glossary, /public npm package ships all four current metadata roots[\s\S]*Qoder runtime bundle includes only `\.qoder-plugin\/`/u);
+  assert.match(glossary, /public npm package ships all five current metadata roots[\s\S]*Qoder runtime bundle includes only `\.qoder-plugin\/`/u);
   assert.match(glossary, /Start with \[model routing\]\(\.\.\/models\/routing\.md\)/u);
 
   assert.match(adapterReadme, /Claude Code\s+\|/u);

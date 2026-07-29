@@ -170,3 +170,26 @@ test("Claude agentCustomize lane routes the provider and isolated config paths",
   assert.equal(received["claude-state"], "/tmp/fixture-claude-state.json");
   assert.equal(received["include-user-home"], true);
 });
+
+test("Qwen agentCustomize lane routes the provider and isolated config paths", async () => {
+  const context = freezeEvidenceBundleContext({
+    workspace: ".",
+    platform: "qwen",
+    depth: "quick",
+    "include-user-home": true,
+  }, NOW);
+  let received;
+  const lane = await collectAgentCustomize(context, {
+    "qwen-home": "/tmp/fixture-qwen-home",
+  }, {
+    collectAssetBaseline: async (options) => {
+      received = options;
+      return { kind: "agent-asset-baseline", status: "complete" };
+    },
+  });
+
+  assert.equal(lane.status, "available");
+  assert.equal(received.provider, "qwen");
+  assert.equal(received["qwen-home"], "/tmp/fixture-qwen-home");
+  assert.equal(received["include-user-home"], true);
+});
