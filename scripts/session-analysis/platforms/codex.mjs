@@ -1010,7 +1010,9 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
         });
     for (const session of selection.sessions) {
       const sessionEvents = await this.readSession(session, scope, eventOptions);
-      events.push(...sessionEvents);
+      for (const event of sessionEvents) {
+        events.push(event);
+      }
       detailedSessions.push(this.mergeSession(sessionEvents, session));
     }
 

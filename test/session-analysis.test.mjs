@@ -1710,6 +1710,41 @@ test("Qoder file-reads rank suspected wrong-file reads without raw commands", as
   }
 });
 
+test("Codex analyzer preserves large session event counts without overflowing the stack", async () => {
+  const { CodexSessionAnalyzer } = await import("../scripts/session-analysis/platforms/codex.mjs");
+  const analyzer = new CodexSessionAnalyzer();
+  const eventCount = 150_000;
+  const sessionId = "codex-large-session";
+  const workspace = path.join(os.tmpdir(), "better-harness-codex-large-workspace");
+  const session = {
+    sessionId,
+    workspace,
+    sourceKinds: ["codex-session-jsonl"],
+    sourceRefs: [],
+    firstSeen: null,
+    lastSeen: null,
+  };
+  const event = {
+    sessionId,
+    type: "synthetic",
+    sourceKind: "codex-session-jsonl",
+    timestamp: null,
+  };
+
+  analyzer.discoverSourceRoots = async () => [];
+  analyzer.readSession = async () => new Array(eventCount).fill(event);
+
+  const result = await analyzer.analyze({
+    home: path.join(os.tmpdir(), "better-harness-codex-large-home"),
+    workspace,
+    command: "facets",
+    sessionInventory: [session],
+  });
+
+  assert.equal(result.sessions[0].eventCounts.synthetic, eventCount);
+  assert.equal(result.facets.topEventTypes.find((item) => item.name === "synthetic")?.count, eventCount);
+});
+
 test("Codex insights summarize function calls and inferred skill reads", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-codex-session-analysis-"));
   const workspace = path.join(root, "workspace", "better-harness");
