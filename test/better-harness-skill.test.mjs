@@ -80,7 +80,7 @@ test("non-Qoder providers default to validated durable HTML with an explicit inl
   assert.match(routing, /Portable HTML report \| Active host is Claude Code, Codex, or Cursor/);
   assert.match(routing, /Inline only \| Inline or no-files output is explicitly requested \| none; inline analysis writes nothing/);
   assert.match(adapters, /Claude Code[^\n]+scripts\/session-analysis\/platforms\/claude\.mjs[^\n]+self-contained HTML \+ Markdown/);
-  assert.match(adapters, /Cursor[^\n]+scripts\/session-analysis\/platforms\/cursor\.mjs[^\n]+self-contained HTML \+ Markdown/);
+  assert.match(adapters, /Cursor[^\n]+scripts\/session-analysis\/platforms\/cursor\.mjs[^\n]+no supported durable-report pipeline yet \(roadmap U-03\)/);
   assert.doesNotMatch(adapters, /Inline repository review only|No Claude\s+session-evidence adapter/);
   assert.match(readme, /Claude Code defaults to a self-contained `report\.html`/);
   assert.match(readme, /\.claude\/better-harness/);
