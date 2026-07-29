@@ -140,6 +140,20 @@ function cwdValidationError(cwd) {
   return null;
 }
 
+function explicitCwdValidationError(options) {
+  if (!Object.prototype.hasOwnProperty.call(options, "cwd")) {
+    return null;
+  }
+  if (typeof options.cwd === "string" && options.cwd.trim()) {
+    return null;
+  }
+  return {
+    code: "INVALID_CWD",
+    message: "Repository cwd requires a non-empty directory value.",
+    hint: "Pass --cwd with an existing repository directory.",
+  };
+}
+
 function errorPayload(error) {
   return {
     ok: false,
@@ -281,6 +295,11 @@ export function main(argv = process.argv.slice(2)) {
     return 0;
   }
   const options = parseArgs(argv);
+  const optionError = explicitCwdValidationError(options);
+  if (optionError) {
+    renderError(optionError, Boolean(options.json));
+    return 1;
+  }
   const cwd = options.cwd ? path.resolve(String(options.cwd)) : process.cwd();
   const validationError = cwdValidationError(cwd);
   if (validationError) {

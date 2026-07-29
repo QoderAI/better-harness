@@ -168,8 +168,11 @@ function hasLocalChanges(cwd) {
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 10_000,
   });
-  if (result.status !== 0) {
-    return false;
+  if (result.error || result.status !== 0) {
+    throw new ReviewTriggerCliError(
+      "runtime-failure",
+      "review-trigger could not inspect the Git worktree",
+    );
   }
   return result.stdout.trim().length > 0;
 }

@@ -141,6 +141,21 @@ test("Better Harness report rejects a missing cwd before collecting evidence", a
   }
 });
 
+test("Better Harness report rejects an explicitly empty cwd", () => {
+  const machine = runBetterHarness(["report", "--cwd=", "--json"]);
+  assert.equal(machine.status, 1);
+  assert.equal(machine.stderr, "");
+  const payload = JSON.parse(machine.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, "INVALID_CWD");
+  assert.match(payload.error.message, /requires a non-empty directory value/u);
+
+  const human = runBetterHarness(["report", "--cwd="]);
+  assert.equal(human.status, 1);
+  assert.equal(human.stdout, "");
+  assert.match(human.stderr, /requires a non-empty directory value/u);
+});
+
 test("Better Harness report rejects a regular-file cwd before collecting evidence", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-quickstart-file-cwd-"));
   const filePath = path.join(root, "not-a-directory");

@@ -4,7 +4,7 @@ import {
   fstatSync,
   lstatSync,
   openSync,
-  readFileSync,
+  readSync,
   realpathSync,
 } from "node:fs";
 import path from "node:path";
@@ -36,6 +36,33 @@ const LOCK_FILE_NAMES = new Set([
   "poetry.lock",
   "yarn.lock",
 ]);
+const DEFAULT_MAX_FILE_BYTES = 16 * 1024 * 1024;
+const READ_CHUNK_BYTES = 64 * 1024;
+
+function maxFileBytes(options = {}) {
+  const configured = Number(options.maxFileBytes);
+  return Number.isSafeInteger(configured) && configured > 0
+    ? configured
+    : DEFAULT_MAX_FILE_BYTES;
+}
+
+function readBoundedFile(descriptor, limit) {
+  const chunks = [];
+  let total = 0;
+  while (total <= limit) {
+    const chunk = Buffer.allocUnsafe(Math.min(READ_CHUNK_BYTES, limit - total + 1));
+    const bytesRead = readSync(descriptor, chunk, 0, chunk.length, null);
+    if (bytesRead === 0) {
+      return Buffer.concat(chunks, total);
+    }
+    total += bytesRead;
+    if (total > limit) {
+      return null;
+    }
+    chunks.push(chunk.subarray(0, bytesRead));
+  }
+  return null;
+}
 
 function emptyTotals() {
   return {
@@ -267,6 +294,7 @@ export function countKnownFileBuffer(buffer, filePath, options = {}) {
 
 export function countFile(repoRoot, filePath, options = {}) {
   const normalized = toPosix(filePath);
+  const fileSizeLimit = maxFileBytes(options);
   if (!isCountablePath(normalized)) {
     return { path: normalized, skipped: true, reason: "unsupported" };
   }
@@ -286,6 +314,9 @@ export function countFile(repoRoot, filePath, options = {}) {
   if (!stat.isFile()) {
     return { path: normalized, skipped: true, reason: "non-regular" };
   }
+  if (stat.size > fileSizeLimit) {
+    return { path: normalized, skipped: true, reason: "too-large" };
+  }
 
   try {
     const realRoot = realpathSync(root);
@@ -302,10 +333,17 @@ export function countFile(repoRoot, filePath, options = {}) {
   try {
     const noFollow = fsConstants.O_NOFOLLOW ?? 0;
     descriptor = openSync(absolutePath, fsConstants.O_RDONLY | noFollow);
-    if (!fstatSync(descriptor).isFile()) {
+    const openedStat = fstatSync(descriptor);
+    if (!openedStat.isFile()) {
       return { path: normalized, skipped: true, reason: "non-regular" };
     }
-    buffer = readFileSync(descriptor);
+    if (openedStat.size > fileSizeLimit) {
+      return { path: normalized, skipped: true, reason: "too-large" };
+    }
+    buffer = readBoundedFile(descriptor, fileSizeLimit);
+    if (buffer === null) {
+      return { path: normalized, skipped: true, reason: "too-large" };
+    }
   } catch {
     return { path: normalized, skipped: true, reason: "unreadable" };
   } finally {

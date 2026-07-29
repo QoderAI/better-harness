@@ -263,6 +263,23 @@ test("CLI runtime failures exit non-zero without exposing cwd input", async () =
   }
 });
 
+test("CLI fails closed when Git worktree inspection fails", async () => {
+  const nonGitCwd = await mkdtemp(path.join(os.tmpdir(), "better-harness-review-trigger-non-git-"));
+
+  try {
+    const result = runCli(["--cwd", nonGitCwd, "--json"]);
+    assert.notEqual(result.status, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.status, "error");
+    assert.equal(payload.error.code, "runtime-failure");
+    assert.doesNotMatch(result.stdout, new RegExp(nonGitCwd.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.equal(result.stderr, "");
+  } finally {
+    await rm(nonGitCwd, { recursive: true, force: true });
+  }
+});
+
 test("CLI fails closed when the blast-radius base ref is unavailable", async () => {
   const repo = await makeRepo({
     "src/app.ts": "export const value = 1;\n",

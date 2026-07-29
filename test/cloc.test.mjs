@@ -174,6 +174,27 @@ test("unsupported and lock files are skipped before reading content", async () =
   }
 });
 
+test("cloc skips regular files beyond the configured read boundary", async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "better-harness-cloc-size-boundary-"));
+
+  try {
+    await writeFixtureFile(repo, "src/large.js", "const value = 'this file exceeds the test boundary';\n");
+
+    assert.deepEqual(countFile(repo, "src/large.js", { maxFileBytes: 16 }), {
+      path: "src/large.js",
+      skipped: true,
+      reason: "too-large",
+    });
+    assert.equal(countFile(repo, "src/large.js", { maxFileBytes: 1_024 }).skipped, false);
+
+    const report = await analyzeCloc({ cwd: repo, useGit: false, workers: 1, maxFileBytes: 16 });
+    assert.equal(report.fileList.counted, 0);
+    assert.deepEqual(report.skippedFiles, [{ path: "src/large.js", reason: "too-large" }]);
+  } finally {
+    await removeFixtureTree(repo);
+  }
+});
+
 test("git-backed cloc skips tracked symlinks without leaking external targets", async (t) => {
   const repo = await makeRepo({
     "src/app.js": "const a = 1;\n",

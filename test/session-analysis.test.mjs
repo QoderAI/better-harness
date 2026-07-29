@@ -638,6 +638,12 @@ test("Qoder workspace analysis excludes unrelated home-only sessions", async () 
       model: "workspace-model",
       usage: { input_tokens: 10, output_tokens: 5 },
     },
+    {
+      type: "tool.requested",
+      sessionId: fixture.sessionId,
+      timestamp: "2026-06-18T10:00:13.000Z",
+      data: { tool_name: "Read", args: { file_path: "src/linked-without-cwd.ts" } },
+    },
   ]);
   await writeJsonl(unrelatedHomePath, [
     {
@@ -715,7 +721,121 @@ test("Qoder workspace analysis excludes unrelated home-only sessions", async () 
       limit: 10,
     });
     assert.equal(JSON.stringify(fileReads.fileReads).includes("src/retained.ts"), true);
+    assert.equal(JSON.stringify(fileReads.fileReads).includes("src/linked-without-cwd.ts"), true);
     assert.equal(JSON.stringify(fileReads.fileReads).includes("src/unrelated-secret.ts"), false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qoder home-session hydration filters foreign and unverified cwd-less records", async () => {
+  const fixture = await makeQoderFixture();
+  const analyzer = new QoderSessionAnalyzer();
+  const sessionId = "mixed-home-session";
+  const otherWorkspace = path.join(fixture.root, "other-workspace");
+
+  await writeJsonl(path.join(fixture.home, "sessions", `${sessionId}.jsonl`), [
+    {
+      type: "user",
+      sessionId,
+      timestamp: "2026-06-18T10:00:00.000Z",
+      cwd: fixture.workspace,
+      message: "workspace request",
+    },
+    {
+      type: "user",
+      sessionId,
+      timestamp: "2026-06-18T10:00:01.000Z",
+      cwd: otherWorkspace,
+      message: "foreign private request",
+    },
+    {
+      type: "user",
+      sessionId,
+      timestamp: "2026-06-18T10:00:02.000Z",
+      message: "unverified private request",
+    },
+  ]);
+
+  try {
+    const scope = await analyzer.resolveScope({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "events",
+      "session-id": sessionId,
+    });
+    const roots = await analyzer.discoverSourceRoots(scope);
+    const sessions = await analyzer.discoverSessions(scope, roots);
+    const session = sessions.find((candidate) => candidate.sessionId === sessionId);
+    assert.ok(session);
+
+    const events = await analyzer.readSession(session, scope, {
+      includeContent: true,
+      includeUserText: true,
+    });
+    assert.deepEqual(events.map((event) => event.userText), ["workspace request"]);
+    assert.deepEqual(events.map((event) => event.cwd), [fixture.workspace]);
+    assert.equal(JSON.stringify(events).includes("foreign private request"), false);
+    assert.equal(JSON.stringify(events).includes("unverified private request"), false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qoder explicit global analysis retains home-only sessions as user-global", async () => {
+  const fixture = await makeQoderFixture();
+  const analyzer = new QoderSessionAnalyzer();
+  const sessionId = "global-home-only";
+  const otherWorkspace = path.join(fixture.root, "other-workspace");
+
+  await writeJsonl(path.join(fixture.home, "sessions", `${sessionId}.jsonl`), [
+    {
+      type: "user",
+      sessionId,
+      timestamp: "2026-06-18T10:00:00.000Z",
+      cwd: otherWorkspace,
+      message: "explicit global request",
+    },
+    {
+      type: "user",
+      sessionId,
+      timestamp: "2026-06-18T10:00:01.000Z",
+      message: "global request without cwd",
+    },
+  ]);
+
+  try {
+    const defaultResult = await analyzer.analyze({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "sessions",
+    });
+    assert.equal(defaultResult.sessions.some((session) => session.sessionId === sessionId), false);
+
+    const scope = await analyzer.resolveScope({
+      home: fixture.home,
+      workspace: fixture.workspace,
+      command: "events",
+      "session-id": sessionId,
+      includeGlobalCapabilities: true,
+    });
+    const roots = await analyzer.discoverSourceRoots(scope);
+    const sessions = await analyzer.discoverSessions(scope, roots);
+    const session = sessions.find((candidate) => candidate.sessionId === sessionId);
+    assert.ok(session);
+    assert.equal(session.sourceRefs.find((ref) => ref.kind === "home-session")?.planningScope, "user-global");
+
+    const events = await analyzer.readSession(session, scope, {
+      includeContent: true,
+      includeUserText: true,
+    });
+    assert.deepEqual(events.map((event) => event.userText), [
+      "explicit global request",
+      "global request without cwd",
+    ]);
+    assert.equal(events.every((event) => event.planningScope === "user-global"), true);
+    assert.equal(events[0].cwd, otherWorkspace);
+    assert.equal(Object.hasOwn(events[1], "cwd"), false);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }

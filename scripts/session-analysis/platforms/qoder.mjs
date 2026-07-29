@@ -663,15 +663,6 @@ function sessionHasWorkspaceEvidence(session) {
     .some((ref) => ref.kind !== "home-session" && ref.planningScope !== "user-global");
 }
 
-function sessionHasGlobalEvidence(session) {
-  return (session?.sourceRefMap ? [...session.sourceRefMap.values()] : [])
-    .some((ref) => ref.kind !== "home-session" && ref.planningScope === "user-global");
-}
-
-function homeSessionPlanningScope(session) {
-  return sessionHasWorkspaceEvidence(session) ? "workspace" : "user-global";
-}
-
 function sourceKey(ref) {
   return `${ref.kind}:${ref.path}`;
 }
@@ -1202,8 +1193,8 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
       const sessionId = probe.sessionId ?? fallbackId;
       const existingSession = sessions.get(sessionId);
       const verifiedWorkspaceSession = sessionHasWorkspaceEvidence(existingSession);
-      const verifiedGlobalSession = scope.includeGlobalCapabilities && sessionHasGlobalEvidence(existingSession);
-      if (!probe.workspaceMatched && !verifiedWorkspaceSession && !verifiedGlobalSession) {
+      const planningScope = probe.workspaceMatched || verifiedWorkspaceSession ? "workspace" : "user-global";
+      if (planningScope === "user-global" && !scope.includeGlobalCapabilities) {
         continue;
       }
       addSessionRef(sessions, sessionId, scope.workspace, {
@@ -1211,7 +1202,7 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
         path: filePath,
         eventType: "home-session",
         timestamp: probe.timestamp,
-        planningScope: probe.workspaceMatched ? "workspace" : homeSessionPlanningScope(existingSession),
+        planningScope,
       });
     }
   }
@@ -1457,6 +1448,9 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
     const includeCommandText = parseBooleanFlag(options["include-command-text"] ?? options.includeCommandText ?? false);
     const includeUserText = parseBooleanFlag(options["include-user-text"] ?? options.includeUserText ?? false);
     const refs = session.sourceRefs ?? [];
+    const workspaceLinked = refs.some(
+      (ref) => ref.kind !== "home-session" && ref.planningScope !== "user-global",
+    );
 
     for (const ref of refs) {
       if (ref.kind === "audit-jsonl") {
@@ -1464,12 +1458,21 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
       } else if (ref.kind === "project-state") {
         await this.readStateEvent(session.sessionId, ref, events, { includeContent, includeCommandText, includeUserText });
       } else if (ref.path.endsWith(JSONL_EXT)) {
-        await this.readJsonlEvents(session.sessionId, ref, events, { includeContent, includeCommandText, includeUserText });
+        await this.readJsonlEvents(
+          session.sessionId,
+          scope,
+          ref,
+          events,
+          { includeContent, includeCommandText, includeUserText },
+          { workspaceLinked },
+        );
       }
     }
 
     return events
-      .map((event) => event.cwd ? event : { ...event, cwd: scope.workspace })
+      .map((event) => event.cwd || event.planningScope === "user-global"
+        ? event
+        : { ...event, cwd: scope.workspace })
       .filter((event) => withinTimeRange(event.timestamp, scope))
       .sort((a, b) => {
         const left = timestampMillis(a.timestamp) ?? 0;
@@ -1481,12 +1484,24 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
       });
   }
 
-  async readJsonlEvents(sessionId, ref, events, options) {
+  async readJsonlEvents(sessionId, scope, ref, events, options, { workspaceLinked = false } = {}) {
     await forEachJsonLine(ref.path, (raw, line) => {
       const sourceRef = { ...ref, line, sessionId };
       const rawSessionId = inferSessionId(raw, sourceRef);
       if (rawSessionId && rawSessionId !== sessionId && ref.kind !== "logs-session") {
         return;
+      }
+      if (ref.kind === "home-session") {
+        if (ref.planningScope === "user-global") {
+          if (!scope.includeGlobalCapabilities) {
+            return;
+          }
+        } else {
+          const recordCwd = inferCwd(raw);
+          if (recordCwd ? !isWorkspaceMatch(recordCwd, scope.workspace) : !workspaceLinked) {
+            return;
+          }
+        }
       }
       events.push(this.normalizeEvent(raw, sourceRef, options));
     });

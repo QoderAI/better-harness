@@ -178,6 +178,7 @@ export async function analyzeCloc(options = {}) {
   const workerCount = chooseWorkerCount(options.workers, fileList.files.length);
   const countOptions = {
     markdownCode: Boolean(options.markdownCode),
+    maxFileBytes: options.maxFileBytes,
   };
   const includeFiles = options.includeFiles !== false;
   if (!includeFiles) {

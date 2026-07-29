@@ -21,22 +21,28 @@ the product surface or changing successful-path report semantics.
   decisions.
 - AC-02 (#12): Workspace-scoped Qoder analysis excludes home-only sessions that
   have no verified relationship to the requested workspace across sessions,
-  events/show, facets, insights, file-reads, and usage-summary.
+  events/show, facets, insights, file-reads, and usage-summary. A matching
+  record cannot authorize foreign-cwd records from the same home session, and
+  cwd-less records require a workspace-linked session source instead of being
+  assigned to the requested workspace. An explicit global-capability pass can
+  retain home-only sessions only as `user-global` evidence.
 - AC-03 (#13): `report --no-sessions` executes no session probe and always uses
   the static `software-fluency` route even when local sessions exist.
 - AC-04 (#14): Blast-radius collection distinguishes an invalid/unavailable
   base ref from a real empty diff and returns an explicit fail-closed error.
-- AC-05 (#15): review-trigger argument and runtime failures exit non-zero while
-  successful findings retain their documented non-blocking result.
-- AC-06 (#16): `report --cwd` rejects missing and non-directory targets before
-  starting evidence collectors; valid-directory fallback behavior remains
-  available.
+- AC-05 (#15): review-trigger argument, Git worktree probes, and runtime
+  failures exit non-zero while successful findings retain their documented
+  non-blocking result.
+- AC-06 (#16): `report --cwd` rejects empty, missing, and non-directory targets
+  before starting evidence collectors; valid-directory fallback behavior
+  remains available.
 - AC-07 (#17): findings repair never lowers `Critical` or arbitrary unknown
   severity to `Medium`; unsupported values fail closed or use an explicit
   conservative mapping.
 - AC-08 (#18): Git-backed cloc never follows a tracked path to a target outside
-  the repository or reads a non-regular file; skipped results remain bounded
-  and do not reveal the external target.
+  the repository, reads a non-regular file, or reads a regular file beyond the
+  configured size boundary; skipped results remain bounded and do not reveal
+  the external target.
 - AC-09: Focused tests, the full Node test suite, package verification, syntax
   checks, and review-readiness checks pass on Linux-compatible local tooling;
   cross-platform path behavior remains covered by portable fixtures.
@@ -56,15 +62,16 @@ the product surface or changing successful-path report semantics.
 1. Add failing regression tests for each issue before changing implementation.
 2. Normalize Secret Guard tool events once, then scan only the content fields
    owned by matched write tools.
-3. Apply one workspace-ownership predicate to Qoder home-session discovery and
-   hydration, keeping explicit global behavior separate.
-4. Make quickstart privacy and cwd validation explicit at its CLI boundary.
+3. Apply workspace ownership at both Qoder home-session discovery and per-event
+   hydration, keeping explicit `user-global` behavior separate.
+4. Make quickstart privacy and empty/missing cwd validation explicit at its CLI
+   boundary.
 5. Replace Git diff ambiguity with a structured failure from blast-radius
    collection.
-6. Separate review-trigger execution failure from successful non-blocking
-   findings.
-7. Make severity repair conservative and make cloc file reads type- and
-   containment-aware.
+6. Separate review-trigger argument, Git-probe, and execution failures from
+   successful non-blocking findings.
+7. Make severity repair conservative and make cloc file reads type-, size-,
+   and containment-aware.
 8. Run focused tests per module, then the complete repository checks.
 9. Perform independent code-review and architecture lanes, address all
    Critical/High findings and any architectural Block, then run Review
@@ -85,16 +92,17 @@ Decision rationale:
   `node --test test/agent-guardrails-secret-scan.test.mjs`
 - AC-02:
   `node --test test/session-analysis.test.mjs test/session-usage-summary.test.mjs`
+  including mixed-cwd, cwd-less, and explicit user-global home-session cases
 - AC-03 and AC-06:
   `node --test test/harness-quickstart.test.mjs test/better-harness-cli.test.mjs`
 - AC-04:
   `node --test test/blast-radius.test.mjs`
 - AC-05:
-  `node --test test/review-trigger.test.mjs`
+  `node --test test/review-trigger.test.mjs`, including a non-Git directory
 - AC-07:
   `node --test test/harness-findings-repair.test.mjs test/harness-report-render-cli.test.mjs`
 - AC-08:
-  `node --test test/cloc.test.mjs`
+  `node --test test/cloc.test.mjs`, including an oversized regular file
 - AC-09:
   `npm test`
   `npm run pack:verify`
@@ -102,9 +110,13 @@ Decision rationale:
 
 Review evidence:
 
-- `npm run check` passed with 852 tests and package verification.
-- The final blocker-focused run passed 68 tests across Secret Guard,
-  review-trigger, blast-radius, and cloc; syntax and diff checks also passed.
+- Review follow-up (2026-07-29): mixed-cwd and cwd-less home-session hydration,
+  explicit user-global analysis, failed Git worktree probes, empty `--cwd=`,
+  and bounded cloc reads are covered by regressions and resolved before merge.
+- `npm run check` passed with the full Node suite and package verification.
+- The review follow-up focused run passed 80 tests across Qoder session
+  analysis, session usage summary, review-trigger, quickstart, and cloc;
+  syntax and diff checks also passed.
 - Code-reviewer recommendation: `APPROVE` after both reported High findings
   were fixed and re-reviewed.
 - Architect status: non-blocking `WATCH`; the previous fail-open `BLOCK` was
