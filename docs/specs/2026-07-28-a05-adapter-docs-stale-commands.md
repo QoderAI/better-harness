@@ -15,9 +15,11 @@ runtime smoke that the roadmap tracks as missing. This is roadmap P0 item A-05.
 The `docs/adapters/README.md` matrix drifted from the shipped CLI:
 
 1. The Codex Smoke cell references `harness prepare --platform codex` and a
-   `html-report` validation step. Neither exists: the registry has no
-   `prepare` subcommand, and rendering/validation runs through
-   `harness analyze` plus `harness render --mode html --validate`
+   standalone `html-report` validation step. The registry has no `prepare`
+   subcommand, and `html-report` is not a CLI step: it is the HTML validator
+   check id inside the renderer
+   (`scripts/harness-analysis/renderers/html.mjs`). Rendering/validation runs
+   through `harness analyze` plus `harness render --mode html --validate`
    (`scripts/better-harness-cli/registry.mjs`,
    `scripts/harness-analysis/render-report.mjs`).
 2. The Cursor Smoke cell presents `agent --plugin-dir . --mode ask --print ->
