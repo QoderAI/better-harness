@@ -185,6 +185,53 @@ test("repairFindingsJsonData preserves valid human-authored repair prompts", () 
   assert.equal(validation.status, "pass", validation.errors.join("\n"));
 });
 
+test("repairFindingsJsonData maps known severe labels and rejects arbitrary severities", () => {
+  const input = validFindingsJson();
+  input.findings = [
+    {
+      ...input.findings[0],
+      id: "critical-finding",
+      title: "Critical finding stays high risk",
+      severity: "Critical",
+    },
+    {
+      ...input.findings[0],
+      id: "blocker-finding",
+      title: "Blocker finding stays high risk",
+      severity: "Blocker",
+    },
+    {
+      ...input.findings[0],
+      id: "medium-finding",
+      title: "Medium finding stays medium risk",
+      severity: "Medium",
+    },
+  ];
+
+  const repaired = repairFindingsJsonData(input, { targetPath: "/tmp/fixture-project" });
+
+  assert.equal(repaired.data.findings[0].severity, "High");
+  assert.equal(repaired.data.findings[1].severity, "High");
+  assert.equal(repaired.data.findings[2].severity, "Medium");
+  assert.ok(repaired.changes.some((change) => change.path === "findings[0].severity"));
+  assert.ok(repaired.changes.some((change) => change.path === "findings[1].severity"));
+
+  const validation = evaluateFindingsJson(JSON.stringify(repaired.data), null);
+  assert.equal(validation.status, "pass", validation.errors.join("\n"));
+
+  input.findings[1].severity = "Cosmic";
+  const rejected = repairFindingsJsonData(input, { targetPath: "/tmp/fixture-project" });
+  assert.equal(rejected.data.findings[1].severity, "Cosmic");
+  assert.equal(
+    rejected.changes.some((change) => change.path === "findings[1].severity"),
+    false,
+  );
+
+  const rejectedValidation = evaluateFindingsJson(JSON.stringify(rejected.data), null);
+  assert.equal(rejectedValidation.status, "fail");
+  assert.ok(rejectedValidation.errors.some((error) => error.includes("severity")));
+});
+
 test("repairFindingsJsonData strips non-openable Memory directory paths but keeps count and scope", () => {
   const input = validFindingsJson();
   input.summary.aiAgentPractice.coverageRows.push({

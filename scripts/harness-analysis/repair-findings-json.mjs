@@ -26,6 +26,9 @@ const RISK_LABEL_MAP = new Map([
   ["high", "High"],
   ["medium", "Medium"],
   ["low", "Low"],
+  ["critical", "High"],
+  ["blocker", "High"],
+  ["severe", "High"],
   ["高", "High"],
   ["中", "Medium"],
   ["低", "Low"],
@@ -130,10 +133,10 @@ function addChange(changes, pathName, before, after) {
   changes.push({ path: pathName, before, after });
 }
 
-function normalizeRiskLabel(value, fallback = "Medium") {
+function normalizeRiskLabel(value) {
   const text = String(value ?? "").trim();
   if (VALID_RISK_LABELS.has(text)) return text;
-  return RISK_LABEL_MAP.get(text.toLowerCase()) ?? fallback;
+  return RISK_LABEL_MAP.get(text.toLowerCase()) ?? text;
 }
 
 function normalizeSurface(value) {

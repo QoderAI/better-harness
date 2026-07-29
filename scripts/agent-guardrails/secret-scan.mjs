@@ -464,8 +464,7 @@ export async function handleHookEvent({ mode, platform, host, event, failOn = "m
 }
 
 function preToolBlockReason(event, failOn) {
-  const toolName = String(event.tool_name ?? event.toolName ?? "");
-  const toolInput = event.tool_input && typeof event.tool_input === "object" ? event.tool_input : {};
+  const { toolName, toolInput } = normalizePreToolEvent(event);
 
   if (/^Bash$/i.test(toolName)) {
     const command = String(toolInput.command ?? "");
@@ -486,7 +485,18 @@ function preToolBlockReason(event, failOn) {
     }
   }
 
-  const filePath = String(toolInput.file_path ?? toolInput.path ?? toolInput.absolute_path ?? "");
+  const contentTargets = writeContentTargets(toolName, toolInput);
+  for (const target of contentTargets) {
+    const findings = scanTextRaw(target.content, target.file, defaultOptions({ failOn, redact: true }));
+    if (findings.some((finding) => shouldFailFinding(finding, failOn))) {
+      return {
+        reasonCode: "secret-in-tool-content",
+        message: "Secret guard blocked write content containing a likely credential. Move the value to a secret manager or environment variable and use a redacted fixture instead.",
+      };
+    }
+  }
+
+  const filePath = String(toolInput.file_path ?? toolInput.filePath ?? toolInput.path ?? toolInput.absolute_path ?? toolInput.absolutePath ?? "");
   if (filePath && isProtectedCredentialPath(filePath)) {
     return {
       reasonCode: "protected-credential-path",
@@ -495,6 +505,53 @@ function preToolBlockReason(event, failOn) {
   }
 
   return null;
+}
+
+function normalizePreToolEvent(event) {
+  const source = event && typeof event === "object" ? event : {};
+  const data = source.data && typeof source.data === "object" && !Array.isArray(source.data)
+    ? source.data
+    : {};
+  const toolName = String(
+    source.tool_name
+    ?? source.toolName
+    ?? data.tool_name
+    ?? data.toolName
+    ?? source.name
+    ?? data.name
+    ?? "",
+  );
+  const input = source.tool_input
+    ?? source.toolInput
+    ?? data.tool_input
+    ?? data.toolInput
+    ?? source.input
+    ?? source.args
+    ?? data.input
+    ?? data.args;
+  return {
+    toolName,
+    toolInput: input && typeof input === "object" && !Array.isArray(input)
+      ? input
+      : (/^apply_patch$/i.test(toolName) && typeof input === "string" ? { patch: input } : {}),
+  };
+}
+
+function writeContentTargets(toolName, toolInput) {
+  if (/^Write$/i.test(toolName)) {
+    return stringContentTargets(toolInput.content, "<write-content>");
+  }
+  if (/^Edit$/i.test(toolName)) {
+    return stringContentTargets(toolInput.new_string ?? toolInput.newString, "<edit-new-string>");
+  }
+  if (/^apply_patch$/i.test(toolName)) {
+    return stringContentTargets(toolInput.patch, "<apply-patch>");
+  }
+  return [];
+}
+
+function stringContentTargets(value, file) {
+  return typeof value === "string" ? [{ content: value, file }] : [];
 }
 
 function blockHook({ platform, eventName, reasonCode, message }) {

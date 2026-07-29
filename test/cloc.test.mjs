@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -169,6 +169,80 @@ test("unsupported and lock files are skipped before reading content", async () =
       skipped: true,
       reason: "unsupported",
     });
+  } finally {
+    await removeFixtureTree(repo);
+  }
+});
+
+test("git-backed cloc skips tracked symlinks without leaking external targets", async (t) => {
+  const repo = await makeRepo({
+    "src/app.js": "const a = 1;\n",
+  });
+  const external = await mkdtemp(path.join(os.tmpdir(), "better-harness-cloc-external-"));
+
+  try {
+    const externalTarget = path.join(external, "secret.js");
+    await writeFile(externalTarget, "const secret = true;\n");
+    try {
+      await symlink(externalTarget, path.join(repo, "src", "external-link.js"));
+    } catch (error) {
+      t.skip(`symlink fixture unavailable on this platform: ${error.code ?? error.message}`);
+      return;
+    }
+    git(repo, ["add", "src/external-link.js"]);
+    git(repo, ["commit", "-q", "-m", "track symlink"]);
+
+    const direct = countFile(repo, "src/external-link.js");
+    assert.deepEqual(direct, {
+      path: "src/external-link.js",
+      skipped: true,
+      reason: "non-regular",
+    });
+
+    const result = await analyzeCloc({ cwd: repo, workers: 1, trackedOnly: true });
+    assert.equal(result.status, "ok");
+    assert.equal(result.totals.files, 1);
+    assert.deepEqual(result.skippedFiles, [{
+      path: "src/external-link.js",
+      reason: "non-regular",
+    }]);
+    assert.equal(JSON.stringify(result).includes(externalTarget), false);
+  } finally {
+    await removeFixtureTree(repo);
+    await removeFixtureTree(external);
+  }
+});
+
+test("cloc skips path candidates outside the repository boundary before reading", async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "better-harness-cloc-boundary-"));
+  const external = await mkdtemp(path.join(os.tmpdir(), "better-harness-cloc-boundary-external-"));
+
+  try {
+    const externalTarget = path.join(external, "secret.js");
+    await writeFile(externalTarget, "const secret = true;\n");
+    const escapedPath = path.relative(repo, externalTarget);
+
+    assert.deepEqual(countFile(repo, escapedPath), {
+      path: escapedPath.split(path.sep).join("/"),
+      skipped: true,
+      reason: "outside-repo",
+    });
+  } finally {
+    await removeFixtureTree(repo);
+    await removeFixtureTree(external);
+  }
+});
+
+test("cloc accepts repository paths whose segment begins with two dots", async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "better-harness-cloc-dotdot-name-"));
+
+  try {
+    await writeFixtureFile(repo, "..generated/app.js", "const generated = true;\n");
+
+    const result = countFile(repo, "..generated/app.js");
+    assert.equal(result.skipped, false);
+    assert.equal(result.path, "..generated/app.js");
+    assert.equal(result.records[0].code, 1);
   } finally {
     await removeFixtureTree(repo);
   }

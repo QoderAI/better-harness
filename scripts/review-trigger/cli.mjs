@@ -2,6 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +15,14 @@ const SEVERITY_ORDER = {
   warning: 2,
   error: 3,
 };
+
+class ReviewTriggerCliError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "ReviewTriggerCliError";
+    this.code = code;
+  }
+}
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -316,8 +325,11 @@ export async function collectReviewTriggerFindings(options = {}) {
         config,
       }));
     }
-  } catch (error) {
-    warnings.push(`change-test-evidence scan failed: ${error.message}`);
+  } catch {
+    throw new ReviewTriggerCliError(
+      "runtime-failure",
+      "review-trigger could not verify change-test evidence",
+    );
   }
 
   return {
@@ -327,8 +339,23 @@ export async function collectReviewTriggerFindings(options = {}) {
   };
 }
 
+async function assertDirectory(cwd) {
+  try {
+    const stats = await stat(cwd);
+    if (!stats.isDirectory()) {
+      throw new ReviewTriggerCliError("runtime-failure", "review-trigger cwd is not a directory");
+    }
+  } catch (error) {
+    if (error instanceof ReviewTriggerCliError) {
+      throw error;
+    }
+    throw new ReviewTriggerCliError("runtime-failure", "review-trigger cwd is unavailable");
+  }
+}
+
 export async function runReviewTrigger(options = {}) {
   const cwd = path.resolve(options.cwd ?? process.env.QODER_CWD ?? process.cwd());
+  await assertDirectory(cwd);
   if (options.input?.stop_hook_active) {
     return {
       ok: true,
@@ -368,11 +395,19 @@ function parseArgs(argv) {
     const arg = argv[index];
     const value = (name) => {
       const next = argv[index + 1];
-      if (!next) throw new Error(`${name} requires a value`);
+      if (!next || next.startsWith("--")) {
+        throw new ReviewTriggerCliError("invalid-arguments", `${name} requires a value`);
+      }
       index += 1;
       return next;
     };
-    const assignMaybeEquals = (name) => arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : value(name);
+    const assignMaybeEquals = (name) => {
+      const next = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : value(name);
+      if (!next) {
+        throw new ReviewTriggerCliError("invalid-arguments", `${name} requires a value`);
+      }
+      return next;
+    };
 
     if (arg === "--help" || arg === "-h") options.help = true;
     else if (arg === "--json") options.json = true;
@@ -404,6 +439,33 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+function failureEnvelope(error) {
+  const code = error instanceof ReviewTriggerCliError ? error.code : "runtime-failure";
+  const message = code === "invalid-arguments"
+    ? "review-trigger received invalid arguments"
+    : "review-trigger runtime failed";
+  return {
+    ok: false,
+    kind: "better-harness.review-trigger",
+    status: "error",
+    exitCode: 1,
+    error: {
+      code,
+      message,
+    },
+  };
+}
+
+function emitFailure(error, options = {}) {
+  const envelope = failureEnvelope(error);
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(envelope, null, 2)}\n`);
+  } else {
+    process.stderr.write(`${envelope.error.message}\n`);
+  }
+  return envelope.exitCode;
+}
+
 function formatHuman(result) {
   if (result.findings.length === 0) {
     return "";
@@ -420,7 +482,13 @@ function formatHuman(result) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const args = parseArgs(argv);
+  let args;
+  try {
+    args = parseArgs(argv);
+  } catch (error) {
+    return emitFailure(error, { json: argv.includes("--json") });
+  }
+
   if (args.help) {
     process.stdout.write(usage());
     return 0;
@@ -436,7 +504,12 @@ export async function main(argv = process.argv.slice(2)) {
     }
   }
 
-  const result = await runReviewTrigger({ ...args, input });
+  let result;
+  try {
+    result = await runReviewTrigger({ ...args, input });
+  } catch (error) {
+    return emitFailure(error, { json: args.json });
+  }
 
   if (args.json) {
     process.stdout.write(`${JSON.stringify({
@@ -458,7 +531,6 @@ if (isCli) {
   main().then((code) => {
     process.exitCode = code;
   }).catch((error) => {
-    process.stderr.write(`review-trigger failed: ${error.stack ?? error.message}\n`);
-    process.exitCode = 0;
+    process.exitCode = emitFailure(error, { json: process.argv.slice(2).includes("--json") });
   });
 }
