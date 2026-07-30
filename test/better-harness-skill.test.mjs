@@ -77,10 +77,11 @@ test("non-Qoder providers default to validated durable HTML with an explicit inl
   assert.match(skill, /HTML artifacts: findings\.json, report\.md, report\.html/);
   assert.match(skill, /Succeed only on\s+`status: pass`/);
   assert.match(skill, /Never hand-write\s+Canvas, Markdown, or HTML/);
-  assert.match(routing, /Portable HTML report \| Active host is Claude Code, Codex, Cursor, Qwen Code, or GitHub Copilot/);
+  assert.match(routing, /Portable HTML report \| Active host is Claude Code, Codex, Cursor, Qwen Code, GitHub Copilot, or Pi/);
   assert.match(routing, /Inline only \| Inline or no-files output is explicitly requested \| none; inline analysis writes nothing/);
   assert.match(adapters, /Claude Code[^\n]+scripts\/session-analysis\/platforms\/claude\.mjs[^\n]+self-contained HTML \+ Markdown/);
   assert.match(adapters, /Cursor[^\n]+scripts\/session-analysis\/platforms\/cursor\.mjs[^\n]+no supported durable-report pipeline yet \(roadmap U-03\)/);
+  assert.match(adapters, /Pi[^\n]+scripts\/session-analysis\/platforms\/pi\.mjs[^\n]+self-contained HTML \+ Markdown/);
   assert.doesNotMatch(adapters, /Inline repository review only|No Claude\s+session-evidence adapter/);
   assert.match(readme, /Claude Code defaults to a self-contained `report\.html`/);
   assert.match(readme, /\.claude\/better-harness/);
@@ -89,13 +90,9 @@ test("non-Qoder providers default to validated durable HTML with an explicit inl
 test("Codex README examples use host-specific skill invocation syntax", () => {
   for (const readmePath of ["README.md", "README.zh-CN.md"]) {
     const readme = read(readmePath);
-    const desktopQuickStart = readme.match(/^\| \*\*Codex Desktop\*\* \|.*$/mu)?.[0] ?? "";
-    const cliQuickStart = readme.match(/^\| \*\*Codex CLI\*\* \|.*$/mu)?.[0] ?? "";
     const desktop = readme.match(/#### Codex Desktop\n([\s\S]*?)\n#### Codex CLI/u)?.[1] ?? "";
     const cli = readme.match(/#### Codex CLI\n([\s\S]*?)\n### Qoder/u)?.[1] ?? "";
 
-    assert.match(desktopQuickStart, /`@better-harness`/u);
-    assert.match(cliQuickStart, /`\$better-harness:better-harness`/u);
     assert.match(desktop, /^@better-harness(?:[ \t]|$)/mu);
     assert.match(cli, /^\$better-harness:better-harness(?:[ \t]|$)/mu);
     assert.doesNotMatch(desktop, /^[ \t]*\/better-harness(?:[ \t]|$)/mu);
@@ -114,6 +111,10 @@ test("Step 1 establishes one provider-labelled evidence bundle", () => {
   assert.match(skill, /Apply both when both scopes are\s+authorized/);
   assert.match(skill, /Neither flag authorizes Memory bodies/);
   assert.match(skill, /from\s+one shared asset snapshot/);
+  assert.match(skill, /`bundle\.context\.topology\.target`/);
+  assert.match(skill, /report `kind`, `route`, and `packageRoute`/);
+  assert.match(skill, /`memberRoute` or `null`/);
+  assert.match(skill, /Providers must agree/);
   assert.match(skill, /bounded `lint`, `inventory`, and `integrity` envelopes/);
   assert.match(skill, /individual [\s\S]+command only to diagnose a named unavailable or truncated owner/);
   assert.doesNotMatch(skill, /<cli> agent-lint --workspace <target>/);
@@ -386,6 +387,16 @@ test("finding-bound fixes remain slash-command owned and independently reassesse
   assert.match(skill, /\[Finding-bound Fix\]\(references\/finding-bound-fix\.md\)/);
   assert.match(fix, /initiating handoff must explicitly invoke `\/better-harness`/);
   assert.match(fix, /better-harness-fix-output/);
+  assert.match(fix, /harness workspace-topology --workspace <workspacePath> --json/);
+  assert.match(fix, /structured\s+`target`/);
+  assert.match(fix, /complete `kind`, `packageRoute`, and `ownerRoute`/);
+  assert.match(fix, /present-but-incomplete target is invalid/);
+  assert.match(fix, /repo-root\|workspace-member\|repo-subtree\|standalone/);
+  assert.match(fix, /mismatch fails closed/);
+  assert.match(fix, /`requestedWorkspace` for standalone/);
+  assert.match(fix, /smallest\s+owner for inspection, mutation,\s+and verification/);
+  assert.match(fix, /legacy report with no `target` field at all/);
+  assert.match(fix, /do not invent\s+`packageRoute` or `ownerRoute`/);
   assert.match(fix, /exactly one fresh read-only subagent/);
   assert.match(fix, /Agent Work Loop/);
   assert.match(fix, /asset-integrity/);

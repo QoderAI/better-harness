@@ -19,7 +19,7 @@ a declarative session selection plan. Raw prompts, commands, paths, and session
 identifiers never enter the profile.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot>
+  --platform <qoder|codex|claude|cursor|qwen|copilot|pi>
                             Session platform (default: qoder)
   --workspace <path>        Target workspace (required)
   --since <ISO timestamp>   Exclude earlier sessions
@@ -43,11 +43,16 @@ export async function createSelectionProfileBundle(options = {}) {
   const analyzerOptions = {
     platform,
     workspace: options.workspace,
+    home: options.home,
     since: options.since,
     until: snapshotUntil,
     qoderHome: options.qoderHome ?? options["qoder-home"],
     codexHome: options.codexHome ?? options["codex-home"],
+    claudeHome: options.claudeHome ?? options["claude-home"],
     cursorHome: options.cursorHome ?? options["cursor-home"],
+    qwenHome: options.qwenHome ?? options["qwen-home"],
+    copilotHome: options.copilotHome ?? options["copilot-home"],
+    piHome: options.piHome ?? options["pi-home"],
   };
   const discovery = await analyzer.analyze({ ...analyzerOptions, command: "sources" });
   const scope = await analyzer.resolveScope(analyzerOptions);

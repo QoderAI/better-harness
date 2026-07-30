@@ -9,7 +9,7 @@ import { createAnalyzer, SESSION_ANALYSIS_HELP } from "../scripts/session-analys
 
 // Canonical support declaration (roadmap A-06): CLI help, provider registry,
 // session platforms, report platforms, and docs must all agree on this set.
-const SUPPORTED_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copilot"];
+const SUPPORTED_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"];
 
 const cliPath = path.join(process.cwd(), "scripts", "better-harness.mjs");
 const adapterMatrixPath = path.join(process.cwd(), "docs", "adapters", "README.md");

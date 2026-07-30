@@ -15,7 +15,7 @@ export const ASSET_BASELINE_SCHEMA_VERSION = 1;
 export const MAX_BASELINE_FINDINGS = 16;
 export const MAX_BASELINE_OWNER_ROUTES = 16;
 
-const PROVIDERS = new Set(["qoder", "codex", "claude", "cursor", "qwen", "copilot"]);
+const PROVIDERS = new Set(["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"]);
 const SEVERITY_RANK = Object.freeze({ error: 0, warning: 1, advisory: 2 });
 const OWNER_KIND_RANK = Object.freeze({
   rules: 0,
@@ -28,7 +28,7 @@ const OWNER_KIND_RANK = Object.freeze({
   agents: 7,
   workflows: 8,
 });
-const OWNER_SCOPE_RANK = Object.freeze({ workspace: 0, project: 0, user: 1, plugin: 2 });
+const OWNER_SCOPE_RANK = Object.freeze({ workspace: 0, project: 0, inherited: 1, user: 2, plugin: 3 });
 
 function text(value, limit = 320) {
   return String(value ?? "").replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, limit);
@@ -67,6 +67,7 @@ function compactFindings(findings = []) {
     items: ordered.slice(0, MAX_BASELINE_FINDINGS).map(compactFinding),
     total: ordered.length,
     omitted: Math.max(0, ordered.length - MAX_BASELINE_FINDINGS),
+    truncated: ordered.length > MAX_BASELINE_FINDINGS,
   };
 }
 
@@ -91,7 +92,9 @@ function ownerRoutes(inventory, workspace) {
         name,
         version: text(item?.version, 32),
         owner: text(item?.pluginName ?? item?.ownerName ?? item?.sourceLabel, 96),
-        route: workspaceRoute(item?.path ?? item?.filePath, workspace),
+        route: text(item?.originRoute, 180)
+          || workspaceRoute(item?.path ?? item?.filePath, workspace),
+        effectiveTarget: text(item?.effectiveTarget, 180),
       }).filter(([, value]) => value !== undefined && value !== ""));
       const key = [route.kind, route.scope, route.name, route.version, route.owner, route.route].join(":");
       if (!routes.has(key)) routes.set(key, route);
@@ -125,6 +128,7 @@ function ownerRoutes(inventory, workspace) {
     items: selected,
     total: ordered.length,
     omitted: Math.max(0, ordered.length - MAX_BASELINE_OWNER_ROUTES),
+    truncated: ordered.length > MAX_BASELINE_OWNER_ROUTES,
   };
 }
 
@@ -197,10 +201,85 @@ function available(data) {
   return { status: "available", data };
 }
 
+function inheritedWorkspaceRoots(topology, workspace) {
+  if (!topology?.gitRoot
+    || !new Set(["workspace-member", "repo-subtree"]).has(topology.target?.kind)) {
+    return [];
+  }
+  const relative = path.relative(topology.gitRoot, workspace);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return [];
+  const parts = relative.split(path.sep).filter(Boolean);
+  const roots = [topology.gitRoot];
+  for (let index = 1; index < parts.length; index += 1) {
+    roots.push(path.join(topology.gitRoot, ...parts.slice(0, index)));
+  }
+  return roots;
+}
+
+function rawItemPath(item) {
+  return item?.evidence?.path ?? item?.filePath ?? item?.rootPath;
+}
+
+function inheritedItem(item, topology) {
+  const filePath = rawItemPath(item);
+  const relative = filePath ? path.relative(topology.gitRoot, path.resolve(filePath)) : "";
+  const originRoute = relative
+    && !relative.startsWith("..")
+    && !path.isAbsolute(relative)
+    ? relative.split(path.sep).join("/")
+    : undefined;
+  return {
+    ...item,
+    scope: "inherited",
+    originScope: "inherited",
+    originRoute,
+    effectiveTarget: topology.target.route,
+  };
+}
+
+function mergeInheritedInventories(projectInventory, inheritedInventories, topology) {
+  const manage = Object.fromEntries(
+    Object.entries(projectInventory.manage ?? {}).map(([collection, items]) => [collection, [...items]]),
+  );
+  for (const inventory of inheritedInventories) {
+    for (const [collection, items] of Object.entries(inventory.manage ?? {})) {
+      const target = manage[collection] ?? [];
+      for (const item of items) {
+        if (item?.scope !== "project") continue;
+        const inherited = inheritedItem(item, topology);
+        const key = [
+          inherited.id,
+          inherited.kind,
+          inherited.name ?? inherited.displayName ?? inherited.label,
+          rawItemPath(inherited),
+        ].join(":");
+        if (!target.some((candidate) => [
+          candidate.id,
+          candidate.kind,
+          candidate.name ?? candidate.displayName ?? candidate.label,
+          rawItemPath(candidate),
+        ].join(":") === key)) {
+          target.push(inherited);
+        }
+      }
+      manage[collection] = target;
+    }
+  }
+  return {
+    ...projectInventory,
+    manage,
+    diagnostics: {
+      ...(projectInventory.diagnostics ?? {}),
+      inheritedWorkspaceCount: inheritedInventories.length,
+      inheritedTargetRoute: topology.target.route,
+    },
+  };
+}
+
 export async function collectAssetBaseline(options = {}, dependencies = {}) {
   const provider = options.provider ?? options.platform ?? "qoder";
   if (!PROVIDERS.has(provider)) {
-    throw new Error(`Unsupported provider: ${provider}. Supported providers: qoder, codex, claude, cursor, qwen, copilot.`);
+    throw new Error(`Unsupported provider: ${provider}. Supported providers: qoder, codex, claude, cursor, qwen, copilot, pi.`);
   }
   const workspace = normalizeWorkspace(options.workspace ?? ".");
   const includeUserHome = parseBooleanFlag(options.includeUserHome ?? options["include-user-home"] ?? false);
@@ -224,6 +303,20 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
   let rawInventory;
   try {
     rawInventory = await collectRawInventory(common);
+    const inheritedRoots = inheritedWorkspaceRoots(options.topology, workspace);
+    if (inheritedRoots.length > 0) {
+      const inheritedInventories = [];
+      for (const inheritedWorkspace of inheritedRoots) {
+        inheritedInventories.push(await collectRawInventory({
+          ...common,
+          workspace: inheritedWorkspace,
+          includeUserHome: false,
+          includeGlobalHooks: false,
+          includeMemories: false,
+        }));
+      }
+      rawInventory = mergeInheritedInventories(rawInventory, inheritedInventories, options.topology);
+    }
   } catch (error) {
     const failed = unavailable(error, "inventory");
     return {
@@ -262,10 +355,19 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
   }
   const envelopes = { lint: lintEnvelope, inventory: inventoryEnvelope, integrity: integrityEnvelope };
   const availableCount = Object.values(envelopes).filter((envelope) => envelope.status === "available").length;
+  const truncatedStages = [
+    lintEnvelope.data?.findings?.truncated ? "lint-findings" : null,
+    inventoryEnvelope.data?.ownerRoutes?.truncated ? "inventory-owner-routes" : null,
+    integrityEnvelope.data?.findings?.truncated ? "integrity-findings" : null,
+  ].filter(Boolean);
   return {
     kind: ASSET_BASELINE_KIND,
     schemaVersion: ASSET_BASELINE_SCHEMA_VERSION,
-    status: availableCount === 3 ? "complete" : availableCount === 0 ? "failed" : "partial",
+    status: availableCount === 3 && truncatedStages.length === 0
+      ? "complete"
+      : availableCount === 0
+        ? "failed"
+        : "partial",
     scope: { provider, workspace, includeUserHome, includeMemories },
     envelopes,
     diagnostics: {
@@ -273,6 +375,8 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
       compact: true,
       findingLimitPerEnvelope: MAX_BASELINE_FINDINGS,
       ownerRouteLimit: MAX_BASELINE_OWNER_ROUTES,
+      inheritedWorkspaceCount: rawInventory?.diagnostics?.inheritedWorkspaceCount ?? 0,
+      truncatedStages,
     },
   };
 }
@@ -300,7 +404,7 @@ export function formatAssetBaselineMarkdown(result) {
   return `${lines.join("\n")}\n`;
 }
 
-const USAGE = `Usage: better-harness coding-agent-practices asset-baseline [qoder|codex|claude|cursor|qwen|copilot] [options]
+const USAGE = `Usage: better-harness coding-agent-practices asset-baseline [qoder|codex|claude|cursor|qwen|copilot|pi] [options]
 
 Collect one compact, read-only AI evidence envelope from a shared asset snapshot.
 

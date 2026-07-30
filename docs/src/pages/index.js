@@ -99,6 +99,22 @@ function hosts() {
       }),
       anchor: "cursor",
     },
+    {
+      name: "Qwen Code",
+      setup: translate({
+        id: "homepage.hosts.qwenCode.setup",
+        message: "Install as a Qwen Code extension.",
+      }),
+      anchor: "qwen-code",
+    },
+    {
+      name: "GitHub Copilot",
+      setup: translate({
+        id: "homepage.hosts.githubCopilot.setup",
+        message: "Add the marketplace and install the plugin.",
+      }),
+      anchor: "github-copilot",
+    },
   ];
 }
 
@@ -262,7 +278,7 @@ function QuickStart() {
             <Link
               key={host.name}
               className={styles.hostCard}
-              to={`/docs/installation#${host.anchor}`}
+              to={`/docs/installation?host=${host.anchor}#${host.anchor}`}
             >
               <h3>{host.name}</h3>
               <p>{host.setup}</p>
@@ -285,9 +301,9 @@ export default function Home() {
     >
       <Hero />
       <main>
+        <QuickStart />
         <LiveDemo />
         <HowItWorks />
-        <QuickStart />
       </main>
     </Layout>
   );

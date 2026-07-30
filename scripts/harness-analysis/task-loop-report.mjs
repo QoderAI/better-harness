@@ -31,13 +31,14 @@ import {
 } from "./report-source.mjs";
 import { projectSemanticFacets, validateSemanticFacets } from "../session-analysis/semantic-facets.mjs";
 import { restoreProjectedInterventionLedger, summarizeLearningCapture } from "./intervention-ledger.mjs";
+import { findingTargetErrors } from "../workspace-topology/index.mjs";
 
 const DIMENSIONS = AGENT_WORK_LOOP_DIMENSIONS;
 
 const DIMENSION_BY_ID = new Map(DIMENSIONS.map((dimension) => [dimension.id, dimension]));
 const AI_AGENT_PRACTICE_SURFACES = Object.freeze(["Rules", "Hooks", "Skills", "Commands", "Custom Agents", "MCP", "Workflows", "Plugins", "Session Insights", "Memories"]);
 const AI_AGENT_PRACTICE_SURFACE_SET = new Set(AI_AGENT_PRACTICE_SURFACES);
-const AI_AGENT_PRACTICE_SCOPES = Object.freeze(["Project", "Global", "Plugin"]);
+const AI_AGENT_PRACTICE_SCOPES = Object.freeze(["Project", "Inherited", "Global", "Plugin"]);
 const AI_AGENT_PRACTICE_SCOPE_SET = new Set(AI_AGENT_PRACTICE_SCOPES);
 export const TASK_LOOP_SUGGESTION_KINDS = Object.freeze([
   "try-existing",
@@ -68,7 +69,7 @@ const TASK_LOOP_HOST_DIMENSION_FIELDS = Object.freeze([
 const LEGACY_TASK_LOOP_HOST_DIMENSION_FIELDS = Object.freeze(["state"]);
 const TASK_LOOP_HOST_FINDING_FIELDS = Object.freeze([
   "id", "title", "severity", "reason", "expectedOutput", "expectedArtifact", "aiFixPrompt", "dimensionRefs",
-  "actualOutputRevision", "actualOutput", "assignmentSummary", "postFixRepairReview", "postFixScoreReview",
+  "target", "actualOutputRevision", "actualOutput", "assignmentSummary", "postFixRepairReview", "postFixScoreReview",
 ]);
 const LEGACY_TASK_LOOP_HOST_FINDING_FIELDS = Object.freeze(["kind", "subdimensionRefs", "evidenceBridge"]);
 const TASK_LOOP_CANVAS_SUMMARY_FIELDS = Object.freeze([
@@ -1509,7 +1510,7 @@ function checkupReportFindings(source) {
 function usageOutcomeReviewLead(source, locale) {
   const usage = source?.sessionEvents?.usageEfficiency;
   if (!isObject(usage) || !isObject(usage.selection) || !isObject(usage.longSessions) || !isObject(usage.outcomeReview)) return null;
-  const platform = ["qoder", "codex", "claude", "cursor", "qwen", "copilot"].includes(source?.manifest?.scope?.platform)
+  const platform = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"].includes(source?.manifest?.scope?.platform)
     ? source.manifest.scope.platform
     : "qoder";
   const activeCount = Number(usage?.longSessions?.activeCount ?? 0);
@@ -1704,6 +1705,7 @@ function softwareFluencyReviewFindings(source) {
           ? rows(finding.dimensionRefs).map(String)
           : [defaultDimensionRef].filter(Boolean),
         subdimensionRefs: rows(finding?.subdimensionRefs).map(String),
+        ...(finding && Object.hasOwn(finding, "target") ? { target: finding.target } : {}),
         staticEvidence: unique([
           ...rows(capability?.evidenceRefs),
           ...rows(finding?.evidenceRefs),
@@ -1808,6 +1810,8 @@ function sourceFindings(source, dimensions) {
     const expectedOutcome = typeof item?.expectedOutcome === "string" && item.expectedOutcome.trim()
       ? item.expectedOutcome.trim()
       : projectUnlock(primary, locale);
+    const hasItemTarget = item && Object.hasOwn(item, "target");
+    const fallbackTarget = source?.repositoryEvidence?.findingTarget;
     const finding = {
       id: String(item?.id ?? `task-loop-${index + 1}`),
       kind: ["evidence-gap", "missing-mechanism", "outcome-gap"].includes(item?.kind) ? item.kind : findingKind(primary),
@@ -1820,6 +1824,9 @@ function sourceFindings(source, dimensions) {
       dimensionRefs,
       subdimensionRefs,
       evidenceBridge: bridge,
+      ...(hasItemTarget || fallbackTarget !== undefined
+        ? { target: hasItemTarget ? item.target : fallbackTarget }
+        : {}),
     };
     finding.aiFixPrompt = actionableAiFixPrompt(source, finding, primary, locale, reader);
     finding.expectedOutput = findingExpectedOutput({ ...item, ...finding, aiFixPrompt: finding.aiFixPrompt });
@@ -2817,6 +2824,9 @@ export function validateCompactTaskLoopFindings(data) {
       && (typeof finding.expectedArtifact !== "string" || !finding.expectedArtifact.trim())) {
       errors.push(`${prefix}.expectedArtifact must be a non-empty string when supplied`);
     }
+    errors.push(...findingTargetErrors(finding?.target, {
+      prefix: `${prefix}.target`,
+    }));
     if (finding.expectedOutput !== undefined
       && (!Array.isArray(finding.expectedOutput)
         || finding.expectedOutput.length === 0
@@ -3893,10 +3903,10 @@ export function validateTaskLoopFindings(data) {
     const prefix = `findings[${index}]`;
     const findingFields = [
       "id", "title", "severity", "reason", "aiFixPrompt", "dimensionRefs", "subdimensionRefs", "evidenceBridge", "expectedArtifact",
-      "expectedOutput", "kind", "actualOutputRevision", "actualOutput", "assignmentSummary", "postFixRepairReview", "postFixScoreReview",
+      "expectedOutput", "kind", "target", "actualOutputRevision", "actualOutput", "assignmentSummary", "postFixRepairReview", "postFixScoreReview",
     ];
     const requiredFindingFields = findingFields.filter((field) => ![
-      "actualOutputRevision", "actualOutput", "assignmentSummary", "postFixRepairReview", "postFixScoreReview",
+      "target", "actualOutputRevision", "actualOutput", "assignmentSummary", "postFixRepairReview", "postFixScoreReview",
     ].includes(field));
     errors.push(...unsupportedFields(finding, findingFields, prefix));
     for (const field of requiredFindingFields) {
@@ -3923,6 +3933,9 @@ export function validateTaskLoopFindings(data) {
     errors.push(...assignmentSummaryErrors(finding, summary.locale, prefix));
     errors.push(...postFixRepairReviewErrors(finding, summary, prefix));
     errors.push(...postFixScoreReviewErrors(finding, summary, prefix));
+    errors.push(...findingTargetErrors(finding?.target, {
+      prefix: `${prefix}.target`,
+    }));
     if (findingIds.has(finding?.id)) errors.push(`${prefix} duplicates finding id: ${finding?.id}`);
     findingIds.add(finding?.id);
     if (!["High", "Medium", "Low"].includes(finding?.severity)) errors.push(`${prefix} has invalid severity: ${finding?.severity}`);

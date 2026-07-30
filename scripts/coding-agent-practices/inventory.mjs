@@ -379,7 +379,7 @@ async function collectCodexMemories(scope) {
 }
 
 function makeSessionSourceHints(scope) {
-  if (!["qoder", "codex", "claude", "cursor", "qwen", "copilot"].includes(scope.platform)) {
+  if (!["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"].includes(scope.platform)) {
     return [];
   }
   return [
@@ -449,6 +449,7 @@ function providerScope(options = {}, platform = options.platform ?? "qoder") {
     claudeStatePath: options.claudeStatePath ?? options["claude-state"] ?? options["claude-state-path"],
     qwenHome: options.qwenHome ?? options["qwen-home"],
     copilotHome: options.copilotHome ?? options["copilot-home"],
+    piHome: options.piHome ?? options["pi-home"],
   };
 }
 
@@ -486,6 +487,9 @@ function customizeItem(item) {
     sourceKind: item.sourceKind,
     precedence: item.precedence,
     scope: item.scope,
+    originScope: item.originScope,
+    originRoute: item.originRoute,
+    effectiveTarget: item.effectiveTarget,
     pluginId: item.pluginId,
     pluginName: item.pluginName,
     pluginEnabled: item.pluginEnabled,
@@ -537,7 +541,7 @@ function customizeSurface({ provider, group, scope, type, label, basePath, items
 async function buildConfiguredAssetSurfaces(inventory, scope) {
   const provider = scope.platform;
   const projectBase = scope.workspace;
-  const userBase = inventory.cursorHome ?? inventory.qoderHome ?? inventory.codexHome ?? inventory.claudeHome ?? inventory.qwenHome ?? inventory.copilotHome;
+  const userBase = inventory.cursorHome ?? inventory.qoderHome ?? inventory.codexHome ?? inventory.claudeHome ?? inventory.qwenHome ?? inventory.copilotHome ?? inventory.piHome;
   const surfaceTypes = [
     ["skills", "skills", "Skills"],
     ["subagents", "agents", "Agents"],
@@ -557,6 +561,21 @@ async function buildConfiguredAssetSurfaces(inventory, scope) {
         scope: "project",
         type,
         label: `Project ${provider} ${label}`,
+        basePath: projectBase,
+        items,
+      }));
+    }
+  }
+
+  for (const [collection, type, label] of surfaceTypes) {
+    const items = scopeItems(inventory, collection, "inherited");
+    if (items.length > 0) {
+      surfaces.push(customizeSurface({
+        provider,
+        group: "Inherited project assets",
+        scope: "inherited",
+        type,
+        label: `Inherited ${provider} ${label}`,
         basePath: projectBase,
         items,
       }));
@@ -641,6 +660,7 @@ export async function collectProviderInventory(options = {}) {
     claudeStatePath: scope.claudeStatePath,
     qwenHome: scope.qwenHome,
     copilotHome: scope.copilotHome,
+    piHome: scope.piHome,
     includeUserHome: scope.includeUserHome,
     includeGlobalHooks: scope.includeGlobalHooks,
   });
@@ -748,10 +768,12 @@ function practiceCoverageRows(surfaces, scope) {
     const scopes = [...new Set(matchedSurfaces.map((surface) => {
       if (surface.group === "Plugin/marketplace assets" || surface.scope === "plugin") return "Plugin";
       if (surface.scope === "user") return "Global";
+      if (surface.scope === "inherited") return "Inherited";
       return "Project";
     }))];
     const paths = [...new Set([...uniqueItems.values()]
-      .map((item) => boundedReportPath(item.path ?? item.filePath ?? item.rootPath, scope.workspace))
+      .map((item) => item.originRoute
+        ?? boundedReportPath(item.path ?? item.filePath ?? item.rootPath, scope.workspace))
       .filter(Boolean))].slice(0, 12);
     rows.push({ surface: surfaceName, scopes, count: uniqueItems.size, paths });
   }
@@ -892,12 +914,12 @@ export function formatInventoryMarkdown(result) {
   return `${lines.join("\n")}\n`;
 }
 
-const USAGE = `Usage: better-harness coding-agent-practices inventory [qoder|codex|claude|cursor|qwen|copilot] [options]
+const USAGE = `Usage: better-harness coding-agent-practices inventory [qoder|codex|claude|cursor|qwen|copilot|pi] [options]
 
 Inspect configured coding-agent assets and practice evidence for one platform.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot>  Select the platform (default: qoder; may also be the first positional)
+  --platform <qoder|codex|claude|cursor|qwen|copilot|pi>  Select the platform (default: qoder; may also be the first positional)
   --workspace <dir>                Workspace root to inspect (default: current directory)
   --json                           Emit JSON (default)
   --format <json|markdown>         Output format
@@ -919,9 +941,9 @@ async function runCli(argv) {
   }
   const { command, options } = parseArgs(argv);
   const platform = options.platform ?? command ?? "qoder";
-  if (!["cursor", "qoder", "codex", "claude", "qwen", "copilot"].includes(platform)) {
+  if (!["cursor", "qoder", "codex", "claude", "qwen", "copilot", "pi"].includes(platform)) {
     throw new Error(
-      `Unsupported platform: ${platform}. Supported platforms: cursor, qoder, codex, claude, qwen, copilot.\n\n${USAGE}`,
+      `Unsupported platform: ${platform}. Supported platforms: cursor, qoder, codex, claude, qwen, copilot, pi.\n\n${USAGE}`,
     );
   }
   const result = platform === "qoder"

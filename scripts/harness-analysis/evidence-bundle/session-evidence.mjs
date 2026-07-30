@@ -21,6 +21,8 @@ export async function collectSessionEvidence(context, options = {}, dependencies
     until: context.window.until,
     limit: context.evidenceLimit,
     "episode-limit": context.evidenceLimit,
+    topology: context.topology,
+    analysisScope: context.analysisScope,
     ...(options[`${context.provider}-home`] ? { [`${context.provider}-home`]: options[`${context.provider}-home`] } : {}),
   });
   if (data?.kind !== "session-core-facts" || !Array.isArray(data.candidates)) {

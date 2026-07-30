@@ -1,4 +1,5 @@
 import { ASSET_INTEGRITY_PROFILE } from "../coding-agent-practices/asset-integrity.mjs";
+import { findingTargetFromTopology } from "../workspace-topology/index.mjs";
 
 const PROFILE_RULES = "agents-md-review";
 const PROFILE_ASSETS = "agent-assets-review";
@@ -296,6 +297,7 @@ export function projectAgentLintPracticeEvidence({
   integrityReview,
   locale = "en",
   provider = "qoder",
+  topology,
 } = {}) {
   const normalizedLocale = locale === "zh-CN" ? "zh-CN" : "en";
   const grouped = new Map();
@@ -306,42 +308,65 @@ export function projectAgentLintPracticeEvidence({
       if (NON_PROBLEM_FINDING_IDS.has(text(finding?.id))) continue;
       const surface = surfaceFor(finding, profile);
       if (!surface || !SURFACE_CONFIG[surface]) continue;
+      const ownerRoute = text(finding?.ownerRoute) || text(finding?.packageRoute) || undefined;
+      const packageRoute = text(finding?.packageRoute) || ownerRoute;
       const key = `${profile}:${text(finding?.id)}:${text(finding?.file)}:${text(finding?.assetName)}`;
-      const current = grouped.get(surface) ?? { findings: [], seen: new Set(), profiles: new Set() };
+      const groupKey = `${surface}\u0000${ownerRoute ?? ""}`;
+      const current = grouped.get(groupKey) ?? {
+        surface,
+        ownerRoute,
+        packageRoute,
+        findings: [],
+        seen: new Set(),
+        profiles: new Set(),
+      };
       if (!current.seen.has(key)) {
         current.seen.add(key);
         current.profiles.add(profile);
         current.findings.push({ ...finding, _profile: profile, _index: index });
       }
-      grouped.set(surface, current);
+      grouped.set(groupKey, current);
     }
   }
 
   const findings = SURFACE_ORDER.flatMap((surface) => {
-    const group = grouped.get(surface);
-    if (!group || group.findings.length === 0) return [];
-    const config = SURFACE_CONFIG[surface];
-    const profile = group.profiles.has(PROFILE_ASSETS)
-      ? PROFILE_ASSETS
-      : group.profiles.has(ASSET_INTEGRITY_PROFILE)
-        ? ASSET_INTEGRITY_PROFILE
-        : PROFILE_RULES;
-    return [{
-      id: `practice-${safeId(surface) || "surface"}-quality`,
-      kind: "evidence-gap",
-      severity: severityFor(group.findings),
-      title: titleFor(surface, group.findings, normalizedLocale),
-      reason: groupedReason(surface, group.findings, normalizedLocale),
-      expectedOutcome: expectedOutcomeFor(surface, normalizedLocale),
-      expectedArtifact: config.expectedArtifact,
-      expectedOutput: [expectedOutputFor(surface, config.expectedArtifact, normalizedLocale)],
-      aiFixPrompt: aiFixPrompt(surface, group.findings, profile, provider, normalizedLocale),
-      dimensionRefs: [...config.dimensionRefs],
-      subdimensionRefs: [...config.subdimensionRefs],
-      staticEvidence: group.findings.map((finding) => evidenceRef(finding._profile, finding, finding._index)),
-      practiceSurface: surface,
-      practiceAssetNames: assetNames(group.findings),
-    }];
+    const surfaceGroups = [...grouped.values()]
+      .filter((group) => group.surface === surface && group.findings.length > 0)
+      .sort((left, right) => (left.ownerRoute ?? "").localeCompare(right.ownerRoute ?? ""));
+    return surfaceGroups.map((group, index) => {
+      const config = SURFACE_CONFIG[surface];
+      const profile = group.profiles.has(PROFILE_ASSETS)
+        ? PROFILE_ASSETS
+        : group.profiles.has(ASSET_INTEGRITY_PROFILE)
+          ? ASSET_INTEGRITY_PROFILE
+          : PROFILE_RULES;
+      const baseId = `practice-${safeId(surface) || "surface"}-quality`;
+      const ownerId = group.ownerRoute === "." ? "root" : safeId(group.ownerRoute);
+      const id = index === 0 ? baseId : `${baseId}-${ownerId || index + 1}`;
+      return {
+        id,
+        kind: "evidence-gap",
+        severity: severityFor(group.findings),
+        title: titleFor(surface, group.findings, normalizedLocale),
+        reason: groupedReason(surface, group.findings, normalizedLocale),
+        expectedOutcome: expectedOutcomeFor(surface, normalizedLocale),
+        expectedArtifact: config.expectedArtifact,
+        expectedOutput: [expectedOutputFor(surface, config.expectedArtifact, normalizedLocale)],
+        aiFixPrompt: aiFixPrompt(surface, group.findings, profile, provider, normalizedLocale),
+        dimensionRefs: [...config.dimensionRefs],
+        subdimensionRefs: [...config.subdimensionRefs],
+        staticEvidence: group.findings.map((finding) => evidenceRef(finding._profile, finding, finding._index)),
+        practiceSurface: surface,
+        practiceAssetNames: assetNames(group.findings),
+        ...(group.ownerRoute ? {
+          ownerRoute: group.ownerRoute,
+          packageRoute: group.packageRoute,
+          ...(topology ? {
+            target: findingTargetFromTopology(topology, { ownerRoute: group.ownerRoute }),
+          } : {}),
+        } : {}),
+      };
+    });
   });
 
   return {

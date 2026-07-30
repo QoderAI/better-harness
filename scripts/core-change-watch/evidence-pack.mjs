@@ -13,7 +13,8 @@ import {
   option,
   parseArgs,
   positiveInt,
-  resolveRepoRoot,
+  publicAnalysisScope,
+  resolveAnalysisScopeForOptions,
   writeJsonResult,
 } from "./common.mjs";
 import { analyzeChangeDrift } from "./change-drift.mjs";
@@ -269,29 +270,34 @@ function buildAgentGuidance(history, core, filters) {
   };
 }
 
-function buildEvidenceSources({ baseRef, maxCommits, historyWindows, noHistory }) {
+function buildEvidenceSources({ baseRef, maxCommits, historyWindows, noHistory, analysisScope }) {
+  const scopeSuffix = analysisScope.pathspecs.length > 0
+    ? ` -- ${analysisScope.pathspecs.join(" ")}`
+    : " --";
   return {
     boundary: "static-local-git-and-file-analysis",
     numericSources: [
       {
         claim: "tracked file, language, manifest, source-root, entrypoint, and framework counts",
         source: "projectProfile",
-        command: "git ls-files -z plus local manifest/path inspection",
+        command: `git ls-files -z${scopeSuffix} plus local manifest/path inspection`,
       },
       {
         claim: "hot files, hot paths, co-change paths, and history windows",
         source: "historyProfile",
-        command: noHistory ? "UNVERIFIED: history scan skipped by --no-history" : `git log -${maxCommits} --numstat --format=commit... --`,
+        command: noHistory
+          ? "UNVERIFIED: history scan skipped by --no-history"
+          : `git log -${maxCommits} --numstat --format=commit...${scopeSuffix}`,
       },
       {
         claim: "changed files, line counts, inferred core candidate hits, hot hits, and companion hits",
         source: "diffImpact",
-        command: `git diff --numstat --no-ext-diff --find-renames ${baseRef} --`,
+        command: `git diff --numstat --no-ext-diff --find-renames ${baseRef}${scopeSuffix}`,
       },
       {
         claim: "changed API, schema, UI, config, error, and CLI surfaces with missing companion evidence",
         source: "changeDrift",
-        command: `git diff --numstat --no-ext-diff --find-renames ${baseRef} -- plus git ls-files -z`,
+        command: `git diff --numstat --no-ext-diff --find-renames ${baseRef}${scopeSuffix} plus git ls-files -z${scopeSuffix}`,
       },
       {
         claim: "history day windows",
@@ -438,7 +444,8 @@ function buildReviewMatrix(projectProfile, historyProfile, coreAnalysis, diffImp
 }
 
 export async function buildEvidencePack(options = {}) {
-  const repoRoot = resolveRepoRoot(options.cwd ?? process.env.QODER_CWD ?? process.cwd());
+  const analysisScope = resolveAnalysisScopeForOptions(options);
+  const repoRoot = analysisScope.repoRoot;
   const languages = normalizeLanguages(options.languages);
   const maxCommits = positiveInt(options.maxCommits, DEFAULT_MAX_COMMITS);
   const maxCandidates = positiveInt(options.maxCandidates, 30);
@@ -447,6 +454,7 @@ export async function buildEvidencePack(options = {}) {
   const historyWindows = normalizeHistoryWindows(options.historyWindows);
   const projectProfile = await analyzeProjectProfile({
     cwd: repoRoot,
+    analysisScope,
     languages,
     ignore: options.ignore,
     measureSourceLines: Boolean(options.measureSourceLines),
@@ -457,6 +465,7 @@ export async function buildEvidencePack(options = {}) {
         kind: "git-history-profile",
         status: "skipped",
         repoRoot,
+        analysisScope: publicAnalysisScope(analysisScope),
         filters: applyIgnorePatterns([], options.ignore).filters,
         hotFiles: [],
         supportingHotFiles: [],
@@ -477,9 +486,17 @@ export async function buildEvidencePack(options = {}) {
         })),
         range: { maxCommits: 0, analyzedCommits: 0, newest: null, oldest: null },
       }
-    : await analyzeGitHistoryProfile({ cwd: repoRoot, languages, maxCommits, historyWindows, ignore: options.ignore });
+    : await analyzeGitHistoryProfile({
+        cwd: repoRoot,
+        analysisScope,
+        languages,
+        maxCommits,
+        historyWindows,
+        ignore: options.ignore,
+      });
   const coreAnalysis = await analyzeCoreCandidates({
     cwd: repoRoot,
+    analysisScope,
     languages,
     maxCommits,
     maxCandidates,
@@ -489,6 +506,7 @@ export async function buildEvidencePack(options = {}) {
   });
   const diffImpact = await analyzeDiffImpact({
     cwd: repoRoot,
+    analysisScope,
     languages,
     baseRef: options.baseRef ?? "HEAD",
     maxCommits,
@@ -499,6 +517,7 @@ export async function buildEvidencePack(options = {}) {
   });
   const changeDrift = await analyzeChangeDrift({
     cwd: repoRoot,
+    analysisScope,
     baseRef: options.baseRef ?? "HEAD",
     ignore: options.ignore,
     changedFiles: diffImpact.changedFiles,
@@ -510,6 +529,7 @@ export async function buildEvidencePack(options = {}) {
     kind: "core-change-watch-evidence-pack",
     status: "ok",
     repoRoot,
+    analysisScope: publicAnalysisScope(analysisScope),
     generatedAt: new Date().toISOString(),
     summary: {
       reviewRecommended: diffImpact.reviewRecommended,
@@ -540,6 +560,7 @@ export async function buildEvidencePack(options = {}) {
       maxCommits,
       historyWindows: historyProfile.historyWindows.map((item) => item.days),
       noHistory: Boolean(options.noHistory),
+      analysisScope: publicAnalysisScope(analysisScope),
     }),
     projectProfile,
     historyProfile,
@@ -558,6 +579,7 @@ export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const result = await buildEvidencePack({
     cwd: option(args, "cwd"),
+    packageRelPath: option(args, "package-rel-path"),
     languages: option(args, "languages"),
     baseRef: option(args, "base-ref", option(args, "base", "HEAD")),
     maxCommits: positiveInt(option(args, "max-commits"), DEFAULT_MAX_COMMITS),

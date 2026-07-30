@@ -371,3 +371,32 @@ Use the Global/User Asset Pass from `global-assets.md` when the user asks about
 Copilot global assets such as `~/.copilot/skills` or `~/.copilot/hooks`, or
 installed plugins. Keep configured inventory evidence separate from observed
 session behavior.
+
+## Pi Asset Route
+
+For Pi-specific actions, use `platforms/pi.md` as the operating practice
+reference for prompt shape, `AGENTS.md` context files, `.pi` config, skills,
+prompt templates, extensions, and pi packages. Presence is not execution
+proof.
+
+Inspect configured surfaces before projecting readiness evidence:
+
+- `AGENTS.md` (project and ancestors) and the global `~/.pi/agent/AGENTS.md`
+  context file for durable repo context.
+- `.pi/settings.json` and `~/.pi/agent/settings.json` for default model,
+  thinking level, declared pi packages, and skill/prompt overrides.
+- `.pi/skills`, `.agents/skills` (project and `~/.agents/skills`), and
+  `~/.pi/agent/skills` for repeatable workflows.
+- `.pi/prompts` and `~/.pi/agent/prompts` for prompt templates that register
+  as slash commands.
+- Pi packages declared in `settings.json` `packages` entries, resolved under
+  `~/.pi/agent/npm/` and `~/.pi/agent/git/` (or `.pi/npm/` and `.pi/git/` for
+  project installs), plus loose extensions under `~/.pi/agent/extensions/`.
+- Session, diff, test, build, and review evidence for observed execution.
+
+Pi has no native MCP inventory; MCP arrives through extensions such as the
+MCP adapter package, so keep MCP capability claims bound to extension
+evidence. Use the Global/User Asset Pass from `global-assets.md` when the
+user asks about Pi global assets such as `~/.pi/agent/skills`, installed pi
+packages, or extensions. Keep configured inventory evidence separate from
+observed session behavior.

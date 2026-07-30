@@ -4,7 +4,7 @@ import {
   DEFAULT_MAX_COMMITS,
   SCHEMA_VERSION,
   addCount,
-  analysisDirectoryFor,
+  analysisDirectoryForScope,
   applyIgnorePatterns,
   git,
   isCli,
@@ -17,12 +17,14 @@ import {
   parseArgs,
   parseNumstat,
   positiveInt,
-  resolveRepoRoot,
+  publicAnalysisScope,
+  resolveAnalysisScopeForOptions,
+  scopePathspecArgs,
   sortedCounts,
   writeJsonResult,
 } from "./common.mjs";
 
-function parseLogWithNumstat(output) {
+function parseLogWithNumstat(output, analysisScope) {
   const commits = [];
   let current = null;
 
@@ -44,7 +46,7 @@ function parseLogWithNumstat(output) {
       continue;
     }
 
-    current.files.push(...parseNumstat(line));
+    current.files.push(...parseNumstat(line, analysisScope));
   }
 
   return commits;
@@ -86,7 +88,7 @@ function sortedHotFiles(map, limit) {
     .slice(0, limit);
 }
 
-function collectHistoryStats(commits, allowedLanguages) {
+function collectHistoryStats(commits, allowedLanguages, analysisScope) {
   const fileStats = new Map();
   const supportingFileStats = new Map();
   const pathStats = new Map();
@@ -102,14 +104,14 @@ function collectHistoryStats(commits, allowedLanguages) {
 
     for (const file of primaryFiles) {
       incrementFileStats(fileStats, file, commit);
-      const directory = analysisDirectoryFor(file.filePath);
+      const directory = analysisDirectoryForScope(file.filePath, analysisScope);
       directories.add(directory);
       addCount(languageStats, file.language ?? "other", 1);
     }
 
     for (const file of supportingFiles) {
       incrementFileStats(supportingFileStats, file, commit);
-      addCount(supportingPathStats, analysisDirectoryFor(file.filePath), 1);
+      addCount(supportingPathStats, analysisDirectoryForScope(file.filePath, analysisScope), 1);
     }
 
     for (const directory of directories) {
@@ -134,12 +136,12 @@ function collectHistoryStats(commits, allowedLanguages) {
   };
 }
 
-function historyWindows(commits, allowedLanguages, daysList) {
+function historyWindows(commits, allowedLanguages, daysList, analysisScope) {
   const nowSeconds = Math.floor(Date.now() / 1000);
   return daysList.map((days) => {
     const sinceSeconds = nowSeconds - days * 24 * 60 * 60;
     const windowCommits = commits.filter((commit) => commit.timestamp >= sinceSeconds);
-    const stats = collectHistoryStats(windowCommits, allowedLanguages);
+    const stats = collectHistoryStats(windowCommits, allowedLanguages, analysisScope);
     const trend = trendForWindow(days, windowCommits.length);
 
     return {
@@ -219,19 +221,36 @@ function applyCommitIgnores(commits, ignorePatterns) {
 }
 
 export async function analyzeGitHistoryProfile(options = {}) {
-  const repoRoot = resolveRepoRoot(options.cwd ?? process.env.QODER_CWD ?? process.cwd());
+  const analysisScope = resolveAnalysisScopeForOptions(options);
+  const repoRoot = analysisScope.repoRoot;
   const maxCommits = positiveInt(options.maxCommits, DEFAULT_MAX_COMMITS);
   const windowDays = normalizeHistoryWindows(options.historyWindows);
   const allowedLanguages = new Set(normalizeLanguages(options.languages));
-  const output = git(
-    repoRoot,
-    ["log", `-${maxCommits}`, "--numstat", "--format=commit%x1f%H%x1f%ct%x1f%s", "--"],
-    { allowFailure: true, timeout: 30_000 },
-  );
-  const parsedCommits = parseLogWithNumstat(output);
+  let output;
+  try {
+    output = git(
+      repoRoot,
+      ["log", `-${maxCommits}`, "--numstat", "--format=commit%x1f%H%x1f%ct%x1f%s", ...scopePathspecArgs(analysisScope)],
+      { timeout: 30_000 },
+    );
+  } catch (error) {
+    // An unborn repository is a valid empty history. Every other Git failure,
+    // including a malformed scope/pathspec, remains a hard coverage failure.
+    try {
+      git(repoRoot, ["rev-parse", "--verify", "HEAD"]);
+    } catch (headError) {
+      if (headError?.code === "GIT_COMMAND_FAILED") {
+        output = "";
+      } else {
+        throw error;
+      }
+    }
+    if (output === undefined) throw error;
+  }
+  const parsedCommits = parseLogWithNumstat(output, analysisScope);
   const filteredHistory = applyCommitIgnores(parsedCommits, options.ignore);
   const commits = filteredHistory.commits;
-  const stats = collectHistoryStats(commits, allowedLanguages);
+  const stats = collectHistoryStats(commits, allowedLanguages, analysisScope);
   const maxHotFiles = positiveInt(options.maxHotFiles, 40);
 
   return {
@@ -239,6 +258,7 @@ export async function analyzeGitHistoryProfile(options = {}) {
     kind: "git-history-profile",
     status: "ok",
     repoRoot,
+    analysisScope: publicAnalysisScope(analysisScope),
     filters: filteredHistory.filters,
     range: {
       maxCommits,
@@ -247,7 +267,7 @@ export async function analyzeGitHistoryProfile(options = {}) {
       oldest: commits.at(-1)?.shortSha ?? null,
     },
     confidence: historyConfidence(commits, maxCommits),
-    historyWindows: historyWindows(commits, allowedLanguages, windowDays),
+    historyWindows: historyWindows(commits, allowedLanguages, windowDays, analysisScope),
     languageTouchCounts: sortedCounts(stats.languageStats, 12).map((item) => ({
       language: item.name,
       touches: item.count,
@@ -273,6 +293,7 @@ export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const result = await analyzeGitHistoryProfile({
     cwd: option(args, "cwd"),
+    packageRelPath: option(args, "package-rel-path"),
     languages: option(args, "languages"),
     maxCommits: positiveInt(option(args, "max-commits"), DEFAULT_MAX_COMMITS),
     maxHotFiles: positiveInt(option(args, "max-hot-files"), 40),

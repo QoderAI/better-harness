@@ -1,7 +1,7 @@
 import { collectAssetBaseline } from "../../coding-agent-practices/asset-baseline.mjs";
 import { availableLane, unavailableLane } from "./contract.mjs";
 
-const ASSET_PROVIDERS = new Set(["qoder", "codex", "claude", "cursor", "qwen", "copilot"]);
+const ASSET_PROVIDERS = new Set(["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"]);
 
 export async function collectAgentCustomize(context, options = {}, dependencies = {}) {
   if (!ASSET_PROVIDERS.has(context.provider)) {
@@ -12,6 +12,8 @@ export async function collectAgentCustomize(context, options = {}, dependencies 
     provider: context.provider,
     workspace: context.workspace,
     language: context.language,
+    topology: context.topology,
+    analysisScope: context.analysisScope,
     "include-user-home": context.authority.includeUserHome,
     "include-memories": context.authority.includeMemories,
     ...(options[`${context.provider}-home`] ? { [`${context.provider}-home`]: options[`${context.provider}-home`] } : {}),

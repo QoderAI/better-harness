@@ -30,6 +30,17 @@ import {
   factsHydrationLimit,
   prepareFactsSessionInventory,
 } from "../session-core-facts.mjs";
+import {
+  bindSessionWorkspaceCwds,
+  hydrateWorkspaceSelection,
+  markSessionReadCoverage,
+  qualifyWorkspaceSessionInventory,
+  sessionWorkspaceCwd,
+  withWorkspaceMatchDiagnostics,
+  workspaceQualifiedSelectionEntries,
+  workspaceMatchScopeFromOptions,
+} from "../provider-runner.mjs";
+import { WORKSPACE_CWD_MATCH, classifyWorkspaceCwd } from "../workspace-match.mjs";
 
 const DEFAULT_LIMIT = 50;
 
@@ -331,6 +342,11 @@ function isWorkspaceMatch(candidate, workspace) {
   return resolved === workspace || resolved.startsWith(`${workspace}${path.sep}`);
 }
 
+function isScopedWorkspaceMatch(candidate, scope) {
+  if (!scope?._workspaceMatchScope) return isWorkspaceMatch(candidate, scope.workspace);
+  return classifyWorkspaceCwd(candidate, scope._workspaceMatchScope) !== WORKSPACE_CWD_MATCH.UNMATCHED;
+}
+
 function createSessionRecord(sessionId, workspace) {
   return {
     sessionId,
@@ -340,6 +356,7 @@ function createSessionRecord(sessionId, workspace) {
     firstSeen: null,
     lastSeen: null,
     indexedEventCounts: new Map(),
+    workspaceCwdCandidates: new Map(),
   };
 }
 
@@ -352,6 +369,13 @@ function addSessionRef(sessions, sessionId, workspace, ref) {
   }
 
   session.sourceKinds.add(ref.kind);
+  if (typeof ref.cwd === "string" && ref.cwd.length > 0) {
+    const priority = Number(ref.cwdPriority ?? 0);
+    session.workspaceCwdCandidates.set(
+      ref.cwd,
+      Math.max(priority, session.workspaceCwdCandidates.get(ref.cwd) ?? Number.NEGATIVE_INFINITY),
+    );
+  }
   session.indexedEventCounts.set(ref.eventType, (session.indexedEventCounts.get(ref.eventType) ?? 0) + 1);
   mergeTimeRange(session, ref.timestamp);
 
@@ -382,7 +406,7 @@ function addSessionRef(sessions, sessionId, workspace, ref) {
 
 function finalizeSession(session) {
   const sourceKinds = [...session.sourceKinds].sort();
-  return {
+  const finalized = {
     sessionId: session.sessionId,
     workspace: session.workspace,
     sourceKinds,
@@ -411,6 +435,16 @@ function finalizeSession(session) {
       lastSeen: ref.lastSeen,
     })),
   };
+  const priorities = [...session.workspaceCwdCandidates.values()];
+  const strongest = priorities.length > 0 ? Math.max(...priorities) : null;
+  return bindSessionWorkspaceCwds(
+    finalized,
+    strongest === null
+      ? []
+      : [...session.workspaceCwdCandidates]
+        .filter(([_cwd, priority]) => priority === strongest)
+        .map(([cwd]) => cwd),
+  );
 }
 
 function summarizeEvents(events) {
@@ -591,6 +625,7 @@ async function firstJsonlRecord(filePath) {
 export class CodexSessionAnalyzer extends SessionAnalyzer {
   async resolveScope(options = {}) {
     const workspace = normalizeWorkspace(options.workspace);
+    const workspaceMatchScope = workspaceMatchScopeFromOptions(options);
     const since = normalizeCliDate(options.since, false);
     const until = normalizeCliDate(options.until, true);
     return {
@@ -606,6 +641,7 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
       includeGlobalCapabilities: parseBooleanFlag(
         options["include-global-capabilities"] ?? options.includeGlobalCapabilities ?? false,
       ),
+      _workspaceMatchScope: workspaceMatchScope,
     };
   }
 
@@ -688,7 +724,8 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
         continue;
       }
       await forEachJsonLine(root.path, (raw, line) => {
-        if (!isWorkspaceMatch(inferCwd(raw), scope.workspace)) {
+        const cwd = inferCwd(raw);
+        if (!isScopedWorkspaceMatch(cwd, scope)) {
           return;
         }
         const sessionId = inferSessionId(raw);
@@ -703,6 +740,8 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
           line,
           eventType: inferType(raw, "audit"),
           timestamp,
+          cwd,
+          cwdPriority: 1,
         });
       });
     }
@@ -715,7 +754,7 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
     }
     await forEachJsonLine(root.path, (raw, line) => {
       const cwd = inferCwd(raw);
-      const planningScope = isWorkspaceMatch(cwd, scope.workspace) ? "workspace" : "user-global";
+      const planningScope = isScopedWorkspaceMatch(cwd, scope) ? "workspace" : "user-global";
       if (planningScope === "user-global" && !scope.includeGlobalCapabilities) {
         return;
       }
@@ -732,6 +771,8 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
         eventType: "session-index",
         timestamp,
         planningScope,
+        cwd,
+        cwdPriority: 2,
       });
     });
   }
@@ -751,7 +792,7 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
       const first = await firstJsonlRecord(filePath);
       const timestamp = inferTimestamp(first);
       const cwd = inferCwd(first);
-      const planningScope = cwd && !isWorkspaceMatch(cwd, scope.workspace) ? "user-global" : "workspace";
+      const planningScope = cwd && !isScopedWorkspaceMatch(cwd, scope) ? "user-global" : "workspace";
       if (planningScope === "user-global" && !scope.includeGlobalCapabilities) {
         continue;
       }
@@ -766,6 +807,8 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
         eventType: "session-jsonl",
         timestamp,
         planningScope,
+        cwd,
+        cwdPriority: 3,
       });
     }
   }
@@ -926,25 +969,50 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
     const includeContent = parseBooleanFlag(options["include-content"] ?? options.includeContent ?? false);
     const includeCommandText = parseBooleanFlag(options["include-command-text"] ?? options.includeCommandText ?? false);
     const includeUserText = parseBooleanFlag(options["include-user-text"] ?? options.includeUserText ?? false);
-    for (const ref of session.sourceRefs ?? []) {
+    const requestedMaxLines = Number(options.workspacePreflightMaxLines);
+    const preflight = Number.isFinite(requestedMaxLines) && requestedMaxLines > 0;
+    let remainingLines = preflight ? Math.trunc(requestedMaxLines) : null;
+    let truncated = false;
+    const refs = preflight
+      ? (session.sourceRefs ?? []).filter((ref) => ["codex-session-jsonl", "codex-archived-session"].includes(ref.kind))
+      : session.sourceRefs ?? [];
+    const identityCwd = scope._workspaceMatchScope
+      ? sessionWorkspaceCwd(session, scope._workspaceMatchScope)
+      : null;
+    const rootCandidate = scope._workspaceMatchScope
+      && classifyWorkspaceCwd(identityCwd, scope._workspaceMatchScope) === WORKSPACE_CWD_MATCH.ROOT_CANDIDATE;
+    for (const ref of refs) {
+      if (remainingLines !== null && remainingLines <= 0) {
+        truncated = true;
+        break;
+      }
       if (!ref.path.endsWith(".jsonl")) {
         continue;
       }
-      await forEachJsonLine(ref.path, (raw, line) => {
+      const readCoverage = await forEachJsonLine(ref.path, (raw, line) => {
         const sessionId = inferSessionId(raw, session.sessionId);
         if (sessionId !== session.sessionId) {
           return;
         }
-        if (!scope.includeGlobalCapabilities && inferCwd(raw) && !isWorkspaceMatch(inferCwd(raw), scope.workspace)) {
+        if (!scope.includeGlobalCapabilities
+          && !rootCandidate
+          && inferCwd(raw)
+          && !isScopedWorkspaceMatch(inferCwd(raw), scope)) {
           return;
         }
         const event = this.normalizeEvent(raw, { ...ref, line }, { includeContent, includeCommandText, includeUserText });
         if (withinTimeRange(event.timestamp, scope)) {
           events.push(event);
         }
-      });
+      }, remainingLines === null ? {} : { maxLines: remainingLines });
+      if (readCoverage.invalidLines > 0) truncated = true;
+      if (remainingLines !== null) {
+        if (readCoverage.lineCount > remainingLines) truncated = true;
+        remainingLines -= Math.min(readCoverage.lineCount, remainingLines);
+      }
     }
-    return events.sort((a, b) => (timestampMillis(a.timestamp) ?? 0) - (timestampMillis(b.timestamp) ?? 0));
+    const sorted = events.sort((a, b) => (timestampMillis(a.timestamp) ?? 0) - (timestampMillis(b.timestamp) ?? 0));
+    return markSessionReadCoverage(sorted, { truncated });
   }
 
   async analyze(options = {}) {
@@ -956,34 +1024,37 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
     const discoveredSessions = Array.isArray(options.sessionInventory)
       ? filterSessionsByScope(options.sessionInventory, scope)
       : filterSessionsByScope(await this.discoverSessions(scope, roots), scope);
+    const workspaceRun = await qualifyWorkspaceSessionInventory({
+      analyzer: this,
+      sessions: discoveredSessions,
+      scope,
+      options,
+    });
+    const qualifiedSessions = workspaceRun.sessions;
     const factsInventory = factsMode
-      ? prepareFactsSessionInventory(discoveredSessions, factsContext)
-      : { sessions: discoveredSessions, omitted: {} };
+      ? prepareFactsSessionInventory(qualifiedSessions, factsContext)
+      : { sessions: qualifiedSessions, omitted: {} };
     const sessions = factsInventory.sessions;
     const warnings = sourceWarnings(roots);
+    const resultBase = withWorkspaceMatchDiagnostics({
+      scope: publicScope(scope),
+      sources: roots.map(toPublicSource),
+      sessions,
+      facets: null,
+      warnings,
+    }, workspaceRun);
 
     if (options.command === "sources") {
-      return {
-        scope: publicScope(scope),
-        sources: roots.map(toPublicSource),
-        sessions,
-        facets: null,
-        warnings,
-      };
+      return resultBase;
     }
     if (options.command === "sessions") {
       const limit = options.limit === undefined ? null : Number(options.limit);
       return {
-        scope: publicScope(scope),
-        sources: roots.map(toPublicSource),
+        ...resultBase,
         sessions: Number.isFinite(limit) ? sessions.slice(0, limit) : sessions,
-        facets: null,
-        warnings,
       };
     }
 
-    const detailedSessions = [];
-    const events = [];
     const insightMode = options.command === "insights";
     const fileReadMode = options.command === "file-reads";
     const eventOptions = factsMode
@@ -991,7 +1062,12 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
       : options.command === "facets" || insightMode || fileReadMode
         ? { ...options, includeCommandText: true, includeUserText: true, includeContent: true }
         : options;
-    const selectionEntries = !factsMode && (options.selectionEntries ?? (
+    const suppliedSelectionEntries = workspaceQualifiedSelectionEntries(
+      options.selectionEntries,
+      sessions,
+      workspaceRun,
+    );
+    const selectionEntries = !factsMode && (suppliedSelectionEntries ?? (
       options.selectionPlan
         ? await collectSessionSelectionEntries({
             analyzer: this,
@@ -1008,53 +1084,54 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
           strategy: factsMode ? options.selection ?? "stratified" : options.selection,
           defaultLimit: factsMode ? 5 : DEFAULT_LIMIT,
         });
-    for (const session of selection.sessions) {
-      const sessionEvents = await this.readSession(session, scope, eventOptions);
-      for (const event of sessionEvents) {
-        events.push(event);
-      }
-      detailedSessions.push(this.mergeSession(sessionEvents, session));
-    }
+    const hydration = await hydrateWorkspaceSelection({
+      analyzer: this,
+      selection,
+      scope,
+      eventOptions,
+      workspaceRun,
+      options,
+    });
+    const effectiveSelection = hydration.selection;
+    const detailedSessions = hydration.detailedSessions;
+    const events = hydration.events;
 
     if (factsMode) {
-      return buildSessionCoreFacts({
+      return withWorkspaceMatchDiagnostics(buildSessionCoreFacts({
         scope,
         events,
-        selection,
+        selection: effectiveSelection,
         warnings,
         omitted: factsInventory.omitted,
         episodeLimit: options["episode-limit"] ?? options.episodeLimit ?? options.limit,
         debug: parseBooleanFlag(options.debug ?? false),
-      });
+      }), workspaceRun, hydration.hydrationQualifications);
     }
 
     if (fileReadMode) {
-      return {
-        scope: publicScope(scope),
-        sources: roots.map(toPublicSource),
+      return withWorkspaceMatchDiagnostics({
+        ...resultBase,
         sessions: detailedSessions,
-        selection: selectionSummary(selection),
+        selection: selectionSummary(effectiveSelection),
         fileReads: buildFileReadDiagnostics({
           scope: publicScope(scope),
           indexedSessions: sessions,
           sessions: detailedSessions,
           warnings,
           events,
-          selectionStrategy: selection.strategy,
-          selectionStrata: selection.strata,
+          selectionStrategy: effectiveSelection.strategy,
+          selectionStrata: effectiveSelection.strata,
           adapterVersion: "codex-v2",
         }),
-        warnings,
-      };
+      }, workspaceRun, hydration.hydrationQualifications);
     }
 
     const facets = buildFacets(sessions, detailedSessions, events);
     if (insightMode) {
-      return {
-        scope: publicScope(scope),
-        sources: roots.map(toPublicSource),
+      return withWorkspaceMatchDiagnostics({
+        ...resultBase,
         sessions: detailedSessions,
-        selection: selectionSummary(selection),
+        selection: selectionSummary(effectiveSelection),
         facets,
         insights: buildInsightPack({
           scope: publicScope(scope),
@@ -1063,22 +1140,19 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
           facets,
           warnings,
           events,
-          selectionStrategy: selection.strategy,
-          selectionStrata: selection.strata,
+          selectionStrategy: effectiveSelection.strategy,
+          selectionStrata: effectiveSelection.strata,
           adapterVersion: "codex-v2",
         }),
-        warnings,
-      };
+      }, workspaceRun, hydration.hydrationQualifications);
     }
 
-    return {
-      scope: publicScope(scope),
-      sources: roots.map(toPublicSource),
+    return withWorkspaceMatchDiagnostics({
+      ...resultBase,
       sessions: detailedSessions,
-      selection: selectionSummary(selection),
+      selection: selectionSummary(effectiveSelection),
       facets,
-      warnings,
-    };
+    }, workspaceRun, hydration.hydrationQualifications);
   }
 }
 

@@ -15,13 +15,14 @@ Commands:
 
   Workflows
     harness                  Check Better Harness readiness reports and Canvas outputs
-                             subcommands: evidence-bundle, analyze, checkup, selection-profile,
-                             source, task-loop-report, render, preview-canvas, report-quality,
-                             repair-findings, record-fix-output, validate-canvas
+                             subcommands: evidence-bundle, workspace-topology, analyze, checkup,
+                             selection-profile, source, task-loop-report, render,
+                             preview-canvas, report-quality, repair-findings, record-fix-output,
+                             validate-canvas
 
   Project Evidence
-    session-analysis         Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, and
-                             Copilot session evidence
+    session-analysis         Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot,
+                             and Pi session evidence
     dependency-governance    Detect dependency governance files, automation, audit signals, and
                              stale dependency evidence
     cloc                     Count code, comments, and blank lines

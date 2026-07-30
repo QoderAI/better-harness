@@ -1801,3 +1801,284 @@ test("agent-customize CLI honours --copilot-home instead of the real user home",
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
+
+async function makePiFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-pi-"));
+  const piHome = path.join(root, ".pi", "agent");
+  const workspace = path.join(root, "workspace");
+
+  const npmPackageRoot = path.join(piHome, "npm", "node_modules", "@scope", "delivery-pack");
+  await writeJson(path.join(npmPackageRoot, "package.json"), {
+    name: "@scope/delivery-pack",
+    version: "1.2.0",
+    description: "Delivery workflows for pi.",
+    pi: { skills: ["./skills"], prompts: ["./prompts"] },
+  });
+  await writeText(
+    path.join(npmPackageRoot, "skills", "delivery-review", "SKILL.md"),
+    "---\nname: delivery-review\ndescription: Review delivery gates.\n---\n",
+  );
+  await writeText(path.join(npmPackageRoot, "prompts", "ship-check.md"), "# Ship Check\n");
+
+  const gitPackageRoot = path.join(piHome, "git", "github.com", "acme", "pi-toolkit");
+  await writeJson(path.join(gitPackageRoot, "package.json"), {
+    name: "pi-toolkit",
+    version: "0.9.0",
+  });
+  await writeText(
+    path.join(gitPackageRoot, "skills", "toolkit-audit", "SKILL.md"),
+    "---\nname: toolkit-audit\ndescription: Audit toolkit output.\n---\n",
+  );
+
+  await writeJson(path.join(piHome, "settings.json"), {
+    packages: [
+      "npm:@scope/delivery-pack@1.2.0",
+      { source: "git:github.com/acme/pi-toolkit@v0.9.0" },
+    ],
+  });
+  await writeText(
+    path.join(piHome, "skills", "local-review", "SKILL.md"),
+    "---\nname: local-review\ndescription: Review code locally.\n---\n",
+  );
+  await writeText(path.join(piHome, "prompts", "user-check.md"), "# User Check\n");
+  await writeText(path.join(piHome, "AGENTS.md"), "# Global Pi Guidance\n");
+  await writeText(
+    path.join(piHome, "extensions", "guardrail-extension", "package.json"),
+    `${JSON.stringify({ name: "guardrail-extension", version: "0.1.0" }, null, 2)}\n`,
+  );
+
+  await writeText(
+    path.join(workspace, ".pi", "skills", "pi-workflow", "SKILL.md"),
+    "---\nname: pi-workflow\ndescription: Pi workflow.\n---\n",
+  );
+  await writeText(path.join(workspace, ".pi", "prompts", "release-notes.md"), "# Release Notes\n");
+  await writeText(
+    path.join(workspace, ".agents", "skills", "shared-standard", "SKILL.md"),
+    "---\nname: shared-standard\ndescription: Shared Agent Skills standard workflow.\n---\n",
+  );
+  await writeText(path.join(workspace, "AGENTS.md"), "# Pi Project Instructions\n");
+
+  return { root, piHome, workspace };
+}
+
+test("collectAgentCustomizeInventory returns Pi packages and extensions as plugins", async () => {
+  const fixture = await makePiFixture();
+
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "pi",
+      piHome: fixture.piHome,
+      workspace: fixture.workspace,
+    });
+
+    assert.equal(inventory.provider, "pi");
+    assert.equal(inventory.piHome, fixture.piHome);
+    assert.equal(inventory.plugins.length, 3);
+
+    const delivery = inventory.plugins.find((plugin) => plugin.name === "@scope/delivery-pack");
+    assert.ok(delivery);
+    assert.equal(delivery.installMatch, "pi-settings-npm");
+    assert.equal(delivery.version, "1.2.0");
+    assert.deepEqual(delivery.skills.map((skill) => skill.name), ["delivery-review"]);
+    assert.deepEqual(delivery.commands.map((command) => command.name), ["ship-check"]);
+
+    const toolkit = inventory.plugins.find((plugin) => plugin.name === "pi-toolkit");
+    assert.ok(toolkit);
+    assert.equal(toolkit.installMatch, "pi-settings-git");
+    assert.deepEqual(toolkit.skills.map((skill) => skill.name), ["toolkit-audit"]);
+
+    const extension = inventory.plugins.find((plugin) => plugin.name === "guardrail-extension");
+    assert.ok(extension);
+    assert.equal(extension.installMatch, "pi-extensions-dir");
+
+    assert.equal(inventory.diagnostics.installedPluginState, "pi-settings-packages");
+    assert.deepEqual(
+      inventory.diagnostics.installedPluginRecordFiles,
+      [path.join(fixture.piHome, "settings.json")],
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Pi provider collects user and project skills, prompt commands, and context rules", async () => {
+  const fixture = await makePiFixture();
+
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "pi",
+      piHome: fixture.piHome,
+      workspace: fixture.workspace,
+    });
+
+    assert.ok(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "user" })
+        .some((item) => item.name === "local-review" && item.scope === "user"),
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "project" }).map((item) => item.name).sort(),
+      ["pi-workflow", "shared-standard"],
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "commands", scopeKind: "user" }).map((item) => item.name).sort(),
+      ["ship-check", "user-check"],
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "commands", scopeKind: "project" }).map((item) => item.name),
+      ["release-notes"],
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "rules", scopeKind: "user" }).map(
+        (item) => `${item.name}:${item.sourceKind ?? "native"}`,
+      ),
+      ["AGENTS.md:pi-global-context"],
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "rules", scopeKind: "project" }).map(
+        (item) => `${item.name}:${item.sourceKind ?? "native"}`,
+      ).sort(),
+      ["AGENTS.md:agents-md-compat"].sort(),
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Pi fails closed on autoload:false and honors package resource filters", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-pi-filters-"));
+  const piHome = path.join(root, ".pi", "agent");
+  const workspace = path.join(root, "workspace");
+  try {
+    const disabledRoot = path.join(piHome, "npm", "node_modules", "disabled-pack");
+    await writeJson(path.join(disabledRoot, "package.json"), { name: "disabled-pack", version: "1.0.0" });
+    await writeText(path.join(disabledRoot, "skills", "hidden", "SKILL.md"), "---\nname: hidden\ndescription: Hidden skill.\n---\n");
+    await writeText(path.join(disabledRoot, "prompts", "hidden.md"), "# Hidden\n");
+
+    const filteredRoot = path.join(piHome, "npm", "node_modules", "filtered-pack");
+    await writeJson(path.join(filteredRoot, "package.json"), { name: "filtered-pack", version: "1.0.0" });
+    await writeText(path.join(filteredRoot, "skills", "keep", "SKILL.md"), "---\nname: keep\ndescription: Keep this skill.\n---\n");
+    await writeText(path.join(filteredRoot, "skills", "drop", "SKILL.md"), "---\nname: drop\ndescription: Drop this skill.\n---\n");
+    await writeText(path.join(filteredRoot, "prompts", "run.md"), "# Run\n");
+
+    await writeJson(path.join(piHome, "settings.json"), {
+      packages: [
+        { source: "npm:disabled-pack", autoload: false, skills: [], prompts: [] },
+        { source: "npm:filtered-pack", skills: ["skills/keep/SKILL.md"], prompts: [] },
+      ],
+    });
+
+    const inventory = await collectAgentCustomizeInventory({ provider: "pi", piHome, workspace });
+    const disabled = inventory.plugins.find((plugin) => plugin.name === "disabled-pack");
+    assert.ok(disabled);
+    assert.equal(disabled.enabled, false);
+    assert.deepEqual(disabled.skills, []);
+    assert.deepEqual(disabled.commands, []);
+
+    const filtered = inventory.plugins.find((plugin) => plugin.name === "filtered-pack");
+    assert.ok(filtered);
+    assert.deepEqual(filtered.skills.map((skill) => skill.name), ["keep"]);
+    assert.deepEqual(filtered.commands, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Pi applies project autoload deltas over normalized user package identities", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-pi-delta-"));
+  const piHome = path.join(root, ".pi", "agent");
+  const workspace = path.join(root, "workspace");
+  try {
+    const packageRoot = path.join(piHome, "npm", "node_modules", "shared-pack");
+    await writeJson(path.join(packageRoot, "package.json"), { name: "shared-pack", version: "1.0.0" });
+    await writeText(path.join(packageRoot, "skills", "base", "SKILL.md"), "---\nname: base\ndescription: Base skill.\n---\n");
+    await writeText(path.join(packageRoot, "skills", "enabled", "SKILL.md"), "---\nname: enabled\ndescription: Enabled skill.\n---\n");
+    await writeText(path.join(packageRoot, "prompts", "base.md"), "# Base prompt\n");
+    await writeJson(path.join(piHome, "settings.json"), { packages: ["npm:shared-pack@1.0.0"] });
+    await writeJson(path.join(workspace, ".pi", "settings.json"), {
+      packages: [{
+        source: "npm:shared-pack@2.0.0",
+        autoload: false,
+        skills: ["skills/enabled/SKILL.md", "-skills/base/SKILL.md"],
+        prompts: [],
+      }],
+    });
+
+    const inventory = await collectAgentCustomizeInventory({ provider: "pi", piHome, workspace });
+    const packages = inventory.plugins.filter((plugin) => plugin.name === "shared-pack");
+    assert.equal(packages.length, 1, "npm identity should ignore the configured version");
+    assert.deepEqual(packages[0].installSources, ["project", "user"]);
+    assert.equal(packages[0].resourceState, "selective-autoload");
+    assert.deepEqual(packages[0].skills.map((skill) => skill.name), ["enabled"]);
+    assert.deepEqual(packages[0].commands.map((command) => command.name), ["base"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Pi package inventory covers flat skills, direct manifest files, and sanitized git identities", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-pi-resources-"));
+  const piHome = path.join(root, ".pi", "agent");
+  const workspace = path.join(root, "workspace");
+  try {
+    const flatRoot = path.join(piHome, "npm", "node_modules", "flat-pack");
+    await writeJson(path.join(flatRoot, "package.json"), {
+      name: "flat-pack",
+      version: "1.0.0",
+      pi: {
+        skills: ["./skills", "./single-skill.md", "-./skills/drop.md"],
+        prompts: ["./single-prompt.md"],
+      },
+    });
+    await writeText(path.join(flatRoot, "skills", "flat.md"), "---\nname: flat\ndescription: Flat skill.\n---\n");
+    await writeText(path.join(flatRoot, "skills", "drop.md"), "---\nname: drop\ndescription: Excluded skill.\n---\n");
+    await writeText(path.join(flatRoot, "skills", "nested", "SKILL.md"), "---\nname: nested\ndescription: Nested skill.\n---\n");
+    await writeText(path.join(flatRoot, "single-skill.md"), "---\nname: single-skill\ndescription: Direct skill.\n---\n");
+    await writeText(path.join(flatRoot, "single-prompt.md"), "# Single Prompt\n");
+
+    const gitRoot = path.join(piHome, "git", "github.com", "acme", "private-pack");
+    await writeJson(path.join(gitRoot, "package.json"), { name: "private-pack", version: "1.0.0" });
+    await writeText(path.join(gitRoot, "skills", "private", "SKILL.md"), "---\nname: private\ndescription: Private skill.\n---\n");
+    await writeJson(path.join(piHome, "settings.json"), {
+      packages: [
+        "npm:flat-pack",
+        "git:https://oauth2:secret-token@github.com/acme/private-pack.git@v1.0.0",
+      ],
+    });
+
+    const inventory = await collectAgentCustomizeInventory({ provider: "pi", piHome, workspace });
+    const flat = inventory.plugins.find((plugin) => plugin.name === "flat-pack");
+    assert.ok(flat);
+    assert.deepEqual(flat.skills.map((skill) => skill.name).sort(), ["flat", "nested", "single-skill"]);
+    assert.deepEqual(flat.commands.map((command) => command.name), ["single-prompt"]);
+    assert.ok(inventory.plugins.some((plugin) => plugin.name === "private-pack"));
+    assert.doesNotMatch(JSON.stringify(inventory), /secret-token/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Pi discovers ~/.agents/skills from the real user home under a relocated agent dir", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-pi-home-"));
+  const userHome = path.join(root, "home");
+  const piHome = path.join(root, "custom-agent-dir", "agent");
+  const workspace = path.join(root, "workspace");
+  try {
+    await mkdir(piHome, { recursive: true });
+    await writeText(
+      path.join(userHome, ".agents", "skills", "global-standard", "SKILL.md"),
+      "---\nname: global-standard\ndescription: Global Agent Skills standard workflow.\n---\n",
+    );
+    await writeText(
+      path.join(piHome, "skills", "agent-dir-skill", "SKILL.md"),
+      "---\nname: agent-dir-skill\ndescription: Skill under the relocated agent dir.\n---\n",
+    );
+    await mkdir(workspace, { recursive: true });
+
+    const inventory = await collectAgentCustomizeInventory({ provider: "pi", piHome, piUserHome: userHome, workspace });
+    const userSkills = filterManageItems(inventory, { tab: "skills", scopeKind: "user" }).map((item) => item.name);
+    assert.ok(userSkills.includes("global-standard"), `expected ~/.agents/skills discovery, got ${userSkills.join(", ")}`);
+    assert.ok(userSkills.includes("agent-dir-skill"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

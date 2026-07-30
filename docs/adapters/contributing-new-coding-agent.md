@@ -36,6 +36,21 @@ A shell does not prove configured-asset or session support. A session parser doe
 not prove the Skill is natively discoverable. Do not register one slice merely
 to make another slice appear complete.
 
+### Capability levels
+
+Not every host lands with full end-to-end support. Be explicit about which of
+these levels the contribution reaches, and do not promote a host to the next
+level until the corresponding evidence exists:
+
+| Level | What it means | Minimum evidence | Public visibility |
+| --- | --- | --- | --- |
+| Partial adapter | Some slices work (often shell, configured assets, or sessions) while others are partial or unavailable. | Spec names claimed, partial, and unavailable slices; provider/session tests pass for the claimed subset. | Matrix and docs list the host with explicit limitations; do not add to the public Quickstart list. |
+| Verified install/discovery | The native install, link, or discovery command is smoke-tested and the Skill loads. | Native CLI smoke in an isolated home/config when possible; fallback is a pinned official doc reference plus a recorded evidence boundary. | README Installation section may list the host; still not Quickstart unless the report loop is validated. |
+| Public Quickstart-ready | Full report loop works: install/discovery, configured assets, session evidence (when claimed), output routing, and a validated report render. | End-to-end report generation on a real or representative repository; tests cover the public-entrypoint set. | Host appears in the README Quickstart list, Docusaurus home-page cards, and installation tabs. |
+
+A host can be merged at the partial or verified level and later promoted to
+public Quickstart-ready once the report loop evidence is complete.
+
 ## 2. Verify the Native Host Contract
 
 Do not derive a new host contract by renaming another adapter. Record the host
@@ -119,7 +134,7 @@ sessions, reports, and packaging have different owners. Search for the existing
 host set before editing:
 
 ```bash
-rg -n "qoder|codex|claude|cursor|qwen" scripts test references templates docs package.json
+rg -n "qoder|codex|claude|cursor|qwen|copilot|pi" scripts test references templates docs package.json
 ```
 
 Use the results as an inventory, not a replacement template. Typical registration

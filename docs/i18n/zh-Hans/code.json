@@ -41,6 +41,12 @@
   "homepage.hosts.cursor.setup": {
     "message": "使用 --plugin-dir 加载源码本地插件。"
   },
+  "homepage.hosts.qwenCode.setup": {
+    "message": "作为 Qwen Code 扩展安装。"
+  },
+  "homepage.hosts.githubCopilot.setup": {
+    "message": "添加 Marketplace 并安装插件。"
+  },
   "homepage.hero.tagline": {
     "message": "看清你的 AI 编码工作流——并一步一步把它变好。"
   },

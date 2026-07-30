@@ -10,12 +10,17 @@ import {
   git,
   isCli,
   isDependencyOrGenerated,
+  isPathInAnalysisScope,
   languageFor,
   listTrackedFiles,
+  listUntrackedFiles,
+  literalGitPathspec,
   option,
   parseArgs,
   parseNumstat,
-  resolveRepoRoot,
+  publicAnalysisScope,
+  resolveAnalysisScopeForOptions,
+  scopePathspecArgs,
   toPosix,
   unique,
   writeJsonResult,
@@ -65,23 +70,19 @@ const ERROR_PATH_RE = /(^|\/)(errors?|exceptions?|contracts?\/errors?)(\/|$)|err
 const CLI_PATH_RE = /(^|\/)(cli|cmd|commands?|bin)(\/|$)|(^|\/)(parser|args?|options?|command)\.(ts|tsx|js|mjs|cjs|go|java|py|php|rb|rs)$/i;
 const CLI_HUNK_RE = /\b(commander|yargs|argparse|cobra|clap|picocli|option|argument|flag|subcommand|--[a-z0-9][a-z0-9-]*)\b/i;
 
-function changedFiles(repoRoot, baseRef, ignorePatterns) {
+function changedFiles(repoRoot, baseRef, ignorePatterns, analysisScope) {
   const output = git(
     repoRoot,
-    ["diff", "--numstat", "--no-ext-diff", "--find-renames", baseRef, "--"],
-    { allowFailure: true },
+    ["diff", "--numstat", "--no-ext-diff", "--find-renames", baseRef, ...scopePathspecArgs(analysisScope)],
   );
-  const trackedFiles = parseNumstat(output);
-  const files = [...trackedFiles, ...untrackedFiles(repoRoot)]
+  const trackedFiles = parseNumstat(output, analysisScope);
+  const files = [...trackedFiles, ...untrackedFiles(repoRoot, analysisScope)]
     .filter((file) => !isDependencyOrGenerated(file.filePath));
   return applyIgnorePatterns(files, ignorePatterns, (file) => file.filePath);
 }
 
-function untrackedFiles(repoRoot) {
-  const output = git(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"], { allowFailure: true });
-  return output
-    .split("\0")
-    .filter(Boolean)
+function untrackedFiles(repoRoot, analysisScope) {
+  return listUntrackedFiles(repoRoot, analysisScope)
     .map((filePath) => ({
       filePath,
       added: 0,
@@ -97,22 +98,23 @@ function diffText(repoRoot, baseRef, filePath) {
   if (filePath.startsWith(".") || filePath.includes("..")) {
     return "";
   }
-  if (git(repoRoot, ["ls-files", "--others", "--exclude-standard", "--", filePath], { allowFailure: true }).trim()) {
+  const literalPathspec = literalGitPathspec(filePath);
+  if (git(repoRoot, ["ls-files", "--others", "--exclude-standard", "--", literalPathspec]).trim()) {
     try {
       return readFileSync(path.join(repoRoot, filePath), "utf8");
     } catch {
       return "";
     }
   }
-  return git(repoRoot, ["diff", "--no-ext-diff", baseRef, "--", filePath], { allowFailure: true });
+  return git(repoRoot, ["diff", "--no-ext-diff", baseRef, "--", literalPathspec]);
 }
 
 function changedSet(files) {
   return new Set(files.map((file) => file.filePath));
 }
 
-function trackedCandidates(repoRoot, predicate, limit = 8) {
-  return listTrackedFiles(repoRoot)
+function trackedCandidates(repoRoot, analysisScope, predicate, limit = 8) {
+  return listTrackedFiles(repoRoot, analysisScope)
     .filter((filePath) => !isDependencyOrGenerated(filePath))
     .filter(predicate)
     .slice(0, limit);
@@ -169,7 +171,7 @@ function ruleFinding({ driftType, triggerFiles, candidateCompanionFiles, evidenc
   };
 }
 
-function buildFindings(repoRoot, baseRef, files) {
+function buildFindings(repoRoot, baseRef, files, analysisScope) {
   const findings = [];
   const changed = changedSet(files);
   const docsChanged = companionChanged(files, (filePath) => docsCandidatePredicate(filePath));
@@ -183,7 +185,7 @@ function buildFindings(repoRoot, baseRef, files) {
     findings.push(ruleFinding({
       driftType: "public-api-docs",
       triggerFiles: apiChanges,
-      candidateCompanionFiles: trackedCandidates(repoRoot, docsCandidatePredicate),
+      candidateCompanionFiles: trackedCandidates(repoRoot, analysisScope, docsCandidatePredicate),
       evidence: "Changed public API-like source without changed documentation files.",
     }));
   }
@@ -193,7 +195,7 @@ function buildFindings(repoRoot, baseRef, files) {
     findings.push(ruleFinding({
       driftType: "schema-tests",
       triggerFiles: schemaChanges,
-      candidateCompanionFiles: trackedCandidates(repoRoot, testCandidatePredicate),
+      candidateCompanionFiles: trackedCandidates(repoRoot, analysisScope, testCandidatePredicate),
       evidence: "Changed schema or migration files without changed test files.",
     }));
   }
@@ -203,7 +205,7 @@ function buildFindings(repoRoot, baseRef, files) {
     findings.push(ruleFinding({
       driftType: "ui-story-snapshot",
       triggerFiles: uiChanges,
-      candidateCompanionFiles: trackedCandidates(repoRoot, storyCandidatePredicate),
+      candidateCompanionFiles: trackedCandidates(repoRoot, analysisScope, storyCandidatePredicate),
       evidence: "Changed UI source without changed stories or snapshots.",
     }));
   }
@@ -213,7 +215,7 @@ function buildFindings(repoRoot, baseRef, files) {
     findings.push(ruleFinding({
       driftType: "config-setup-docs",
       triggerFiles: configChanges,
-      candidateCompanionFiles: trackedCandidates(repoRoot, docsCandidatePredicate),
+      candidateCompanionFiles: trackedCandidates(repoRoot, analysisScope, docsCandidatePredicate),
       evidence: "Changed setup or configuration files without changed README/docs files.",
     }));
   }
@@ -223,7 +225,11 @@ function buildFindings(repoRoot, baseRef, files) {
     findings.push(ruleFinding({
       driftType: "error-contract",
       triggerFiles: errorChanges,
-      candidateCompanionFiles: trackedCandidates(repoRoot, (filePath) => testCandidatePredicate(filePath) && /contract|error|api/i.test(filePath)),
+      candidateCompanionFiles: trackedCandidates(
+        repoRoot,
+        analysisScope,
+        (filePath) => testCandidatePredicate(filePath) && /contract|error|api/i.test(filePath),
+      ),
       evidence: "Changed error-code-like source without changed contract/error test files.",
     }));
   }
@@ -233,7 +239,7 @@ function buildFindings(repoRoot, baseRef, files) {
     findings.push(ruleFinding({
       driftType: "cli-help-docs",
       triggerFiles: cliChanges,
-      candidateCompanionFiles: trackedCandidates(repoRoot, cliHelpCandidatePredicate),
+      candidateCompanionFiles: trackedCandidates(repoRoot, analysisScope, cliHelpCandidatePredicate),
       evidence: "Changed CLI parser or command-like source without changed help docs or help tests.",
     }));
   }
@@ -245,11 +251,17 @@ function buildFindings(repoRoot, baseRef, files) {
 }
 
 export async function analyzeChangeDrift(options = {}) {
-  const repoRoot = resolveRepoRoot(options.cwd ?? process.env.QODER_CWD ?? process.cwd());
+  const analysisScope = resolveAnalysisScopeForOptions(options);
+  const repoRoot = analysisScope.repoRoot;
   const baseRef = options.baseRef ?? "HEAD";
   const diffFiles = options.changedFiles
-    ? applyIgnorePatterns(options.changedFiles, options.ignore, (file) => file.filePath ?? file.path)
-    : changedFiles(repoRoot, baseRef, options.ignore);
+    ? applyIgnorePatterns(
+        options.changedFiles.filter((file) =>
+          isPathInAnalysisScope(file.filePath ?? file.path, analysisScope)),
+        options.ignore,
+        (file) => file.filePath ?? file.path,
+      )
+    : changedFiles(repoRoot, baseRef, options.ignore, analysisScope);
   const files = diffFiles.items.map((file) => ({
     ...file,
     filePath: toPosix(file.filePath ?? file.path),
@@ -257,7 +269,7 @@ export async function analyzeChangeDrift(options = {}) {
     role: file.role ?? fileRoleFor(file.filePath ?? file.path),
     supporting: file.supporting ?? fileRoleFor(file.filePath ?? file.path) !== "source",
   }));
-  const findings = buildFindings(repoRoot, baseRef, files);
+  const findings = buildFindings(repoRoot, baseRef, files, analysisScope);
   const typeCounts = {};
   for (const finding of findings) {
     typeCounts[finding.driftType] = (typeCounts[finding.driftType] ?? 0) + 1;
@@ -268,6 +280,7 @@ export async function analyzeChangeDrift(options = {}) {
     kind: "change-drift",
     status: findings.length > 0 ? "advisory" : "ok",
     repoRoot,
+    analysisScope: publicAnalysisScope(analysisScope),
     baseRef,
     filters: diffFiles.filters,
     summary: {
@@ -292,6 +305,7 @@ export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const result = await analyzeChangeDrift({
     cwd: option(args, "cwd"),
+    packageRelPath: option(args, "package-rel-path"),
     baseRef: option(args, "base-ref", option(args, "base", "HEAD")),
     ignore: option(args, "ignore"),
   });

@@ -446,6 +446,7 @@ test("requested usage reuses one cutoff and the initially discovered session inv
       calls.push({
         command: options.command,
         until: options.until,
+        piHome: options.piHome,
         inventory: options.sessionInventory?.map((session) => session.sessionId) ?? null,
       });
       if (options.command === "sources") {
@@ -495,12 +496,14 @@ test("requested usage reuses one cutoff and the initially discovered session inv
       snapshotUntil: "2026-07-17T09:00:00.000Z",
       includeUsage: true,
       qoderHome: path.join(root, ".qoder"),
+      piHome: path.join(root, ".pi", "agent"),
       practiceInventory: { summary: { practiceCoverageRows: [] }, memories: { included: false, categories: [] } },
     });
     assert.equal(selection.eligibleCount, 2);
     assert.equal(source.sessionEvents.usageActivity.sessions.total, 2);
     assert.equal(source.sessionEvents.usageEfficiency.selection.eligibleSessionCount, 2);
     assert.equal(new Set(calls.map((call) => call.until)).size, 1);
+    assert.ok(calls.every((call) => call.piHome === path.join(root, ".pi", "agent")));
     assert.deepEqual(calls.filter((call) => call.command === "insights").map((call) => call.inventory), [
       ["session-a", "session-b"],
       ["session-a", "session-b"],
@@ -563,6 +566,7 @@ test("default practice projection keeps effective global hooks and installed plu
         { surface: "Rules", scopes: ["Project"], count: 1 },
         { surface: "Hooks", scopes: ["Global"], count: 11 },
         { surface: "Plugins", scopes: ["Plugin"], count: 10 },
+        { surface: "Skills", scopes: ["Inherited"], count: 2 },
         { surface: "MCP", scopes: ["Global"], count: 3 },
         { surface: "Skills", scopes: ["Global"], count: 20 },
         { surface: "Memories", scopes: ["Project"], count: 4 },
@@ -572,11 +576,11 @@ test("default practice projection keeps effective global hooks and installed plu
 
   assert.deepEqual(
     projectPracticeCoverageRows(inventory).map((row) => row.surface),
-    ["Rules", "Hooks", "Plugins", "Memories", "Custom Agents"],
+    ["Rules", "Hooks", "Plugins", "Skills", "Memories", "Custom Agents"],
   );
   const customAgents = projectPracticeCoverageRows(inventory).find((row) => row.surface === "Custom Agents");
   assert.deepEqual(customAgents, { surface: "Custom Agents", scopes: ["Project"], count: 0, paths: [] });
-  assert.equal(projectPracticeCoverageRows(inventory, true).length, 7);
+  assert.equal(projectPracticeCoverageRows(inventory, true).length, 8);
 });
 
 test("session source bridge projects only relevant change validation", () => {

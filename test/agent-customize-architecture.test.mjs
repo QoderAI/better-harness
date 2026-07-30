@@ -54,8 +54,8 @@ test("host architecture docs keep matrix, providers, and thin shells separate", 
   assert.match(adapterReadme, /# Host Adapter Matrix/u);
   assert.match(adapterReadme, /`docs\/adapters\/qoder\.md`/u);
   assert.match(adapterReadme, /Codex \| Analysis-capable source-local host \| `\.codex-plugin\/`/u);
-  assert.match(adapterReadme, /npm package includes the Qoder, Claude Code,\s+Codex, Cursor, Qwen, and GitHub Copilot plugin metadata roots/u);
-  assert.match(adapterReadme, /generated\s+Qoder runtime bundle includes only the Qoder shell/u);
+  assert.match(adapterReadme, /npm package includes six filesystem metadata\s+roots for Qoder, Claude Code, Codex, Cursor, Qwen, and Copilot, plus Pi install\s+metadata in the existing `package\.json`/u);
+  assert.match(adapterReadme, /generated\s+Qoder runtime bundle\s+includes only the Qoder shell/u);
   assert.match(adapterReadme, /Cursor \| Analysis-capable source-local host[^\n]+platforms\/cursor\.mjs/u);
   assert.doesNotMatch(adapterReadme, /Cursor has no session-evidence adapter/u);
   assert.match(adapterReadme, /Split a host into `docs\/adapters\/<host>\.md` only when/u);
@@ -81,6 +81,7 @@ test("host architecture docs keep matrix, providers, and thin shells separate", 
 
   assert.match(adapterReadme, /Claude Code\s+\|/u);
   assert.match(adapterReadme, /GitHub Copilot \| Analysis-capable source-local host \| `\.github\/plugin\/`[^\n]+platforms\/copilot\.mjs/u);
+  assert.match(adapterReadme, /Pi \| Analysis-capable source-local host \| `pi` manifest[^\n]+platforms\/pi\.mjs/u);
   assert.match(directoryAdr, /\.github\/plugin\/\s+# \[active\] thin GitHub Copilot shell/u);
   assert.doesNotMatch(community, /`docs\/adapters\/<host>\.md`\s+\| Discovery paths/u);
   assert.doesNotMatch(architecture, /Do not add `\.codex-plugin\/` until Codex has/u);

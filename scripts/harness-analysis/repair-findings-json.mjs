@@ -20,7 +20,7 @@ const VALID_AGENT_SURFACES = new Set([
   "Session Insights",
   "Memories",
 ]);
-const VALID_AGENT_PRACTICE_SCOPES = new Set(["Project", "Global", "Plugin"]);
+const VALID_AGENT_PRACTICE_SCOPES = new Set(["Project", "Inherited", "Global", "Plugin"]);
 
 const RISK_LABEL_MAP = new Map([
   ["high", "High"],
@@ -117,6 +117,7 @@ const GENERATED_FINDING_FIELDS = new Set([
   "reason",
   "aiFixPrompt",
   "dimensionRefs",
+  "target",
 ]);
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -202,6 +203,7 @@ function validationCommandFor(finding) {
 
 function targetPathFor(finding, options) {
   const target = firstPathCandidate(
+    finding?.target?.ownerRoute,
     finding?.target,
     finding?.path,
     finding?.file,

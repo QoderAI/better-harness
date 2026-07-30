@@ -1,4 +1,5 @@
 import { analyzeHarnessEvidence } from "../report-run.mjs";
+import { resolveWorkspaceTopology } from "../../workspace-topology/index.mjs";
 import { collectAgentCustomize } from "./agent-customize.mjs";
 import {
   EVIDENCE_BUNDLE_KIND,
@@ -39,6 +40,8 @@ async function collectLead(context, options, analyze) {
       ...(options["canvas-out"] ? { "canvas-out": options["canvas-out"] } : {}),
       ...(options["replace-canvas"] ? { "replace-canvas": options["replace-canvas"] } : {}),
       ...(options[`${context.provider}-home`] ? { [`${context.provider}-home`]: options[`${context.provider}-home`] } : {}),
+      topology: context.topology,
+      analysisScope: context.analysisScope,
     });
     if (!data?.evidence || !data?.summaryFacts) {
       throw Object.assign(new Error("lead analyzer returned an invalid contract"), {
@@ -52,7 +55,20 @@ async function collectLead(context, options, analyze) {
 }
 
 export async function collectEvidenceBundle(options = {}, dependencies = {}) {
-  const context = freezeEvidenceBundleContext(options, dependencies.now?.() ?? new Date());
+  const now = dependencies.now?.() ?? new Date();
+  const baseContext = freezeEvidenceBundleContext(options, now);
+  const resolveTopology = dependencies.resolveWorkspaceTopology ?? resolveWorkspaceTopology;
+  const topologyResolution = await resolveTopology({
+    workspace: baseContext.workspace,
+    maxFiles: options["topology-max-files"] ?? options.topologyMaxFiles,
+    maxMembers: options["topology-max-members"] ?? options.topologyMaxMembers,
+    maxInstructionScopes: options["topology-max-instruction-scopes"] ?? options.topologyMaxInstructionScopes,
+  });
+  const context = freezeEvidenceBundleContext({
+    ...options,
+    topology: topologyResolution.topology,
+    analysisScope: topologyResolution.analysisScope,
+  }, now);
   const sessionCollector = dependencies.collectSessionEvidence ?? collectSessionEvidence;
   const projectCollector = dependencies.collectProjectHarness ?? collectProjectHarness;
   const customizeCollector = dependencies.collectAgentCustomize ?? collectAgentCustomize;
@@ -68,9 +84,10 @@ export async function collectEvidenceBundle(options = {}, dependencies = {}) {
   const unavailableLanes = EVIDENCE_LANE_NAMES.filter((name) => lanes[name]?.status === "unavailable");
   const partialLanes = EVIDENCE_LANE_NAMES.filter((name) => lanes[name]?.status === "partial");
   const leadFailed = !laneIsAvailable(lead);
-  const status = leadFailed || (context.depth === "normal" && incompleteLanes.length > 0)
+  const topologyIncomplete = context.topology.status !== "complete";
+  const status = leadFailed || (context.depth === "normal" && (incompleteLanes.length > 0 || topologyIncomplete))
     ? "failed"
-    : incompleteLanes.length > 0
+    : incompleteLanes.length > 0 || topologyIncomplete
       ? "partial"
       : "complete";
   return {
@@ -87,6 +104,9 @@ export async function collectEvidenceBundle(options = {}, dependencies = {}) {
       unavailableLanes,
       partialLanes,
       leadRequired: true,
+      topologyRequired: true,
+      topologyStatus: context.topology.status,
+      topologyIncomplete,
       individualCommandsRemainDiagnostic: true,
     },
   };

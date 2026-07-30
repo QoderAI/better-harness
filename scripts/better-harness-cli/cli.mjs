@@ -65,6 +65,7 @@ const GROUP_EXAMPLES = {
   "harness": [
     { audience: "workflow", text: "better-harness harness analyze --workspace . --language en --format json" },
     { audience: "workflow", text: "better-harness harness checkup --phase scan --provider qoder --workspace . --json" },
+    { audience: "advanced", text: "better-harness harness workspace-topology --workspace . --json" },
     { audience: "maintainer", text: "better-harness harness source --workspace . --source <scratch>/report.source.json --language en" },
     { audience: "advanced", text: "better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json" },
     { audience: "advanced", text: "better-harness harness preview-canvas <run>/report.canvas.tsx --open" },

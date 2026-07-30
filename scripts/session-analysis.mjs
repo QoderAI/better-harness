@@ -238,7 +238,14 @@ async function loadPlatform(platform = "qoder") {
       main: module.main,
     };
   }
-  throw new Error(`Unsupported platform: ${platform}. Supported platforms: qoder, codex, claude, cursor, qwen, copilot.`);
+  if (platform === "pi") {
+    const module = await import("./session-analysis/platforms/pi.mjs");
+    return {
+      Analyzer: module.PiSessionAnalyzer,
+      main: module.main,
+    };
+  }
+  throw new Error(`Unsupported platform: ${platform}. Supported platforms: qoder, codex, claude, cursor, qwen, copilot, pi.`);
 }
 
 export async function createAnalyzer(platform = "qoder") {
@@ -288,7 +295,7 @@ export async function main(argv = process.argv.slice(2)) {
         ]
       : [];
     process.stdout.write([
-      `Usage: session-analysis${command ? ` ${command}` : " <command>"} --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace <path> [options]`,
+      `Usage: session-analysis${command ? ` ${command}` : " <command>"} --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace <path> [options]`,
       "",
       "Commands: sources, sessions, facets, insights, facts, file-reads, show, events, claude-facets",
       ...factsOptions,

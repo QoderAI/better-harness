@@ -340,7 +340,7 @@ export function formatAssetIntegrityMarkdown(result) {
   return `${lines.join("\n")}\n`;
 }
 
-const USAGE = `Usage: better-harness coding-agent-practices asset-integrity [qoder|codex|claude|cursor|qwen|copilot] [options]
+const USAGE = `Usage: better-harness coding-agent-practices asset-integrity [qoder|codex|claude|cursor|qwen|copilot|pi] [options]
 
 Run a read-only metadata integrity review for Memory titles, enabled Plugins,
 and Hooks. Memory bodies are never read.
@@ -368,8 +368,8 @@ async function runCli(argv) {
   }
   const { command, options } = parseArgs(argv);
   const provider = options.provider ?? options.platform ?? command ?? "qoder";
-  if (!["qoder", "codex", "claude", "cursor", "qwen", "copilot"].includes(provider)) {
-    throw new Error(`Unsupported provider: ${provider}. Supported providers: qoder, codex, claude, cursor, qwen, copilot.`);
+  if (!["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"].includes(provider)) {
+    throw new Error(`Unsupported provider: ${provider}. Supported providers: qoder, codex, claude, cursor, qwen, copilot, pi.`);
   }
   const includeUserHome = options.includeUserHome ?? options["include-user-home"] ?? false;
   const includeMemories = options.includeMemories ?? options["include-memories"] ?? false;

@@ -16,8 +16,285 @@ import {
   prepareFactsSessionInventory,
 } from "./session-core-facts.mjs";
 import { mergeTimeRange, timestampMillis } from "./time.mjs";
+import {
+  WORKSPACE_CWD_MATCH,
+  WORKSPACE_SESSION_MATCH,
+  classifyWorkspaceCwd,
+  qualifyWorkspaceSession,
+  summarizeWorkspaceQualifications,
+  validateWorkspaceMatchTopology,
+} from "./workspace-match.mjs";
 
 const DEFAULT_LIMIT = 50;
+const DEFAULT_WORKSPACE_PREFLIGHT_MAX_LINES = 2_000;
+const DEFAULT_WORKSPACE_PATH_FACT_LIMIT = 2_000;
+const SESSION_WORKSPACE_CWDS = Symbol("session-workspace-cwds");
+const SESSION_READ_COVERAGE = Symbol("session-read-coverage");
+
+function boundedPositiveInteger(value, fallback, maximum = 20_000) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(maximum, Math.max(1, Math.trunc(parsed)));
+}
+
+function workspacePreflightMaxLines(options = {}) {
+  return boundedPositiveInteger(
+    options.workspacePreflightMaxLines ?? options["workspace-preflight-max-lines"],
+    DEFAULT_WORKSPACE_PREFLIGHT_MAX_LINES,
+  );
+}
+
+function workspacePathFactLimit(options = {}) {
+  return boundedPositiveInteger(
+    options.workspacePathFactLimit ?? options["workspace-path-fact-limit"],
+    DEFAULT_WORKSPACE_PATH_FACT_LIMIT,
+  );
+}
+
+function fullHydrationEventOptions(options = {}) {
+  const hydrationOptions = { ...options };
+  delete hydrationOptions.workspacePreflightMaxLines;
+  delete hydrationOptions["workspace-preflight-max-lines"];
+  return hydrationOptions;
+}
+
+export function workspaceMatchScopeFromOptions(options = {}) {
+  return options.topology ? validateWorkspaceMatchTopology(options.topology) : null;
+}
+
+export function bindSessionWorkspaceCwds(session, candidates = []) {
+  if (!session || typeof session !== "object") return session;
+  const values = [...new Set(
+    (Array.isArray(candidates) ? candidates : [candidates])
+      .filter((candidate) => typeof candidate === "string" && candidate.length > 0),
+  )];
+  Object.defineProperty(session, SESSION_WORKSPACE_CWDS, {
+    configurable: true,
+    enumerable: false,
+    value: Object.freeze(values),
+  });
+  return session;
+}
+
+export function sessionWorkspaceCwds(session) {
+  const bound = session?.[SESSION_WORKSPACE_CWDS];
+  if (Array.isArray(bound) && bound.length > 0) return bound;
+  const explicit = session?.workspaceCwd ?? session?.cwd;
+  return typeof explicit === "string" && explicit.length > 0 ? [explicit] : [];
+}
+
+export function sessionWorkspaceCwd(session, workspaceScope) {
+  if (!workspaceScope) return sessionWorkspaceCwds(session)[0] ?? null;
+  if (session?.workspaceMatch === WORKSPACE_SESSION_MATCH.DIRECT_CWD) {
+    return workspaceScope.requestedWorkspace;
+  }
+  if (session?.workspaceMatch === WORKSPACE_SESSION_MATCH.ROOT_CWD) {
+    return workspaceScope.gitRoot;
+  }
+  const candidates = sessionWorkspaceCwds(session);
+  if (candidates.length === 0) return null;
+  const matches = new Set(candidates.map((candidate) => classifyWorkspaceCwd(candidate, workspaceScope)));
+  if (matches.size !== 1) return null;
+  const [match] = matches;
+  if (match === WORKSPACE_CWD_MATCH.DIRECT) return workspaceScope.requestedWorkspace;
+  if (match === WORKSPACE_CWD_MATCH.ROOT_CANDIDATE) return workspaceScope.gitRoot;
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+export function markSessionReadCoverage(events, { truncated = false } = {}) {
+  if (!Array.isArray(events)) return events;
+  Object.defineProperty(events, SESSION_READ_COVERAGE, {
+    configurable: true,
+    enumerable: false,
+    value: Object.freeze({ truncated: truncated === true }),
+  });
+  return events;
+}
+
+function sessionReadCoverage(events) {
+  return events?.[SESSION_READ_COVERAGE] ?? null;
+}
+
+function trustedPathFacts(events = [], limit = DEFAULT_WORKSPACE_PATH_FACT_LIMIT) {
+  const pathFacts = [];
+  let truncated = false;
+  for (const event of events) {
+    const paths = [
+      event?.filePath,
+      ...(Array.isArray(event?.targetPaths) ? event.targetPaths : []),
+      ...(Array.isArray(event?.affectedPaths) ? event.affectedPaths : []),
+    ];
+    for (const candidate of paths) {
+      if (typeof candidate !== "string" || candidate.length === 0) continue;
+      if (pathFacts.length >= limit) {
+        truncated = true;
+        break;
+      }
+      pathFacts.push(event?.cwd ? { path: candidate, cwd: event.cwd } : { path: candidate });
+    }
+    if (truncated) break;
+  }
+  return { pathFacts, truncated };
+}
+
+async function readWorkspacePreflight(analyzer, session, scope, options) {
+  const maxLines = workspacePreflightMaxLines(options);
+  const readOptions = {
+    ...options,
+    includeCommandText: false,
+    includeUserText: false,
+    includeContent: false,
+    "include-command-text": false,
+    "include-user-text": false,
+    "include-content": false,
+    workspacePreflightMaxLines: maxLines,
+  };
+  const read = typeof analyzer.readWorkspacePreflight === "function"
+    ? await analyzer.readWorkspacePreflight(session, scope, readOptions)
+    : await analyzer.readSession(session, scope, readOptions);
+  if (Array.isArray(read)) {
+    const coverage = sessionReadCoverage(read);
+    return { events: read, truncated: coverage ? coverage.truncated : true };
+  }
+  return {
+    events: Array.isArray(read?.events) ? read.events : [],
+    truncated: read?.truncated === true
+      || (read?.truncated !== false && !sessionReadCoverage(read?.events))
+      || sessionReadCoverage(read?.events)?.truncated === true,
+  };
+}
+
+function admittedSession(session, qualification) {
+  const admitted = {
+    ...session,
+    workspaceMatch: qualification.workspaceMatch,
+  };
+  return bindSessionWorkspaceCwds(admitted, sessionWorkspaceCwds(session));
+}
+
+export async function qualifyWorkspaceSessionInventory({
+  analyzer,
+  sessions = [],
+  scope,
+  options = {},
+} = {}) {
+  const workspaceScope = scope?._workspaceMatchScope ?? null;
+  if (!workspaceScope) {
+    return {
+      enabled: false,
+      sessions,
+      qualifications: [],
+      workspaceScope: null,
+    };
+  }
+
+  const admitted = [];
+  const qualifications = [];
+  const pathFactLimit = workspacePathFactLimit(options);
+  for (const session of sessions) {
+    const cwd = sessionWorkspaceCwd(session, workspaceScope);
+    const cwdMatch = classifyWorkspaceCwd(cwd, workspaceScope);
+    let qualification;
+    if (cwdMatch === WORKSPACE_CWD_MATCH.ROOT_CANDIDATE) {
+      const preflight = await readWorkspacePreflight(analyzer, session, scope, options);
+      const facts = trustedPathFacts(preflight.events, pathFactLimit);
+      qualification = qualifyWorkspaceSession({
+        cwd,
+        pathFacts: facts.pathFacts,
+        truncated: preflight.truncated || facts.truncated,
+      }, workspaceScope);
+    } else {
+      qualification = qualifyWorkspaceSession({ cwd }, workspaceScope);
+    }
+    qualifications.push(qualification);
+    if (qualification.qualified) admitted.push(admittedSession(session, qualification));
+  }
+
+  return {
+    enabled: true,
+    sessions: admitted,
+    qualifications,
+    workspaceScope,
+  };
+}
+
+export function recheckHydratedWorkspaceSession(session, events, workspaceRun, options = {}) {
+  if (!workspaceRun?.enabled) return null;
+  if (session?.workspaceMatch === WORKSPACE_SESSION_MATCH.DIRECT_CWD) {
+    return qualifyWorkspaceSession({ cwd: workspaceRun.workspaceScope.requestedWorkspace }, workspaceRun.workspaceScope);
+  }
+  const facts = trustedPathFacts(events, workspacePathFactLimit(options));
+  const cwd = sessionWorkspaceCwd(session, workspaceRun.workspaceScope);
+  const readCoverage = sessionReadCoverage(events);
+  return qualifyWorkspaceSession({
+    cwd,
+    pathFacts: facts.pathFacts,
+    truncated: facts.truncated || !readCoverage || readCoverage.truncated,
+  }, workspaceRun.workspaceScope);
+}
+
+export function workspaceQualifiedSelectionEntries(entries, sessions, workspaceRun) {
+  if (!workspaceRun?.enabled || !Array.isArray(entries)) return entries;
+  const eligibleIds = new Set(sessions.map((session) => session?.sessionId).filter(Boolean));
+  const reconciled = entries.filter((entry) => eligibleIds.has(entry?.session?.sessionId));
+  if (reconciled.length !== entries.length || reconciled.length !== sessions.length) {
+    throw Object.assign(new Error("session selection entries do not match the qualified workspace population"), {
+      code: "SESSION_SELECTION_WORKSPACE_POPULATION_DRIFT",
+    });
+  }
+  return reconciled;
+}
+
+export async function hydrateWorkspaceSelection({
+  analyzer,
+  selection,
+  scope,
+  eventOptions = {},
+  workspaceRun,
+  options = {},
+} = {}) {
+  const selectedSessions = selection?.sessions ?? [];
+  const admittedSessions = [];
+  const detailedSessions = [];
+  const events = [];
+  const hydrationQualifications = [];
+  for (const session of selectedSessions) {
+    const sessionEvents = await analyzer.readSession(session, scope, eventOptions);
+    const qualification = recheckHydratedWorkspaceSession(session, sessionEvents, workspaceRun, options);
+    if (qualification && session.workspaceMatch === WORKSPACE_SESSION_MATCH.ROOT_CWD) {
+      hydrationQualifications.push(qualification);
+    }
+    if (qualification && !qualification.qualified) continue;
+    admittedSessions.push(session);
+    for (const event of sessionEvents) {
+      events.push(event);
+    }
+    detailedSessions.push(analyzer.mergeSession(sessionEvents, session));
+  }
+  const effectiveSelection = workspaceRun?.enabled && admittedSessions.length !== selectedSessions.length
+    ? {
+        ...selection,
+        sessions: admittedSessions,
+        analyzedCount: admittedSessions.length,
+      }
+    : selection;
+  return { selection: effectiveSelection, detailedSessions, events, hydrationQualifications };
+}
+
+export function workspaceMatchDiagnostics(workspaceRun, hydrationQualifications = []) {
+  if (!workspaceRun?.enabled) return null;
+  return Object.freeze({
+    kind: "better-harness.session-workspace-match",
+    schemaVersion: 1,
+    preflight: summarizeWorkspaceQualifications(workspaceRun.qualifications),
+    hydration: summarizeWorkspaceQualifications(hydrationQualifications),
+  });
+}
+
+export function withWorkspaceMatchDiagnostics(result, workspaceRun, hydrationQualifications = []) {
+  const diagnostics = workspaceMatchDiagnostics(workspaceRun, hydrationQualifications);
+  return diagnostics ? { ...result, sessionWorkspaceMatch: diagnostics } : result;
+}
 
 export function publicScope(scope = {}) {
   return Object.fromEntries(
@@ -152,21 +429,28 @@ export async function runProviderAnalysis(analyzer, options = {}, config = {}) {
   const discovered = Array.isArray(options.sessionInventory)
     ? filterSessionsByScope(options.sessionInventory, scope)
     : filterSessionsByScope(await analyzer.discoverSessions(scope, roots), scope);
+  const workspaceRun = await qualifyWorkspaceSessionInventory({
+    analyzer,
+    sessions: discovered,
+    scope,
+    options,
+  });
+  const qualifiedSessions = workspaceRun.sessions;
   const factsInventory = factsMode
-    ? prepareFactsSessionInventory(discovered, factsContext)
-    : { sessions: discovered, omitted: {} };
+    ? prepareFactsSessionInventory(qualifiedSessions, factsContext)
+    : { sessions: qualifiedSessions, omitted: {} };
   const sessions = factsInventory.sessions;
   const warnings = [
     ...sourceWarnings(roots),
     ...(typeof analyzer.analysisWarnings === "function" ? await analyzer.analysisWarnings(scope, roots, sessions) : []),
   ];
-  const resultBase = {
+  const resultBase = withWorkspaceMatchDiagnostics({
     scope: publicScope(scope),
     sources: roots.map(publicSource),
     sessions,
     facets: null,
     warnings,
-  };
+  }, workspaceRun);
   if (options.command === "sources") return resultBase;
   if (options.command === "sessions") {
     const limit = options.limit === undefined ? null : Number(options.limit);
@@ -180,7 +464,12 @@ export async function runProviderAnalysis(analyzer, options = {}, config = {}) {
     : options.command === "facets" || insightMode || fileReadMode
       ? { ...options, includeCommandText: true, includeUserText: true, includeContent: true }
       : options;
-  const selectionEntries = !factsMode && (options.selectionEntries ?? (options.selectionPlan
+  const suppliedSelectionEntries = workspaceQualifiedSelectionEntries(
+    options.selectionEntries,
+    sessions,
+    workspaceRun,
+  );
+  const selectionEntries = !factsMode && (suppliedSelectionEntries ?? (options.selectionPlan
     ? await collectSessionSelectionEntries({
         analyzer,
         sessions,
@@ -195,58 +484,62 @@ export async function runProviderAnalysis(analyzer, options = {}, config = {}) {
         strategy: factsMode ? options.selection ?? "stratified" : options.selection,
         defaultLimit: factsMode ? 5 : DEFAULT_LIMIT,
       });
-  const detailedSessions = [];
-  const events = [];
-  for (const session of selection.sessions) {
-    const sessionEvents = await analyzer.readSession(session, scope, eventOptions);
-    events.push(...sessionEvents);
-    detailedSessions.push(analyzer.mergeSession(sessionEvents, session));
-  }
+  const hydration = await hydrateWorkspaceSelection({
+    analyzer,
+    selection,
+    scope,
+    eventOptions: fullHydrationEventOptions(eventOptions),
+    workspaceRun,
+    options,
+  });
+  const effectiveSelection = hydration.selection;
+  const detailedSessions = hydration.detailedSessions;
+  const events = hydration.events;
   if (factsMode) {
     const sourceCoverage = typeof analyzer.factsSourceCoverage === "function"
       ? await analyzer.factsSourceCoverage(scope, {
           roots,
           discoveredSessions: discovered,
           eligibleSessions: sessions,
-          selectedSessions: selection.sessions,
+          selectedSessions: effectiveSelection.sessions,
           events,
           warnings,
         })
       : null;
-    return buildSessionCoreFacts({
+    return withWorkspaceMatchDiagnostics(buildSessionCoreFacts({
       scope,
       events,
-      selection,
+      selection: effectiveSelection,
       warnings,
       omitted: factsInventory.omitted,
       episodeLimit: options["episode-limit"] ?? options.episodeLimit ?? options.limit,
       debug: parseBooleanFlag(options.debug ?? false),
       sourceCoverage,
-    });
+    }), workspaceRun, hydration.hydrationQualifications);
   }
   if (fileReadMode) {
-    return {
+    return withWorkspaceMatchDiagnostics({
       ...resultBase,
       sessions: detailedSessions,
-      selection: selectionSummary(selection),
+      selection: selectionSummary(effectiveSelection),
       fileReads: buildFileReadDiagnostics({
         scope: publicScope(scope),
         indexedSessions: sessions,
         sessions: detailedSessions,
         warnings,
         events,
-        selectionStrategy: selection.strategy,
-        selectionStrata: selection.strata,
+        selectionStrategy: effectiveSelection.strategy,
+        selectionStrata: effectiveSelection.strata,
         adapterVersion,
       }),
-    };
+    }, workspaceRun, hydration.hydrationQualifications);
   }
   const facets = buildProviderFacets({ indexedSessions: sessions, detailedSessions, events, platform });
   if (insightMode) {
-    return {
+    return withWorkspaceMatchDiagnostics({
       ...resultBase,
       sessions: detailedSessions,
-      selection: selectionSummary(selection),
+      selection: selectionSummary(effectiveSelection),
       facets,
       insights: buildInsightPack({
         scope: publicScope(scope),
@@ -255,14 +548,19 @@ export async function runProviderAnalysis(analyzer, options = {}, config = {}) {
         facets,
         warnings,
         events,
-        selectionStrategy: selection.strategy,
-        selectionStrata: selection.strata,
+        selectionStrategy: effectiveSelection.strategy,
+        selectionStrata: effectiveSelection.strata,
         adapterVersion,
         usageOptions: { pricingTable: await pricingTable(options) },
       }),
-    };
+    }, workspaceRun, hydration.hydrationQualifications);
   }
-  return { ...resultBase, sessions: detailedSessions, selection: selectionSummary(selection), facets };
+  return withWorkspaceMatchDiagnostics({
+    ...resultBase,
+    sessions: detailedSessions,
+    selection: selectionSummary(effectiveSelection),
+    facets,
+  }, workspaceRun, hydration.hydrationQualifications);
 }
 
 function filterEvents(result, type) {
@@ -288,15 +586,36 @@ export async function runProviderCommand(analyzer, command, options = {}) {
   if (command === "show" || command === "events") {
     const index = await analyzer.analyze({ ...commandOptions, command: "sessions", limit: 1 });
     const scope = await analyzer.resolveScope(commandOptions);
+    const workspaceRun = {
+      enabled: Boolean(scope._workspaceMatchScope),
+      workspaceScope: scope._workspaceMatchScope ?? null,
+    };
     const sessions = [];
+    const hydrationQualifications = [];
+    const eventOptions = fullHydrationEventOptions(commandOptions);
     for (const session of index.sessions) {
-      const events = await analyzer.readSession(session, scope, commandOptions);
+      const events = await analyzer.readSession(session, scope, eventOptions);
+      const qualification = recheckHydratedWorkspaceSession(session, events, workspaceRun, commandOptions);
+      if (qualification && session.workspaceMatch === WORKSPACE_SESSION_MATCH.ROOT_CWD) {
+        hydrationQualifications.push(qualification);
+      }
+      if (qualification && !qualification.qualified) continue;
       sessions.push({
         ...analyzer.mergeSession(events, session),
         events: command === "show" && !parseBooleanFlag(options["include-events"] ?? false) ? undefined : events,
       });
     }
-    return command === "events" ? filterEvents({ ...index, sessions }, options.type) : { ...index, sessions };
+    const result = index.sessionWorkspaceMatch
+      ? {
+          ...index,
+          sessions,
+          sessionWorkspaceMatch: {
+            ...index.sessionWorkspaceMatch,
+            hydration: summarizeWorkspaceQualifications(hydrationQualifications),
+          },
+        }
+      : { ...index, sessions };
+    return command === "events" ? filterEvents(result, options.type) : result;
   }
   throw new Error(`Unknown command: ${command}`);
 }

@@ -719,7 +719,7 @@ function allowedSourceScopes(scopeKind = "user", tab = "plugins") {
     return tab === "mcps" ? new Set(["team", "dashboard"]) : new Set(["team"]);
   }
   if (scopeKind === "workspace" || scopeKind === "project") {
-    return new Set(["project"]);
+    return new Set(["project", "inherited"]);
   }
   return new Set(["user", "plugin"]);
 }

@@ -9,17 +9,27 @@ import { parseArgs, parseBooleanFlag } from "../cli.mjs";
 import { forEachJsonLine, pathExists, walkFiles } from "../fs.mjs";
 import { expandHome, normalizeWorkspace } from "../paths.mjs";
 import {
+  bindSessionWorkspaceCwds,
   emitProviderResult,
+  markSessionReadCoverage,
   runProviderAnalysis,
   runProviderCommand,
+  sessionWorkspaceCwd,
+  workspaceMatchScopeFromOptions,
 } from "../provider-runner.mjs";
 import { parseResultFacts } from "../result-facts.mjs";
 import { mergeTimeRange, normalizeCliDate, normalizeTimestamp, timestampMillis, withinTimeRange } from "../time.mjs";
+import { WORKSPACE_CWD_MATCH, classifyWorkspaceCwd } from "../workspace-match.mjs";
 
 function isWorkspaceMatch(candidate, workspace) {
   if (!candidate) return false;
   const resolved = normalizeWorkspace(candidate);
   return resolved === workspace || resolved.startsWith(`${workspace}${path.sep}`);
+}
+
+function isScopedWorkspaceMatch(candidate, scope) {
+  if (!scope?._workspaceMatchScope) return isWorkspaceMatch(candidate, scope.workspace);
+  return classifyWorkspaceCwd(candidate, scope._workspaceMatchScope) !== WORKSPACE_CWD_MATCH.UNMATCHED;
 }
 
 export function workspaceToQwenSlugVariants(workspace) {
@@ -216,13 +226,25 @@ function transcriptEvents(raw, sourceRef, options) {
   return events;
 }
 
-async function probeTranscript(filePath, workspace) {
-  const summary = { sessionId: path.basename(filePath, ".jsonl"), firstSeen: null, lastSeen: null, workspaceMatch: false };
+async function probeTranscript(filePath, scope) {
+  const cwdCandidates = new Set();
+  const summary = {
+    sessionId: path.basename(filePath, ".jsonl"),
+    firstSeen: null,
+    lastSeen: null,
+    workspaceMatch: false,
+    cwds: [],
+  };
   await forEachJsonLine(filePath, (raw) => {
     summary.sessionId = inferSessionId(raw, summary.sessionId);
-    if (isWorkspaceMatch(raw?.cwd, workspace)) summary.workspaceMatch = true;
+    if (typeof raw?.cwd === "string" && raw.cwd.length > 0) cwdCandidates.add(raw.cwd);
+    if (!scope._workspaceMatchScope && isWorkspaceMatch(raw?.cwd, scope.workspace)) summary.workspaceMatch = true;
     mergeTimeRange(summary, inferTimestamp(raw));
   });
+  summary.cwds = [...cwdCandidates];
+  if (scope._workspaceMatchScope) {
+    summary.workspaceMatch = summary.cwds.some((cwd) => isScopedWorkspaceMatch(cwd, scope));
+  }
   return summary;
 }
 
@@ -235,7 +257,11 @@ function addRef(sessions, sessionId, workspace, ref) {
     lastSeen: null,
     sourceKinds: new Set(),
     sourceRefs: [],
+    workspaceCwds: new Set(),
   };
+  for (const cwd of ref.cwds ?? []) {
+    if (typeof cwd === "string" && cwd.length > 0) session.workspaceCwds.add(cwd);
+  }
   session.sourceKinds.add(ref.kind);
   session.sourceRefs.push(ref);
   mergeTimeRange(session, ref.firstSeen ?? ref.timestamp);
@@ -244,7 +270,11 @@ function addRef(sessions, sessionId, workspace, ref) {
 }
 
 function finalizeSession(session) {
-  return { ...session, sourceKinds: [...session.sourceKinds].sort() };
+  const { workspaceCwds, ...publicSession } = session;
+  return bindSessionWorkspaceCwds(
+    { ...publicSession, sourceKinds: [...session.sourceKinds].sort() },
+    [...workspaceCwds],
+  );
 }
 
 function dedupeEvents(events) {
@@ -269,6 +299,12 @@ export class QwenSessionAnalyzer extends SessionAnalyzer {
     const since = normalizeCliDate(options.since, false);
     const until = normalizeCliDate(options.until, true);
     const workspace = normalizeWorkspace(options.workspace);
+    const workspaceMatchScope = workspaceMatchScopeFromOptions(options);
+    const transcriptWorkspaces = [...new Set([
+      workspace,
+      workspaceMatchScope?.requestedWorkspace,
+      workspaceMatchScope?.target.kind === "workspace-member" ? workspaceMatchScope.gitRoot : null,
+    ].filter(Boolean))];
     const home = path.resolve(expandHome(options.home ?? options.qwenHome ?? options["qwen-home"] ?? process.env.QWEN_HOME ?? "~/.qwen"));
     // Qwen separates config home (QWEN_HOME / ~/.qwen) from runtime data
     // (QWEN_RUNTIME_DIR). Session transcripts live under the runtime dir.
@@ -280,13 +316,16 @@ export class QwenSessionAnalyzer extends SessionAnalyzer {
       workspace,
       home,
       runtimeDir,
-      _workspaceSlugVariants: workspaceToQwenSlugVariants(workspace),
+      _workspaceSlugVariants: [...new Set(
+        transcriptWorkspaces.flatMap((candidate) => workspaceToQwenSlugVariants(candidate)),
+      )],
       since: since.label,
       sinceTime: since.time,
       until: until.label,
       untilTime: until.time,
       sessionId: options["session-id"] ?? options.sessionId ?? options._?.[0] ?? null,
       includeGlobalCapabilities: parseBooleanFlag(options["include-global-capabilities"] ?? false),
+      _workspaceMatchScope: workspaceMatchScope,
     };
   }
 
@@ -325,7 +364,7 @@ export class QwenSessionAnalyzer extends SessionAnalyzer {
       seenRoots.add(realRoot);
       const files = await walkFiles(rootPath, { maxDepth: 2, limit: 20_000, match: (file) => file.endsWith(".jsonl") });
       for (const filePath of files) {
-        const probe = await probeTranscript(filePath, scope.workspace);
+        const probe = await probeTranscript(filePath, scope);
         if (!probe.workspaceMatch || !withinTimeRange(probe.lastSeen ?? probe.firstSeen, scope)) continue;
         addRef(sessions, probe.sessionId, scope.workspace, {
           kind: transcriptRoot.kind,
@@ -333,6 +372,7 @@ export class QwenSessionAnalyzer extends SessionAnalyzer {
           path: filePath,
           firstSeen: probe.firstSeen,
           lastSeen: probe.lastSeen,
+          cwds: probe.cwds,
         });
       }
     }
@@ -350,20 +390,41 @@ export class QwenSessionAnalyzer extends SessionAnalyzer {
 
   async readSession(session, scope, options = {}) {
     const events = [];
+    const requestedMaxLines = Number(options.workspacePreflightMaxLines);
+    const preflight = Number.isFinite(requestedMaxLines) && requestedMaxLines > 0;
+    let remainingLines = preflight ? Math.trunc(requestedMaxLines) : null;
+    let truncated = false;
+    const identityCwd = scope._workspaceMatchScope
+      ? sessionWorkspaceCwd(session, scope._workspaceMatchScope)
+      : null;
+    const rootCandidate = scope._workspaceMatchScope
+      && classifyWorkspaceCwd(identityCwd, scope._workspaceMatchScope) === WORKSPACE_CWD_MATCH.ROOT_CANDIDATE;
     for (const ref of session.sourceRefs ?? []) {
+      if (remainingLines !== null && remainingLines <= 0) {
+        truncated = true;
+        break;
+      }
       if (!ref.path.endsWith(".jsonl")) continue;
-      await forEachJsonLine(ref.path, (raw, line) => {
+      const readCoverage = await forEachJsonLine(ref.path, (raw, line) => {
         if (inferSessionId(raw, session.sessionId) !== session.sessionId) return;
-        if (raw?.cwd && !isWorkspaceMatch(raw.cwd, scope.workspace)) return;
+        if (!rootCandidate && raw?.cwd && !isScopedWorkspaceMatch(raw.cwd, scope)) return;
         for (const event of this.normalizeEvents(raw, { ...ref, sessionId: session.sessionId, line }, options)) {
           if (withinTimeRange(event.timestamp, scope)) events.push(event);
         }
-      });
+      }, remainingLines === null ? {} : { maxLines: remainingLines });
+      if (readCoverage.invalidLines > 0) truncated = true;
+      if (remainingLines !== null) {
+        if (readCoverage.lineCount > remainingLines) truncated = true;
+        remainingLines -= Math.min(readCoverage.lineCount, remainingLines);
+      }
     }
-    return dedupeEvents(events).sort((left, right) =>
+    const sorted = dedupeEvents(events)
+      .map((event) => event.cwd || !identityCwd ? event : { ...event, cwd: identityCwd })
+      .sort((left, right) =>
       (timestampMillis(left.timestamp) ?? 0) - (timestampMillis(right.timestamp) ?? 0)
       || Number(left.evidenceRef?.line ?? 0) - Number(right.evidenceRef?.line ?? 0)
       || Number(left.evidenceRef?.seq ?? 0) - Number(right.evidenceRef?.seq ?? 0));
+    return markSessionReadCoverage(sorted, { truncated });
   }
 
   async analyze(options = {}) {

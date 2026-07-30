@@ -791,9 +791,11 @@ test("installed-like Canvas validation resolves its transform runtime from --sdk
 
     await cp(path.resolve("scripts/harness-analysis"), installedAnalysis, { recursive: true });
     await cp(path.resolve("scripts/agent-guardrails"), path.join(installedRoot, "scripts", "agent-guardrails"), { recursive: true });
+    await cp(path.resolve("scripts/core-change-watch"), path.join(installedRoot, "scripts", "core-change-watch"), { recursive: true });
     await cp(path.resolve("scripts/coding-agent-practices/asset-eval"), path.join(installedRoot, "scripts", "coding-agent-practices", "asset-eval"), { recursive: true });
     await cp(path.resolve("scripts/coding-agent-practices/checkup"), path.join(installedRoot, "scripts", "coding-agent-practices", "checkup"), { recursive: true });
     await cp(path.resolve("scripts/session-analysis"), path.join(installedRoot, "scripts", "session-analysis"), { recursive: true });
+    await cp(path.resolve("scripts/workspace-topology"), path.join(installedRoot, "scripts", "workspace-topology"), { recursive: true });
     await cp(path.resolve("templates/canvas"), path.join(installedRoot, "templates", "canvas"), { recursive: true });
     await writeFixture(path.join(sdkRoot, "package.json"), '{"name":"fixture-canvas-sdk"}\n');
     await writeFixture(sdkDeclarationsPath, 'export { AreaChart, BarChart, Button, Callout, Card, CardBody, CardHeader, CollapsibleSection, Dialog, Divider, Fluency, Grid, IconButton, ImprovementKataCard, LineChart, MetricsGrid, Progress, RiskHeatmap, Row, SendToChatButton, Stack, Table, Tag, Text, useCanvasAction } from "./core.js";\n');

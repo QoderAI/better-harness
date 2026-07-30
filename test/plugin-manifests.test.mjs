@@ -171,6 +171,8 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   assert.equal(copilot.hooks, undefined);
   assert.equal(copilot.license, "MIT");
 
+  assert.deepEqual(packageJson.pi, { skills: ["./skills"], prompts: ["./prompts"] });
+  assert.ok(packageJson.keywords.includes("pi-package"), "package keywords should mark the pi package");
   assert.equal(cursor.license, "MIT");
   assert.equal(qoder.license, "MIT");
   assert.equal(packageJson.license, "MIT");
@@ -236,6 +238,7 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
     ".github/plugin/",
     ".qoder-plugin/",
     "qwen-extension.json",
+    "prompts/",
     "AGENTS.md",
     "CHANGELOG.md",
     "CODE_OF_CONDUCT.md",
@@ -265,6 +268,7 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
   assert.doesNotMatch(bundleScript, /"\.codex-plugin"/u);
   assert.doesNotMatch(bundleScript, /"\.cursor-plugin"/u);
   assert.doesNotMatch(bundleScript, /"\.github"/u);
+  assert.doesNotMatch(bundleScript, /"prompts"/u);
   assert.doesNotMatch(bundleScript, /"schemas"/u);
 
   const verifyScript = readText("scripts/npm-package/verify-pack.mjs");
@@ -273,6 +277,8 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
   assert.match(verifyScript, /package\/CONTRIBUTING\.md/u);
   assert.match(verifyScript, /package\/case-studies\/factory\/model\/factory-readiness\.md/u);
   assert.match(verifyScript, /package\/docs\/glossary\.md/u);
+  assert.match(verifyScript, /package\/scripts\/workspace-topology\/cli\.mjs/u);
+  assert.match(verifyScript, /package\/scripts\/workspace-topology\/finding-target\.mjs/u);
   assert.match(verifyScript, /^\s*"LICENSE",$/mu);
   assert.match(verifyScript, /vendor\/tree-sitter-wasm\/LICENSE/u);
   assert.match(verifyScript, /vendor\/esbuild-wasm\/LICENSE\.md/u);
@@ -286,6 +292,7 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
   assert.match(verifyScript, /package\/\.cursor-plugin\/plugin\.json/u);
   assert.match(verifyScript, /package\/\.cursor-plugin\/marketplace\.json/u);
   assert.match(verifyScript, /package\/qwen-extension\.json/u);
+  assert.match(verifyScript, /package\/prompts\/better-harness\.md/u);
   assert.doesNotMatch(verifyScript, /package\/schemas\/proactive-trigger\.v1\.schema\.json/u);
   assert.doesNotMatch(verifyScript, /package\/scripts\/proactive\/trigger\.mjs/u);
   assert.match(verifyScript, /package\/scripts\/review-trigger\/cli\.mjs/u);
