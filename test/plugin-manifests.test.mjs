@@ -105,6 +105,8 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   const cursor = readJson(".cursor-plugin/plugin.json");
   const codex = readJson(".codex-plugin/plugin.json");
   const qwen = readJson("qwen-extension.json");
+  const copilot = readJson(".github/plugin/plugin.json");
+  const copilotMarketplace = readJson(".github/plugin/marketplace.json");
   const cursorMarketplace = readJson(".cursor-plugin/marketplace.json");
   const packageJson = readJson("package.json");
   const packageLock = readJson("package-lock.json");
@@ -159,6 +161,16 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   assert.equal(qwen.displayName, qoder.displayName);
   assert.equal(qwen.contextFileName, "QWEN.md");
   assert.equal(qwen.skills, "./skills/");
+
+  assert.equal(copilot.name, qoder.name);
+  assert.equal(copilot.version, qoder.version);
+  assert.equal(copilot.description, qoder.description);
+  assert.deepEqual(copilot.author, qoder.author);
+  assert.equal(copilot.category, qoder.category);
+  assert.equal(copilot.skills, "./skills/");
+  assert.equal(copilot.hooks, undefined);
+  assert.equal(copilot.license, "MIT");
+
   assert.equal(cursor.license, "MIT");
   assert.equal(qoder.license, "MIT");
   assert.equal(packageJson.license, "MIT");
@@ -169,7 +181,7 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   assert.equal(packageLock.packages[""].name, packageJson.name);
   assert.equal(packageLock.packages[""].license, packageJson.license);
   assert.match(packageJson.scripts["publish:dry-run"], /registry\.npmjs\.org/u);
-  for (const manifest of [qoder, claude, cursor, codex]) {
+  for (const manifest of [qoder, claude, cursor, codex, copilot]) {
     assert.equal(manifest.homepage, "https://github.com/QoderAI/better-harness");
     assert.equal(manifest.repository, "https://github.com/QoderAI/better-harness");
   }
@@ -200,6 +212,17 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   assert.equal(claudeMarketplace.plugins[0].version, claude.version);
   assert.equal(claudeMarketplace.plugins[0].source, "./");
   assert.deepEqual(claudeMarketplace.plugins[0].author, claude.author);
+
+  assert.equal(copilotMarketplace.name, "better-harness");
+  // Copilot marketplace owners accept name and email only.
+  assert.deepEqual(copilotMarketplace.owner, { name: copilot.author.name, email: copilot.author.email });
+  assert.equal(copilotMarketplace.metadata.version, copilot.version);
+  assert.equal(copilotMarketplace.plugins.length, 1);
+  assert.equal(copilotMarketplace.plugins[0].name, copilot.name);
+  assert.equal(copilotMarketplace.plugins[0].description, copilot.description);
+  assert.equal(copilotMarketplace.plugins[0].version, copilot.version);
+  assert.equal(copilotMarketplace.plugins[0].source, "./");
+  assert.equal(copilotMarketplace.plugins[0].skills, "./skills/");
 });
 
 test("npm packaging includes every host manifest while the runtime bundle stays Qoder-specific", () => {
@@ -210,6 +233,7 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
     ".claude-plugin/",
     ".codex-plugin/",
     ".cursor-plugin/",
+    ".github/plugin/",
     ".qoder-plugin/",
     "qwen-extension.json",
     "AGENTS.md",
@@ -240,6 +264,7 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
   assert.doesNotMatch(bundleScript, /"\.claude-plugin"/u);
   assert.doesNotMatch(bundleScript, /"\.codex-plugin"/u);
   assert.doesNotMatch(bundleScript, /"\.cursor-plugin"/u);
+  assert.doesNotMatch(bundleScript, /"\.github"/u);
   assert.doesNotMatch(bundleScript, /"schemas"/u);
 
   const verifyScript = readText("scripts/npm-package/verify-pack.mjs");
@@ -255,6 +280,9 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
   assert.match(verifyScript, /package\/\.claude-plugin\/plugin\.json/u);
   assert.match(verifyScript, /package\/\.claude-plugin\/marketplace\.json/u);
   assert.match(verifyScript, /package\/\.codex-plugin\/plugin\.json/u);
+  assert.match(verifyScript, /package\/\.github\/plugin\/plugin\.json/u);
+  assert.match(verifyScript, /package\/\.github\/plugin\/marketplace\.json/u);
+  assert.match(verifyScript, /"\.github\/plugin\/plugin\.json"/u);
   assert.match(verifyScript, /package\/\.cursor-plugin\/plugin\.json/u);
   assert.match(verifyScript, /package\/\.cursor-plugin\/marketplace\.json/u);
   assert.match(verifyScript, /package\/qwen-extension\.json/u);
