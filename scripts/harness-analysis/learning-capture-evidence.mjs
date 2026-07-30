@@ -1,6 +1,12 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
+import {
+  isPathInAnalysisScope,
+  resolveAnalysisScopeForOptions,
+  scopePathspecArgs,
+} from "../core-change-watch/common.mjs";
+
 const PROJECT_SKILL_RE = /(^|\/)(?:(?:\.qoder|\.agents|\.codex|\.cursor|\.claude|\.github|\.qoder-plugin|\.codex-plugin)\/skills\/|skills\/)[^/]+\/SKILL\.md$/iu;
 const SPEC_PATH_RE = /(^|\/)(?:(?:docs|\.qoder|\.agents|\.codex|\.cursor)\/(?:specs?|adrs?|rfcs?)\/|(?:specs?|adrs?|rfcs?)\/)[^/]+\.md$/iu;
 const DESIGN_RECORD_RE = /(^|\/)docs\/[^/]*(?:design|decision)[^/]*\.md$/iu;
@@ -297,10 +303,19 @@ function pathCorrelated(sourcePaths, testPaths) {
   return sourceStems.some((source) => testStems.some((test) => source === test || source.includes(test) || test.includes(source)));
 }
 
-export function collectBoundedGitHistory(workspace, { limit = 200, timeout = 5_000, runner = spawnSync } = {}) {
+export function collectBoundedGitHistory(workspace, {
+  limit = 200,
+  timeout = 5_000,
+  runner = spawnSync,
+  analysisScope,
+} = {}) {
+  const resolvedScope = analysisScope
+    ? resolveAnalysisScopeForOptions({ cwd: workspace, analysisScope })
+    : null;
   const result = runner("git", [
-    "-C", path.resolve(workspace), "log", "--no-merges", `-n${Math.max(1, Math.min(500, Number(limit) || 200))}`,
-    "--format=__HD_COMMIT__%H%x09%P%x09%s", "--name-status", "--no-renames", "--",
+    "-C", resolvedScope?.repoRoot ?? path.resolve(workspace), "log", "--no-merges", `-n${Math.max(1, Math.min(500, Number(limit) || 200))}`,
+    "--format=__HD_COMMIT__%H%x09%P%x09%s", "--name-status", "--no-renames",
+    ...(resolvedScope ? scopePathspecArgs(resolvedScope) : ["--"]),
   ], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024, timeout, windowsHide: true });
   if (result?.status !== 0 || typeof result?.stdout !== "string") {
     return { status: "unavailable", commits: [], error: boundedLabel(result?.error?.code ?? "git-log-failed") };
@@ -317,7 +332,9 @@ export function collectBoundedGitHistory(workspace, { limit = 200, timeout = 5_0
     if (!current || !rawLine.includes("\t")) continue;
     const [status = "", ...fileParts] = rawLine.split("\t");
     const file = safePath(fileParts.at(-1));
-    if (file) current.files.push({ status: status.slice(0, 1), path: file });
+    if (file && (!resolvedScope || isPathInAnalysisScope(file, resolvedScope))) {
+      current.files.push({ status: status.slice(0, 1), path: file });
+    }
   }
   return { status: "complete", commits };
 }

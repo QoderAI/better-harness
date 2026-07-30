@@ -9,12 +9,17 @@ import { parseArgs, parseBooleanFlag } from "../cli.mjs";
 import { forEachJsonLine, isDirectory, pathExists } from "../fs.mjs";
 import { expandHome, normalizeWorkspace } from "../paths.mjs";
 import {
+  bindSessionWorkspaceCwds,
   emitProviderResult,
+  markSessionReadCoverage,
   runProviderAnalysis,
   runProviderCommand,
+  sessionWorkspaceCwd,
+  workspaceMatchScopeFromOptions,
 } from "../provider-runner.mjs";
 import { parseResultFacts } from "../result-facts.mjs";
 import { mergeTimeRange, normalizeCliDate, normalizeTimestamp, timestampMillis, withinTimeRange } from "../time.mjs";
+import { WORKSPACE_CWD_MATCH, classifyWorkspaceCwd } from "../workspace-match.mjs";
 
 const TRANSCRIPT_FILE = "events.jsonl";
 const WORKSPACE_FILE = "workspace.yaml";
@@ -23,6 +28,11 @@ function isWorkspaceMatch(candidate, workspace) {
   if (!candidate) return false;
   const resolved = normalizeWorkspace(candidate);
   return resolved === workspace || resolved.startsWith(`${workspace}${path.sep}`);
+}
+
+function isScopedWorkspaceMatch(candidate, scope) {
+  if (!scope?._workspaceMatchScope) return isWorkspaceMatch(candidate, scope.workspace);
+  return classifyWorkspaceCwd(candidate, scope._workspaceMatchScope) !== WORKSPACE_CWD_MATCH.UNMATCHED;
 }
 
 /**
@@ -371,7 +381,7 @@ function transcriptEvents(raw, sourceRef, options) {
   return events;
 }
 
-async function probeSessionDirectory(sessionDir, workspace) {
+async function probeSessionDirectory(sessionDir, scope) {
   const transcriptPath = path.join(sessionDir, TRANSCRIPT_FILE);
   const descriptor = parseWorkspaceDescriptor(await readWorkspaceDescriptor(sessionDir));
   const summary = {
@@ -384,7 +394,8 @@ async function probeSessionDirectory(sessionDir, workspace) {
     requestRecords: 0,
     firstSeen: null,
     lastSeen: null,
-    workspaceMatch: isWorkspaceMatch(descriptor.cwd, workspace),
+    workspaceMatch: !scope._workspaceMatchScope && isWorkspaceMatch(descriptor.cwd, scope.workspace),
+    cwds: descriptor.cwd ? [descriptor.cwd] : [],
   };
   if (!summary.transcriptAvailable) {
     return summary;
@@ -404,11 +415,15 @@ async function probeSessionDirectory(sessionDir, workspace) {
       const cwd = data?.context?.cwd;
       if (cwd) {
         summary.cwd = summary.cwd ?? cwd;
-        if (isWorkspaceMatch(cwd, workspace)) summary.workspaceMatch = true;
+        if (!summary.cwds.includes(cwd)) summary.cwds.push(cwd);
+        if (!scope._workspaceMatchScope && isWorkspaceMatch(cwd, scope.workspace)) summary.workspaceMatch = true;
       }
     }
     mergeTimeRange(summary, inferTimestamp(raw));
   });
+  if (scope._workspaceMatchScope) {
+    summary.workspaceMatch = summary.cwds.some((cwd) => isScopedWorkspaceMatch(cwd, scope));
+  }
   return summary;
 }
 
@@ -519,6 +534,7 @@ export class CopilotSessionAnalyzer extends SessionAnalyzer {
     const since = normalizeCliDate(options.since, false);
     const until = normalizeCliDate(options.until, true);
     const workspace = normalizeWorkspace(options.workspace);
+    const workspaceMatchScope = workspaceMatchScopeFromOptions(options);
     const home = path.resolve(expandHome(
       options.home ?? options.copilotHome ?? options["copilot-home"] ?? process.env.COPILOT_HOME ?? "~/.copilot",
     ));
@@ -532,6 +548,7 @@ export class CopilotSessionAnalyzer extends SessionAnalyzer {
       untilTime: until.time,
       sessionId: options["session-id"] ?? options.sessionId ?? options._?.[0] ?? null,
       includeGlobalCapabilities: parseBooleanFlag(options["include-global-capabilities"] ?? false),
+      _workspaceMatchScope: workspaceMatchScope,
     };
   }
 
@@ -567,7 +584,7 @@ export class CopilotSessionAnalyzer extends SessionAnalyzer {
     for (const entry of entries) {
       const sessionDir = path.join(transcriptRoot.path, entry.name);
       if (!entry.isDirectory() && !(await isDirectory(sessionDir))) continue;
-      const probe = await probeSessionDirectory(sessionDir, scope.workspace);
+      const probe = await probeSessionDirectory(sessionDir, scope);
       if (probe?.workspaceMatch) matched.push(probe);
     }
 
@@ -580,7 +597,7 @@ export class CopilotSessionAnalyzer extends SessionAnalyzer {
       });
 
     const inWindow = inWindowProbes
-      .map((probe) => ({
+      .map((probe) => bindSessionWorkspaceCwds({
         sessionId: probe.sessionId,
         workspace: scope.workspace,
         firstSeen: probe.firstSeen,
@@ -596,7 +613,7 @@ export class CopilotSessionAnalyzer extends SessionAnalyzer {
             lastSeen: probe.lastSeen,
           },
         ],
-      }))
+      }, probe.cwds))
       .sort((left, right) => (timestampMillis(right.lastSeen) ?? 0) - (timestampMillis(left.lastSeen) ?? 0));
 
     scope._copilotSourceCoverage = buildCopilotSourceCoverage({ scope, roots, matched, inWindow, inWindowProbes });
@@ -613,9 +630,20 @@ export class CopilotSessionAnalyzer extends SessionAnalyzer {
 
   async readSession(session, scope, options = {}) {
     const events = [];
+    const requestedMaxLines = Number(options.workspacePreflightMaxLines);
+    const preflight = Number.isFinite(requestedMaxLines) && requestedMaxLines > 0;
+    let remainingLines = preflight ? Math.trunc(requestedMaxLines) : null;
+    let truncated = false;
+    const identityCwd = scope._workspaceMatchScope
+      ? sessionWorkspaceCwd(session, scope._workspaceMatchScope)
+      : null;
     for (const ref of session.sourceRefs ?? []) {
+      if (remainingLines !== null && remainingLines <= 0) {
+        truncated = true;
+        break;
+      }
       if (!ref.path.endsWith(".jsonl")) continue;
-      await forEachJsonLine(ref.path, (raw, line) => {
+      const readCoverage = await forEachJsonLine(ref.path, (raw, line) => {
         for (const event of this.normalizeEvents(
           raw,
           { ...ref, sessionId: session.sessionId, line },
@@ -623,11 +651,19 @@ export class CopilotSessionAnalyzer extends SessionAnalyzer {
         )) {
           if (withinTimeRange(event.timestamp, scope)) events.push(event);
         }
-      });
+      }, remainingLines === null ? {} : { maxLines: remainingLines });
+      if (readCoverage.invalidLines > 0) truncated = true;
+      if (remainingLines !== null) {
+        if (readCoverage.lineCount > remainingLines) truncated = true;
+        remainingLines -= Math.min(readCoverage.lineCount, remainingLines);
+      }
     }
-    return dedupeEvents(events).sort((left, right) =>
+    const sorted = dedupeEvents(events)
+      .map((event) => event.cwd || !identityCwd ? event : { ...event, cwd: identityCwd })
+      .sort((left, right) =>
       (timestampMillis(left.timestamp) ?? 0) - (timestampMillis(right.timestamp) ?? 0)
       || Number(left.evidenceRef?.line ?? 0) - Number(right.evidenceRef?.line ?? 0));
+    return markSessionReadCoverage(sorted, { truncated });
   }
 
   async analysisWarnings(scope, _roots, _sessions) {

@@ -7,7 +7,11 @@ import { fileURLToPath } from "node:url";
 import { createAnalyzer } from "../session-analysis.mjs";
 import { runAgentLint } from "../agent-lint/index.mjs";
 import { scanPaths } from "../agent-guardrails/secret-scan.mjs";
-import { listTrackedFiles } from "../core-change-watch/common.mjs";
+import {
+  listTrackedFiles,
+  resolveAnalysisScopeForOptions,
+  toAnalysisRelativePath,
+} from "../core-change-watch/common.mjs";
 import {
   collectProviderInventory,
   collectQoderInventory,
@@ -43,6 +47,7 @@ import { loadPriorLearningCaptureState } from "./learning-capture-state.mjs";
 import { scanTaskLoopRepositoryEvidence } from "./task-loop-repository-evidence.mjs";
 import { buildLearningLoopReview } from "./learning-loop-candidates.mjs";
 import { buildWorkflowDemandDiagnostics } from "./workflow-demand-diagnostics.mjs";
+import { findingTargetFromTopology } from "../workspace-topology/index.mjs";
 
 export const TASK_LOOP_SOURCE_ADAPTER_VERSION = "task-loop-source-v2";
 const DEFAULT_LIMIT = 40;
@@ -105,6 +110,7 @@ export function projectPracticeCoverageRows(practiceInventory, includeGlobalCapa
   const projectRows = includeGlobalCapabilities ? [...coverageRows] : coverageRows.filter((row) => {
     const scopes = rows(row?.scopes);
     return scopes.includes("Project")
+      || scopes.includes("Inherited")
       || scopes.includes("Plugin")
       || (row?.surface === "Hooks" && scopes.includes("Global"));
   });
@@ -160,7 +166,7 @@ function coveragePaths(repositoryEvidence, surface) {
     .filter((row) => {
       if (String(row?.surface ?? "").toLowerCase() !== surface.toLowerCase()) return false;
       const scopes = rows(row?.scopes).map((scope) => String(scope));
-      return scopes.length === 0 || scopes.includes("Project");
+      return scopes.length === 0 || scopes.includes("Project") || scopes.includes("Inherited");
     })
     .flatMap((row) => rows(row?.paths).map((item) => String(item ?? "").trim()).filter(Boolean))
     .filter((item, index, all) => all.indexOf(item) === index)
@@ -214,11 +220,30 @@ function isWithinRoot(root, target) {
 
 export async function collectTrackedSensitiveConfigFiles(
   workspace,
-  trackedFiles = listTrackedFiles(path.resolve(workspace)),
+  trackedFiles,
   fsApi = { lstat, realpath },
+  analysisScope,
+  topology,
 ) {
-  const root = await fsApi.realpath(path.resolve(workspace));
-  const candidates = trackedFiles
+  let resolvedScope = null;
+  if (analysisScope || trackedFiles === undefined) {
+    try {
+      resolvedScope = resolveAnalysisScopeForOptions({ cwd: workspace, analysisScope });
+    } catch (error) {
+      if ((analysisScope && topology?.gitRoot !== null) || error?.code !== "GIT_COMMAND_FAILED") throw error;
+      return {
+        files: [],
+        candidateCount: 0,
+        truncated: false,
+        skippedCount: 0,
+        errorCount: 1,
+      };
+    }
+  }
+  const root = await fsApi.realpath(resolvedScope?.targetRoot ?? path.resolve(workspace));
+  const inventory = trackedFiles ?? listTrackedFiles(resolvedScope.repoRoot, resolvedScope);
+  const candidates = inventory
+    .map((file) => resolvedScope?.kind === "path" ? toAnalysisRelativePath(file, resolvedScope) : file)
     .map((file) => String(file ?? "").replaceAll("\\", "/"))
     .filter((file) => SENSITIVE_CONFIG_FILE_RE.test(file) && !SECRET_SCAN_IGNORE_FILE_RE.test(file))
     .sort();
@@ -828,6 +853,8 @@ export async function collectAgentLintPracticeEvidence(options = {}) {
     qwenHome: options.qwenHome ?? options["qwen-home"],
     copilotHome: options.copilotHome ?? options["copilot-home"],
     piHome: options.piHome ?? options["pi-home"],
+    topology: options.topology,
+    analysisScope: options.analysisScope,
   };
   const [instructionReview, assetReview, practiceInventory] = await Promise.all([
     runAgentLint({ ...common, profile: "agents-md-review" }),
@@ -850,6 +877,7 @@ export async function collectAgentLintPracticeEvidence(options = {}) {
     integrityReview,
     locale: normalizeReaderLocale(options.language),
     provider,
+    topology: options.topology,
   });
   if (!assetReviewSupported) {
     const assetReviewProjection = projected.reviews.find((review) => review.profile === "agent-assets-review");
@@ -1053,6 +1081,8 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     includeGlobalCapabilities: options.includeGlobalCapabilities
       ?? options["include-global-capabilities"]
       ?? false,
+    topology: options.topology,
+    analysisScope: options.analysisScope,
   };
   const discovery = await analyzer.analyze({ ...analyzerOptions, command: "sources" });
   const population = options.sessionPopulation ?? null;
@@ -1102,7 +1132,13 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
         })).insights,
       )
     : insightResult.insights;
-  const sensitiveConfigFiles = await collectTrackedSensitiveConfigFiles(options.workspace);
+  const sensitiveConfigFiles = await collectTrackedSensitiveConfigFiles(
+    options.workspace,
+    undefined,
+    undefined,
+    options.analysisScope,
+    options.topology,
+  );
   const secretScan = sensitiveConfigFiles.files.length > 0
     ? await scanPaths(sensitiveConfigFiles.files, {
         cwd: options.workspace,
@@ -1113,10 +1149,15 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     : { findings: [], summary: { totalFindings: 0 } };
   const repositoryEvidence = scanTaskLoopRepositoryEvidence({
     workspace: options.workspace,
+    analysisScope: options.analysisScope,
+    topology: options.topology,
     locale: language,
     insights: insightResult.insights,
     secretScan,
   });
+  if (options.topology) {
+    repositoryEvidence.findingTarget = findingTargetFromTopology(options.topology);
+  }
   const scanReadErrorCount = rows(secretScan?.stats?.errors).length;
   const scanSkippedCount = Number(secretScan?.stats?.skippedFiles ?? 0);
   repositoryEvidence.secretScanCoverage = {

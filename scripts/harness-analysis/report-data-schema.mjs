@@ -2,13 +2,17 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { evaluateFindingsJson } from "./validate-canvas.mjs";
-import { isAgentWorkLoopReport } from "./fluency-dimensions.mjs";
+import {
+  FINDING_TARGET_REPORT_CONTRACT_VERSION,
+  isAgentWorkLoopReport,
+} from "./fluency-dimensions.mjs";
 import {
   isFullTaskLoopFindings,
   splitTaskLoopFindings,
   validateCompactTaskLoopFindings,
   validateTaskLoopFindings,
 } from "./task-loop-report.mjs";
+import { findingTargetErrors } from "../workspace-topology/index.mjs";
 
 const ALLOWED_MODES = new Set(["qoder-canvas", "markdown", "html"]);
 const ALLOWED_LANGUAGES = new Set(["en", "zh-CN"]);
@@ -19,6 +23,7 @@ const FINDING_OUTPUT_FIELDS = [
   "reason",
   "aiFixPrompt",
   "dimensionRefs",
+  "target",
 ];
 
 function isObject(value) {
@@ -82,11 +87,18 @@ function findingsDataShapeErrors(data) {
   return errors;
 }
 
+function requiresPackageFindingTarget(rawData, topology) {
+  return topology?.target?.kind === "workspace-member"
+    && Number.isInteger(rawData?.summary?.reportContractVersion)
+    && rawData.summary.reportContractVersion >= FINDING_TARGET_REPORT_CONTRACT_VERSION;
+}
+
 export function normalizeReportData(rawData, {
   mode = "qoder-canvas",
   language,
   target,
   dataPath,
+  topology,
 } = {}) {
   const errors = [];
   if (!ALLOWED_MODES.has(mode)) {
@@ -107,6 +119,17 @@ export function normalizeReportData(rawData, {
     } else {
       const findingsCheck = evaluateFindingsJson(JSON.stringify(rawData), null);
       errors.push(...findingsCheck.errors);
+    }
+  }
+  if (Array.isArray(rawData?.findings) && topology) {
+    const requireFindingTarget = requiresPackageFindingTarget(rawData, topology);
+    for (const [index, finding] of rawData.findings.entries()) {
+      errors.push(...findingTargetErrors(finding?.target, {
+        topology,
+        required: requireFindingTarget,
+        requireOwnerRoute: finding?.target?.kind === "workspace-member",
+        prefix: `findings[${index}].target`,
+      }));
     }
   }
 

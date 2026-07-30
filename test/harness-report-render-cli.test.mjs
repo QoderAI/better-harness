@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { evaluateHtmlReport, renderHtml } from "../scripts/harness-analysis/renderers/html.mjs";
+import { renderReport } from "../scripts/harness-analysis/render-report.mjs";
 import { renderCanvasTsx } from "../scripts/harness-analysis/renderers/qoder-canvas.mjs";
 import { buildTaskLoopSourceCandidate } from "../scripts/harness-analysis/task-loop-source.mjs";
 import { applyEpisodeReviews } from "../scripts/harness-analysis/episode-evidence-review.mjs";
+import { projectTaskLoopFindings } from "../scripts/harness-analysis/task-loop-report.mjs";
 
 const cliPath = path.join(process.cwd(), "scripts", "better-harness.mjs");
 const renderPath = path.join(process.cwd(), "scripts", "harness-analysis", "render-report.mjs");
@@ -279,6 +281,53 @@ function runNode(args, options = {}) {
   });
 }
 
+function git(cwd, args) {
+  const result = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  assert.equal(result.status, 0, result.stderr);
+}
+
+async function createRenderMonorepo(root, { partial = false } = {}) {
+  git(root, ["init", "-q"]);
+  git(root, ["config", "user.email", "test@example.com"]);
+  git(root, ["config", "user.name", "Test User"]);
+  await writeJson(path.join(root, "package.json"), {
+    private: true,
+    workspaces: partial ? ["packages/*", "../outside/*"] : ["packages/*"],
+  });
+  for (const name of ["a", "b"]) {
+    await writeJson(path.join(root, "packages", name, "package.json"), { name });
+  }
+  git(root, ["add", "."]);
+  git(root, ["commit", "-q", "-m", "fixture"]);
+}
+
+function targetFindingData({ packageRoute = "packages/a" } = {}) {
+  const data = sampleFindings();
+  data.findings = data.findings.map((finding) => ({
+    ...finding,
+    target: {
+      kind: "workspace-member",
+      packageRoute,
+      ownerRoute: packageRoute,
+    },
+  }));
+  return data;
+}
+
+function taskLoopFindingsAtVersion(version) {
+  const findings = projectTaskLoopFindings(reviewedTaskLoopSource(), {
+    projectName: "render-source-project",
+    direct: true,
+  });
+  findings.summary.reportContractVersion = version;
+  for (const finding of findings.findings) delete finding.target;
+  return findings;
+}
+
 function parseRun(stdout) {
   const payload = JSON.parse(stdout);
   assert.equal(payload.kind, "harness-report-render");
@@ -347,6 +396,164 @@ test("render command defaults new writes to Better Harness Qoder Canvas output",
     assert.equal(payload.outputLocation.requestedOut, ".qoder/better-harness");
     assert.equal(payload.outputLocation.resolvedOutDir.endsWith(path.join(".qoder", "better-harness")), true);
     assert.equal(payload.runDir.startsWith(payload.outputLocation.resolvedOutDir), true);
+  });
+});
+
+test("render keeps legacy v1 package findings readable without target metadata", async () => {
+  await withTempDir("better-harness-render-legacy-package-", async (root) => {
+    await createRenderMonorepo(root);
+    const packageRoot = path.join(root, "packages", "a");
+    const findingsPath = path.join(root, "legacy.findings.json");
+    await writeJson(findingsPath, taskLoopFindingsAtVersion(1));
+
+    const result = runNode([
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "markdown",
+      "--out", path.join(root, "runs"),
+      "--target", packageRoot,
+      "--json",
+    ]);
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = parseRun(result.stdout);
+    assert.equal(payload.status, "pass");
+  });
+});
+
+test("render requires target metadata for the new contract in a package workspace", async () => {
+  await withTempDir("better-harness-render-new-package-", async (root) => {
+    await createRenderMonorepo(root);
+    const findingsPath = path.join(root, "current.findings.json");
+    await writeJson(findingsPath, taskLoopFindingsAtVersion(26));
+
+    const result = runNode([
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "markdown",
+      "--out", path.join(root, "runs"),
+      "--target", path.join(root, "packages", "a"),
+      "--json",
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseRun(result.stdout);
+    assert.equal(payload.error.code, "INVALID_FINDINGS");
+    assert.ok(payload.error.details.some((error) =>
+      /findings\[0\]\.target is required for this workspace target/u.test(error)));
+  });
+});
+
+test("render rejects structured target metadata without an explicit target workspace", async () => {
+  await withTempDir("better-harness-render-target-required-", async (root) => {
+    const findingsPath = path.join(root, "target.findings.json");
+    await writeJson(findingsPath, targetFindingData());
+
+    const result = runNode([
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "markdown",
+      "--out", path.join(root, "runs"),
+      "--json",
+    ]);
+
+    assert.equal(result.status, 1);
+    assert.equal(parseRun(result.stdout).error.code, "MISSING_RENDER_TARGET");
+  });
+});
+
+test("render rejects structured target metadata when topology discovery is partial", async () => {
+  await withTempDir("better-harness-render-target-partial-", async (root) => {
+    await createRenderMonorepo(root, { partial: true });
+    const findingsPath = path.join(root, "target.findings.json");
+    await writeJson(findingsPath, targetFindingData());
+
+    const result = runNode([
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "markdown",
+      "--out", path.join(root, "runs"),
+      "--target", path.join(root, "packages", "a"),
+      "--json",
+    ]);
+
+    assert.equal(result.status, 1);
+    assert.equal(parseRun(result.stdout).error.code, "RENDER_WORKSPACE_TOPOLOGY_INCOMPLETE");
+  });
+});
+
+test("render canonicalizes both target and frozen topology workspace identities", async () => {
+  await withTempDir("better-harness-render-target-alias-", async (root) => {
+    await createRenderMonorepo(root);
+    const packageRoot = path.join(root, "packages", "a");
+    const packageLink = path.join(root, "package-a-link");
+    const findingsPath = path.join(root, "target.findings.json");
+    await symlink(packageRoot, packageLink, "dir");
+    await writeJson(findingsPath, targetFindingData());
+
+    await assert.rejects(
+      () => renderReport({
+        findings: findingsPath,
+        mode: "markdown",
+        out: path.join(root, "runs"),
+        target: packageRoot,
+        topology: {
+          status: "partial",
+          requestedWorkspace: packageLink,
+          target: { kind: "workspace-member" },
+        },
+      }),
+      (error) => error.code === "RENDER_WORKSPACE_TOPOLOGY_INCOMPLETE",
+    );
+  });
+});
+
+test("render rejects structured target metadata for a different package", async () => {
+  await withTempDir("better-harness-render-target-mismatch-", async (root) => {
+    await createRenderMonorepo(root);
+    const findingsPath = path.join(root, "target.findings.json");
+    await writeJson(findingsPath, targetFindingData({ packageRoute: "packages/a" }));
+
+    const result = runNode([
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "markdown",
+      "--out", path.join(root, "runs"),
+      "--target", path.join(root, "packages", "b"),
+      "--json",
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = parseRun(result.stdout);
+    assert.equal(payload.error.code, "INVALID_FINDINGS");
+    assert.ok(payload.error.details.some((error) => /packageRoute does not match/u.test(error)));
+  });
+});
+
+test("render accepts and preserves structured target metadata for the selected package", async () => {
+  await withTempDir("better-harness-render-target-match-", async (root) => {
+    await createRenderMonorepo(root);
+    const findingsPath = path.join(root, "target.findings.json");
+    const outDir = path.join(root, "runs");
+    await writeJson(findingsPath, targetFindingData({ packageRoute: "packages/a" }));
+
+    const result = runNode([
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "markdown",
+      "--out", outDir,
+      "--target", path.join(root, "packages", "a"),
+      "--json",
+    ]);
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = parseRun(result.stdout);
+    const rendered = JSON.parse(readFileSync(path.join(payload.runDir, "findings.json"), "utf8"));
+    assert.deepEqual(rendered.findings[0].target, {
+      kind: "workspace-member",
+      packageRoute: "packages/a",
+      ownerRoute: "packages/a",
+    });
   });
 });
 

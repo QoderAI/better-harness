@@ -277,6 +277,8 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
   assert.match(verifyScript, /package\/CONTRIBUTING\.md/u);
   assert.match(verifyScript, /package\/case-studies\/factory\/model\/factory-readiness\.md/u);
   assert.match(verifyScript, /package\/docs\/glossary\.md/u);
+  assert.match(verifyScript, /package\/scripts\/workspace-topology\/cli\.mjs/u);
+  assert.match(verifyScript, /package\/scripts\/workspace-topology\/finding-target\.mjs/u);
   assert.match(verifyScript, /^\s*"LICENSE",$/mu);
   assert.match(verifyScript, /vendor\/tree-sitter-wasm\/LICENSE/u);
   assert.match(verifyScript, /vendor\/esbuild-wasm\/LICENSE\.md/u);

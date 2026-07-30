@@ -28,11 +28,43 @@ version equality never selects the route. Missing, ambiguous, stale,
 inaccessible, or incomplete callbacks stop before editing. Never search for a
 recent run or substitute another report.
 
+## Bind the Current Workspace Topology
+
+Read the exact finding, then resolve the callback workspace without widening it:
+
+```text
+<cli> harness workspace-topology --workspace <workspacePath> --json
+```
+
+Require `topology.status: "complete"`. When the finding has a structured
+`target`, require its complete `kind`, `packageRoute`, and `ownerRoute`; a
+present-but-incomplete target is invalid and never falls back to legacy routing.
+Accept only `repo-root|workspace-member|repo-subtree|standalone`; a workspace
+member requires a non-null package route.
+Require canonical Git-root-relative POSIX routes, reject absolute or escaping
+routes, and verify any non-null `packageRoute` is a retained topology member.
+For a path target, the package route must match the current member and the owner
+must be that route, an ancestor owner, or inside the current target; a sibling
+owner is outside authority. For a root target, the owner may be `.` or a route
+inside the current topology. Standalone findings require a standalone topology.
+
+Any kind, package, owner, containment, or topology-status mismatch fails closed
+before inspection or editing. Do not infer a replacement route from finding
+prose, evidence paths, expected output, or branch names. Resolve `<ownerPath>`
+from `topology.gitRoot` (or `requestedWorkspace` for standalone) and the
+validated `ownerRoute`, then use that smallest owner for inspection, mutation,
+and verification.
+
+For a legacy report with no `target` field at all, keep it readable: bind
+`<ownerPath>` to the callback's exact `workspacePath`, do not invent
+`packageRoute` or `ownerRoute`, and do not widen or narrow the repair scope.
+
 ## Load the Smallest Owner
 
-Read the exact finding, then load its smallest packaged owner before inspecting
-the target. For Rules, Skills, Hooks, MCP, Memory, customization, or design
-findings, start from [Agent Customize](../../../references/agent-customize/routing.md).
+After topology binding passes, load the smallest packaged owner before
+inspecting `<ownerPath>`. For Rules, Skills, Hooks, MCP, Memory, customization,
+or design findings, start from
+[Agent Customize](../../../references/agent-customize/routing.md).
 
 For `frontend-design-contract-missing`, also load the
 [DESIGN.md Contract](../../../references/project-harness/design-md-contract.md)
@@ -42,7 +74,8 @@ augmentation and never invent brand decisions.
 
 ## Apply and Verify
 
-Apply only the authorized fix and run the smallest target-owned validation.
+Apply only the authorized fix inside `<ownerPath>` and run the smallest
+owner-owned validation.
 Keep the bound `findings.json` unchanged until the record command succeeds; it
 is the locked pre-fix score baseline for the optional review below.
 Derive 1-12 `actualOutput` rows from the real diff or configuration result, not
@@ -50,6 +83,11 @@ Derive 1-12 `actualOutput` rows from the real diff or configuration result, not
 kind, a reader-facing name, `Project|Global`, an openable slash-normalized path
 when one survives, and a concise artifact result. Any `SKILL.md` path must use
 `artifact: Skill`.
+For a structured finding, write every `Project` path relative to the frozen
+topology Git root (or standalone requested workspace), even when the callback
+workspace is a member package. This keeps an ancestor-owned result such as
+`AGENTS.md` openable without `..`; the recorder validates it against
+`ownerRoute`. Legacy findings keep callback-workspace-relative paths.
 
 Author one standalone `assignmentSummary` in the report's exact locale. Its
 title and body explain the finding-level verified outcome and validation

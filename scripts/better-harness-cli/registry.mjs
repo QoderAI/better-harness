@@ -170,6 +170,13 @@ const COMMANDS = [
         description: "Return versioned Session Evidence, Project Harness, and Agent Customize envelopes with explicit lane status and unchanged diagnostic commands.",
       },
       {
+        name: "workspace-topology",
+        audience: "advanced",
+        script: "workspace-topology/cli.mjs",
+        summary: "Resolve the Git-aware workspace target and member topology.",
+        description: "Report the canonical repository target, workspace members, instruction scopes, bounded inventory coverage, and path-scoped analysis contract without mutating the workspace.",
+      },
+      {
         name: "analyze",
         audience: "workflow",
         script: "harness-analysis/report-run.mjs",

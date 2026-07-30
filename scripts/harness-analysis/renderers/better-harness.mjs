@@ -10,6 +10,7 @@ import {
   validateTaskLoopFindings,
   validateTaskLoopUsagePair,
 } from "../task-loop-report.mjs";
+import { findingTargetErrors } from "../../workspace-topology/index.mjs";
 
 export const BETTER_HARNESS_FINDINGS_FILE = "findings.json";
 export const BETTER_HARNESS_CANVAS_DATA_FILE = "canvas.json";
@@ -25,7 +26,7 @@ const BETTER_HARNESS_ALLOWED_IMPORTS = new Set([
   `./${BETTER_HARNESS_CANVAS_DATA_FILE}`,
 ]);
 const DIMENSION_FIELDS = new Set(["id", "label", "score", "summary", "findingRefs"]);
-const FINDING_FIELDS = new Set(["id", "title", "severity", "reason", "aiFixPrompt", "dimensionRefs"]);
+const FINDING_FIELDS = new Set(["id", "title", "severity", "reason", "aiFixPrompt", "dimensionRefs", "target"]);
 const DIMENSION_SUMMARY_EXAMPLE_RE = /^(?:example|示例)\s*[:：]/i;
 
 function check(id, errors = [], warnings = [], summary = {}) {
@@ -138,6 +139,9 @@ function betterHarnessFindingsErrors(findingsText, canvasText) {
         errors.push(`findings[${index}] dimensionRefs contains unknown dimension id: ${ref}`);
       }
     }
+    errors.push(...findingTargetErrors(finding?.target, {
+      prefix: `findings[${index}].target`,
+    }));
   }
 
   return errors;

@@ -1022,7 +1022,7 @@ test("project MCP tool snapshots map numeric plugin ids when local evidence exis
   }
 });
 
-test("unproven numeric plugin ids use cache fallback with diagnostics", async () => {
+test("unproven numeric plugin ids remain unmatched with diagnostics", async () => {
   const fixture = await makeCursorFixture();
 
   try {
@@ -1047,17 +1047,68 @@ test("unproven numeric plugin ids use cache fallback with diagnostics", async ()
 
     assert.deepEqual(
       inventory.plugins.map((plugin) => plugin.displayName),
-      ["Future Tool"],
+      [],
     );
-    assert.deepEqual(
-      inventory.plugins.map((plugin) => plugin.installMatch),
-      ["cache-fallback"],
-    );
-    assert.equal(inventory.plugins[0].cursorPluginId, undefined);
-    assert.equal(inventory.plugins[0].installedPluginRecordId, undefined);
-    assert.equal(inventory.plugins[0].installOrder, undefined);
-    assert.equal(inventory.diagnostics.installedPluginFallbackCount, 1);
+    assert.equal(inventory.diagnostics.installedPluginFallbackCount, 0);
     assert.deepEqual(inventory.diagnostics.unmatchedInstalledPluginIds, ["9001"]);
+    assert.match(inventory.diagnostics.installedPluginMatching, /remained unmatched/u);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("unknown Cursor plugin ids are invariant to cache candidate order", async () => {
+  const fixture = await makeCursorFixture();
+
+  try {
+    const cacheRoot = path.join(fixture.cursorHome, "plugins", "cache", "cursor-public");
+    const candidates = [
+      ["alpha-without-id", "aaa111"],
+      ["zulu-without-id", "zzz999"],
+    ];
+    for (const [pluginName, revision] of candidates) {
+      await writeJson(path.join(cacheRoot, pluginName, revision, ".cursor-plugin", "plugin.json"), {
+        name: pluginName,
+        displayName: pluginName,
+        description: `${pluginName} plugin`,
+      });
+    }
+
+    const records = [
+      { id: "9001", sources: ["user"] },
+      { id: "opaque-install-record", sources: ["project"] },
+    ];
+    const first = await collectAgentCustomizeInventory({
+      cursorHome: fixture.cursorHome,
+      workspace: fixture.workspace,
+      installedPluginRecords: records,
+    });
+
+    for (const [index, [pluginName, revision]] of candidates.entries()) {
+      await writeJson(path.join(cacheRoot, pluginName, revision, ".cursor-plugin", "plugin.json"), {
+        name: pluginName,
+        displayName: candidates.at(-(index + 1))[0],
+        description: `${pluginName} plugin`,
+      });
+    }
+    const reordered = await collectAgentCustomizeInventory({
+      cursorHome: fixture.cursorHome,
+      workspace: fixture.workspace,
+      installedPluginRecords: records,
+    });
+
+    assert.deepEqual(first.plugins, []);
+    assert.deepEqual(reordered.plugins, []);
+    assert.deepEqual(first.diagnostics.unmatchedInstalledPluginIds, [
+      "9001",
+      "opaque-install-record",
+    ]);
+    assert.deepEqual(reordered.diagnostics.unmatchedInstalledPluginIds, [
+      "9001",
+      "opaque-install-record",
+    ]);
+    assert.equal(first.diagnostics.installedPluginFallbackCount, 0);
+    assert.equal(reordered.diagnostics.installedPluginFallbackCount, 0);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }

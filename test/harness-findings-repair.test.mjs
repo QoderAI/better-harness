@@ -121,6 +121,20 @@ test("repairFindingsJsonData normalizes to the minimal findings contract", () =>
   assert.equal(validation.status, "pass", validation.errors.join("\n"));
 });
 
+test("repairFindingsJsonData preserves a valid structured finding target", () => {
+  const input = validFindingsJson();
+  input.findings[0].target = {
+    kind: "workspace-member",
+    packageRoute: "packages/app",
+    ownerRoute: "packages/app",
+  };
+  const repaired = repairFindingsJsonData(input, { targetPath: "/tmp/fixture-project" });
+
+  assert.deepEqual(repaired.data.findings[0].target, input.findings[0].target);
+  const validation = evaluateFindingsJson(JSON.stringify(repaired.data), null);
+  assert.equal(validation.status, "pass", validation.errors.join("\n"));
+});
+
 test("repairFindingsJsonData preserves structurally complete task-loop result contracts regardless of version metadata", () => {
   const report = (reportContractVersion) => ({
     summary: {

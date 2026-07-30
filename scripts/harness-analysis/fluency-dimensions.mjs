@@ -16,7 +16,11 @@ export const BETTER_HARNESS_AGENT_FLUENCY_DIMENSION_IDS = [
 // no-session or explicitly repository-only fallback. Agent Work Loop is the
 // default after a source probe confirms usable sessions.
 export const AGENT_WORK_LOOP_MODEL_ID = "agent-work-loop-v4";
-export const AGENT_WORK_LOOP_REPORT_CONTRACT_VERSION = 25;
+// Finding targets were introduced as a required package-scoping contract in
+// version 26. Older reports remain readable without a target because their
+// report contract did not carry enough information to prove package ownership.
+export const FINDING_TARGET_REPORT_CONTRACT_VERSION = 26;
+export const AGENT_WORK_LOOP_REPORT_CONTRACT_VERSION = FINDING_TARGET_REPORT_CONTRACT_VERSION;
 export const LEARNING_CAPTURE_REVIEWED_SCORE_FLOOR = 35;
 
 // These IDs and reader-facing labels are the canonical Agent Work Loop

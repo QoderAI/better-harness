@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -199,6 +199,11 @@ test("better-harness CLI exposes command inventory as JSON", () => {
     harness.subcommands.find((subcommand) => subcommand.name === "evidence-bundle").script,
     "scripts/harness-analysis/evidence-bundle/cli.mjs",
   );
+  assert.equal(harness.subcommands.find((subcommand) => subcommand.name === "workspace-topology").audience, "advanced");
+  assert.equal(
+    harness.subcommands.find((subcommand) => subcommand.name === "workspace-topology").script,
+    "scripts/workspace-topology/cli.mjs",
+  );
   assert.equal(harness.subcommands.find((subcommand) => subcommand.name === "render").audience, "advanced");
   assert.equal(harness.subcommands.find((subcommand) => subcommand.name === "source").audience, "maintainer");
   assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "prepare"), false);
@@ -248,6 +253,7 @@ test("better-harness CLI filters machine inventory by audience", () => {
   assert.equal(advancedCommands.some((command) => command.name === "core-change-watch"), false);
   const harness = advancedCommands.find((command) => command.name === "harness");
   assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "render"), true);
+  assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "workspace-topology"), true);
   assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "source"), false);
 });
 
@@ -308,6 +314,7 @@ test("better-harness CLI group help expands advanced and maintainer subcommands"
   const advanced = runBetterHarness(["harness", "--help", "--audience", "advanced"]);
   assert.equal(advanced.status, 0, advanced.stderr);
   const advancedCommands = listedSubcommands(advanced.stdout);
+  assert.equal(advancedCommands.includes("workspace-topology"), true);
   assert.equal(advancedCommands.includes("render"), true);
   assert.equal(advancedCommands.includes("preview-canvas"), true);
   assert.equal(advancedCommands.includes("validate-canvas"), true);
@@ -326,6 +333,29 @@ test("better-harness CLI exposes Canvas preview help without starting a server",
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, "");
   assert.notEqual(result.stdout, "");
+});
+
+test("better-harness CLI dispatches workspace topology JSON with spaced paths", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness topology cli-"));
+  try {
+    await writeFixtureFile(root, "README.md", "# Standalone workspace\n");
+    const result = runBetterHarness([
+      "harness",
+      "workspace-topology",
+      "--workspace",
+      root,
+      "--json",
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.topology.target.kind, "standalone");
+    assert.equal(payload.topology.requestedWorkspace, await realpath(root));
+    assert.deepEqual(payload.analysisScope, { kind: "repo", route: ".", pathspecs: [] });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("better-harness Canvas preview resolves relative reports from the caller workspace", async () => {

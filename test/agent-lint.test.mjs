@@ -334,8 +334,11 @@ test("Claude and Codex instruction ledgers keep their active filenames separate"
       claude.graph.entrypoints.map((entrypoint) => entrypoint.relativePath),
       ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md", ".claude/rules/security.md", "pkg/CLAUDE.md"],
     );
+    const claudeSources = claude.hostInstructionReview.sources;
     assert.deepEqual(
-      claude.hostInstructionReview.sources.map((source) => source.relativePath),
+      claudeSources
+        .filter((source) => source.scope !== "ancestor")
+        .map((source) => source.relativePath),
       [
         "user:CLAUDE.md",
         ".claude/CLAUDE.md",
@@ -345,7 +348,14 @@ test("Claude and Codex instruction ledgers keep their active filenames separate"
         "CLAUDE.local.md",
       ],
     );
-    assert.equal(claude.hostInstructionReview.sources.some((source) => source.relativePath.includes("AGENTS")), false);
+    assert.equal(
+      claudeSources
+        .filter((source) => source.scope === "ancestor")
+        .every((source) => source.sourceKind === "claude-ancestor"
+          && source.relativePath === "ancestor:CLAUDE.md"),
+      true,
+    );
+    assert.equal(claudeSources.some((source) => source.relativePath.includes("AGENTS")), false);
     assert.deepEqual(
       codex.graph.entrypoints.map((entrypoint) => entrypoint.relativePath),
       ["AGENTS.md", "pkg/AGENTS.md"],

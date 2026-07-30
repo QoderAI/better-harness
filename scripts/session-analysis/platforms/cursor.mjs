@@ -8,7 +8,15 @@ import { SessionAnalyzer } from "../../session-analysis.mjs";
 import { parseArgs, parseBooleanFlag } from "../cli.mjs";
 import { forEachJsonLine, pathExists, walkFiles } from "../fs.mjs";
 import { expandHome, normalizeWorkspace } from "../paths.mjs";
-import { emitProviderResult, runProviderAnalysis, runProviderCommand } from "../provider-runner.mjs";
+import {
+  bindSessionWorkspaceCwds,
+  emitProviderResult,
+  markSessionReadCoverage,
+  runProviderAnalysis,
+  runProviderCommand,
+  sessionWorkspaceCwd,
+  workspaceMatchScopeFromOptions,
+} from "../provider-runner.mjs";
 import { parseResultFacts } from "../result-facts.mjs";
 import { mergeTimeRange, normalizeCliDate, normalizeTimestamp, timestampMillis, withinTimeRange } from "../time.mjs";
 
@@ -258,7 +266,15 @@ function addRef(sessions, sessionId, workspace, ref) {
     sourceKinds: new Set(),
     sourceRefs: [],
     eventTimestampCoverage: "unobserved",
+    workspaceCwdCandidates: new Map(),
   };
+  if (typeof ref.cwd === "string" && ref.cwd.length > 0) {
+    const priority = Number(ref.cwdPriority ?? 0);
+    session.workspaceCwdCandidates.set(
+      ref.cwd,
+      Math.max(priority, session.workspaceCwdCandidates.get(ref.cwd) ?? Number.NEGATIVE_INFINITY),
+    );
+  }
   if (!session.sourceRefs.some((existing) => existing.kind === ref.kind && existing.path === ref.path)) {
     session.sourceRefs.push(ref);
   }
@@ -270,7 +286,18 @@ function addRef(sessions, sessionId, workspace, ref) {
 }
 
 function finalizeSession(session) {
-  return { ...session, sourceKinds: [...session.sourceKinds].sort() };
+  const { workspaceCwdCandidates, ...publicSession } = session;
+  const finalized = { ...publicSession, sourceKinds: [...session.sourceKinds].sort() };
+  const priorities = [...workspaceCwdCandidates.values()];
+  const strongest = priorities.length > 0 ? Math.max(...priorities) : null;
+  return bindSessionWorkspaceCwds(
+    finalized,
+    strongest === null
+      ? []
+      : [...workspaceCwdCandidates]
+        .filter(([_cwd, priority]) => priority === strongest)
+        .map(([cwd]) => cwd),
+  );
 }
 
 async function readJson(filePath) {
@@ -399,11 +426,19 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
     const since = normalizeCliDate(options.since, false);
     const until = normalizeCliDate(options.until, true);
     const workspace = normalizeWorkspace(options.workspace);
+    const workspaceMatchScope = workspaceMatchScopeFromOptions(options);
+    const transcriptWorkspaces = [...new Set([
+      workspace,
+      workspaceMatchScope?.requestedWorkspace,
+      workspaceMatchScope?.target.kind === "workspace-member" ? workspaceMatchScope.gitRoot : null,
+    ].filter(Boolean))];
     return {
       platform: "cursor",
       workspace,
       home: path.resolve(expandHome(options.home ?? options.cursorHome ?? options["cursor-home"] ?? "~/.cursor")),
-      _workspaceSlugVariants: workspaceToCursorSlugVariants(workspace),
+      _workspaceSlugVariants: [...new Set(
+        transcriptWorkspaces.flatMap((candidate) => workspaceToCursorSlugVariants(candidate)),
+      )],
       since: since.label,
       sinceTime: since.time,
       until: until.label,
@@ -411,6 +446,7 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
       sessionId: options["session-id"] ?? options.sessionId ?? options._?.[0] ?? null,
       includeGlobalCapabilities: parseBooleanFlag(options["include-global-capabilities"] ?? false),
       _command: options.command ?? null,
+      _workspaceMatchScope: workspaceMatchScope,
     };
   }
 
@@ -500,7 +536,7 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
         if (!knownIds.has(sessionId)) continue;
         let meta;
         try { meta = await readJson(filePath); } catch { continue; }
-        if (meta.cwd && !isWorkspaceMatch(meta.cwd, scope.workspace)) continue;
+        if (meta.cwd && !scope._workspaceMatchScope && !isWorkspaceMatch(meta.cwd, scope.workspace)) continue;
         const firstSeen = normalizeTimestamp(meta.createdAtMs);
         const lastSeen = normalizeTimestamp(meta.updatedAtMs);
         addRef(sessions, sessionId, scope.workspace, {
@@ -509,6 +545,7 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
           path: filePath,
           firstSeen,
           lastSeen,
+          ...(meta.cwd ? { cwd: meta.cwd, cwdPriority: 4 } : {}),
         });
       }
     }
@@ -566,15 +603,32 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
 
   async readSession(session, scope, options = {}) {
     const events = [];
-    for (const ref of session.sourceRefs ?? []) {
+    const requestedMaxLines = Number(options.workspacePreflightMaxLines);
+    const preflight = Number.isFinite(requestedMaxLines) && requestedMaxLines > 0;
+    let remainingLines = preflight ? Math.trunc(requestedMaxLines) : null;
+    let truncated = false;
+    const refs = preflight
+      ? (session.sourceRefs ?? []).filter((ref) => ref.kind === "cursor-agent-transcript")
+      : session.sourceRefs ?? [];
+    const identityCwd = scope._workspaceMatchScope
+      ? sessionWorkspaceCwd(session, scope._workspaceMatchScope)
+      : null;
+    for (const ref of refs) {
+      if (remainingLines !== null && remainingLines <= 0) {
+        truncated = true;
+        break;
+      }
       if (ref.kind === "cursor-chat-meta") {
         let raw;
-        try { raw = await readJson(ref.path); } catch { continue; }
+        try { raw = await readJson(ref.path); } catch {
+          truncated = true;
+          continue;
+        }
         events.push(...this.normalizeEvents(raw, { ...ref, sessionId: session.sessionId }, options)
           .filter((event) => withinTimeRange(event.timestamp, scope)));
         continue;
       }
-      await forEachJsonLine(ref.path, (raw, line) => {
+      const readCoverage = await forEachJsonLine(ref.path, (raw, line) => {
         if (ref.kind.includes("audit")) {
           const identities = [raw?.session_id, raw?.conversation_id,
             raw?.transcript_path ? path.basename(String(raw.transcript_path), ".jsonl") : null].filter(Boolean);
@@ -583,12 +637,20 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
         for (const event of this.normalizeEvents(raw, { ...ref, sessionId: session.sessionId, line }, options)) {
           if (event.sessionId === session.sessionId && withinTimeRange(event.timestamp, scope)) events.push(event);
         }
-      });
+      }, remainingLines === null ? {} : { maxLines: remainingLines });
+      if (readCoverage.invalidLines > 0) truncated = true;
+      if (remainingLines !== null) {
+        if (readCoverage.lineCount > remainingLines) truncated = true;
+        remainingLines -= Math.min(readCoverage.lineCount, remainingLines);
+      }
     }
-    return events.sort((left, right) =>
+    const sorted = events
+      .map((event) => event.cwd || !identityCwd ? event : { ...event, cwd: identityCwd })
+      .sort((left, right) =>
       (timestampMillis(left.timestamp) ?? 0) - (timestampMillis(right.timestamp) ?? 0)
       || Number(left.evidenceRef?.line ?? 0) - Number(right.evidenceRef?.line ?? 0)
       || Number(left.evidenceRef?.seq ?? 0) - Number(right.evidenceRef?.seq ?? 0));
+    return markSessionReadCoverage(sorted, { truncated });
   }
 
   async analysisWarnings(scope, roots, sessions) {

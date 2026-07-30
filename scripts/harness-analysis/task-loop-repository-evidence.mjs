@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { listTrackedFiles } from "../core-change-watch/common.mjs";
+import {
+  fromAnalysisRelativePath,
+  listTrackedFiles,
+  resolveAnalysisScopeForOptions,
+} from "../core-change-watch/common.mjs";
 import {
   buildLearningCaptureEvidence,
   collectBoundedGitHistory,
@@ -596,14 +600,42 @@ export function buildTaskLoopRepositoryEvidence({
   };
 }
 
-export function scanTaskLoopRepositoryEvidence({ workspace, insights = {}, secretScan = {}, locale = "en" } = {}) {
-  const root = path.resolve(workspace);
-  const trackedFiles = listTrackedFiles(root);
+export function scanTaskLoopRepositoryEvidence({
+  workspace,
+  analysisScope,
+  topology,
+  insights = {},
+  secretScan = {},
+  locale = "en",
+} = {}) {
+  if (topology?.gitRoot === null) {
+    return buildTaskLoopRepositoryEvidence({
+      insights,
+      secretScan,
+      gitHistory: { status: "unavailable", commits: [], error: "not-a-git-repository" },
+      locale,
+    });
+  }
+  let resolvedScope;
+  try {
+    resolvedScope = resolveAnalysisScopeForOptions({ cwd: workspace, analysisScope });
+  } catch (error) {
+    if (analysisScope || error?.code !== "GIT_COMMAND_FAILED") throw error;
+    return buildTaskLoopRepositoryEvidence({
+      insights,
+      secretScan,
+      gitHistory: { status: "unavailable", commits: [], error: "not-a-git-repository" },
+      locale,
+    });
+  }
+  const root = resolvedScope.repoRoot;
+  const trackedFiles = listTrackedFiles(root, resolvedScope);
+  const packageManifestRoute = fromAnalysisRelativePath("package.json", resolvedScope);
   let packageManifest = {};
   const fileContents = {};
-  if (trackedFiles.map(posix).includes("package.json")) {
+  if (trackedFiles.map(posix).includes(packageManifestRoute)) {
     try {
-      packageManifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+      packageManifest = JSON.parse(readFileSync(path.join(root, packageManifestRoute), "utf8"));
     } catch {
       packageManifest = {};
     }
@@ -616,6 +648,6 @@ export function scanTaskLoopRepositoryEvidence({ workspace, insights = {}, secre
       // The inventory remains useful when an optional guidance file cannot be read.
     }
   }
-  const gitHistory = collectBoundedGitHistory(root);
+  const gitHistory = collectBoundedGitHistory(root, { analysisScope: resolvedScope });
   return buildTaskLoopRepositoryEvidence({ trackedFiles, packageManifest, fileContents, insights, secretScan, gitHistory, locale });
 }

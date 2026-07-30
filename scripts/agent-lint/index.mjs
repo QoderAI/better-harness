@@ -6,6 +6,7 @@ import { parseFrontmatter } from "../agent-customize/core/items.mjs";
 import { enrichFindingWithRecommendation } from "../findings-recommend.mjs";
 import { isDirectory, pathExists } from "../session-analysis/fs.mjs";
 import { normalizeWorkspace } from "../session-analysis/paths.mjs";
+import { ownerRouteForPath, routeContains } from "../workspace-topology/index.mjs";
 import { reviewHostInstructions } from "./host-instructions.mjs";
 import { reviewHookAssets } from "./hook-review.mjs";
 
@@ -480,9 +481,87 @@ async function collectNestedEntrypoints(workspace, maxEntrypointDepth, provider)
     }));
 }
 
+function topologyScopeOwnerRoute(route) {
+  if (route === ".claude/CLAUDE.md"
+    || route === ".github/copilot-instructions.md"
+    || route.startsWith(".github/instructions/")) return ".";
+  for (const marker of ["/.claude/rules/", "/.cursor/rules/", "/.qoder/rules/"]) {
+    const normalized = `/${route}`;
+    const index = normalized.indexOf(marker);
+    if (index !== -1) {
+      return normalized.slice(1, index) || ".";
+    }
+  }
+  const owner = path.posix.dirname(route);
+  return owner === "." ? "." : owner;
+}
+
+function topologyScopeSourceKind(route) {
+  const base = path.posix.basename(route);
+  if (route === ".github/copilot-instructions.md") return "copilot-instructions";
+  if (route.startsWith(".github/instructions/") && route.endsWith(".instructions.md")) {
+    return "copilot-instructions";
+  }
+  if (route.includes("/.claude/rules/") || route.startsWith(".claude/rules/")) return "claude-rule";
+  if (route.includes("/.cursor/rules/") || route.startsWith(".cursor/rules/")) return "cursor-rule";
+  if (route.includes("/.qoder/rules/") || route.startsWith(".qoder/rules/")) return "qoder-rule";
+  if (base === "AGENTS.md") return route === "AGENTS.md" ? "agents-md" : "nested-agent-guide";
+  if (base === "CLAUDE.md") return route === "CLAUDE.md" ? "claude-md" : "nested-agent-guide";
+  if (base === "CLAUDE.local.md") return "claude-local";
+  if (base === "QWEN.md") return "qwen-md-context";
+  return "nested-agent-guide";
+}
+
+function topologyScopeApplies(topology, scope) {
+  if (topology.target.route === ".") return true;
+  const ownerRoute = topologyScopeOwnerRoute(scope.route);
+  return routeContains(ownerRoute, topology.target.route)
+    || routeContains(topology.target.route, ownerRoute);
+}
+
+async function topologyEntrypoints(topology, provider) {
+  const workspace = normalizeWorkspace(topology.gitRoot ?? topology.requestedWorkspace);
+  const selected = (topology.instructionScopes?.items ?? [])
+    .filter((scope) => !provider || scope.provider === provider)
+    .filter((scope) => topologyScopeApplies(topology, scope));
+  const grouped = new Map();
+
+  for (const scope of selected) {
+    const current = grouped.get(scope.route);
+    const providers = [...new Set([...(current?.providers ?? []), scope.provider])].sort();
+    grouped.set(scope.route, {
+      route: scope.route,
+      providers,
+      activation: current && (current.activation !== "effective" || scope.activation !== "effective")
+        ? "candidate"
+        : scope.activation,
+    });
+  }
+
+  const entrypoints = [];
+  for (const scope of [...grouped.values()].sort((left, right) => left.route.localeCompare(right.route))) {
+    const filePath = path.join(workspace, ...scope.route.split("/"));
+    if (!await pathExists(filePath)) continue;
+    const sourceKind = topologyScopeSourceKind(scope.route);
+    entrypoints.push({
+      path: filePath,
+      relativePath: scope.route,
+      sourceKind,
+      nested: sourceKind === "nested-agent-guide",
+      activation: scope.activation,
+      packageRoute: ownerRouteForPath(topology, scope.route),
+      ...(provider ? { provider } : { providers: scope.providers }),
+    });
+  }
+  return entrypoints;
+}
+
 export async function discoverAgentEntrypoints(options = {}) {
-  const workspace = normalizeWorkspace(options.workspace);
+  const topology = options.topology;
   const provider = options.provider ? String(options.provider).toLowerCase() : undefined;
+  if (topology) return topologyEntrypoints(topology, provider);
+
+  const workspace = normalizeWorkspace(options.workspace);
   const maxEntrypointDepth = Number(options.maxEntrypointDepth ?? options["max-entrypoint-depth"] ?? 4);
   const entrypoints = [];
 
@@ -537,7 +616,9 @@ function summarizeEntrypoints(entrypoints) {
 }
 
 export async function collectAgentInstructionGraph(options = {}) {
-  const workspace = normalizeWorkspace(options.workspace);
+  const workspace = options.topology
+    ? normalizeWorkspace(options.topology.gitRoot ?? options.topology.requestedWorkspace)
+    : normalizeWorkspace(options.workspace);
   const maxReferenceDepth = Number(options.maxReferenceDepth ?? options["max-reference-depth"] ?? 0);
   const entrypoints = await discoverAgentEntrypoints({ ...options, workspace });
   const queue = entrypoints.map((entrypoint) => ({ ...entrypoint, filePath: entrypoint.path, depth: 0 }));
@@ -556,6 +637,10 @@ export async function collectAgentInstructionGraph(options = {}) {
     const parsed = await parseFile(current.filePath, workspace, {
       sourceKind: current.sourceKind,
       entrypoint: current.depth === 0,
+      ...(current.activation ? { activation: current.activation } : {}),
+      ...(current.packageRoute ? { packageRoute: current.packageRoute } : {}),
+      ...(current.provider ? { provider: current.provider } : {}),
+      ...(current.providers ? { providers: current.providers } : {}),
     });
     const references = [];
     for (const link of parsed.links) {
@@ -734,6 +819,8 @@ function finding(id, severity, evidence, remediation, options = {}) {
     "assetName",
     "scope",
     "sourceLabel",
+    "packageRoute",
+    "ownerRoute",
   ]) {
     if (options[key] !== undefined) {
       result[key] = options[key];
@@ -1576,18 +1663,29 @@ async function singleWorkspacePayload(options = {}) {
     : options.profile === PROFILE_AGENT_ASSETS_REVIEW
       ? await applyAgentAssetsReviewProfile(graph, options)
       : { findings: [], manifestEvidence: [], assetInventory: undefined };
+  const findings = profileResult.findings.map((item) => {
+    if (!options.topology || typeof item?.file !== "string") return item;
+    const route = normalizeSlash(item.file);
+    if (!route || path.isAbsolute(route) || route === ".." || route.startsWith("../")) return item;
+    const packageRoute = ownerRouteForPath(options.topology, route);
+    return {
+      ...item,
+      packageRoute,
+      ownerRoute: packageRoute,
+    };
+  });
   return {
     kind: "agent-lint",
     profile: options.profile,
     summary: {
       ...summarizeGraph(graph),
-      ...summarizeFindings(profileResult.findings),
+      ...summarizeFindings(findings),
     },
     graph,
     manifestEvidence: profileResult.manifestEvidence,
     hostInstructionReview: profileResult.hostInstructionReview,
     assetInventory: profileResult.assetInventory,
-    findings: profileResult.findings,
+    findings,
   };
 }
 

@@ -168,8 +168,11 @@ export async function analyzeHarnessEvidence(options = {}) {
         claudeHome: options["claude-home"],
         cursorHome: options["cursor-home"],
         qwenHome: options["qwen-home"],
+        copilotHome: options["copilot-home"],
         piHome: options["pi-home"],
         sessionPopulation: options.sessionPopulation,
+        topology: options.topology,
+        analysisScope: options.analysisScope,
       });
   const source = sourceResult.source;
   const sourceErrors = validateHarnessReportSource(source);

@@ -60,6 +60,8 @@ export async function collectSessionEvidence(context, options = {}, dependencies
     limit: context.evidenceLimit,
     "episode-limit": context.evidenceLimit,
     ...(population ? { sessionInventory: population.sessions } : {}),
+    topology: context.topology,
+    analysisScope: context.analysisScope,
   });
   if (data?.kind !== "session-core-facts" || !Array.isArray(data.candidates)) {
     throw Object.assign(new Error("session facts returned an invalid contract"), {

@@ -487,6 +487,9 @@ function customizeItem(item) {
     sourceKind: item.sourceKind,
     precedence: item.precedence,
     scope: item.scope,
+    originScope: item.originScope,
+    originRoute: item.originRoute,
+    effectiveTarget: item.effectiveTarget,
     pluginId: item.pluginId,
     pluginName: item.pluginName,
     pluginEnabled: item.pluginEnabled,
@@ -558,6 +561,21 @@ async function buildConfiguredAssetSurfaces(inventory, scope) {
         scope: "project",
         type,
         label: `Project ${provider} ${label}`,
+        basePath: projectBase,
+        items,
+      }));
+    }
+  }
+
+  for (const [collection, type, label] of surfaceTypes) {
+    const items = scopeItems(inventory, collection, "inherited");
+    if (items.length > 0) {
+      surfaces.push(customizeSurface({
+        provider,
+        group: "Inherited project assets",
+        scope: "inherited",
+        type,
+        label: `Inherited ${provider} ${label}`,
         basePath: projectBase,
         items,
       }));
@@ -750,10 +768,12 @@ function practiceCoverageRows(surfaces, scope) {
     const scopes = [...new Set(matchedSurfaces.map((surface) => {
       if (surface.group === "Plugin/marketplace assets" || surface.scope === "plugin") return "Plugin";
       if (surface.scope === "user") return "Global";
+      if (surface.scope === "inherited") return "Inherited";
       return "Project";
     }))];
     const paths = [...new Set([...uniqueItems.values()]
-      .map((item) => boundedReportPath(item.path ?? item.filePath ?? item.rootPath, scope.workspace))
+      .map((item) => item.originRoute
+        ?? boundedReportPath(item.path ?? item.filePath ?? item.rootPath, scope.workspace))
       .filter(Boolean))].slice(0, 12);
     rows.push({ surface: surfaceName, scopes, count: uniqueItems.size, paths });
   }

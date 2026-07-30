@@ -14,7 +14,7 @@ Legend: **Yes** = implemented and tested; **Partial** = limited or source-local;
 | --- | --- | --- | --- | --- |
 | Host shell | Yes | Yes | Yes | Yes |
 | Installation / distribution | Yes: built-in + npm bundle | Partial: source-local artifact | Partial: source-local plugin | Partial: repository marketplace |
-| Configured asset inventory | Yes | Yes | Partial: plugin ID fallback is heuristic | No unified provider |
+| Configured asset inventory | Yes | Yes | Partial: direct IDs and project MCP hints only; unknown IDs remain unmatched | No unified provider |
 | Session evidence | Yes | Yes | No | No |
 | Hook runtime evidence | Yes | Partial: hook facets are empty | No | No |
 | Model / token evidence | Yes | Partial: model facets are empty | No | No |
@@ -51,7 +51,7 @@ platform depth.
 | [ ] | P1 | C-02 | Normalize Codex model, usage, and hook evidence when present. | Missing data stays unavailable; no model, token, or hook values are invented. |
 | [ ] | P1 | C-03 | Add a real Codex installation smoke. | Build, install, discover Skills, analyze, render HTML, validate, and reinstall all pass. |
 | [ ] | P1 | C-04 | Decide whether Codex apply remains read-only. | Automatic apply is added only after an accepted provider-native mutation contract. |
-| [ ] | P2 | U-01 | Remove deterministic Cursor plugin assignment by cache order. | Unmatched numeric IDs remain unknown instead of being attached to the wrong plugin. |
+| [x] | P2 | U-01 | Remove deterministic Cursor plugin assignment by cache order. | Unmatched numeric IDs remain unknown instead of being attached to the wrong plugin. |
 | [ ] | P2 | U-02 | Add Cursor inventory-only checkup. | Results are configured-only and cleanup/apply remains blocked. |
 | [ ] | P2 | U-03 | Add a Cursor static-only Harness report route. | HTML/Markdown output passes validation and clearly marks session evidence unavailable. |
 | [ ] | P2 | U-04 | Add a Cursor artifact and runtime smoke. | A packaged plugin works with `cursor-agent --plugin-dir` without source-tree assumptions. |

@@ -111,6 +111,10 @@ test("Step 1 establishes one provider-labelled evidence bundle", () => {
   assert.match(skill, /Apply both when both scopes are\s+authorized/);
   assert.match(skill, /Neither flag authorizes Memory bodies/);
   assert.match(skill, /from\s+one shared asset snapshot/);
+  assert.match(skill, /`bundle\.context\.topology\.target`/);
+  assert.match(skill, /report `kind`, `route`, and `packageRoute`/);
+  assert.match(skill, /`memberRoute` or `null`/);
+  assert.match(skill, /Providers must agree/);
   assert.match(skill, /bounded `lint`, `inventory`, and `integrity` envelopes/);
   assert.match(skill, /individual [\s\S]+command only to diagnose a named unavailable or truncated owner/);
   assert.doesNotMatch(skill, /<cli> agent-lint --workspace <target>/);
@@ -383,6 +387,16 @@ test("finding-bound fixes remain slash-command owned and independently reassesse
   assert.match(skill, /\[Finding-bound Fix\]\(references\/finding-bound-fix\.md\)/);
   assert.match(fix, /initiating handoff must explicitly invoke `\/better-harness`/);
   assert.match(fix, /better-harness-fix-output/);
+  assert.match(fix, /harness workspace-topology --workspace <workspacePath> --json/);
+  assert.match(fix, /structured\s+`target`/);
+  assert.match(fix, /complete `kind`, `packageRoute`, and `ownerRoute`/);
+  assert.match(fix, /present-but-incomplete target is invalid/);
+  assert.match(fix, /repo-root\|workspace-member\|repo-subtree\|standalone/);
+  assert.match(fix, /mismatch fails closed/);
+  assert.match(fix, /`requestedWorkspace` for standalone/);
+  assert.match(fix, /smallest\s+owner for inspection, mutation,\s+and verification/);
+  assert.match(fix, /legacy report with no `target` field at all/);
+  assert.match(fix, /do not invent\s+`packageRoute` or `ownerRoute`/);
   assert.match(fix, /exactly one fresh read-only subagent/);
   assert.match(fix, /Agent Work Loop/);
   assert.match(fix, /asset-integrity/);
