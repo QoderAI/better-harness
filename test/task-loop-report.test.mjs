@@ -195,6 +195,42 @@ async function withTempDir(fn) {
   }
 }
 
+function memberTopology(gitRoot, memberRoute) {
+  const members = ["packages/a", "packages/b"].map((route) => ({
+    route,
+    kind: "manifest",
+    discoveredBy: ["package.json"],
+  }));
+  return {
+    kind: "better-harness.workspace-topology",
+    schemaVersion: 1,
+    status: "complete",
+    requestedWorkspace: path.join(gitRoot, ...memberRoute.split("/")),
+    gitRoot,
+    target: {
+      kind: "workspace-member",
+      route: memberRoute,
+      memberRoute,
+      memberMatch: "exact",
+    },
+    members: {
+      items: members,
+      total: members.length,
+      omitted: 0,
+      truncated: false,
+    },
+    instructionScopes: { items: [], total: 0, omitted: 0, truncated: false },
+    discovery: {
+      tracked: 2,
+      untracked: 0,
+      scanned: 2,
+      omitted: 0,
+      truncated: false,
+      warnings: [],
+    },
+  };
+}
+
 function reportSource({
   includeControlledOutcome = true,
   includeLifecycleDecision = includeControlledOutcome,
@@ -1217,7 +1253,7 @@ test("task-loop projection carries AI-reviewed dimension scores with evidence", 
 
   assert.equal(findings.summary.modelId, "agent-work-loop-v4");
   assert.equal(findings.summary.locale, "en");
-  assert.equal(findings.summary.reportContractVersion, 25);
+  assert.equal(findings.summary.reportContractVersion, 26);
   assert.deepEqual(findings.summary.assignmentSummaries, []);
   assert.equal(findings.summary.evidenceMode, "session-rich");
   assert.equal(findings.summary.overview, "Protected changes still need linked delivery proof.");
@@ -1825,7 +1861,7 @@ test("Chinese Bavi projection localizes all five dimensions, fifteen checks, ben
   const subdimensions = dimensions.flatMap((dimension) => dimension.subdimensions);
 
   assert.equal(findings.summary.modelId, "agent-work-loop-v4");
-  assert.equal(findings.summary.reportContractVersion, 25);
+  assert.equal(findings.summary.reportContractVersion, 26);
   assert.equal(findings.summary.locale, "zh-CN");
   assert.equal(findings.summary.overview, "路径在真实任务中用过，但还没有关联与该问题相符的结果。");
   assert.deepEqual(dimensions.map((dimension) => dimension.label), ["任务理解", "可控执行", "改动验证", "可靠交付", "经验沉淀"]);
@@ -2756,6 +2792,201 @@ test("render merge rejects modified analyzer-owned Canvas facts", () => {
   );
 });
 
+test("task-loop findings preserve structured package targets through split and merge", () => {
+  const source = reportSource();
+  const target = {
+    kind: "workspace-member",
+    packageRoute: "packages/app",
+    ownerRoute: "packages/app",
+  };
+  source.repositoryEvidence.findingTarget = target;
+
+  const full = projectTaskLoopFindings(source);
+  assert.ok(full.findings.length > 0);
+  assert.ok(full.findings.every((finding) => (
+    finding.target.kind === target.kind
+    && finding.target.packageRoute === target.packageRoute
+    && finding.target.ownerRoute === target.ownerRoute
+  )));
+  assert.deepEqual(validateTaskLoopFindings(full), []);
+
+  const split = splitTaskLoopFindings(full);
+  assert.ok(split.findings.findings.every((finding) => finding.target.packageRoute === "packages/app"));
+  assert.ok(split.canvas.findings.every((finding) => !Object.hasOwn(finding, "target")));
+  const merged = mergeTaskLoopCanvasData(split.findings, split.canvas);
+  assert.ok(merged.findings.every((finding) => finding.target.ownerRoute === "packages/app"));
+});
+
+test("practice findings preserve root and package owners through final projection", () => {
+  const topology = memberTopology(path.resolve("/tmp/better-harness-owner-projection"), "packages/a");
+  const practice = projectAgentLintPracticeEvidence({
+    topology,
+    instructionReview: {
+      profile: "agents-md-review",
+      findings: [{
+        id: "missing-local-reference",
+        severity: "warning",
+        file: "AGENTS.md",
+        packageRoute: ".",
+        ownerRoute: ".",
+      }, {
+        id: "missing-local-reference",
+        severity: "warning",
+        file: "packages/a/AGENTS.md",
+        packageRoute: "packages/a",
+        ownerRoute: "packages/a",
+      }],
+    },
+  });
+
+  assert.equal(practice.findings.length, 2);
+  assert.deepEqual(practice.findings.map((finding) => finding.target.ownerRoute), [".", "packages/a"]);
+  assert.notEqual(practice.findings[0].id, practice.findings[1].id);
+
+  const source = reportSource({ includeRepositoryFinding: false, interventionLedger: [] });
+  source.repositoryEvidence.findingTarget = {
+    kind: "workspace-member",
+    packageRoute: "packages/a",
+    ownerRoute: "packages/a",
+  };
+  source.repositoryEvidence.findings = practice.findings;
+  const projected = projectTaskLoopFindings(source);
+
+  assert.deepEqual(projected.findings.map((finding) => finding.target.ownerRoute), [".", "packages/a"]);
+  assert.deepEqual(validateTaskLoopFindings(projected), []);
+
+  source.repositoryEvidence.findings[0].target = null;
+  const invalid = projectTaskLoopFindings(source);
+  assert.equal(invalid.findings[0].target, null);
+  assert.match(validateTaskLoopFindings(invalid).join("; "), /target must be an object/u);
+});
+
+test("record-fix-output rejects a finding bound to a sibling package", async () => {
+  await withTempDir(async (root) => {
+    const workspace = path.join(root, "packages", "b");
+    const runDir = path.join(workspace, ".qoder", "better-harness", "run");
+    const findingsPath = path.join(runDir, "findings.json");
+    const resultPath = path.join(root, "result.json");
+    const source = reportSource();
+    source.repositoryEvidence.findingTarget = {
+      kind: "workspace-member",
+      packageRoute: "packages/a",
+      ownerRoute: "packages/a",
+    };
+    const split = splitTaskLoopFindings(projectTaskLoopFindings(source));
+    await mkdir(runDir, { recursive: true });
+    await writeFile(findingsPath, `${JSON.stringify(split.findings, null, 2)}\n`);
+    await writeFile(path.join(runDir, "canvas.json"), `${JSON.stringify(split.canvas, null, 2)}\n`);
+    await writeFile(resultPath, JSON.stringify({
+      actualOutput: [],
+      assignmentSummary: assignmentSummary(),
+    }));
+
+    await assert.rejects(recordFixOutput({
+      workspace,
+      findings: findingsPath,
+      findingId: split.findings.findings[0].id,
+      expectedRevision: 0,
+      result: resultPath,
+      topology: memberTopology(root, "packages/b"),
+    }), (error) => error?.code === "FINDING_TARGET_MISMATCH"
+      && /packageRoute does not match/u.test(error.message));
+  });
+});
+
+test("record-fix-output rejects ownerless package targets and partial topology", async () => {
+  await withTempDir(async (root) => {
+    const workspace = path.join(root, "packages", "a");
+    const runDir = path.join(workspace, ".qoder", "better-harness", "run");
+    const findingsPath = path.join(runDir, "findings.json");
+    const resultPath = path.join(root, "result.json");
+    const source = reportSource();
+    source.repositoryEvidence.findingTarget = {
+      kind: "workspace-member",
+      packageRoute: "packages/a",
+      ownerRoute: null,
+    };
+    const split = splitTaskLoopFindings(projectTaskLoopFindings(source));
+    await mkdir(runDir, { recursive: true });
+    await writeFile(findingsPath, `${JSON.stringify(split.findings, null, 2)}\n`);
+    await writeFile(path.join(runDir, "canvas.json"), `${JSON.stringify(split.canvas, null, 2)}\n`);
+    await writeFile(resultPath, JSON.stringify({
+      actualOutput: [],
+      assignmentSummary: assignmentSummary(),
+    }));
+
+    await assert.rejects(recordFixOutput({
+      workspace,
+      findings: findingsPath,
+      findingId: split.findings.findings[0].id,
+      expectedRevision: 0,
+      result: resultPath,
+      topology: memberTopology(root, "packages/a"),
+    }), (error) => error?.code === "FINDING_TARGET_MISMATCH"
+      && /ownerRoute is required/u.test(error.message));
+
+    for (const finding of split.findings.findings) finding.target.ownerRoute = "packages/a";
+    await writeFile(findingsPath, `${JSON.stringify(split.findings, null, 2)}\n`);
+    const partialTopology = {
+      ...memberTopology(root, "packages/a"),
+      status: "partial",
+    };
+    await assert.rejects(recordFixOutput({
+      workspace,
+      findings: findingsPath,
+      findingId: split.findings.findings[0].id,
+      expectedRevision: 0,
+      result: resultPath,
+      topology: partialTopology,
+    }), (error) => error?.code === "FINDING_TARGET_TOPOLOGY_INCOMPLETE");
+  });
+});
+
+test("record-fix-output records an ancestor-owned result from a package callback", async () => {
+  await withTempDir(async (root) => {
+    const workspace = path.join(root, "packages", "a");
+    const runDir = path.join(workspace, ".qoder", "better-harness", "run");
+    const findingsPath = path.join(runDir, "findings.json");
+    const resultPath = path.join(root, "result.json");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(root, "AGENTS.md"), "# Root owner\n");
+    const source = reportSource();
+    source.repositoryEvidence.findingTarget = {
+      kind: "workspace-member",
+      packageRoute: "packages/a",
+      ownerRoute: ".",
+    };
+    const split = splitTaskLoopFindings(projectTaskLoopFindings(source));
+    await writeFile(findingsPath, `${JSON.stringify(split.findings, null, 2)}\n`);
+    await writeFile(path.join(runDir, "canvas.json"), `${JSON.stringify(split.canvas, null, 2)}\n`);
+    const finding = split.findings.findings[0];
+    await writeFile(resultPath, JSON.stringify({
+      actualOutput: [{
+        action: "updated",
+        artifact: finding.expectedArtifact,
+        name: "Root Agent guidance",
+        scope: "Project",
+        path: "AGENTS.md",
+        summary: "Updated the inherited root guidance and verified the package workflow.",
+      }],
+      assignmentSummary: assignmentSummary(),
+    }));
+
+    const recorded = await recordFixOutput({
+      workspace,
+      findings: findingsPath,
+      findingId: finding.id,
+      expectedRevision: 0,
+      result: resultPath,
+      topology: memberTopology(root, "packages/a"),
+    });
+
+    assert.equal(recorded.status, "pass");
+    const updated = JSON.parse(await readFile(findingsPath, "utf8"));
+    assert.equal(updated.findings[0].actualOutput[0].path, "AGENTS.md");
+  });
+});
+
 test("record-fix-output replaces one latest result and increments its revision", async () => {
   await withTempDir(async (root) => {
     const workspace = path.join(root, "workspace");
@@ -2865,6 +3096,120 @@ test("record-fix-output replaces one latest result and increments its revision",
     }), (error) => error?.code === "STALE_FIX_OUTPUT_REVISION");
     assert.equal(JSON.parse(await readFile(findingsPath, "utf8")).findings[0].actualOutputRevision, 2);
     assert.ok((await readFile(staleResultPath, "utf8")).includes("actualOutput"));
+  });
+});
+
+test("record-fix-output does not resolve Home for purely Project actualOutput", async () => {
+  await withTempDir(async (root) => {
+    const workspace = path.join(root, "workspace");
+    const runDir = path.join(workspace, ".Qoder", "better-harness", "run");
+    const findingsPath = path.join(runDir, "findings.json");
+    const canvasPath = path.join(runDir, "canvas.json");
+    const targetPath = "fix-output/project-owner.md";
+    const split = splitTaskLoopFindings(projectTaskLoopFindings(reportSource()));
+    const finding = split.findings.findings[0];
+    const resultPath = path.join(root, "result.json");
+    const unavailableHome = path.join(root, "unavailable-home");
+    await mkdir(path.join(workspace, path.dirname(targetPath)), { recursive: true });
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(workspace, targetPath), "# Project owner\n");
+    await writeFile(findingsPath, `${JSON.stringify(split.findings, null, 2)}\n`);
+    await writeFile(canvasPath, `${JSON.stringify(split.canvas, null, 2)}\n`);
+    await writeFile(resultPath, JSON.stringify({
+      actualOutput: [{
+        action: "updated",
+        artifact: finding.expectedArtifact,
+        name: `${finding.expectedArtifact} project owner`,
+        scope: "Project",
+        path: targetPath,
+        summary: "Recorded the verified Project-scoped owner result.",
+      }],
+      assignmentSummary: assignmentSummary(),
+    }));
+
+    const invocation = spawnSync(process.execPath, [
+      path.resolve("scripts/harness-analysis/record-fix-output.mjs"),
+      "--workspace", workspace,
+      "--findings", findingsPath,
+      "--finding-id", finding.id,
+      "--expected-revision", "0",
+      "--result", resultPath,
+      "--json",
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, HOME: unavailableHome, USERPROFILE: unavailableHome },
+    });
+
+    assert.equal(invocation.status, 0, invocation.stderr);
+    const result = JSON.parse(invocation.stdout);
+    assert.equal(result.kind, "harness-fix-output-record");
+    assert.equal(result.status, "pass");
+    assert.equal(result.findingsPath, findingsPath);
+    assert.equal(result.findingId, finding.id);
+    assert.equal(result.revision, 1);
+    assert.equal(result.actualOutputCount, 1);
+  });
+});
+
+test("record-fix-output resolves Home only for Global actualOutput", async () => {
+  await withTempDir(async (root) => {
+    const prepareGlobalFixture = async (name) => {
+      const workspace = path.join(root, name, "workspace");
+      const runDir = path.join(workspace, ".Qoder", "better-harness", "run");
+      const findingsPath = path.join(runDir, "findings.json");
+      const resultPath = path.join(root, name, "result.json");
+      const split = splitTaskLoopFindings(projectTaskLoopFindings(reportSource()));
+      const finding = split.findings.findings[0];
+      await mkdir(runDir, { recursive: true });
+      await writeFile(findingsPath, `${JSON.stringify(split.findings, null, 2)}\n`);
+      await writeFile(path.join(runDir, "canvas.json"), `${JSON.stringify(split.canvas, null, 2)}\n`);
+      await writeFile(resultPath, JSON.stringify({
+        actualOutput: [{
+          action: "updated",
+          artifact: finding.expectedArtifact,
+          name: `${finding.expectedArtifact} global owner`,
+          scope: "Global",
+          path: "~/global-owner.md",
+          summary: "Recorded the verified Global-scoped owner result.",
+        }],
+        assignmentSummary: assignmentSummary(),
+      }));
+      return { workspace, findingsPath, resultPath, finding };
+    };
+    const invoke = (fixture, home) => spawnSync(process.execPath, [
+      path.resolve("scripts/harness-analysis/record-fix-output.mjs"),
+      "--workspace", fixture.workspace,
+      "--findings", fixture.findingsPath,
+      "--finding-id", fixture.finding.id,
+      "--expected-revision", "0",
+      "--result", fixture.resultPath,
+      "--json",
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, HOME: home, USERPROFILE: home },
+    });
+
+    const fakeHome = path.join(root, "fake-home");
+    await mkdir(fakeHome, { recursive: true });
+    await writeFile(path.join(fakeHome, "global-owner.md"), "# Global owner\n");
+    const successful = await prepareGlobalFixture("success");
+    const successfulInvocation = invoke(successful, fakeHome);
+    assert.equal(successfulInvocation.status, 0, successfulInvocation.stderr);
+    assert.equal(JSON.parse(successfulInvocation.stdout).status, "pass");
+    assert.equal(JSON.parse(await readFile(successful.findingsPath, "utf8")).findings[0].actualOutputRevision, 1);
+
+    const unavailable = await prepareGlobalFixture("unavailable");
+    const before = await readFile(unavailable.findingsPath, "utf8");
+    const unavailableInvocation = invoke(unavailable, path.join(root, "unavailable-home"));
+    assert.equal(unavailableInvocation.status, 1);
+    assert.equal(unavailableInvocation.stderr, "");
+    const error = JSON.parse(unavailableInvocation.stdout);
+    assert.equal(error.kind, "harness-fix-output-record");
+    assert.equal(error.status, "error");
+    assert.match(error.message, /ENOENT|no such file|realpath/u);
+    assert.equal(await readFile(unavailable.findingsPath, "utf8"), before);
   });
 });
 

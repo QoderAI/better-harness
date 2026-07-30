@@ -8,18 +8,22 @@ import {
   SCHEMA_VERSION,
   applyIgnorePatterns,
   analysisDirectoryFor,
+  assertCompatibleAnalysisScope,
   git,
   isCli,
   isDependencyOrGenerated,
   isSupportingFile,
   fileRoleFor,
   languageFor,
+  listUntrackedFiles,
   normalizeLanguages,
   option,
   parseArgs,
   parseNumstat,
   positiveInt,
-  resolveRepoRoot,
+  publicAnalysisScope,
+  resolveAnalysisScopeForOptions,
+  scopePathspecArgs,
   writeJsonResult,
 } from "./common.mjs";
 import { analyzeCoreCandidates } from "./core-candidates.mjs";
@@ -39,14 +43,14 @@ function severityFor(score) {
   return "low";
 }
 
-function changedFiles(repoRoot, baseRef, ignorePatterns) {
+function changedFiles(repoRoot, baseRef, ignorePatterns, analysisScope) {
   const output = git(
     repoRoot,
-    ["diff", "--numstat", "--no-ext-diff", "--find-renames", baseRef, "--"],
-    { allowFailure: true },
+    ["diff", "--numstat", "--no-ext-diff", "--find-renames", baseRef, ...scopePathspecArgs(analysisScope)],
   );
-  const trackedFiles = parseNumstat(output);
-  const files = [...trackedFiles, ...untrackedFiles(repoRoot)].filter((file) => !isDependencyOrGenerated(file.filePath));
+  const trackedFiles = parseNumstat(output, analysisScope);
+  const files = [...trackedFiles, ...untrackedFiles(repoRoot, analysisScope)]
+    .filter((file) => !isDependencyOrGenerated(file.filePath));
   return applyIgnorePatterns(files, ignorePatterns, (file) => file.filePath);
 }
 
@@ -59,11 +63,8 @@ function textLineCount(repoRoot, filePath) {
   }
 }
 
-function untrackedFiles(repoRoot) {
-  const output = git(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"], { allowFailure: true });
-  return output
-    .split("\0")
-    .filter(Boolean)
+function untrackedFiles(repoRoot, analysisScope) {
+  return listUntrackedFiles(repoRoot, analysisScope)
     .map((filePath) => ({
       filePath,
       added: textLineCount(repoRoot, filePath),
@@ -93,25 +94,36 @@ function coreHitForChangedFile(file, core) {
 }
 
 export async function analyzeDiffImpact(options = {}) {
-  const repoRoot = resolveRepoRoot(options.cwd ?? process.env.QODER_CWD ?? process.cwd());
+  const analysisScope = resolveAnalysisScopeForOptions(options);
+  const repoRoot = analysisScope.repoRoot;
   const baseRef = options.baseRef ?? "HEAD";
   const allowedLanguages = new Set(normalizeLanguages(options.languages));
-  const profile = options.profile ?? await analyzeProjectProfile({ cwd: repoRoot, languages: [...allowedLanguages], ignore: options.ignore });
+  const profile = options.profile ?? await analyzeProjectProfile({
+    cwd: repoRoot,
+    analysisScope,
+    languages: [...allowedLanguages],
+    ignore: options.ignore,
+  });
   const history = options.history ?? await analyzeGitHistoryProfile({
     cwd: repoRoot,
+    analysisScope,
     languages: [...allowedLanguages],
     maxCommits: positiveInt(options.maxCommits, DEFAULT_MAX_COMMITS),
     ignore: options.ignore,
   });
   const core = options.core ?? await analyzeCoreCandidates({
     cwd: repoRoot,
+    analysisScope,
     languages: [...allowedLanguages],
     maxCommits: positiveInt(options.maxCommits, DEFAULT_MAX_COMMITS),
     profile,
     history,
     ignore: options.ignore,
   });
-  const diffFiles = changedFiles(repoRoot, baseRef, options.ignore);
+  assertCompatibleAnalysisScope(profile, analysisScope, "project profile");
+  assertCompatibleAnalysisScope(history, analysisScope, "history profile");
+  assertCompatibleAnalysisScope(core, analysisScope, "core analysis");
+  const diffFiles = changedFiles(repoRoot, baseRef, options.ignore, analysisScope);
   const files = diffFiles.items.filter((file) => file.role !== "source" || allowedLanguages.has(file.language));
   const coreHits = [];
   const hotHits = [];
@@ -189,6 +201,7 @@ export async function analyzeDiffImpact(options = {}) {
     kind: "diff-impact",
     status: attentionRequired ? "attention-required" : "ok",
     repoRoot,
+    analysisScope: publicAnalysisScope(analysisScope),
     baseRef,
     filters: diffFiles.filters,
     score: normalizedScore,
@@ -222,6 +235,7 @@ export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const result = await analyzeDiffImpact({
     cwd: option(args, "cwd"),
+    packageRelPath: option(args, "package-rel-path"),
     languages: option(args, "languages"),
     baseRef: option(args, "base-ref", option(args, "base", "HEAD")),
     maxCommits: positiveInt(option(args, "max-commits"), DEFAULT_MAX_COMMITS),

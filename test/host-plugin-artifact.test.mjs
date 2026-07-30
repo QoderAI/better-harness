@@ -44,6 +44,12 @@ test("runtime bundle includes the project license and runtime docs", async () =>
       "CONTRIBUTING.md",
       "case-studies/factory/model/factory-readiness.md",
       "docs/glossary.md",
+      "scripts/workspace-topology/cli.mjs",
+      "scripts/workspace-topology/contract.mjs",
+      "scripts/workspace-topology/finding-target.mjs",
+      "scripts/workspace-topology/index.mjs",
+      "scripts/workspace-topology/inventory.mjs",
+      "scripts/workspace-topology/manifests.mjs",
       "vendor/tree-sitter-wasm/LICENSE",
       "vendor/esbuild-wasm/LICENSE.md",
     ]) {

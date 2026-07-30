@@ -44,9 +44,11 @@ Memory metadata requires `--include-memories`; user/global or installed-Plugin
 metadata requires `--include-user-home`. Apply both when both scopes are
 authorized. Neither flag authorizes Memory bodies.
 
-The command freezes target, provider, window, depth, evidence limit, and asset
-authority once. It returns `sessionEvidence`, `projectHarness`, and
-`agentCustomize` lanes plus the lead analyzer envelope. The Agent Customize
+It freezes resolved topology, provider, window, depth, limit, and authority.
+Before delegation, read
+`bundle.context.topology.target`; report `kind`, `route`, and `packageRoute`
+(`memberRoute` or `null`). Providers must agree. It returns `sessionEvidence`,
+`projectHarness`, `agentCustomize`, and the lead envelope. The Agent Customize
 lane contains the bounded `lint`, `inventory`, and `integrity` envelopes from
 one shared asset snapshot. Keep every lane and stage status and each provider
 distinct. Use the individual `session-analysis facts`, `core-change-watch

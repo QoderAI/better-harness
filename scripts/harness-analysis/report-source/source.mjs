@@ -9,6 +9,7 @@ import {
 import { validateLearningLoopReview } from "../learning-loop-candidates.mjs";
 import { validateLearningCaptureEvidence } from "../learning-capture-evidence.mjs";
 import { validateWorkflowDemandDiagnostics } from "../workflow-demand-diagnostics.mjs";
+import { findingTargetErrors } from "../../workspace-topology/index.mjs";
 
 export const HARNESS_REPORT_SOURCE_SCHEMA_VERSION = 3;
 export const LEARNING_CAPTURE_INTERVENTION_FINDING_ID = "learning-capture-follow-up";
@@ -1076,6 +1077,9 @@ export function validateHarnessReportSource(source) {
   errors.push(...currentWorkflowDemandFindingBindingErrors(source));
   errors.push(...learningCaptureSkillCreationBindingErrors(source));
   errors.push(...validateLearningCaptureEvidence(source.repositoryEvidence?.learningCaptureEvidence));
+  errors.push(...findingTargetErrors(source.repositoryEvidence?.findingTarget, {
+    prefix: "report source repositoryEvidence.findingTarget",
+  }));
   errors.push(...validateCheckupReportEvidence(source.repositoryEvidence?.customizationCheckup));
   errors.push(...validateLearningCaptureReviewedChecks(source));
   errors.push(...sourceFindingIntegrityErrors(source));

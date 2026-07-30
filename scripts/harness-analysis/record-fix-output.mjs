@@ -13,6 +13,10 @@ import {
   validateTaskLoopCanvasSplit,
   validateTaskLoopFindings,
 } from "./task-loop-report.mjs";
+import {
+  findingTargetErrors,
+  resolveWorkspaceTopology,
+} from "../workspace-topology/index.mjs";
 const LOCK_TIMEOUT_MS = 5_000;
 const STALE_LOCK_MS = 10 * 60_000;
 
@@ -119,19 +123,33 @@ function isWithin(root, candidate) {
   return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-async function assertOutputTargets(actualOutput, workspacePath) {
+async function assertOutputTargets(actualOutput, workspacePath, {
+  findingTarget,
+  topology,
+} = {}) {
   const workspaceRealPath = await realpath(workspacePath);
-  const homeRealPath = await realpath(os.homedir());
+  let homeRealPath;
+  const topologyRoot = topology?.gitRoot ?? topology?.requestedWorkspace ?? workspaceRealPath;
+  const projectRealPath = findingTarget ? await realpath(topologyRoot) : workspaceRealPath;
+  const ownerRoot = findingTarget?.ownerRoute === null || findingTarget?.ownerRoute === undefined
+    ? null
+    : path.resolve(topologyRoot, ...String(findingTarget.ownerRoute).split("/"));
+  const ownerRealPath = ownerRoot ? await realpath(ownerRoot) : null;
   for (const [index, output] of actualOutput.entries()) {
     if (!output?.path) continue;
     const logicalPath = String(output.path);
-    const root = output.scope === "Global" ? homeRealPath : workspaceRealPath;
-    const relativePath = output.scope === "Global" ? logicalPath.slice(2) : logicalPath;
+    const isGlobal = output.scope === "Global";
+    if (isGlobal) homeRealPath ??= await realpath(os.homedir());
+    const root = isGlobal ? homeRealPath : projectRealPath;
+    const relativePath = isGlobal ? logicalPath.slice(2) : logicalPath;
     const targetPath = path.resolve(root, ...relativePath.split("/"));
     const targetStat = await stat(targetPath).catch(() => null);
     if (!targetStat?.isFile()) throw new Error(`actualOutput[${index}].path must resolve to an existing file`);
     const targetRealPath = await realpath(targetPath);
     if (!isWithin(root, targetRealPath)) throw new Error(`actualOutput[${index}].path resolves outside its ${output.scope} scope`);
+    if (output.scope === "Project" && ownerRealPath && !isWithin(ownerRealPath, targetRealPath)) {
+      throw new Error(`actualOutput[${index}].path resolves outside the finding target ownerRoute`);
+    }
   }
 }
 
@@ -150,6 +168,8 @@ export async function recordFixOutput({
   expectedRevision,
   result,
   consumeResult = false,
+  topology,
+  resolveTopology = resolveWorkspaceTopology,
 } = {}) {
   const workspacePath = path.resolve(String(workspace ?? ""));
   const findingsPath = path.resolve(String(findingsOption ?? ""));
@@ -173,6 +193,27 @@ export async function recordFixOutput({
     const matches = context.findings.findings.filter((finding) => finding?.id === findingId);
     if (matches.length !== 1) throw new Error(`finding id must match exactly one row: ${findingId}`);
     const finding = matches[0];
+    let repairTopology = topology;
+    if (Object.hasOwn(finding, "target")) {
+      repairTopology ??= (await resolveTopology({ workspace: workspaceRealPath })).topology;
+      if (repairTopology.status !== "complete") {
+        throw Object.assign(new Error("finding-bound repair requires complete workspace topology"), {
+          code: "FINDING_TARGET_TOPOLOGY_INCOMPLETE",
+        });
+      }
+      const targetErrors = findingTargetErrors(finding.target, {
+        topology: repairTopology,
+        required: true,
+        requireOwnerRoute: true,
+        prefix: `finding ${findingId}.target`,
+      });
+      if (targetErrors.length > 0) {
+        throw Object.assign(new Error(targetErrors.join("; ")), {
+          code: "FINDING_TARGET_MISMATCH",
+          errors: targetErrors,
+        });
+      }
+    }
     const currentRevision = Number.isInteger(finding.actualOutputRevision) ? finding.actualOutputRevision : 0;
     if (currentRevision !== revision) {
       throw Object.assign(new Error(`stale fix-output revision: expected ${revision}, found ${currentRevision}`), {
@@ -187,7 +228,10 @@ export async function recordFixOutput({
     delete finding.postFixScoreReview;
     context.findings.summary.assignmentSummaries = assignmentSummariesFromFindings(context.findings.findings);
     assertValidReport(context.findings, context.canvas, "Updated findings validation failed");
-    await assertOutputTargets(finding.actualOutput, workspacePath);
+    await assertOutputTargets(finding.actualOutput, workspacePath, {
+      findingTarget: finding.target,
+      topology: repairTopology,
+    });
     await atomicReplace(findingsPath, `${JSON.stringify(context.findings, null, 2)}\n`);
     payload = {
       kind: "harness-fix-output-record",

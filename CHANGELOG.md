@@ -28,6 +28,11 @@ observable behavior and compatibility, not every internal refactor.
 
 ### Changed
 
+- Cursor installed-plugin inventory now leaves unknown numeric or opaque IDs
+  unmatched instead of assigning them to cached plugins by name/order. Direct
+  manifest IDs and workspace project MCP hints remain supported.
+- `harness record-fix-output` now resolves Home only for Global output, so a
+  verified Project-only result remains recordable when Home is unavailable.
 - The `harness analyze` platform gate now names the full supported set
   (`qoder, codex, claude, cursor, qwen, copilot, pi`) when it rejects an
   unsupported `--platform`, matching the session-analysis and asset-baseline

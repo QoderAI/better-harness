@@ -10,17 +10,27 @@ import { parseArgs, parseBooleanFlag } from "../cli.mjs";
 import { forEachJsonLine, isDirectory, pathExists, walkFiles } from "../fs.mjs";
 import { expandHome, normalizeWorkspace } from "../paths.mjs";
 import {
+  bindSessionWorkspaceCwds,
   emitProviderResult,
+  markSessionReadCoverage,
   runProviderAnalysis,
   runProviderCommand,
+  sessionWorkspaceCwd,
+  workspaceMatchScopeFromOptions,
 } from "../provider-runner.mjs";
 import { parseResultFacts } from "../result-facts.mjs";
 import { mergeTimeRange, normalizeCliDate, normalizeTimestamp, timestampMillis, withinTimeRange } from "../time.mjs";
+import { WORKSPACE_CWD_MATCH, classifyWorkspaceCwd } from "../workspace-match.mjs";
 
 function isWorkspaceMatch(candidate, workspace) {
   if (!candidate) return false;
   const resolved = normalizeWorkspace(candidate);
   return resolved === workspace || resolved.startsWith(`${workspace}${path.sep}`);
+}
+
+function isScopedWorkspaceMatch(candidate, scope) {
+  if (!scope?._workspaceMatchScope) return isWorkspaceMatch(candidate, scope.workspace);
+  return classifyWorkspaceCwd(candidate, scope._workspaceMatchScope) !== WORKSPACE_CWD_MATCH.UNMATCHED;
 }
 
 export function workspaceToPiSessionDirVariants(workspace) {
@@ -220,13 +230,14 @@ function transcriptEvents(raw, sourceRef, options) {
   return events;
 }
 
-async function probeTranscript(filePath, workspace) {
+async function probeTranscript(filePath, scope) {
   const summary = {
     sessionId: sessionIdFromFileName(filePath),
     firstSeen: null,
     lastSeen: null,
     workspaceMatch: false,
     validHeader: false,
+    cwd: null,
   };
   let firstRecord = true;
   await forEachJsonLine(filePath, (raw) => {
@@ -234,12 +245,13 @@ async function probeTranscript(filePath, workspace) {
       firstRecord = false;
       // Pi requires the first parsed record to be the session header. Do not
       // let a later injected header qualify an otherwise foreign transcript.
-      if (raw?.type !== "session" || typeof raw.id !== "string" || !isWorkspaceMatch(raw.cwd, workspace)) {
+      if (raw?.type !== "session" || typeof raw.id !== "string" || !isScopedWorkspaceMatch(raw.cwd, scope)) {
         return false;
       }
       summary.validHeader = true;
       summary.workspaceMatch = true;
       summary.sessionId = raw.id;
+      summary.cwd = raw.cwd;
     } else if (raw?.type === "session") {
       // Multiple headers are not a valid Pi session and can splice content
       // from different workspaces, so reject the whole file fail-closed.
@@ -261,7 +273,9 @@ function addRef(sessions, sessionId, workspace, ref) {
     lastSeen: null,
     sourceKinds: new Set(),
     sourceRefs: [],
+    workspaceCwds: new Set(),
   };
+  if (typeof ref.cwd === "string" && ref.cwd.length > 0) session.workspaceCwds.add(ref.cwd);
   session.sourceKinds.add(ref.kind);
   session.sourceRefs.push(ref);
   mergeTimeRange(session, ref.firstSeen ?? ref.timestamp);
@@ -270,7 +284,11 @@ function addRef(sessions, sessionId, workspace, ref) {
 }
 
 function finalizeSession(session) {
-  return { ...session, sourceKinds: [...session.sourceKinds].sort() };
+  const { workspaceCwds, ...publicSession } = session;
+  return bindSessionWorkspaceCwds(
+    { ...publicSession, sourceKinds: [...session.sourceKinds].sort() },
+    [...workspaceCwds],
+  );
 }
 
 async function listSessionDirectories(sessionsRoot, variants) {
@@ -332,6 +350,7 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
     const since = normalizeCliDate(options.since, false);
     const until = normalizeCliDate(options.until, true);
     const workspace = normalizeWorkspace(options.workspace);
+    const workspaceMatchScope = workspaceMatchScopeFromOptions(options);
     // Pi resolves its agent dir from PI_CODING_AGENT_DIR (default ~/.pi/agent).
     const home = path.resolve(expandHome(
       options.home ?? options.piHome ?? options["pi-home"] ?? process.env.PI_CODING_AGENT_DIR ?? "~/.pi/agent",
@@ -343,13 +362,18 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
       home,
       sessionsDir: sessionDirContract.dir,
       sessionDirMode: sessionDirContract.mode,
-      _workspaceDirVariants: workspaceToPiSessionDirVariants(workspace),
+      _workspaceDirVariantSets: [...new Set([
+        workspace,
+        workspaceMatchScope?.requestedWorkspace,
+        workspaceMatchScope?.target.kind === "workspace-member" ? workspaceMatchScope.gitRoot : null,
+      ].filter(Boolean))].map((candidate) => workspaceToPiSessionDirVariants(candidate)),
       since: since.label,
       sinceTime: since.time,
       until: until.label,
       untilTime: until.time,
       sessionId: options["session-id"] ?? options.sessionId ?? options._?.[0] ?? null,
       includeGlobalCapabilities: parseBooleanFlag(options["include-global-capabilities"] ?? false),
+      _workspaceMatchScope: workspaceMatchScope,
     };
   }
 
@@ -357,14 +381,17 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
     const custom = scope.sessionDirMode === "custom";
     const matchingDirs = custom
       ? []
-      : await listSessionDirectories(scope.sessionsDir, scope._workspaceDirVariants);
+      : [...new Set((await Promise.all(
+          scope._workspaceDirVariantSets.map((variants) => listSessionDirectories(scope.sessionsDir, variants)),
+        )).flat())];
+    const primaryVariants = scope._workspaceDirVariantSets[0];
     const root = {
       id: "pi-sessions",
       kind: "pi-session-jsonl",
       role: "session-transcript",
       path: custom
         ? scope.sessionsDir
-        : (matchingDirs[0] ?? path.join(scope.sessionsDir, scope._workspaceDirVariants.exact)),
+        : (matchingDirs[0] ?? path.join(scope.sessionsDir, primaryVariants.exact)),
       paths: [scope.sessionsDir],
       optional: false,
       enabled: true,
@@ -393,7 +420,9 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
       // tree nests them under workspace-keyed --<cwd-slug>-- directories.
       const candidateDirs = custom
         ? [sessionsRoot]
-        : await listSessionDirectories(sessionsRoot, scope._workspaceDirVariants);
+        : [...new Set((await Promise.all(
+            scope._workspaceDirVariantSets.map((variants) => listSessionDirectories(sessionsRoot, variants)),
+          )).flat())];
       for (const dirPath of candidateDirs) {
         let realDir;
         try { realDir = realpathSync.native(dirPath); } catch { realDir = path.resolve(dirPath); }
@@ -403,7 +432,7 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
         for (const filePath of files) {
           // Both modes qualify each transcript by the session-header cwd, so a
           // shared custom directory never leaks foreign-workspace sessions.
-          const probe = await probeTranscript(filePath, scope.workspace);
+          const probe = await probeTranscript(filePath, scope);
           if (!probe.validHeader || !probe.workspaceMatch || !withinTimeRange(probe.lastSeen ?? probe.firstSeen, scope)) continue;
           addRef(sessions, probe.sessionId, scope.workspace, {
             kind: transcriptRoot.kind,
@@ -411,6 +440,7 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
             path: filePath,
             firstSeen: probe.firstSeen,
             lastSeen: probe.lastSeen,
+            cwd: probe.cwd,
           });
         }
       }
@@ -429,19 +459,38 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
 
   async readSession(session, scope, options = {}) {
     const events = [];
+    const requestedMaxLines = Number(options.workspacePreflightMaxLines);
+    const preflight = Number.isFinite(requestedMaxLines) && requestedMaxLines > 0;
+    let remainingLines = preflight ? Math.trunc(requestedMaxLines) : null;
+    let truncated = false;
+    const identityCwd = scope._workspaceMatchScope
+      ? sessionWorkspaceCwd(session, scope._workspaceMatchScope)
+      : null;
     for (const ref of session.sourceRefs ?? []) {
+      if (remainingLines !== null && remainingLines <= 0) {
+        truncated = true;
+        break;
+      }
       if (!ref.path.endsWith(".jsonl")) continue;
-      await forEachJsonLine(ref.path, (raw, line) => {
-        if (raw?.type === "session" && raw?.cwd && !isWorkspaceMatch(raw.cwd, scope.workspace)) return;
+      const readCoverage = await forEachJsonLine(ref.path, (raw, line) => {
+        if (raw?.type === "session" && raw?.cwd && !isScopedWorkspaceMatch(raw.cwd, scope)) return;
         for (const event of this.normalizeEvents(raw, { ...ref, sessionId: session.sessionId, line }, options)) {
           if (withinTimeRange(event.timestamp, scope)) events.push(event);
         }
-      });
+      }, remainingLines === null ? {} : { maxLines: remainingLines });
+      if (readCoverage.invalidLines > 0) truncated = true;
+      if (remainingLines !== null) {
+        if (readCoverage.lineCount > remainingLines) truncated = true;
+        remainingLines -= Math.min(readCoverage.lineCount, remainingLines);
+      }
     }
-    return events.sort((left, right) =>
+    const sorted = events
+      .map((event) => event.cwd || !identityCwd ? event : { ...event, cwd: identityCwd })
+      .sort((left, right) =>
       (timestampMillis(left.timestamp) ?? 0) - (timestampMillis(right.timestamp) ?? 0)
       || Number(left.evidenceRef?.line ?? 0) - Number(right.evidenceRef?.line ?? 0)
       || Number(left.evidenceRef?.seq ?? 0) - Number(right.evidenceRef?.seq ?? 0));
+    return markSessionReadCoverage(sorted, { truncated });
   }
 
   async analyze(options = {}) {

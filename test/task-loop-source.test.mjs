@@ -566,6 +566,7 @@ test("default practice projection keeps effective global hooks and installed plu
         { surface: "Rules", scopes: ["Project"], count: 1 },
         { surface: "Hooks", scopes: ["Global"], count: 11 },
         { surface: "Plugins", scopes: ["Plugin"], count: 10 },
+        { surface: "Skills", scopes: ["Inherited"], count: 2 },
         { surface: "MCP", scopes: ["Global"], count: 3 },
         { surface: "Skills", scopes: ["Global"], count: 20 },
         { surface: "Memories", scopes: ["Project"], count: 4 },
@@ -575,11 +576,11 @@ test("default practice projection keeps effective global hooks and installed plu
 
   assert.deepEqual(
     projectPracticeCoverageRows(inventory).map((row) => row.surface),
-    ["Rules", "Hooks", "Plugins", "Memories", "Custom Agents"],
+    ["Rules", "Hooks", "Plugins", "Skills", "Memories", "Custom Agents"],
   );
   const customAgents = projectPracticeCoverageRows(inventory).find((row) => row.surface === "Custom Agents");
   assert.deepEqual(customAgents, { surface: "Custom Agents", scopes: ["Project"], count: 0, paths: [] });
-  assert.equal(projectPracticeCoverageRows(inventory, true).length, 7);
+  assert.equal(projectPracticeCoverageRows(inventory, true).length, 8);
 });
 
 test("session source bridge projects only relevant change validation", () => {

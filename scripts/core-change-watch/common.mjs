@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const DEFAULT_MAX_COMMITS = 500;
 export const DEFAULT_HISTORY_WINDOWS_DAYS = [30, 90, 180];
 
@@ -64,7 +64,6 @@ const GENERATED_OR_DEPENDENCY = new Set([
   ".next",
   ".qoder",
   ".turbo",
-  "build",
   "coverage",
   "dist",
   "node_modules",
@@ -241,7 +240,7 @@ export function applyIgnorePatterns(items, patterns = [], pathFor = (item) => it
   };
 }
 
-export function git(cwd, args, { allowFailure = false, timeout = 20_000 } = {}) {
+export function git(cwd, args, { timeout = 20_000 } = {}) {
   const result = spawnSync("git", args, {
     cwd,
     encoding: "utf8",
@@ -251,10 +250,15 @@ export function git(cwd, args, { allowFailure = false, timeout = 20_000 } = {}) 
   });
 
   if (result.status !== 0) {
-    if (allowFailure) {
-      return "";
-    }
-    throw new Error(`git ${args.join(" ")} failed: ${result.stderr.trim()}`);
+    const error = Object.assign(
+      new Error(`git ${args.join(" ")} failed: ${String(result.stderr ?? "").trim()}`),
+      {
+        code: result.error?.code === "ETIMEDOUT" ? "GIT_COMMAND_TIMEOUT" : "GIT_COMMAND_FAILED",
+        command: Object.freeze(["git", ...args]),
+        exitStatus: result.status,
+      },
+    );
+    throw error;
   }
 
   return result.stdout;
@@ -264,11 +268,327 @@ export function resolveRepoRoot(cwd = process.cwd()) {
   return path.resolve(git(path.resolve(cwd), ["rev-parse", "--show-toplevel"]).trim());
 }
 
-export function listTrackedFiles(repoRoot) {
-  return git(repoRoot, ["ls-files", "-z"], { allowFailure: true })
+function analysisScopeError(message, code = "INVALID_ANALYSIS_SCOPE") {
+  return Object.assign(new Error(message), { code });
+}
+
+function canonicalAbsolutePath(value) {
+  const resolved = path.resolve(value);
+  let existingAncestor = resolved;
+  const missingSegments = [];
+  while (!existsSync(existingAncestor)) {
+    const parent = path.dirname(existingAncestor);
+    if (parent === existingAncestor) {
+      return resolved;
+    }
+    missingSegments.unshift(path.basename(existingAncestor));
+    existingAncestor = parent;
+  }
+  const nativeRealpath = typeof realpathSync.native === "function"
+    ? realpathSync.native(existingAncestor)
+    : realpathSync(existingAncestor);
+  return path.resolve(nativeRealpath, ...missingSegments);
+}
+
+function canonicalPathIdentity(value) {
+  const canonical = canonicalAbsolutePath(value);
+  return process.platform === "win32" ? canonical.toLowerCase() : canonical;
+}
+
+function sameCanonicalPath(left, right) {
+  return canonicalPathIdentity(left) === canonicalPathIdentity(right);
+}
+
+function unwrapAnalysisScope(value) {
+  if (value && typeof value === "object" && Object.hasOwn(value, "analysisScope")) {
+    return value.analysisScope;
+  }
+  return value;
+}
+
+function normalizeRepoRelativePath(value, {
+  allowRoot = true,
+  label = "repository-relative path",
+  code = "INVALID_ANALYSIS_SCOPE",
+} = {}) {
+  const raw = toPosix(value ?? "");
+  if (raw.includes("\0")) {
+    throw analysisScopeError(`${label} must not contain NUL bytes`, code);
+  }
+  if (path.posix.isAbsolute(raw) || path.win32.isAbsolute(raw)) {
+    throw analysisScopeError(`${label} must be relative to the Git root: ${raw}`, code);
+  }
+
+  const withoutLeadingDot = raw.replace(/^(?:\.\/)+/u, "");
+  if (withoutLeadingDot === "" || withoutLeadingDot === ".") {
+    if (allowRoot) {
+      return ".";
+    }
+    throw analysisScopeError(`${label} must identify a path below the Git root`, code);
+  }
+
+  if (withoutLeadingDot.split("/").includes("..")) {
+    throw analysisScopeError(`${label} must not traverse outside its scope: ${raw}`, code);
+  }
+
+  const normalized = path.posix.normalize(withoutLeadingDot).replace(/\/+$/u, "");
+  if (path.posix.isAbsolute(normalized)
+    || normalized === ".."
+    || normalized.startsWith("../")) {
+    throw analysisScopeError(`${label} must not traverse outside its scope: ${raw}`, code);
+  }
+  return normalized || ".";
+}
+
+function routeForTarget(repoRoot, targetRoot) {
+  const canonicalRepoRoot = canonicalAbsolutePath(repoRoot);
+  const canonicalTargetRoot = canonicalAbsolutePath(targetRoot);
+  const relative = path.relative(canonicalRepoRoot, canonicalTargetRoot);
+  if (relative === "") {
+    return ".";
+  }
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw analysisScopeError(
+      `analysis target must stay inside the Git root: ${targetRoot}`,
+      "INVALID_PACKAGE_SCOPE",
+    );
+  }
+  return normalizeRepoRelativePath(relative, {
+    label: "analysis target route",
+    code: "INVALID_PACKAGE_SCOPE",
+  });
+}
+
+function canonicalAnalysisScope(value) {
+  const scope = unwrapAnalysisScope(value);
+  if (scope === undefined || scope === null) {
+    return { kind: "repo", route: ".", pathspecs: [] };
+  }
+  if (typeof scope !== "object" || Array.isArray(scope)) {
+    throw analysisScopeError("analysis scope must be an object");
+  }
+
+  const routeValue = scope.route ?? scope.packageRelPath
+    ?? (scope.kind === "repo" || scope.targetKind === "repo-root" ? "." : undefined);
+  if (routeValue === undefined || routeValue === null) {
+    throw analysisScopeError("analysis scope route is required");
+  }
+  const route = normalizeRepoRelativePath(routeValue, { label: "analysis scope route" });
+  const inferredKind = route === "." ? "repo" : "path";
+  const kind = scope.kind ?? inferredKind;
+  if (!new Set(["repo", "path"]).has(kind)) {
+    throw analysisScopeError(`unsupported analysis scope kind: ${kind}`);
+  }
+  if (kind !== inferredKind) {
+    throw analysisScopeError(`analysis scope kind ${kind} is incompatible with route ${route}`);
+  }
+
+  const pathspecs = kind === "repo" ? [] : [literalGitPathspec(route)];
+  if (scope.pathspecs !== undefined) {
+    if (!Array.isArray(scope.pathspecs)
+      || scope.pathspecs.length !== pathspecs.length
+      || scope.pathspecs.some((item, index) => item !== pathspecs[index])) {
+      throw analysisScopeError(`analysis scope pathspecs do not match route ${route}`);
+    }
+  }
+  return { kind, route, pathspecs };
+}
+
+export function literalGitPathspec(filePath) {
+  const normalized = normalizeRepoRelativePath(filePath, {
+    allowRoot: false,
+    label: "Git pathspec route",
+    code: "INVALID_PACKAGE_SCOPE",
+  });
+  return `:(top,literal)${normalized}`;
+}
+
+export function publicAnalysisScope(analysisScope) {
+  const scope = canonicalAnalysisScope(analysisScope);
+  return Object.freeze({
+    kind: scope.kind,
+    route: scope.route,
+    pathspecs: Object.freeze([...scope.pathspecs]),
+  });
+}
+
+export function resolveAnalysisScope(options = {}) {
+  const normalizedOptions = typeof options === "string" ? { cwd: options } : options;
+  if (!normalizedOptions || typeof normalizedOptions !== "object" || Array.isArray(normalizedOptions)) {
+    throw analysisScopeError("analysis scope options must be an object");
+  }
+
+  const discoveryCwd = canonicalAbsolutePath(
+    normalizedOptions.cwd
+      ?? normalizedOptions.targetRoot
+      ?? normalizedOptions.repoRoot
+      ?? process.cwd(),
+  );
+  const repoRoot = canonicalAbsolutePath(normalizedOptions.repoRoot ?? resolveRepoRoot(discoveryCwd));
+  const explicitRoute = normalizedOptions.route ?? normalizedOptions.packageRelPath;
+  const targetRoot = explicitRoute === undefined
+    ? canonicalAbsolutePath(normalizedOptions.targetRoot ?? discoveryCwd)
+    : canonicalAbsolutePath(path.resolve(repoRoot, ...normalizeRepoRelativePath(explicitRoute, {
+      label: "analysis target route",
+      code: "INVALID_PACKAGE_SCOPE",
+    }).split("/")));
+  const route = routeForTarget(repoRoot, targetRoot);
+
+  if (explicitRoute !== undefined) {
+    const normalizedExplicitRoute = normalizeRepoRelativePath(explicitRoute, {
+      label: "analysis target route",
+      code: "INVALID_PACKAGE_SCOPE",
+    });
+    if (normalizedExplicitRoute !== route) {
+      throw analysisScopeError(
+        `analysis target route ${normalizedExplicitRoute} does not match target ${targetRoot}`,
+        "INVALID_PACKAGE_SCOPE",
+      );
+    }
+  }
+  if (normalizedOptions.targetRoot !== undefined
+    && routeForTarget(repoRoot, canonicalAbsolutePath(normalizedOptions.targetRoot)) !== route) {
+    throw analysisScopeError(
+      "analysis target route and targetRoot identify different paths",
+      "INVALID_PACKAGE_SCOPE",
+    );
+  }
+
+  const publicScope = publicAnalysisScope({
+    kind: route === "." ? "repo" : "path",
+    route,
+  });
+  return Object.freeze({
+    ...publicScope,
+    repoRoot,
+    targetRoot,
+  });
+}
+
+export function resolveAnalysisScopeForOptions(options = {}) {
+  const supplied = unwrapAnalysisScope(options.analysisScope);
+  const resolved = resolveAnalysisScope({
+    cwd: options.cwd ?? process.env.QODER_CWD ?? process.cwd(),
+    repoRoot: supplied?.repoRoot ?? options.repoRoot,
+    targetRoot: supplied?.targetRoot ?? options.targetRoot,
+    route: supplied?.route ?? options.packageRelPath,
+  });
+  if (supplied !== undefined && supplied !== null) {
+    assertCompatibleAnalysisScope(supplied, resolved, "provided analysis scope");
+  }
+  return resolved;
+}
+
+export function isPathInAnalysisScope(filePath, analysisScope) {
+  let normalized;
+  try {
+    normalized = normalizeRepoRelativePath(filePath, { label: "analyzed file path" });
+  } catch {
+    return false;
+  }
+  const scope = canonicalAnalysisScope(analysisScope);
+  return scope.kind === "repo"
+    || normalized === scope.route
+    || normalized.startsWith(`${scope.route}/`);
+}
+
+export function toAnalysisRelativePath(filePath, analysisScope) {
+  const normalized = normalizeRepoRelativePath(filePath, { label: "analyzed file path" });
+  const scope = canonicalAnalysisScope(analysisScope);
+  if (!isPathInAnalysisScope(normalized, scope)) {
+    throw analysisScopeError(
+      `path ${normalized} is outside analysis scope ${scope.route}`,
+      "PATH_OUTSIDE_ANALYSIS_SCOPE",
+    );
+  }
+  if (scope.kind === "repo") {
+    return normalized;
+  }
+  return normalized === scope.route ? "." : normalized.slice(scope.route.length + 1);
+}
+
+export function fromAnalysisRelativePath(filePath, analysisScope) {
+  const normalized = normalizeRepoRelativePath(filePath, {
+    label: "analysis-relative path",
+    code: "PATH_OUTSIDE_ANALYSIS_SCOPE",
+  });
+  const scope = canonicalAnalysisScope(analysisScope);
+  if (scope.kind === "repo" || normalized === ".") {
+    return normalized === "." && scope.kind === "path" ? scope.route : normalized;
+  }
+  return path.posix.join(scope.route, normalized);
+}
+
+export function scopePathspecArgs(analysisScope) {
+  const scope = canonicalAnalysisScope(analysisScope);
+  return ["--", ...scope.pathspecs];
+}
+
+export function assertCompatibleAnalysisScope(actual, expected, owner = "analysis input") {
+  const expectedScope = canonicalAnalysisScope(expected);
+  const actualValue = unwrapAnalysisScope(actual);
+  if ((actualValue === undefined || actualValue === null) && expectedScope.kind === "repo") {
+    return true;
+  }
+  if (actualValue === undefined || actualValue === null) {
+    throw analysisScopeError(
+      `${owner} is missing analysis scope ${expectedScope.route}`,
+      "ANALYSIS_SCOPE_MISMATCH",
+    );
+  }
+
+  const actualScope = canonicalAnalysisScope(actualValue);
+  const actualRepoRoot = actualValue.repoRoot;
+  const expectedValue = unwrapAnalysisScope(expected);
+  const expectedRepoRoot = expectedValue?.repoRoot;
+  const sameRepoRoot = actualRepoRoot === undefined || expectedRepoRoot === undefined
+    || sameCanonicalPath(actualRepoRoot, expectedRepoRoot);
+  if (!sameRepoRoot
+    || actualScope.kind !== expectedScope.kind
+    || actualScope.route !== expectedScope.route) {
+    throw analysisScopeError(
+      `${owner} analysis scope ${actualScope.route} does not match ${expectedScope.route}`,
+      "ANALYSIS_SCOPE_MISMATCH",
+    );
+  }
+  return true;
+}
+
+export function listTrackedFiles(repoRoot, analysisScope = null) {
+  const resolvedRepoRoot = canonicalAbsolutePath(repoRoot);
+  const scopeValue = unwrapAnalysisScope(analysisScope);
+  if (scopeValue?.repoRoot !== undefined
+    && !sameCanonicalPath(scopeValue.repoRoot, resolvedRepoRoot)) {
+    throw analysisScopeError(
+      `tracked-file Git root ${resolvedRepoRoot} does not match analysis scope Git root ${scopeValue.repoRoot}`,
+      "ANALYSIS_SCOPE_MISMATCH",
+    );
+  }
+  return git(resolvedRepoRoot, ["ls-files", "-z", ...scopePathspecArgs(scopeValue)])
     .split("\0")
     .filter(Boolean)
-    .map(toPosix);
+    .map(toPosix)
+    .filter((filePath) => isPathInAnalysisScope(filePath, scopeValue));
+}
+
+export function listUntrackedFiles(repoRoot, analysisScope = null) {
+  const resolvedRepoRoot = canonicalAbsolutePath(repoRoot);
+  const scopeValue = unwrapAnalysisScope(analysisScope);
+  if (scopeValue?.repoRoot !== undefined
+    && !sameCanonicalPath(scopeValue.repoRoot, resolvedRepoRoot)) {
+    throw analysisScopeError(
+      `untracked-file Git root ${resolvedRepoRoot} does not match analysis scope Git root ${scopeValue.repoRoot}`,
+      "ANALYSIS_SCOPE_MISMATCH",
+    );
+  }
+  return git(
+    resolvedRepoRoot,
+    ["ls-files", "--others", "--exclude-standard", "-z", ...scopePathspecArgs(scopeValue)],
+  )
+    .split("\0")
+    .filter(Boolean)
+    .map(toPosix)
+    .filter((filePath) => isPathInAnalysisScope(filePath, scopeValue));
 }
 
 export function languageFor(filePath) {
@@ -363,6 +683,11 @@ export function analysisDirectoryFor(filePath) {
   return directoryOf(filePath, 2);
 }
 
+export function analysisDirectoryForScope(filePath, analysisScope) {
+  const localPath = toAnalysisRelativePath(filePath, analysisScope);
+  return fromAnalysisRelativePath(analysisDirectoryFor(localPath), analysisScope);
+}
+
 export function parentDirectories(filePath, maxDepth = 3) {
   const parts = toPosix(filePath).split("/");
   const max = Math.min(maxDepth, Math.max(1, parts.length - 1));
@@ -420,7 +745,7 @@ export function normalizeRenamePath(filePath) {
     .replace(/[{}]/g, "");
 }
 
-export function parseNumstat(output) {
+export function parseNumstat(output, analysisScope = null) {
   const files = [];
   for (const line of output.split(/\r?\n/)) {
     if (!line.trim()) {
@@ -429,7 +754,7 @@ export function parseNumstat(output) {
 
     const [addedRaw, deletedRaw, ...pathParts] = line.split("\t");
     const filePath = normalizeRenamePath(pathParts.join("\t"));
-    if (!filePath) {
+    if (!filePath || !isPathInAnalysisScope(filePath, analysisScope)) {
       continue;
     }
 

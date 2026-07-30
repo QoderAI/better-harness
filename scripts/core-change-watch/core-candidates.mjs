@@ -4,8 +4,9 @@ import {
   DEFAULT_MAX_COMMITS,
   SCHEMA_VERSION,
   addCount,
-  analysisDirectoryFor,
+  analysisDirectoryForScope,
   applyIgnorePatterns,
+  assertCompatibleAnalysisScope,
   compactReasonList,
   isCli,
   isDependencyOrGenerated,
@@ -18,9 +19,11 @@ import {
   option,
   parseArgs,
   positiveInt,
-  resolveRepoRoot,
+  publicAnalysisScope,
+  resolveAnalysisScopeForOptions,
   scoreToConfidence,
   sortedCounts,
+  toAnalysisRelativePath,
   writeJsonResult,
 } from "./common.mjs";
 import { analyzeGitHistoryProfile } from "./git-history-profile.mjs";
@@ -66,8 +69,8 @@ function isNonCoreCandidatePath(candidatePath) {
   ));
 }
 
-function candidateForFile(map, filePath) {
-  const directory = analysisDirectoryFor(filePath);
+function candidateForFile(map, filePath, analysisScope) {
+  const directory = analysisDirectoryForScope(filePath, analysisScope);
   const item = map.get(directory) ?? {
     path: directory,
     score: 0,
@@ -89,9 +92,10 @@ function candidateForFile(map, filePath) {
   return item;
 }
 
-function applyPathSignals(candidate) {
+function applyPathSignals(candidate, analysisScope) {
+  const localPath = toAnalysisRelativePath(candidate.path, analysisScope);
   for (const signal of CORE_PATH_PATTERNS) {
-    if (signal.pattern.test(candidate.path)) {
+    if (signal.pattern.test(localPath)) {
       candidate.score += signal.score;
       candidate.reasons.push(signal.reason);
     }
@@ -151,8 +155,9 @@ function applyProfileSignals(candidate, profile) {
   }
 }
 
-function candidateHasSource(candidate, pattern) {
-  return candidate.evidence.sourceFiles.some((filePath) => pattern.test(filePath));
+function candidateHasSource(candidate, pattern, analysisScope) {
+  return candidate.evidence.sourceFiles.some((filePath) =>
+    pattern.test(toAnalysisRelativePath(filePath, analysisScope)));
 }
 
 function frameworkManifestDirectory(evidence) {
@@ -164,7 +169,7 @@ function frameworkManifestDirectory(evidence) {
   return parts.length <= 1 ? "." : parts.slice(0, -1).join("/");
 }
 
-function applyFrameworkSignals(candidate, profile) {
+function applyFrameworkSignals(candidate, profile, analysisScope) {
   const frameworks = new Set((profile.frameworks ?? []).map((framework) => framework.name));
   for (const framework of profile.frameworks ?? []) {
     for (const evidence of framework.evidence ?? []) {
@@ -176,36 +181,48 @@ function applyFrameworkSignals(candidate, profile) {
     }
   }
   for (const signal of FRAMEWORK_PATH_SIGNALS) {
-    if (frameworks.has(signal.framework) && signal.pattern.test(candidate.path)) {
+    if (frameworks.has(signal.framework)
+      && signal.pattern.test(toAnalysisRelativePath(candidate.path, analysisScope))) {
       candidate.score += signal.score;
       candidate.reasons.push(signal.reason);
     }
   }
 
-  if (frameworks.has("django") && candidateHasSource(candidate, /(^|\/)(models|views|urls|serializers|services)\.py$/)) {
+  if (frameworks.has("django")
+    && candidateHasSource(candidate, /(^|\/)(models|views|urls|serializers|services)\.py$/, analysisScope)) {
     candidate.score += 20;
     candidate.reasons.push("django app module files");
   }
-  if (frameworks.has("nestjs") && candidateHasSource(candidate, /(^|\/).*\.(module|service|controller)\.ts$/)) {
+  if (frameworks.has("nestjs")
+    && candidateHasSource(candidate, /(^|\/).*\.(module|service|controller)\.ts$/, analysisScope)) {
     candidate.score += 18;
     candidate.reasons.push("nestjs module/service/controller files");
   }
 }
 
 export async function analyzeCoreCandidates(options = {}) {
-  const repoRoot = resolveRepoRoot(options.cwd ?? process.env.QODER_CWD ?? process.cwd());
+  const analysisScope = resolveAnalysisScopeForOptions(options);
+  const repoRoot = analysisScope.repoRoot;
   const allowedLanguages = new Set(normalizeLanguages(options.languages));
   const maxCandidates = positiveInt(options.maxCandidates, 30);
-  const rawTrackedFiles = listTrackedFiles(repoRoot);
+  const rawTrackedFiles = listTrackedFiles(repoRoot, analysisScope);
   const filteredTrackedFiles = applyIgnorePatterns(rawTrackedFiles, options.ignore);
   const trackedFiles = filteredTrackedFiles.items;
-  const profile = options.profile ?? await analyzeProjectProfile({ cwd: repoRoot, languages: [...allowedLanguages], ignore: options.ignore });
+  const profile = options.profile ?? await analyzeProjectProfile({
+    cwd: repoRoot,
+    analysisScope,
+    languages: [...allowedLanguages],
+    ignore: options.ignore,
+  });
   const history = options.history ?? await analyzeGitHistoryProfile({
     cwd: repoRoot,
+    analysisScope,
     languages: [...allowedLanguages],
     maxCommits: positiveInt(options.maxCommits, DEFAULT_MAX_COMMITS),
     ignore: options.ignore,
   });
+  assertCompatibleAnalysisScope(profile, analysisScope, "project profile");
+  assertCompatibleAnalysisScope(history, analysisScope, "history profile");
   const candidates = new Map();
 
   for (const filePath of trackedFiles) {
@@ -216,19 +233,22 @@ export async function analyzeCoreCandidates(options = {}) {
     if (!allowedLanguages.has(language)) {
       continue;
     }
-    if (isNonCoreCandidatePath(analysisDirectoryFor(filePath))) {
+    if (isNonCoreCandidatePath(toAnalysisRelativePath(
+      analysisDirectoryForScope(filePath, analysisScope),
+      analysisScope,
+    ))) {
       continue;
     }
-    candidateForFile(candidates, filePath);
+    candidateForFile(candidates, filePath, analysisScope);
   }
 
   for (const candidate of candidates.values()) {
     candidate.score += Math.min(10, candidate.files);
     applyDensitySignals(candidate);
-    applyPathSignals(candidate);
+    applyPathSignals(candidate, analysisScope);
     applyHistorySignals(candidate, history);
     applyProfileSignals(candidate, profile);
-    applyFrameworkSignals(candidate, profile);
+    applyFrameworkSignals(candidate, profile, analysisScope);
   }
 
   const resultCandidates = [...candidates.values()]
@@ -257,6 +277,7 @@ export async function analyzeCoreCandidates(options = {}) {
     kind: "core-candidates",
     status: "ok",
     repoRoot,
+    analysisScope: publicAnalysisScope(analysisScope),
     filters: filteredTrackedFiles.filters,
     candidates: resultCandidates,
     summary: {
@@ -271,6 +292,7 @@ export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const result = await analyzeCoreCandidates({
     cwd: option(args, "cwd"),
+    packageRelPath: option(args, "package-rel-path"),
     languages: option(args, "languages"),
     maxCommits: positiveInt(option(args, "max-commits"), DEFAULT_MAX_COMMITS),
     maxCandidates: positiveInt(option(args, "max-candidates"), 30),

@@ -102,11 +102,12 @@ test("asset baseline shares one inventory snapshot and emits compact AI envelope
   assert.equal(lintInventory, rawInventory);
   assert.equal(publicInventory, rawInventory);
   assert.equal(result.kind, ASSET_BASELINE_KIND);
-  assert.equal(result.status, "complete");
+  assert.equal(result.status, "partial");
   assert.equal(result.diagnostics.sharedInventorySnapshot, true);
   assert.equal(result.diagnostics.compact, true);
   assert.equal(result.envelopes.lint.data.findings.items.length, MAX_BASELINE_FINDINGS);
   assert.equal(result.envelopes.lint.data.findings.omitted, 4);
+  assert.equal(result.envelopes.lint.data.findings.truncated, true);
   assert.equal(result.envelopes.integrity.data.findings.omitted, 4);
   assert.deepEqual(result.envelopes.inventory.data.ownerRoutes.items[0], {
     kind: "skills",
@@ -119,6 +120,12 @@ test("asset baseline shares one inventory snapshot and emits compact AI envelope
   assert.equal(result.envelopes.inventory.data.ownerRoutes.items.some((item) => item.kind === "plugins"), true);
   assert.equal(result.envelopes.inventory.data.ownerRoutes.items.some((item) => item.kind === "agents"), true);
   assert.equal(result.envelopes.inventory.data.ownerRoutes.omitted, 16);
+  assert.equal(result.envelopes.inventory.data.ownerRoutes.truncated, true);
+  assert.deepEqual(result.diagnostics.truncatedStages, [
+    "lint-findings",
+    "inventory-owner-routes",
+    "integrity-findings",
+  ]);
   assert.equal(Object.hasOwn(result.envelopes.inventory.data.summary, "practiceCoverageRows"), false);
   const serialized = JSON.stringify(result);
   assert.ok(Buffer.byteLength(serialized) < 12_000, "fixture baseline must stay compact for AI reading");
@@ -284,6 +291,102 @@ test("Qwen asset baseline completes from a native project fixture", async () => 
     assert.equal(result.envelopes.lint.data.assetInventory.summary.skills, 1);
     assert.equal(result.envelopes.inventory.data.ownerRoutes.items.some((item) =>
       item.kind === "skills" && item.name === "review"), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("package asset baseline preserves root and intermediate assets as inherited owners", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-asset-monorepo-"));
+  const workspace = path.join(root, "packages", "app");
+  const qoderHome = path.join(root, "qoder-home");
+  try {
+    await mkdir(qoderHome, { recursive: true });
+    await mkdir(path.join(root, ".agents", "skills", "root-review"), { recursive: true });
+    await mkdir(path.join(workspace, ".qoder", "skills", "local-review"), { recursive: true });
+    await writeFile(path.join(root, "AGENTS.md"), "# Root instructions\n");
+    await writeFile(path.join(root, "packages", "AGENTS.md"), "# Packages instructions\n");
+    await writeFile(path.join(workspace, "AGENTS.md"), "# App instructions\n");
+    await writeFile(
+      path.join(root, ".agents", "skills", "root-review", "SKILL.md"),
+      "---\nname: root-review\ndescription: Review the repository contract.\n---\n",
+    );
+    await writeFile(
+      path.join(workspace, ".qoder", "skills", "local-review", "SKILL.md"),
+      "---\nname: local-review\ndescription: Review the package contract.\n---\n",
+    );
+    const topology = {
+      kind: "better-harness.workspace-topology",
+      schemaVersion: 1,
+      status: "complete",
+      requestedWorkspace: workspace,
+      gitRoot: root,
+      target: {
+        kind: "workspace-member",
+        route: "packages/app",
+        memberRoute: "packages/app",
+        memberMatch: "exact",
+      },
+      members: {
+        items: [{
+          route: "packages/app",
+          kind: "manifest",
+          discoveredBy: ["package.json#workspaces"],
+          manifestRoute: "package.json",
+        }],
+        total: 1,
+        omitted: 0,
+        truncated: false,
+      },
+      instructionScopes: {
+        items: [
+          { route: "AGENTS.md", provider: "qoder", activation: "effective" },
+          { route: "packages/AGENTS.md", provider: "qoder", activation: "candidate" },
+          { route: "packages/app/AGENTS.md", provider: "qoder", activation: "candidate" },
+        ],
+        total: 3,
+        omitted: 0,
+        truncated: false,
+      },
+      discovery: {
+        inventoryMode: "git",
+        ignoreMode: "git-index",
+        tracked: 5,
+        untracked: 0,
+        scanned: 5,
+        omitted: 0,
+        truncated: false,
+        warnings: [],
+      },
+    };
+
+    const result = await collectAssetBaseline({
+      provider: "qoder",
+      workspace,
+      qoderHome,
+      topology,
+      includeUserHome: false,
+    });
+
+    assert.equal(result.status, "complete");
+    assert.equal(result.diagnostics.inheritedWorkspaceCount, 2);
+    const owners = result.envelopes.inventory.data.ownerRoutes.items;
+    assert.ok(owners.some((item) =>
+      item.kind === "skills"
+      && item.scope === "project"
+      && item.name === "local-review"
+      && item.route === ".qoder/skills/local-review/SKILL.md"));
+    assert.ok(owners.some((item) =>
+      item.kind === "skills"
+      && item.scope === "inherited"
+      && item.name === "root-review"
+      && item.route === ".agents/skills/root-review/SKILL.md"
+      && item.effectiveTarget === "packages/app"));
+    const lintEntrypoints = result.envelopes.lint.data.assetInventory;
+    assert.ok(lintEntrypoints);
+    assert.ok(result.envelopes.lint.data.summary.entrypoints >= 3);
+    assert.ok(result.envelopes.inventory.data.coverageRows.some((row) =>
+      row.surface === "Skills" && row.scopes.includes("Inherited")));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

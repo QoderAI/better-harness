@@ -7,6 +7,7 @@ import {
   AGENT_WORK_LOOP_DIMENSIONS,
   AGENT_WORK_LOOP_MODEL_ID,
   AGENT_WORK_LOOP_REPORT_CONTRACT_VERSION,
+  FINDING_TARGET_REPORT_CONTRACT_VERSION,
   agentWorkLoopDimensionScoreCeiling,
   scoreAgentWorkLoopDimension,
   scoreAgentWorkLoopEvidence,
@@ -66,7 +67,8 @@ test("Agent Work Loop runtime metadata stays separate from the review model", ()
   ]) assert.match(software, new RegExp(heading));
 
   assert.equal(AGENT_WORK_LOOP_MODEL_ID, "agent-work-loop-v4");
-  assert.equal(AGENT_WORK_LOOP_REPORT_CONTRACT_VERSION, 25);
+  assert.equal(FINDING_TARGET_REPORT_CONTRACT_VERSION, 26);
+  assert.equal(AGENT_WORK_LOOP_REPORT_CONTRACT_VERSION, 26);
   assert.match(workLoop, /^# Agent Work Loop\n/);
   assert.match(workLoop, /## Review map/);
   assert.match(workLoop, /## Evidence, findings, and scores/);

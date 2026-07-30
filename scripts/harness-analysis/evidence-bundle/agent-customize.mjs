@@ -12,6 +12,8 @@ export async function collectAgentCustomize(context, options = {}, dependencies 
     provider: context.provider,
     workspace: context.workspace,
     language: context.language,
+    topology: context.topology,
+    analysisScope: context.analysisScope,
     "include-user-home": context.authority.includeUserHome,
     "include-memories": context.authority.includeMemories,
     ...(options[`${context.provider}-home`] ? { [`${context.provider}-home`]: options[`${context.provider}-home`] } : {}),

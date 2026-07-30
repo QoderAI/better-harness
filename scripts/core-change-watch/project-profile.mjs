@@ -7,6 +7,7 @@ import {
   SCHEMA_VERSION,
   addCount,
   analysisDirectoryFor,
+  analysisDirectoryForScope,
   applyIgnorePatterns,
   compactReasonList,
   fileRoleFor,
@@ -19,9 +20,12 @@ import {
   normalizeLanguages,
   option,
   parseArgs,
+  publicAnalysisScope,
   readJsonFile,
-  resolveRepoRoot,
+  resolveAnalysisScopeForOptions,
   sortedCounts,
+  fromAnalysisRelativePath,
+  toAnalysisRelativePath,
   toPosix,
   writeJsonResult,
 } from "./common.mjs";
@@ -133,10 +137,10 @@ function entryScore(filePath) {
   return 0;
 }
 
-function corePathHint(filePath) {
-  const directory = analysisDirectoryFor(filePath);
-  if (/(^|\/)(core|auth|security|permission|permissions|crypto|session|payment|billing|domain|service|api)(\/|$)/i.test(directory)) {
-    return directory;
+function corePathHint(filePath, analysisScope) {
+  const localDirectory = analysisDirectoryFor(toAnalysisRelativePath(filePath, analysisScope));
+  if (/(^|\/)(core|auth|security|permission|permissions|crypto|session|payment|billing|domain|service|api)(\/|$)/i.test(localDirectory)) {
+    return fromAnalysisRelativePath(localDirectory, analysisScope);
   }
   return "";
 }
@@ -206,11 +210,12 @@ function firstMarkdownHeading(text) {
   return "";
 }
 
-function rootPackageIdentity(repoRoot, fileSet) {
-  if (!fileSet.has("package.json")) {
+function rootPackageIdentity(repoRoot, fileSet, analysisScope) {
+  const manifestPath = fromAnalysisRelativePath("package.json", analysisScope);
+  if (!fileSet.has(manifestPath)) {
     return null;
   }
-  const manifest = readJsonFile(repoRoot, "package.json");
+  const manifest = readJsonFile(repoRoot, manifestPath);
   if (!manifest || typeof manifest !== "object") {
     return null;
   }
@@ -220,16 +225,19 @@ function rootPackageIdentity(repoRoot, fileSet) {
     evidence: [],
   };
   if (identity.name) {
-    identity.evidence.push("package.json:name");
+    identity.evidence.push(`${manifestPath}:name`);
   }
   if (identity.description) {
-    identity.evidence.push("package.json:description");
+    identity.evidence.push(`${manifestPath}:description`);
   }
   return identity.name || identity.description ? identity : null;
 }
 
-function rootReadmeTitle(repoRoot, trackedFiles) {
-  const readmePath = trackedFiles.find((filePath) => /^readme(?:\.[^.]+)?$/i.test(path.posix.basename(filePath)) && !filePath.includes("/"));
+function rootReadmeTitle(repoRoot, trackedFiles, analysisScope) {
+  const readmePath = trackedFiles.find((filePath) => {
+    const local = toAnalysisRelativePath(filePath, analysisScope);
+    return /^readme(?:\.[^.]+)?$/i.test(path.posix.basename(local)) && !local.includes("/");
+  });
   if (!readmePath) {
     return { title: "", path: "" };
   }
@@ -359,10 +367,10 @@ function sourceLineStatus(totals) {
   return "unavailable";
 }
 
-function projectIdentity(repoRoot, trackedFiles) {
+function projectIdentity(repoRoot, trackedFiles, analysisScope) {
   const fileSet = new Set(trackedFiles);
-  const packageIdentity = rootPackageIdentity(repoRoot, fileSet);
-  const readme = rootReadmeTitle(repoRoot, trackedFiles);
+  const packageIdentity = rootPackageIdentity(repoRoot, fileSet, analysisScope);
+  const readme = rootReadmeTitle(repoRoot, trackedFiles, analysisScope);
   const evidence = [];
 
   if (packageIdentity?.evidence?.length) {
@@ -373,7 +381,7 @@ function projectIdentity(repoRoot, trackedFiles) {
   }
 
   return {
-    name: packageIdentity?.name || readme.title || path.basename(repoRoot),
+    name: packageIdentity?.name || readme.title || path.basename(analysisScope.targetRoot),
     description: packageIdentity?.description || "",
     readmeTitle: readme.title,
     evidence: compactReasonList(evidence, 8),
@@ -391,13 +399,17 @@ function isPathUnderScope(filePath, scope) {
   return normalizedScope === "." || normalized === normalizedScope || normalized.startsWith(`${normalizedScope}/`);
 }
 
-function agentInstructionFiles(trackedFiles) {
+function agentInstructionFiles(trackedFiles, analysisScope) {
   return trackedFiles
     .filter((filePath) => path.posix.basename(toPosix(filePath)) === AGENT_INSTRUCTION_FILE)
     .filter((filePath) => !isDependencyOrGenerated(filePath))
     .map((filePath) => ({
       path: toPosix(filePath),
-      scope: instructionScope(filePath),
+      scope: fromAnalysisRelativePath(
+        instructionScope(toAnalysisRelativePath(filePath, analysisScope)),
+        analysisScope,
+      ),
+      targetRoot: instructionScope(toAnalysisRelativePath(filePath, analysisScope)) === ".",
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
 }
@@ -424,9 +436,9 @@ function agentInstructionStatus(count, suggestedMinimum) {
   return "adequate";
 }
 
-function analyzeAgentInstructions({ trackedFiles, sourceRecords, sourceRoots, totals }) {
-  const files = agentInstructionFiles(trackedFiles);
-  const nestedScopes = files.filter((item) => item.scope !== ".").map((item) => item.scope);
+function analyzeAgentInstructions({ trackedFiles, sourceRecords, sourceRoots, totals, analysisScope }) {
+  const files = agentInstructionFiles(trackedFiles, analysisScope);
+  const nestedScopes = files.filter((item) => !item.targetRoot).map((item) => item.scope);
   let sourceFilesUnderNestedInstructions = 0;
   const uncoveredSourceDirs = new Map();
 
@@ -439,7 +451,7 @@ function analyzeAgentInstructions({ trackedFiles, sourceRecords, sourceRoots, to
     }
   }
 
-  const rootCount = files.filter((item) => item.scope === ".").length;
+  const rootCount = files.filter((item) => item.targetRoot).length;
   const nestedCount = files.length - rootCount;
   const suggestedMinimum = suggestedInstructionMinimum(totals, sourceRoots);
   const suggestedAdditional = Math.max(0, suggestedMinimum - files.length);
@@ -466,7 +478,7 @@ function analyzeAgentInstructions({ trackedFiles, sourceRecords, sourceRoots, to
     count: files.length,
     rootCount,
     nestedCount,
-    files,
+    files: files.map(({ targetRoot: _targetRoot, ...file }) => file),
     status,
     suggestedMinimum,
     suggestedAdditional,
@@ -489,8 +501,9 @@ function buildProjectInfo({
   sourceRoots,
   entryCandidates,
   totals,
+  analysisScope,
 }) {
-  const identity = projectIdentity(repoRoot, trackedFiles);
+  const identity = projectIdentity(repoRoot, trackedFiles, analysisScope);
   return {
     ...identity,
     primaryLanguages: languages.slice(0, 5).map((item) => ({
@@ -519,10 +532,11 @@ function buildProjectInfo({
 }
 
 export async function analyzeProjectProfile(options = {}) {
-  const repoRoot = resolveRepoRoot(options.cwd ?? process.env.QODER_CWD ?? process.cwd());
+  const analysisScope = resolveAnalysisScopeForOptions(options);
+  const repoRoot = analysisScope.repoRoot;
   const allowedLanguages = new Set(normalizeLanguages(options.languages));
   const measureSourceLines = shouldMeasureSourceLines(options);
-  const rawTrackedFiles = listTrackedFiles(repoRoot);
+  const rawTrackedFiles = listTrackedFiles(repoRoot, analysisScope);
   const filteredTrackedFiles = applyIgnorePatterns(rawTrackedFiles, options.ignore);
   const trackedFiles = filteredTrackedFiles.items;
   const analysisTrackedFiles = trackedFiles.filter((filePath) => !isDependencyOrGenerated(filePath));
@@ -561,7 +575,7 @@ export async function analyzeProjectProfile(options = {}) {
     }
 
     if (!isSourceFile(normalized)) {
-      const score = entryScore(normalized);
+      const score = entryScore(toAnalysisRelativePath(normalized, analysisScope));
       if (score > 0 && existsSync(path.join(repoRoot, normalized))) {
         entryCandidates.push({
           path: normalized,
@@ -578,7 +592,7 @@ export async function analyzeProjectProfile(options = {}) {
       continue;
     }
 
-    const score = entryScore(normalized);
+    const score = entryScore(toAnalysisRelativePath(normalized, analysisScope));
     if (score > 0 && existsSync(path.join(repoRoot, normalized))) {
       entryCandidates.push({
         path: normalized,
@@ -613,7 +627,7 @@ export async function analyzeProjectProfile(options = {}) {
         path: normalized,
         language,
         lines,
-        directory: analysisDirectoryFor(normalized),
+        directory: analysisDirectoryForScope(normalized, analysisScope),
       });
     }
 
@@ -627,12 +641,13 @@ export async function analyzeProjectProfile(options = {}) {
     stats.files += 1;
     stats.sourceFiles += isPrimarySource ? 1 : 0;
     stats.testFiles += isTest ? 1 : 0;
-    addCount(stats.roots, analysisDirectoryFor(normalized), 1);
+    addCount(stats.roots, analysisDirectoryForScope(normalized, analysisScope), 1);
     languageStats.set(language, stats);
 
     if (isPrimarySource) {
-      addCount(sourceRoots, normalized.split("/")[0] ?? ".", 1);
-      const hint = corePathHint(normalized);
+      const localRoot = toAnalysisRelativePath(normalized, analysisScope).split("/")[0] ?? ".";
+      addCount(sourceRoots, fromAnalysisRelativePath(localRoot, analysisScope), 1);
+      const hint = corePathHint(normalized, analysisScope);
       addCount(coreHints, hint, hint ? 1 : 0);
     }
 
@@ -657,6 +672,7 @@ export async function analyzeProjectProfile(options = {}) {
     kind: "project-profile",
     status: "ok",
     repoRoot,
+    analysisScope: publicAnalysisScope(analysisScope),
     filters: filteredTrackedFiles.filters,
     projectInfo: buildProjectInfo({
       repoRoot,
@@ -667,12 +683,14 @@ export async function analyzeProjectProfile(options = {}) {
       sourceRoots: sortedSourceRoots,
       entryCandidates: sortedEntryCandidates,
       totals,
+      analysisScope,
     }),
     agentInstructions: analyzeAgentInstructions({
       trackedFiles,
       sourceRecords,
       sourceRoots: sortedSourceRoots,
       totals,
+      analysisScope,
     }),
     languages,
     manifests: sortedManifests,
@@ -688,6 +706,7 @@ export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const result = await analyzeProjectProfile({
     cwd: option(args, "cwd"),
+    packageRelPath: option(args, "package-rel-path"),
     languages: option(args, "languages"),
     ignore: option(args, "ignore"),
     measureSourceLines: Boolean(args["measure-source-lines"]),

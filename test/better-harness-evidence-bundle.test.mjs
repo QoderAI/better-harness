@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -12,9 +13,44 @@ import { collectAgentCustomize } from "../scripts/harness-analysis/evidence-bund
 
 const NOW = new Date("2026-07-24T08:00:00.000Z");
 
+function topologyResolution(workspace = ".", status = "complete") {
+  const absolute = path.resolve(workspace);
+  const topology = Object.freeze({
+    kind: "better-harness.workspace-topology",
+    schemaVersion: 1,
+    status,
+    requestedWorkspace: absolute,
+    gitRoot: absolute,
+    target: {
+      kind: "repo-root",
+      route: ".",
+      memberRoute: null,
+      memberMatch: "none",
+    },
+    members: { items: [], total: 0, omitted: 0, truncated: false },
+    instructionScopes: { items: [], total: 0, omitted: 0, truncated: false },
+    discovery: {
+      inventoryMode: "git",
+      ignoreMode: "git-index",
+      tracked: 1,
+      untracked: 0,
+      scanned: 1,
+      omitted: 0,
+      truncated: status !== "complete",
+      warnings: status === "complete" ? [] : [{ code: "inventory-truncated" }],
+    },
+  });
+  return Object.freeze({
+    topology,
+    analysisScope: Object.freeze({ kind: "repo", route: ".", pathspecs: Object.freeze([]) }),
+    inventory: Object.freeze({ items: Object.freeze([]) }),
+  });
+}
+
 function dependencies(overrides = {}) {
   return {
     now: () => NOW,
+    resolveWorkspaceTopology: async ({ workspace }) => topologyResolution(workspace),
     collectSessionEvidence: async () => availableLane({ kind: "session-core-facts", candidates: [] }),
     collectProjectHarness: async () => availableLane({ kind: "core-change-watch-evidence-pack" }),
     collectAgentCustomize: async () => availableLane({ kind: "agent-asset-baseline", status: "complete" }),
@@ -33,7 +69,7 @@ test("evidence bundle freezes the three canonical lane names and normal scope", 
   }, dependencies());
 
   assert.equal(result.kind, EVIDENCE_BUNDLE_KIND);
-  assert.equal(result.schemaVersion, 1);
+  assert.equal(result.schemaVersion, 2);
   assert.equal(result.status, "complete");
   assert.deepEqual(Object.keys(result.lanes), ["sessionEvidence", "projectHarness", "agentCustomize"]);
   assert.equal(result.context.provider, "codex");
@@ -45,7 +81,84 @@ test("evidence bundle freezes the three canonical lane names and normal scope", 
   });
   assert.equal(result.context.authority.includeUserHome, true);
   assert.equal(result.context.authority.includeMemories, false);
+  assert.equal(result.context.topology.target.kind, "repo-root");
+  assert.deepEqual(result.context.analysisScope, { kind: "repo", route: ".", pathspecs: [] });
   assert.equal(result.diagnostics.collectionMode, "frozen-context-multi-owner");
+});
+
+test("evidence bundle resolves topology once and shares the frozen binding with every consumer", async () => {
+  let resolutions = 0;
+  let canonicalTopology;
+  const received = [];
+  const result = await collectEvidenceBundle({ workspace: ".", depth: "normal" }, dependencies({
+    resolveWorkspaceTopology: async ({ workspace }) => {
+      resolutions += 1;
+      const resolution = topologyResolution(workspace);
+      canonicalTopology = resolution.topology;
+      return resolution;
+    },
+    collectSessionEvidence: async (context) => {
+      received.push(context.topology);
+      return availableLane({ kind: "session-core-facts", candidates: [] });
+    },
+    collectProjectHarness: async (context) => {
+      received.push(context.topology);
+      return availableLane({ kind: "core-change-watch-evidence-pack" });
+    },
+    collectAgentCustomize: async (context) => {
+      received.push(context.topology);
+      return availableLane({ kind: "agent-asset-baseline", status: "complete" });
+    },
+    analyzeHarnessEvidence: async (options) => {
+      received.push(options.topology);
+      return { evidence: "bounded", summaryFacts: { dimensions: [] } };
+    },
+  }));
+
+  assert.equal(result.status, "complete");
+  assert.equal(resolutions, 1);
+  assert.equal(received.length, 4);
+  assert.ok(received.every((topology) => topology === canonicalTopology));
+});
+
+test("topology truncation fails normal bundles and lowers quick bundles to partial", async () => {
+  const partialResolver = async ({ workspace }) => topologyResolution(workspace, "partial");
+  const normal = await collectEvidenceBundle({ workspace: ".", depth: "normal" }, dependencies({
+    resolveWorkspaceTopology: partialResolver,
+  }));
+  const quick = await collectEvidenceBundle({ workspace: ".", depth: "quick" }, dependencies({
+    resolveWorkspaceTopology: partialResolver,
+  }));
+
+  assert.equal(normal.status, "failed");
+  assert.equal(quick.status, "partial");
+  assert.equal(normal.diagnostics.topologyIncomplete, true);
+  assert.equal(normal.diagnostics.topologyStatus, "partial");
+});
+
+test("evidence bundle rejects a frozen topology for a different workspace", () => {
+  const resolution = topologyResolution(".");
+  const mismatched = structuredClone(resolution.topology);
+  mismatched.requestedWorkspace = path.resolve("different-workspace");
+  assert.throws(() => freezeEvidenceBundleContext({
+    workspace: ".",
+    topology: mismatched,
+    analysisScope: resolution.analysisScope,
+  }, NOW), (error) => error?.code === "INVALID_WORKSPACE_TOPOLOGY"
+    && /target\.route must resolve from gitRoot to requestedWorkspace/u.test(error.message));
+});
+
+test("evidence bundle rejects analysis pathspecs that are not derived from the frozen topology", () => {
+  const resolution = topologyResolution(".");
+  assert.throws(() => freezeEvidenceBundleContext({
+    workspace: ".",
+    topology: resolution.topology,
+    analysisScope: {
+      kind: "repo",
+      route: ".",
+      pathspecs: [":(top,literal)scripts"],
+    },
+  }, NOW), (error) => error?.code === "EVIDENCE_ANALYSIS_SCOPE_MISMATCH");
 });
 
 test("normal bundles fail closed and redact collector error details", async () => {
@@ -60,6 +173,24 @@ test("normal bundles fail closed and redact collector error details", async () =
   assert.equal(result.lanes.projectHarness.error.code, "PROJECT_SCAN_FAILED");
   assert.equal(result.lanes.projectHarness.error.message, "project-harness evidence is unavailable");
   assert.doesNotMatch(JSON.stringify(result), /Users\/example|secret/);
+});
+
+test("scoped Git coverage failure makes the project lane unavailable and fails normal bundles", async () => {
+  const normalDependencies = dependencies({
+    buildEvidencePack: async () => {
+      throw Object.assign(new Error("fatal: bad revision with private path"), {
+        code: "GIT_COMMAND_FAILED",
+      });
+    },
+  });
+  delete normalDependencies.collectProjectHarness;
+  const result = await collectEvidenceBundle({ workspace: ".", depth: "normal" }, normalDependencies);
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.lanes.projectHarness.status, "unavailable");
+  assert.equal(result.lanes.projectHarness.error.code, "GIT_COMMAND_FAILED");
+  assert.equal(result.lanes.projectHarness.error.message, "project-harness evidence is unavailable");
+  assert.ok(result.diagnostics.unavailableLanes.includes("projectHarness"));
 });
 
 test("quick bundles retain an explicit partial lane without failing the lead", async () => {

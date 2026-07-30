@@ -215,14 +215,6 @@ function installSourcesForRecord(record) {
 }
 
 function attachInstallRecord(plugin, record, matchKind, installOrder) {
-  if (matchKind === "cache-fallback") {
-    return {
-      ...plugin,
-      installSources: installSourcesForRecord(record),
-      installSource: record.source,
-      installMatch: matchKind,
-    };
-  }
   return {
     ...plugin,
     cursorPluginId: plugin.cursorPluginId ?? record.id,
@@ -270,8 +262,6 @@ function filterInstalledPlugins(plugins, installState, pluginIdHints) {
   const pluginById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
   const included = new Map();
   const matchedRecordIds = new Set();
-  const unmatchedRecords = [];
-  let fallbackCount = 0;
 
   records.forEach((record, installOrder) => {
     const match = matchInstallRecord(record, plugins, pluginById, pluginIdHints);
@@ -280,29 +270,11 @@ function filterInstalledPlugins(plugins, installState, pluginIdHints) {
       matchedRecordIds.add(record.id);
       return;
     }
-    unmatchedRecords.push({ record, installOrder });
   });
 
-  const remainingSlots = records.length - included.size;
-  if (remainingSlots > 0) {
-    const fallbackCandidates = plugins
-      .filter((plugin) => !included.has(plugin.id) && !plugin.hasCursorMarketplaceManifest)
-      .sort(sortByName)
-      .slice(0, remainingSlots);
-    for (const [index, plugin] of fallbackCandidates.entries()) {
-      const unmatched = unmatchedRecords[index];
-      fallbackCount += 1;
-      included.set(
-        plugin.id,
-        attachInstallRecord(
-          plugin,
-          unmatched?.record ?? { id: plugin.cursorPluginId ?? plugin.id, sources: ["user"] },
-          "cache-fallback",
-          unmatched?.installOrder,
-        ),
-      );
-    }
-  }
+  const unmatchedInstalledPluginIds = records
+    .filter((record) => !matchedRecordIds.has(record.id))
+    .map((record) => record.id);
 
   return {
     plugins: [...included.values()].sort(sortByInstallOrder),
@@ -310,12 +282,10 @@ function filterInstalledPlugins(plugins, installState, pluginIdHints) {
       installedPluginState: installState.source,
       installedPluginStorageKey: installState.storageKey,
       installedPluginRecordCount: records.length,
-      installedPluginFallbackCount: fallbackCount,
-      unmatchedInstalledPluginIds: records
-        .filter((record) => !matchedRecordIds.has(record.id))
-        .map((record) => record.id),
-      installedPluginMatching: fallbackCount > 0
-        ? "numeric plugin IDs without local manifests were matched by cache fallback order"
+      installedPluginFallbackCount: 0,
+      unmatchedInstalledPluginIds,
+      installedPluginMatching: unmatchedInstalledPluginIds.length > 0
+        ? "only direct plugin IDs and project MCP hints were matched; unknown installed plugin records remained unmatched"
         : "local evidence matched all installed plugin records",
     },
   };
