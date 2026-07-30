@@ -19,6 +19,15 @@ observable behavior and compatibility, not every internal refactor.
   before either Session facts or lead analysis hydrates it. Versioned redacted
   bindings fail closed on population, selection, or admission contradictions
   while preserving bounded lead selection and explicit zero-signal filtering.
+- Self-contained HTML reports now expose every fluency-dimension score track as
+  a labeled progressbar with a zero-to-100 range and the displayed rounded
+  score. Report validation rejects incomplete, duplicated, invalid, or
+  score-mismatched dimension progressbar contracts.
+- Chinese self-contained HTML reports now use standards-based language
+  segmentation to keep bounded word-like phrases together while preserving
+  normal wrapping around Latin text, paths, URLs, and longer content. Runtimes
+  without segmentation support fall back to readable escaped text, and English
+  reports remain unchanged.
 
 ## 0.3.0 - 2026-07-27
 
