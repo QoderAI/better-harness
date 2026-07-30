@@ -15,6 +15,10 @@ observable behavior and compatibility, not every internal refactor.
   Rails or FastAPI, exposes bounded root Just recipes as statically discovered
   unverified argv entrypoints, and keeps historical-only files out of current
   recommended reads and action targets.
+- Evidence bundles now discover and privacy-filter one frozen Session population
+  before either Session facts or lead analysis hydrates it. Versioned redacted
+  bindings fail closed on population, selection, or admission contradictions
+  while preserving bounded lead selection and explicit zero-signal filtering.
 
 ## 0.3.0 - 2026-07-27
 
