@@ -37,7 +37,7 @@ const CORE_PATH_PATTERNS = [
   { pattern: /^cmd\/[^/]+/i, score: 14, reason: "go command entrypoint" },
   { pattern: /^src\/main\/java\//i, score: 24, reason: "java production source" },
   { pattern: /^packages\/[^/]+/i, score: 16, reason: "workspace package" },
-  { pattern: /^app\/api(\/|$)/i, score: 20, reason: "typescript api route" },
+  { pattern: /^app\/api(\/|$)/i, score: 20, reason: "api route path" },
   { pattern: /^src\/(controller|controllers|service|services|entity|repository|security)(\/|$)/i, score: 18, reason: "framework source path" },
   { pattern: /^app\/(http|models|services|providers|policies|jobs|console|controllers|models)(\/|$)/i, score: 18, reason: "framework app path" },
   { pattern: /^routes(\/|$)/i, score: 12, reason: "framework route path" },
@@ -45,6 +45,7 @@ const CORE_PATH_PATTERNS = [
 ];
 
 const FRAMEWORK_PATH_SIGNALS = [
+  { framework: "fastapi", pattern: /^app\/api(\/|$)/, score: 18, reason: "fastapi route path" },
   { framework: "laravel", pattern: /^app\/(Http|Models|Services|Providers|Policies|Jobs|Console)(\/|$)/, score: 22, reason: "laravel application path" },
   { framework: "laravel", pattern: /^routes(\/|$)/, score: 14, reason: "laravel route path" },
   { framework: "symfony", pattern: /^src\/(Controller|Entity|Service|Security|Repository|MessageHandler)(\/|$)/, score: 22, reason: "symfony application path" },

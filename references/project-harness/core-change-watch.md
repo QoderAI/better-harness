@@ -12,6 +12,25 @@ the resulting boundary evidence-qualified in visible output: say "inferred core
 boundary" or "affected core files", and name concrete source paths when they
 support the claim.
 
+## Project Profile And Current-Work Paths
+
+Framework labels require framework-specific manifest or convention evidence.
+Generic directories such as `app/api` and `app/services` remain useful
+language-neutral path signals, but they do not establish Rails, TypeScript, or
+another framework by themselves.
+
+A root `justfile`, `Justfile`, or `.justfile` contributes bounded public recipe
+entry candidates. These rows expose an argv-style command and retain
+`executionStatus: "unverified"`; collection parses the file statically and does
+not run Just or a shell. Private recipes remain outside the command surface.
+
+Raw bounded history may retain files that no longer exist because those paths
+remain valid historical facts. Before `recommendedReads` and follow-up action
+file lists are emitted, Core Change Watch intersects their candidates with the
+currently present tracked inventory plus currently present changed/untracked
+files. Do not interpret a historical hot path as a current edit target unless
+it passes that projection boundary.
+
 ## High-Impact Expansion
 
 Expand before synthesis for Core, platform, IDE plugin, LSP, auth, tool
