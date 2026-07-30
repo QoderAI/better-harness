@@ -315,7 +315,7 @@ function renderCustomize(summary, language) {
 
 function renderEvidence(summary, language) {
   const boundary = summary?.evidenceBoundary ?? {};
-  const coverage = summary?.atAGlance?.coverage ?? {};
+  const coverage = boundary?.episodeCoverage ?? summary?.atAGlance?.coverage ?? {};
   const selection = boundary?.manifest?.selection ?? coverage?.selection ?? {};
   const learning = summary?.learningCapture ?? {};
   const facts = [

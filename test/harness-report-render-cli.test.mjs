@@ -674,6 +674,53 @@ test("HTML dimension progressbar semantics stay complete and score-bound", () =>
   }
 });
 
+test("HTML evidence episode coverage preserves canonical summary facts and legacy fallback", () => {
+  // Given: machine-owned summary facts and a conflicting legacy projection.
+  const fixture = sampleFindings();
+  const reportData = {
+    ...fixture,
+    language: "en",
+    target: { name: "render-fixture", path: "/tmp/render-fixture" },
+    summary: {
+      ...fixture.summary,
+      evidenceBoundary: {
+        episodeCoverage: {
+          episodeCount: 14,
+          editedEpisodeCount: 12,
+        },
+      },
+      atAGlance: {
+        coverage: {
+          episodeCount: 1,
+          editedEpisodeCount: 1,
+        },
+      },
+    },
+  };
+
+  // When: canonical and legacy reports are rendered.
+  const canonicalHtml = renderHtml(reportData);
+  const legacyHtml = renderHtml({
+    ...reportData,
+    summary: {
+      ...reportData.summary,
+      evidenceBoundary: undefined,
+      atAGlance: {
+        coverage: {
+          episodeCount: 7,
+          editedEpisodeCount: 5,
+        },
+      },
+    },
+  });
+
+  // Then: machine facts win, while legacy-only input remains readable.
+  assert.match(canonicalHtml, /<span>Task episodes<\/span><strong>14<\/strong>/u);
+  assert.match(canonicalHtml, /<span>Edited episodes<\/span><strong>12<\/strong>/u);
+  assert.match(legacyHtml, /<span>Task episodes<\/span><strong>7<\/strong>/u);
+  assert.match(legacyHtml, /<span>Edited episodes<\/span><strong>5<\/strong>/u);
+});
+
 test("HTML CJK phrase breaking emits bounded deterministic markup without changing report data", () => {
   // Given: reviewed phrases plus escaping, long-token, path, URL, and mixed-Latin boundaries.
   const fixture = sampleFindings();

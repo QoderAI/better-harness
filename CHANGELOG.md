@@ -28,6 +28,9 @@ observable behavior and compatibility, not every internal refactor.
   normal wrapping around Latin text, paths, URLs, and longer content. Runtimes
   without segmentation support fall back to readable escaped text, and English
   reports remain unchanged.
+- HTML Evidence cards now display machine-owned Task Episode coverage from a
+  summary-facts companion, with legacy at-a-glance coverage retained only as a
+  compatibility fallback.
 
 ## 0.3.0 - 2026-07-27
 
