@@ -5,12 +5,12 @@ import { collectAgentCustomizeInventory, filterManageItems, groupManageItems } f
 
 function usage() {
   return [
-    "Usage: better-harness agent-customize [inventory|manage] --provider <cursor|qoder|codex|claude|qwen> [--workspace <path>]",
+    "Usage: better-harness agent-customize [inventory|manage] --provider <cursor|qoder|codex|claude|qwen|copilot> [--workspace <path>]",
     "       better-harness agent-customize manage --provider <provider> [--tab <tab>] [--query <text>] [--scope <scope>] [--group-by <key>]",
     "",
     "Collect configured agent-customize inventory for one provider as JSON.",
     "Provider home overrides: --cursor-home, --qoder-home, --codex-home, --claude-home,",
-    "--qwen-home, --claude-state, --codex-app-path, --qoder-shared-client-cache-root.",
+    "--qwen-home, --copilot-home, --claude-state, --codex-app-path, --qoder-shared-client-cache-root.",
     "",
   ].join("\n");
 }
@@ -30,6 +30,7 @@ function summarize(inventory, options) {
     codexHome: inventory.codexHome,
     claudeHome: inventory.claudeHome,
     qwenHome: inventory.qwenHome,
+    copilotHome: inventory.copilotHome,
     claudeStatePath: inventory.claudeStatePath,
     codexAppPath: inventory.codexAppPath,
     sharedClientCacheRoot: inventory.sharedClientCacheRoot,

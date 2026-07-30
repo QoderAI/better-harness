@@ -29,6 +29,7 @@
     ".claude-plugin/",
     ".codex-plugin/",
     ".cursor-plugin/",
+    ".github/plugin/",
     ".qoder-plugin/",
     "qwen-extension.json",
     "AGENTS.md",

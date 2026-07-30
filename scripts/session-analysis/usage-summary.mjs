@@ -12,7 +12,7 @@ Emit a bounded, read-only usage boundary as JSON. This command never accepts
 --output and never writes report or scratch files.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen>
+  --platform <qoder|codex|claude|cursor|qwen|copilot>
                             Session provider (default: qoder)
   --workspace <path>        Target workspace (default: current directory)
   --selection <strategy>    Selection strategy (default: all-eligible)
