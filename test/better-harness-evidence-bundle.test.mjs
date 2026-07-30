@@ -216,3 +216,26 @@ test("Pi agentCustomize lane routes the provider and isolated config paths", asy
   assert.equal(received["pi-home"], "/tmp/fixture-pi-home");
   assert.equal(received["include-user-home"], true);
 });
+
+test("WorkBuddy agentCustomize lane routes the provider and isolated config paths", async () => {
+  const context = freezeEvidenceBundleContext({
+    workspace: ".",
+    platform: "workbuddy",
+    depth: "quick",
+    "include-user-home": true,
+  }, NOW);
+  let received;
+  const lane = await collectAgentCustomize(context, {
+    "workbuddy-home": "/tmp/fixture-workbuddy-home",
+  }, {
+    collectAssetBaseline: async (options) => {
+      received = options;
+      return { kind: "agent-asset-baseline", status: "complete" };
+    },
+  });
+
+  assert.equal(lane.status, "available");
+  assert.equal(received.provider, "workbuddy");
+  assert.equal(received["workbuddy-home"], "/tmp/fixture-workbuddy-home");
+  assert.equal(received["include-user-home"], true);
+});

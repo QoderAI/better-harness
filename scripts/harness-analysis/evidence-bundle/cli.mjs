@@ -33,7 +33,7 @@ const ALLOWED = new Set([
   "workspace", "platform", "provider", "language", "depth", "since", "until",
   "evidence-limit", "include-user-home", "include-memories", "canvas-out",
   "replace-canvas", "format", "json", "qoder-home", "codex-home", "claude-home",
-  "cursor-home", "qwen-home", "copilot-home", "pi-home", "claude-state", "help", "h",
+  "cursor-home", "qwen-home", "copilot-home", "pi-home", "workbuddy-home", "claude-state", "help", "h",
 ]);
 
 function assertOptions(command, options) {

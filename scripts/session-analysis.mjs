@@ -245,7 +245,14 @@ async function loadPlatform(platform = "qoder") {
       main: module.main,
     };
   }
-  throw new Error(`Unsupported platform: ${platform}. Supported platforms: qoder, codex, claude, cursor, qwen, copilot, pi.`);
+  if (platform === "workbuddy") {
+    const module = await import("./session-analysis/platforms/workbuddy.mjs");
+    return {
+      Analyzer: module.WorkbuddySessionAnalyzer,
+      main: module.main,
+    };
+  }
+  throw new Error(`Unsupported platform: ${platform}. Supported platforms: qoder, codex, claude, cursor, qwen, copilot, pi, workbuddy.`);
 }
 
 export async function createAnalyzer(platform = "qoder") {
@@ -295,7 +302,7 @@ export async function main(argv = process.argv.slice(2)) {
         ]
       : [];
     process.stdout.write([
-      `Usage: session-analysis${command ? ` ${command}` : " <command>"} --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace <path> [options]`,
+      `Usage: session-analysis${command ? ` ${command}` : " <command>"} --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace <path> [options]`,
       "",
       "Commands: sources, sessions, facets, insights, facts, file-reads, show, events, claude-facets",
       ...factsOptions,

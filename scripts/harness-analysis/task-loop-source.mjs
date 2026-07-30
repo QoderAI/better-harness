@@ -66,13 +66,13 @@ const REQUIRED_SOFTWARE_FLUENCY_CAPABILITIES = Object.freeze([
 const HELP = `Usage: node scripts/harness-analysis/task-loop-source.mjs --workspace <target> --source <report.source.json> [options]
 
 Create a conservative Agent Work Loop report-source candidate from normalized
-Qoder, Codex, Claude, Cursor, Qwen, Copilot, or Pi sessions. It retains privacy-safe episode, change, validation,
+Qoder, Codex, Claude, Cursor, Qwen, Copilot, Pi, or WorkBuddy sessions. It retains privacy-safe episode, change, validation,
 repair-candidate, and explicit host-decision identities. Task understanding,
 validation relevance, repair, delivery, recovery, and Learning Capture remain
 unobserved until the prepared source-bound review resolves them.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot|pi>
+  --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy>
                                   Session platform (default: qoder)
   --workspace <path>            Target workspace (required)
   --source <path>               Candidate report.source.json path (required)
@@ -813,7 +813,7 @@ export function buildTaskLoopSourceCandidate({
 
 export async function collectAgentLintPracticeEvidence(options = {}) {
   const provider = options.platform ?? "qoder";
-  const assetReviewSupported = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"].includes(provider);
+  const assetReviewSupported = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"].includes(provider);
   const common = {
     workspace: options.workspace,
     provider,
@@ -824,6 +824,7 @@ export async function collectAgentLintPracticeEvidence(options = {}) {
     qwenHome: options.qwenHome ?? options["qwen-home"],
     copilotHome: options.copilotHome ?? options["copilot-home"],
     piHome: options.piHome ?? options["pi-home"],
+    workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
   };
   const [instructionReview, assetReview, practiceInventory] = await Promise.all([
     runAgentLint({ ...common, profile: "agents-md-review" }),
@@ -929,6 +930,16 @@ export function collectTaskLoopPracticeInventory(options = {}, platform = option
       includeGlobalHooks: true,
       includeMemories: false,
       piHome: options.piHome ?? options["pi-home"],
+    });
+  }
+  if (platform === "workbuddy") {
+    return collectProviderInventory({
+      platform,
+      workspace: options.workspace,
+      includeUserHome: includeGlobalCapabilities,
+      includeGlobalHooks: true,
+      includeMemories: false,
+      workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
     });
   }
   return Promise.resolve(null);
@@ -1046,6 +1057,7 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     qwenHome: options.qwenHome ?? options["qwen-home"],
     copilotHome: options.copilotHome ?? options["copilot-home"],
     piHome: options.piHome ?? options["pi-home"],
+    workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
     includeGlobalCapabilities: options.includeGlobalCapabilities
       ?? options["include-global-capabilities"]
       ?? false,

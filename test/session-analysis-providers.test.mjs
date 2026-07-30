@@ -23,6 +23,10 @@ import {
   workspaceToQwenSlugVariants,
 } from "../scripts/session-analysis/platforms/qwen.mjs";
 import {
+  WorkbuddySessionAnalyzer,
+  workspaceToWorkbuddySlugVariants,
+} from "../scripts/session-analysis/platforms/workbuddy.mjs";
+import {
   CopilotSessionAnalyzer,
   parseWorkspaceDescriptor,
 } from "../scripts/session-analysis/platforms/copilot.mjs";
@@ -43,11 +47,13 @@ test("root dispatcher creates Claude and Cursor provider analyzers", async () =>
   assert.ok(await createAnalyzer("qwen") instanceof QwenSessionAnalyzer);
   assert.ok(await createAnalyzer("copilot") instanceof CopilotSessionAnalyzer);
   assert.ok(await createAnalyzer("pi") instanceof PiSessionAnalyzer);
+  assert.ok(await createAnalyzer("workbuddy") instanceof WorkbuddySessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("claude") instanceof ClaudeSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("cursor") instanceof CursorSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("qwen") instanceof QwenSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("copilot") instanceof CopilotSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("pi") instanceof PiSessionAnalyzer);
+  assert.ok(await createCapabilityAnalyzer("workbuddy") instanceof WorkbuddySessionAnalyzer);
 });
 
 test("Claude, Cursor, and Qwen workspace slugs cover Unix and Windows layouts", () => {
@@ -55,10 +61,12 @@ test("Claude, Cursor, and Qwen workspace slugs cover Unix and Windows layouts", 
   assert.ok(workspaceToCursorSlugVariants("/workspace/project").includes("workspace-project"));
   assert.ok(workspaceToQwenSlugVariants("/workspace/project").includes("-workspace-project"));
   assert.equal(workspaceToPiSessionDirVariants("/workspace/project").exact, "--workspace-project--");
+  assert.equal(workspaceToWorkbuddySlugVariants("/workspace/project").exact, "workspace-project");
   assert.ok(workspaceToClaudeSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToCursorSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToQwenSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToPiSessionDirVariants("C:\\workspace\\project").exact.includes("C--workspace-project"));
+  assert.ok(workspaceToWorkbuddySlugVariants("C:\\workspace\\project").exact.includes("C--workspace-project"));
 });
 
 test("Claude provider expands nested tool requests and results without using generated facets", async () => {
@@ -1009,4 +1017,119 @@ test("Pi custom session roots require a directory", async () => {
   });
   assert.equal(result.sources[0].exists, false);
   assert.equal(result.sessions.length, 0);
+});
+
+test("WorkBuddy provider expands tool calls, tool results, and usage from JSONL transcripts", async () => {
+  const root = await fixtureRoot("session-workbuddy-provider-");
+  const home = path.join(root, ".workbuddy");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "66666666-6666-4666-8666-666666666666";
+  const dirName = workspaceToWorkbuddySlugVariants(workspace).exact;
+  await writeJsonl(path.join(home, "projects", dirName, `${sessionId}.jsonl`), [
+    { id: "u1", type: "message", role: "user", timestamp: "1784509200000", sessionId, cwd: workspace, content: [{ type: "input_text", text: "Implement the provider and run tests" }] },
+    { id: "r1", type: "reasoning", parentId: "u1", timestamp: "1784509205000", sessionId, cwd: workspace, content: [], rawContent: [{ type: "reasoning_text", text: "inspect first" }] },
+    {
+      id: "01aa",
+      parentId: "r1",
+      type: "function_call",
+      timestamp: "1784509210000",
+      callId: "call_one",
+      name: "Bash",
+      arguments: JSON.stringify({ command: "npm test", description: "run tests" }),
+      sessionId,
+      cwd: workspace,
+      providerData: { model: "glm-5.2", messageId: "01aa", usage: { requests: 1, inputTokens: 10, outputTokens: 4, totalTokens: 14, inputTokensDetails: [{ cached_tokens: 2 }] } },
+    },
+    {
+      id: "res1",
+      parentId: "01aa",
+      type: "function_call_result",
+      timestamp: "1784509220000",
+      callId: "call_one",
+      name: "Bash",
+      status: "completed",
+      output: { type: "text", text: "3 tests passed" },
+      sessionId,
+      cwd: workspace,
+    },
+    {
+      id: "01bb",
+      parentId: "res1",
+      type: "function_call",
+      timestamp: "1784509230000",
+      callId: "call_two",
+      name: "Read",
+      arguments: JSON.stringify({ path: path.join(workspace, "package.json") }),
+      sessionId,
+      cwd: workspace,
+      providerData: { model: "glm-5.2", messageId: "01bb" },
+    },
+    {
+      id: "res2",
+      parentId: "01bb",
+      type: "function_call_result",
+      timestamp: "1784509240000",
+      callId: "call_two",
+      name: "Read",
+      status: "failed",
+      output: { type: "text", text: "not found" },
+      sessionId,
+      cwd: workspace,
+    },
+    { id: "a1", type: "message", role: "assistant", timestamp: "1784509250000", sessionId, cwd: workspace, providerData: { model: "glm-5.2", messageId: "a1" }, content: [{ type: "output_text", text: "Done: tests pass." }] },
+    { type: "ai-title", timestamp: "1784509260000", sessionId, cwd: workspace, aiTitle: "Implement provider" },
+  ]);
+
+  const analyzer = new WorkbuddySessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  assert.equal(discovery.sessions[0].sessionId, sessionId);
+  assert.deepEqual(discovery.sources.map((source) => source.kind), ["workbuddy-session-jsonl"]);
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {
+    includeCommandText: true,
+    includeUserText: true,
+    includeContent: true,
+  });
+  assert.equal(events.filter((event) => event.type === "tool.call").length, 2);
+  assert.equal(events.filter((event) => event.type === "tool.result").length, 2);
+  assert.equal(events.find((event) => event.type === "user")?.userText, "Implement the provider and run tests");
+  assert.equal(events.find((event) => event.model === "glm-5.2" && event.type === "model.response.completed")?.modelUsage.inputTokens, 10);
+  assert.equal(events.find((event) => event.model === "glm-5.2" && event.type === "model.response.completed")?.modelUsage.cacheReadInputTokens, 2);
+  assert.equal(events.find((event) => event.toolInvocationId === "call_one" && event.type === "tool.call")?.commandText, "npm test");
+  assert.equal(events.find((event) => event.toolInvocationId === "call_two" && event.type === "tool.call")?.filePath, path.join(workspace, "package.json"));
+  assert.equal(events.find((event) => event.toolInvocationId === "call_two" && event.type === "tool.result")?.success, false);
+  assert.ok(events.some((event) => event.type === "metadata.reasoning"));
+  assert.ok(events.some((event) => event.type === "metadata.ai-title"));
+  const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
+  assert.equal(facts.kind, "session-core-facts");
+  assert.equal(facts.scope.platform, "workbuddy");
+  assert.doesNotMatch(JSON.stringify(facts), new RegExp(sessionId, "u"));
+  assert.doesNotMatch(JSON.stringify(facts), new RegExp(home.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+});
+
+test("WorkBuddy provider rejects a transcript whose records belong to another workspace", async () => {
+  const root = await fixtureRoot("session-workbuddy-isolation-");
+  const home = path.join(root, ".workbuddy");
+  const workspace = path.join(root, "workspace", "target");
+  const other = path.join(root, "workspace", "other");
+  const dirName = workspaceToWorkbuddySlugVariants(workspace).exact;
+  await writeJsonl(path.join(home, "projects", dirName, "foreign.jsonl"), [
+    { id: "u1", type: "message", role: "user", timestamp: "1784509200000", sessionId: "foreign", cwd: other, content: [{ type: "input_text", text: "foreign" }] },
+  ]);
+  const result = await new WorkbuddySessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 0);
+});
+
+test("WorkBuddy provider discovers subdirectory session dirs that share the workspace prefix", async () => {
+  const root = await fixtureRoot("session-workbuddy-subdir-");
+  const home = path.join(root, ".workbuddy");
+  const workspace = path.join(root, "workspace", "target");
+  const subdir = path.join(workspace, "packages", "app");
+  const dirName = workspaceToWorkbuddySlugVariants(subdir).exact;
+  await writeJsonl(path.join(home, "projects", dirName, "child.jsonl"), [
+    { id: "u1", type: "message", role: "user", timestamp: "1784509200000", sessionId: "77777777-7777-4777-8777-777777777777", cwd: subdir, content: [{ type: "input_text", text: "child session" }] },
+  ]);
+  const result = await new WorkbuddySessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 1);
 });

@@ -400,3 +400,31 @@ evidence. Use the Global/User Asset Pass from `global-assets.md` when the
 user asks about Pi global assets such as `~/.pi/agent/skills`, installed pi
 packages, or extensions. Keep configured inventory evidence separate from
 observed session behavior.
+
+## WorkBuddy Asset Route
+
+For WorkBuddy-specific actions, use `platforms/workbuddy.md` as the operating
+practice reference for identity context files, the global `AGENTS.md`,
+skills, marketplace plugins, and MCP config. Presence is not execution proof.
+
+Inspect configured surfaces before projecting readiness evidence:
+
+- `AGENTS.md` (project) and the global `~/.workbuddy/AGENTS.md` plus the
+  `SOUL.md`, `IDENTITY.md`, and `USER.md` identity files for standing
+  context.
+- `~/.workbuddy/settings.json` for `enabledPlugins` state keyed as
+  `<plugin>@<marketplace>`.
+- `~/.workbuddy/skills`, `.agents/skills` (project and `~/.agents/skills`),
+  and project `.workbuddy/skills` for repeatable workflows.
+- Marketplace plugins under
+  `~/.workbuddy/plugins/marketplaces/<marketplace>/plugins/` with
+  `.codebuddy-plugin/plugin.json` manifests.
+- `~/.workbuddy/mcp.json` for user-scope MCP servers.
+- Session, diff, test, build, and review evidence for observed execution.
+
+Marketplace catalogs list availability, not use; bind plugin capability
+claims to `enabledPlugins` state plus observed session behavior. Use the
+Global/User Asset Pass from `global-assets.md` when the user asks about
+WorkBuddy global assets such as `~/.workbuddy/skills` or installed
+marketplace plugins. Keep configured inventory evidence separate from
+observed session behavior.
