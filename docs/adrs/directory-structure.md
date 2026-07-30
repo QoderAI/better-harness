@@ -42,6 +42,11 @@ Legend:
 .codex-plugin/                         # [active] thin Codex shell
   plugin.json                          # thin discovery/install metadata only
 
+.github/plugin/                        # [active] thin GitHub Copilot shell
+  plugin.json marketplace.json         # native install/discovery metadata only
+
+qwen-extension.json                    # [active] thin Qwen Code shell
+
 .agents/
   skills/<skill>/                      # [active] host-local only; shared logic -> root skills/
     SKILL.md
@@ -71,7 +76,7 @@ scripts/
   core-change-watch/               # [active] static structure/core-path/history evidence
   session-analysis.mjs                 # [active] thin shim; new exports -> scripts/session-analysis/
   session-analysis/                    # [active] session evidence collection/normalization
-    platforms/<host>.mjs               # Qoder/Codex/Claude/Cursor/Qwen host adapters
+    platforms/<host>.mjs               # Qoder/Codex/Claude/Cursor/Qwen/Copilot host adapters
     ides/<ide>/                        # target editor-local evidence not covered by host adapters
   <business-capability>/               # [target] new capability owner
     cli.mjs                            # use cli.mjs for new capabilities
@@ -206,9 +211,10 @@ Use the tree first. These rules resolve common collisions:
 - Shared workflows go to root `skills/`; host-local wrappers or generated
   mirrors go to `.agents/skills/`.
 - Host plugin directories such as `.claude-plugin/`, `.qoder-plugin/`,
-  `.cursor-plugin/`, and `.codex-plugin/` are install/discovery shells for one
-  host. Existing active shells may be hand-maintained narrowly, but the Qoder
-  public npm package ships all five plugin metadata roots, while the Qoder
+  `.cursor-plugin/`, `.codex-plugin/`, and `.github/plugin/` are
+  install/discovery shells for one host. Existing active shells may be
+  hand-maintained narrowly, but the Qoder
+  public npm package ships all six plugin metadata roots, while the Qoder
   runtime bundle ships only `.qoder-plugin/`. New host shells start from the
   `docs/adapters/README.md` matrix; split to `docs/adapters/<host>.md` and add a
   source-local `scripts/packaging/` builder only for an accepted host-artifact

@@ -1,19 +1,21 @@
 # Global Coding-Agent Assets
 
 Use this reference when a readiness run, screenshot, or user request points to
-Cursor, Qoder, Codex, or Claude settings, installed assets, global skills, user hooks,
-commands, agents, plugins, MCPs, or memories. Treat this as a configured asset
-inventory, not a session behavior report.
+Cursor, Qoder, Codex, Claude, Qwen, or Copilot settings, installed assets,
+global skills, user hooks, commands, agents, plugins, MCPs, or memories. Treat
+this as a configured asset inventory, not a session behavior report.
 
 ## Scope
 
-- Project assets: `.cursor`, `.qoder`, `.codex`, `.claude`, `.agents`, project rules,
-  skills, agents, commands, hooks, workflows, settings, and MCP config.
-- User/global assets: `~/.{cursor,qoder,codex,claude}` skills, hooks, commands,
-  agents, rules, settings, and MCP config.
+- Project assets: `.cursor`, `.qoder`, `.codex`, `.claude`, `.agents`,
+  `.github`, project rules, skills, agents, commands, hooks, workflows,
+  settings, and MCP config.
+- User/global assets: `~/.{cursor,qoder,codex,claude,qwen,copilot}` skills,
+  hooks, commands, agents, rules, settings, and MCP config.
 - Plugin/marketplace assets: provider plugin caches and install evidence under
-  `~/.cursor`, `~/.qoder`, `~/.codex`, and `~/.claude`, including plugin-declared Skills,
-  MCPs, Commands, Hooks, Rules, and Subagents.
+  `~/.cursor`, `~/.qoder`, `~/.codex`, `~/.claude`, `~/.qwen`, and
+  `~/.copilot`, including plugin-declared Skills, MCPs, Commands, Hooks, Rules,
+  and Subagents.
 - Memories: `~/.qoder/memories/**` plus Qoder `SharedClientCache`
   `app-config.json` memory keys and `cache/db/*.db*` file presence; and Codex
   generated-memory metadata under `~/.codex/memories/` plus supported
@@ -26,14 +28,15 @@ inventory, not a session behavior report.
 Run the read-only inventory when user-home or installed assets are in scope:
 
 ```bash
-<node> <better-harness-root>/scripts/agent-customize/cli.mjs inventory --provider <cursor|qoder|codex|claude> --workspace <absolute-target-path>
-<node> <better-harness-root>/scripts/coding-agent-practices/inventory.mjs <cursor|qoder|codex|claude> --workspace <absolute-target-path> --include-user-home --include-memories --format markdown
-<cli> coding-agent-practices asset-integrity <cursor|qoder|codex|claude> --workspace <absolute-target-path> --language <en|zh-CN> --json [--include-memories] [--include-user-home]
+<node> <better-harness-root>/scripts/agent-customize/cli.mjs inventory --provider <cursor|qoder|codex|claude|qwen|copilot> --workspace <absolute-target-path>
+<node> <better-harness-root>/scripts/coding-agent-practices/inventory.mjs <cursor|qoder|codex|claude|qwen|copilot> --workspace <absolute-target-path> --include-user-home --include-memories --format markdown
+<cli> coding-agent-practices asset-integrity <cursor|qoder|codex|claude|qwen|copilot> --workspace <absolute-target-path> --language <en|zh-CN> --json [--include-memories] [--include-user-home]
 ```
 
 Use `--cursor-home <path>`, `--qoder-home <path>`, `--codex-home <path>`,
-`--claude-home <path>`, `--claude-state <file>`,
-`--codex-app-path <path>`, or `--shared-cache <path>` for fixtures, alternate
+`--claude-home <path>`, `--qwen-home <path>`, `--copilot-home <path>`,
+`--claude-state <file>`, `--codex-app-path <path>`, or `--shared-cache <path>`
+for fixtures, alternate
 installs, or non-standard homes. Use the `agent-customize` command as the
 provider-specific configured asset source of truth; use the
 `coding-agent-practices` wrapper when the report also needs the matrix shape or

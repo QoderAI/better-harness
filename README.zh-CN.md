@@ -145,6 +145,7 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 | **Codex Desktop** | 在 **Settings > Plugins > + Add > From Marketplace** 中添加本仓库，安装 Better Harness，启动新任务，然后调用 `@better-harness`。 |
 | **Codex CLI** | 添加 Git Marketplace，运行 `codex plugin add better-harness@better-harness`，然后调用 `$better-harness:better-harness`。 |
 | **Qoder Desktop / CLI** | 安装 Qoder Desktop 后无需额外安装——Better Harness 已内置，并可在桌面端和 CLI 中使用。打开仓库并使用下方的报告提示词。 |
+| **GitHub Copilot CLI** | 添加本仓库 Marketplace，安装 `better-harness@better-harness`，启动新会话，然后使用下方的报告提示词。 |
 | **Cursor** | 从源码加载插件——参见[安装](#installation)。 |
 
 安装完成后，让 Better Harness 生成当前宿主支持的持久化报告：
@@ -154,7 +155,7 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 ```
 
 Better Harness 会将行为断言限定在相关的任务过程片段（Task Episode）及其周边项目机制内。
-Qoder 生成 Canvas 报告；Claude Code、Codex 和 Cursor 生成自包含的 HTML 报告及配套 Markdown。
+Qoder 生成 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub Copilot 生成自包含的 HTML 报告及配套 Markdown。
 缺失或不完整的证据会被明确标注。有关当前覆盖范围和输出差异，请参阅
 [宿主适配器矩阵](docs/adapters/README.md)。
 
@@ -296,6 +297,27 @@ cursor-agent --plugin-dir /path/to/better-harness
 
 Cursor 会话证据来自与工作区匹配的会话记录、元数据和审计日志。
 覆盖范围不完整或不可用时会被明确标注。
+
+### GitHub Copilot
+
+将本仓库注册为 Copilot 插件 Marketplace，然后安装 Better Harness：
+
+```bash
+copilot plugin marketplace add QoderAI/better-harness
+copilot plugin install better-harness@better-harness
+```
+
+验证 Skill 已加载：
+
+```bash
+copilot plugin list
+```
+
+请优先使用 Marketplace 安装。Copilot CLI 已弃用直接从仓库、URL 或本地路径安装。
+
+Copilot 会话证据来自 `~/.copilot/session-state/` 下与工作区匹配的 Copilot CLI 会话记录。
+Copilot 不记录逐次响应的 token 用量，VS Code Copilot Chat 也没有受支持的持久化会话记录；
+两者均作为明确的证据边界保留。
 
 <a id="develop-and-package-from-source"></a>
 

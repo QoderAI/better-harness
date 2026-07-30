@@ -77,7 +77,7 @@ test("non-Qoder providers default to validated durable HTML with an explicit inl
   assert.match(skill, /HTML artifacts: findings\.json, report\.md, report\.html/);
   assert.match(skill, /Succeed only on\s+`status: pass`/);
   assert.match(skill, /Never hand-write\s+Canvas, Markdown, or HTML/);
-  assert.match(routing, /Portable HTML report \| Active host is Claude Code, Codex, or Cursor/);
+  assert.match(routing, /Portable HTML report \| Active host is Claude Code, Codex, Cursor, Qwen Code, or GitHub Copilot/);
   assert.match(routing, /Inline only \| Inline or no-files output is explicitly requested \| none; inline analysis writes nothing/);
   assert.match(adapters, /Claude Code[^\n]+scripts\/session-analysis\/platforms\/claude\.mjs[^\n]+self-contained HTML \+ Markdown/);
   assert.match(adapters, /Cursor[^\n]+scripts\/session-analysis\/platforms\/cursor\.mjs[^\n]+self-contained HTML \+ Markdown/);

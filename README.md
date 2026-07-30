@@ -149,6 +149,7 @@ Pick your coding agent — you can be looking at your first report in minutes:
 | **Codex Desktop** | Add the repository under **Settings > Plugins > + Add > From Marketplace**, install Better Harness, start a new task, then invoke `@better-harness`. |
 | **Codex CLI** | Add the Git marketplace, run `codex plugin add better-harness@better-harness`, then invoke `$better-harness:better-harness`. |
 | **Qoder Desktop / CLI** | Nothing to install when Qoder Desktop is installed — Better Harness is built in and available to both. Open your repository and use the report prompt below. |
+| **GitHub Copilot CLI** | Add the repository marketplace, install `better-harness@better-harness`, start a new session, then use the report prompt below. |
 | **Cursor** | Load the plugin from source — see [Installation](#installation). |
 
 Once installed, ask Better Harness to generate the host's durable report:
@@ -159,8 +160,8 @@ Once installed, ask Better Harness to generate the host's durable report:
 
 Better Harness scopes behavior claims to relevant Task Episodes and the
 surrounding project mechanisms. Qoder produces a Canvas report; Claude Code,
-Codex, and Cursor produce self-contained HTML with paired Markdown. Missing or
-partial evidence remains explicit. See the
+Codex, Cursor, Qwen Code, and GitHub Copilot produce self-contained HTML with
+paired Markdown. Missing or partial evidence remains explicit. See the
 [Host Adapter Matrix](docs/adapters/README.md) for current coverage and output
 differences.
 
@@ -308,6 +309,30 @@ cursor-agent --plugin-dir /path/to/better-harness
 
 Cursor session evidence is supported through workspace-matched transcripts,
 metadata, and audit logs. Partial or unavailable coverage remains explicit.
+
+### GitHub Copilot
+
+Register this repository as a Copilot plugin marketplace, then install Better
+Harness:
+
+```bash
+copilot plugin marketplace add QoderAI/better-harness
+copilot plugin install better-harness@better-harness
+```
+
+Verify that the Skill loaded:
+
+```bash
+copilot plugin list
+```
+
+Prefer marketplace installs. Direct repository, URL, and local-path installs are
+deprecated in Copilot CLI.
+
+Copilot session evidence is supported through workspace-matched Copilot CLI
+transcripts under `~/.copilot/session-state/`. Copilot records no per-response
+token usage, and VS Code Copilot Chat has no supported durable transcript; both
+remain explicit evidence boundaries.
 
 ## Develop and package from source
 

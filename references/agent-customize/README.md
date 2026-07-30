@@ -14,8 +14,8 @@ authority, routing, overlap, observed use, and maintenance boundaries.
   `mcp-review.md`, `memory-review.md`, `hooks-review.md`,
   `custom-agents-review.md`, and `knowledge-assets-review.md`.
 - Inventory and authority: `global-assets.md`.
-- Provider-specific notes: `platforms/claude.md`, `platforms/codex.md`, and
-  `platforms/qoder.md`.
+- Provider-specific notes: `platforms/claude.md`, `platforms/codex.md`,
+  `platforms/qoder.md`, `platforms/qwen.md`, and `platforms/copilot.md`.
 
 ## Does Not Own
 
