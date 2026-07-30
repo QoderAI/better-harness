@@ -77,6 +77,25 @@ function resultText(data) {
   return result?.content ?? result?.detailedContent ?? "";
 }
 
+// Copilot permission records carry protocol enums (`read`, `write`, `shell`,
+// `approved`, `denied-interactively-by-user`, ...). The guard keeps unexpected
+// values out of normalized events so prompt text can never leak through a field
+// that is only meant to hold a bounded token.
+const PERMISSION_TOKEN_PATTERN = /^[a-z][a-z0-9._-]{0,63}$/u;
+
+function permissionToken(value) {
+  const token = String(value ?? "").trim().toLowerCase();
+  return PERMISSION_TOKEN_PATTERN.test(token) ? token : null;
+}
+
+function permissionDecisionFor(resultKind) {
+  const token = permissionToken(resultKind);
+  if (!token) return null;
+  if (token.startsWith("approved") || token.startsWith("allowed")) return "allowed";
+  if (token.startsWith("denied") || token.startsWith("rejected")) return "denied";
+  return token;
+}
+
 /**
  * Normalize one Copilot `events.jsonl` record.
  *
@@ -116,6 +135,8 @@ function transcriptEvents(raw, sourceRef, options) {
 
   if (rawType === "assistant.message") {
     const text = typeof data.content === "string" ? data.content : "";
+    const outputTokens = Number(data.outputTokens);
+    const usageObserved = Number.isFinite(outputTokens) && outputTokens >= 0;
     const event = {
       ...base,
       type: "assistant",
@@ -126,8 +147,29 @@ function transcriptEvents(raw, sourceRef, options) {
     };
     if (text) event.userVisibleAssistantMessage = true;
     if (options.includeContent && text) event.content = text;
-    if (data.model) event.model = data.model;
+    // When usage is observed the model is attributed on the companion response
+    // event instead, so a single response is not counted against two events.
+    if (data.model && !usageObserved) event.model = data.model;
     events.push(event);
+    if (usageObserved) {
+      // Copilot reports output tokens per assistant message but never input
+      // tokens or cost, and `isModelRequestEvent` deliberately ignores plain
+      // `assistant` events. Emit a companion response event carrying only the
+      // fields that were actually observed -- omitted token fields read as 0 in
+      // `session-efficiency`, so no input usage or cost is invented here.
+      events.push({
+        ...base,
+        type: "model.response.completed",
+        category: "model",
+        model: data.model ?? null,
+        modelUsage: { outputTokens },
+        usageFieldsObserved: true,
+        responseId: data.messageId ?? null,
+        requestId: data.requestId ?? null,
+        evidenceRef: evidenceRef(sourceRef, "model.response.completed"),
+        summary: "assistant response usage (output tokens only)",
+      });
+    }
     return events;
   }
 
@@ -248,6 +290,39 @@ function transcriptEvents(raw, sourceRef, options) {
     return events;
   }
 
+  if (rawType === "permission.requested" || rawType === "permission.completed") {
+    // Copilot records permission handling as a request/result pair correlated by
+    // `requestId`. Only the correlation id and bounded protocol enums are kept --
+    // the prompt payload (`intention`, `path`, `paths`, `commands`) is dropped.
+    //
+    // The decision rides the result event alone. Attaching one to the request as
+    // well would double-count every permission in the episode summaries, and
+    // Copilot emits a request even when policy auto-approves, so treating the
+    // request as a prompt would overstate friction.
+    const requested = rawType === "permission.requested";
+    const event = {
+      ...base,
+      type: "control.permission",
+      category: "control",
+      lifecyclePhase: requested ? "request" : "result",
+      evidenceRef: evidenceRef(sourceRef, rawType),
+      summary: requested ? "permission requested" : "permission resolved",
+    };
+    // Deliberately not `toolInvocationId`: a tool call can be re-prompted, and
+    // `dedupeEvents` keys on that field, which would drop real observations.
+    if (typeof data.requestId === "string" && data.requestId) {
+      event.permissionRequestId = data.requestId;
+    }
+    const kind = permissionToken(data.permissionRequest?.kind);
+    if (kind) event.permissionKind = kind;
+    if (!requested) {
+      const decision = permissionDecisionFor(data.result?.kind);
+      if (decision) event.permissionDecision = decision;
+    }
+    events.push(event);
+    return events;
+  }
+
   if (rawType === "session.permissions_changed" || rawType === "session.mode_changed") {
     events.push({
       ...base,
@@ -305,6 +380,8 @@ async function probeSessionDirectory(sessionDir, workspace) {
     transcriptAvailable: await pathExists(transcriptPath),
     cwd: descriptor.cwd,
     records: 0,
+    conversationRecords: 0,
+    requestRecords: 0,
     firstSeen: null,
     lastSeen: null,
     workspaceMatch: isWorkspaceMatch(descriptor.cwd, workspace),
@@ -315,6 +392,12 @@ async function probeSessionDirectory(sessionDir, workspace) {
 
   await forEachJsonLine(transcriptPath, (raw) => {
     summary.records += 1;
+    if (raw?.type === "user.message" || raw?.type === "assistant.message") {
+      summary.conversationRecords += 1;
+    }
+    if (raw?.type === "assistant.message" && Number.isFinite(Number(raw?.data?.outputTokens))) {
+      summary.requestRecords += 1;
+    }
     if (raw?.type === "session.start") {
       const data = raw?.data ?? {};
       if (data.sessionId) summary.sessionId = data.sessionId;
@@ -335,15 +418,34 @@ async function probeSessionDirectory(sessionDir, workspace) {
  * A Copilot session directory can exist and match the workspace while carrying
  * no `events.jsonl`. That state stays explicit instead of collapsing into zero
  * activity or a clean result.
+ *
+ * The payload populates the canonical `session-core-facts` transcript fields so
+ * public facts never report unmapped evidence as a confirmed zero. Copilot has
+ * no terminal source, so `terminalOnly` is a measured zero rather than an
+ * unknown, and sessions with a missing or empty transcript surface as
+ * `unreadable`. Copilot-specific counters are kept alongside for warnings and
+ * are dropped by the bounded public schema.
  */
-function buildCopilotSourceCoverage({ scope, roots, matched, inWindow }) {
+function buildCopilotSourceCoverage({ scope, roots, matched, inWindow, inWindowProbes = [] }) {
   const root = roots.find((entry) => entry.kind === "copilot-session-jsonl");
   const workspaceSessions = matched.length;
   const withTranscript = matched.filter((probe) => probe.transcriptAvailable);
   const withoutTranscript = workspaceSessions - withTranscript.length;
+  const timeUnobservedProbes = matched.filter((probe) => !probe.firstSeen && !probe.lastSeen);
   const timeUnobserved = withTranscript.filter((probe) => !probe.firstSeen && !probe.lastSeen).length;
   const emptyTranscripts = withTranscript.filter((probe) => probe.records === 0).length;
   const requestedWindow = scope.sinceTime !== null || scope.untilTime !== null;
+
+  // Mirrors the Cursor precedent. Without a requested window every matched
+  // session stays relevant, so a session whose transcript is missing or empty
+  // surfaces as `unreadable` instead of disappearing from the denominator.
+  let relevant = matched;
+  if (requestedWindow) {
+    relevant = inWindowProbes.length > 0 ? inWindowProbes : timeUnobservedProbes;
+  }
+  const withConversation = relevant.filter((probe) => probe.conversationRecords > 0).length;
+  const withRequest = relevant.filter((probe) => probe.requestRecords > 0).length;
+  const unreadable = relevant.filter((probe) => !probe.transcriptAvailable || probe.records === 0).length;
 
   let status = "observed";
   if (!root?.exists || workspaceSessions === 0) {
@@ -361,17 +463,27 @@ function buildCopilotSourceCoverage({ scope, roots, matched, inWindow }) {
     transcript: {
       sourceAvailable: Boolean(root?.exists),
       workspaceSessions,
+      inWindowSessions: inWindow.length,
+      outOfWindowSessions: Math.max(workspaceSessions - inWindow.length - timeUnobservedProbes.length, 0),
+      timeUnobservedSessions: timeUnobserved,
+      relevantSessions: relevant.length,
+      withConversation,
+      withRequest,
+      // Copilot exposes no terminal-only source, so this is measured, not unknown.
+      terminalOnly: 0,
+      unreadable,
+      // Copilot-specific detail retained for adapter warnings.
       withTranscript: withTranscript.length,
       withoutTranscript,
       emptyTranscripts,
-      timeUnobservedSessions: timeUnobserved,
-      inWindowSessions: inWindow.length,
     },
     usage: {
-      // Copilot transcripts carry no per-response model usage. Subagent and
+      // Copilot records output tokens per assistant message but never input
+      // tokens or cost, so per-response usage is partial. Subagent and
       // compaction totals are aggregates and are never projected as per-response
       // usage.
-      perResponseUsageObserved: false,
+      perResponseUsageObserved: withRequest > 0,
+      perResponseUsageFields: ["outputTokens"],
     },
   };
 }
@@ -459,13 +571,15 @@ export class CopilotSessionAnalyzer extends SessionAnalyzer {
       if (probe?.workspaceMatch) matched.push(probe);
     }
 
-    const inWindow = matched
+    const inWindowProbes = matched
       .filter((probe) => probe.transcriptAvailable)
       .filter((probe) => {
         const timestamp = probe.lastSeen ?? probe.firstSeen;
         if ((scope.sinceTime !== null || scope.untilTime !== null) && !timestamp) return false;
         return withinTimeRange(timestamp, scope);
-      })
+      });
+
+    const inWindow = inWindowProbes
       .map((probe) => ({
         sessionId: probe.sessionId,
         workspace: scope.workspace,
@@ -485,7 +599,7 @@ export class CopilotSessionAnalyzer extends SessionAnalyzer {
       }))
       .sort((left, right) => (timestampMillis(right.lastSeen) ?? 0) - (timestampMillis(left.lastSeen) ?? 0));
 
-    scope._copilotSourceCoverage = buildCopilotSourceCoverage({ scope, roots, matched, inWindow });
+    scope._copilotSourceCoverage = buildCopilotSourceCoverage({ scope, roots, matched, inWindow, inWindowProbes });
     return inWindow;
   }
 
@@ -519,8 +633,8 @@ export class CopilotSessionAnalyzer extends SessionAnalyzer {
   async analysisWarnings(scope, _roots, _sessions) {
     const coverage = scope._copilotSourceCoverage;
     const warnings = [{
-      code: "copilot-per-response-usage-unobserved",
-      message: "Copilot transcripts do not record per-response model token usage; usage evidence requires the opt-in OpenTelemetry export.",
+      code: "copilot-per-response-usage-partial",
+      message: "Copilot transcripts record output tokens per assistant response but no input tokens, cache tokens, or cost; complete usage evidence requires the opt-in OpenTelemetry export.",
     }];
     if (!coverage || coverage.status === "absent") {
       warnings.push({

@@ -259,15 +259,23 @@ transcript records are the primary source: `user.message`, `assistant.message`,
 `tool.execution_start`, `tool.execution_complete`, `hook.start`, `hook.end`,
 `subagent.started`, `subagent.completed`, `session.plan_changed`,
 `session.compaction_start`, `session.compaction_complete`,
+`permission.requested`, `permission.completed`,
 `session.permissions_changed`, and `external_tool.*`. Unrecognized types stay
 explicit `metadata.*` events rather than being dropped or reinterpreted.
 
-Keep three Copilot boundaries explicit:
+Keep four Copilot boundaries explicit:
 
-- Copilot transcripts record no per-response model token usage. Subagent
-  totals (`totalTokens`) and `preCompactionTokens` are aggregates and never
-  become per-response usage. Usage evidence requires the opt-in OpenTelemetry
-  export, which this workflow does not read.
+- Copilot records `outputTokens` per assistant message and nothing else. Carry
+  that field as partial per-response usage; never fill input tokens, cache
+  tokens, or cost with zero. Subagent totals (`totalTokens`) and
+  `preCompactionTokens` are aggregates and never become per-response usage.
+  Complete usage evidence requires the opt-in OpenTelemetry export, which this
+  workflow does not read.
+- Permission evidence comes from the `permission.requested` /
+  `permission.completed` pair, joined on `requestId`. Retain only the request
+  kind and the result decision. The prompt intent, paths, and commands are
+  payloads and are never retained. `session.permissions_changed` reports a mode
+  change, not a decision.
 - A session directory can match the workspace and carry no `events.jsonl`. That
   is partial coverage, not zero activity.
 - `~/.copilot/session-store.db` is documented as automatically managed. Never

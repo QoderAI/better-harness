@@ -517,12 +517,13 @@ test("Copilot provider pairs tool lifecycle, hooks, and subagent delegation", as
     { type: "user.message", id: "e2", timestamp: "2026-07-20T01:00:01.000Z", data: { content: "run the tests" } },
     { type: "hook.start", id: "e3", timestamp: "2026-07-20T01:00:02.000Z", data: { hookInvocationId: "h1", hookType: "userPromptSubmitted" } },
     { type: "hook.end", id: "e4", timestamp: "2026-07-20T01:00:03.000Z", data: { hookInvocationId: "h1", hookType: "userPromptSubmitted", success: true } },
-    { type: "assistant.message", id: "e5", timestamp: "2026-07-20T01:00:04.000Z", data: { model: "test-model", content: "running" } },
+    { type: "assistant.message", id: "e5", timestamp: "2026-07-20T01:00:04.000Z", data: { model: "test-model", content: "running", messageId: "m1", requestId: "r1", outputTokens: 128 } },
     { type: "tool.execution_start", id: "e6", timestamp: "2026-07-20T01:00:05.000Z", data: { toolCallId: "t1", toolName: "bash", arguments: { command: "npm test" } } },
     { type: "tool.execution_complete", id: "e7", timestamp: "2026-07-20T01:00:06.000Z", data: { toolCallId: "t1", success: true, result: { content: "Tests: 1 failed, 2 passed" } } },
     { type: "subagent.started", id: "e8", timestamp: "2026-07-20T01:00:07.000Z", data: { toolCallId: "s1", agentName: "research" } },
     { type: "subagent.completed", id: "e9", timestamp: "2026-07-20T01:00:08.000Z", data: { toolCallId: "s1", agentName: "research", totalTokens: 42, totalToolCalls: 3 } },
     { type: "brand.new.event", id: "e10", timestamp: "2026-07-20T01:00:09.000Z", data: {} },
+    { type: "assistant.message", id: "e11", timestamp: "2026-07-20T01:00:10.000Z", data: { model: "test-model", content: "done", messageId: "m2" } },
   ]);
 
   const analyzer = new CopilotSessionAnalyzer();
@@ -543,11 +544,107 @@ test("Copilot provider pairs tool lifecycle, hooks, and subagent delegation", as
   assert.equal(byType.get("subagent.start").subagentName, "research");
   assert.equal(byType.get("subagent.stop").subagentTotalTokens, 42);
   assert.ok(byType.has("metadata.brand.new.event"));
-  assert.equal(events.some((event) => event.modelUsage), false);
+
+  // Copilot reports output tokens per assistant message. They ride a companion
+  // response event because `isModelRequestEvent` ignores plain assistant events,
+  // and only the observed field is carried -- no input tokens or cost.
+  const responses = events.filter((event) => event.type === "model.response.completed");
+  assert.equal(responses.length, 1);
+  assert.deepEqual(responses[0].modelUsage, { outputTokens: 128 });
+  assert.equal(responses[0].usageFieldsObserved, true);
+  assert.equal(responses[0].responseId, "m1");
+  assert.equal(responses[0].requestId, "r1");
+  assert.equal(responses[0].model, "test-model");
+  const assistants = events.filter((event) => event.type === "assistant");
+  assert.equal(assistants.length, 2);
+  // Model attribution moves to the companion so one response is not counted twice.
+  assert.equal(assistants[0].model, undefined);
+  // An assistant message without observed usage keeps its own attribution.
+  assert.equal(assistants[1].model, "test-model");
 
   const coverage = analyzer.factsSourceCoverage(scope);
   assert.equal(coverage.status, "observed");
-  assert.equal(coverage.usage.perResponseUsageObserved, false);
+  assert.equal(coverage.usage.perResponseUsageObserved, true);
+  assert.deepEqual(coverage.usage.perResponseUsageFields, ["outputTokens"]);
+  assert.equal(coverage.transcript.withConversation, 1);
+  assert.equal(coverage.transcript.withRequest, 1);
+  assert.equal(coverage.transcript.terminalOnly, 0);
+  assert.equal(coverage.transcript.unreadable, 0);
+});
+
+test("Copilot provider maps the permission request and result pair without payloads", async () => {
+  const root = await fixtureRoot("copilot-permission-");
+  const home = path.join(root, ".copilot");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionDir = path.join(home, "session-state", "session-p");
+  await mkdir(workspace, { recursive: true });
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "workspace.yaml"), `id: session-p\ncwd: ${workspace}\n`);
+  await writeJsonl(path.join(sessionDir, "events.jsonl"), [
+    { type: "user.message", id: "e1", timestamp: "2026-07-20T01:00:00.000Z", data: { content: "read it" } },
+    {
+      type: "permission.requested",
+      id: "e2",
+      timestamp: "2026-07-20T01:00:01.000Z",
+      data: {
+        requestId: "req-1",
+        permissionRequest: { kind: "read", toolCallId: "t1", intention: "Read file: C:\\secret\\notes.md", path: "C:\\secret\\notes.md" },
+        promptRequest: { kind: "path", accessKind: "read", paths: ["C:\\secret\\notes.md"], toolCallId: "t1" },
+      },
+    },
+    { type: "permission.completed", id: "e3", timestamp: "2026-07-20T01:00:02.000Z", data: { requestId: "req-1", toolCallId: "t1", result: { kind: "approved" } } },
+    {
+      type: "permission.requested",
+      id: "e4",
+      timestamp: "2026-07-20T01:00:03.000Z",
+      data: {
+        requestId: "req-2",
+        permissionRequest: { kind: "shell", toolCallId: "t2", intention: "Run: rm -rf /" },
+        promptRequest: { kind: "commands", commands: ["rm -rf /"], toolCallId: "t2" },
+      },
+    },
+    { type: "permission.completed", id: "e5", timestamp: "2026-07-20T01:00:04.000Z", data: { requestId: "req-2", toolCallId: "t2", result: { kind: "denied-interactively-by-user" } } },
+    // A re-prompt reuses the tool call id; both requests must survive dedupe.
+    {
+      type: "permission.requested",
+      id: "e6",
+      timestamp: "2026-07-20T01:00:05.000Z",
+      data: { requestId: "req-3", permissionRequest: { kind: "shell", toolCallId: "t2" } },
+    },
+    { type: "permission.completed", id: "e7", timestamp: "2026-07-20T01:00:06.000Z", data: { requestId: "req-3", toolCallId: "t2", result: { kind: "approved-for-location" } } },
+    { type: "session.permissions_changed", id: "e8", timestamp: "2026-07-20T01:00:07.000Z", data: {} },
+  ]);
+
+  const analyzer = new CopilotSessionAnalyzer();
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const roots = await analyzer.discoverSourceRoots(scope);
+  const sessions = await analyzer.discoverSessions(scope, roots);
+  const events = await analyzer.readSession(sessions[0], scope, { includeCommandText: true });
+
+  const permissions = events.filter((event) => event.type === "control.permission");
+  assert.equal(permissions.length, 6);
+  assert.deepEqual(
+    permissions.map((event) => [event.lifecyclePhase, event.permissionRequestId, event.permissionKind ?? null, event.permissionDecision ?? null]),
+    [
+      ["request", "req-1", "read", null],
+      ["result", "req-1", null, "allowed"],
+      ["request", "req-2", "shell", null],
+      ["result", "req-2", null, "denied"],
+      ["request", "req-3", "shell", null],
+      ["result", "req-3", null, "allowed"],
+    ],
+  );
+  // The lifecycle stays additive: the mode/permission change event is unaffected.
+  assert.ok(events.some((event) => event.type === "control.change"));
+
+  // No prompt payload may survive normalization, even with content opted in.
+  const serialized = JSON.stringify(permissions);
+  for (const payload of ["secret", "notes.md", "rm -rf", "Read file", "intention", "paths"]) {
+    assert.ok(!serialized.includes(payload), `permission events leaked ${payload}`);
+  }
+  // Tool call ids are deliberately not carried on `toolInvocationId`: dedupe keys
+  // on that field and a re-prompt would be dropped as a duplicate.
+  assert.ok(permissions.every((event) => event.toolInvocationId === undefined));
 });
 
 test("Copilot provider keeps transcript-less workspace sessions explicit", async () => {
@@ -575,10 +672,18 @@ test("Copilot provider keeps transcript-less workspace sessions explicit", async
   assert.equal(coverage.status, "partial");
   assert.equal(coverage.transcript.workspaceSessions, 2);
   assert.equal(coverage.transcript.withoutTranscript, 1);
+  // The missing transcript survives inside the canonical contract instead of
+  // being dropped when public facts are bounded.
+  assert.equal(coverage.transcript.relevantSessions, 2);
+  assert.equal(coverage.transcript.withConversation, 1);
+  assert.equal(coverage.transcript.withRequest, 0);
+  assert.equal(coverage.transcript.unreadable, 1);
+  assert.equal(coverage.transcript.terminalOnly, 0);
+  assert.equal(coverage.usage.perResponseUsageObserved, false);
 
   const warnings = await analyzer.analysisWarnings(scope, roots, sessions);
   assert.ok(warnings.some((warning) => warning.code === "copilot-session-transcript-partial"));
-  assert.ok(warnings.some((warning) => warning.code === "copilot-per-response-usage-unobserved"));
+  assert.ok(warnings.some((warning) => warning.code === "copilot-per-response-usage-partial"));
 });
 
 test("Copilot provider ignores sessions from another workspace", async () => {

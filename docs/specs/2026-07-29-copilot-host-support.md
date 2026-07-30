@@ -27,9 +27,9 @@ Harness report.
 Copilot's transcript is the richest of any supported host: `events.jsonl`
 records hook, subagent, plan, compaction, and permission lifecycle events
 directly. That evidence must be normalized without inventing coverage Copilot
-does not record. Copilot does not persist per-response token usage in the
-transcript, and VS Code Copilot Chat has no documented durable transcript, so
-both stay explicit boundaries rather than zero values.
+does not record. Copilot records output tokens per assistant message but no
+input tokens, cache tokens, or cost, and VS Code Copilot Chat has no documented
+durable transcript, so both stay explicit boundaries rather than zero values.
 
 ## Acceptance Scenarios
 
@@ -51,14 +51,19 @@ both stay explicit boundaries rather than zero values.
   `--platform copilot` through a capability-owned platform module that reads
   workspace-matching `~/.copilot/session-state/<id>/events.jsonl`, and both the
   public and capability-owned analyzer factories resolve it.
-- **CHS-AC-5 (evidence boundaries):** Copilot facts report
-  `usageFieldsObserved: false` because the transcript records no per-response
-  token usage. Session Diagnostics states that VS Code Copilot Chat has no
-  supported durable transcript and that `session-store.db` is documented as
-  auto-managed and is not an evidence source.
+- **CHS-AC-5 (evidence boundaries):** Copilot facts carry the per-response
+  `outputTokens` the transcript records and omit input tokens, cache tokens, and
+  cost rather than reporting them as zero, so per-response usage coverage is
+  partial and complete usage still requires the opt-in OpenTelemetry export.
+  Permission request and result events normalize into the shared permission
+  lifecycle without retaining prompt intents, paths, or commands. Session
+  Diagnostics states that VS Code Copilot Chat has no supported durable
+  transcript and that `session-store.db` is documented as auto-managed and is not
+  an evidence source.
 - **CHS-AC-6 (bundle propagation):** `harness evidence-bundle --platform copilot`
   freezes a Copilot context and returns all three lanes, and `--copilot-home`
-  routes isolated configuration paths into the Agent Customize lane.
+  routes isolated configuration paths into the Agent Customize lane through both
+  the collector API and the `agent-customize` CLI.
 - **CHS-AC-7 (host routing):** The host adapter matrix carries a Copilot row with
   discovery paths, evidence sources, default output, and a smoke command.
   Portable HTML routing includes Copilot, and Qoder remains the only Canvas host.

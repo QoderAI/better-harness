@@ -73,6 +73,7 @@ async function main() {
     codexHome: options["codex-home"],
     claudeHome: options["claude-home"],
     qwenHome: options["qwen-home"],
+    copilotHome: options["copilot-home"],
     claudeStatePath: options["claude-state"] ?? options["claude-state-path"],
     codexAppPath: options["codex-app-path"],
     qoderSharedClientCacheRoot: options["qoder-shared-client-cache-root"] ?? options["shared-client-cache-root"],

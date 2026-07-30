@@ -1761,3 +1761,43 @@ test("Copilot inventory without user-home authority keeps project scope only", a
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
+
+test("agent-customize CLI honours --copilot-home instead of the real user home", async () => {
+  // Regression: the CLI advertised --copilot-home but never forwarded it, so an
+  // isolated home still resolved ~/.copilot and scanned the caller's real assets.
+  const fixture = await makeCopilotFixture();
+  try {
+    const result = runAgentCustomizeCli([
+      "inventory",
+      "--provider",
+      "copilot",
+      "--workspace",
+      fixture.workspace,
+      "--copilot-home",
+      fixture.copilotHome,
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const inventory = JSON.parse(result.stdout);
+
+    // The resolved home must be the override, never the caller's real ~/.copilot.
+    assert.equal(inventory.copilotHome, fixture.copilotHome);
+    assert.notEqual(inventory.copilotHome, path.join(os.homedir(), ".copilot"));
+
+    // The inventory itself must also come from the override.
+    assert.equal(inventory.diagnostics.installedPluginState, "copilot-config");
+    assert.deepEqual(inventory.plugins.map((plugin) => plugin.id), ["acme/delivery"]);
+    assert.deepEqual(
+      inventory.manage.skills.map((skill) => skill.name).sort(),
+      ["review-change", "ship-release", "user-skill"],
+    );
+    for (const item of [...inventory.manage.skills, ...inventory.manage.mcps]) {
+      assert.ok(
+        !item.evidence?.path || !item.evidence.path.startsWith(path.join(os.homedir(), ".copilot")),
+        `inventory item escaped the override home: ${item.evidence?.path}`,
+      );
+    }
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
