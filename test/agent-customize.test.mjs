@@ -2133,3 +2133,164 @@ test("Pi discovers ~/.agents/skills from the real user home under a relocated ag
     await rm(root, { recursive: true, force: true });
   }
 });
+
+async function makeWorkbuddyFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-workbuddy-"));
+  const workbuddyHome = path.join(root, ".workbuddy");
+  const workspace = path.join(root, "workspace");
+
+  const marketplacePluginRoot = path.join(
+    workbuddyHome, "plugins", "marketplaces", "codebuddy-plugins-official", "plugins", "find-skills",
+  );
+  await writeJson(path.join(marketplacePluginRoot, ".codebuddy-plugin", "plugin.json"), {
+    name: "find-skills",
+    description: "Discover and install agent skills.",
+    version: "1.0.0",
+  });
+  await writeText(
+    path.join(marketplacePluginRoot, "skills", "find-skills", "SKILL.md"),
+    "---\nname: find-skills\ndescription: Discover and install agent skills.\n---\n",
+  );
+  await writeJson(path.join(marketplacePluginRoot, ".mcp.json"), {
+    mcpServers: {
+      "plugin-search": { command: "npx", args: ["-y", "plugin-search-mcp"] },
+    },
+  });
+
+  const disabledPluginRoot = path.join(
+    workbuddyHome, "plugins", "marketplaces", "cb_teams_marketplace", "plugins", "finance-data",
+  );
+  await writeJson(path.join(disabledPluginRoot, ".codebuddy-plugin", "plugin.json"), {
+    name: "finance-data",
+    description: "Finance data workflows.",
+    version: "2.0.0",
+  });
+
+  await writeJson(path.join(workbuddyHome, "settings.json"), {
+    enabledPlugins: {
+      "find-skills@codebuddy-plugins-official": true,
+      "finance-data@cb_teams_marketplace": false,
+    },
+  });
+  await writeJson(path.join(workbuddyHome, ".mcp.json"), {
+    mcpServers: {
+      "docs-server": { command: "npx", args: ["-y", "docs-mcp"] },
+    },
+  });
+  await writeText(
+    path.join(workbuddyHome, "skills", "frontend-slides", "SKILL.md"),
+    "---\nname: frontend-slides\ndescription: Build HTML slide decks.\n---\n",
+  );
+  await writeText(path.join(workbuddyHome, "AGENTS.md"), "# Global WorkBuddy Guidance\n");
+  await writeText(path.join(workbuddyHome, "SOUL.md"), "# SOUL\n\nBe genuinely helpful.\n");
+  await writeText(path.join(workbuddyHome, "USER.md"), "# USER\n\nPrefers concise answers.\n");
+
+  await writeText(
+    path.join(workspace, ".workbuddy", "skills", "wb-workflow", "SKILL.md"),
+    "---\nname: wb-workflow\ndescription: WorkBuddy workflow.\n---\n",
+  );
+  await writeText(
+    path.join(workspace, ".agents", "skills", "shared-standard", "SKILL.md"),
+    "---\nname: shared-standard\ndescription: Shared Agent Skills standard workflow.\n---\n",
+  );
+  await writeText(path.join(workspace, "AGENTS.md"), "# WorkBuddy Project Instructions\n");
+
+  return { root, workbuddyHome, workspace };
+}
+
+test("collectAgentCustomizeInventory returns WorkBuddy marketplace plugins with enabled state", async () => {
+  const fixture = await makeWorkbuddyFixture();
+
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "workbuddy",
+      workbuddyHome: fixture.workbuddyHome,
+      workspace: fixture.workspace,
+    });
+
+    assert.equal(inventory.provider, "workbuddy");
+    assert.equal(inventory.workbuddyHome, fixture.workbuddyHome);
+    assert.equal(inventory.plugins.length, 2);
+
+    const findSkills = inventory.plugins.find((plugin) => plugin.name === "find-skills");
+    assert.ok(findSkills);
+    assert.equal(findSkills.installMatch, "workbuddy-marketplace-dir");
+    assert.equal(findSkills.enabled, true);
+    assert.equal(findSkills.version, "1.0.0");
+    assert.deepEqual(findSkills.skills.map((skill) => skill.name), ["find-skills"]);
+    assert.deepEqual(findSkills.mcpServers.map((server) => server.name), ["plugin-search"]);
+
+    const finance = inventory.plugins.find((plugin) => plugin.name === "finance-data");
+    assert.ok(finance);
+    assert.equal(finance.enabled, false);
+
+    assert.equal(inventory.diagnostics.installedPluginState, "workbuddy-marketplace-dirs");
+    assert.deepEqual(
+      inventory.diagnostics.installedPluginRecordFiles,
+      [path.join(fixture.workbuddyHome, "settings.json")],
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("agent-customize CLI honours --workbuddy-home instead of the real user home", async () => {
+  const fixture = await makeWorkbuddyFixture();
+  try {
+    const result = runAgentCustomizeCli([
+      "inventory",
+      "--provider",
+      "workbuddy",
+      "--workspace",
+      fixture.workspace,
+      "--workbuddy-home",
+      fixture.workbuddyHome,
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const inventory = JSON.parse(result.stdout);
+    assert.equal(inventory.workbuddyHome, fixture.workbuddyHome);
+    assert.notEqual(inventory.workbuddyHome, path.join(os.homedir(), ".workbuddy"));
+    assert.ok(inventory.manage.mcps.some((item) => item.name === "docs-server"));
+    assert.ok(inventory.manage.mcps.some((item) => item.name === "plugin-search"));
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("WorkBuddy provider collects user and project skills, MCP servers, and context rules", async () => {
+  const fixture = await makeWorkbuddyFixture();
+
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "workbuddy",
+      workbuddyHome: fixture.workbuddyHome,
+      workspace: fixture.workspace,
+    });
+
+    assert.ok(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "user" })
+        .some((item) => item.name === "frontend-slides" && item.scope === "user"),
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "project" }).map((item) => item.name).sort(),
+      ["shared-standard", "wb-workflow"],
+    );
+    assert.ok(
+      filterManageItems(inventory, { tab: "mcps", scopeKind: "user" })
+        .some((item) => item.name === "docs-server"),
+    );
+    assert.ok(
+      filterManageItems(inventory, { tab: "mcps", scopeKind: "plugin" })
+        .some((item) => item.name === "plugin-search" && item.sourceLabel === "Find Skills"),
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "rules", scopeKind: "user" }).map(
+        (item) => `${item.name}:${item.sourceKind ?? "native"}`,
+      ).sort(),
+      ["AGENTS.md:workbuddy-global-context", "SOUL.md:workbuddy-global-context", "USER.md:workbuddy-global-context"].sort(),
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});

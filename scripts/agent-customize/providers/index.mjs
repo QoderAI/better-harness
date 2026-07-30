@@ -5,6 +5,7 @@ import { collectCursorCustomizeInventory } from "./cursor.mjs";
 import { collectPiCustomizeInventory } from "./pi.mjs";
 import { collectQoderCustomizeInventory } from "./qoder.mjs";
 import { collectQwenCustomizeInventory } from "./qwen.mjs";
+import { collectWorkbuddyCustomizeInventory } from "./workbuddy.mjs";
 
 export const PROVIDER_COLLECTORS = new Map([
   ["cursor", collectCursorCustomizeInventory],
@@ -14,6 +15,7 @@ export const PROVIDER_COLLECTORS = new Map([
   ["qwen", collectQwenCustomizeInventory],
   ["copilot", collectCopilotCustomizeInventory],
   ["pi", collectPiCustomizeInventory],
+  ["workbuddy", collectWorkbuddyCustomizeInventory],
 ]);
 
 export async function collectProviderInventory(provider, options = {}) {

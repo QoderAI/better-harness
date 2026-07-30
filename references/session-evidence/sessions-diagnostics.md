@@ -12,22 +12,22 @@ fails validation:
 
 ```bash
 # Discover evidence roots for a workspace
-<node> scripts/session-analysis.mjs sources --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo
+<node> scripts/session-analysis.mjs sources --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo
 
 # Session list with event counts and time range
-<node> scripts/session-analysis.mjs facets --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo --limit 20
+<node> scripts/session-analysis.mjs facets --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --limit 20
 
 # Compact insight cards and action candidates
-<node> scripts/session-analysis.mjs insights --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo --limit 20
+<node> scripts/session-analysis.mjs insights --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --limit 20
 
 # Read single session events
-<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo --session-id <id> --include-events
+<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --session-id <id> --include-events
 
 # Diagnose the facts admission funnel and resolve candidate refs to local sessions
-<node> scripts/session-analysis.mjs facts --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo --selection all-eligible --limit 5 --debug --output /tmp/session-facts-debug.json
+<node> scripts/session-analysis.mjs facts --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --selection all-eligible --limit 5 --debug --output /tmp/session-facts-debug.json
 
 # Expand one debug locator with normalized commands and user text
-<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo --session-id <id> --include-events --include-command-text --include-user-text
+<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --session-id <id> --include-events --include-command-text --include-user-text
 ```
 
 `facts --debug` is an operator-only diagnostic route. It exposes raw session
@@ -38,7 +38,7 @@ opening only the candidate sessions needed to explain a surprising aggregate.
 Command and user text flags are also local-only and must not be used for broad
 transcript dumps.
 
-Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, `copilot`, and `pi`. Do not invent
+Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, `copilot`, `pi`, and `workbuddy`. Do not invent
 unsupported platform names.
 Always pass the absolute target workspace and load the matching Platform Notes
 before interpreting source roots or workspace bindings.
@@ -307,3 +307,26 @@ tool results as provider-labelled coverage. Entries such as `model_change`,
 (`AGENTS.md`), Skills, prompt templates, extensions, pi packages, and other
 project/user assets through `../agent-customize/global-assets.md`; configured
 presence does not prove use.
+
+### WorkBuddy
+
+For WorkBuddy, the analyzer reads workspace-matching JSONL transcripts under
+`~/.workbuddy/projects/<cwd-slug>/*.jsonl`. It verifies embedded `cwd` values
+when present; for observed 5.x transcripts without `cwd`, it admits only files
+from the exact requested workspace slug and rejects prefix-only directory
+matches. WorkBuddy computes the directory slug by stripping the leading
+separator and replacing path separators with `-`, so `/home/admin/workspace` maps to
+`~/.workbuddy/projects/home-admin-workspace/`. The `WORKBUDDY_DIR`
+environment variable relocates the data root; honor it before assuming the
+default path. WorkBuddy does not maintain a separate audit log; transcript
+records are the primary lifecycle source, with tool calls carried in
+`function_call` records and tool results in `function_call_result` records.
+
+Treat transcript timestamps, sparse camelCase or snake_case model usage
+(`providerData.usage`), tool calls, and tool results as provider-labelled
+coverage. Entries such as `reasoning`, `file-history-snapshot`, `ai-title`,
+and `custom-title` stay metadata even when a companion usage event is emitted.
+Route configured WorkBuddy rules (`AGENTS.md`, identity files), Skills,
+marketplace plugins, MCP config, and other project/user assets through
+`../agent-customize/global-assets.md`; configured presence does not prove
+use.

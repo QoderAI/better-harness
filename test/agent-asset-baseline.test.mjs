@@ -422,3 +422,34 @@ test("Pi asset baseline completes from a native project fixture", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("WorkBuddy asset baseline completes from a native project fixture", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-asset-baseline-workbuddy-"));
+  const workspace = path.join(root, "project");
+  const workbuddyHome = path.join(root, ".workbuddy");
+  try {
+    await mkdir(workbuddyHome, { recursive: true });
+    await mkdir(path.join(workspace, ".workbuddy", "skills", "review"), { recursive: true });
+    await writeFile(path.join(workspace, "AGENTS.md"), "# WorkBuddy project\n\nRun npm test.\n");
+    await writeFile(
+      path.join(workspace, ".workbuddy", "skills", "review", "SKILL.md"),
+      "---\nname: review\ndescription: Review a bounded WorkBuddy project change.\n---\n",
+    );
+
+    const result = await collectAssetBaseline({
+      provider: "workbuddy",
+      workspace,
+      workbuddyHome,
+      includeUserHome: false,
+    });
+
+    assert.equal(result.status, "complete");
+    assert.equal(result.scope.provider, "workbuddy");
+    assert.equal(result.envelopes.inventory.status, "available");
+    assert.equal(result.envelopes.lint.data.assetInventory.summary.skills, 1);
+    assert.equal(result.envelopes.inventory.data.ownerRoutes.items.some((item) =>
+      item.kind === "skills" && item.name === "review"), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
