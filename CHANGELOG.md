@@ -20,6 +20,8 @@ observable behavior and compatibility, not every internal refactor.
 
 ### Changed
 
+- `harness record-fix-output` now resolves Home only for Global output, so a
+  verified Project-only result remains recordable when Home is unavailable.
 - The `harness analyze` platform gate now names the full supported set
   (`qoder, codex, claude, cursor, qwen, copilot, pi`) when it rejects an
   unsupported `--platform`, matching the session-analysis and asset-baseline
