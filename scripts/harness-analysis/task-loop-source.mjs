@@ -70,13 +70,13 @@ const REQUIRED_SOFTWARE_FLUENCY_CAPABILITIES = Object.freeze([
 const HELP = `Usage: node scripts/harness-analysis/task-loop-source.mjs --workspace <target> --source <report.source.json> [options]
 
 Create a conservative Agent Work Loop report-source candidate from normalized
-Qoder, Codex, Claude, Cursor, Qwen, or Copilot sessions. It retains privacy-safe episode, change, validation,
+Qoder, Codex, Claude, Cursor, Qwen, Copilot, or Pi sessions. It retains privacy-safe episode, change, validation,
 repair-candidate, and explicit host-decision identities. Task understanding,
 validation relevance, repair, delivery, recovery, and Learning Capture remain
 unobserved until the prepared source-bound review resolves them.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot>
+  --platform <qoder|codex|claude|cursor|qwen|copilot|pi>
                                   Session platform (default: qoder)
   --workspace <path>            Target workspace (required)
   --source <path>               Candidate report.source.json path (required)
@@ -817,7 +817,7 @@ export function buildTaskLoopSourceCandidate({
 
 export async function collectAgentLintPracticeEvidence(options = {}) {
   const provider = options.platform ?? "qoder";
-  const assetReviewSupported = ["qoder", "codex", "claude", "cursor", "qwen", "copilot"].includes(provider);
+  const assetReviewSupported = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"].includes(provider);
   const common = {
     workspace: options.workspace,
     provider,
@@ -827,6 +827,7 @@ export async function collectAgentLintPracticeEvidence(options = {}) {
     cursorHome: options.cursorHome ?? options["cursor-home"],
     qwenHome: options.qwenHome ?? options["qwen-home"],
     copilotHome: options.copilotHome ?? options["copilot-home"],
+    piHome: options.piHome ?? options["pi-home"],
   };
   const [instructionReview, assetReview, practiceInventory] = await Promise.all([
     runAgentLint({ ...common, profile: "agents-md-review" }),
@@ -922,6 +923,16 @@ export function collectTaskLoopPracticeInventory(options = {}, platform = option
       includeGlobalHooks: true,
       includeMemories: false,
       qwenHome: options.qwenHome ?? options["qwen-home"],
+    });
+  }
+  if (platform === "pi") {
+    return collectProviderInventory({
+      platform,
+      workspace: options.workspace,
+      includeUserHome: includeGlobalCapabilities,
+      includeGlobalHooks: true,
+      includeMemories: false,
+      piHome: options.piHome ?? options["pi-home"],
     });
   }
   return Promise.resolve(null);
@@ -1029,12 +1040,16 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
   const analyzerOptions = {
     platform,
     workspace: options.workspace,
+    home: options.home,
     since: selectionProfile?.scope?.since ?? options.since,
     until: snapshotUntil,
     qoderHome: options.qoderHome ?? options["qoder-home"],
     codexHome: options.codexHome ?? options["codex-home"],
     claudeHome: options.claudeHome ?? options["claude-home"],
     cursorHome: options.cursorHome ?? options["cursor-home"],
+    qwenHome: options.qwenHome ?? options["qwen-home"],
+    copilotHome: options.copilotHome ?? options["copilot-home"],
+    piHome: options.piHome ?? options["pi-home"],
     includeGlobalCapabilities: options.includeGlobalCapabilities
       ?? options["include-global-capabilities"]
       ?? false,

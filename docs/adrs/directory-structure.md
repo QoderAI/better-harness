@@ -76,7 +76,7 @@ scripts/
   core-change-watch/               # [active] static structure/core-path/history evidence
   session-analysis.mjs                 # [active] thin shim; new exports -> scripts/session-analysis/
   session-analysis/                    # [active] session evidence collection/normalization
-    platforms/<host>.mjs               # Qoder/Codex/Claude/Cursor/Qwen/Copilot host adapters
+    platforms/<host>.mjs               # Qoder/Codex/Claude/Cursor/Qwen/Copilot/Pi host adapters
     ides/<ide>/                        # target editor-local evidence not covered by host adapters
   <business-capability>/               # [target] new capability owner
     cli.mjs                            # use cli.mjs for new capabilities

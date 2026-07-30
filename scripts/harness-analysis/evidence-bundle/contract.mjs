@@ -8,7 +8,7 @@ export const EVIDENCE_LANE_NAMES = Object.freeze([
   "agentCustomize",
 ]);
 
-const PROVIDERS = new Set(["qoder", "codex", "claude", "cursor", "qwen", "copilot"]);
+const PROVIDERS = new Set(["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"]);
 const DEPTHS = new Set(["quick", "normal"]);
 
 function enabled(value) {

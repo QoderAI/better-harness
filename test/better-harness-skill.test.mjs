@@ -77,10 +77,11 @@ test("non-Qoder providers default to validated durable HTML with an explicit inl
   assert.match(skill, /HTML artifacts: findings\.json, report\.md, report\.html/);
   assert.match(skill, /Succeed only on\s+`status: pass`/);
   assert.match(skill, /Never hand-write\s+Canvas, Markdown, or HTML/);
-  assert.match(routing, /Portable HTML report \| Active host is Claude Code, Codex, Cursor, Qwen Code, or GitHub Copilot/);
+  assert.match(routing, /Portable HTML report \| Active host is Claude Code, Codex, Cursor, Qwen Code, GitHub Copilot, or Pi/);
   assert.match(routing, /Inline only \| Inline or no-files output is explicitly requested \| none; inline analysis writes nothing/);
   assert.match(adapters, /Claude Code[^\n]+scripts\/session-analysis\/platforms\/claude\.mjs[^\n]+self-contained HTML \+ Markdown/);
   assert.match(adapters, /Cursor[^\n]+scripts\/session-analysis\/platforms\/cursor\.mjs[^\n]+self-contained HTML \+ Markdown/);
+  assert.match(adapters, /Pi[^\n]+scripts\/session-analysis\/platforms\/pi\.mjs[^\n]+self-contained HTML \+ Markdown/);
   assert.doesNotMatch(adapters, /Inline repository review only|No Claude\s+session-evidence adapter/);
   assert.match(readme, /Claude Code defaults to a self-contained `report\.html`/);
   assert.match(readme, /\.claude\/better-harness/);
@@ -89,13 +90,9 @@ test("non-Qoder providers default to validated durable HTML with an explicit inl
 test("Codex README examples use host-specific skill invocation syntax", () => {
   for (const readmePath of ["README.md", "README.zh-CN.md"]) {
     const readme = read(readmePath);
-    const desktopQuickStart = readme.match(/^\| \*\*Codex Desktop\*\* \|.*$/mu)?.[0] ?? "";
-    const cliQuickStart = readme.match(/^\| \*\*Codex CLI\*\* \|.*$/mu)?.[0] ?? "";
     const desktop = readme.match(/#### Codex Desktop\n([\s\S]*?)\n#### Codex CLI/u)?.[1] ?? "";
     const cli = readme.match(/#### Codex CLI\n([\s\S]*?)\n### Qoder/u)?.[1] ?? "";
 
-    assert.match(desktopQuickStart, /`@better-harness`/u);
-    assert.match(cliQuickStart, /`\$better-harness:better-harness`/u);
     assert.match(desktop, /^@better-harness(?:[ \t]|$)/mu);
     assert.match(cli, /^\$better-harness:better-harness(?:[ \t]|$)/mu);
     assert.doesNotMatch(desktop, /^[ \t]*\/better-harness(?:[ \t]|$)/mu);

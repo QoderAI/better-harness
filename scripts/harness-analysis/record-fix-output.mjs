@@ -121,11 +121,13 @@ function isWithin(root, candidate) {
 
 async function assertOutputTargets(actualOutput, workspacePath) {
   const workspaceRealPath = await realpath(workspacePath);
-  const homeRealPath = await realpath(os.homedir());
+  let homeRealPath;
   for (const [index, output] of actualOutput.entries()) {
     if (!output?.path) continue;
     const logicalPath = String(output.path);
-    const root = output.scope === "Global" ? homeRealPath : workspaceRealPath;
+    const isGlobal = output.scope === "Global";
+    if (isGlobal) homeRealPath ??= await realpath(os.homedir());
+    const root = isGlobal ? homeRealPath : workspaceRealPath;
     const relativePath = output.scope === "Global" ? logicalPath.slice(2) : logicalPath;
     const targetPath = path.resolve(root, ...relativePath.split("/"));
     const targetStat = await stat(targetPath).catch(() => null);

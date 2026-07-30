@@ -5,12 +5,27 @@ observable behavior and compatibility, not every internal refactor.
 
 ## Unreleased
 
+### Added
+
+- Pi (pi.dev) is now a supported analysis-capable source-local host. The
+  repository installs as a pi package (`pi install <repo>`) through a `pi`
+  manifest in `package.json`, registers a `/better-harness` prompt template,
+  and gains a Pi configured-asset provider (settings-declared pi packages,
+  skills, prompt templates, extensions, and `AGENTS.md` context) plus a Pi
+  session-evidence adapter that reads workspace-matching JSONL v3 transcripts
+  under `~/.pi/agent/sessions/` with `PI_CODING_AGENT_DIR` and
+  `PI_CODING_AGENT_SESSION_DIR` overrides. Pi's shell is the `pi` manifest in
+  the existing `package.json`, so the public npm package still ships six host
+  metadata roots and the Qoder runtime bundle remains Qoder-specific.
+
 ### Changed
 
+- `harness record-fix-output` now resolves Home only for Global output, so a
+  verified Project-only result remains recordable when Home is unavailable.
 - The `harness analyze` platform gate now names the full supported set
-  (`qoder, codex, claude, cursor, qwen, copilot`) when it rejects an unsupported
-  `--platform`, matching the session-analysis and asset-baseline gates. The
-  existing error prefix and exit behavior are unchanged.
+  (`qoder, codex, claude, cursor, qwen, copilot, pi`) when it rejects an
+  unsupported `--platform`, matching the session-analysis and asset-baseline
+  gates. The existing error prefix and exit behavior are unchanged.
 - Core Change Watch now requires framework-specific evidence before labeling
   Rails or FastAPI, exposes bounded root Just recipes as statically discovered
   unverified argv entrypoints, and keeps historical-only files out of current

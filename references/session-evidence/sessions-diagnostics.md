@@ -12,22 +12,22 @@ fails validation:
 
 ```bash
 # Discover evidence roots for a workspace
-<node> scripts/session-analysis.mjs sources --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo
+<node> scripts/session-analysis.mjs sources --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo
 
 # Session list with event counts and time range
-<node> scripts/session-analysis.mjs facets --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo --limit 20
+<node> scripts/session-analysis.mjs facets --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo --limit 20
 
 # Compact insight cards and action candidates
-<node> scripts/session-analysis.mjs insights --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo --limit 20
+<node> scripts/session-analysis.mjs insights --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo --limit 20
 
 # Read single session events
-<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo --session-id <id> --include-events
+<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo --session-id <id> --include-events
 
 # Diagnose the facts admission funnel and resolve candidate refs to local sessions
-<node> scripts/session-analysis.mjs facts --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo --selection all-eligible --limit 5 --debug --output /tmp/session-facts-debug.json
+<node> scripts/session-analysis.mjs facts --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo --selection all-eligible --limit 5 --debug --output /tmp/session-facts-debug.json
 
 # Expand one debug locator with normalized commands and user text
-<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo --session-id <id> --include-events --include-command-text --include-user-text
+<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi> --workspace /path/to/repo --session-id <id> --include-events --include-command-text --include-user-text
 ```
 
 `facts --debug` is an operator-only diagnostic route. It exposes raw session
@@ -38,7 +38,7 @@ opening only the candidate sessions needed to explain a surprising aggregate.
 Command and user text flags are also local-only and must not be used for broad
 transcript dumps.
 
-Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, and `copilot`. Do not invent
+Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, `copilot`, and `pi`. Do not invent
 unsupported platform names.
 Always pass the absolute target workspace and load the matching Platform Notes
 before interpreting source roots or workspace bindings.
@@ -286,3 +286,24 @@ output is undocumented and stays `unobserved`. Route configured Copilot rules
 (`AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/`),
 Skills, Agents, hooks, MCP, and installed Plugins through
 `../agent-customize/global-assets.md`; configured presence does not prove use.
+
+### Pi
+
+For Pi, the analyzer reads workspace-matching JSONL transcripts under
+`~/.pi/agent/sessions/--<cwd-slug>--/*.jsonl` and verifies the `cwd` embedded
+in the version-3 session header before admitting a session. Pi computes the
+directory slug by stripping the leading separator and replacing path
+separators with `-`, so `/home/admin/workspace` maps to
+`~/.pi/agent/sessions/--home-admin-workspace--/`. The `PI_CODING_AGENT_DIR`
+and `PI_CODING_AGENT_SESSION_DIR` environment variables relocate the agent
+dir and session storage; honor them before assuming the default path. Pi does
+not maintain a separate audit log; transcript `message` entries are the
+primary lifecycle source, with tool calls carried in assistant `toolCall`
+content blocks and tool results in `toolResult` role messages.
+
+Treat transcript timestamps, model usage (`message.usage`), tool calls, and
+tool results as provider-labelled coverage. Entries such as `model_change`,
+`compaction`, and `custom` stay metadata. Route configured Pi rules
+(`AGENTS.md`), Skills, prompt templates, extensions, pi packages, and other
+project/user assets through `../agent-customize/global-assets.md`; configured
+presence does not prove use.

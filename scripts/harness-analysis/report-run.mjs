@@ -19,7 +19,7 @@ an explicit Qoder Canvas output is requested.
 
 Options:
   --workspace <path>       Target workspace (required)
-  --platform <name>        qoder, codex, claude, cursor, qwen, or copilot (default: qoder)
+  --platform <name>        qoder, codex, claude, cursor, qwen, copilot, or pi (default: qoder)
   --language <locale>      en or zh-CN (default: en)
   --since <ISO timestamp>  Include sessions at or after the frozen window start
   --until <ISO timestamp>  Include sessions at or before the frozen window end
@@ -34,7 +34,7 @@ function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
-const REPORT_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copilot"];
+const REPORT_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"];
 
 function reportPlatform(value = "qoder") {
   const platform = String(value || "qoder").toLowerCase();
@@ -58,7 +58,7 @@ function flagEnabled(value) {
 function assertCliOptions(options) {
   const allowed = new Set([
     "workspace", "platform", "language", "since", "until", "format", "canvas-out", "replace-canvas", "include-global-capabilities",
-    "qoder-home", "codex-home", "claude-home", "cursor-home", "qwen-home", "copilot-home",
+    "qoder-home", "codex-home", "claude-home", "cursor-home", "qwen-home", "copilot-home", "pi-home",
   ]);
   const positional = Array.isArray(options._) ? options._ : [];
   const unknown = Object.keys(options).filter((key) => key !== "_" && !allowed.has(key));
@@ -168,6 +168,7 @@ export async function analyzeHarnessEvidence(options = {}) {
         claudeHome: options["claude-home"],
         cursorHome: options["cursor-home"],
         qwenHome: options["qwen-home"],
+        piHome: options["pi-home"],
         sessionPopulation: options.sessionPopulation,
       });
   const source = sourceResult.source;

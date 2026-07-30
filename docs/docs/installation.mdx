@@ -149,6 +149,55 @@ Cursor session evidence is supported through workspace-matched transcripts,
 metadata, and audit logs. Partial or unavailable coverage remains explicit.
 
 </TabItem>
+<TabItem value="qwen-code" label="Qwen Code">
+
+## Qwen Code {#qwen-code}
+
+Install Better Harness as a Qwen Code extension:
+
+```bash
+qwen extensions install QoderAI/better-harness
+```
+
+Start a new Qwen Code session in the repository you want to review and run the
+report prompt:
+
+```text
+/better-harness review this project's AI coding workflow and generate a report
+```
+
+Qwen Code produces a self-contained `report.html` with paired `report.md` and
+`findings.json`. Session evidence coverage depends on Qwen Code's available
+transcript paths; missing or partial evidence remains explicit.
+
+</TabItem>
+<TabItem value="github-copilot" label="GitHub Copilot">
+
+## GitHub Copilot {#github-copilot}
+
+Register this repository as a Copilot plugin marketplace, then install Better
+Harness:
+
+```bash
+copilot plugin marketplace add QoderAI/better-harness
+copilot plugin install better-harness@better-harness
+```
+
+Verify that the Skill loaded:
+
+```bash
+copilot plugin list
+```
+
+Prefer marketplace installs. Direct repository, URL, and local-path installs are
+deprecated in Copilot CLI.
+
+Copilot session evidence is supported through workspace-matched Copilot CLI
+transcripts under `~/.copilot/session-state/`. Copilot records no per-response
+token usage, and VS Code Copilot Chat has no supported durable transcript; both
+remain explicit evidence boundaries.
+
+</TabItem>
 </Tabs>
 
 ## Next step

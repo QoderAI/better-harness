@@ -15,8 +15,8 @@ you want to review, start a new session, and run:
 
 Better Harness scopes behavior claims to relevant Task Episodes and the
 surrounding project mechanisms. Qoder produces a Canvas report; Claude Code,
-Codex, and Cursor produce self-contained HTML with paired Markdown. Missing or
-partial evidence remains explicit.
+Codex, Cursor, Qwen Code, and GitHub Copilot produce self-contained HTML with
+paired Markdown. Missing or partial evidence remains explicit.
 
 See the [live demo report](pathname:///demo/better-harness-report/) for
 what the HTML output looks like.

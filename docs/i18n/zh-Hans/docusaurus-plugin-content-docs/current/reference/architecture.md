@@ -41,7 +41,7 @@ Better Harness 使用
 | 项目证据 | `better-harness core-change-watch` | 项目、历史、核心路径和 diff 信号 |
 | 改动置信度 | `hooks/git-scripts/blast-radius` | 改动的符号图影响半径 |
 | 依赖治理 | `better-harness dependency-governance` | 更新自动化、审计、过期依赖信号 |
-| 会话证据 | `better-harness session-analysis` | 归一化 Qoder、Codex、Claude 或 Cursor 会话行为 |
+| 会话证据 | `better-harness session-analysis` | 归一化 Qoder、Codex、Claude、Cursor、Qwen 或 Copilot 会话行为 |
 | 智能体资产 | `better-harness coding-agent-practices inventory` | 盘点已配置的智能体接口 |
 | 守护 | `hooks/`、`scripts/agent-guardrails` | 密钥扫描和生命周期检查 |
 

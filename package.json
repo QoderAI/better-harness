@@ -22,9 +22,14 @@
     "better-harness",
     "ai-delivery",
     "continuous-improvement",
-    "agent-harness"
+    "agent-harness",
+    "pi-package"
   ],
   "type": "module",
+  "pi": {
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  },
   "files": [
     ".claude-plugin/",
     ".codex-plugin/",
@@ -51,6 +56,7 @@
     "!docs/package-lock.json",
     "hooks/",
     "models/",
+    "prompts/",
     "references/",
     "scripts/",
     "!scripts/packaging/",

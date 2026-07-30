@@ -2868,6 +2868,120 @@ test("record-fix-output replaces one latest result and increments its revision",
   });
 });
 
+test("record-fix-output does not resolve Home for purely Project actualOutput", async () => {
+  await withTempDir(async (root) => {
+    const workspace = path.join(root, "workspace");
+    const runDir = path.join(workspace, ".Qoder", "better-harness", "run");
+    const findingsPath = path.join(runDir, "findings.json");
+    const canvasPath = path.join(runDir, "canvas.json");
+    const targetPath = "fix-output/project-owner.md";
+    const split = splitTaskLoopFindings(projectTaskLoopFindings(reportSource()));
+    const finding = split.findings.findings[0];
+    const resultPath = path.join(root, "result.json");
+    const unavailableHome = path.join(root, "unavailable-home");
+    await mkdir(path.join(workspace, path.dirname(targetPath)), { recursive: true });
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(workspace, targetPath), "# Project owner\n");
+    await writeFile(findingsPath, `${JSON.stringify(split.findings, null, 2)}\n`);
+    await writeFile(canvasPath, `${JSON.stringify(split.canvas, null, 2)}\n`);
+    await writeFile(resultPath, JSON.stringify({
+      actualOutput: [{
+        action: "updated",
+        artifact: finding.expectedArtifact,
+        name: `${finding.expectedArtifact} project owner`,
+        scope: "Project",
+        path: targetPath,
+        summary: "Recorded the verified Project-scoped owner result.",
+      }],
+      assignmentSummary: assignmentSummary(),
+    }));
+
+    const invocation = spawnSync(process.execPath, [
+      path.resolve("scripts/harness-analysis/record-fix-output.mjs"),
+      "--workspace", workspace,
+      "--findings", findingsPath,
+      "--finding-id", finding.id,
+      "--expected-revision", "0",
+      "--result", resultPath,
+      "--json",
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, HOME: unavailableHome, USERPROFILE: unavailableHome },
+    });
+
+    assert.equal(invocation.status, 0, invocation.stderr);
+    const result = JSON.parse(invocation.stdout);
+    assert.equal(result.kind, "harness-fix-output-record");
+    assert.equal(result.status, "pass");
+    assert.equal(result.findingsPath, findingsPath);
+    assert.equal(result.findingId, finding.id);
+    assert.equal(result.revision, 1);
+    assert.equal(result.actualOutputCount, 1);
+  });
+});
+
+test("record-fix-output resolves Home only for Global actualOutput", async () => {
+  await withTempDir(async (root) => {
+    const prepareGlobalFixture = async (name) => {
+      const workspace = path.join(root, name, "workspace");
+      const runDir = path.join(workspace, ".Qoder", "better-harness", "run");
+      const findingsPath = path.join(runDir, "findings.json");
+      const resultPath = path.join(root, name, "result.json");
+      const split = splitTaskLoopFindings(projectTaskLoopFindings(reportSource()));
+      const finding = split.findings.findings[0];
+      await mkdir(runDir, { recursive: true });
+      await writeFile(findingsPath, `${JSON.stringify(split.findings, null, 2)}\n`);
+      await writeFile(path.join(runDir, "canvas.json"), `${JSON.stringify(split.canvas, null, 2)}\n`);
+      await writeFile(resultPath, JSON.stringify({
+        actualOutput: [{
+          action: "updated",
+          artifact: finding.expectedArtifact,
+          name: `${finding.expectedArtifact} global owner`,
+          scope: "Global",
+          path: "~/global-owner.md",
+          summary: "Recorded the verified Global-scoped owner result.",
+        }],
+        assignmentSummary: assignmentSummary(),
+      }));
+      return { workspace, findingsPath, resultPath, finding };
+    };
+    const invoke = (fixture, home) => spawnSync(process.execPath, [
+      path.resolve("scripts/harness-analysis/record-fix-output.mjs"),
+      "--workspace", fixture.workspace,
+      "--findings", fixture.findingsPath,
+      "--finding-id", fixture.finding.id,
+      "--expected-revision", "0",
+      "--result", fixture.resultPath,
+      "--json",
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, HOME: home, USERPROFILE: home },
+    });
+
+    const fakeHome = path.join(root, "fake-home");
+    await mkdir(fakeHome, { recursive: true });
+    await writeFile(path.join(fakeHome, "global-owner.md"), "# Global owner\n");
+    const successful = await prepareGlobalFixture("success");
+    const successfulInvocation = invoke(successful, fakeHome);
+    assert.equal(successfulInvocation.status, 0, successfulInvocation.stderr);
+    assert.equal(JSON.parse(successfulInvocation.stdout).status, "pass");
+    assert.equal(JSON.parse(await readFile(successful.findingsPath, "utf8")).findings[0].actualOutputRevision, 1);
+
+    const unavailable = await prepareGlobalFixture("unavailable");
+    const before = await readFile(unavailable.findingsPath, "utf8");
+    const unavailableInvocation = invoke(unavailable, path.join(root, "unavailable-home"));
+    assert.equal(unavailableInvocation.status, 1);
+    assert.equal(unavailableInvocation.stderr, "");
+    const error = JSON.parse(unavailableInvocation.stdout);
+    assert.equal(error.kind, "harness-fix-output-record");
+    assert.equal(error.status, "error");
+    assert.match(error.message, /ENOENT|no such file|realpath/u);
+    assert.equal(await readFile(unavailable.findingsPath, "utf8"), before);
+  });
+});
+
 test("record-fix-output keeps JSON failures machine-readable", () => {
   const result = spawnSync(process.execPath, [
     path.resolve("scripts/better-harness.mjs"),

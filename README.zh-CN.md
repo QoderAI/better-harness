@@ -29,15 +29,26 @@
   <a href="docs/community.md">参与贡献</a>
 </p>
 
-<a id="see-it-in-action"></a>
+<a id="quick-start"></a>
 
-## 看看实际效果
+## 快速开始
 
-让 `/better-harness` 审查当前任务及其所在项目的 Harness，并生成一份可留存的报告：
+用以下 Coding Agent 审查你的工作流：[Claude Code](#claude-code)、[Codex Desktop](#codex-desktop)、[Codex CLI](#codex-cli)、[Qoder Desktop/CLI](#qoder)、[Cursor](#cursor)、[Qwen Code](#qwen-code)、[GitHub Copilot CLI](#github-copilot)。
+
+安装完成后，让 Better Harness 生成当前宿主支持的持久化报告：
 
 ```text
 /better-harness 审查此项目的 AI 编码工作流并生成报告
 ```
+
+Better Harness 会将行为断言限定在相关的任务过程片段（Task Episode）及其周边项目机制内。
+Qoder 生成 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub Copilot 生成自包含的 HTML 报告及配套 Markdown。
+缺失或不完整的证据会被明确标注。有关当前覆盖范围和输出差异，请参阅
+[宿主适配器矩阵](docs/adapters/README.md)。
+
+<a id="see-it-in-action"></a>
+
+## 看看实际效果
 
 报告会明确标注证据缺口，并将有证据支撑的问题整理成按优先级排列的发现；
 每项发现都包含影响、预期输出、范围明确的修复方案与验收检查。
@@ -133,32 +144,6 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 该架构让三个证据域保持独立，直到主智能体进行统一分析。
 每个结果都会保留可见的证据来源、责任归属和验证路径。
 
-<a id="quick-start"></a>
-
-## 快速开始
-
-选择你的编码智能体——几分钟内即可看到第一份报告：
-
-| 编码智能体 | 设置方式 |
-| --- | --- |
-| **Claude Code** | 添加本仓库 Marketplace，安装 `better-harness@better-harness`，启动新会话，然后使用下方的报告提示词。 |
-| **Codex Desktop** | 在 **Settings > Plugins > + Add > From Marketplace** 中添加本仓库，安装 Better Harness，启动新任务，然后调用 `@better-harness`。 |
-| **Codex CLI** | 添加 Git Marketplace，运行 `codex plugin add better-harness@better-harness`，然后调用 `$better-harness:better-harness`。 |
-| **Qoder Desktop / CLI** | 安装 Qoder Desktop 后无需额外安装——Better Harness 已内置，并可在桌面端和 CLI 中使用。打开仓库并使用下方的报告提示词。 |
-| **GitHub Copilot CLI** | 添加本仓库 Marketplace，安装 `better-harness@better-harness`，启动新会话，然后使用下方的报告提示词。 |
-| **Cursor** | 从源码加载插件——参见[安装](#installation)。 |
-
-安装完成后，让 Better Harness 生成当前宿主支持的持久化报告：
-
-```text
-/better-harness 审查此项目的 AI 编码工作流并生成报告
-```
-
-Better Harness 会将行为断言限定在相关的任务过程片段（Task Episode）及其周边项目机制内。
-Qoder 生成 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub Copilot 生成自包含的 HTML 报告及配套 Markdown。
-缺失或不完整的证据会被明确标注。有关当前覆盖范围和输出差异，请参阅
-[宿主适配器矩阵](docs/adapters/README.md)。
-
 <a id="installation"></a>
 
 ## 安装
@@ -202,6 +187,8 @@ Claude Code 默认会在仓库的 `.claude/better-harness` 报告根目录下生
 
 ### Codex
 
+<a id="codex-desktop"></a>
+
 #### Codex Desktop
 
 1. 打开 **Settings > Plugins**。
@@ -217,6 +204,8 @@ Claude Code 默认会在仓库的 `.claude/better-harness` 报告根目录下生
 仓库 URL 使用 `https://github.com/QoderAI/better-harness.git`，Git ref 使用 `main`。
 
 ![Codex 添加插件 Marketplace 的对话框，包含仓库、Git ref 和可选的 sparse paths](assets/install/codex-add-marketplace.jpg)
+
+<a id="codex-cli"></a>
 
 #### Codex CLI
 
@@ -318,6 +307,48 @@ copilot plugin list
 Copilot 会话证据来自 `~/.copilot/session-state/` 下与工作区匹配的 Copilot CLI 会话记录。
 Copilot 不记录逐次响应的 token 用量，VS Code Copilot Chat 也没有受支持的持久化会话记录；
 两者均作为明确的证据边界保留。
+
+### Qwen Code
+
+将 Better Harness 安装为 Qwen Code 扩展：
+
+```bash
+qwen extensions install QoderAI/better-harness
+```
+
+在要审查的仓库中启动新的 Qwen Code 会话，然后运行报告提示词：
+
+```text
+/better-harness 审查此项目的 AI 编码工作流并生成报告
+```
+
+Qwen Code 产出自包含的 `report.html`，并配套 `report.md` 与 `findings.json`。
+会话证据覆盖范围取决于 Qwen Code 可用的会话记录路径；缺失或不完整的证据保持显式标注。
+
+### Pi
+
+将本仓库作为 [pi package](https://pi.dev/docs/latest/packages) 安装：
+
+```bash
+pi install https://github.com/QoderAI/better-harness
+```
+
+或在不修改设置的情况下单次试用：
+
+```bash
+pi -e git:github.com/QoderAI/better-harness
+```
+
+Pi 通过 `package.json` 中的 `pi` manifest 发现 `better-harness` Skill 和
+`/better-harness` 提示模板。在需要审查的仓库中启动新的 Pi 会话，运行报告提示词：
+
+```text
+/better-harness 审查此项目的 AI 编码工作流并生成报告
+```
+
+Pi 默认在仓库的 `.pi/better-harness` 报告根目录下生成自包含的 `report.html`
+及配套的 `report.md` 和 `findings.json`。Pi 会话证据读自
+`~/.pi/agent/sessions/` 下与工作区匹配的 JSONL 会话记录；缺失的证据会被明确标注而不会被推断。
 
 <a id="develop-and-package-from-source"></a>
 

@@ -13,8 +13,8 @@ sidebar_position: 3
 ```
 
 Better Harness 会把行为论断限定在相关的 Task Episode 和周边的项目机制内。
-Qoder 产出 Canvas 报告；Claude Code、Codex 和 Cursor 产出自包含 HTML 并
-配套 Markdown。缺失或不完整的证据保持显式标注。
+Qoder 产出 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub Copilot
+产出自包含 HTML 并配套 Markdown。缺失或不完整的证据保持显式标注。
 
 想了解 HTML 输出的样子，可以查看
 [在线 Demo 报告](pathname:///demo/better-harness-report/)。

@@ -447,6 +447,7 @@ test("requested usage reuses one frozen population and emits its lead selection 
       calls.push({
         command: options.command,
         until: options.until,
+        piHome: options.piHome,
         inventory: options.sessionInventory?.map((session) => session.sessionId) ?? null,
       });
       if (options.command === "sources") {
@@ -506,6 +507,7 @@ test("requested usage reuses one frozen population and emits its lead selection 
       includeUsage: true,
       sessionPopulation,
       qoderHome: path.join(root, ".qoder"),
+      piHome: path.join(root, ".pi", "agent"),
       practiceInventory: { summary: { practiceCoverageRows: [] }, memories: { included: false, categories: [] } },
     });
     assert.equal(selection.eligibleCount, 2);
@@ -516,6 +518,7 @@ test("requested usage reuses one frozen population and emits its lead selection 
     assert.equal(sessionBinding.admission.projectedEpisodes, sessionBinding.admission.admittedEpisodes
       + sessionBinding.admission.zeroSignalDiscardedEpisodes);
     assert.equal(new Set(calls.map((call) => call.until)).size, 1);
+    assert.ok(calls.every((call) => call.piHome === path.join(root, ".pi", "agent")));
     assert.deepEqual(calls.filter((call) => call.command === "insights").map((call) => call.inventory), [
       ["session-a", "session-b"],
       ["session-a", "session-b"],

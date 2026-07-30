@@ -145,6 +145,50 @@ Cursor 会话证据通过与工作区匹配的转录、元数据和审计日志�
 不可用的覆盖范围会保持显式标注。
 
 </TabItem>
+<TabItem value="qwen-code" label="Qwen Code">
+
+## Qwen Code {#qwen-code}
+
+将 Better Harness 安装为 Qwen Code 扩展：
+
+```bash
+qwen extensions install QoderAI/better-harness
+```
+
+在要审查的仓库中启动新的 Qwen Code 会话，然后运行报告提示词：
+
+```text
+/better-harness 审查此项目的 AI 编码工作流并生成报告
+```
+
+Qwen Code 产出自包含的 `report.html`，并配套 `report.md` 与 `findings.json`。
+会话证据覆盖范围取决于 Qwen Code 可用的会话记录路径；缺失或不完整的证据保持显式标注。
+
+</TabItem>
+<TabItem value="github-copilot" label="GitHub Copilot">
+
+## GitHub Copilot {#github-copilot}
+
+将本仓库注册为 Copilot 插件 Marketplace，然后安装 Better Harness：
+
+```bash
+copilot plugin marketplace add QoderAI/better-harness
+copilot plugin install better-harness@better-harness
+```
+
+验证 Skill 已加载：
+
+```bash
+copilot plugin list
+```
+
+请优先使用 Marketplace 安装。Copilot CLI 已弃用直接从仓库、URL 或本地路径安装。
+
+Copilot 会话证据来自 `~/.copilot/session-state/` 下与工作区匹配的 Copilot CLI 会话记录。
+Copilot 不记录逐次响应的 token 用量，VS Code Copilot Chat 也没有受支持的持久化会话记录；
+两者均作为明确的证据边界保留。
+
+</TabItem>
 </Tabs>
 
 ## 下一步
