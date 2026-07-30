@@ -1,0 +1,10 @@
+# Docusaurus
+build/
+.docusaurus/
+node_modules/
+
+# Synced from ../assets/ by scripts/sync-assets.mjs
+static/demo/
+static/img/agent-work-loop-en.svg
+static/img/better-harness-architecture-en.svg
+static/img/codex-add-marketplace.jpg

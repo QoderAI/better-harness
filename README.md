@@ -20,6 +20,7 @@
 </p>
 
 <p align="center">
+  <a href="https://qoderai.github.io/better-harness/">Website</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="#see-it-in-action">Demo</a> ·
   <a href="#why-better-harness">Why</a> ·
@@ -44,11 +45,12 @@ prioritized findings with an impact, expected output, scoped repair, and
 acceptance checks.
 
 <p align="center">
-  <a href="assets/demo/better-harness-report.html"><img src="assets/demo/better-harness-findings-report.png" alt="Better Harness HTML report showing an evidence-bounded finding with its impact, expected output, scoped AI fix, and acceptance checks" width="900"></a>
+  <a href="https://qoderai.github.io/better-harness/demo/better-harness-report/"><img src="assets/demo/better-harness-findings-report.png" alt="Better Harness HTML report showing an evidence-bounded finding with its impact, expected output, scoped AI fix, and acceptance checks" width="900"></a>
 </p>
 
 <p align="center">
-  <sub><a href="assets/demo/better-harness-report.html">Open the complete self-contained English HTML report</a>.</sub>
+  <sub><a href="https://qoderai.github.io/better-harness/demo/better-harness-report/">Open the complete self-contained English HTML report</a>
+  (<a href="assets/demo/better-harness-report.html">source</a>).</sub>
 </p>
 
 After you have comparable reports over time, the history view shows how the five
@@ -149,6 +151,7 @@ Pick your coding agent — you can be looking at your first report in minutes:
 | **Codex Desktop** | Add the repository under **Settings > Plugins > + Add > From Marketplace**, install Better Harness, start a new task, then invoke `@better-harness`. |
 | **Codex CLI** | Add the Git marketplace, run `codex plugin add better-harness@better-harness`, then invoke `$better-harness:better-harness`. |
 | **Qoder Desktop / CLI** | Nothing to install when Qoder Desktop is installed — Better Harness is built in and available to both. Open your repository and use the report prompt below. |
+| **GitHub Copilot CLI** | Add the repository marketplace, install `better-harness@better-harness`, start a new session, then use the report prompt below. |
 | **Cursor** | Load the plugin from source — see [Installation](#installation). |
 
 Once installed, ask Better Harness to generate the host's durable report:
@@ -159,8 +162,8 @@ Once installed, ask Better Harness to generate the host's durable report:
 
 Better Harness scopes behavior claims to relevant Task Episodes and the
 surrounding project mechanisms. Qoder produces a Canvas report; Claude Code,
-Codex, and Cursor produce self-contained HTML with paired Markdown. Missing or
-partial evidence remains explicit. See the
+Codex, Cursor, Qwen Code, and GitHub Copilot produce self-contained HTML with
+paired Markdown. Missing or partial evidence remains explicit. See the
 [Host Adapter Matrix](docs/adapters/README.md) for current coverage and output
 differences.
 
@@ -309,6 +312,30 @@ cursor-agent --plugin-dir /path/to/better-harness
 Cursor session evidence is supported through workspace-matched transcripts,
 metadata, and audit logs. Partial or unavailable coverage remains explicit.
 
+### GitHub Copilot
+
+Register this repository as a Copilot plugin marketplace, then install Better
+Harness:
+
+```bash
+copilot plugin marketplace add QoderAI/better-harness
+copilot plugin install better-harness@better-harness
+```
+
+Verify that the Skill loaded:
+
+```bash
+copilot plugin list
+```
+
+Prefer marketplace installs. Direct repository, URL, and local-path installs are
+deprecated in Copilot CLI.
+
+Copilot session evidence is supported through workspace-matched Copilot CLI
+transcripts under `~/.copilot/session-state/`. Copilot records no per-response
+token usage, and VS Code Copilot Chat has no supported durable transcript; both
+remain explicit evidence boundaries.
+
 ## Develop and package from source
 
 Development requires Node.js `>=22.20.0 <25.0.0` and npm
@@ -349,7 +376,7 @@ smallest surface that matches the improvement you want to make:
 | --- | --- | --- |
 | Workflow guidance and engineering practices | [`skills/`](skills/) or [`references/`](references/) | Add sourced guidance for a language, framework, review pattern, or recurring agent workflow. |
 | Review models and executable analysis | [`models/`](models/) or [`scripts/`](scripts/) | Add an evidence-backed review lens, detector, or agent-friendly analysis command with fixtures and tests. |
-| Delivery controls and host support | [`hooks/`](hooks/) or the [host adapter matrix](docs/adapters/README.md) | Add a narrow lifecycle check or document and validate evidence support for another coding-agent host. |
+| Delivery controls and host support | [`hooks/`](hooks/) or the [new Coding Agent guide](docs/adapters/contributing-new-coding-agent.md) | Add a narrow lifecycle check or document and validate evidence support for another Coding Agent host. |
 | Reports and visual language | [`templates/reporting/`](templates/reporting/) or [`templates/style/`](templates/style/) | Add a report mode, reusable reporting contract, or directive-only visual style with validation evidence. |
 | Examples and operating models | [`case-studies/`](case-studies/) | Share a redacted, evidence-bounded example of how a team applies agent review and delivery practices. |
 
@@ -359,9 +386,12 @@ To get started:
    owner and understand its contract.
 2. Follow the [contribution guide](CONTRIBUTING.md) to set up the project and
    scope the change.
-3. Add tests, fixtures, or preview evidence when the contribution changes
+3. For host support, follow the
+   [new Coding Agent contribution guide](docs/adapters/contributing-new-coding-agent.md)
+   and update the [host adapter matrix](docs/adapters/README.md).
+4. Add tests, fixtures, or preview evidence when the contribution changes
    runtime behavior or rendered output.
-4. Open a focused pull request that explains what changed, why, and how it was
+5. Open a focused pull request that explains what changed, why, and how it was
    validated.
 
 Not sure where an idea belongs? [Open an issue](https://github.com/QoderAI/better-harness/issues)

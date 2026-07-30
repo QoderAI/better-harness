@@ -50,6 +50,36 @@ test("runtime bundle includes the project license and runtime docs", async () =>
       assert.ok(bundle.entries.includes(requiredPath), requiredPath);
       assert.ok(archiveEntries.has(requiredPath), requiredPath);
     }
+    for (const forbiddenPrefix of [
+      "docs/.docusaurus",
+      "docs/.gitignore",
+      "docs/build",
+      "docs/docs",
+      "docs/i18n",
+      "docs/node_modules",
+      "docs/scripts",
+      "docs/src",
+      "docs/static",
+      "docs/docusaurus.config.js",
+      "docs/package-lock.json",
+      "docs/package.json",
+      "docs/sidebars.js",
+    ]) {
+      assert.equal(
+        bundle.entries.some(
+          (entry) => entry === forbiddenPrefix || entry.startsWith(`${forbiddenPrefix}/`),
+        ),
+        false,
+        forbiddenPrefix,
+      );
+      assert.equal(
+        [...archiveEntries].some(
+          (entry) => entry === forbiddenPrefix || entry.startsWith(`${forbiddenPrefix}/`),
+        ),
+        false,
+        forbiddenPrefix,
+      );
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

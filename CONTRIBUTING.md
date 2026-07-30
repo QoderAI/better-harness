@@ -17,6 +17,8 @@ it and agree that it may be distributed under the repository's [MIT License](LIC
 - Read [Architecture Principles](docs/ARCHITECTURE.md) and the root
   [agent instructions](AGENTS.md) before changing ownership boundaries or
   runtime behavior.
+- Follow [Contributing a New Coding Agent Host](docs/adapters/contributing-new-coding-agent.md)
+  before adding or widening host support.
 
 Small, focused fixes can go directly to a pull request. Open an issue first when
 the change affects public behavior, schemas, report contracts, packaging,
@@ -66,6 +68,11 @@ Start with the two common extension routes in
 Executable behavior, host adapters, models, hooks, packaging, and report
 contracts have additional owner and evidence requirements. Follow the complete
 extensibility matrix instead of adding a parallel implementation.
+
+For a Coding Agent host, use the dedicated
+[host contribution guide](docs/adapters/contributing-new-coding-agent.md). It
+separates shell, configured-asset, session, output, and packaging claims so a
+host can land partial support without overstating its coverage.
 
 ## Plan the Change
 

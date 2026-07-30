@@ -5,7 +5,12 @@ observable behavior and compatibility, not every internal refactor.
 
 ## Unreleased
 
-No unreleased changes yet.
+### Changed
+
+- The `harness analyze` platform gate now names the full supported set
+  (`qoder, codex, claude, cursor, qwen, copilot`) when it rejects an unsupported
+  `--platform`, matching the session-analysis and asset-baseline gates. The
+  existing error prefix and exit behavior are unchanged.
 
 ## 0.3.0 - 2026-07-27
 

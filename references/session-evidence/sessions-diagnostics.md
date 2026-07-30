@@ -12,22 +12,22 @@ fails validation:
 
 ```bash
 # Discover evidence roots for a workspace
-<node> scripts/session-analysis.mjs sources --platform <qoder|codex|claude|cursor|qwen> --workspace /path/to/repo
+<node> scripts/session-analysis.mjs sources --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo
 
 # Session list with event counts and time range
-<node> scripts/session-analysis.mjs facets --platform <qoder|codex|claude|cursor|qwen> --workspace /path/to/repo --limit 20
+<node> scripts/session-analysis.mjs facets --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo --limit 20
 
 # Compact insight cards and action candidates
-<node> scripts/session-analysis.mjs insights --platform <qoder|codex|claude|cursor|qwen> --workspace /path/to/repo --limit 20
+<node> scripts/session-analysis.mjs insights --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo --limit 20
 
 # Read single session events
-<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen> --workspace /path/to/repo --session-id <id> --include-events
+<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo --session-id <id> --include-events
 
 # Diagnose the facts admission funnel and resolve candidate refs to local sessions
-<node> scripts/session-analysis.mjs facts --platform <qoder|codex|claude|cursor|qwen> --workspace /path/to/repo --selection all-eligible --limit 5 --debug --output /tmp/session-facts-debug.json
+<node> scripts/session-analysis.mjs facts --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo --selection all-eligible --limit 5 --debug --output /tmp/session-facts-debug.json
 
 # Expand one debug locator with normalized commands and user text
-<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen> --workspace /path/to/repo --session-id <id> --include-events --include-command-text --include-user-text
+<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace /path/to/repo --session-id <id> --include-events --include-command-text --include-user-text
 ```
 
 `facts --debug` is an operator-only diagnostic route. It exposes raw session
@@ -38,7 +38,7 @@ opening only the candidate sessions needed to explain a surprising aggregate.
 Command and user text flags are also local-only and must not be used for broad
 transcript dumps.
 
-Supported platforms: `qoder`, `codex`, `claude`, `cursor`, and `qwen`. Do not invent
+Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, and `copilot`. Do not invent
 unsupported platform names.
 Always pass the absolute target workspace and load the matching Platform Notes
 before interpreting source roots or workspace bindings.
@@ -138,7 +138,7 @@ in scope:
 - Generated reports: source evidence JSON, usage JSON, analysis packets, review
   packets, final reports, and quality-check output.
 - For installed or global assets, run
-  `scripts/agent-customize/cli.mjs inventory --provider <cursor|qoder|codex|claude>`
+  `scripts/agent-customize/cli.mjs inventory --provider <cursor|qoder|codex|claude|qwen|copilot>`
   or the `scripts/coding-agent-practices/inventory.mjs` wrapper, and treat its
   output as configured asset inventory, not session behavior.
 
@@ -247,3 +247,42 @@ tool results as provider-labelled coverage. Generated files under
 Route configured Qwen rules (`QWEN.md`), Skills, hooks, extensions, and other
 project/user assets through `../agent-customize/global-assets.md`; configured
 presence does not prove use.
+
+### Copilot
+
+For GitHub Copilot CLI, the analyzer reads workspace-matching transcripts under
+`~/.copilot/session-state/<session-id>/events.jsonl`. Each session directory
+carries a `workspace.yaml` descriptor whose `cwd` binds the session to a
+workspace; the analyzer also accepts the `context.cwd` recorded on the
+`session.start` event. Copilot writes one typed lifecycle record per line, so
+transcript records are the primary source: `user.message`, `assistant.message`,
+`tool.execution_start`, `tool.execution_complete`, `hook.start`, `hook.end`,
+`subagent.started`, `subagent.completed`, `session.plan_changed`,
+`session.compaction_start`, `session.compaction_complete`,
+`permission.requested`, `permission.completed`,
+`session.permissions_changed`, and `external_tool.*`. Unrecognized types stay
+explicit `metadata.*` events rather than being dropped or reinterpreted.
+
+Keep four Copilot boundaries explicit:
+
+- Copilot records `outputTokens` per assistant message and nothing else. Carry
+  that field as partial per-response usage; never fill input tokens, cache
+  tokens, or cost with zero. Subagent totals (`totalTokens`) and
+  `preCompactionTokens` are aggregates and never become per-response usage.
+  Complete usage evidence requires the opt-in OpenTelemetry export, which this
+  workflow does not read.
+- Permission evidence comes from the `permission.requested` /
+  `permission.completed` pair, joined on `requestId`. Retain only the request
+  kind and the result decision. The prompt intent, paths, and commands are
+  payloads and are never retained. `session.permissions_changed` reports a mode
+  change, not a decision.
+- A session directory can match the workspace and carry no `events.jsonl`. That
+  is partial coverage, not zero activity.
+- `~/.copilot/session-store.db` is documented as automatically managed. Never
+  read or decode it.
+
+VS Code Copilot Chat has no supported durable transcript; its `debug-logs`
+output is undocumented and stays `unobserved`. Route configured Copilot rules
+(`AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/`),
+Skills, Agents, hooks, MCP, and installed Plugins through
+`../agent-customize/global-assets.md`; configured presence does not prove use.

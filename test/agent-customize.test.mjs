@@ -1626,3 +1626,178 @@ test("Qwen provider collects user and project MCPs, skills, hooks, and rules", a
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
+
+async function makeCopilotFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-copilot-"));
+  const copilotHome = path.join(root, ".copilot");
+  const workspace = path.join(root, "workspace", "better-harness");
+
+  const pluginRoot = path.join(copilotHome, "installed-plugins", "acme", "delivery");
+  await writeJson(path.join(pluginRoot, ".github", "plugin", "plugin.json"), {
+    name: "delivery",
+    version: "1.0.0",
+    displayName: "Delivery",
+    description: "Delivery workflow plugin.",
+    skills: "./skills/",
+  });
+  await writeText(
+    path.join(pluginRoot, "skills", "ship-release", "SKILL.md"),
+    "---\nname: ship-release\ndescription: Ship a release.\n---\n",
+  );
+  await writeJson(path.join(pluginRoot, ".mcp.json"), {
+    mcpServers: { deliveryMcp: { command: "node", args: ["mcp/server.cjs"] } },
+  });
+
+  await writeJson(path.join(copilotHome, "config.json"), {
+    installedPlugins: [
+      {
+        name: "delivery",
+        marketplace: "acme",
+        version: "1.0.0",
+        enabled: true,
+        installed_at: "2026-07-20T00:00:00.000Z",
+        cache_path: pluginRoot,
+      },
+      {
+        name: "missing-plugin",
+        marketplace: "acme",
+        version: "0.1.0",
+        enabled: true,
+        cache_path: path.join(copilotHome, "installed-plugins", "acme", "missing-plugin"),
+      },
+    ],
+  });
+
+  await writeText(path.join(copilotHome, "copilot-instructions.md"), "# User Copilot Guide\n\nPersonal defaults.\n");
+  await writeText(
+    path.join(copilotHome, "skills", "user-skill", "SKILL.md"),
+    "---\nname: user-skill\ndescription: A personal skill.\n---\n",
+  );
+  await writeJson(path.join(copilotHome, "mcp-config.json"), {
+    mcpServers: { userMcp: { command: "node", args: ["user.cjs"] } },
+  });
+
+  await writeText(path.join(workspace, "AGENTS.md"), "# Agents\n\nProject guidance.\n");
+  await writeText(path.join(workspace, ".github", "copilot-instructions.md"), "# Copilot\n\nProject Copilot guidance.\n");
+  await writeText(
+    path.join(workspace, ".github", "instructions", "tests.instructions.md"),
+    "---\napplyTo: \"**/*.test.mjs\"\ndescription: Test guidance.\n---\n",
+  );
+  await writeText(
+    path.join(workspace, ".github", "skills", "review-change", "SKILL.md"),
+    "---\nname: review-change\ndescription: Review a change.\n---\n",
+  );
+  await writeText(
+    path.join(workspace, ".github", "agents", "reviewer.agent.md"),
+    "---\nname: reviewer\ndescription: Review code.\n---\n",
+  );
+  await writeJson(path.join(workspace, ".github", "hooks", "guard.json"), {
+    hooks: { Stop: [{ hooks: [{ type: "command", command: "node scripts/review-trigger/cli.mjs" }] }] },
+  });
+  await writeJson(path.join(workspace, ".github", "mcp.json"), {
+    mcpServers: { projectMcp: { command: "node", args: ["project.cjs"] } },
+  });
+
+  return { root, copilotHome, workspace };
+}
+
+test("Copilot inventory separates plugin, user, and project assets", async () => {
+  const fixture = await makeCopilotFixture();
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "copilot",
+      workspace: fixture.workspace,
+      copilotHome: fixture.copilotHome,
+      includeUserHome: true,
+    });
+
+    assert.equal(inventory.provider, "copilot");
+    assert.equal(inventory.copilotHome, fixture.copilotHome);
+    assert.equal(inventory.diagnostics.installedPluginState, "copilot-config");
+
+    // The record whose cache path is absent must not become an installed plugin.
+    assert.equal(inventory.plugins.length, 1);
+    assert.equal(inventory.plugins[0].id, "acme/delivery");
+    assert.equal(inventory.plugins[0].installMatch, "copilot-marketplace");
+    assert.equal(inventory.plugins[0].skills.length, 1);
+
+    const skillNames = inventory.manage.skills.map((skill) => skill.name).sort();
+    assert.deepEqual(skillNames, ["review-change", "ship-release", "user-skill"]);
+
+    const scopesByName = new Map(inventory.manage.skills.map((skill) => [skill.name, skill.scope]));
+    assert.equal(scopesByName.get("review-change"), "project");
+    assert.equal(scopesByName.get("user-skill"), "user");
+    assert.equal(scopesByName.get("ship-release"), "plugin");
+
+    const ruleNames = inventory.manage.rules.map((rule) => rule.name);
+    assert.ok(ruleNames.includes("AGENTS.md"));
+    assert.ok(ruleNames.includes("copilot-instructions.md"));
+
+    const mcpNames = inventory.manage.mcps.map((mcp) => mcp.name).sort();
+    assert.deepEqual(mcpNames, ["deliveryMcp", "projectMcp", "userMcp"]);
+
+    assert.equal(inventory.manage.subagents.some((agent) => agent.name === "reviewer"), true);
+    assert.equal(inventory.manage.hooks.length > 0, true);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Copilot inventory without user-home authority keeps project scope only", async () => {
+  const fixture = await makeCopilotFixture();
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "copilot",
+      workspace: fixture.workspace,
+      copilotHome: fixture.copilotHome,
+      includeUserHome: false,
+    });
+
+    assert.equal(inventory.plugins.length, 0);
+    assert.equal(inventory.diagnostics.installedPluginState, "not-authorized");
+    assert.deepEqual(inventory.manage.skills.map((skill) => skill.name), ["review-change"]);
+    assert.deepEqual(inventory.manage.mcps.map((mcp) => mcp.name), ["projectMcp"]);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("agent-customize CLI honours --copilot-home instead of the real user home", async () => {
+  // Regression: the CLI advertised --copilot-home but never forwarded it, so an
+  // isolated home still resolved ~/.copilot and scanned the caller's real assets.
+  const fixture = await makeCopilotFixture();
+  try {
+    const result = runAgentCustomizeCli([
+      "inventory",
+      "--provider",
+      "copilot",
+      "--workspace",
+      fixture.workspace,
+      "--copilot-home",
+      fixture.copilotHome,
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const inventory = JSON.parse(result.stdout);
+
+    // The resolved home must be the override, never the caller's real ~/.copilot.
+    assert.equal(inventory.copilotHome, fixture.copilotHome);
+    assert.notEqual(inventory.copilotHome, path.join(os.homedir(), ".copilot"));
+
+    // The inventory itself must also come from the override.
+    assert.equal(inventory.diagnostics.installedPluginState, "copilot-config");
+    assert.deepEqual(inventory.plugins.map((plugin) => plugin.id), ["acme/delivery"]);
+    assert.deepEqual(
+      inventory.manage.skills.map((skill) => skill.name).sort(),
+      ["review-change", "ship-release", "user-skill"],
+    );
+    for (const item of [...inventory.manage.skills, ...inventory.manage.mcps]) {
+      assert.ok(
+        !item.evidence?.path || !item.evidence.path.startsWith(path.join(os.homedir(), ".copilot")),
+        `inventory item escaped the override home: ${item.evidence?.path}`,
+      );
+    }
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});

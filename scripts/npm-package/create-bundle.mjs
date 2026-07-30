@@ -34,6 +34,27 @@ const RUNTIME_ROOTS = [
   "templates",
 ];
 
+// Repository docs remain part of the Qoder runtime, but the colocated
+// Docusaurus application is a publication surface rather than runtime input.
+// Keep these paths explicit so canonical docs such as docs/ARCHITECTURE.md and
+// docs/specs/ continue to ship.
+const RUNTIME_EXCLUDED_PATHS = [
+  "docs/.docusaurus",
+  "docs/.gitignore",
+  "docs/build",
+  "docs/docs",
+  "docs/i18n",
+  "docs/node_modules",
+  "docs/scripts",
+  "docs/src",
+  "docs/static",
+  "docs/docusaurus.config.js",
+  "docs/package-lock.json",
+  "docs/package.json",
+  "docs/sidebars.js",
+  "scripts/packaging",
+];
+
 const FIXED_DOS_TIME = 0;
 const FIXED_DOS_DATE = 33;
 
@@ -82,7 +103,9 @@ function shouldSkip(filePath) {
 
 function shouldSkipRuntimePath(relativePath) {
   const normalized = toZipPath(relativePath);
-  return normalized === "scripts/packaging" || normalized.startsWith("scripts/packaging/");
+  return RUNTIME_EXCLUDED_PATHS.some(
+    (excluded) => normalized === excluded || normalized.startsWith(`${excluded}/`),
+  );
 }
 
 function toZipPath(filePath) {

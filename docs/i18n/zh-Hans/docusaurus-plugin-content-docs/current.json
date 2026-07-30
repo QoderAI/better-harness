@@ -1,0 +1,22 @@
+{
+  "version.label": {
+    "message": "Next",
+    "description": "The label for version current"
+  },
+  "sidebar.docs.category.Getting Started": {
+    "message": "快速上手",
+    "description": "The label for category 'Getting Started' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Concepts": {
+    "message": "核心概念",
+    "description": "The label for category 'Concepts' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Hosts": {
+    "message": "宿主支持",
+    "description": "The label for category 'Hosts' in sidebar 'docs'"
+  },
+  "sidebar.docs.category.Reference": {
+    "message": "参考",
+    "description": "The label for category 'Reference' in sidebar 'docs'"
+  }
+}

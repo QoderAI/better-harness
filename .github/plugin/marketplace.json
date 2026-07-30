@@ -1,0 +1,27 @@
+{
+  "name": "better-harness",
+  "owner": {
+    "name": "Qoder",
+    "email": "dev@qoder.com"
+  },
+  "metadata": {
+    "description": "Better Harness plugins for AI delivery readiness.",
+    "version": "0.3.0"
+  },
+  "plugins": [
+    {
+      "name": "better-harness",
+      "description": "Build an AI-ready engineering system for safe coding-agent delivery and continuous software improvement.",
+      "version": "0.3.0",
+      "source": "./",
+      "author": {
+        "name": "Qoder",
+        "email": "dev@qoder.com"
+      },
+      "homepage": "https://github.com/QoderAI/better-harness",
+      "repository": "https://github.com/QoderAI/better-harness",
+      "license": "MIT",
+      "skills": "./skills/"
+    }
+  ]
+}

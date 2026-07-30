@@ -15,6 +15,11 @@ matrix below:
 Reach for the full surface matrix only when you add executable behavior (scripts,
 hooks), a maturity model or detector, a host adapter, or packaging.
 
+To add a Coding Agent host, start with
+[Contributing a New Coding Agent Host](adapters/contributing-new-coding-agent.md).
+It turns the matrix row into an evidence, implementation, cross-platform, and
+review workflow without making every support slice mandatory.
+
 ## Extensible Surfaces
 
 This is the complete reference. For the common cases, see Start Here above.
@@ -32,7 +37,7 @@ This is the complete reference. For the common cases, see Start Here above.
 | Style grammar | Yes | `templates/style/` | Directive-only visual language; no runnable skeletons | Selected by report/style routing | Style-template tests and no copied runtime skeletons |
 | Structured knowledge | Candidate only | `knowledge-base/{official,community}/...` | `knowledge.md`, interim `schema.json`, fixtures, namespace uniqueness | Docs-only until registry spec, compiler, and binding tests exist | Namespace check, schema/fixture review, migration note |
 | Examples and operating models | Yes | `case-studies/` | Named example, scope, evidence boundary, non-runtime status | Reference material only unless separately bound | Link/path check; no runtime-policy claims |
-| Host shell and packaging | Thin, or generated only after a split trigger | `.claude-plugin/`, `.qoder-plugin/`, `.cursor-plugin/`, `.codex-plugin/`, `qwen-extension.json`, future lifecycle shells | Install/discovery metadata and pointers to canonical owners | Public npm package includes all five current metadata roots; the Qoder runtime bundle includes only `.qoder-plugin/`, and generated host artifacts stay source-local | `scripts/npm-package/` verification, or split adapter note plus target builder |
+| Host shell and packaging | Thin, or generated only after a split trigger | `.claude-plugin/`, `.qoder-plugin/`, `.cursor-plugin/`, `.codex-plugin/`, `.github/plugin/`, `qwen-extension.json`, future lifecycle shells | Install/discovery metadata and pointers to canonical owners | Public npm package includes all six current metadata roots; the Qoder runtime bundle includes only `.qoder-plugin/`, and generated host artifacts stay source-local | `scripts/npm-package/` verification, or split adapter note plus target builder |
 
 ## Non-Extension Boundaries
 
@@ -56,7 +61,7 @@ Do not use community extensibility as a reason to:
 | "Add a new maturity lens" | `models/` | Model id, levels, dimensions, evidence and confidence rules, index entry | It mutates built-in defaults without saying so |
 | "Add a new detector signal" | Owning model, executable capability, or skill-local reference | Signal id, source evidence, false-positive boundary, projection target, and visible consumer | It has no evidence field, runtime or workflow owner, or consumer |
 | "Add language/framework knowledge" | `references/` first; `knowledge-base/` only with schema and fixtures | Source boundary, examples, fixture expectations | It is docs-only but tries to become runtime-active |
-| "Add host support" | `docs/adapters/README.md` matrix row | Discovery paths, evidence sources, smoke command, packaging status, split trigger if needed | It mixes host evidence collection with package generation |
+| "Add host support" | [new Coding Agent guide](adapters/contributing-new-coding-agent.md), then `docs/adapters/README.md` matrix row | Native host/version evidence, supported slices, discovery paths, evidence sources, smoke command, packaging status, split trigger if needed | It copies another adapter, mixes host evidence collection with package generation, or overstates partial support |
 | "Add a script" | `scripts/<business-capability>/` | CLI contract, JSON shape, fixtures, tests | It is ad-hoc debugging that belongs in `dev/` |
 | "Add an enforcement rule" | `hooks/` | Lifecycle event, expected blocking behavior, dry-run or fixture proof | A prompt reminder would be enough |
 | "Add a report or visual mode" | `templates/reporting/` | Parser contract, consumer path, preview or static check | It duplicates runtime rules into the base report template |

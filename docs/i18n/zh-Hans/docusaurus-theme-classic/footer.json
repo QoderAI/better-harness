@@ -1,0 +1,50 @@
+{
+  "link.title.Docs": {
+    "message": "文档",
+    "description": "The title of the footer links column with title=Docs in the footer"
+  },
+  "link.title.Project": {
+    "message": "项目",
+    "description": "The title of the footer links column with title=Project in the footer"
+  },
+  "link.title.More": {
+    "message": "更多",
+    "description": "The title of the footer links column with title=More in the footer"
+  },
+  "link.item.label.Introduction": {
+    "message": "简介",
+    "description": "The label of footer link with label=Introduction linking to /docs/introduction"
+  },
+  "link.item.label.Installation": {
+    "message": "安装",
+    "description": "The label of footer link with label=Installation linking to /docs/installation"
+  },
+  "link.item.label.Agent Work Loop": {
+    "message": "Agent Work Loop",
+    "description": "The label of footer link with label=Agent Work Loop linking to /docs/concepts/agent-work-loop"
+  },
+  "link.item.label.Demo Report": {
+    "message": "Demo 报告",
+    "description": "The label of footer link with label=Demo Report linking to pathname:///demo/better-harness-report/"
+  },
+  "link.item.label.Roadmap": {
+    "message": "路线图",
+    "description": "The label of footer link with label=Roadmap linking to https://github.com/QoderAI/better-harness/blob/main/roadmap.md"
+  },
+  "link.item.label.Contribute": {
+    "message": "参与贡献",
+    "description": "The label of footer link with label=Contribute linking to https://github.com/QoderAI/better-harness/blob/main/docs/community.md"
+  },
+  "link.item.label.GitHub": {
+    "message": "GitHub",
+    "description": "The label of footer link with label=GitHub linking to https://github.com/QoderAI/better-harness"
+  },
+  "link.item.label.npm": {
+    "message": "npm",
+    "description": "The label of footer link with label=npm linking to https://www.npmjs.com/package/@qoderai/better-harness"
+  },
+  "copyright": {
+    "message": "Copyright © 2026 Qoder. MIT licensed.",
+    "description": "The footer copyright"
+  }
+}

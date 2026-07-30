@@ -167,7 +167,7 @@ function usage() {
   return [
     "Usage: better-harness agent-lint [--workspace <path>] [--profile agents-md-review|agent-assets-review] [--json|--format markdown]",
     "       better-harness agent-lint --workspace-root <dir> --scan-children --profile agents-md-review",
-    "       better-harness agent-lint --profile agent-assets-review --provider <qoder|codex|claude|cursor|qwen> [--skill <path>]",
+    "       better-harness agent-lint --profile agent-assets-review --provider <qoder|codex|claude|cursor|qwen|copilot> [--skill <path>]",
     "",
     "Parse agent instruction entrypoints and bounded local Markdown references into review evidence.",
     "",

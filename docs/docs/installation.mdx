@@ -1,0 +1,156 @@
+---
+id: installation
+title: Installation
+sidebar_position: 2
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Installation
+
+Installation differs by coding agent. Install Better Harness separately for
+each host, except that Qoder CLI can use the version bundled with Qoder
+Desktop. After installing or updating a plugin, start a new session or task so
+the host reloads its plugin inventory.
+
+<Tabs groupId="host" queryString>
+<TabItem value="claude-code" label="Claude Code">
+
+## Claude Code {#claude-code}
+
+Register this repository as a Claude Code marketplace:
+
+```text
+/plugin marketplace add QoderAI/better-harness
+```
+
+Then install Better Harness:
+
+```text
+/plugin install better-harness@better-harness
+```
+
+Verify discovery from the shell:
+
+```bash
+claude plugin details better-harness@better-harness
+```
+
+The details should include `Skills (1) better-harness`. Then start a new
+Claude session in the repository you want to review and run the report prompt:
+
+```text
+/better-harness review this project's AI coding workflow and generate a report
+```
+
+Claude Code defaults to a self-contained `report.html` with paired `report.md`
+and `findings.json` under the repository's `.claude/better-harness` report
+root. Ask for inline or no-files output to keep the result in chat only.
+Workspace-matching local Claude sessions are included when available; missing
+evidence stays explicit rather than being inferred.
+
+</TabItem>
+<TabItem value="codex" label="Codex">
+
+## Codex {#codex}
+
+### Codex Desktop
+
+1. Open **Settings &gt; Plugins**.
+2. Select **+ Add &gt; From Marketplace**.
+3. Enter the Git repository URL, set its Git ref, and leave **Sparse paths**
+   empty for this single-plugin repository.
+4. Select **Add marketplace**, then install **Better Harness** from the new
+   marketplace.
+
+Use `https://github.com/QoderAI/better-harness.git` with Git ref `main`.
+
+![Codex Add plugin marketplace dialog with repository, Git ref, and optional sparse paths](/img/codex-add-marketplace.jpg)
+
+### Codex CLI
+
+Add the repository source:
+
+```bash
+codex plugin marketplace add \
+  'https://github.com/QoderAI/better-harness.git' \
+  --ref main
+```
+
+Then inspect and install Better Harness:
+
+```bash
+codex plugin list --marketplace better-harness
+codex plugin add better-harness@better-harness
+```
+
+Start a new Codex task in the repository you want to review and run the report
+prompt:
+
+```text
+/better-harness review this project's AI coding workflow and generate a report
+```
+
+Use the repository URL with `marketplace add`, not a raw `marketplace.json`
+URL. Current Codex builds use `plugin add` and `--marketplace`; examples that
+use `plugin install` or `--source` target a different CLI contract.
+
+</TabItem>
+<TabItem value="qoder" label="Qoder">
+
+## Qoder {#qoder}
+
+Better Harness is built into the [Qoder](https://qoder.com/) desktop app, so
+no Marketplace or local plugin installation is required there. Choose either
+entry point:
+
+1. **From a session:** Open the repository you want to review, start a new
+   session, and run the report prompt:
+
+   ```text
+   /better-harness review this project's AI coding workflow and generate a report
+   ```
+
+2. **From Quest (Qoder 1.18.0+):** Open Quest, then select
+   **Better Harness (Beta)** from the left sidebar.
+
+### Qoder CLI
+
+If Qoder Desktop is installed, Better Harness is already available in Qoder
+CLI. No marketplace or plugin installation is required.
+
+Only when using Qoder CLI without Qoder Desktop, add this repository as a
+marketplace and install Better Harness manually:
+
+```bash
+qodercli plugin marketplace add \
+  'https://github.com/QoderAI/better-harness.git'
+qodercli plugin install better-harness@better-harness
+```
+
+Verify the manual installation with `qodercli plugin list`, then start a new
+Qoder CLI session before using `/better-harness`.
+
+</TabItem>
+<TabItem value="cursor" label="Cursor">
+
+## Cursor {#cursor}
+
+The Cursor plugin is not published to the marketplace yet. Load the
+source-local plugin for one Cursor Agent session:
+
+```bash
+git clone https://github.com/QoderAI/better-harness.git
+cursor-agent --plugin-dir /path/to/better-harness
+```
+
+Cursor session evidence is supported through workspace-matched transcripts,
+metadata, and audit logs. Partial or unavailable coverage remains explicit.
+
+</TabItem>
+</Tabs>
+
+## Next step
+
+Generate [your first report](./your-first-report.md).

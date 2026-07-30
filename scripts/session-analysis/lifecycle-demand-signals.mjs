@@ -540,7 +540,7 @@ function fingerprint(value) {
 
 function safeHost(value) {
   const host = String(value ?? "").toLowerCase();
-  return ["qoder", "codex", "claude", "cursor", "qwen"].includes(host) ? host : "unknown";
+  return ["qoder", "codex", "claude", "cursor", "qwen", "copilot"].includes(host) ? host : "unknown";
 }
 
 function safeEvidenceToken(value, fallback) {

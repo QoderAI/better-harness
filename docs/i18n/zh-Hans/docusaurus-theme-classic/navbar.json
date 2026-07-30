@@ -1,0 +1,22 @@
+{
+  "title": {
+    "message": "Better Harness",
+    "description": "The title in the navbar"
+  },
+  "item.label.Docs": {
+    "message": "文档",
+    "description": "Navbar item with label Docs"
+  },
+  "item.label.Demo Report": {
+    "message": "Demo 报告",
+    "description": "Navbar item with label Demo Report"
+  },
+  "item.label.Roadmap": {
+    "message": "路线图",
+    "description": "Navbar item with label Roadmap"
+  },
+  "item.label.GitHub": {
+    "message": "GitHub",
+    "description": "Navbar item with label GitHub"
+  }
+}

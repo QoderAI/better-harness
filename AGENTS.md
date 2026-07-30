@@ -3,6 +3,8 @@
 Cross-platform support is required (Windows, macOS, Linux).
 Architecture, directory routing, and template ownership live in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Adding support for a new Coding Agent host starts with
+[docs/adapters/contributing-new-coding-agent.md](docs/adapters/contributing-new-coding-agent.md).
 
 ## Plan & Spec
 

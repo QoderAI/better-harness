@@ -1,0 +1,106 @@
+.hero {
+  padding: 4rem 0;
+  text-align: center;
+}
+
+.heroLead {
+  max-width: 46rem;
+  margin: 0 auto 2rem;
+  font-size: 1.05rem;
+  opacity: 0.92;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.section {
+  padding: 3.5rem 0;
+}
+
+.sectionAlt {
+  background: var(--ifm-color-emphasis-100);
+}
+
+.demoFrame {
+  text-align: center;
+  margin: 2rem 0 0.5rem;
+}
+
+.demoFrame img {
+  max-width: 900px;
+  width: 100%;
+  border-radius: var(--ifm-global-radius);
+  box-shadow: var(--bh-shadow-lg);
+}
+
+.demoCaption {
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.dimensionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.dimensionCard {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-global-radius);
+  padding: 1rem;
+  background: var(--ifm-background-color);
+}
+
+.dimensionCard h3 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.dimensionCard p {
+  font-size: 0.9rem;
+  margin-bottom: 0;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.hostGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.hostCard {
+  display: block;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-global-radius);
+  padding: 1.25rem;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--ifm-transition-fast),
+    box-shadow var(--ifm-transition-fast);
+}
+
+.hostCard:hover {
+  color: inherit;
+  text-decoration: none;
+  border-color: var(--ifm-color-primary);
+  box-shadow: var(--bh-shadow-md);
+}
+
+.hostCard h3 {
+  font-size: 1.05rem;
+  margin-bottom: 0.5rem;
+}
+
+.hostCard p {
+  font-size: 0.9rem;
+  margin-bottom: 0;
+  color: var(--ifm-color-emphasis-700);
+}

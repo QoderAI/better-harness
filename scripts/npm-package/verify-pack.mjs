@@ -53,6 +53,8 @@ function verifyReleaseVersionAlignment() {
     [".claude-plugin/marketplace.json", readJson(".claude-plugin/marketplace.json").plugins?.[0]?.version],
     [".codex-plugin/plugin.json", readJson(".codex-plugin/plugin.json").version],
     [".cursor-plugin/plugin.json", readJson(".cursor-plugin/plugin.json").version],
+    [".github/plugin/plugin.json", readJson(".github/plugin/plugin.json").version],
+    [".github/plugin/marketplace.json", readJson(".github/plugin/marketplace.json").plugins?.[0]?.version],
     ["qwen-extension.json", readJson("qwen-extension.json").version],
   ];
   for (const [source, version] of versions) {
@@ -137,6 +139,8 @@ const required = [
   "package/.codex-plugin/plugin.json",
   "package/.cursor-plugin/plugin.json",
   "package/.cursor-plugin/marketplace.json",
+  "package/.github/plugin/plugin.json",
+  "package/.github/plugin/marketplace.json",
   "package/.qoder-plugin/plugin.json",
   "package/qwen-extension.json",
   "package/case-studies/factory/model/factory-readiness.md",
@@ -210,6 +214,20 @@ const forbiddenPrefixes = [
   "package/scripts/packaging/",
   "package/skills/loop-blueprint/",
   "package/skills/harness/",
+  // Docusaurus site machinery lives inside docs/ but must not ship with npm.
+  "package/docs/docs/",
+  "package/docs/i18n/",
+  "package/docs/src/",
+  "package/docs/static/",
+  "package/docs/scripts/",
+  "package/docs/build/",
+  "package/docs/.docusaurus/",
+  "package/docs/.gitignore",
+  "package/docs/node_modules/",
+  "package/docs/docusaurus.config.js",
+  "package/docs/package-lock.json",
+  "package/docs/sidebars.js",
+  "package/docs/package.json",
 ];
 
 for (const entry of required) {
@@ -317,6 +335,7 @@ const forbiddenBundlePrefixes = [
   ".claude-plugin/",
   ".codex-plugin/",
   ".cursor-plugin/",
+  ".github/plugin/",
   "qwen-extension.json",
   "test/",
   "dev/",
@@ -327,6 +346,20 @@ const forbiddenBundlePrefixes = [
   "scripts/packaging/",
   "skills/loop-blueprint/",
   "skills/harness/",
+  // Keep the generated Qoder runtime free of the colocated Docusaurus app.
+  "docs/.docusaurus/",
+  "docs/.gitignore",
+  "docs/build/",
+  "docs/docs/",
+  "docs/i18n/",
+  "docs/node_modules/",
+  "docs/scripts/",
+  "docs/src/",
+  "docs/static/",
+  "docs/docusaurus.config.js",
+  "docs/package-lock.json",
+  "docs/package.json",
+  "docs/sidebars.js",
 ];
 
 for (const entry of requiredBundleEntries) {

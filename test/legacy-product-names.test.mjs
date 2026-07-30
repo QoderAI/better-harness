@@ -10,6 +10,8 @@ const skippedDirectories = new Set([
   ".git",
   ".idea",
   ".qoder",
+  ".docusaurus",
+  "build",
   "coverage",
   "dist",
   "node_modules",

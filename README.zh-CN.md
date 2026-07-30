@@ -145,6 +145,7 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 | **Codex Desktop** | 在 **Settings > Plugins > + Add > From Marketplace** 中添加本仓库，安装 Better Harness，启动新任务，然后调用 `@better-harness`。 |
 | **Codex CLI** | 添加 Git Marketplace，运行 `codex plugin add better-harness@better-harness`，然后调用 `$better-harness:better-harness`。 |
 | **Qoder Desktop / CLI** | 安装 Qoder Desktop 后无需额外安装——Better Harness 已内置，并可在桌面端和 CLI 中使用。打开仓库并使用下方的报告提示词。 |
+| **GitHub Copilot CLI** | 添加本仓库 Marketplace，安装 `better-harness@better-harness`，启动新会话，然后使用下方的报告提示词。 |
 | **Cursor** | 从源码加载插件——参见[安装](#installation)。 |
 
 安装完成后，让 Better Harness 生成当前宿主支持的持久化报告：
@@ -154,7 +155,7 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 ```
 
 Better Harness 会将行为断言限定在相关的任务过程片段（Task Episode）及其周边项目机制内。
-Qoder 生成 Canvas 报告；Claude Code、Codex 和 Cursor 生成自包含的 HTML 报告及配套 Markdown。
+Qoder 生成 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub Copilot 生成自包含的 HTML 报告及配套 Markdown。
 缺失或不完整的证据会被明确标注。有关当前覆盖范围和输出差异，请参阅
 [宿主适配器矩阵](docs/adapters/README.md)。
 
@@ -297,6 +298,27 @@ cursor-agent --plugin-dir /path/to/better-harness
 Cursor 会话证据来自与工作区匹配的会话记录、元数据和审计日志。
 覆盖范围不完整或不可用时会被明确标注。
 
+### GitHub Copilot
+
+将本仓库注册为 Copilot 插件 Marketplace，然后安装 Better Harness：
+
+```bash
+copilot plugin marketplace add QoderAI/better-harness
+copilot plugin install better-harness@better-harness
+```
+
+验证 Skill 已加载：
+
+```bash
+copilot plugin list
+```
+
+请优先使用 Marketplace 安装。Copilot CLI 已弃用直接从仓库、URL 或本地路径安装。
+
+Copilot 会话证据来自 `~/.copilot/session-state/` 下与工作区匹配的 Copilot CLI 会话记录。
+Copilot 不记录逐次响应的 token 用量，VS Code Copilot Chat 也没有受支持的持久化会话记录；
+两者均作为明确的证据边界保留。
+
 <a id="develop-and-package-from-source"></a>
 
 ## 从源码开发和打包
@@ -338,7 +360,7 @@ Canvas 预览需要已安装的 Qoder 运行时，或显式指定 `--sdk-media`/
 | --- | --- | --- |
 | 工作流指导与工程实践 | [`skills/`](skills/) 或 [`references/`](references/) | 为某种语言、框架、审查模式或重复出现的智能体工作流添加有来源支撑的指南。 |
 | 审查模型与可执行分析 | [`models/`](models/) 或 [`scripts/`](scripts/) | 添加由证据支持的审查视角、检测器，或带 fixture 和测试的智能体友好分析命令。 |
-| 交付控制与宿主支持 | [`hooks/`](hooks/) 或[宿主适配器矩阵](docs/adapters/README.md) | 添加范围明确的生命周期检查，或记录并验证另一种编码智能体宿主的证据支持情况。 |
+| 交付控制与宿主支持 | [`hooks/`](hooks/) 或[新增 Coding Agent 指南](docs/adapters/contributing-new-coding-agent.md) | 添加范围明确的生命周期检查，或记录并验证另一种 Coding Agent 宿主的证据支持情况。 |
 | 报告与视觉语言 | [`templates/reporting/`](templates/reporting/) 或 [`templates/style/`](templates/style/) | 添加报告模式、可复用的报告契约，或带验证证据的纯指令式视觉样式。 |
 | 示例与运行模型 | [`case-studies/`](case-studies/) | 分享经过脱敏且以证据为边界的示例，展示团队如何应用智能体审查与交付实践。 |
 
@@ -346,8 +368,10 @@ Canvas 预览需要已安装的 Qoder 运行时，或显式指定 `--sdk-media`/
 
 1. 阅读[社区扩展地图](docs/community.md)，找到规范的归属位置并了解相应契约。
 2. 按照[贡献指南](CONTRIBUTING.md)设置项目并确定变更范围。
-3. 当贡献会改变运行时行为或渲染输出时，添加测试、fixture 或预览证据。
-4. 提交一个聚焦的 Pull Request，说明改了什么、为什么修改以及如何验证。
+3. 如需新增宿主支持，请遵循[新增 Coding Agent 贡献指南](docs/adapters/contributing-new-coding-agent.md)，
+   并更新[宿主适配器矩阵](docs/adapters/README.md)。
+4. 当贡献会改变运行时行为或渲染输出时，添加测试、fixture 或预览证据。
+5. 提交一个聚焦的 Pull Request，说明改了什么、为什么修改以及如何验证。
 
 不确定某个想法应该放在哪里？在创建新的顶层功能区，或修改公共报告、schema、打包或兼容性契约之前，
 请先[创建 issue](https://github.com/QoderAI/better-harness/issues)。

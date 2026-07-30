@@ -19,7 +19,7 @@ an explicit Qoder Canvas output is requested.
 
 Options:
   --workspace <path>       Target workspace (required)
-  --platform <name>        qoder, codex, claude, cursor, or qwen (default: qoder)
+  --platform <name>        qoder, codex, claude, cursor, qwen, or copilot (default: qoder)
   --language <locale>      en or zh-CN (default: en)
   --since <ISO timestamp>  Include sessions at or after the frozen window start
   --until <ISO timestamp>  Include sessions at or before the frozen window end
@@ -34,12 +34,19 @@ function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
+const REPORT_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copilot"];
+
 function reportPlatform(value = "qoder") {
   const platform = String(value || "qoder").toLowerCase();
-  if (!["qoder", "codex", "claude", "cursor", "qwen"].includes(platform)) {
-    throw Object.assign(new Error(`unsupported Harness report platform: ${platform}`), {
-      code: "UNSUPPORTED_REPORT_PLATFORM",
-    });
+  if (!REPORT_PLATFORMS.includes(platform)) {
+    throw Object.assign(
+      new Error(
+        `unsupported Harness report platform: ${platform}. Supported platforms: ${REPORT_PLATFORMS.join(", ")}.`,
+      ),
+      {
+        code: "UNSUPPORTED_REPORT_PLATFORM",
+      },
+    );
   }
   return platform;
 }
@@ -51,7 +58,7 @@ function flagEnabled(value) {
 function assertCliOptions(options) {
   const allowed = new Set([
     "workspace", "platform", "language", "since", "until", "format", "canvas-out", "replace-canvas", "include-global-capabilities",
-    "qoder-home", "codex-home", "claude-home", "cursor-home", "qwen-home",
+    "qoder-home", "codex-home", "claude-home", "cursor-home", "qwen-home", "copilot-home",
   ]);
   const positional = Array.isArray(options._) ? options._ : [];
   const unknown = Object.keys(options).filter((key) => key !== "_" && !allowed.has(key));

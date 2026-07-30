@@ -1,4 +1,4 @@
-Usage: session-analysis <command> --platform <qoder|codex|claude|cursor|qwen> --workspace <path> [options]
+Usage: session-analysis <command> --platform <qoder|codex|claude|cursor|qwen|copilot> --workspace <path> [options]
 
 Commands: sources, sessions, facets, insights, facts, file-reads, show, events, claude-facets
 

@@ -21,6 +21,8 @@ export function createFactsRunContext(options = {}, platform = "unknown", provid
     qoder: process.env.QODER_SESSION_ID,
     claude: process.env.CLAUDE_SESSION_ID,
     cursor: process.env.CURSOR_SESSION_ID,
+    qwen: process.env.QWEN_SESSION_ID,
+    copilot: process.env.COPILOT_SESSION_ID,
   })[platform];
   const excludedSessionId = String(
     options["exclude-session-id"] ?? options.excludeSessionId ?? environmentSessionId ?? "",

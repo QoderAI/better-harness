@@ -43,9 +43,16 @@ export function parseArgs(argv) {
   return args;
 }
 
+// Directories that never hold authored repo docs: dependency trees and the
+// Docusaurus build output that lives alongside the site under docs/.
+const SKIPPED_DIR_NAMES = new Set(["node_modules", "build"]);
+
 export function markdownFilesUnder(dir) {
   const found = [];
   for (const entry of readdirSync(dir)) {
+    if (SKIPPED_DIR_NAMES.has(entry) || entry.startsWith(".")) {
+      continue;
+    }
     const full = path.join(dir, entry);
     const stats = statSync(full);
     if (stats.isDirectory()) {

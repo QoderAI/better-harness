@@ -1,0 +1,57 @@
+---
+id: your-first-report
+title: Your First Report
+sidebar_position: 3
+---
+
+# Your First Report
+
+Once Better Harness is [installed](./installation.mdx), open the repository
+you want to review, start a new session, and run:
+
+```text
+/better-harness review this project's AI coding workflow and generate a report
+```
+
+Better Harness scopes behavior claims to relevant Task Episodes and the
+surrounding project mechanisms. Qoder produces a Canvas report; Claude Code,
+Codex, and Cursor produce self-contained HTML with paired Markdown. Missing or
+partial evidence remains explicit.
+
+See the [live demo report](pathname:///demo/better-harness-report/) for
+what the HTML output looks like.
+
+## Reading the report
+
+The report combines the five-part Agent Work Loop overview, prioritized
+findings, detected agent assets, and an evidence brief. Read it through the
+[five work-loop questions](./concepts/agent-work-loop.md); session evidence
+changes confidence and coverage, not the model.
+
+## From report to action
+
+A report is the start of a loop, not a verdict. Each finding is a row with a
+next step, so a score turns into a change:
+
+1. **Draft a bounded fix.** Run `/better-harness repair-plan` to validate one
+   finding and draft a scoped repair plan, without writing new report
+   artifacts.
+2. **Give recurring work an owner.** When a finding looks like repeated work,
+   route it through
+   [Loop Discovery](https://github.com/QoderAI/better-harness/blob/main/references/loop-engineering/loop-discovery.md)
+   to pick the smallest durable owner: a skill, hook, script, automation, or
+   rule.
+3. **Schedule follow-up.** A schedule-ready finding renders a row-scoped
+   `/schedule /better-harness` handoff with cadence, validation, and a stop
+   condition.
+4. **Confirm movement.** Re-run the review to check the change landed and the
+   capability signal moved.
+
+## Static-only inspection
+
+From a source checkout, you can inspect repository evidence without reading
+local sessions:
+
+```bash
+node scripts/better-harness.mjs report --no-sessions
+```

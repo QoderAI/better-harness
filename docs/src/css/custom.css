@@ -1,0 +1,71 @@
+/**
+ * Better Harness website theme overrides.
+ *
+ * Colors, radius, shadows, and motion are sourced from the Canvas SDK design
+ * system (canvas-sdk/src/palettes.ts + canvas-tokens.ts) so the website
+ * matches the product's report/Canvas surfaces:
+ * - light palette: accent #3685BF, editor #FCFCFC, chrome #F8F8F8
+ * - dark palette: accent #599CE7, editor #181818, chrome #141414, link #87C3FF
+ * - radius.md 6px; motion 120/200/320ms; shadow sm/md/lg
+ */
+
+:root {
+  /* Canvas light accent #3685BF; dark step = palette buttonHoverBackground */
+  --ifm-color-primary: #3685bf;
+  --ifm-color-primary-dark: #2e76ab;
+  --ifm-color-primary-darker: #2b70a2;
+  --ifm-color-primary-darkest: #235c85;
+  --ifm-color-primary-light: #4b94c9;
+  --ifm-color-primary-lighter: #579bcd;
+  --ifm-color-primary-lightest: #7fb3da;
+
+  /* Canvas light status colors */
+  --ifm-color-success: #1f8a65;
+  --ifm-color-warning: #e69500;
+  --ifm-color-danger: #cf2d56;
+  --ifm-color-info: #3685bf;
+
+  /* Canvas light surfaces: editor / chrome */
+  --ifm-background-color: #fcfcfc;
+  --ifm-navbar-background-color: #f8f8f8;
+
+  /* Canvas radius.md and motion tokens */
+  --ifm-global-radius: 6px;
+  --ifm-transition-fast: 120ms;
+  --ifm-transition-slow: 320ms;
+
+  /* Canvas shadow scale */
+  --bh-shadow-sm: 0 1px 2px #00000033;
+  --bh-shadow-md: 0 4px 8px #00000044;
+  --bh-shadow-lg: 0 8px 16px #00000055;
+
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+/* html-prefixed selector so overrides beat Docusaurus' own
+   html[data-theme='dark'] variable definitions. */
+html[data-theme="dark"] {
+  /* Canvas dark accent #599CE7; light step = palette buttonHoverBackground */
+  --ifm-color-primary: #599ce7;
+  --ifm-color-primary-dark: #3d8ce3;
+  --ifm-color-primary-darker: #2f84e1;
+  --ifm-color-primary-darkest: #1c6ec7;
+  --ifm-color-primary-light: #6aabe9;
+  --ifm-color-primary-lighter: #75b0eb;
+  --ifm-color-primary-lightest: #97c4f0;
+
+  /* Canvas dark status colors */
+  --ifm-color-success: #3fa266;
+  --ifm-color-warning: #ffa500;
+  --ifm-color-danger: #fc6b83;
+  --ifm-color-info: #599ce7;
+
+  /* Canvas dark surfaces: editor / chrome; dedicated link color */
+  --ifm-background-color: #181818;
+  --ifm-background-surface-color: #141414;
+  --ifm-navbar-background-color: #141414;
+  --ifm-link-color: #87c3ff;
+
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}

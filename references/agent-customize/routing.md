@@ -31,12 +31,13 @@ Route by ownership before choosing a vendor-specific feature:
 
 - Agent guides (`AGENTS.md`, `CLAUDE.md`, Copilot, Cursor, Qoder rules) ->
   `agents-md-review.md`.
-- Cursor/Qoder/Codex/Claude project or user assets -> `global-assets.md`; for
-  Claude-specific configured-asset scope, then load `platforms/claude.md`; for
-  Codex-specific operating practice, then load `platforms/codex.md`; for
-  Qoder-specific feature taxonomy, then load `platforms/qoder.md`. For
-  installed, user-home, settings screenshot, plugin cache, or memory scope, run
-  the Global/User Asset Pass.
+- Cursor/Qoder/Codex/Claude/Qwen/Copilot project or user assets ->
+  `global-assets.md`; for Claude-specific configured-asset scope, then load
+  `platforms/claude.md`; for Codex-specific operating practice, then load
+  `platforms/codex.md`; for Qoder-specific feature taxonomy, then load
+  `platforms/qoder.md`; for Copilot-specific operating practice, then load
+  `platforms/copilot.md`. For installed, user-home, settings screenshot, plugin
+  cache, or memory scope, run the Global/User Asset Pass.
 - Prior decision, user correction, remembered preference, stale recall,
   cross-window adoption, or memory-safety question -> `memory-review.md` after
   `global-assets.md` establishes the configured/storage boundary. Memory files
@@ -336,3 +337,37 @@ Use the Global/User Asset Pass from `global-assets.md` when the user asks about
 Qwen global assets such as `~/.qwen/skills` or `~/.qwen/hooks`, installed
 extensions, or memories. Keep configured inventory evidence separate from
 observed session behavior.
+
+## Copilot Asset Route
+
+For GitHub Copilot-specific actions, use `platforms/copilot.md` as the operating
+practice reference for prompt shape, instruction files, `.github` and
+`~/.copilot` configuration, testing and review loops, MCP, Skills, Agents,
+hooks, and plugins. Presence is not execution proof.
+
+Inspect configured surfaces before projecting readiness evidence:
+
+- `AGENTS.md`, `.github/copilot-instructions.md`, and
+  `.github/instructions/*.instructions.md` for durable repo context. Copilot
+  combines every matching instruction file instead of choosing one, and an
+  instruction file without an `applyTo` glob is never auto-applied.
+- `~/.copilot/settings.json` and `.github/copilot/settings.json` for model,
+  approval, permission, MCP, and hook defaults. `~/.copilot/config.json` is
+  automatically managed state, not user configuration.
+- `.github/skills`, `.agents/skills`, `~/.copilot/skills`, and `~/.agents/skills`
+  for repeatable workflows. Resolution is first-found-wins and plugin-provided
+  Skills are the lowest local tier.
+- `.github/agents/*.agent.md` and `~/.copilot/agents/` for custom Agents.
+- MCP configuration (`~/.copilot/mcp-config.json`, project `.mcp.json`, and
+  `.github/mcp.json`) and connector availability for external context.
+- `.github/hooks/*.json` and `~/.copilot/hooks/` for lifecycle automation.
+- Installed Plugins recorded in the `installedPlugins` array of
+  `~/.copilot/config.json`, with plugin roots under
+  `~/.copilot/installed-plugins/<marketplace>/<plugin>/`. Keep installed records
+  separate from marketplace catalogs and from runtime-use claims.
+- Session, diff, test, build, and review evidence for observed execution.
+
+Use the Global/User Asset Pass from `global-assets.md` when the user asks about
+Copilot global assets such as `~/.copilot/skills` or `~/.copilot/hooks`, or
+installed plugins. Keep configured inventory evidence separate from observed
+session behavior.
