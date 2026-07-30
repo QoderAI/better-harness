@@ -98,12 +98,15 @@ package through the `pi` manifest in `package.json`.
 - WorkBuddy configured assets are inventoried through
   `scripts/agent-customize/providers/workbuddy.mjs`, covering `~/.workbuddy`
   user skills, marketplace plugins under `plugins/marketplaces/` with enabled
-  state from `settings.json`, `mcp.json` MCP servers, the global `AGENTS.md`
+  state from `settings.json`, `mcp.json`/`.mcp.json` user and plugin MCP
+  servers, the global `AGENTS.md`
   and identity context files, the shared `.agents/skills` directories, and
   project `.workbuddy` assets. Session evidence comes from
   `scripts/session-analysis/platforms/workbuddy.mjs`, which reads
-  workspace-matching JSONL transcripts under `~/.workbuddy/projects/<cwd-slug>/`
-  and honors the `WORKBUDDY_DIR` override. WorkBuddy has no install shell in
+  workspace-matching JSONL transcripts under `~/.workbuddy/projects/<cwd-slug>/`.
+  Embedded `cwd` values are authoritative; cwd-less 5.x transcripts qualify
+  only from an exact workspace slug. The adapter honors the `WORKBUDDY_DIR`
+  override. WorkBuddy has no install shell in
   this repository; skills install manually into `~/.workbuddy/skills` or
   through WorkBuddy's own marketplace surfaces.
 

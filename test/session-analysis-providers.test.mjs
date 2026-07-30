@@ -1108,6 +1108,64 @@ test("WorkBuddy provider expands tool calls, tool results, and usage from JSONL 
   assert.doesNotMatch(JSON.stringify(facts), new RegExp(home.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
 });
 
+test("WorkBuddy 5.x accepts cwd-less exact directories and preserves sparse snake-case usage", async () => {
+  const root = await fixtureRoot("session-workbuddy-current-provider-");
+  const home = path.join(root, ".workbuddy");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "88888888-8888-4888-8888-888888888888";
+  const dirName = workspaceToWorkbuddySlugVariants(workspace).exact;
+  await writeJsonl(path.join(home, "projects", dirName, `${sessionId}.jsonl`), [
+    {
+      id: "u1",
+      type: "message",
+      role: "user",
+      timestamp: "1784509200000",
+      sessionId,
+      content: [{ type: "input_text", text: "Inspect the current WorkBuddy format" }],
+    },
+    {
+      id: "r1",
+      type: "reasoning",
+      timestamp: "1784509205000",
+      sessionId,
+      providerData: {
+        model: "glm-5.2",
+        messageId: "reasoning-response",
+        usage: { input_tokens: 24453 },
+      },
+    },
+    {
+      id: "a1",
+      type: "message",
+      role: "assistant",
+      timestamp: "1784509210000",
+      sessionId,
+      providerData: {
+        model: "glm-5.2",
+        messageId: "assistant-response",
+        usage: { output_tokens: 289 },
+      },
+      content: [{ type: "output_text", text: "Current format confirmed." }],
+    },
+    { id: "title1", type: "custom-title", timestamp: "1784509215000", sessionId, title: "Current host" },
+  ]);
+
+  const analyzer = new WorkbuddySessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sources[0].exists, true);
+  assert.equal(discovery.sessions.length, 1);
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {});
+  const usageEvents = events.filter((event) => event.type === "model.response.completed");
+  assert.deepEqual(usageEvents.map((event) => event.modelUsage), [
+    { inputTokens: 24453 },
+    { outputTokens: 289 },
+  ]);
+  assert.ok(events.some((event) => event.type === "metadata.reasoning"));
+  assert.ok(events.some((event) => event.type === "metadata.custom-title"));
+  assert.ok(events.every((event) => event.cwd === workspace));
+});
+
 test("WorkBuddy provider rejects a transcript whose records belong to another workspace", async () => {
   const root = await fixtureRoot("session-workbuddy-isolation-");
   const home = path.join(root, ".workbuddy");
@@ -1132,4 +1190,40 @@ test("WorkBuddy provider discovers subdirectory session dirs that share the work
   ]);
   const result = await new WorkbuddySessionAnalyzer().analyze({ command: "sources", workspace, home });
   assert.equal(result.sessions.length, 1);
+});
+
+test("WorkBuddy provider rejects cwd-less transcripts from prefix-only directories", async () => {
+  const root = await fixtureRoot("session-workbuddy-prefix-isolation-");
+  const home = path.join(root, ".workbuddy");
+  const workspace = path.join(root, "workspace", "target");
+  const subdir = path.join(workspace, "packages", "app");
+  const dirName = workspaceToWorkbuddySlugVariants(subdir).exact;
+  await writeJsonl(path.join(home, "projects", dirName, "ambiguous.jsonl"), [
+    {
+      id: "u1",
+      type: "message",
+      role: "user",
+      timestamp: "1784509200000",
+      sessionId: "ambiguous",
+      content: [{ type: "input_text", text: "cwd unavailable" }],
+    },
+  ]);
+
+  const result = await new WorkbuddySessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 0);
+});
+
+test("WorkBuddy source roots stay absent without workspace-matching project directories", async () => {
+  const root = await fixtureRoot("session-workbuddy-absent-root-");
+  const home = path.join(root, ".workbuddy");
+  const workspace = path.join(root, "workspace", "target");
+  const foreign = path.join(root, "workspace", "other");
+  const foreignDir = workspaceToWorkbuddySlugVariants(foreign).exact;
+  await writeJsonl(path.join(home, "projects", foreignDir, "foreign.jsonl"), [
+    { id: "u1", type: "message", role: "user", timestamp: "1784509200000", sessionId: "foreign" },
+  ]);
+
+  const result = await new WorkbuddySessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sources[0].exists, false);
+  assert.equal(result.sessions.length, 0);
 });

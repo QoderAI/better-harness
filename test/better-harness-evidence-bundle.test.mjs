@@ -10,8 +10,14 @@ import {
 import { availableLane } from "../scripts/harness-analysis/evidence-bundle/contract.mjs";
 import { collectSessionEvidence } from "../scripts/harness-analysis/evidence-bundle/session-evidence.mjs";
 import { collectAgentCustomize } from "../scripts/harness-analysis/evidence-bundle/agent-customize.mjs";
+import { EVIDENCE_BUNDLE_HELP } from "../scripts/harness-analysis/evidence-bundle/cli.mjs";
 
 const NOW = new Date("2026-07-24T08:00:00.000Z");
+
+test("evidence-bundle help advertises WorkBuddy and its isolated home override", () => {
+  assert.match(EVIDENCE_BUNDLE_HELP, /pi, or workbuddy/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /--workbuddy-home <dir>/u);
+});
 
 function topologyResolution(workspace = ".", status = "complete") {
   const absolute = path.resolve(workspace);

@@ -9,10 +9,13 @@ observable behavior and compatibility, not every internal refactor.
 
 - WorkBuddy is now a supported analysis-capable source-local host. It gains a
   WorkBuddy configured-asset provider (user skills, marketplace plugins with
-  `settings.json` enabled state, `mcp.json` MCP servers, the global
+  `settings.json` enabled state, `mcp.json`/`.mcp.json` user and plugin MCP
+  servers, the global
   `AGENTS.md` and identity context files) plus a WorkBuddy session-evidence
   adapter that reads workspace-matching JSONL transcripts under
-  `~/.workbuddy/projects/` with a `WORKBUDDY_DIR` override. WorkBuddy has no
+  `~/.workbuddy/projects/`, including cwd-less 5.x transcripts from exact
+  workspace-slug directories and sparse camelCase/snake_case usage, with a
+  `WORKBUDDY_DIR` override. WorkBuddy has no
   install shell in this repository; the skill installs by copying it into
   `~/.workbuddy/skills`.
 - Pi (pi.dev) is now a supported analysis-capable source-local host. The

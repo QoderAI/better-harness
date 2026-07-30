@@ -8,7 +8,7 @@ import {
   agentsMarkdownRuleSource,
   buildManageCollections,
   collectMarkdownItems,
-  collectMcpFromConfig,
+  collectMcpItems,
   collectRuleSources,
   collectSkillFiles,
   collectWorkspaceRootPrimitives,
@@ -70,7 +70,7 @@ async function collectWorkbuddyMarketplacePlugin({ pluginRoot, pluginName, marke
   plugin.rules = [];
   plugin.subagents = [];
   plugin.hooks = [];
-  plugin.mcpServers = [];
+  plugin.mcpServers = await collectMcpItems(pluginRoot, "plugin", displayName, pluginRoot);
   return plugin;
 }
 
@@ -126,7 +126,7 @@ async function collectWorkbuddyUserPrimitives(workbuddyHome) {
     rules: globalRules,
     commands: [],
     hooks: [],
-    mcps: await collectMcpFromConfig(path.join(workbuddyHome, "mcp.json"), "user", "User", workbuddyHome),
+    mcps: await collectMcpItems(workbuddyHome, "user", "User", workbuddyHome),
   };
 }
 

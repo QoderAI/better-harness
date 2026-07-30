@@ -42,8 +42,9 @@ context taxes each turn.
   `~/.workbuddy/settings.json` `enabledPlugins` keyed as
   `<plugin>@<marketplace>`. Marketplace records live in
   `plugins/known_marketplaces.json`.
-- **MCP servers**: `~/.workbuddy/mcp.json` (`mcpServers`) declares user-scope
-  MCP servers.
+- **MCP servers**: `~/.workbuddy/mcp.json` or `~/.workbuddy/.mcp.json`
+  (`mcpServers`) declares user-scope MCP servers. Marketplace plugins can
+  declare plugin-scope servers through the same filenames at the plugin root.
 - **Project assets**: a project `.workbuddy/` directory can carry
   `skills/`, `rules/`, and `commands/`; project `AGENTS.md` provides repo
   rules.
@@ -53,10 +54,13 @@ context taxes each turn.
 WorkBuddy sessions are flat JSONL records under
 `~/.workbuddy/projects/<cwd-slug>/<session-uuid>.jsonl`, where the slug is
 the absolute working directory with the leading separator stripped and path
-separators replaced by `-`. Records carry epoch-millisecond timestamps,
-`sessionId`, and `cwd`; record types include `message` (user/assistant),
-`reasoning`, `function_call`, `function_call_result`, `file-history-snapshot`,
-and `ai-title`. `WORKBUDDY_DIR` relocates the data root. Route session reads
+separators replaced by `-`. WorkBuddy 2.x records carry `cwd`; observed 5.x
+records can omit it, so the adapter admits cwd-less transcripts only from the
+exact requested workspace slug and rejects prefix-only matches. Record types
+include `message` (user/assistant), `reasoning`, `function_call`,
+`function_call_result`, `file-history-snapshot`, `ai-title`, and
+`custom-title`. Usage may use camelCase or snake_case token fields.
+`WORKBUDDY_DIR` relocates the data root. Route session reads
 through `scripts/session-analysis/platforms/workbuddy.mjs`; configured
 presence never substitutes for observed session behavior.
 

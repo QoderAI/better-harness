@@ -45,6 +45,7 @@ Options:
   --qwen-home <dir>         Qwen Code data root (default: ~/.qwen)
   --copilot-home <dir>      Copilot CLI data root (default: ~/.copilot)
   --pi-home <dir>           Pi agent data root (default: ~/.pi/agent)
+  --workbuddy-home <dir>    WorkBuddy data root (default: ~/.workbuddy)
   --include-cache           Include optional Qoder cache evidence
   --include-global-capabilities
                             Include optional user-global Qoder evidence

@@ -10,17 +10,27 @@ import { parseArgs, parseBooleanFlag } from "../cli.mjs";
 import { forEachJsonLine, pathExists, walkFiles } from "../fs.mjs";
 import { expandHome, normalizeWorkspace } from "../paths.mjs";
 import {
+  bindSessionWorkspaceCwds,
   emitProviderResult,
+  markSessionReadCoverage,
   runProviderAnalysis,
   runProviderCommand,
+  sessionWorkspaceCwd,
+  workspaceMatchScopeFromOptions,
 } from "../provider-runner.mjs";
 import { parseResultFacts } from "../result-facts.mjs";
 import { mergeTimeRange, normalizeCliDate, normalizeTimestamp, timestampMillis, withinTimeRange } from "../time.mjs";
+import { WORKSPACE_CWD_MATCH, classifyWorkspaceCwd } from "../workspace-match.mjs";
 
 function isWorkspaceMatch(candidate, workspace) {
   if (!candidate) return false;
   const resolved = normalizeWorkspace(candidate);
   return resolved === workspace || resolved.startsWith(`${workspace}${path.sep}`);
+}
+
+function isScopedWorkspaceMatch(candidate, scope) {
+  if (!scope?._workspaceMatchScope) return isWorkspaceMatch(candidate, scope.workspace);
+  return classifyWorkspaceCwd(candidate, scope._workspaceMatchScope) !== WORKSPACE_CWD_MATCH.UNMATCHED;
 }
 
 export function workspaceToWorkbuddySlugVariants(workspace) {
@@ -63,29 +73,43 @@ function textFromBlocks(blocks) {
     .trim();
 }
 
+function finiteNumber(...values) {
+  return values.find((value) => typeof value === "number" && Number.isFinite(value));
+}
+
+function normalizeUsage(usage) {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
+  const observed = {};
+  for (const [key, value] of [
+    ["inputTokens", finiteNumber(usage.inputTokens, usage.input_tokens, usage.input)],
+    ["outputTokens", finiteNumber(usage.outputTokens, usage.output_tokens, usage.output)],
+    ["cacheReadInputTokens", finiteNumber(
+      usage.cacheReadInputTokens,
+      usage.cache_read_input_tokens,
+      usage.cacheRead,
+    )],
+    ["cacheCreationInputTokens", finiteNumber(
+      usage.cacheCreationInputTokens,
+      usage.cache_creation_input_tokens,
+      usage.cacheWrite,
+    )],
+  ]) {
+    if (value !== undefined) observed[key] = value;
+  }
+  const details = Array.isArray(usage.inputTokensDetails)
+    ? usage.inputTokensDetails
+    : (Array.isArray(usage.input_tokens_details) ? usage.input_tokens_details : []);
+  const cached = details
+    .map((item) => finiteNumber(item?.cached_tokens, item?.cachedTokens))
+    .filter((value) => value !== undefined);
+  if (!("cacheReadInputTokens" in observed) && cached.length > 0) {
+    observed.cacheReadInputTokens = cached.reduce((sum, value) => sum + value, 0);
+  }
+  return Object.keys(observed).length > 0 ? observed : null;
+}
+
 function inferUsage(raw) {
-  const provider = raw?.providerData?.usage;
-  if (provider && typeof provider === "object") {
-    const cacheRead = Array.isArray(provider.inputTokensDetails)
-      ? provider.inputTokensDetails.reduce((sum, item) => sum + (Number(item?.cached_tokens) || 0), 0)
-      : 0;
-    return {
-      inputTokens: Number(provider.inputTokens) || 0,
-      outputTokens: Number(provider.outputTokens) || 0,
-      cacheReadInputTokens: cacheRead,
-      cacheCreationInputTokens: 0,
-    };
-  }
-  const message = raw?.message?.usage;
-  if (message && typeof message === "object") {
-    return {
-      inputTokens: Number(message.input_tokens) || 0,
-      outputTokens: Number(message.output_tokens) || 0,
-      cacheReadInputTokens: Number(message.cache_read_input_tokens) || 0,
-      cacheCreationInputTokens: Number(message.cache_creation_input_tokens) || 0,
-    };
-  }
-  return null;
+  return normalizeUsage(raw?.providerData?.usage) ?? normalizeUsage(raw?.message?.usage);
 }
 
 function inferModel(raw) {
@@ -152,6 +176,7 @@ function transcriptEvents(raw, sourceRef, options) {
   const role = raw?.role ?? null;
   const timestamp = inferTimestamp(raw);
   const events = [];
+  const usage = inferUsage(raw);
   const base = {
     sessionId: sourceRef.sessionId,
     timestamp,
@@ -176,7 +201,6 @@ function transcriptEvents(raw, sourceRef, options) {
     });
   } else if (rawType === "message" && role === "assistant") {
     const model = inferModel(raw);
-    const usage = inferUsage(raw);
     const visibleText = textFromBlocks(contentBlocks(raw));
     const event = {
       ...base,
@@ -190,7 +214,6 @@ function transcriptEvents(raw, sourceRef, options) {
     if (options.includeContent && visibleText) event.content = visibleText;
     if (model && !usage) event.model = model;
     events.push(event);
-    if (usage) events.push(usageEvent(raw, base, sourceRef, usage));
   } else if (rawType === "function_call") {
     const input = parseCallArguments(raw);
     const toolEvent = {
@@ -208,9 +231,6 @@ function transcriptEvents(raw, sourceRef, options) {
     if (options.includeCommandText && commandText) toolEvent.commandText = commandText;
     if (filePath) toolEvent.filePath = filePath;
     events.push(toolEvent);
-    // WorkBuddy attaches per-request usage snapshots to function_call records.
-    const usage = inferUsage(raw);
-    if (usage) events.push(usageEvent(raw, base, sourceRef, usage));
   } else if (rawType === "function_call_result") {
     const status = raw?.status ?? null;
     const success = status ? status === "completed" : true;
@@ -242,6 +262,11 @@ function transcriptEvents(raw, sourceRef, options) {
     });
   }
 
+  // WorkBuddy 2.x attached usage to function calls, while 5.x also attaches
+  // it to assistant and reasoning records. Normalize every observed snapshot
+  // independently, then dedupe repeated response IDs after reading the file.
+  if (usage) events.push(usageEvent(raw, base, sourceRef, usage));
+
   return events;
 }
 
@@ -257,18 +282,34 @@ function dedupeUsageEvents(events) {
   });
 }
 
-async function probeTranscript(filePath, workspace) {
+async function probeTranscript(filePath, scope, directoryCandidate) {
   const summary = {
     sessionId: path.basename(filePath, ".jsonl"),
     firstSeen: null,
     lastSeen: null,
     workspaceMatch: false,
+    cwdObserved: false,
+    foreignCwd: false,
+    cwd: null,
   };
   await forEachJsonLine(filePath, (raw) => {
     if (raw?.sessionId) summary.sessionId = raw.sessionId;
-    if (raw?.cwd && isWorkspaceMatch(raw.cwd, workspace)) summary.workspaceMatch = true;
+    if (typeof raw?.cwd === "string" && raw.cwd.length > 0) {
+      summary.cwdObserved = true;
+      if (isScopedWorkspaceMatch(raw.cwd, scope)) {
+        summary.cwd ??= raw.cwd;
+      } else {
+        summary.foreignCwd = true;
+      }
+    }
     mergeTimeRange(summary, inferTimestamp(raw));
   });
+  summary.workspaceMatch = summary.cwdObserved
+    ? !summary.foreignCwd && summary.cwd !== null
+    : directoryCandidate.matchKind === "exact";
+  if (!summary.cwdObserved && summary.workspaceMatch) {
+    summary.cwd = directoryCandidate.workspaceIdentity;
+  }
   return summary;
 }
 
@@ -281,7 +322,9 @@ function addRef(sessions, sessionId, workspace, ref) {
     lastSeen: null,
     sourceKinds: new Set(),
     sourceRefs: [],
+    workspaceCwds: new Set(),
   };
+  if (typeof ref.cwd === "string" && ref.cwd.length > 0) session.workspaceCwds.add(ref.cwd);
   session.sourceKinds.add(ref.kind);
   session.sourceRefs.push(ref);
   mergeTimeRange(session, ref.firstSeen ?? ref.timestamp);
@@ -290,10 +333,14 @@ function addRef(sessions, sessionId, workspace, ref) {
 }
 
 function finalizeSession(session) {
-  return { ...session, sourceKinds: [...session.sourceKinds].sort() };
+  const { workspaceCwds, ...publicSession } = session;
+  return bindSessionWorkspaceCwds(
+    { ...publicSession, sourceKinds: [...session.sourceKinds].sort() },
+    [...workspaceCwds],
+  );
 }
 
-async function listProjectDirectories(projectsRoot, variants) {
+async function listProjectDirectories(projectsRoot, contracts) {
   let entries;
   try {
     entries = await readdir(projectsRoot, { withFileTypes: true });
@@ -303,8 +350,25 @@ async function listProjectDirectories(projectsRoot, variants) {
   return entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
-    .filter((name) => name === variants.exact || name.startsWith(variants.prefix))
-    .map((name) => path.join(projectsRoot, name));
+    .map((name) => {
+      const exact = contracts.find((contract) => name === contract.variants.exact);
+      if (exact) {
+        return {
+          path: path.join(projectsRoot, name),
+          matchKind: "exact",
+          workspaceIdentity: exact.workspaceIdentity,
+        };
+      }
+      const prefix = contracts
+        .filter((contract) => name.startsWith(contract.variants.prefix))
+        .sort((left, right) => right.variants.prefix.length - left.variants.prefix.length)[0];
+      return prefix ? {
+        path: path.join(projectsRoot, name),
+        matchKind: "prefix",
+        workspaceIdentity: prefix.workspaceIdentity,
+      } : null;
+    })
+    .filter(Boolean);
 }
 
 export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
@@ -316,6 +380,7 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
     const since = normalizeCliDate(options.since, false);
     const until = normalizeCliDate(options.until, true);
     const workspace = normalizeWorkspace(options.workspace);
+    const workspaceMatchScope = workspaceMatchScopeFromOptions(options);
     // WorkBuddy keeps its data root at ~/.workbuddy; WORKBUDDY_DIR overrides.
     const home = path.resolve(expandHome(
       options.home ?? options.workbuddyHome ?? options["workbuddy-home"] ?? process.env.WORKBUDDY_DIR ?? "~/.workbuddy",
@@ -328,34 +393,40 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
       workspace,
       home,
       projectsDir,
-      _workspaceSlugVariants: workspaceToWorkbuddySlugVariants(workspace),
+      _workspaceDirContracts: [...new Set([
+        workspace,
+        workspaceMatchScope?.requestedWorkspace,
+        workspaceMatchScope?.target.kind === "workspace-member" ? workspaceMatchScope.gitRoot : null,
+      ].filter(Boolean))].map((workspaceIdentity) => ({
+        workspaceIdentity,
+        variants: workspaceToWorkbuddySlugVariants(workspaceIdentity),
+      })),
       since: since.label,
       sinceTime: since.time,
       until: until.label,
       untilTime: until.time,
       sessionId: options["session-id"] ?? options.sessionId ?? options._?.[0] ?? null,
       includeGlobalCapabilities: parseBooleanFlag(options["include-global-capabilities"] ?? false),
+      _workspaceMatchScope: workspaceMatchScope,
     };
   }
 
   async discoverSourceRoots(scope) {
-    const roots = [
-      {
-        id: "workbuddy-projects",
-        kind: "workbuddy-session-jsonl",
-        role: "session-transcript",
-        path: path.join(scope.projectsDir, scope._workspaceSlugVariants.exact),
-        paths: [scope.projectsDir],
-        optional: false,
-        enabled: true,
-        workspaceScoped: true,
-        coverage: "primary",
-      },
-    ];
-    return Promise.all(roots.map(async (root) => ({
-      ...root,
-      exists: await pathExists(root.path) || await pathExists(root.paths[0]),
-    })));
+    const matchingDirs = await listProjectDirectories(scope.projectsDir, scope._workspaceDirContracts);
+    const primaryVariants = scope._workspaceDirContracts[0].variants;
+    return [{
+      id: "workbuddy-projects",
+      kind: "workbuddy-session-jsonl",
+      role: "session-transcript",
+      path: matchingDirs[0]?.path ?? path.join(scope.projectsDir, primaryVariants.exact),
+      paths: [scope.projectsDir],
+      optional: false,
+      enabled: true,
+      workspaceScoped: true,
+      coverage: "primary",
+      // A shared projects parent is not itself workspace evidence.
+      exists: matchingDirs.length > 0,
+    }];
   }
 
   async discoverSessions(scope, roots) {
@@ -365,14 +436,15 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
     const seenDirs = new Set();
     for (const projectsRoot of transcriptRoot.paths ?? []) {
       if (!await pathExists(projectsRoot)) continue;
-      for (const dirPath of await listProjectDirectories(projectsRoot, scope._workspaceSlugVariants)) {
+      for (const candidate of await listProjectDirectories(projectsRoot, scope._workspaceDirContracts)) {
+        const dirPath = candidate.path;
         let realDir;
         try { realDir = realpathSync.native(dirPath); } catch { realDir = path.resolve(dirPath); }
         if (seenDirs.has(realDir)) continue;
         seenDirs.add(realDir);
         const files = await walkFiles(dirPath, { maxDepth: 1, limit: 20_000, match: (file) => file.endsWith(".jsonl") });
         for (const filePath of files) {
-          const probe = await probeTranscript(filePath, scope.workspace);
+          const probe = await probeTranscript(filePath, scope, candidate);
           if (!probe.workspaceMatch || !withinTimeRange(probe.lastSeen ?? probe.firstSeen, scope)) continue;
           addRef(sessions, probe.sessionId, scope.workspace, {
             kind: transcriptRoot.kind,
@@ -380,6 +452,7 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
             path: filePath,
             firstSeen: probe.firstSeen,
             lastSeen: probe.lastSeen,
+            cwd: probe.cwd,
           });
         }
       }
@@ -398,19 +471,36 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
 
   async readSession(session, scope, options = {}) {
     const events = [];
+    const requestedMaxLines = Number(options.workspacePreflightMaxLines);
+    const preflight = Number.isFinite(requestedMaxLines) && requestedMaxLines > 0;
+    let remainingLines = preflight ? Math.trunc(requestedMaxLines) : null;
+    let truncated = false;
+    const identityCwd = sessionWorkspaceCwd(session, scope._workspaceMatchScope);
     for (const ref of session.sourceRefs ?? []) {
+      if (remainingLines !== null && remainingLines <= 0) {
+        truncated = true;
+        break;
+      }
       if (!ref.path.endsWith(".jsonl")) continue;
-      await forEachJsonLine(ref.path, (raw, line) => {
-        if (raw?.cwd && !isWorkspaceMatch(raw.cwd, scope.workspace)) return;
+      const readCoverage = await forEachJsonLine(ref.path, (raw, line) => {
+        if (raw?.cwd && !isScopedWorkspaceMatch(raw.cwd, scope)) return;
         for (const event of this.normalizeEvents(raw, { ...ref, sessionId: session.sessionId, line }, options)) {
           if (withinTimeRange(event.timestamp, scope)) events.push(event);
         }
-      });
+      }, remainingLines === null ? {} : { maxLines: remainingLines });
+      if (readCoverage.invalidLines > 0) truncated = true;
+      if (remainingLines !== null) {
+        if (readCoverage.lineCount > remainingLines) truncated = true;
+        remainingLines -= Math.min(readCoverage.lineCount, remainingLines);
+      }
     }
-    return dedupeUsageEvents(events.sort((left, right) =>
+    const sorted = dedupeUsageEvents(events
+      .map((event) => event.cwd || !identityCwd ? event : { ...event, cwd: identityCwd })
+      .sort((left, right) =>
       (timestampMillis(left.timestamp) ?? 0) - (timestampMillis(right.timestamp) ?? 0)
       || Number(left.evidenceRef?.line ?? 0) - Number(right.evidenceRef?.line ?? 0)
       || Number(left.evidenceRef?.seq ?? 0) - Number(right.evidenceRef?.seq ?? 0)));
+    return markSessionReadCoverage(sorted, { truncated });
   }
 
   async analyze(options = {}) {

@@ -311,20 +311,22 @@ presence does not prove use.
 ### WorkBuddy
 
 For WorkBuddy, the analyzer reads workspace-matching JSONL transcripts under
-`~/.workbuddy/projects/<cwd-slug>/*.jsonl` and verifies the `cwd` embedded in
-the flat records before admitting a session. WorkBuddy computes the directory
-slug by stripping the leading separator and replacing path separators with
-`-`, so `/home/admin/workspace` maps to
+`~/.workbuddy/projects/<cwd-slug>/*.jsonl`. It verifies embedded `cwd` values
+when present; for observed 5.x transcripts without `cwd`, it admits only files
+from the exact requested workspace slug and rejects prefix-only directory
+matches. WorkBuddy computes the directory slug by stripping the leading
+separator and replacing path separators with `-`, so `/home/admin/workspace` maps to
 `~/.workbuddy/projects/home-admin-workspace/`. The `WORKBUDDY_DIR`
 environment variable relocates the data root; honor it before assuming the
 default path. WorkBuddy does not maintain a separate audit log; transcript
 records are the primary lifecycle source, with tool calls carried in
 `function_call` records and tool results in `function_call_result` records.
 
-Treat transcript timestamps, model usage (`providerData.usage`), tool calls,
-and tool results as provider-labelled coverage. Entries such as `reasoning`,
-`file-history-snapshot`, and `ai-title` stay metadata. Route configured
-WorkBuddy rules (`AGENTS.md`, identity files), Skills, marketplace plugins,
-MCP config, and other project/user assets through
+Treat transcript timestamps, sparse camelCase or snake_case model usage
+(`providerData.usage`), tool calls, and tool results as provider-labelled
+coverage. Entries such as `reasoning`, `file-history-snapshot`, `ai-title`,
+and `custom-title` stay metadata even when a companion usage event is emitted.
+Route configured WorkBuddy rules (`AGENTS.md`, identity files), Skills,
+marketplace plugins, MCP config, and other project/user assets through
 `../agent-customize/global-assets.md`; configured presence does not prove
 use.

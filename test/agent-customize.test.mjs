@@ -2151,6 +2151,11 @@ async function makeWorkbuddyFixture() {
     path.join(marketplacePluginRoot, "skills", "find-skills", "SKILL.md"),
     "---\nname: find-skills\ndescription: Discover and install agent skills.\n---\n",
   );
+  await writeJson(path.join(marketplacePluginRoot, ".mcp.json"), {
+    mcpServers: {
+      "plugin-search": { command: "npx", args: ["-y", "plugin-search-mcp"] },
+    },
+  });
 
   const disabledPluginRoot = path.join(
     workbuddyHome, "plugins", "marketplaces", "cb_teams_marketplace", "plugins", "finance-data",
@@ -2167,7 +2172,7 @@ async function makeWorkbuddyFixture() {
       "finance-data@cb_teams_marketplace": false,
     },
   });
-  await writeJson(path.join(workbuddyHome, "mcp.json"), {
+  await writeJson(path.join(workbuddyHome, ".mcp.json"), {
     mcpServers: {
       "docs-server": { command: "npx", args: ["-y", "docs-mcp"] },
     },
@@ -2213,6 +2218,7 @@ test("collectAgentCustomizeInventory returns WorkBuddy marketplace plugins with 
     assert.equal(findSkills.enabled, true);
     assert.equal(findSkills.version, "1.0.0");
     assert.deepEqual(findSkills.skills.map((skill) => skill.name), ["find-skills"]);
+    assert.deepEqual(findSkills.mcpServers.map((server) => server.name), ["plugin-search"]);
 
     const finance = inventory.plugins.find((plugin) => plugin.name === "finance-data");
     assert.ok(finance);
@@ -2223,6 +2229,30 @@ test("collectAgentCustomizeInventory returns WorkBuddy marketplace plugins with 
       inventory.diagnostics.installedPluginRecordFiles,
       [path.join(fixture.workbuddyHome, "settings.json")],
     );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("agent-customize CLI honours --workbuddy-home instead of the real user home", async () => {
+  const fixture = await makeWorkbuddyFixture();
+  try {
+    const result = runAgentCustomizeCli([
+      "inventory",
+      "--provider",
+      "workbuddy",
+      "--workspace",
+      fixture.workspace,
+      "--workbuddy-home",
+      fixture.workbuddyHome,
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const inventory = JSON.parse(result.stdout);
+    assert.equal(inventory.workbuddyHome, fixture.workbuddyHome);
+    assert.notEqual(inventory.workbuddyHome, path.join(os.homedir(), ".workbuddy"));
+    assert.ok(inventory.manage.mcps.some((item) => item.name === "docs-server"));
+    assert.ok(inventory.manage.mcps.some((item) => item.name === "plugin-search"));
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
@@ -2249,6 +2279,10 @@ test("WorkBuddy provider collects user and project skills, MCP servers, and cont
     assert.ok(
       filterManageItems(inventory, { tab: "mcps", scopeKind: "user" })
         .some((item) => item.name === "docs-server"),
+    );
+    assert.ok(
+      filterManageItems(inventory, { tab: "mcps", scopeKind: "plugin" })
+        .some((item) => item.name === "plugin-search" && item.sourceLabel === "Find Skills"),
     );
     assert.deepEqual(
       filterManageItems(inventory, { tab: "rules", scopeKind: "user" }).map(

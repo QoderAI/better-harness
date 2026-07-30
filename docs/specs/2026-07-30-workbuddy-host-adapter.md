@@ -3,7 +3,7 @@
 ## Traceability
 
 - Spec ID: SPEC-2026-07-30-workbuddy-host-adapter
-- Status: Draft
+- Status: Implemented
 
 ## Intent
 
@@ -121,6 +121,22 @@ layouts instead of treating one fixture shape as universal:
   usage summary, configured-asset inventory, and evidence bundle against an
   isolated `--workbuddy-home`; report only bounded metadata and aggregate
   counts.
+
+Implemented evidence (Node 22.20.0, 2026-07-30):
+
+- `node --test`: 992/992 tests passed, including separate WorkBuddy 2.106.4
+  and 5.x fixtures, cwd-less prefix rejection, sparse usage, MCP filename/scope,
+  CLI override, help, and evidence-bundle routing contracts.
+- `scripts/npm-package/verify-pack.mjs`: passed with 337 npm entries and 360
+  runtime-zip entries; `test/doc-link-graph.test.mjs` and `git diff --check`
+  passed.
+- Native WorkBuddy 5.0.2 smoke against an explicitly authorized local data root
+  found one exact-slug session for the selected workspace, observed usage on
+  all 50 normalized response records, and inventoried 10 MCP servers (one user
+  and nine plugin scope) without reading prompt or tool content.
+- A quick local WorkBuddy evidence bundle over this repository completed with
+  all three lanes and the lead available. The preview health route returned
+  `ok`, and `/canvas-module.js` returned HTTP 200 with JavaScript content.
 
 Residual risk: the WorkBuddy directory slug is not injective. Transcripts that
 omit `cwd` therefore qualify only from the exact requested workspace directory;

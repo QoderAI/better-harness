@@ -419,7 +419,9 @@ Inspect configured surfaces before projecting readiness evidence:
 - Marketplace plugins under
   `~/.workbuddy/plugins/marketplaces/<marketplace>/plugins/` with
   `.codebuddy-plugin/plugin.json` manifests.
-- `~/.workbuddy/mcp.json` for user-scope MCP servers.
+- `~/.workbuddy/mcp.json` or `~/.workbuddy/.mcp.json` for user-scope MCP
+  servers, plus either filename at a marketplace plugin root for plugin-scope
+  servers.
 - Session, diff, test, build, and review evidence for observed execution.
 
 Marketplace catalogs list availability, not use; bind plugin capability
