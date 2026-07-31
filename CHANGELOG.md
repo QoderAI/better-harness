@@ -5,6 +5,18 @@ observable behavior and compatibility, not every internal refactor.
 
 ## Unreleased
 
+### Added
+
+- `better-harness loop readiness` (audience `advanced`) is a new fail-closed
+  gate for loop run levels. It evaluates a caller-declared capability
+  assessment against the versioned LC-01 readiness contract (v1, 14
+  capabilities across 5 run levels) without probing hosts, network, or the
+  workspace: absent or non-`available` required capabilities prevent the
+  level (exit 2 with every blocking capability listed), and any input the
+  assessment contract rejects (unknown id/state/field, duplicate observation,
+  empty evidence, unsupported version, malformed JSON) exits 1 without ever
+  producing a decision. `--json` keeps stdout parser-safe.
+
 ### Fixed
 
 - The Portable HTML report route in `templates/reporting/routing.md` now
