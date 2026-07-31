@@ -14,6 +14,41 @@ each host, except that Qoder CLI can use the version bundled with Qoder
 Desktop. After installing or updating a plugin, start a new session or task so
 the host reloads its plugin inventory.
 
+## Prerequisites {#prerequisites}
+
+To use Better Harness from a host, install one of the supported coding agents
+below and make sure it can open the repository you want to analyze. The host's
+own system requirements and runtime still apply; follow its tab without running
+the repository's development setup unless the tab explicitly uses a source
+checkout.
+
+Node.js and npm are required only when you use the standalone CLI, run Better
+Harness from a source checkout, or contribute to this repository. Those paths
+support Windows, macOS, and Linux and require:
+
+- Node.js `>=22.20.0 <25.0.0`
+- npm `>=10.9.3 <12.0.0`
+
+Check the active runtime before using the standalone or source CLI:
+
+```bash
+node --version
+npm --version
+```
+
+Cursor's source-local path also requires Git so you can clone this repository.
+
+:::tip Don't see your Coding Agent?
+
+The six tabs below are the verified Quickstart paths, while the project tracks
+eight host adapters in total. [Compare all adapter support boundaries](./hosts/adapter-matrix),
+then [follow the new-host contribution workflow and worked pull requests](./hosts/contributing-new-coding-agent)
+if you want to add or complete an integration. You can also
+[browse current repository pull requests](https://github.com/QoderAI/better-harness/pulls)
+before starting overlapping work.
+
+:::
+
 <Tabs groupId="host" queryString>
 <TabItem value="claude-code" label="Claude Code">
 
@@ -31,6 +66,8 @@ Then install Better Harness:
 /plugin install better-harness@better-harness
 ```
 
+### Verify installation
+
 Verify discovery from the shell:
 
 ```bash
@@ -38,10 +75,10 @@ claude plugin details better-harness@better-harness
 ```
 
 The details should include `Skills (1) better-harness`. Then start a new
-Claude session in the repository you want to review and run the report prompt:
+Claude session in the repository you want to analyze and run the report prompt:
 
 ```text
-/better-harness review this project's AI coding workflow and generate a report
+/better-harness analyze this project's AI coding workflow and generate an evidence-backed report
 ```
 
 Claude Code defaults to a self-contained `report.html` with paired `report.md`
@@ -73,9 +110,7 @@ Use `https://github.com/QoderAI/better-harness.git` with Git ref `main`.
 Add the repository source:
 
 ```bash
-codex plugin marketplace add \
-  'https://github.com/QoderAI/better-harness.git' \
-  --ref main
+codex plugin marketplace add "https://github.com/QoderAI/better-harness.git" --ref main
 ```
 
 Then inspect and install Better Harness:
@@ -85,11 +120,26 @@ codex plugin list --marketplace better-harness
 codex plugin add better-harness@better-harness
 ```
 
-Start a new Codex task in the repository you want to review and run the report
-prompt:
+### Verify installation
+
+For Codex Desktop, confirm that **Better Harness** appears installed under
+**Settings &gt; Plugins**. Then start a new task in the repository you want to
+analyze and run:
 
 ```text
-/better-harness review this project's AI coding workflow and generate a report
+@better-harness analyze this project's AI coding workflow and generate an evidence-backed report
+```
+
+For Codex CLI, confirm that the configured marketplace exposes the plugin:
+
+```bash
+codex plugin list --marketplace better-harness
+```
+
+Then start a new Codex task in the repository you want to analyze and run:
+
+```text
+$better-harness:better-harness analyze this project's AI coding workflow and generate an evidence-backed report
 ```
 
 Use the repository URL with `marketplace add`, not a raw `marketplace.json`
@@ -105,11 +155,11 @@ Better Harness is built into the [Qoder](https://qoder.com/) desktop app, so
 no Marketplace or local plugin installation is required there. Choose either
 entry point:
 
-1. **From a session:** Open the repository you want to review, start a new
+1. **From a session:** Open the repository you want to analyze, start a new
    session, and run the report prompt:
 
    ```text
-   /better-harness review this project's AI coding workflow and generate a report
+   /better-harness analyze this project's AI coding workflow and generate an evidence-backed report
    ```
 
 2. **From Quest (Qoder 1.18.0+):** Open Quest, then select
@@ -124,13 +174,23 @@ Only when using Qoder CLI without Qoder Desktop, add this repository as a
 marketplace and install Better Harness manually:
 
 ```bash
-qodercli plugin marketplace add \
-  'https://github.com/QoderAI/better-harness.git'
+qodercli plugin marketplace add "https://github.com/QoderAI/better-harness.git"
 qodercli plugin install better-harness@better-harness
 ```
 
-Verify the manual installation with `qodercli plugin list`, then start a new
-Qoder CLI session before using `/better-harness`.
+### Verify installation
+
+For Qoder Desktop, start a new session and run the report prompt shown above.
+On Qoder 1.18.0 or newer, seeing **Better Harness (Beta)** in the Quest sidebar
+also confirms the built-in entry point is available.
+
+For a manual Qoder CLI installation, verify discovery with:
+
+```bash
+qodercli plugin list
+```
+
+Then start a new Qoder CLI session before using `/better-harness`.
 
 </TabItem>
 <TabItem value="cursor" label="Cursor">
@@ -144,6 +204,18 @@ source-local plugin for one Cursor Agent session:
 git clone https://github.com/QoderAI/better-harness.git
 cursor-agent --plugin-dir /path/to/better-harness
 ```
+
+### Verify installation
+
+Keep that Cursor Agent session open and run:
+
+```text
+/better-harness analyze this project's AI coding workflow and generate an evidence-backed report
+```
+
+Starting the analysis confirms that the source-local Skill loaded for that
+session. Cursor does not install this checkout globally; start future sessions
+with the same `--plugin-dir` argument.
 
 Cursor session evidence is supported through workspace-matched transcripts,
 metadata, and audit logs. Partial or unavailable coverage remains explicit.
@@ -159,11 +231,13 @@ Install Better Harness as a Qwen Code extension:
 qwen extensions install QoderAI/better-harness
 ```
 
-Start a new Qwen Code session in the repository you want to review and run the
+### Verify installation
+
+Start a new Qwen Code session in the repository you want to analyze and run the
 report prompt:
 
 ```text
-/better-harness review this project's AI coding workflow and generate a report
+/better-harness analyze this project's AI coding workflow and generate an evidence-backed report
 ```
 
 Qwen Code produces a self-contained `report.html` with paired `report.md` and
@@ -183,14 +257,18 @@ copilot plugin marketplace add QoderAI/better-harness
 copilot plugin install better-harness@better-harness
 ```
 
-Verify that the Skill loaded:
+### Verify installation
+
+Confirm that the plugin is installed and that its Skill is available:
 
 ```bash
 copilot plugin list
+copilot skill list
 ```
 
-Prefer marketplace installs. Direct repository, URL, and local-path installs are
-deprecated in Copilot CLI.
+The output should include `better-harness`. Start a new Copilot CLI session so
+it reloads the installed Skill. Prefer the marketplace path above because it
+keeps discovery and updates tied to one registered source.
 
 Copilot session evidence is supported through workspace-matched Copilot CLI
 transcripts under `~/.copilot/session-state/`. Copilot records no per-response
@@ -202,4 +280,5 @@ remain explicit evidence boundaries.
 
 ## Next step
 
-Generate [your first report](./your-first-report.md).
+Generate [your first report](./your-first-report.md). If installation or
+discovery fails, use the bounded checks in [Troubleshooting](./troubleshooting.md).

@@ -1,9 +1,10 @@
 # Host Adapter Matrix
 
 This is the single entry point for Claude Code, Codex, Qoder, Cursor, Qwen,
-GitHub Copilot, and Pi host boundaries. Do not create `docs/adapters/claude-code.md`,
+GitHub Copilot, Pi, and WorkBuddy host boundaries. Do not create `docs/adapters/claude-code.md`,
 `docs/adapters/codex.md`, `docs/adapters/qoder.md`, `docs/adapters/cursor.md`,
-`docs/adapters/qwen.md`, `docs/adapters/copilot.md`, or `docs/adapters/pi.md` by default.
+`docs/adapters/qwen.md`, `docs/adapters/copilot.md`, `docs/adapters/pi.md`, or
+`docs/adapters/workbuddy.md` by default.
 
 Adding another host? Follow
 [Contributing a New Coding Agent Host](contributing-new-coding-agent.md) before
@@ -29,10 +30,11 @@ package through the `pi` manifest in `package.json`.
 | Claude Code | Analysis-capable source-local host | `.claude-plugin/` | `scripts/agent-customize/providers/claude.mjs` | `scripts/session-analysis/platforms/claude.mjs` | self-contained HTML + Markdown | `.claude` + `CLAUDE.md` + Plugin assets | `claude plugin validate --strict .` -> isolated install/discovery -> configured-asset baseline -> validated `html` render |
 | Codex | Analysis-capable source-local host | `.codex-plugin/` | `scripts/agent-customize/providers/codex.mjs` | `scripts/session-analysis/platforms/codex.mjs` | self-contained HTML + Markdown | `.codex` + `.agents` + `AGENTS.md` | `harness analyze --platform codex` -> `harness render --mode html --validate` |
 | Qoder | First-class product host | `.qoder-plugin/` | `scripts/agent-customize/providers/qoder.mjs` | `scripts/session-analysis/platforms/qoder.mjs` | `better-harness` | `.qoder/rules` + `AGENTS.md` + output templates | `better-harness harness render --mode qoder-canvas --validate` |
-| Cursor | Analysis-capable source-local host | `.cursor-plugin/` | `scripts/agent-customize/providers/cursor.mjs` | `scripts/session-analysis/platforms/cursor.mjs` | no supported durable-report pipeline yet (roadmap U-03) | `.cursor` + `.codex` compatibility + `AGENTS.md` | packaged `cursor-agent --plugin-dir` runtime smoke is not yet available (roadmap U-04) |
+| Cursor | Analysis-capable source-local host | `.cursor-plugin/` | `scripts/agent-customize/providers/cursor.mjs` | `scripts/session-analysis/platforms/cursor.mjs` | no supported durable-report pipeline yet (roadmap HA-03) | `.cursor` + `.codex` compatibility + `AGENTS.md` | packaged `cursor-agent --plugin-dir` runtime smoke is not yet available (roadmap HA-04) |
 | Qwen Code | Analysis-capable source-local host | `qwen-extension.json` | `scripts/agent-customize/providers/qwen.mjs` | `scripts/session-analysis/platforms/qwen.mjs` | self-contained HTML + Markdown | `.qwen` + `QWEN.md` + `AGENTS.md` | `harness analyze --platform qwen` -> `harness render --mode html --validate` |
 | GitHub Copilot | Analysis-capable source-local host | `.github/plugin/` | `scripts/agent-customize/providers/copilot.mjs` | `scripts/session-analysis/platforms/copilot.mjs` | self-contained HTML + Markdown | `.github` + `AGENTS.md` + `~/.copilot` | `copilot plugin marketplace add .` -> `copilot plugin install better-harness@better-harness` -> configured-asset baseline -> validated `html` render |
 | Pi | Analysis-capable source-local host | `pi` manifest in `package.json` | `scripts/agent-customize/providers/pi.mjs` | `scripts/session-analysis/platforms/pi.mjs` | self-contained HTML + Markdown | `.pi` + `.agents` + `AGENTS.md` | `pi install <source>` or `pi -e <source>` -> `/better-harness` prompt template -> validated `html` render |
+| WorkBuddy | Analysis-capable source-local host | none (skills install into `~/.workbuddy/skills`) | `scripts/agent-customize/providers/workbuddy.mjs` | `scripts/session-analysis/platforms/workbuddy.mjs` | self-contained HTML + Markdown | `~/.workbuddy` `AGENTS.md` + identity files + `.agents` + `AGENTS.md` | `session-analysis --platform workbuddy sources` -> validated `html` render |
 
 ## Discovery And Evidence
 
@@ -93,6 +95,20 @@ package through the `pi` manifest in `package.json`.
   discovers the canonical root `skills/` directory and the `prompts/`
   templates through the `pi` manifest in `package.json`; that manifest is
   install/discovery metadata and does not own Pi evidence collection.
+- WorkBuddy configured assets are inventoried through
+  `scripts/agent-customize/providers/workbuddy.mjs`, covering `~/.workbuddy`
+  user skills, marketplace plugins under `plugins/marketplaces/` with enabled
+  state from `settings.json`, `mcp.json`/`.mcp.json` user and plugin MCP
+  servers, the global `AGENTS.md`
+  and identity context files, the shared `.agents/skills` directories, and
+  project `.workbuddy` assets. Session evidence comes from
+  `scripts/session-analysis/platforms/workbuddy.mjs`, which reads
+  workspace-matching JSONL transcripts under `~/.workbuddy/projects/<cwd-slug>/`.
+  Embedded `cwd` values are authoritative; cwd-less 5.x transcripts qualify
+  only from an exact workspace slug. The adapter honors the `WORKBUDDY_DIR`
+  override. WorkBuddy has no install shell in
+  this repository; skills install manually into `~/.workbuddy/skills` or
+  through WorkBuddy's own marketplace surfaces.
 
 ## Output Modes
 
@@ -100,7 +116,7 @@ Canonical templates live under `templates/reporting/`.
 
 - `qoder-canvas.md`: Qoder Canvas output contract, covering renderer-owned
   `findings.json`, Canvas-only `canvas.json`, and `report.canvas.tsx`.
-- `html-visual.md`: portable Claude Code/Codex/Cursor/Qwen/Copilot/Pi visual output contract, covering
+- `html-visual.md`: portable Claude Code/Codex/Cursor/Qwen/Copilot/Pi/WorkBuddy visual output contract, covering
   `findings.json`, `report.md`, and `report.html`.
 - Markdown-only output has no visual companion.
 

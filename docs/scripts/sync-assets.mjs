@@ -21,8 +21,8 @@ export function syncAssets({ repoRoot, siteRoot }) {
       to: join(generatedDemoRoot, "better-harness-findings-report.png"),
     },
     {
-      from: join(repoRoot, "assets", "demo", "twenty-history.gif"),
-      to: join(generatedDemoRoot, "twenty-history.gif"),
+      from: join(repoRoot, "assets", "demo", "twenty-history.png"),
+      to: join(generatedDemoRoot, "twenty-history.png"),
     },
     {
       from: join(repoRoot, "assets", "agent-work-loop-en.svg"),

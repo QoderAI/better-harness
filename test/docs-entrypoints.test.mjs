@@ -17,6 +17,16 @@ const PUBLIC_QUICKSTART_HOSTS = [
   { name: "GitHub Copilot", anchor: "github-copilot", id: "githubCopilot" },
 ];
 
+const ADAPTER_SUPPORT_HOSTS = [
+  { name: "Pi", anchor: "pi", id: "pi" },
+  { name: "WorkBuddy", anchor: "workbuddy", id: "workBuddy" },
+];
+
+const SUPPORTED_CARD_HOSTS = [
+  ...PUBLIC_QUICKSTART_HOSTS,
+  ...ADAPTER_SUPPORT_HOSTS,
+];
+
 const README_PRODUCT_ENTRIES = [
   { label: "Claude Code", anchor: "claude-code" },
   { label: "Codex Desktop", anchor: "codex-desktop" },
@@ -114,26 +124,52 @@ function checkReadmeQuickstart(filePath, introPattern, fileLabel) {
 test("README.md Quickstart lists all seven product entries with valid installation anchors", () => {
   const content = checkReadmeQuickstart(
     ["README.md"],
-    /Review your coding workflow with:[^\n]*/u,
+    /Analyze and improve your coding workflow with:[^\n]*/u,
     "README.md",
   );
   assertHeadingOrder(content, "Quick start", "See it in action", "README.md");
   assertHeadingOrder(content, "Quick start", "Why Better Harness?", "README.md");
   assertHeadingOrder(content, "Quick start", "Architecture", "README.md");
+  const quickStart = content.slice(
+    content.indexOf("## Quick start"),
+    content.indexOf("## See it in action"),
+  );
+  assert.doesNotMatch(quickStart, /```text[\s\S]*\/better-harness/u);
+  assert.match(
+    content,
+    /qoderai\.github\.io\/better-harness\/\?utm_source=github&utm_medium=referral&utm_campaign=repository_landing&utm_content=readme_hero/u,
+  );
+  assert.match(content, /canonical registry covers eight host adapters/u);
+  assert.match(content, /Pi and WorkBuddy currently\nremain adapter-support entries/u);
 });
 
 test("README.zh-CN.md Quickstart lists all seven product entries with valid installation anchors", () => {
   const content = checkReadmeQuickstart(
     ["README.zh-CN.md"],
-    /用以下 Coding Agent 审查你的工作流：[^\n]*/u,
+    /使用以下 Coding Agent 分析并改进你的工作流：[^\n]*/u,
     "README.zh-CN.md",
   );
   assertHeadingOrder(content, "快速开始", "看看实际效果", "README.zh-CN.md");
   assertHeadingOrder(content, "快速开始", "为什么选择 Better Harness？", "README.zh-CN.md");
   assertHeadingOrder(content, "快速开始", "架构", "README.zh-CN.md");
+  const quickStart = content.slice(
+    content.indexOf("## 快速开始"),
+    content.indexOf("## 看看实际效果"),
+  );
+  assert.doesNotMatch(quickStart, /```text[\s\S]*\/better-harness/u);
+  assert.match(
+    content,
+    /qoderai\.github\.io\/better-harness\/zh-Hans\/\?utm_source=github&utm_medium=referral&utm_campaign=repository_landing&utm_content=readme_hero/u,
+  );
+  assert.match(
+    content,
+    /https:\/\/qoderai\.github\.io\/better-harness\/demo\/better-harness-report\//u,
+  );
+  assert.match(content, /规范注册表当前包含八个宿主适配器/u);
+  assert.match(content, /Pi 与 WorkBuddy 仍属于适配器支持入口/u);
 });
 
-test("Docusaurus home page cards match public Quickstart host set and render in the right order", () => {
+test("Docusaurus home page cards expose eight adapters without flattening support levels", () => {
   const source = readUtf8("docs", "src", "pages", "index.js");
 
   const anchors = [];
@@ -142,7 +178,7 @@ test("Docusaurus home page cards match public Quickstart host set and render in 
     anchors.push(match[1]);
   }
 
-  const expectedIds = PUBLIC_QUICKSTART_HOSTS.map((host) => host.id);
+  const expectedIds = SUPPORTED_CARD_HOSTS.map((host) => host.id);
   assertSameSet(anchors, expectedIds, "docs/src/pages/index.js host translation ids");
 
   const cardAnchors = [];
@@ -150,7 +186,7 @@ test("Docusaurus home page cards match public Quickstart host set and render in 
   for (const match of source.matchAll(anchorPattern)) {
     cardAnchors.push(match[1]);
   }
-  const expectedAnchors = PUBLIC_QUICKSTART_HOSTS.map((host) => host.anchor);
+  const expectedAnchors = SUPPORTED_CARD_HOSTS.map((host) => host.anchor);
   assertSameSet(cardAnchors, expectedAnchors, "docs/src/pages/index.js card anchors");
 
   const quickStartIndex = source.indexOf("<QuickStart />");
@@ -165,12 +201,29 @@ test("Docusaurus home page cards match public Quickstart host set and render in 
   );
 
   for (const host of PUBLIC_QUICKSTART_HOSTS) {
-    const expectedPattern = `/docs/installation?host=\${host.anchor}#\${host.anchor}`;
+    const expectedPattern = `/docs/installation?host=${host.anchor}#${host.anchor}`;
     assert.ok(
       source.includes(expectedPattern),
       `docs/src/pages/index.js: ${host.name} card must use the Tabs query contract "${expectedPattern}" to activate the correct installation tab`,
     );
   }
+
+  for (const host of ADAPTER_SUPPORT_HOSTS) {
+    const expectedPattern = `/docs/hosts/adapter-matrix#${host.anchor}`;
+    assert.ok(
+      source.includes(expectedPattern),
+      `docs/src/pages/index.js: ${host.name} card must link to bounded support details at "${expectedPattern}"`,
+    );
+  }
+
+  assert.equal(
+    [...source.matchAll(/supportLevel: "quickstart"/gu)].length,
+    PUBLIC_QUICKSTART_HOSTS.length,
+  );
+  assert.equal(
+    [...source.matchAll(/supportLevel: "adapter"/gu)].length,
+    ADAPTER_SUPPORT_HOSTS.length,
+  );
 });
 
 test("Docusaurus installation.mdx tabs match public Quickstart host anchors", () => {
@@ -213,22 +266,30 @@ test("zh-Hans installation.mdx tabs match public Quickstart host anchors", () =>
   }
 });
 
-test("zh-Hans code.json has translations for all homepage host cards", () => {
+test("zh-Hans code.json has translations for all eight homepage host cards", () => {
   const codeJson = JSON.parse(readUtf8("docs", "i18n", "zh-Hans", "code.json"));
-  for (const host of PUBLIC_QUICKSTART_HOSTS) {
-    const key = `homepage.hosts.${host.id}.setup`;
-    assert.ok(codeJson[key], `docs/i18n/zh-Hans/code.json missing ${key}`);
-    assert.ok(codeJson[key].message, `docs/i18n/zh-Hans/code.json ${key} has no message`);
+  for (const host of SUPPORTED_CARD_HOSTS) {
+    for (const field of ["method", "setup"]) {
+      const key = `homepage.hosts.${host.id}.${field}`;
+      assert.ok(codeJson[key], `docs/i18n/zh-Hans/code.json missing ${key}`);
+      assert.ok(codeJson[key].message, `docs/i18n/zh-Hans/code.json ${key} has no message`);
+    }
   }
+  assert.ok(codeJson["homepage.hosts.output.html"]?.message);
+  assert.ok(codeJson["homepage.hosts.output.canvas"]?.message);
+  assert.ok(codeJson["homepage.hosts.setupAction"]?.message);
+  assert.ok(codeJson["homepage.hosts.supportAction"]?.message);
+  assert.ok(codeJson["homepage.hosts.status.quickstart"]?.message);
+  assert.ok(codeJson["homepage.hosts.status.adapter"]?.message);
 });
 
-test("public adapter matrix documents exactly the six public Quickstart hosts", () => {
+test("public adapter matrix documents all eight adapters and their support boundaries", () => {
   const matrix = readUtf8("docs", "docs", "hosts", "adapter-matrix.md");
   const tableRows = matrix
     .split("\n")
-    .filter((line) => line.startsWith("| ") && !line.startsWith("| ---") && !line.includes("Positioning"));
+    .filter((line) => line.startsWith("| ") && !line.startsWith("| ---") && !line.includes("Public entry"));
   const hostNames = tableRows.map((line) => line.split("|")[1].trim());
-  const expectedNames = PUBLIC_QUICKSTART_HOSTS.map((host) => host.name);
+  const expectedNames = SUPPORTED_CARD_HOSTS.map((host) => host.name);
   assertSameSet(hostNames, expectedNames, "docs/docs/hosts/adapter-matrix.md host table");
 
   assert.match(
@@ -239,18 +300,20 @@ test("public adapter matrix documents exactly the six public Quickstart hosts", 
 
   assert.match(
     matrix,
-    /Claude Code\/Codex\/Cursor\/Qwen\/Copilot/u,
-    "docs/docs/hosts/adapter-matrix.md HTML visual contract omits Qwen/Copilot",
+    /Claude Code\/Codex\/Cursor\/Qwen\/Copilot\/Pi\/WorkBuddy/u,
+    "docs/docs/hosts/adapter-matrix.md HTML visual contract omits supported HTML hosts",
   );
+  assert.match(matrix, /### Pi \{#pi\}/u);
+  assert.match(matrix, /### WorkBuddy \{#workbuddy\}/u);
 });
 
-test("zh-Hans public adapter matrix documents exactly the six public Quickstart hosts", () => {
+test("zh-Hans public adapter matrix documents all eight adapters and their support boundaries", () => {
   const matrix = readUtf8("docs", "i18n", "zh-Hans", "docusaurus-plugin-content-docs", "current", "hosts", "adapter-matrix.md");
   const tableRows = matrix
     .split("\n")
-    .filter((line) => line.startsWith("| ") && !line.startsWith("| ---") && !line.includes("定位"));
+    .filter((line) => line.startsWith("| ") && !line.startsWith("| ---") && !line.includes("公开入口"));
   const hostNames = tableRows.map((line) => line.split("|")[1].trim());
-  const expectedNames = PUBLIC_QUICKSTART_HOSTS.map((host) => host.name);
+  const expectedNames = SUPPORTED_CARD_HOSTS.map((host) => host.name);
   assertSameSet(hostNames, expectedNames, "zh-Hans adapter-matrix.md host table");
 
   assert.match(
@@ -261,9 +324,24 @@ test("zh-Hans public adapter matrix documents exactly the six public Quickstart 
 
   assert.match(
     matrix,
-    /Claude Code\/Codex\/Cursor\/Qwen\/Copilot/u,
-    "zh-Hans adapter-matrix.md HTML visual contract omits Qwen/Copilot",
+    /Claude Code\/Codex\/Cursor\/Qwen\/Copilot\/Pi\/WorkBuddy/u,
+    "zh-Hans adapter-matrix.md HTML visual contract omits supported HTML hosts",
   );
+  assert.match(matrix, /### Pi \{#pi\}/u);
+  assert.match(matrix, /### WorkBuddy \{#workbuddy\}/u);
+});
+
+test("installation pages connect missing-host developers to matrices and pull requests", () => {
+  const sources = [
+    readUtf8("docs", "docs", "installation.mdx"),
+    readUtf8("docs", "i18n", "zh-Hans", "docusaurus-plugin-content-docs", "current", "installation.mdx"),
+  ];
+
+  for (const source of sources) {
+    assert.match(source, /\.\/hosts\/adapter-matrix/u);
+    assert.match(source, /\.\/hosts\/contributing-new-coding-agent/u);
+    assert.match(source, /https:\/\/github\.com\/QoderAI\/better-harness\/pulls/u);
+  }
 });
 
 test("README.md documents the Qwen Code native install command", () => {

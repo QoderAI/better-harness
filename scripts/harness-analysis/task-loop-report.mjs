@@ -1510,7 +1510,7 @@ function checkupReportFindings(source) {
 function usageOutcomeReviewLead(source, locale) {
   const usage = source?.sessionEvents?.usageEfficiency;
   if (!isObject(usage) || !isObject(usage.selection) || !isObject(usage.longSessions) || !isObject(usage.outcomeReview)) return null;
-  const platform = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"].includes(source?.manifest?.scope?.platform)
+  const platform = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"].includes(source?.manifest?.scope?.platform)
     ? source.manifest.scope.platform
     : "qoder";
   const activeCount = Number(usage?.longSessions?.activeCount ?? 0);

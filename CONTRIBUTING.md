@@ -17,6 +17,11 @@ it and agree that it may be distributed under the repository's [MIT License](LIC
 - Read [Architecture Principles](docs/ARCHITECTURE.md) and the root
   [agent instructions](AGENTS.md) before changing ownership boundaries or
   runtime behavior.
+- Read the
+  [Developer Experience System ADR](docs/adrs/developer-experience-system.md)
+  before changing public entrypoints, Quickstarts, CLI/help/error contracts,
+  Preview prerequisites, host support claims, diagnostics, privacy or support
+  behavior, release claims, or DX measures.
 - Follow [Contributing a New Coding Agent Host](docs/adapters/contributing-new-coding-agent.md)
   before adding or widening host support.
 
@@ -26,7 +31,7 @@ compatibility boundaries, or more than one canonical owner.
 
 ## Development Setup
 
-Better Harness 0.3.0 supports Node.js `>=22.20.0 <25.0.0` and npm
+Better Harness 0.4.0 supports Node.js `>=22.20.0 <25.0.0` and npm
 `>=10.9.3 <12.0.0`. The supported project targets are Windows, macOS, and Linux.
 
 ```bash

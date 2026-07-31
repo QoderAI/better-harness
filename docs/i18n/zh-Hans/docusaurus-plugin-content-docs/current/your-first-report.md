@@ -6,18 +6,22 @@ sidebar_position: 3
 
 # 你的第一份报告
 
-[安装](./installation.mdx)完成后，打开要评审的仓库，开启新会话并运行：
+[安装](./installation.mdx)完成后，打开要分析的仓库并开启新的会话或任务。请使用
+对应宿主 **验证安装** 小节里的调用方式——不同宿主的语法并不相同：
 
-```text
-/better-harness review this project's AI coding workflow and generate a report
-```
+- Claude Code、Qoder、Cursor 和 Qwen Code 使用文档中的 `/better-harness`
+  报告提示词。
+- Codex Desktop 使用 `@better-harness`；Codex CLI 使用
+  `$better-harness:better-harness`。
+- 对于 GitHub Copilot，请先确认 `copilot skill list` 包含 `better-harness`，
+  再让 Copilot 使用该 Skill 完成分析。本站不会声称未经验证的斜杠命令别名。
 
 Better Harness 会把行为论断限定在相关的 Task Episode 和周边的项目机制内。
 Qoder 产出 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub Copilot
 产出自包含 HTML 并配套 Markdown。缺失或不完整的证据保持显式标注。
 
 想了解 HTML 输出的样子，可以查看
-[在线 Demo 报告](pathname:///demo/better-harness-report/)。
+[示例报告](pathname:///demo/better-harness-report/)。
 
 ## 阅读报告
 
@@ -37,7 +41,7 @@ Qoder 产出 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub
    选出最小的持久化负责者：skill、hook、脚本、自动化或规则。
 3. **安排后续跟进。** 具备调度条件的发现会渲染出行级
    `/schedule /better-harness` 交接，带节奏、验证方式和停止条件。
-4. **确认改进落地。** 重新运行评审，检查改动已生效、能力信号有变化。
+4. **确认改进落地。** 重新运行分析，检查改动已生效、能力信号有变化。
 
 ## 纯静态检查
 

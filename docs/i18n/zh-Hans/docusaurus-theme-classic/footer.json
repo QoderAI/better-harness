@@ -19,6 +19,10 @@
     "message": "安装",
     "description": "The label of footer link with label=Installation linking to /docs/installation"
   },
+  "link.item.label.Blog": {
+    "message": "博客",
+    "description": "The label of footer link with label=Blog linking to /blog"
+  },
   "link.item.label.Agent Work Loop": {
     "message": "Agent Work Loop",
     "description": "The label of footer link with label=Agent Work Loop linking to /docs/concepts/agent-work-loop"

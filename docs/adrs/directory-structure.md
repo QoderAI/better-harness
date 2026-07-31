@@ -2,9 +2,12 @@
 
 ## Status
 
-Proposed. Revision: 2026-07-16. Renamed from
+Proposed. Revision: 2026-07-31. Renamed from
 `docs/specs/directory-structure.md`. If local host instructions still name the
 old path, this ADR is the canonical successor.
+
+This decision is listed as `ADR-0001` in the [ADR index](README.md). The ID is a
+stable navigation label and does not change this ADR's Proposed status.
 
 This ADR is the detailed directory-status reference under
 `docs/ARCHITECTURE.md`, the accepted repository-wide owner. Formal acceptance
@@ -13,7 +16,9 @@ of this ADR still requires the validation gate below.
 ## Scope
 
 This ADR owns directory ownership and contribution routing. It does not define
-knowledge-base registry schemas or host package generation internals.
+knowledge-base registry schemas, host package generation internals, or the
+cross-surface DX control plane; the latter belongs to the
+[Developer Experience System ADR](developer-experience-system.md).
 
 Rejected direction: top-level `packs/`. A pack is a lifecycle state, not a
 source directory.
@@ -64,8 +69,20 @@ agent-roles/<role>.md                  # [target] create only for role-only prom
                                         # no workflow steps/tools/evidence contracts
                                         # reused by 2+ explicit consumers
 
+# repository governance and support policy
+SECURITY.md                            # [target] private disclosure and security policy
+SUPPORT.md                             # [target] supported versions and support routes
+
 # executable automation; split by business capability, never scripts/core/
 scripts/
+  dx-contracts/                       # [target] judgment-free declaration catalog,
+                                      # activation ledger, validation, and projection diff
+  host-support/                       # [target] host identities, support slices,
+                                      # profile predicates, and freshness policies
+  evidence-contract/                  # [target] shared receipt envelope, evidence
+                                      # taxonomy, compatibility, and redaction invariants
+  harness-doctor/                     # [target] bounded read-only product diagnostics
+  support-bundle/                     # [target] plan/redact/persist/delete support evidence
   harness-analysis/                 # [active] Harness evidence and report mechanics
     canvas-preview/                 # [active] local Canvas preview subcapability
       cli.mjs                       # executable command owner
@@ -76,7 +93,7 @@ scripts/
   core-change-watch/               # [active] static structure/core-path/history evidence
   session-analysis.mjs                 # [active] thin shim; new exports -> scripts/session-analysis/
   session-analysis/                    # [active] session evidence collection/normalization
-    platforms/<host>.mjs               # Qoder/Codex/Claude/Cursor/Qwen/Copilot/Pi host adapters
+    platforms/<host>.mjs               # Qoder/Codex/Claude/Cursor/Qwen/Copilot/Pi/WorkBuddy host adapters
     ides/<ide>/                        # target editor-local evidence not covered by host adapters
   <business-capability>/               # [target] new capability owner
     cli.mjs                            # use cli.mjs for new capabilities
@@ -84,7 +101,7 @@ scripts/
     fixtures/
     lib/                               # helpers scoped to this capability
   knowledge-base-registry/             # [target] compiler; requires matching spec
-  runtime-smoke/<host>/                # [target] host runtime health checks
+  runtime-smoke/<host>/                # [target] isolated native checks and receipt payloads
   npm-package/                         # [active] current bundle and verify tooling
   packaging/                           # [active] source-local generated host artifacts
     build-host-plugin.mjs              # assemble an existing thin host shell plus runtime roots
@@ -135,8 +152,14 @@ templates/                             # [active] runtime-selected contracts
   common/                              # [target] shared fragments, 2+ consumers
 
 docs/
+  dx/                                 # [target] curated journeys, metric definitions,
+                                      # and DX improvement governance
+  privacy.md                          # [target] repository data-use and privacy policy
+  accessibility.md                    # [target] cross-surface accessibility minimums
   adrs/
+    README.md                          # [active] ADR id, status, and route index
     directory-structure.md             # [active] this directory ownership ADR
+    developer-experience-system.md      # [active] proposed DX target architecture
   specs/
     knowledge-base-registry.md         # [target] required before KB runtime activation
   adapters/                            # [active] matrix first; split notes by trigger
@@ -161,6 +184,12 @@ Use the tree first. These rules resolve common collisions:
 | Single-consumer role/persona text | `skills/<skill>/references/` |
 | Single-file executable script | `scripts/<name>.mjs` only until a second support file is needed |
 | Executable capability | `scripts/<capability>/cli.mjs` |
+| DX declaration catalog, activation state, or projection drift | `scripts/dx-contracts/` |
+| Host identity, support slice, profile predicate, or freshness policy | `scripts/host-support/` |
+| Shared evidence envelope, class taxonomy, or redaction invariant | `scripts/evidence-contract/` |
+| Read-only Better Harness environment diagnostics | `scripts/harness-doctor/` |
+| Native Host smoke payload | `scripts/runtime-smoke/<host>/` |
+| Support bundle plan, redaction, persistence, deletion, or handoff | `scripts/support-bundle/` |
 | Harness Canvas preview runtime | `scripts/harness-analysis/canvas-preview/` |
 | Harness report-source and review integrity | `scripts/harness-analysis/report-source/` |
 | Capability-specific host adapter | `scripts/<capability>/platforms/<host>.mjs` |
@@ -170,10 +199,13 @@ Use the tree first. These rules resolve common collisions:
 | Hook wiring | `hooks/hooks.json.template` |
 | Hook implementation | `hooks/git-scripts/<hook>/` |
 | Host matrix entry | `docs/adapters/README.md` |
+| DX journey, contract, evidence, or governance decision | `docs/adrs/developer-experience-system.md` |
 | Split adapter note | `docs/adapters/<host>.md` only after matrix split triggers |
 | Local debug helper | `dev/` |
 | Automated test | `test/` |
 | Human prose guidance | `references/` |
+| Better Harness DX journey or metric governance | `docs/dx/` after the ADR activation gate |
+| Repository privacy or accessibility policy | `docs/privacy.md` or `docs/accessibility.md` after the ADR activation gate |
 | Prose-only community guidance | `references/<topic>/community/` |
 | Named examples or operating models | `case-studies/` |
 | Report skeleton | `templates/reporting/report-structure.md` |
@@ -318,6 +350,14 @@ Adding support for a new host must route every artifact to an owner:
 
 ## Migration Gates
 
+- DX targets named by the
+  [Developer Experience System ADR](developer-experience-system.md) begin
+  inactive. ADR acceptance never activates them. The first DX implementation
+  slice records the current baseline without creating target directories.
+  `scripts/dx-contracts/` creates the report-only activation ledger only when
+  that directory's own activation gate passes; each fact or policy slice then
+  requires a dated spec, owner/parity evidence, reviewed cutover, and rollback
+  before its target becomes authoritative.
 - Target directories need a first real asset plus the entry-specific gate below.
   If no entry-specific gate exists yet, the default minimum is validation
   evidence named in the change. For prose-only targets, validation evidence is a

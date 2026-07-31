@@ -1,0 +1,28 @@
+# Architecture Decision Records
+
+This directory contains repository-wide architecture decisions that refine the
+accepted principles in [Architecture Principles](../ARCHITECTURE.md). Filenames
+remain descriptive, lowercase, and stable. ADR IDs are stable navigation labels;
+adding an ID does not rename an existing file or change its acceptance status.
+
+The status in each ADR is canonical. This index is a discovery surface and must
+be updated in the same change when an ADR is added, accepted, superseded, or
+deprecated.
+
+| ID | Decision | Status | Decision date | Scope |
+| --- | --- | --- | --- | --- |
+| `ADR-0001` | [AI-Optimized Directory Structure](directory-structure.md) | Proposed | 2026-07-16 | Directory ownership, artifact routing, migration gates, and target-directory activation |
+| `ADR-0002` | [Developer Experience System](developer-experience-system.md) | Proposed | 2026-07-31 | Journeys, federated contracts, projections, native evidence, governance, support, and DX measurement |
+
+## Lifecycle
+
+- **Proposed:** complete enough for architecture review, but not yet an accepted
+  repository rule.
+- **Accepted:** explicitly approved after the ADR's validation gate passes.
+- **Superseded:** replaced by another named ADR; historical context and links
+  remain available.
+- **Deprecated:** retained for context but no longer governs new work.
+
+Implementation does not happen merely because an ADR is Accepted. Non-trivial
+implementation slices still require the dated Spec, acceptance scenarios, test
+evidence, risk review, and activation gates required by `AGENTS.md`.

@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildCheckupScan } from "../scripts/coding-agent-practices/checkup/scan.mjs";
+import { freezeSessionPopulation } from "../scripts/session-analysis/session-population.mjs";
 import {
   buildHarnessReviewPacket,
   validateHarnessReviewPacket,
@@ -396,7 +397,7 @@ test("source generation keeps usage opt-in and rejects incomplete requested cens
   );
 });
 
-test("requested usage reuses one cutoff and the initially discovered session inventory", async () => {
+test("requested usage reuses one frozen population without rediscovery and emits its lead selection binding", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-frozen-usage-"));
   const workspace = path.join(root, "workspace");
   const calls = [];
@@ -405,7 +406,7 @@ test("requested usage reuses one cutoff and the initially discovered session inv
     firstSeen: "2026-07-17T08:00:00.000Z",
     lastSeen: "2026-07-17T08:05:00.000Z",
     sourceKinds: ["fixture"],
-    sourceRefs: [],
+    sourceRefs: [{ kind: "project-session", path: "/fixture/session.jsonl" }],
   }));
   const activity = {
     schemaVersion: 1,
@@ -489,12 +490,22 @@ test("requested usage reuses one cutoff and the initially discovered session inv
   };
   try {
     await mkdir(workspace, { recursive: true });
-    const { source, selection } = await createTaskLoopSourceFromSessions({
+    const sessionPopulation = freezeSessionPopulation({
+      scope: {
+        platform: "qoder",
+        workspace,
+        until: "2026-07-17T09:00:00.000Z",
+      },
+      sessions: initialSessions,
+      suppliedUntil: true,
+    });
+    const { source, selection, sessionBinding } = await createTaskLoopSourceFromSessions({
       analyzer,
       platform: "qoder",
       workspace,
       snapshotUntil: "2026-07-17T09:00:00.000Z",
       includeUsage: true,
+      sessionPopulation,
       qoderHome: path.join(root, ".qoder"),
       piHome: path.join(root, ".pi", "agent"),
       practiceInventory: { summary: { practiceCoverageRows: [] }, memories: { included: false, categories: [] } },
@@ -502,8 +513,13 @@ test("requested usage reuses one cutoff and the initially discovered session inv
     assert.equal(selection.eligibleCount, 2);
     assert.equal(source.sessionEvents.usageActivity.sessions.total, 2);
     assert.equal(source.sessionEvents.usageEfficiency.selection.eligibleSessionCount, 2);
+    assert.equal(sessionBinding.population.eligible.count, 2);
+    assert.equal(sessionBinding.selection.parentPopulationFingerprint, sessionPopulation.binding.eligible.fingerprint);
+    assert.equal(sessionBinding.admission.projectedEpisodes, sessionBinding.admission.admittedEpisodes
+      + sessionBinding.admission.zeroSignalDiscardedEpisodes);
     assert.equal(new Set(calls.map((call) => call.until)).size, 1);
     assert.ok(calls.every((call) => call.piHome === path.join(root, ".pi", "agent")));
+    assert.equal(calls.filter((call) => call.command === "sources").length, 0);
     assert.deepEqual(calls.filter((call) => call.command === "insights").map((call) => call.inventory), [
       ["session-a", "session-b"],
       ["session-a", "session-b"],

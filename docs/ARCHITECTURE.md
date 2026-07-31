@@ -1,8 +1,11 @@
 # Architecture Principles
 
 This file is the accepted repository-wide owner of architecture principles,
-ownership boundaries, and AI-facing routing rules. Its detailed directory-status
-reference is `docs/adrs/directory-structure.md`.
+ownership boundaries, and AI-facing routing rules. Detailed decisions are
+indexed in [Architecture Decision Records](adrs/README.md). The
+[directory-structure ADR](adrs/directory-structure.md) owns directory status;
+the [developer-experience-system ADR](adrs/developer-experience-system.md) owns
+the target journey, contract, evidence, governance, and DX-measurement system.
 
 - Build minimum runnable atomic capabilities: each `scripts/<capability>/` should be copyable, executable, testable, and distributable.
 - Put command execution in `cli.mjs`; add `index.mjs` only when other modules need a public import surface.
@@ -42,7 +45,9 @@ reference is `docs/adrs/directory-structure.md`.
 
 ## AI Directory Routing
 
-- The ADR at `docs/adrs/directory-structure.md` is this file's detailed AI-optimized directory-status reference.
+- Start from the [ADR index](adrs/README.md). The directory-structure ADR is
+  this file's detailed AI-optimized directory-status reference, while the DX
+  system ADR governs cross-surface experience contracts and activation gates.
 - For open-source community extensibility, start from `docs/community.md` and route intent -> owner -> contract -> evidence -> activation -> validation -> packaging before adding surfaces.
 - Put shared user workflows in root `skills/`; use `.agents/skills/` only for host-local skills, generated mirrors, or wrappers.
 - Use each `.agents/skills/<skill>/SKILL.md` as the host-local entrypoint; do not add mirror sidecar metadata.
@@ -68,6 +73,26 @@ reference is `docs/adrs/directory-structure.md`.
   in the capability-owned provider and session-analysis modules. The public npm
   package ships all six plugin metadata roots, while the Qoder runtime bundle
   includes only `.qoder-plugin/`.
+
+## Developer Experience Routing
+
+- Read the
+  [Developer Experience System ADR](adrs/developer-experience-system.md) before
+  changing public product routes, Quickstarts, CLI/help/error contracts,
+  Preview prerequisites, host support declarations, diagnostics, support or
+  privacy behavior, release claims, or DX metrics.
+- Treat the DX system as a federated control plane. Capability owners retain
+  behavior and judgment; cross-surface tooling may index, validate, compare,
+  and project their public declarations.
+- Keep curated prose and translations author-owned. Generate or validate only
+  structured facts unless an accepted spec establishes a narrower deterministic
+  ownership boundary.
+- Keep fixture, package, native-host, installed-application, deployed-site, and
+  post-publish evidence distinct. One evidence class does not satisfy another
+  class's acceptance gate.
+- Do not route Better Harness's own DX governance through the runtime
+  `software-fluency` report model. Changes to report-model routing require their
+  own spec and validation.
 
 ## Template Boundaries
 

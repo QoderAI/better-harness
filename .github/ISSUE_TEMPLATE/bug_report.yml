@@ -21,8 +21,8 @@ body:
     id: version
     attributes:
       label: Better Harness version
-      description: Use the installed package or plugin metadata. The current repository baseline is 0.3.0.
-      placeholder: 0.3.0
+      description: Copy the version from installed package or plugin metadata. If unavailable, enter a commit SHA or unknown.
+      placeholder: x.y.z, commit SHA, or unknown
     validations:
       required: true
 
@@ -35,6 +35,9 @@ body:
         - Codex
         - Qoder
         - Cursor
+        - Qwen Code
+        - GitHub Copilot
+        - Pi
         - Standalone CLI
         - Other
     validations:
@@ -57,8 +60,12 @@ body:
     attributes:
       label: Installation method
       options:
-        - npm package
-        - IDE runtime ZIP or provisioned plugin
+        - Bundled with Qoder Desktop
+        - Host marketplace or plugin manager
+        - Qwen Code extension
+        - Cursor source-local --plugin-dir
+        - Pi package (pi install or pi -e)
+        - npm package or standalone CLI
         - Source checkout
         - Other
     validations:

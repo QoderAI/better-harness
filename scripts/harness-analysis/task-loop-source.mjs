@@ -22,6 +22,11 @@ import { buildTaskEpisodes, stableFingerprint } from "../session-analysis/episod
 import { buildObservationManifest } from "../session-analysis/observation-manifest.mjs";
 import { sanitizePrivateReviewText } from "../session-analysis/privacy-safe-text.mjs";
 import { sessionAnalysisRef } from "../session-analysis/session-ref.mjs";
+import {
+  bindSessionSelection,
+  leadAdmissionBinding,
+  sessionPopulationDiscovery,
+} from "../session-analysis/session-population.mjs";
 import { selectSessions } from "../session-analysis/selection.mjs";
 import {
   assertSessionSelectionBinding,
@@ -71,13 +76,13 @@ const REQUIRED_SOFTWARE_FLUENCY_CAPABILITIES = Object.freeze([
 const HELP = `Usage: node scripts/harness-analysis/task-loop-source.mjs --workspace <target> --source <report.source.json> [options]
 
 Create a conservative Agent Work Loop report-source candidate from normalized
-Qoder, Codex, Claude, Cursor, Qwen, Copilot, or Pi sessions. It retains privacy-safe episode, change, validation,
+Qoder, Codex, Claude, Cursor, Qwen, Copilot, Pi, or WorkBuddy sessions. It retains privacy-safe episode, change, validation,
 repair-candidate, and explicit host-decision identities. Task understanding,
 validation relevance, repair, delivery, recovery, and Learning Capture remain
 unobserved until the prepared source-bound review resolves them.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot|pi>
+  --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy>
                                   Session platform (default: qoder)
   --workspace <path>            Target workspace (required)
   --source <path>               Candidate report.source.json path (required)
@@ -838,7 +843,7 @@ export function buildTaskLoopSourceCandidate({
 
 export async function collectAgentLintPracticeEvidence(options = {}) {
   const provider = options.platform ?? "qoder";
-  const assetReviewSupported = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi"].includes(provider);
+  const assetReviewSupported = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"].includes(provider);
   const common = {
     workspace: options.workspace,
     provider,
@@ -849,6 +854,7 @@ export async function collectAgentLintPracticeEvidence(options = {}) {
     qwenHome: options.qwenHome ?? options["qwen-home"],
     copilotHome: options.copilotHome ?? options["copilot-home"],
     piHome: options.piHome ?? options["pi-home"],
+    workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
     topology: options.topology,
     analysisScope: options.analysisScope,
   };
@@ -957,6 +963,16 @@ export function collectTaskLoopPracticeInventory(options = {}, platform = option
       includeGlobalHooks: true,
       includeMemories: false,
       piHome: options.piHome ?? options["pi-home"],
+    });
+  }
+  if (platform === "workbuddy") {
+    return collectProviderInventory({
+      platform,
+      workspace: options.workspace,
+      includeUserHome: includeGlobalCapabilities,
+      includeGlobalHooks: true,
+      includeMemories: false,
+      workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
     });
   }
   return Promise.resolve(null);
@@ -1074,14 +1090,19 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     qwenHome: options.qwenHome ?? options["qwen-home"],
     copilotHome: options.copilotHome ?? options["copilot-home"],
     piHome: options.piHome ?? options["pi-home"],
+    workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
     includeGlobalCapabilities: options.includeGlobalCapabilities
       ?? options["include-global-capabilities"]
       ?? false,
     topology: options.topology,
     analysisScope: options.analysisScope,
   };
-  const discovery = await analyzer.analyze({ ...analyzerOptions, command: "sources" });
-  const sessionInventory = Object.freeze(discovery.sessions.map((session) => Object.freeze(structuredClone(session))));
+  const population = options.sessionPopulation ?? null;
+  const discovery = population
+    ? sessionPopulationDiscovery(population)
+    : await analyzer.analyze({ ...analyzerOptions, command: "sources" });
+  const inventorySource = population?.sessions ?? discovery.sessions;
+  const sessionInventory = Object.freeze(inventorySource.map((session) => Object.freeze(structuredClone(session))));
   if (selectionProfile) {
     assertSessionSelectionBinding(selectionProfile, selectionPlan, { eligibleCount: sessionInventory.length });
   }
@@ -1222,7 +1243,24 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     memoryInventory: practiceInventory?.memories ?? { included: false, categories: [] },
   });
   assertStandardUsageComplete(source, selected, includeUsage);
-  return { source, selection: selected };
+  if (!population) return { source, selection: selected };
+  const selectionBinding = bindSessionSelection(population, selected.sessions, {
+    strategy: selected.strategy,
+    projectionPolicy: "lead-report-signal-v1",
+  });
+  const admittedEpisodes = Number(source.sessionEvents?.candidateEpisodeCount ?? 0);
+  const zeroSignalDiscardedEpisodes = Number(source.sessionEvents?.discardedEpisodeCount ?? 0);
+  const sessionBinding = {
+    population: population.binding,
+    selection: selectionBinding,
+    admission: leadAdmissionBinding({
+      projectedEpisodes: admittedEpisodes + zeroSignalDiscardedEpisodes,
+      admittedEpisodes,
+      zeroSignalDiscardedEpisodes,
+      retainedTaskEpisodes: source.taskEpisodes.length,
+    }, selectionBinding),
+  };
+  return { source, selection: selected, sessionBinding };
 }
 
 async function main(argv = process.argv.slice(2)) {

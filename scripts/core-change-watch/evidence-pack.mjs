@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 import {
   DEFAULT_MAX_COMMITS,
   SCHEMA_VERSION,
@@ -8,6 +11,7 @@ import {
   isCli,
   isSupportingFile,
   languageFor,
+  listTrackedFiles,
   normalizeHistoryWindows,
   normalizeLanguages,
   option,
@@ -23,8 +27,8 @@ import { analyzeDiffImpact } from "./diff-impact.mjs";
 import { analyzeGitHistoryProfile } from "./git-history-profile.mjs";
 import { analyzeProjectProfile } from "./project-profile.mjs";
 
-function addRead(reads, path, reason, priority = 50) {
-  if (!path) {
+function addRead(reads, path, reason, priority = 50, currentPaths = null) {
+  if (!path || (currentPaths && !currentPaths.has(path))) {
     return;
   }
   const role = fileRoleFor(path);
@@ -45,32 +49,32 @@ function addRead(reads, path, reason, priority = 50) {
   });
 }
 
-function recommendedReads(core, diff, profile, maxReads) {
+function recommendedReads(core, diff, profile, maxReads, currentPaths) {
   const reads = new Map();
 
   for (const file of diff.changedFiles) {
-    addRead(reads, file.path, "changed file", 100);
+    addRead(reads, file.path, "changed file", 100, currentPaths);
   }
 
   for (const hit of diff.coreHits) {
-    addRead(reads, hit.filePath, `changed core candidate ${hit.path}`, 95);
+    addRead(reads, hit.filePath, `changed core candidate ${hit.path}`, 95, currentPaths);
   }
 
   for (const hit of diff.hotHits) {
-    addRead(reads, hit.path, "changed hot file", 90);
+    addRead(reads, hit.path, "changed hot file", 90, currentPaths);
   }
 
   for (const candidate of core.candidates.slice(0, 8)) {
     for (const file of candidate.evidence.hotFiles.slice(0, 3)) {
-      addRead(reads, file.path, `hot file under ${candidate.path}`, 75);
+      addRead(reads, file.path, `hot file under ${candidate.path}`, 75, currentPaths);
     }
     for (const file of candidate.evidence.sourceFiles.slice(0, 2)) {
-      addRead(reads, file, `representative source under ${candidate.path}`, 55);
+      addRead(reads, file, `representative source under ${candidate.path}`, 55, currentPaths);
     }
   }
 
   for (const entry of profile.entryCandidates.slice(0, 5)) {
-    addRead(reads, entry.path, "entry candidate", 45);
+    addRead(reads, entry.path, "entry candidate", 45, currentPaths);
   }
 
   return [...reads.values()]
@@ -78,12 +82,12 @@ function recommendedReads(core, diff, profile, maxReads) {
     .slice(0, maxReads);
 }
 
-function actionFiles(files, limit = 8) {
+function actionFiles(files, limit = 8, currentPaths = null) {
   const seen = new Set();
   const result = [];
   for (const file of files) {
     const path = typeof file === "string" ? file : file?.path;
-    if (!path || seen.has(path)) {
+    if (!path || seen.has(path) || (currentPaths && !currentPaths.has(path))) {
       continue;
     }
     seen.add(path);
@@ -99,29 +103,30 @@ function actionFiles(files, limit = 8) {
   return result;
 }
 
-function supportingFilesByRole(history, diff, role) {
+function supportingFilesByRole(history, diff, role, currentPaths) {
   const fromDiff = diff.companionHits?.filter((item) => item.role === role) ?? [];
   const fromHistory = history.supportingHotFiles?.filter((item) => item.role === role) ?? [];
-  return actionFiles([...fromDiff, ...fromHistory], 8);
+  return actionFiles([...fromDiff, ...fromHistory], 8, currentPaths);
 }
 
-function buildFollowUpActions(core, diff, history, changeDrift, maxActions) {
+function buildFollowUpActions(core, diff, history, changeDrift, maxActions, currentPaths) {
   const actions = [];
   const topCoreFiles = actionFiles(core.candidates.slice(0, 4).flatMap((candidate) => [
     ...candidate.evidence.hotFiles,
     ...candidate.evidence.sourceFiles,
-  ]), 10);
+  ]), 10, currentPaths);
   const changedPrimaryFiles = actionFiles(
     diff.changedFiles.filter((file) => !file.supporting),
     10,
+    currentPaths,
   );
-  const affectedCoreFiles = actionFiles(diff.coreHits.map((hit) => hit.filePath), 10);
-  const localizationFiles = supportingFilesByRole(history, diff, "localization");
-  const documentationFiles = supportingFilesByRole(history, diff, "documentation");
+  const affectedCoreFiles = actionFiles(diff.coreHits.map((hit) => hit.filePath), 10, currentPaths);
+  const localizationFiles = supportingFilesByRole(history, diff, "localization", currentPaths);
+  const documentationFiles = supportingFilesByRole(history, diff, "documentation", currentPaths);
   const testFiles = actionFiles([
     ...(history.supportingHotFiles?.filter((item) => item.role === "test" || item.role === "fixture") ?? []),
     ...diff.changedFiles.filter((item) => item.role === "test" || item.role === "fixture"),
-  ], 8);
+  ], 8, currentPaths);
 
   if (topCoreFiles.length > 0) {
     actions.push({
@@ -190,7 +195,7 @@ function buildFollowUpActions(core, diff, history, changeDrift, maxActions) {
       priority: finding.severity === "high" ? "high" : "medium",
       title: companionActionTitle(finding),
       reason: finding.evidence,
-      files: actionFiles([...finding.triggerFiles, ...finding.candidateCompanionFiles], 8),
+      files: actionFiles([...finding.triggerFiles, ...finding.candidateCompanionFiles], 8, currentPaths),
       passCheck: finding.action,
     });
   }
@@ -212,6 +217,14 @@ function buildFollowUpActions(core, diff, history, changeDrift, maxActions) {
   }
 
   return actions.slice(0, maxActions);
+}
+
+function currentWorkPaths(repoRoot, diff) {
+  const candidates = new Set([
+    ...listTrackedFiles(repoRoot),
+    ...diff.changedFiles.map((file) => file.path),
+  ]);
+  return new Set([...candidates].filter((filePath) => existsSync(path.resolve(repoRoot, filePath))));
 }
 
 function stageFilters(projectProfile, historyProfile, coreAnalysis, diffImpact) {
@@ -522,7 +535,15 @@ export async function buildEvidencePack(options = {}) {
     ignore: options.ignore,
     changedFiles: diffImpact.changedFiles,
   });
-  const followUpActions = buildFollowUpActions(coreAnalysis, diffImpact, historyProfile, changeDrift, maxFollowUpActions);
+  const currentPaths = currentWorkPaths(repoRoot, diffImpact);
+  const followUpActions = buildFollowUpActions(
+    coreAnalysis,
+    diffImpact,
+    historyProfile,
+    changeDrift,
+    maxFollowUpActions,
+    currentPaths,
+  );
   const filters = stageFilters(projectProfile, historyProfile, coreAnalysis, diffImpact);
   const pack = {
     schemaVersion: SCHEMA_VERSION,
@@ -567,7 +588,7 @@ export async function buildEvidencePack(options = {}) {
     coreAnalysis,
     diffImpact,
     changeDrift,
-    recommendedReads: recommendedReads(coreAnalysis, diffImpact, projectProfile, maxRecommendedReads),
+    recommendedReads: recommendedReads(coreAnalysis, diffImpact, projectProfile, maxRecommendedReads, currentPaths),
     followUpActions,
     agentGuidance: buildAgentGuidance(historyProfile, coreAnalysis, filters),
     reviewMatrix: buildReviewMatrix(projectProfile, historyProfile, coreAnalysis, diffImpact, changeDrift, followUpActions),

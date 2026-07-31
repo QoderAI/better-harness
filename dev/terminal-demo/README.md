@@ -16,7 +16,14 @@ agg --theme github-dark --font-size 22 --fps-cap 15 \
   --last-frame-duration 3 \
   dev/terminal-demo/twenty-history.cast \
   assets/demo/twenty-history.gif
+
+ffmpeg -i assets/demo/twenty-history.gif -vf reverse -frames:v 1 assets/demo/twenty-history.png
 ```
+
+The repository keeps the GIF as the recording source. The public website uses
+the static final-frame PNG so it does not autoplay or loop. Regenerate both
+files together after changing the recording; the `reverse` filter makes the
+GIF's last frame the single PNG output frame.
 
 Run without a root to discover history below the current workspace, or select a
 workspace explicitly:

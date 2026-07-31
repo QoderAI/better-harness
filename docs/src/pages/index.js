@@ -1,14 +1,10 @@
 import Link from "@docusaurus/Link";
 import Translate, { translate } from "@docusaurus/Translate";
 import useBaseUrl from "@docusaurus/useBaseUrl";
-import CodeBlock from "@theme/CodeBlock";
 import Layout from "@theme/Layout";
 import clsx from "clsx";
 
 import styles from "./index.module.css";
-
-const REPORT_PROMPT =
-  "/better-harness review this project's AI coding workflow and generate a report";
 
 function loopDimensions() {
   return [
@@ -65,93 +61,316 @@ function loopDimensions() {
   ];
 }
 
+function reportProofs() {
+  return [
+    {
+      title: translate({
+        id: "homepage.proof.evidence.title",
+        message: "Visible evidence",
+      }),
+      description: translate({
+        id: "homepage.proof.evidence.description",
+        message: "See which project or session signal supports each finding.",
+      }),
+    },
+    {
+      title: translate({
+        id: "homepage.proof.impact.title",
+        message: "Prioritized impact",
+      }),
+      description: translate({
+        id: "homepage.proof.impact.description",
+        message: "Start with the workflow gap that matters most.",
+      }),
+    },
+    {
+      title: translate({
+        id: "homepage.proof.repair.title",
+        message: "Bounded repair",
+      }),
+      description: translate({
+        id: "homepage.proof.repair.description",
+        message: "Keep the proposed change scoped to the observed problem.",
+      }),
+    },
+    {
+      title: translate({
+        id: "homepage.proof.acceptance.title",
+        message: "Acceptance checks",
+      }),
+      description: translate({
+        id: "homepage.proof.acceptance.description",
+        message: "Know what evidence would make the improvement reviewable.",
+      }),
+    },
+  ];
+}
+
 function hosts() {
+  const htmlOutput = translate({
+    id: "homepage.hosts.output.html",
+    message: "HTML + Markdown report",
+  });
+  const canvasOutput = translate({
+    id: "homepage.hosts.output.canvas",
+    message: "Canvas report",
+  });
+  const verifiedStatus = translate({
+    id: "homepage.hosts.status.quickstart",
+    message: "Verified Quickstart",
+  });
+  const adapterStatus = translate({
+    id: "homepage.hosts.status.adapter",
+    message: "Adapter support",
+  });
+  const setupAction = translate({
+    id: "homepage.hosts.setupAction",
+    message: "View setup",
+  });
+  const supportAction = translate({
+    id: "homepage.hosts.supportAction",
+    message: "View support details",
+  });
+
   return [
     {
       name: "Claude Code",
+      method: translate({
+        id: "homepage.hosts.claudeCode.method",
+        message: "Marketplace plugin",
+      }),
+      output: htmlOutput,
       setup: translate({
         id: "homepage.hosts.claudeCode.setup",
         message: "Add the repository marketplace, then install the plugin.",
       }),
       anchor: "claude-code",
+      supportLevel: "quickstart",
+      status: verifiedStatus,
+      action: setupAction,
+      to: "/docs/installation?host=claude-code#claude-code",
     },
     {
       name: "Codex",
+      method: translate({
+        id: "homepage.hosts.codex.method",
+        message: "Desktop + CLI marketplace",
+      }),
+      output: htmlOutput,
       setup: translate({
         id: "homepage.hosts.codex.setup",
-        message: "Add the Git marketplace from Desktop settings or the CLI.",
+        message: "Choose Desktop or CLI for the correct entrypoint.",
       }),
       anchor: "codex",
+      supportLevel: "quickstart",
+      status: verifiedStatus,
+      action: setupAction,
+      to: "/docs/installation?host=codex#codex",
     },
     {
       name: "Qoder",
+      method: translate({
+        id: "homepage.hosts.qoder.method",
+        message: "Built into Desktop",
+      }),
+      output: canvasOutput,
       setup: translate({
         id: "homepage.hosts.qoder.setup",
-        message: "Built into Qoder Desktop and CLI\u2014nothing to install.",
+        message:
+          "Built into Qoder Desktop; Qoder CLI can reuse it or install separately.",
       }),
       anchor: "qoder",
+      supportLevel: "quickstart",
+      status: verifiedStatus,
+      action: setupAction,
+      to: "/docs/installation?host=qoder#qoder",
     },
     {
       name: "Cursor",
+      method: translate({
+        id: "homepage.hosts.cursor.method",
+        message: "Source-local plugin",
+      }),
+      output: htmlOutput,
       setup: translate({
         id: "homepage.hosts.cursor.setup",
         message: "Load the source-local plugin with --plugin-dir.",
       }),
       anchor: "cursor",
+      supportLevel: "quickstart",
+      status: verifiedStatus,
+      action: setupAction,
+      to: "/docs/installation?host=cursor#cursor",
     },
     {
       name: "Qwen Code",
+      method: translate({
+        id: "homepage.hosts.qwenCode.method",
+        message: "Extension",
+      }),
+      output: htmlOutput,
       setup: translate({
         id: "homepage.hosts.qwenCode.setup",
         message: "Install as a Qwen Code extension.",
       }),
       anchor: "qwen-code",
+      supportLevel: "quickstart",
+      status: verifiedStatus,
+      action: setupAction,
+      to: "/docs/installation?host=qwen-code#qwen-code",
     },
     {
       name: "GitHub Copilot",
+      method: translate({
+        id: "homepage.hosts.githubCopilot.method",
+        message: "CLI marketplace",
+      }),
+      output: htmlOutput,
       setup: translate({
         id: "homepage.hosts.githubCopilot.setup",
         message: "Add the marketplace and install the plugin.",
       }),
       anchor: "github-copilot",
+      supportLevel: "quickstart",
+      status: verifiedStatus,
+      action: setupAction,
+      to: "/docs/installation?host=github-copilot#github-copilot",
+    },
+    {
+      name: "Pi",
+      method: translate({
+        id: "homepage.hosts.pi.method",
+        message: "Package + CLI extension",
+      }),
+      output: htmlOutput,
+      setup: translate({
+        id: "homepage.hosts.pi.setup",
+        message:
+          "Install and evidence adapters are available; a full interactive report smoke remains pending.",
+      }),
+      anchor: "pi",
+      supportLevel: "adapter",
+      status: adapterStatus,
+      action: supportAction,
+      to: "/docs/hosts/adapter-matrix#pi",
+    },
+    {
+      name: "WorkBuddy",
+      method: translate({
+        id: "homepage.hosts.workBuddy.method",
+        message: "Skill / marketplace path",
+      }),
+      output: htmlOutput,
+      setup: translate({
+        id: "homepage.hosts.workBuddy.setup",
+        message:
+          "Evidence and report adapters are available; installation stays on WorkBuddy-owned paths.",
+      }),
+      anchor: "workbuddy",
+      supportLevel: "adapter",
+      status: adapterStatus,
+      action: supportAction,
+      to: "/docs/hosts/adapter-matrix#workbuddy",
     },
   ];
 }
 
 function Hero() {
+  const sampleReportUrl = useBaseUrl("/demo/better-harness-report/");
+
   return (
     <header className={clsx("hero hero--primary", styles.hero)}>
-      <div className="container">
-        <h1 className="hero__title">Better Harness</h1>
-        <p className="hero__subtitle">
-          <Translate id="homepage.hero.tagline">
-            See how your AI coding workflow works—and make it better, one step
-            at a time.
-          </Translate>
-        </p>
-        <p className={styles.heroLead}>
-          <Translate id="homepage.hero.lead">
-            Better Harness reviews how coding agents understand tasks, make
-            changes, verify results, deliver safely, and learn—then shows what
-            to improve next, with every finding tied to visible evidence.
-          </Translate>
-        </p>
-        <div className={styles.buttons}>
-          <a
-            className="button button--secondary button--lg"
-            href={useBaseUrl("/demo/better-harness-report/")}
-          >
-            <Translate id="homepage.hero.viewDemo">
-              View live demo report
+      <div className={clsx("container", styles.heroGrid)}>
+        <div className={styles.heroCopy}>
+          <p className={styles.eyebrow}>
+            <Translate id="homepage.hero.eyebrow">
+              Better Harness · Open-source insights for the Agent Work Loop
             </Translate>
-          </a>
-          <Link
-            className="button button--outline button--secondary button--lg"
-            to="/docs/introduction"
-          >
-            <Translate id="homepage.hero.getStarted">Get started</Translate>
-          </Link>
+          </p>
+          <h1 className={clsx("hero__title", styles.heroTitle)}>
+            <Translate id="homepage.hero.title">
+              Delegate coding to agents. Improve the loop around them.
+            </Translate>
+          </h1>
+          <p className={styles.heroLead}>
+            <Translate id="homepage.hero.lead">
+              Better Harness turns project and session evidence into loop-level
+              insights, prioritized improvements, and verifiable next
+              steps—inside the coding agent you already use.
+            </Translate>
+          </p>
+          <div className={styles.buttons}>
+            <a
+              className={clsx("button button--lg", styles.heroPrimaryButton)}
+              href="#choose-host"
+            >
+              <Translate id="homepage.hero.chooseHost">
+                Choose your coding agent
+              </Translate>
+            </a>
+            <a
+              className={clsx("button button--lg", styles.heroSecondaryButton)}
+              href={sampleReportUrl}
+            >
+              <Translate id="homepage.hero.viewDemo">
+                Explore a sample report
+              </Translate>
+            </a>
+          </div>
+          <ul className={styles.trustList} aria-label={translate({
+            id: "homepage.hero.trustLabel",
+            message: "Project trust signals",
+          })}>
+            <li>
+              <Translate id="homepage.hero.trust.openSource">
+                Open source · MIT
+              </Translate>
+            </li>
+            <li>
+              <Translate id="homepage.hero.trust.hostSpecific">
+                Host-specific setup
+              </Translate>
+            </li>
+            <li>
+              <Translate id="homepage.hero.trust.evidence">
+                Missing evidence stays explicit
+              </Translate>
+            </li>
+          </ul>
         </div>
+        <a
+          className={styles.heroPreview}
+          href={sampleReportUrl}
+          aria-label={translate({
+            id: "homepage.hero.previewLinkLabel",
+            message: "Open the Better Harness sample report",
+          })}
+        >
+          <span className={styles.heroPreviewLabel}>
+            <Translate id="homepage.hero.previewLabel">
+              Sample finding · evidence-bounded
+            </Translate>
+          </span>
+          <img
+            src={useBaseUrl("/demo/better-harness-findings-report.png")}
+            alt={translate({
+              id: "homepage.demo.reportAlt",
+              message:
+                "Better Harness sample HTML report showing an evidence-bounded finding with its impact, expected output, scoped AI fix, and acceptance checks",
+            })}
+            width="1280"
+            height="950"
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
+          />
+          <span className={styles.heroPreviewCaption}>
+            <Translate id="homepage.hero.previewCaption">
+              Evidence, impact, bounded repair, and acceptance checks in one
+              reviewable report.
+            </Translate>
+          </span>
+        </a>
       </div>
     </header>
   );
@@ -162,43 +381,58 @@ function LiveDemo() {
     <section className={styles.section}>
       <div className="container">
         <h2>
-          <Translate id="homepage.demo.title">See it in action</Translate>
+          <Translate id="homepage.demo.title">
+            Turn evidence into the next concrete improvement
+          </Translate>
         </h2>
         <p>
-          <Translate
-            id="homepage.demo.intro"
-            values={{ command: <code>/better-harness</code> }}
-          >
-            {
-              "Ask {command} to review the current task and its surrounding project Harness. The report keeps missing evidence explicit and turns supported gaps into prioritized findings with an impact, expected output, scoped repair, and acceptance checks."
-            }
+          <Translate id="homepage.demo.intro">
+            Better Harness keeps unsupported claims out of the score and turns
+            observed workflow gaps into findings a team can inspect, discuss,
+            and verify.
           </Translate>
         </p>
-        <p className={styles.demoFrame}>
-          <a href={useBaseUrl("/demo/better-harness-report/")}>
-            <img
-              src={useBaseUrl("/demo/better-harness-findings-report.png")}
-              alt="Better Harness HTML report showing an evidence-bounded finding with its impact, expected output, scoped AI fix, and acceptance checks"
-            />
-          </a>
-        </p>
-        <p className={styles.demoCaption}>
-          <a href={useBaseUrl("/demo/better-harness-report/")}>
+        <div className={styles.proofGrid}>
+          {reportProofs().map((proof) => (
+            <article key={proof.title} className={styles.proofCard}>
+              <h3>{proof.title}</h3>
+              <p>{proof.description}</p>
+            </article>
+          ))}
+        </div>
+        <p className={styles.demoAction}>
+          <a
+            className="button button--primary button--lg"
+            href={useBaseUrl("/demo/better-harness-report/")}
+          >
             <Translate id="homepage.demo.openReport">
-              Open the complete self-contained English HTML report
+              Explore the self-contained English sample report
             </Translate>
           </a>
         </p>
+        <h3 className={styles.historyTitle}>
+          <Translate id="homepage.demo.historyTitle">
+            Track recorded change over time
+          </Translate>
+        </h3>
         <p className={styles.demoFrame}>
           <img
-            src={useBaseUrl("/demo/twenty-history.gif")}
-            alt="Better Harness terminal history demo showing five Agent Work Loop dimensions over time"
+            src={useBaseUrl("/demo/twenty-history.png")}
+            alt={translate({
+              id: "homepage.demo.historyAlt",
+              message:
+                "Static final frame of Better Harness report history showing five Agent Work Loop dimensions over time",
+            })}
+            width="1351"
+            height="955"
+            loading="lazy"
+            decoding="async"
           />
         </p>
         <p className={styles.demoCaption}>
-          <Translate id="homepage.demo.gifCaption">
-            The animation replays historical Harness reports. It shows recorded
-            trends, not causal proof of improvement.
+          <Translate id="homepage.demo.historyCaption">
+            This static final frame summarizes historical Harness reports. It
+            shows recorded trends, not causal proof of improvement.
           </Translate>
         </p>
       </div>
@@ -229,7 +463,7 @@ function HowItWorks() {
             }}
           >
             {
-              "Better Harness combines feedforward guides (AGENTS.md, specs, Skills, acceptance criteria) with feedback sensors (linters, tests, Hooks, review agents), and evaluates five parts of delivery—the {workLoopLink}:"
+              "Better Harness combines feedforward guides (AGENTS.md, specs, Skills, acceptance criteria) with feedback sensors (linters, tests, Hooks, evaluation agents), and evaluates five parts of delivery—the {workLoopLink}:"
             }
           </Translate>
         </p>
@@ -244,14 +478,22 @@ function HowItWorks() {
         <p className={styles.demoFrame}>
           <img
             src={useBaseUrl("/img/better-harness-architecture-en.svg")}
-            alt="Better Harness architecture: host integration, three independent evidence agents, unified analysis by one lead agent, findings, host outputs, and repair"
+            alt={translate({
+              id: "homepage.how.architectureAlt",
+              message:
+                "Better Harness architecture: six public Quickstart hosts plus Pi and WorkBuddy adapter support feed three independent evidence agents, unified analysis, host-neutral outputs, and repair",
+            })}
+            width="1800"
+            height="1360"
+            loading="lazy"
+            decoding="async"
           />
         </p>
         <p className={styles.demoCaption}>
           <Translate id="homepage.how.architectureCaption">
-            Three evidence domains stay independent until unified analysis;
-            every result retains a visible evidence source, owner, and
-            validation route.
+            Eight capability-level host adapters feed the same evidence
+            pipeline. Six have verified Quickstart paths; Pi and WorkBuddy keep
+            their current adapter-support boundaries explicit.
           </Translate>
         </p>
       </div>
@@ -261,27 +503,47 @@ function HowItWorks() {
 
 function QuickStart() {
   return (
-    <section className={styles.section}>
+    <section
+      id="choose-host"
+      className={clsx(styles.section, styles.hostSection)}
+    >
       <div className="container">
         <h2>
-          <Translate id="homepage.quickstart.title">Quick start</Translate>
+          <Translate id="homepage.quickstart.title">
+            Choose your coding agent
+          </Translate>
         </h2>
         <p>
           <Translate id="homepage.quickstart.intro">
-            Pick your coding agent—you can be looking at your first report in
-            minutes. Once installed, ask for the host&apos;s durable report:
+            Eight host adapters are supported. Six have verified setup paths;
+            Pi and WorkBuddy link to their current support boundaries.
           </Translate>
         </p>
-        <CodeBlock language="text">{REPORT_PROMPT}</CodeBlock>
         <div className={styles.hostGrid}>
           {hosts().map((host) => (
             <Link
               key={host.name}
               className={styles.hostCard}
-              to={`/docs/installation?host=${host.anchor}#${host.anchor}`}
+              to={host.to}
+              data-support-level={host.supportLevel}
             >
               <h3>{host.name}</h3>
+              <div className={styles.hostMeta}>
+                <span>{host.method}</span>
+                <span>{host.output}</span>
+                <span
+                  className={clsx(
+                    styles.hostStatus,
+                    host.supportLevel === "quickstart"
+                      ? styles.hostStatusVerified
+                      : styles.hostStatusAdapter,
+                  )}
+                >
+                  {host.status}
+                </span>
+              </div>
               <p>{host.setup}</p>
+              <span className={styles.hostAction}>{host.action}</span>
             </Link>
           ))}
         </div>
@@ -293,10 +555,14 @@ function QuickStart() {
 export default function Home() {
   return (
     <Layout
+      title={translate({
+        id: "homepage.meta.title",
+        message: "AI Coding Agent Workflow Insights",
+      })}
       description={translate({
         id: "homepage.meta.description",
         message:
-          "Better Harness reviews how coding agents understand tasks, make changes, verify results, deliver safely, and learn - with every finding tied to visible evidence.",
+          "Open-source Agent Work Loop insights that turn coding-agent project and session evidence into prioritized, verifiable improvements.",
       })}
     >
       <Hero />

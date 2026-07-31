@@ -5,41 +5,37 @@
 </p>
 
 <p align="center">
-  <strong>看清你的 AI 编码工作流如何运转，并一步步把它变得更好。</strong>
+  <strong>把编码交给 Agent，用证据改进它背后的工作流。</strong>
 </p>
 
 <p align="center">
-  Better Harness 审视编码智能体理解任务、实施变更、验证结果、安全交付和沉淀经验的全过程，
-  再指出下一步的改进方向；每项发现都有可见证据作为依据。
+  Better Harness 为 Agent Work Loop 提供开源洞察。它通过你正在使用的 Coding Agent 运行，
+  把项目与会话证据转化为有优先级的改进和可验证的下一步；没有观察到的证据会明确标注。
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT 许可证"></a>
-  <a href="package.json"><img src="https://img.shields.io/badge/node-%3E%3D22.20.0-brightgreen.svg" alt="Node.js >= 22.20.0"></a>
 </p>
 
 <p align="center">
-  <a href="#quick-start">快速开始</a> ·
-  <a href="#see-it-in-action">实际效果</a> ·
-  <a href="#why-better-harness">为什么选择 Better Harness</a> ·
-  <a href="#what-is-open">开放了什么</a> ·
-  <a href="#installation">安装</a> ·
-  <a href="docs/adapters/README.md">宿主支持</a> ·
-  <a href="roadmap.md">路线图</a> ·
-  <a href="docs/community.md">参与贡献</a>
+  <a href="https://qoderai.github.io/better-harness/zh-Hans/?utm_source=github&utm_medium=referral&utm_campaign=repository_landing&utm_content=readme_hero">中文网站</a> ·
+  <a href="#quick-start">选择 Coding Agent</a> ·
+  <a href="#see-it-in-action">示例报告</a> ·
+  <a href="https://qoderai.github.io/better-harness/zh-Hans/docs/introduction">文档</a>
 </p>
 
 <a id="quick-start"></a>
 
 ## 快速开始
 
-用以下 Coding Agent 审查你的工作流：[Claude Code](#claude-code)、[Codex Desktop](#codex-desktop)、[Codex CLI](#codex-cli)、[Qoder Desktop/CLI](#qoder)、[Cursor](#cursor)、[Qwen Code](#qwen-code)、[GitHub Copilot CLI](#github-copilot)。
+使用以下 Coding Agent 分析并改进你的工作流：[Claude Code](#claude-code)、[Codex Desktop](#codex-desktop)、[Codex CLI](#codex-cli)、[Qoder Desktop/CLI](#qoder)、[Cursor](#cursor)、[Qwen Code](#qwen-code)、[GitHub Copilot CLI](#github-copilot)。
 
-安装完成后，让 Better Harness 生成当前宿主支持的持久化报告：
+选择你正在使用的宿主，查看对应的安装、验证、调用和报告输出说明。
+不同宿主的入口并不完全相同，请直接使用对应章节给出的命令。
 
-```text
-/better-harness 审查此项目的 AI 编码工作流并生成报告
-```
+规范注册表当前包含八个宿主适配器。Pi 与 WorkBuddy 仍属于适配器支持入口，
+没有进入包含六个宿主的已验证快速开始；具体边界见
+[公开宿主适配矩阵](docs/docs/hosts/adapter-matrix.md)。
 
 Better Harness 会将行为断言限定在相关的任务过程片段（Task Episode）及其周边项目机制内。
 Qoder 生成 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub Copilot 生成自包含的 HTML 报告及配套 Markdown。
@@ -54,20 +50,21 @@ Qoder 生成 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub
 每项发现都包含影响、预期输出、范围明确的修复方案与验收检查。
 
 <p align="center">
-  <a href="assets/demo/better-harness-report.html"><img src="assets/demo/better-harness-findings-report.png" alt="Better Harness HTML 报告，展示一项由证据支持的发现及其影响、预期输出、范围明确的 AI 修复方案和验收检查" width="900"></a>
+  <a href="https://qoderai.github.io/better-harness/demo/better-harness-report/"><img src="assets/demo/better-harness-findings-report.png" alt="Better Harness HTML 报告，展示一项由证据支持的发现及其影响、预期输出、范围明确的 AI 修复方案和验收检查" width="900"></a>
 </p>
 
 <p align="center">
-  <sub><a href="assets/demo/better-harness-report.html">打开完整的自包含英文 HTML 报告</a>。</sub>
+  <sub><a href="https://qoderai.github.io/better-harness/demo/better-harness-report/">打开完整的自包含英文 HTML 报告</a>
+  （<a href="assets/demo/better-harness-report.html">源文件</a>）。</sub>
 </p>
 
 当你积累了多份可比较的历史报告后，历史视图会展示智能体工作闭环五个维度的变化：
 
 <p align="center">
-  <a href="dev/terminal-demo/README.md"><img src="assets/demo/twenty-history.gif" alt="Better Harness 终端历史演示，展示智能体工作闭环五个维度随时间的变化" width="900"></a>
+  <a href="dev/terminal-demo/README.md"><img src="assets/demo/twenty-history.png" alt="Better Harness 报告历史的静态最终帧，展示智能体工作闭环五个维度随时间的变化" width="900"></a>
 </p>
 
-动画会回放历史 Harness 报告。它展示的是已记录的趋势，并不能证明改进之间存在因果关系。
+这张静态最终帧汇总了历史 Harness 报告。它展示的是已记录的趋势，并不能证明改进之间存在因果关系。
 [查看演示录制方式](dev/terminal-demo/README.md)。
 
 <a id="why-better-harness"></a>
@@ -82,7 +79,7 @@ AI 编码智能体修改代码很快，但围绕它们的工作流往往才是�
 - 🚀 **速度压过保障措施** —— 审查与交付检查被绕过。
 - 🧠 **经验没有沉淀** —— 同样的问题在下一个任务中再次出现。
 
-只审查最终 diff 会遗漏这些系统层面的问题。Better Harness 审查的是工作流本身：
+只审查最终 diff 会遗漏这些系统层面的问题。Better Harness 分析的是 diff 背后的工作流：
 它收集项目证据（以及宿主支持时的会话证据），评估五个相互关联的维度，
 并将具体差距转化为按优先级排列的发现。每项发现都与证据、预期结果、修复边界和验证路径关联，
 让团队能够一次改进一个问题。
@@ -96,7 +93,7 @@ Better Harness 使用
 闭环，把工作开始前可用的指引与智能体行动后可用的信号结合起来：
 
 - **前馈指引** —— `AGENTS.md`、spec、Skill 和验收标准在智能体行动前为其指明方向。
-- **反馈传感器** —— linter、测试、Hook 和审查智能体观察结果并帮助智能体自我纠正。
+- **反馈传感器** —— linter、测试、Hook 和评估智能体观察结果并帮助智能体自我纠正。
 
 在这一闭环中，它评估交付过程的五个部分，也就是**智能体工作闭环（Agent Work Loop）**：
 
@@ -172,11 +169,11 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 claude plugin details better-harness@better-harness
 ```
 
-详细信息应包含 `Skills (1) better-harness`。然后在需要审查的仓库中启动新的 Claude 会话，
+详细信息应包含 `Skills (1) better-harness`。然后在需要分析的仓库中启动新的 Claude 会话，
 并运行报告提示词：
 
 ```text
-/better-harness 审查此项目的 AI 编码工作流并生成报告
+/better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
 ```
 
 Claude Code 默认会在仓库的 `.claude/better-harness` 报告根目录下生成自包含的
@@ -195,10 +192,10 @@ Claude Code 默认会在仓库的 `.claude/better-harness` 报告根目录下生
 2. 选择 **+ Add > From Marketplace**。
 3. 输入 Git 仓库 URL，设置 Git ref；对于这个单插件仓库，**Sparse paths** 留空。
 4. 选择 **Add marketplace**，然后从新 Marketplace 中安装 **Better Harness**。
-5. 在需要审查的仓库中启动新任务，并运行报告提示词：
+5. 在需要分析的仓库中启动新任务，并运行报告提示词：
 
 ```text
-@better-harness 审查此项目的 AI 编码工作流并生成报告
+@better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
 ```
 
 仓库 URL 使用 `https://github.com/QoderAI/better-harness.git`，Git ref 使用 `main`。
@@ -224,10 +221,10 @@ codex plugin list --marketplace better-harness
 codex plugin add better-harness@better-harness
 ```
 
-在需要审查的仓库中启动新的 Codex 任务，并运行报告提示词：
+在需要分析的仓库中启动新的 Codex 任务，并运行报告提示词：
 
 ```text
-$better-harness:better-harness 审查此项目的 AI 编码工作流并生成报告
+$better-harness:better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
 ```
 
 使用 `marketplace add` 时应传入仓库 URL，而不是原始 `marketplace.json` URL。
@@ -239,10 +236,10 @@ $better-harness:better-harness 审查此项目的 AI 编码工作流并生成报
 Better Harness 已内置于 [Qoder](https://qoder.com/) 桌面应用，因此无需通过 Marketplace
 或本地插件安装。可以选择以下任一入口：
 
-1. **从会话进入：** 打开需要审查的仓库，启动新会话，然后运行报告提示词：
+1. **从会话进入：** 打开需要分析的仓库，启动新会话，然后运行报告提示词：
 
    ```text
-   /better-harness 审查此项目的 AI 编码工作流并生成报告
+   /better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
    ```
 
 2. **从 Quest 进入（Qoder 1.18.0+）：** 打开 Quest，然后从左侧边栏选择
@@ -251,11 +248,11 @@ Better Harness 已内置于 [Qoder](https://qoder.com/) 桌面应用，因此无
 #### Qoder CLI
 
 如果已安装 Qoder Desktop，Better Harness 在 Qoder CLI 中也已可用，
-无需安装 Marketplace 或插件。在需要审查的仓库中启动新的 Qoder CLI 会话，
+无需安装 Marketplace 或插件。在需要分析的仓库中启动新的 Qoder CLI 会话，
 然后运行报告提示词：
 
 ```text
-/better-harness 审查此项目的 AI 编码工作流并生成报告
+/better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
 ```
 
 只有在未安装 Qoder Desktop、单独使用 Qoder CLI 时，才需要手动添加本仓库作为
@@ -316,10 +313,10 @@ Copilot 不记录逐次响应的 token 用量，VS Code Copilot Chat 也没有�
 qwen extensions install QoderAI/better-harness
 ```
 
-在要审查的仓库中启动新的 Qwen Code 会话，然后运行报告提示词：
+在要分析的仓库中启动新的 Qwen Code 会话，然后运行报告提示词：
 
 ```text
-/better-harness 审查此项目的 AI 编码工作流并生成报告
+/better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
 ```
 
 Qwen Code 产出自包含的 `report.html`，并配套 `report.md` 与 `findings.json`。
@@ -340,10 +337,10 @@ pi -e git:github.com/QoderAI/better-harness
 ```
 
 Pi 通过 `package.json` 中的 `pi` manifest 发现 `better-harness` Skill 和
-`/better-harness` 提示模板。在需要审查的仓库中启动新的 Pi 会话，运行报告提示词：
+`/better-harness` 提示模板。在需要分析的仓库中启动新的 Pi 会话，运行报告提示词：
 
 ```text
-/better-harness 审查此项目的 AI 编码工作流并生成报告
+/better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
 ```
 
 Pi 默认在仓库的 `.pi/better-harness` 报告根目录下生成自包含的 `report.html`
@@ -390,10 +387,10 @@ Canvas 预览需要已安装的 Qoder 运行时，或显式指定 `--sdk-media`/
 | 可贡献的内容 | 从这里开始 | 示例 |
 | --- | --- | --- |
 | 工作流指导与工程实践 | [`skills/`](skills/) 或 [`references/`](references/) | 为某种语言、框架、审查模式或重复出现的智能体工作流添加有来源支撑的指南。 |
-| 审查模型与可执行分析 | [`models/`](models/) 或 [`scripts/`](scripts/) | 添加由证据支持的审查视角、检测器，或带 fixture 和测试的智能体友好分析命令。 |
+| 评估模型与可执行分析 | [`models/`](models/) 或 [`scripts/`](scripts/) | 添加由证据支持的评估视角、检测器，或带 fixture 和测试的智能体友好分析命令。 |
 | 交付控制与宿主支持 | [`hooks/`](hooks/) 或[新增 Coding Agent 指南](docs/adapters/contributing-new-coding-agent.md) | 添加范围明确的生命周期检查，或记录并验证另一种 Coding Agent 宿主的证据支持情况。 |
 | 报告与视觉语言 | [`templates/reporting/`](templates/reporting/) 或 [`templates/style/`](templates/style/) | 添加报告模式、可复用的报告契约，或带验证证据的纯指令式视觉样式。 |
-| 示例与运行模型 | [`case-studies/`](case-studies/) | 分享经过脱敏且以证据为边界的示例，展示团队如何应用智能体审查与交付实践。 |
+| 示例与运行模型 | [`case-studies/`](case-studies/) | 分享经过脱敏且以证据为边界的示例，展示团队如何应用 Agent Work Loop 分析与交付实践。 |
 
 开始贡献：
 

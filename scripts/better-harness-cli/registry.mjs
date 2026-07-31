@@ -52,7 +52,7 @@ const COMMANDS = [
     kind: "direct",
     audience: "advanced",
     script: "session-analysis.mjs",
-    summary: "Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot, and Pi session evidence.",
+    summary: "Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot, Pi, and WorkBuddy session evidence.",
     subcommands: [
       {
         name: "sources",

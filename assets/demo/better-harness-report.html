@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="generator" content="better-harness codex-html">
-  <title>Harness Insights · harness-expert</title>
+  <title>Sample report · harness-expert · Better Harness</title>
   <style>
     :root { color-scheme: dark; --bg:#111315; --panel:#1a1d20; --panel-2:#21252a; --line:#31363d; --text:#f5f7fa; --muted:#9aa3ad; --blue:#6cb8ff; --blue-2:#1b6ca8; --orange:#ff9a5a; --green:#53d69b; --red:#ff6b6b; }
     * { box-sizing:border-box; }
@@ -18,6 +18,9 @@
     .hero h1 { margin:12px 0 10px; font-size:clamp(42px,7vw,82px); line-height:.96; letter-spacing:-.055em; }
     .hero p { max-width:760px; margin-bottom:22px; color:#c9d0d8; font-size:18px; }
     .hero-tags { display:flex; flex-wrap:wrap; gap:8px; }
+    .demo-context { position:relative; z-index:1; display:flex; width:min(1180px,calc(100% - 40px)); margin:24px auto -28px; padding:14px 18px; align-items:center; justify-content:space-between; gap:18px; border:1px solid #315f7f; border-radius:16px; background:#142b3b; box-shadow:0 12px 32px rgba(0,0,0,.22); }
+    .demo-context-copy { display:grid; gap:2px; }.demo-context-copy strong { color:#fff; }.demo-context-copy span { color:#c9d0d8; font-size:13px; }
+    .demo-context-actions { display:flex; flex:0 0 auto; flex-wrap:wrap; gap:8px; }.demo-context a { min-height:38px; padding:8px 12px; border:1px solid #6cb8ff; border-radius:10px; color:#d9efff; font-size:13px; font-weight:700; text-decoration:none; }.demo-context a:hover,.demo-context a:focus-visible { color:#111315; background:#d9efff; }.demo-context a:focus-visible { outline:3px solid #fff; outline-offset:2px; }
     .score-orbit { width:174px; aspect-ratio:1; display:grid; place-content:center; text-align:center; border:14px solid #343a41; border-top-color:var(--blue); border-right-color:var(--blue-2); border-radius:50%; background:#1a2026; box-shadow:inset 0 0 0 1px var(--line); }
     .score-orbit strong { font-size:44px; line-height:1; }
     .score-orbit span { width:110px; margin-top:7px; color:var(--muted); font-size:12px; }
@@ -37,10 +40,32 @@
     footer { margin-top:64px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
     @media (max-width:900px) { .metrics,.dimension-grid{grid-template-columns:repeat(2,1fr)}.activity-layout,.two-column{grid-template-columns:1fr}.evidence-grid{grid-template-columns:repeat(2,1fr)} }
     @media (max-width:620px) { main{width:min(100% - 24px,1180px);padding-top:18px}.hero{grid-template-columns:1fr;min-height:0;padding:25px;border-radius:22px}.hero h1{font-size:44px}.hero p{font-size:15px}.score-orbit{width:126px}.score-orbit strong{font-size:34px}.metrics{grid-template-columns:1fr;margin-bottom:42px}.metric{min-height:0}.section{margin-top:46px}.section-heading,.suggestion-heading{display:block}.section-heading > p,.suggestion-heading > p{text-align:left;margin-top:8px}.dimension-grid{grid-template-columns:1fr}.dimension-card{min-height:0}.finding summary{grid-template-columns:34px minmax(0,1fr)}.finding summary .pill{grid-column:2;justify-self:start}.finding-body{padding:16px}.evidence-grid{grid-template-columns:1fr}.usage-row{grid-template-columns:minmax(92px,.7fr) 1fr 44px} }
-    @media print { :root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-2:#f6f8fa;--line:#d8dee4;--text:#111;--muted:#59636e}body{background:#fff}body::before{display:none}.hero{box-shadow:none}.section{break-inside:avoid} }
+    @media (max-width:620px) { .demo-context{display:grid;width:min(100% - 24px,1180px);margin:12px auto 0}.demo-context-actions{display:grid}.demo-context a{text-align:center} }
+    @media print { :root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-2:#f6f8fa;--line:#d8dee4;--text:#111;--muted:#59636e}body{background:#fff}body::before{display:none}.demo-context{display:none}.hero{box-shadow:none}.section{break-inside:avoid} }
   </style>
 </head>
 <body>
+<aside class="demo-context" data-demo-context="sample" aria-labelledby="demo-context-title">
+  <div class="demo-context-copy">
+    <strong id="demo-context-title">Sample report</strong>
+    <span>This is a checked-in, evidence-bounded sample of one Better Harness review, not live project data.</span>
+  </div>
+  <nav class="demo-context-actions" aria-label="Sample report actions">
+    <a href="https://qoderai.github.io/better-harness/" data-demo-target="">Back to Better Harness</a>
+    <a href="https://qoderai.github.io/better-harness/docs/installation" data-demo-target="docs/installation">Install and run your report</a>
+  </nav>
+</aside>
+<script>
+  (() => {
+    const routeMarker = "/demo/better-harness-report";
+    const markerIndex = window.location.pathname.indexOf(routeMarker);
+    if (markerIndex < 0) return;
+    const localizedSiteRoot = `${window.location.pathname.slice(0, markerIndex)}/`;
+    for (const link of document.querySelectorAll("[data-demo-target]")) {
+      link.href = `${localizedSiteRoot}${link.dataset.demoTarget}`;
+    }
+  })();
+</script>
 <main id="harness-report" data-report-mode="codex-html">
 <header class="hero" data-section="overview">
     <div class="hero-copy">

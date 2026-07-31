@@ -1,21 +1,146 @@
 .hero {
-  padding: 4rem 0;
-  text-align: center;
+  --ifm-hero-background-color: var(--ifm-color-primary-darkest);
+  --ifm-hero-text-color: #ffffff;
+
+  padding: 4.5rem 0;
+}
+
+.heroGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+  align-items: center;
+  gap: 3rem;
+}
+
+.heroCopy {
+  text-align: left;
+}
+
+.eyebrow {
+  margin: 0 0 0.85rem;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.heroTitle {
+  max-width: 12ch;
+  margin-bottom: 1.25rem;
+  font-size: clamp(2.5rem, 5vw, 4.2rem);
+  line-height: 1.02;
 }
 
 .heroLead {
-  max-width: 46rem;
-  margin: 0 auto 2rem;
-  font-size: 1.05rem;
-  opacity: 0.92;
+  max-width: 43rem;
+  margin: 0 0 2rem;
+  color: #ffffff;
+  font-size: 1.08rem;
+  line-height: 1.7;
 }
 
 .buttons {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 1rem;
   flex-wrap: wrap;
+}
+
+.heroPrimaryButton,
+.heroPrimaryButton:hover,
+.heroPrimaryButton:active {
+  color: var(--ifm-color-primary-darkest);
+  background: #ffffff;
+  border-color: #ffffff;
+}
+
+.heroSecondaryButton,
+.heroSecondaryButton:active {
+  color: #ffffff;
+  background: transparent;
+  border-color: #ffffff;
+}
+
+.heroSecondaryButton:hover {
+  color: var(--ifm-color-primary-darkest);
+  background: #ffffff;
+  border-color: #ffffff;
+}
+
+.heroPrimaryButton:focus-visible,
+.heroSecondaryButton:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 3px;
+}
+
+.trustList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trustList li {
+  padding: 0.35rem 0.65rem;
+  color: #ffffff;
+  border: 1px solid #ffffff80;
+  border-radius: var(--ifm-global-radius);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.heroPreview {
+  display: block;
+  padding: 0.75rem;
+  color: #ffffff;
+  background: #ffffff14;
+  border: 1px solid #ffffff66;
+  border-radius: var(--ifm-global-radius);
+  box-shadow: var(--bh-shadow-lg);
+  text-decoration: none;
+  transition: background var(--ifm-transition-fast),
+    transform var(--ifm-transition-fast);
+}
+
+.heroPreview:hover {
+  color: #ffffff;
+  background: #ffffff1f;
+  text-decoration: none;
+  transform: translateY(-2px);
+}
+
+.heroPreview:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 4px;
+}
+
+.heroPreview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0.65rem 0;
+  border-radius: var(--ifm-global-radius);
+}
+
+.heroPreviewLabel,
+.heroPreviewCaption {
+  display: block;
+}
+
+.heroPreviewLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.heroPreviewCaption {
+  font-size: 0.86rem;
+  line-height: 1.45;
 }
 
 .section {
@@ -34,6 +159,7 @@
 .demoFrame img {
   max-width: 900px;
   width: 100%;
+  height: auto;
   border-radius: var(--ifm-global-radius);
   box-shadow: var(--bh-shadow-lg);
 }
@@ -42,6 +168,40 @@
   text-align: center;
   font-size: 0.9rem;
   color: var(--ifm-color-emphasis-700);
+}
+
+.proofGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.proofCard {
+  padding: 1.25rem;
+  background: var(--ifm-background-color);
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-global-radius);
+}
+
+.proofCard h3 {
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+}
+
+.proofCard p {
+  margin-bottom: 0;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.demoAction {
+  margin: 0 0 3.5rem;
+  text-align: center;
+}
+
+.historyTitle {
+  margin-top: 0;
+  text-align: center;
 }
 
 .dimensionGrid {
@@ -76,6 +236,10 @@
   margin-top: 2rem;
 }
 
+.hostSection {
+  scroll-margin-top: calc(var(--ifm-navbar-height) + 1rem);
+}
+
 @media (min-width: 768px) {
   .hostGrid {
     grid-template-columns: repeat(2, 1fr);
@@ -88,8 +252,15 @@
   }
 }
 
+@media (min-width: 1200px) {
+  .hostGrid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
 .hostCard {
-  display: block;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--ifm-color-emphasis-300);
   border-radius: var(--ifm-global-radius);
   padding: 1.25rem;
@@ -113,6 +284,103 @@
 
 .hostCard p {
   font-size: 0.9rem;
-  margin-bottom: 0;
+  margin-bottom: 1rem;
   color: var(--ifm-color-emphasis-700);
+}
+
+.hostMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.hostMeta span {
+  padding: 0.2rem 0.5rem;
+  color: var(--ifm-color-emphasis-800);
+  background: var(--ifm-color-emphasis-100);
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-global-radius);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.hostStatus {
+  white-space: nowrap;
+}
+
+.hostMeta .hostStatusVerified {
+  color: var(--ifm-color-success-darkest);
+  background: color-mix(in srgb, var(--ifm-color-success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ifm-color-success) 45%, transparent);
+}
+
+.hostMeta .hostStatusAdapter {
+  color: var(--ifm-color-warning-darkest);
+  background: color-mix(in srgb, var(--ifm-color-warning) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ifm-color-warning) 50%, transparent);
+}
+
+.hostAction {
+  margin-top: auto;
+  color: var(--ifm-color-primary);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+@media (max-width: 995px) {
+  .heroGrid {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  .heroCopy {
+    text-align: center;
+  }
+
+  .heroTitle,
+  .heroLead {
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  .buttons,
+  .trustList {
+    justify-content: center;
+  }
+
+  .heroPreview {
+    width: min(100%, 760px);
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .hero {
+    padding: 3rem 0;
+  }
+
+  .heroTitle {
+    font-size: 2.45rem;
+  }
+
+  .buttons :global(.button) {
+    width: 100%;
+  }
+
+  .demoAction :global(.button) {
+    display: block;
+    width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .trustList {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .proofGrid {
+    grid-template-columns: 1fr;
+  }
 }

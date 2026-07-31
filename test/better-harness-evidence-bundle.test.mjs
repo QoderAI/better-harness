@@ -10,8 +10,109 @@ import {
 import { availableLane } from "../scripts/harness-analysis/evidence-bundle/contract.mjs";
 import { collectSessionEvidence } from "../scripts/harness-analysis/evidence-bundle/session-evidence.mjs";
 import { collectAgentCustomize } from "../scripts/harness-analysis/evidence-bundle/agent-customize.mjs";
+import { EVIDENCE_BUNDLE_HELP } from "../scripts/harness-analysis/evidence-bundle/cli.mjs";
 
 const NOW = new Date("2026-07-24T08:00:00.000Z");
+
+const POPULATION_BINDING = Object.freeze({
+  schemaVersion: 1,
+  kind: "session-population-binding",
+  scopeFingerprint: "1111111111111111",
+  policyFingerprint: "2222222222222222",
+  omission: {
+    exactIdentityAvailable: true,
+    activeSessions: 1,
+    homeSessionOnly: 0,
+    recencyInference: "disabled-frozen-until",
+  },
+  eligible: { count: 1, fingerprint: "3333333333333333" },
+});
+
+const SESSION_SELECTION_BINDING = Object.freeze({
+  schemaVersion: 1,
+  kind: "session-selection-binding",
+  parentPopulationFingerprint: POPULATION_BINDING.eligible.fingerprint,
+  strategy: "all-eligible",
+  selected: { count: 1, fingerprint: "3333333333333333" },
+  projectionPolicyFingerprint: "4444444444444444",
+});
+
+const LEAD_SELECTION_BINDING = Object.freeze({
+  ...SESSION_SELECTION_BINDING,
+  strategy: "stratified",
+  projectionPolicyFingerprint: "5555555555555555",
+});
+
+function sessionFacts(overrides = {}) {
+  return {
+    kind: "session-core-facts",
+    candidates: [],
+    scope: { eligibleSessions: 1, selectedSessions: 1 },
+    admission: {
+      taskEpisodes: 1,
+      candidateEpisodes: 1,
+      distinctRequests: 1,
+      emittedCandidates: 1,
+    },
+    omitted: {
+      noRequest: 0,
+      selfAnalysis: 0,
+      lowSignal: 0,
+      duplicateRequests: 0,
+      candidateBudget: 0,
+      activeSessions: 1,
+      homeSessionOnly: 0,
+    },
+    populationBinding: POPULATION_BINDING,
+    selectionBinding: SESSION_SELECTION_BINDING,
+    admissionBinding: {
+      schemaVersion: 1,
+      kind: "session-admission-binding",
+      projectionPolicyFingerprint: SESSION_SELECTION_BINDING.projectionPolicyFingerprint,
+      taskEpisodes: 1,
+      candidateEpisodes: 1,
+      distinctRequests: 1,
+      emittedCandidates: 1,
+      noRequest: 0,
+      selfAnalysis: 0,
+      lowSignal: 0,
+      duplicateRequests: 0,
+      candidateBudget: 0,
+    },
+    ...overrides,
+  };
+}
+
+function leadEvidence(overrides = {}) {
+  return {
+    evidence: "bounded",
+    summaryFacts: {
+      evidenceBoundary: {
+        manifest: { selection: { eligibleCount: 1, analyzedCount: 1 } },
+        episodeCoverage: { episodeCount: 0 },
+      },
+    },
+    sessionBinding: {
+      population: POPULATION_BINDING,
+      selection: LEAD_SELECTION_BINDING,
+      admission: {
+        schemaVersion: 1,
+        kind: "lead-admission-binding",
+        projectedEpisodes: 1,
+        admittedEpisodes: 0,
+        zeroSignalDiscardedEpisodes: 1,
+        retainedTaskEpisodes: 0,
+        projectionPolicyFingerprint: LEAD_SELECTION_BINDING.projectionPolicyFingerprint,
+      },
+    },
+    ...overrides,
+  };
+}
+
+test("evidence-bundle help advertises WorkBuddy and its isolated home override", () => {
+  assert.match(EVIDENCE_BUNDLE_HELP, /pi, or workbuddy/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /--workbuddy-home <dir>/u);
+});
 
 function topologyResolution(workspace = ".", status = "complete") {
   const absolute = path.resolve(workspace);
@@ -48,13 +149,21 @@ function topologyResolution(workspace = ".", status = "complete") {
 }
 
 function dependencies(overrides = {}) {
+  const population = Object.freeze({
+    sessions: Object.freeze([{ sessionId: "eligible-session" }]),
+    binding: POPULATION_BINDING,
+  });
   return {
     now: () => NOW,
     resolveWorkspaceTopology: async ({ workspace }) => topologyResolution(workspace),
-    collectSessionEvidence: async () => availableLane({ kind: "session-core-facts", candidates: [] }),
+    collectSessionPopulation: async () => population,
+    collectSessionEvidence: async (_context, _options, received) => {
+      assert.equal(received.sessionPopulation, population);
+      return availableLane(sessionFacts());
+    },
     collectProjectHarness: async () => availableLane({ kind: "core-change-watch-evidence-pack" }),
     collectAgentCustomize: async () => availableLane({ kind: "agent-asset-baseline", status: "complete" }),
-    analyzeHarnessEvidence: async () => ({ evidence: "bounded", summaryFacts: { dimensions: [] } }),
+    analyzeHarnessEvidence: async () => leadEvidence(),
     ...overrides,
   };
 }
@@ -99,7 +208,7 @@ test("evidence bundle resolves topology once and shares the frozen binding with 
     },
     collectSessionEvidence: async (context) => {
       received.push(context.topology);
-      return availableLane({ kind: "session-core-facts", candidates: [] });
+      return availableLane(sessionFacts());
     },
     collectProjectHarness: async (context) => {
       received.push(context.topology);
@@ -111,7 +220,7 @@ test("evidence bundle resolves topology once and shares the frozen binding with 
     },
     analyzeHarnessEvidence: async (options) => {
       received.push(options.topology);
-      return { evidence: "bounded", summaryFacts: { dimensions: [] } };
+      return leadEvidence();
     },
   }));
 
@@ -345,5 +454,129 @@ test("Pi agentCustomize lane routes the provider and isolated config paths", asy
   assert.equal(lane.status, "available");
   assert.equal(received.provider, "pi");
   assert.equal(received["pi-home"], "/tmp/fixture-pi-home");
+  assert.equal(received["include-user-home"], true);
+});
+
+test("shared Session population excludes the active session before both lanes hydrate", async () => {
+  const population = Object.freeze({
+    sessions: Object.freeze([{ sessionId: "eligible-session" }]),
+    binding: POPULATION_BINDING,
+  });
+  let lanePopulation;
+  let leadPopulation;
+  const result = await collectEvidenceBundle({
+    workspace: ".",
+    platform: "codex",
+    depth: "normal",
+  }, dependencies({
+    collectSessionPopulation: async () => population,
+    collectSessionEvidence: async (_context, _options, received) => {
+      lanePopulation = received.sessionPopulation;
+      return availableLane(sessionFacts());
+    },
+    analyzeHarnessEvidence: async (options) => {
+      leadPopulation = options.sessionPopulation;
+      return leadEvidence();
+    },
+  }));
+
+  assert.equal(lanePopulation, population);
+  assert.equal(leadPopulation, population);
+  assert.equal(result.status, "complete");
+  assert.equal(result.diagnostics.sessionPopulationBinding.status, "bound");
+  assert.equal(result.diagnostics.sessionPopulationBinding.population.eligible.count, 1);
+  assert.doesNotMatch(JSON.stringify(result), /eligible-session/u);
+});
+
+test("Session population conflict fails closed with a redacted stable code", async () => {
+  const result = await collectEvidenceBundle({ workspace: ".", platform: "codex" }, dependencies({
+    analyzeHarnessEvidence: async () => leadEvidence({
+      sessionBinding: {
+        ...leadEvidence().sessionBinding,
+        population: {
+          ...POPULATION_BINDING,
+          eligible: { count: 2, fingerprint: "6666666666666666" },
+        },
+      },
+    }),
+  }));
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.lead.status, "unavailable");
+  assert.equal(result.lead.error.code, "SESSION_POPULATION_BINDING_MISMATCH");
+  assert.equal(result.diagnostics.sessionPopulationBinding.status, "conflict");
+  const serialized = JSON.stringify(result);
+  assert.doesNotMatch(serialized, /eligible-session/u);
+  assert.doesNotMatch(serialized, /"sessionId"/u);
+});
+
+test("Session population conflict rejects lead counts that contradict its binding", async () => {
+  const result = await collectEvidenceBundle({ workspace: ".", platform: "codex" }, dependencies({
+    analyzeHarnessEvidence: async () => leadEvidence({
+      summaryFacts: {
+        evidenceBoundary: {
+          manifest: { selection: { eligibleCount: 2, analyzedCount: 1 } },
+          episodeCoverage: { episodeCount: 0 },
+        },
+      },
+    }),
+  }));
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.lead.error.code, "SESSION_POPULATION_BINDING_MISMATCH");
+  assert.equal(result.diagnostics.sessionPopulationBinding.status, "conflict");
+});
+
+test("Session facts reject counts that contradict the shared all-eligible population", async () => {
+  await assert.rejects(
+    collectSessionEvidence(freezeEvidenceBundleContext({ workspace: ".", platform: "codex" }, NOW), {}, {
+      sessionPopulation: {
+        sessions: [{ sessionId: "eligible-session" }],
+        binding: POPULATION_BINDING,
+      },
+      createAnalyzer: async () => ({
+        analyze: async () => sessionFacts({
+          scope: { eligibleSessions: 1, selectedSessions: 0 },
+        }),
+      }),
+    }),
+    (error) => error?.code === "SESSION_POPULATION_BINDING_MISMATCH",
+  );
+});
+
+test("zero-signal Episode admission remains valid inside one bound population", async () => {
+  const result = await collectEvidenceBundle({ workspace: ".", platform: "codex" }, dependencies());
+
+  assert.equal(result.status, "complete");
+  assert.equal(result.lead.status, "available");
+  assert.deepEqual(result.diagnostics.sessionPopulationBinding.episodes, {
+    comparison: "not-comparable-selection-or-policy",
+    sessionTaskEpisodes: 1,
+    leadProjectedEpisodes: 1,
+    leadRetainedEpisodes: 0,
+    leadZeroSignalDiscardedEpisodes: 1,
+  });
+});
+
+test("WorkBuddy agentCustomize lane routes the provider and isolated config paths", async () => {
+  const context = freezeEvidenceBundleContext({
+    workspace: ".",
+    platform: "workbuddy",
+    depth: "quick",
+    "include-user-home": true,
+  }, NOW);
+  let received;
+  const lane = await collectAgentCustomize(context, {
+    "workbuddy-home": "/tmp/fixture-workbuddy-home",
+  }, {
+    collectAssetBaseline: async (options) => {
+      received = options;
+      return { kind: "agent-asset-baseline", status: "complete" };
+    },
+  });
+
+  assert.equal(lane.status, "available");
+  assert.equal(received.provider, "workbuddy");
+  assert.equal(received["workbuddy-home"], "/tmp/fixture-workbuddy-home");
   assert.equal(received["include-user-home"], true);
 });

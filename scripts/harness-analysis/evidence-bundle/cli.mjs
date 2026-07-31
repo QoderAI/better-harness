@@ -13,7 +13,7 @@ Harness, and Agent Customize specialists plus the lead analyzer.
 
 Options:
   --workspace <path>       Target workspace (required)
-  --platform <name>        qoder, codex, claude, cursor, qwen, copilot, or pi (default: qoder)
+  --platform <name>        qoder, codex, claude, cursor, qwen, copilot, pi, or workbuddy (default: qoder)
   --language <locale>      Evidence language (default: en)
   --depth <quick|normal>   7-day/3-item or 30-day/5-item review (default: normal)
   --since <ISO timestamp>  Override the frozen window start
@@ -23,6 +23,7 @@ Options:
   --include-memories       Include authorized Memory title metadata
   --claude-home <dir>      Claude config root override
   --claude-state <file>    Claude state-file override
+  --workbuddy-home <dir>   WorkBuddy data root override
   --canvas-out <file>      With Qoder, initialize canvas.json from lead facts
   --replace-canvas         Replace that canvas.json when explicitly authorized
   --format json            JSON only
@@ -33,7 +34,7 @@ const ALLOWED = new Set([
   "workspace", "platform", "provider", "language", "depth", "since", "until",
   "evidence-limit", "include-user-home", "include-memories", "canvas-out",
   "replace-canvas", "format", "json", "qoder-home", "codex-home", "claude-home",
-  "cursor-home", "qwen-home", "copilot-home", "pi-home", "claude-state", "help", "h",
+  "cursor-home", "qwen-home", "copilot-home", "pi-home", "workbuddy-home", "claude-state", "help", "h",
 ]);
 
 function assertOptions(command, options) {

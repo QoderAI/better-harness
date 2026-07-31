@@ -10,6 +10,24 @@ runtime smoke that the roadmap tracks as missing. This is roadmap P0 item A-05.
 - Story: roadmap.md TODO A-05
 - Status: Implemented
 
+## Roadmap Rebase Note (2026-07-30)
+
+After this spec was implemented, `roadmap.md` was rewritten as the Loop
+Control Plane roadmap and the old `A-*` / `C-*` / `U-*` / `L-*` / `X-*` table
+was removed. Consequences for this spec:
+
+- The `A-05` roadmap row no longer exists; this spec's Status line is the
+  completion record, and A-05 is listed in the roadmap's completed
+  adapter-enablement work note.
+- Open items `U-03` and `U-04` were superseded by the Host Adapter Enablement
+  track: the Cursor durable-report gap now falls under `HA-03` and the
+  packaged runtime smoke under `HA-04`. The Cursor matrix cells and the
+  guarding `test/better-harness-skill.test.mjs` assertion now point to
+  `HA-03` / `HA-04`; the `U-03` / `U-04` references below are kept as the
+  original acceptance record.
+- Plan step 4 (checking A-05 off in `roadmap.md`) is obsolete for the same
+  reason.
+
 ## Intent
 
 The `docs/adapters/README.md` matrix drifted from the shipped CLI:

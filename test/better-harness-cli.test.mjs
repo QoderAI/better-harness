@@ -105,6 +105,10 @@ test("delegated session-analysis and checkup help stay privacy-safe with extra o
     assert.notEqual(result.stdout, "");
     assert.doesNotMatch(result.stdout, new RegExp(privateRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
   }
+
+  const sessionHelp = runBetterHarness(["session-analysis", "--help"]);
+  assert.equal(sessionHelp.status, 0, sessionHelp.stderr);
+  assert.match(sessionHelp.stdout, /--workbuddy-home <dir>/u);
 });
 
 test("better-harness CLI prints version like a standard CLI", () => {

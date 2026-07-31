@@ -830,6 +830,183 @@ test("HTML mode mirrors the reviewed Agent Work Loop reader sections without Can
   });
 });
 
+test("HTML dimension progressbar semantics stay complete and score-bound", () => {
+  // Given: a canonical reviewed report with five fluency dimensions.
+  const reportData = {
+    ...sampleFindings(),
+    language: "en",
+    target: { name: "render-fixture", path: "/tmp/render-fixture" },
+  };
+
+  // When: the report is rendered and its dimension progressbars are inspected.
+  const html = renderHtml(reportData);
+  const progressbars = html.match(/<div class="track" role="progressbar"[^>]*>/gu) ?? [];
+
+  // Then: every displayed rounded score has one complete semantic contract.
+  assert.equal(progressbars.length, reportData.summary.dimensions.length);
+  for (const dimension of reportData.summary.dimensions) {
+    const score = Math.round(dimension.score);
+    assert.ok(progressbars.includes(
+      `<div class="track" role="progressbar" aria-label="${dimension.label} ${score} of 100" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${score}">`,
+    ));
+  }
+  assert.equal(evaluateHtmlReport(html, reportData).status, "pass");
+
+  const firstProgressbar = progressbars[0] ?? "";
+  const firstProgressbarMarkup = html.match(/<div class="track" role="progressbar"[^>]*><i[^>]*><\/i><\/div>/u)?.[0] ?? "";
+  assert.notEqual(firstProgressbarMarkup, "");
+  const mutateFirstProgressbar = (pattern, replacement) => html.replace(
+    firstProgressbar,
+    firstProgressbar.replace(pattern, replacement),
+  );
+  const mutations = [
+    ["missing progressbar", html.replace(firstProgressbarMarkup, "")],
+    ["extra progressbar", html.replace(firstProgressbarMarkup, `${firstProgressbarMarkup}${firstProgressbarMarkup}`)],
+    ["missing role", mutateFirstProgressbar(' role="progressbar"', "")],
+    ["invalid role", mutateFirstProgressbar('role="progressbar"', 'role="meter"')],
+    ["missing label", mutateFirstProgressbar(/ aria-label="[^"]+"/u, "")],
+    ["invalid label", mutateFirstProgressbar(/aria-label="[^"]+"/u, 'aria-label=""')],
+    ["invalid minimum", mutateFirstProgressbar('aria-valuemin="0"', 'aria-valuemin="1"')],
+    ["invalid maximum", mutateFirstProgressbar('aria-valuemax="100"', 'aria-valuemax="99"')],
+    ["invalid current value", mutateFirstProgressbar(/aria-valuenow="[^"]+"/u, 'aria-valuenow="invalid"')],
+    ["score mismatch", mutateFirstProgressbar('aria-valuenow="62"', 'aria-valuenow="61"')],
+  ];
+
+  for (const [label, mutatedHtml] of mutations) {
+    assert.equal(
+      evaluateHtmlReport(mutatedHtml, reportData).status,
+      "fail",
+      `${label} mutation must fail validation`,
+    );
+  }
+});
+
+test("HTML evidence episode coverage preserves canonical summary facts and legacy fallback", () => {
+  // Given: machine-owned summary facts and a conflicting legacy projection.
+  const fixture = sampleFindings();
+  const reportData = {
+    ...fixture,
+    language: "en",
+    target: { name: "render-fixture", path: "/tmp/render-fixture" },
+    summary: {
+      ...fixture.summary,
+      evidenceBoundary: {
+        episodeCoverage: {
+          episodeCount: 14,
+          editedEpisodeCount: 12,
+        },
+      },
+      atAGlance: {
+        coverage: {
+          episodeCount: 1,
+          editedEpisodeCount: 1,
+        },
+      },
+    },
+  };
+
+  // When: canonical and legacy reports are rendered.
+  const canonicalHtml = renderHtml(reportData);
+  const legacyHtml = renderHtml({
+    ...reportData,
+    summary: {
+      ...reportData.summary,
+      evidenceBoundary: undefined,
+      atAGlance: {
+        coverage: {
+          episodeCount: 7,
+          editedEpisodeCount: 5,
+        },
+      },
+    },
+  });
+
+  // Then: machine facts win, while legacy-only input remains readable.
+  assert.match(canonicalHtml, /<span>Task episodes<\/span><strong>14<\/strong>/u);
+  assert.match(canonicalHtml, /<span>Edited episodes<\/span><strong>12<\/strong>/u);
+  assert.match(legacyHtml, /<span>Task episodes<\/span><strong>7<\/strong>/u);
+  assert.match(legacyHtml, /<span>Edited episodes<\/span><strong>5<\/strong>/u);
+});
+
+test("HTML CJK phrase breaking emits bounded deterministic markup without changing report data", () => {
+  // Given: reviewed phrases plus escaping, long-token, path, URL, and mixed-Latin boundaries.
+  const fixture = sampleFindings();
+  const reportData = {
+    ...fixture,
+    language: "zh-CN",
+    target: { name: "render-fixture", path: "/tmp/render-fixture" },
+    summary: {
+      ...fixture.summary,
+      overview: "同一证据包给出两套互相冲突的口径，并保留 recommendedReads 与 app/api/example.py。",
+      dimensions: fixture.summary.dimensions.map((dimension, index) => ({
+        ...dimension,
+        label: ["任务理解", "可控执行", "改动验证", "可靠交付", "经验沉淀"][index],
+        summary: index === 1
+          ? "项目具有工作入口，但画像没有投影这些命令，代理仍需猜测验证路线。"
+          : dimension.summary,
+      })),
+    },
+    findings: fixture.findings.map((finding, index) => ({
+      ...finding,
+      title: index === 0 ? "同一证据包给出相反结论" : "项目画像漏掉工作入口",
+      reason: index === 0
+        ? "安全<script>与命令：https://example.com/复核/very-long-token"
+        : `${finding.reason} 超长连续汉字测试文本边界仍可读取`,
+    })),
+  };
+
+  // When: the Chinese and English documents are rendered through the same HTML renderer.
+  const chineseHtml = renderHtml(reportData);
+  const englishHtml = renderHtml({ ...reportData, language: "en" });
+
+  // Then: ordinary Chinese word segments receive bounded keep-together markup.
+  assert.match(chineseHtml, /<html lang="zh-CN" class="no-js">/u);
+  for (const phrase of ["口径", "入口", "结论", "命令"]) {
+    assert.match(chineseHtml, new RegExp(`<span class="cjk-phrase">${phrase}</span>`, "u"));
+  }
+  const markedPhrases = [...chineseHtml.matchAll(/<span class="cjk-phrase">([^<]+)<\/span>/gu)];
+  assert.ok(markedPhrases.length > 4);
+  for (const [, phrase] of markedPhrases) {
+    assert.match(phrase, /^\p{Script=Han}{2,8}$/u);
+    assert.ok([...phrase].length <= 8);
+  }
+  const metricMarkup = chineseHtml.match(/<div class="metric">([\s\S]*?)<\/div>/u)?.[1] ?? "";
+  const scoreOrbitMarkup = chineseHtml.match(/<div class="score-orbit">([\s\S]*?)<\/div>/u)?.[1] ?? "";
+  const evidenceMarkup = chineseHtml.match(/<div class="evidence-grid">([\s\S]*?)<\/div>/u)?.[1] ?? "";
+  for (const surfaceMarkup of [metricMarkup, scoreOrbitMarkup, evidenceMarkup]) {
+    assert.match(surfaceMarkup, /<span>[\s\S]*?<span class="cjk-phrase">/u);
+  }
+  assert.match(chineseHtml, /\.score-orbit > span\s*\{[^}]*width:110px/u);
+  assert.match(chineseHtml, /\.metric > span,\.metric > small\s*\{[^}]*display:block/u);
+  assert.match(chineseHtml, /\.metric > strong\s*\{[^}]*display:block/u);
+  assert.match(chineseHtml, /\.evidence-grid > div > span,\.evidence-grid > div > strong\s*\{[^}]*display:block/u);
+  assert.match(chineseHtml, /\.evidence-grid > div > span\s*\{[^}]*font-size:12px/u);
+  assert.match(chineseHtml, /\.evidence-grid > div > strong\s*\{[^}]*margin-top:4px/u);
+  assert.match(chineseHtml, /<span class="cjk-phrase">安全<\/span>&lt;script&gt;/u);
+  assert.doesNotMatch(chineseHtml, /安全<script>/u);
+  assert.match(chineseHtml, /recommendedReads/u);
+  assert.match(chineseHtml, /app\/api\/example\.py/u);
+  assert.match(chineseHtml, /https:\/\/example\.com\//u);
+
+  // And: English output and nonvisual report surfaces do not gain phrase markup.
+  assert.match(englishHtml, /<html lang="en" class="no-js">/u);
+  assert.doesNotMatch(englishHtml, /<span class="cjk-phrase">/u);
+  assert.doesNotMatch(chineseHtml, /aria-label="[^"]*<span class="cjk-phrase">/u);
+  assert.doesNotMatch(chineseHtml, /<script id="harness-report-data" type="application\/json">[\s\S]*?<span class="cjk-phrase">/u);
+
+  // And: unsupported runtimes fall back to escaped readable text.
+  const segmenter = Intl.Segmenter;
+  let fallbackHtml;
+  try {
+    Intl.Segmenter = undefined;
+    fallbackHtml = renderHtml(reportData);
+  } finally {
+    Intl.Segmenter = segmenter;
+  }
+  assert.doesNotMatch(fallbackHtml, /<span class="cjk-phrase">/u);
+  assert.match(fallbackHtml, /安全&lt;script&gt;与命令/u);
+});
+
 test("HTML validator rejects incomplete finding action contracts", () => {
   const reportData = {
     ...sampleFindings(),

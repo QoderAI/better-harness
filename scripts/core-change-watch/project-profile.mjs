@@ -57,6 +57,8 @@ const SOURCE_FILES_PER_AGENT_INSTRUCTION = 250;
 const SIGNIFICANT_SOURCE_ROOT_FILES = 100;
 const SOURCE_LINE_METHOD = "tracked readable primary source files only; excludes tests, non-source assets, generated/dependency paths, and untracked files";
 const SOURCE_LINE_SKIPPED_METHOD = "not measured by default; use --measure-source-lines to count tracked readable primary source files only";
+const ROOT_JUSTFILES = new Set(["justfile", "Justfile", ".justfile"]);
+const MAX_JUST_RECIPES = 100;
 
 function scriptNames(manifest, filePath) {
   if (!manifest?.scripts || typeof manifest.scripts !== "object") {
@@ -135,6 +137,41 @@ function entryScore(filePath) {
     return 58;
   }
   return 0;
+}
+
+function justRecipeScore(name) {
+  const conventional = new Map([
+    ["default", 100],
+    ["sync", 99],
+    ["api-dev", 98],
+    ["health", 97],
+    ["check", 96],
+  ]);
+  return conventional.get(name) ?? 70;
+}
+
+function justRecipeNames(text) {
+  const recipes = [];
+  let privateRecipe = false;
+  for (const line of String(text ?? "").split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    if (!/^\s/u.test(line) && /^\[[^\]]+\]$/u.test(trimmed)) {
+      privateRecipe = /(?:^|[\s,])private(?:[\s,]|$)/u.test(trimmed.slice(1, -1));
+      continue;
+    }
+    const match = !/^\s/u.test(line)
+      ? /^@?([A-Za-z_][A-Za-z0-9_-]*)\b(?!\s*:=)[^:\r\n]*:(?:\s|$)/u.exec(line)
+      : null;
+    if (match) {
+      if (!privateRecipe && !match[1].startsWith("_")) recipes.push(match[1]);
+      privateRecipe = false;
+      if (recipes.length >= MAX_JUST_RECIPES) break;
+      continue;
+    }
+    if (!/^\s/u.test(line)) privateRecipe = false;
+  }
+  return [...new Set(recipes)];
 }
 
 function corePathHint(filePath, analysisScope) {
@@ -313,6 +350,7 @@ function detectFrameworks(repoRoot, trackedFiles) {
     || firstManifestWithDependency(composerManifests, "symfony/http-kernel");
   const codeIgniterManifest = firstManifestWithDependency(composerManifests, "codeigniter4/framework");
   const railsGemfile = firstTextMatch(repoRoot, fileSet, /(^|\/)Gemfile$/, /\bgem\s+["']rails["']/);
+  const railsRoutes = manifestFiles(fileSet, /(^|\/)config\/routes\.rb$/)[0] ?? "";
   const pythonManifestText = joinedManifestText(repoRoot, fileSet, /(^|\/)(requirements\.txt|pyproject\.toml|Pipfile)$/);
   const javaBuildText = joinedManifestText(repoRoot, fileSet, /(^|\/)(pom\.xml|build\.gradle|build\.gradle\.kts)$/);
 
@@ -331,8 +369,11 @@ function detectFrameworks(repoRoot, trackedFiles) {
   if (codeIgniterManifest || fileSet.has("app/Config/Routes.php")) {
     addFrameworkSignal(signals, "codeigniter", codeIgniterManifest ? 70 : 30, codeIgniterManifest ? `${codeIgniterManifest}:codeigniter4/framework` : "app/Config/Routes.php");
   }
-  if (railsGemfile || fileSet.has("config/routes.rb") || hasFileMatching(fileSet, /^app\/(models|controllers|services)\//)) {
-    addFrameworkSignal(signals, "rails", railsGemfile ? 75 : 35, railsGemfile ? `${railsGemfile}:rails` : "rails app paths");
+  if (railsGemfile || railsRoutes) {
+    addFrameworkSignal(signals, "rails", railsGemfile ? 75 : 45, railsGemfile ? `${railsGemfile}:rails` : railsRoutes);
+  }
+  if (/\bfastapi\b/iu.test(pythonManifestText)) {
+    addFrameworkSignal(signals, "fastapi", 75, "python manifest:fastapi");
   }
   if (/\bdjango\b/i.test(pythonManifestText) || fileSet.has("manage.py") || hasFileMatching(fileSet, /(^|\/)settings\.py$/)) {
     addFrameworkSignal(signals, "django", /\bdjango\b/i.test(pythonManifestText) ? 70 : 35, /\bdjango\b/i.test(pythonManifestText) ? "python manifest:django" : "manage.py/settings.py");
@@ -526,6 +567,10 @@ function buildProjectInfo({
       path: item.path,
       language: item.language,
       score: item.score,
+      ...(item.kind ? { kind: item.kind } : {}),
+      ...(item.command ? { command: item.command } : {}),
+      ...(item.sourcePath ? { sourcePath: item.sourcePath } : {}),
+      ...(item.executionStatus ? { executionStatus: item.executionStatus } : {}),
     })),
     manifests: manifests.slice(0, 8),
   };
@@ -563,6 +608,23 @@ export async function analyzeProjectProfile(options = {}) {
     if (isDependencyOrGenerated(normalized)) {
       totals.generatedOrDependencyFiles += 1;
       continue;
+    }
+
+    if (!normalized.includes("/") && ROOT_JUSTFILES.has(normalized)) {
+      const recipes = justRecipeNames(safeReadText(repoRoot, normalized));
+      manifests.push({ path: normalized, kind: "just", scripts: [...recipes].sort() });
+      for (const recipe of recipes) {
+        entryCandidates.push({
+          path: normalized,
+          language: "just",
+          score: justRecipeScore(recipe),
+          reasons: compactReasonList(["statically discovered root Just recipe"]),
+          kind: "just-recipe",
+          command: ["just", recipe],
+          sourcePath: normalized,
+          executionStatus: "unverified",
+        });
+      }
     }
 
     if (isManifestFile(normalized)) {

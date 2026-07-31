@@ -89,6 +89,99 @@ test("project profile identifies language, manifest, source root, and entry sign
   }
 });
 
+test("framework-specific evidence distinguishes FastAPI from generic Rails and TypeScript paths", async () => {
+  const repo = await makeRepo({
+    "pyproject.toml": "[project]\nname = \"fastapi-service\"\ndependencies = [\"fastapi>=0.116\"]\n",
+    "app/api/routes.py": "def route(): return True\n",
+    "app/services/search.py": "def search(): return []\n",
+  });
+
+  try {
+    const profile = await analyzeProjectProfile({ cwd: repo });
+    const core = await analyzeCoreCandidates({ cwd: repo, profile, maxCommits: 20 });
+
+    assert.ok(profile.frameworks.some((item) => item.name === "fastapi" && item.confidence === "high"));
+    assert.equal(profile.frameworks.some((item) => item.name === "rails"), false);
+    assert.equal(
+      core.candidates
+        .filter((item) => item.path === "app/api" || item.path.startsWith("app/api/"))
+        .some((item) => item.reasons.some((reason) => /typescript/iu.test(reason))),
+      false,
+    );
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("Just recipes are projected statically as unverified argv entry candidates", async () => {
+  const repo = await makeRepo({
+    "Justfile": [
+      "default:",
+      "    @just --list",
+      "sync:",
+      "    uv sync",
+      "api-dev *args=\"\":",
+      "    uv run uvicorn app.main:app {{args}}",
+      "health:",
+      "    curl http://localhost:7102/health",
+      "[private]",
+      "secret-maintenance:",
+      "    echo hidden",
+      "check: sync",
+      "    just test",
+      "",
+    ].join("\r\n"),
+    "app/main.py": "def main(): return True\n",
+  });
+
+  try {
+    const profile = await analyzeProjectProfile({ cwd: repo });
+    const entries = profile.projectInfo.entryCandidates.filter((item) => item.kind === "just-recipe");
+
+    for (const recipe of ["default", "sync", "api-dev", "health", "check"]) {
+      const entry = entries.find((item) => item.command?.join(" ") === `just ${recipe}`);
+      assert.ok(entry, recipe);
+      assert.equal(entry.sourcePath, "Justfile");
+      assert.equal(entry.executionStatus, "unverified");
+    }
+    assert.equal(entries.some((item) => item.command?.includes("secret-maintenance")), false);
+    assert.deepEqual(
+      profile.manifests.find((item) => item.path === "Justfile")?.scripts,
+      ["api-dev", "check", "default", "health", "sync"],
+    );
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("non-current historical paths stay in history but leave current reads and actions", async () => {
+  const repo = await makeRepo({
+    "src/core/current.ts": "export const current = true;\n",
+    "src/core/legacy.ts": "export const legacy = 0;\n",
+  });
+
+  try {
+    for (let index = 1; index <= 4; index += 1) {
+      await writeFixtureFile(repo, "src/core/legacy.ts", `export const legacy = ${index};\n`);
+      git(repo, ["add", "."]);
+      git(repo, ["commit", "-q", "-m", `touch legacy ${index}`]);
+    }
+    git(repo, ["rm", "-q", "src/core/legacy.ts"]);
+    git(repo, ["commit", "-q", "-m", "remove legacy source"]);
+    await writeFixtureFile(repo, "src/core/new-service.ts", "export const added = true;\n");
+
+    const pack = await buildEvidencePack({ cwd: repo, baseRef: "HEAD", maxCommits: 30 });
+    const actionPaths = pack.followUpActions.flatMap((action) => action.files ?? []).map((item) => item.path);
+
+    assert.ok(pack.historyProfile.hotFiles.some((item) => item.path === "src/core/legacy.ts"));
+    assert.equal(pack.recommendedReads.some((item) => item.path === "src/core/legacy.ts"), false);
+    assert.equal(actionPaths.includes("src/core/legacy.ts"), false);
+    assert.ok(pack.recommendedReads.some((item) => item.path === "src/core/new-service.ts"));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test("project profile summarizes project identity, scale, and AGENTS instruction density", async () => {
   const repo = await makeRepo({
     "package.json": JSON.stringify({
