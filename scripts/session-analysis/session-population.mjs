@@ -3,6 +3,11 @@ import {
   createFactsRunContext,
   prepareFactsSessionInventory,
 } from "./session-core-facts.mjs";
+import {
+  bindSessionWorkspaceCwds,
+  cloneSessionWithWorkspaceCwds,
+  sessionWorkspaceCwds,
+} from "./provider-runner.mjs";
 
 export const SESSION_POPULATION_BINDING_SCHEMA_VERSION = 1;
 export const SESSION_SELECTION_BINDING_SCHEMA_VERSION = 1;
@@ -41,6 +46,14 @@ function bindingError(code, message) {
   return Object.assign(new Error(message), { code });
 }
 
+function freezeSession(session, inheritedWorkspaceCwds = []) {
+  const frozenCandidate = cloneSessionWithWorkspaceCwds(session);
+  if (sessionWorkspaceCwds(frozenCandidate).length === 0) {
+    bindSessionWorkspaceCwds(frozenCandidate, inheritedWorkspaceCwds);
+  }
+  return Object.freeze(frozenCandidate);
+}
+
 export function freezeSessionPopulation({
   scope = {},
   sessions = [],
@@ -58,8 +71,16 @@ export function freezeSessionPopulation({
     ...(excludedSessionId ? { "exclude-session-id": excludedSessionId } : {}),
     _factsStartedAt: startedAt,
   }, platform, providerSessionId);
-  const prepared = prepareFactsSessionInventory(rows(sessions), factsContext);
-  const frozenSessions = Object.freeze(prepared.sessions.map((session) => Object.freeze(structuredClone(session))));
+  const sourceSessions = rows(sessions);
+  const workspaceCwdsBySessionId = new Map(sourceSessions.flatMap((session) => {
+    const sessionId = String(session?.sessionId ?? "").trim();
+    return sessionId ? [[sessionId, sessionWorkspaceCwds(session)]] : [];
+  }));
+  const prepared = prepareFactsSessionInventory(sourceSessions, factsContext);
+  const frozenSessions = Object.freeze(prepared.sessions.map((session) => {
+    const sessionId = String(session?.sessionId ?? "").trim();
+    return freezeSession(session, sessionId ? workspaceCwdsBySessionId.get(sessionId) : []);
+  }));
   const ids = sessionIds(frozenSessions);
   const population = {
     sessions: frozenSessions,

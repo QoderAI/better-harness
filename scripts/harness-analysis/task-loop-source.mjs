@@ -21,6 +21,7 @@ import { projectCheckupReportEvidence } from "../coding-agent-practices/checkup/
 import { buildTaskEpisodes, stableFingerprint } from "../session-analysis/episode-contract.mjs";
 import { buildObservationManifest } from "../session-analysis/observation-manifest.mjs";
 import { sanitizePrivateReviewText } from "../session-analysis/privacy-safe-text.mjs";
+import { cloneSessionWithWorkspaceCwds } from "../session-analysis/provider-runner.mjs";
 import { sessionAnalysisRef } from "../session-analysis/session-ref.mjs";
 import {
   bindSessionSelection,
@@ -1102,7 +1103,9 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     ? sessionPopulationDiscovery(population)
     : await analyzer.analyze({ ...analyzerOptions, command: "sources" });
   const inventorySource = population?.sessions ?? discovery.sessions;
-  const sessionInventory = Object.freeze(inventorySource.map((session) => Object.freeze(structuredClone(session))));
+  const sessionInventory = Object.freeze(
+    inventorySource.map((session) => Object.freeze(cloneSessionWithWorkspaceCwds(session))),
+  );
   if (selectionProfile) {
     assertSessionSelectionBinding(selectionProfile, selectionPlan, { eligibleCount: sessionInventory.length });
   }

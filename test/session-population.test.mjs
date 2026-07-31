@@ -5,6 +5,10 @@ async function populationModule() {
   return import("../scripts/session-analysis/session-population.mjs");
 }
 
+async function workspaceModule() {
+  return import("../scripts/session-analysis/provider-runner.mjs");
+}
+
 test("frozen population binding omits exact active and Qoder home-only sessions", async () => {
   const { freezeSessionPopulation } = await populationModule();
   const population = freezeSessionPopulation({
@@ -31,6 +35,28 @@ test("frozen population binding omits exact active and Qoder home-only sessions"
   assert.equal(population.binding.eligible.count, 1);
   assert.match(population.binding.eligible.fingerprint, /^[a-f0-9]{16}$/u);
   assert.doesNotMatch(JSON.stringify(population.binding), /active-private|home-private|eligible-private|\/private/u);
+});
+
+test("frozen population preserves private Session workspace CWD candidates", async () => {
+  const { freezeSessionPopulation } = await populationModule();
+  const { bindSessionWorkspaceCwds, sessionWorkspaceCwds } = await workspaceModule();
+  const session = bindSessionWorkspaceCwds(
+    { sessionId: "eligible" },
+    ["/workspace", "/workspace/member"],
+  );
+
+  const population = freezeSessionPopulation({
+    scope: { platform: "codex", workspace: "/workspace", until: "2026-07-30T00:00:00.000Z" },
+    sessions: [session],
+    suppliedUntil: true,
+  });
+  const [frozenSession] = population.sessions;
+
+  assert.deepEqual(sessionWorkspaceCwds(frozenSession), ["/workspace", "/workspace/member"]);
+  assert.deepEqual(Object.keys(frozenSession), ["sessionId"]);
+  assert.deepEqual({ ...frozenSession }, { sessionId: "eligible" });
+  assert.equal(JSON.stringify(frozenSession), "{\"sessionId\":\"eligible\"}");
+  assert.equal(Object.isFrozen(frozenSession), true);
 });
 
 test("selection binding rejects a session outside the frozen population", async () => {

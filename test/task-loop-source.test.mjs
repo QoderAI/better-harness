@@ -7,6 +7,10 @@ import test from "node:test";
 import { buildCheckupScan } from "../scripts/coding-agent-practices/checkup/scan.mjs";
 import { freezeSessionPopulation } from "../scripts/session-analysis/session-population.mjs";
 import {
+  bindSessionWorkspaceCwds,
+  sessionWorkspaceCwds,
+} from "../scripts/session-analysis/provider-runner.mjs";
+import {
   buildHarnessReviewPacket,
   validateHarnessReviewPacket,
 } from "../scripts/harness-analysis/report-review-packet.mjs";
@@ -401,13 +405,14 @@ test("requested usage reuses one frozen population without rediscovery and emits
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-frozen-usage-"));
   const workspace = path.join(root, "workspace");
   const calls = [];
-  const initialSessions = ["session-a", "session-b"].map((sessionId) => ({
-    sessionId,
-    firstSeen: "2026-07-17T08:00:00.000Z",
-    lastSeen: "2026-07-17T08:05:00.000Z",
-    sourceKinds: ["fixture"],
-    sourceRefs: [{ kind: "project-session", path: "/fixture/session.jsonl" }],
-  }));
+  const initialSessions = ["session-a", "session-b"].map((sessionId) =>
+    bindSessionWorkspaceCwds({
+      sessionId,
+      firstSeen: "2026-07-17T08:00:00.000Z",
+      lastSeen: "2026-07-17T08:05:00.000Z",
+      sourceKinds: ["fixture"],
+      sourceRefs: [{ kind: "project-session", path: "/fixture/session.jsonl" }],
+    }, [workspace]));
   const activity = {
     schemaVersion: 1,
     dateBasis: "UTC",
@@ -449,6 +454,7 @@ test("requested usage reuses one frozen population without rediscovery and emits
         until: options.until,
         piHome: options.piHome,
         inventory: options.sessionInventory?.map((session) => session.sessionId) ?? null,
+        workspaceCwds: options.sessionInventory?.map(sessionWorkspaceCwds) ?? null,
       });
       if (options.command === "sources") {
         return {
@@ -523,6 +529,10 @@ test("requested usage reuses one frozen population without rediscovery and emits
     assert.deepEqual(calls.filter((call) => call.command === "insights").map((call) => call.inventory), [
       ["session-a", "session-b"],
       ["session-a", "session-b"],
+    ]);
+    assert.deepEqual(calls.filter((call) => call.command === "insights").map((call) => call.workspaceCwds), [
+      [[workspace], [workspace]],
+      [[workspace], [workspace]],
     ]);
   } finally {
     await rm(root, { recursive: true, force: true });

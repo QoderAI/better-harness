@@ -83,6 +83,11 @@ export function sessionWorkspaceCwds(session) {
   return typeof explicit === "string" && explicit.length > 0 ? [explicit] : [];
 }
 
+export function cloneSessionWithWorkspaceCwds(session) {
+  const clonedSession = structuredClone(session);
+  return bindSessionWorkspaceCwds(clonedSession, sessionWorkspaceCwds(session));
+}
+
 export function sessionWorkspaceCwd(session, workspaceScope) {
   if (!workspaceScope) return sessionWorkspaceCwds(session)[0] ?? null;
   if (session?.workspaceMatch === WORKSPACE_SESSION_MATCH.DIRECT_CWD) {
