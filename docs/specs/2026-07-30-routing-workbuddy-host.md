@@ -40,10 +40,11 @@ against `routing.md`.
   match the updated host list.
 - AC-3: `test/support-declarations.test.mjs` gains a derived check: every
   adapter-matrix host whose Default Output cell claims
-  `self-contained HTML + Markdown` must appear in the Portable HTML report
-  route of `routing.md`. The check is one-directional so a host may be
-  removed from the matrix claim first (as the in-flight A-05 change does for
-  Cursor) without breaking routing.
+  `self-contained HTML + Markdown` must appear as an exact host entry in the
+  Portable HTML report route of `routing.md`. A prefix collision such as
+  `WorkBuddy` versus `WorkBuddy Enterprise` must fail. The check is
+  one-directional so a host may be removed from the matrix claim first (as the
+  in-flight A-05 change does for Cursor) without breaking routing.
 - AC-4: `npm test` passes; `node --test test/doc-link-graph.test.mjs` passes
   with this spec's links resolving.
 
@@ -61,11 +62,14 @@ against `routing.md`.
    `templates/reporting/routing.md`.
 2. Update the two hard-coded host-list assertions to match.
 3. Add the derived matrix-to-routing consistency test to
-   `test/support-declarations.test.mjs`.
+   `test/support-declarations.test.mjs`, parsing the route declaration into
+   normalized host entries and covering a host-prefix collision.
 
 ## Test Evidence
 
 - `node --test test/support-declarations.test.mjs`
+- Mutation regression: replacing the exact `WorkBuddy` route entry with
+  `WorkBuddy Enterprise` must report WorkBuddy as missing.
 - `node --test test/better-harness-skill.test.mjs`
 - `node --test test/style-templates.test.mjs`
 - `node --test test/doc-link-graph.test.mjs`
