@@ -43,6 +43,9 @@ agent loop.
   plugin/connector, subagent, and state support.
 - `automation-readiness.md`: schedule or automation readiness contract after
   Loop Discovery selects automation or `schedule-ready`.
+- `readiness-gate.md`: executable fail-closed readiness gate (`LC-01`) that
+  decides whether a caller-declared capability assessment allows a loop run
+  level.
 - `loop-state-ledger.md`: state ledger contract for paused, recurring,
   background, or multi-run loops.
 - `learning-loop-patterns.md`: longitudinal learning pattern signatures,
@@ -75,6 +78,8 @@ agent loop.
 - Use `loop-primitives.md` when a proven loop needs supporting primitives.
 - Use `automation-readiness.md` after the decision is automation,
   `schedule-ready`, or scheduled/background follow-up.
+- Use `readiness-gate.md` when a proposed loop run level needs an executable
+  allowed/prevented decision from declared capability observations.
 - Use `loop-state-ledger.md` when a loop needs resumable, recurring, or
   cross-agent state.
 - Continue to `../agent-customize/skill-discovery.md` only after Loop Discovery selects

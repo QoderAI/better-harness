@@ -1,0 +1,76 @@
+{
+  "kind": "loop-readiness-assessment",
+  "readinessContractVersion": 1,
+  "observations": [
+    {
+      "id": "workspace-read",
+      "state": "available",
+      "evidence": "fixture: workspace-read verified by caller"
+    },
+    {
+      "id": "evidence-source",
+      "state": "available",
+      "evidence": "fixture: evidence-source verified by caller"
+    },
+    {
+      "id": "privacy-boundary",
+      "state": "available",
+      "evidence": "fixture: privacy-boundary verified by caller"
+    },
+    {
+      "id": "plan-artifact-write",
+      "state": "available",
+      "evidence": "fixture: plan-artifact-write verified by caller"
+    },
+    {
+      "id": "human-approval",
+      "state": "available",
+      "evidence": "fixture: human-approval verified by caller"
+    },
+    {
+      "id": "isolated-execution",
+      "state": "available",
+      "evidence": "fixture: isolated-execution verified by caller"
+    },
+    {
+      "id": "frozen-pre-state",
+      "state": "available",
+      "evidence": "fixture: frozen-pre-state verified by caller"
+    },
+    {
+      "id": "validation-route",
+      "state": "available",
+      "evidence": "fixture: validation-route verified by caller"
+    },
+    {
+      "id": "rollback-reference",
+      "state": "available",
+      "evidence": "fixture: rollback-reference verified by caller"
+    },
+    {
+      "id": "schedule-trigger",
+      "state": "available",
+      "evidence": "fixture: schedule-trigger verified by caller"
+    },
+    {
+      "id": "stop-condition",
+      "state": "available",
+      "evidence": "fixture: stop-condition verified by caller"
+    },
+    {
+      "id": "triage-path",
+      "state": "available",
+      "evidence": "fixture: triage-path verified by caller"
+    },
+    {
+      "id": "budget-policy",
+      "state": "available",
+      "evidence": "fixture: budget-policy verified by caller"
+    },
+    {
+      "id": "idempotent-recovery",
+      "state": "available",
+      "evidence": "fixture: idempotent-recovery verified by caller"
+    }
+  ]
+}

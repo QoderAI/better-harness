@@ -1,0 +1,26 @@
+{
+  "kind": "loop-readiness-assessment",
+  "readinessContractVersion": 1,
+  "observations": [
+    {
+      "id": "workspace-read",
+      "state": "available",
+      "evidence": "fixture: workspace-read verified by caller"
+    },
+    {
+      "id": "evidence-source",
+      "state": "available",
+      "evidence": "fixture: evidence-source verified by caller"
+    },
+    {
+      "id": "privacy-boundary",
+      "state": "available",
+      "evidence": "fixture: privacy-boundary verified by caller"
+    },
+    {
+      "id": "plan-artifact-write",
+      "state": "blocked",
+      "evidence": "fixture: plan directory is read-only"
+    }
+  ]
+}

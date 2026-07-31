@@ -31,6 +31,11 @@ const HELP_GROUPS = [
     commands: ["harness"],
   },
   {
+    title: "Loop Control",
+    audience: "advanced",
+    commands: ["loop"],
+  },
+  {
     title: "Project Evidence",
     audience: "advanced",
     commands: ["session-analysis", "dependency-governance", "cloc"],
@@ -80,6 +85,9 @@ const GROUP_EXAMPLES = {
   "coding-agent-practices": [
     { audience: "advanced", text: "better-harness coding-agent-practices asset-baseline codex --workspace . --json" },
     { audience: "advanced", text: "better-harness coding-agent-practices inventory qoder --workspace ." },
+  ],
+  "loop": [
+    { audience: "advanced", text: "better-harness loop readiness --level read-only-observation --assessment <file> --json" },
   ],
 };
 

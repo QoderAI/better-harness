@@ -1,0 +1,16 @@
+{
+  "kind": "loop-readiness-assessment",
+  "readinessContractVersion": 1,
+  "observations": [
+    {
+      "id": "workspace-read",
+      "state": "available",
+      "evidence": "fixture: workspace-read verified by caller"
+    },
+    {
+      "id": "workspace-write",
+      "state": "available",
+      "evidence": "fixture: misspelled capability"
+    }
+  ]
+}
