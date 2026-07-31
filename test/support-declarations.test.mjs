@@ -13,6 +13,7 @@ const SUPPORTED_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copi
 
 const cliPath = path.join(process.cwd(), "scripts", "better-harness.mjs");
 const adapterMatrixPath = path.join(process.cwd(), "docs", "adapters", "README.md");
+const reportRoutingPath = path.join(process.cwd(), "templates", "reporting", "routing.md");
 
 function runBetterHarness(args) {
   return spawnSync(process.execPath, [cliPath, ...args], {
@@ -118,4 +119,25 @@ test("host adapter matrix documents exactly the supported platforms", () => {
   const documentedPlatforms = [...matrix.matchAll(/session-analysis\/platforms\/([a-z-]+)\.mjs/gu)].map((match) => match[1]);
   assertSameSet(documentedProviders, "adapter matrix configured-asset providers");
   assertSameSet(documentedPlatforms, "adapter matrix session platforms");
+});
+
+test("adapter-matrix portable HTML hosts appear in the portable HTML report route", () => {
+  const matrix = readFileSync(adapterMatrixPath, "utf8");
+  const routing = readFileSync(reportRoutingPath, "utf8");
+
+  // Hosts whose matrix Default Output cell claims the portable HTML pipeline.
+  // One-directional on purpose: a host may drop the matrix claim first (for
+  // example a pending durable-report gap) without breaking report routing.
+  const htmlHosts = matrix
+    .split("\n")
+    .map((line) => line.split("|").map((cell) => cell.trim()))
+    .filter((cells) => cells[6] === "self-contained HTML + Markdown")
+    .map((cells) => cells[1]);
+  assert.ok(htmlHosts.length > 0, "adapter matrix declares no self-contained HTML + Markdown hosts");
+
+  const routeHosts = routing.match(/\| Portable HTML report \| Active host is ([^|]+)\|/u)?.[1];
+  assert.ok(routeHosts, "reporting/routing.md does not declare a Portable HTML report route");
+  for (const host of htmlHosts) {
+    assert.ok(routeHosts.includes(host), `Portable HTML report route is missing matrix HTML host: ${host}`);
+  }
 });
