@@ -34,15 +34,21 @@ export async function collectSessionPopulation(context, options = {}, dependenci
       code: "INVALID_SESSION_POPULATION",
     });
   }
+  const scope = {
+    ...(discovery.scope ?? {}),
+    platform: context.provider,
+    workspace: context.workspace,
+    since: context.window.since,
+    until: context.window.until,
+  };
   return freezeSessionPopulation({
-    scope: {
-      ...(discovery.scope ?? {}),
-      platform: context.provider,
-      workspace: context.workspace,
-      since: context.window.since,
-      until: context.window.until,
-    },
+    scope,
     sessions: discovery.sessions,
+    discovery: {
+      scope,
+      sources: discovery.sources,
+      warnings: discovery.warnings,
+    },
     excludedSessionId: options["exclude-session-id"] ?? options.excludeSessionId,
     providerSessionId: typeof analyzer.currentSessionId === "function" ? analyzer.currentSessionId() : null,
     suppliedUntil: true,

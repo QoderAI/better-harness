@@ -9,6 +9,7 @@ export const SESSION_SELECTION_BINDING_SCHEMA_VERSION = 1;
 export const SESSION_ADMISSION_BINDING_SCHEMA_VERSION = 1;
 
 const PRIVATE_POPULATION_IDS = new WeakMap();
+const PRIVATE_POPULATION_DISCOVERY = new WeakMap();
 
 function rows(value) {
   return Array.isArray(value) ? value : [];
@@ -43,6 +44,7 @@ function bindingError(code, message) {
 export function freezeSessionPopulation({
   scope = {},
   sessions = [],
+  discovery = null,
   excludedSessionId = null,
   providerSessionId = null,
   suppliedUntil = scope.until !== undefined && scope.until !== null && scope.until !== "",
@@ -89,7 +91,20 @@ export function freezeSessionPopulation({
     }),
   };
   PRIVATE_POPULATION_IDS.set(population, new Set(ids));
+  PRIVATE_POPULATION_DISCOVERY.set(population, Object.freeze({
+    scope: Object.freeze(structuredClone(discovery?.scope ?? scope)),
+    sources: Object.freeze(rows(discovery?.sources).map((source) => Object.freeze(structuredClone(source)))),
+    warnings: Object.freeze(rows(discovery?.warnings).map((warning) => Object.freeze(structuredClone(warning)))),
+  }));
   return Object.freeze(population);
+}
+
+export function sessionPopulationDiscovery(population) {
+  const discovery = PRIVATE_POPULATION_DISCOVERY.get(population);
+  if (!discovery) {
+    throw bindingError("INVALID_SESSION_POPULATION", "discovery requires a private frozen Session population");
+  }
+  return discovery;
 }
 
 export function bindSessionSelection(population, selectedSessions = [], {

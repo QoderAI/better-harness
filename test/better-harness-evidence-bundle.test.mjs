@@ -505,7 +505,9 @@ test("Session population conflict fails closed with a redacted stable code", asy
   assert.equal(result.lead.status, "unavailable");
   assert.equal(result.lead.error.code, "SESSION_POPULATION_BINDING_MISMATCH");
   assert.equal(result.diagnostics.sessionPopulationBinding.status, "conflict");
-  assert.doesNotMatch(JSON.stringify(result), /eligible-session|private|sessionId/u);
+  const serialized = JSON.stringify(result);
+  assert.doesNotMatch(serialized, /eligible-session/u);
+  assert.doesNotMatch(serialized, /"sessionId"/u);
 });
 
 test("Session population conflict rejects lead counts that contradict its binding", async () => {

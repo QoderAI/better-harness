@@ -25,6 +25,7 @@ import { sessionAnalysisRef } from "../session-analysis/session-ref.mjs";
 import {
   bindSessionSelection,
   leadAdmissionBinding,
+  sessionPopulationDiscovery,
 } from "../session-analysis/session-population.mjs";
 import { selectSessions } from "../session-analysis/selection.mjs";
 import {
@@ -1096,8 +1097,10 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     topology: options.topology,
     analysisScope: options.analysisScope,
   };
-  const discovery = await analyzer.analyze({ ...analyzerOptions, command: "sources" });
   const population = options.sessionPopulation ?? null;
+  const discovery = population
+    ? sessionPopulationDiscovery(population)
+    : await analyzer.analyze({ ...analyzerOptions, command: "sources" });
   const inventorySource = population?.sessions ?? discovery.sessions;
   const sessionInventory = Object.freeze(inventorySource.map((session) => Object.freeze(structuredClone(session))));
   if (selectionProfile) {

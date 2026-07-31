@@ -397,7 +397,7 @@ test("source generation keeps usage opt-in and rejects incomplete requested cens
   );
 });
 
-test("requested usage reuses one frozen population and emits its lead selection binding", async () => {
+test("requested usage reuses one frozen population without rediscovery and emits its lead selection binding", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-frozen-usage-"));
   const workspace = path.join(root, "workspace");
   const calls = [];
@@ -519,6 +519,7 @@ test("requested usage reuses one frozen population and emits its lead selection 
       + sessionBinding.admission.zeroSignalDiscardedEpisodes);
     assert.equal(new Set(calls.map((call) => call.until)).size, 1);
     assert.ok(calls.every((call) => call.piHome === path.join(root, ".pi", "agent")));
+    assert.equal(calls.filter((call) => call.command === "sources").length, 0);
     assert.deepEqual(calls.filter((call) => call.command === "insights").map((call) => call.inventory), [
       ["session-a", "session-b"],
       ["session-a", "session-b"],

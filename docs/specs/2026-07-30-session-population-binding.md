@@ -101,6 +101,13 @@ Tasks:
 - Privacy serialization audit: the focused bundle fixture proves neither the
   private inventory nor its Session IDs appear in serialized output; the real
   target inspection printed only versioned bindings and aggregate counters.
+- Review hardening: the lead source path now skips a second `sources` discovery
+  when a frozen population is supplied, and the privacy regression checks
+  specific fixture identities instead of rejecting macOS `/private/tmp` paths.
+- Review validation: the focused Session/report suite passed 123/123 tests, the
+  repository gate passed 1006/1006 tests plus package verification, and browser
+  QA confirmed complete progressbar semantics with no console errors or page
+  overflow in the Chinese HTML fixture.
 - Documentation: the canonical routing graph regenerated without drift and the
   six documentation checks pass.
 - Package gate: `TMPDIR=<clean-temp-root> npm run check` passed 892/892 tests
