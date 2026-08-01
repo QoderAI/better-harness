@@ -150,13 +150,19 @@ function isWithinRoot(root, candidate) {
 
 async function safeStructureItems(root, items, warnings) {
   const canonicalRoot = await realpath(root);
+  const trackedRoutes = new Set(
+    items.filter((item) => item.provenance === "tracked").map((item) => item.route),
+  );
   const safe = [];
   for (const item of items) {
     const absolute = path.resolve(root, ...item.route.split("/"));
     try {
       const canonical = await realpath(absolute);
       const metadata = await lstat(canonical);
-      if (!metadata.isFile() || !isWithinRoot(canonicalRoot, canonical)) {
+      const canonicalRoute = path.relative(canonicalRoot, canonical).split(path.sep).join("/");
+      const safeRedirect = canonicalRoute === item.route
+        || (item.provenance === "tracked" && trackedRoutes.has(canonicalRoute));
+      if (!metadata.isFile() || !isWithinRoot(canonicalRoot, canonical) || !safeRedirect) {
         warnings.push(warning("structure-entry-unsafe", item.route));
         continue;
       }

@@ -417,6 +417,64 @@ test("workspace topology accepts a contained tracked structural symlink", async 
   }
 });
 
+test("workspace topology rejects a tracked structural symlink to an ignored in-root file", async (t) => {
+  const repo = await makeGitRepo({
+    ".gitignore": ".env\n",
+  }, {
+    ".env": "LOCAL_ONLY=placeholder\n",
+  });
+  try {
+    try {
+      await symlink(".env", path.join(repo, "CLAUDE.md"));
+    } catch (error) {
+      t.skip(`symlink unavailable: ${error.message}`);
+      return;
+    }
+    git(repo, ["add", "CLAUDE.md"]);
+    git(repo, ["commit", "-q", "-m", "add ignored-target structural symlink fixture"]);
+
+    const result = await resolveWorkspaceTopology({ workspace: repo });
+
+    assert.equal(result.topology.status, "partial");
+    assert.equal(
+      result.topology.instructionScopes.items.some((item) => item.route === "CLAUDE.md"),
+      false,
+    );
+    assert.ok(result.topology.discovery.warnings.some((item) =>
+      item.code === "structure-entry-unsafe" && item.route === "CLAUDE.md"));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("workspace topology rejects a tracked structural symlink to a non-structural file", async (t) => {
+  const repo = await makeGitRepo({
+    "README.md": "# project\n",
+  });
+  try {
+    try {
+      await symlink("README.md", path.join(repo, "CLAUDE.md"));
+    } catch (error) {
+      t.skip(`symlink unavailable: ${error.message}`);
+      return;
+    }
+    git(repo, ["add", "CLAUDE.md"]);
+    git(repo, ["commit", "-q", "-m", "add non-structural-target symlink fixture"]);
+
+    const result = await resolveWorkspaceTopology({ workspace: repo });
+
+    assert.equal(result.topology.status, "partial");
+    assert.equal(
+      result.topology.instructionScopes.items.some((item) => item.route === "CLAUDE.md"),
+      false,
+    );
+    assert.ok(result.topology.discovery.warnings.some((item) =>
+      item.code === "structure-entry-unsafe" && item.route === "CLAUDE.md"));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test("workspace topology does not follow a tracked structural symlink outside the Git root", async () => {
   const repo = await makeGitRepo({
     "package.json": JSON.stringify({ workspaces: ["packages/*"] }),
