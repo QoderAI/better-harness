@@ -475,6 +475,32 @@ test("workspace topology rejects a tracked structural symlink to a non-structura
   }
 });
 
+test("workspace topology rejects a tracked manifest symlink to another manifest route", async (t) => {
+  const repo = await makeGitRepo({
+    "package.json": JSON.stringify({ name: "root" }),
+    "packages/source/package.json": JSON.stringify({ name: "source" }),
+  });
+  try {
+    await mkdir(path.join(repo, "packages", "alias"), { recursive: true });
+    try {
+      await symlink("../source/package.json", path.join(repo, "packages", "alias", "package.json"));
+    } catch (error) {
+      t.skip(`symlink unavailable: ${error.message}`);
+      return;
+    }
+    git(repo, ["add", "packages/alias/package.json"]);
+    git(repo, ["commit", "-q", "-m", "add tracked manifest alias fixture"]);
+
+    const result = await resolveWorkspaceTopology({ workspace: repo });
+
+    assert.equal(result.topology.status, "partial");
+    assert.ok(result.topology.discovery.warnings.some((item) =>
+      item.code === "structure-entry-unsafe" && item.route === "packages/alias/package.json"));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test("workspace topology does not follow a tracked structural symlink outside the Git root", async () => {
   const repo = await makeGitRepo({
     "package.json": JSON.stringify({ workspaces: ["packages/*"] }),

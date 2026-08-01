@@ -148,6 +148,23 @@ function isWithinRoot(root, candidate) {
     || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
+function isInstructionRoute(route) {
+  const base = path.posix.basename(route);
+  const extension = path.posix.extname(route).toLowerCase();
+  return base === "AGENTS.md"
+    || base === "CLAUDE.md"
+    || base === "CLAUDE.local.md"
+    || base === "QWEN.md"
+    || route === ".github/copilot-instructions.md"
+    || (route.startsWith(".github/instructions/") && route.endsWith(".instructions.md"))
+    || ((route.includes("/.claude/rules/") || route.startsWith(".claude/rules/"))
+      && new Set([".md", ".mdc"]).has(extension))
+    || ((route.includes("/.cursor/rules/") || route.startsWith(".cursor/rules/"))
+      && new Set([".md", ".mdc"]).has(extension))
+    || ((route.includes("/.qoder/rules/") || route.startsWith(".qoder/rules/"))
+      && new Set([".md", ".mdc"]).has(extension));
+}
+
 async function safeStructureItems(root, items, warnings) {
   const canonicalRoot = await realpath(root);
   const trackedRoutes = new Set(
@@ -161,7 +178,12 @@ async function safeStructureItems(root, items, warnings) {
       const metadata = await lstat(canonical);
       const canonicalRoute = path.relative(canonicalRoot, canonical).split(path.sep).join("/");
       const safeRedirect = canonicalRoute === item.route
-        || (item.provenance === "tracked" && trackedRoutes.has(canonicalRoute));
+        || (
+          item.provenance === "tracked"
+          && trackedRoutes.has(canonicalRoute)
+          && isInstructionRoute(item.route)
+          && isInstructionRoute(canonicalRoute)
+        );
       if (!metadata.isFile() || !isWithinRoot(canonicalRoot, canonical) || !safeRedirect) {
         warnings.push(warning("structure-entry-unsafe", item.route));
         continue;
@@ -294,22 +316,7 @@ export async function discoverWorkspaceStructure({
   }
 
   const instructionScopes = [];
-  const instructionItems = structureItems.filter((item) => {
-    const base = path.posix.basename(item.route);
-    const extension = path.posix.extname(item.route).toLowerCase();
-    return base === "AGENTS.md"
-      || base === "CLAUDE.md"
-      || base === "CLAUDE.local.md"
-      || base === "QWEN.md"
-      || item.route === ".github/copilot-instructions.md"
-      || (item.route.startsWith(".github/instructions/") && item.route.endsWith(".instructions.md"))
-      || ((item.route.includes("/.claude/rules/") || item.route.startsWith(".claude/rules/"))
-        && new Set([".md", ".mdc"]).has(extension))
-      || ((item.route.includes("/.cursor/rules/") || item.route.startsWith(".cursor/rules/"))
-        && new Set([".md", ".mdc"]).has(extension))
-      || ((item.route.includes("/.qoder/rules/") || item.route.startsWith(".qoder/rules/"))
-        && new Set([".md", ".mdc"]).has(extension));
-  });
+  const instructionItems = structureItems.filter((item) => isInstructionRoute(item.route));
 
   for (const item of instructionItems) {
     const base = path.posix.basename(item.route);
