@@ -1,4 +1,4 @@
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { lstat, readFile, readlink, realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { normalizeRoute, routeContains } from "./contract.mjs";
@@ -165,6 +165,15 @@ function isInstructionRoute(route) {
       && new Set([".md", ".mdc"]).has(extension));
 }
 
+async function isDirectSameDirectoryLink(absolute, canonical) {
+  const metadata = await lstat(absolute);
+  if (!metadata.isSymbolicLink()) return false;
+  const target = path.normalize(await readlink(absolute));
+  return !path.isAbsolute(target)
+    && path.dirname(target) === "."
+    && path.resolve(path.dirname(absolute), target) === canonical;
+}
+
 async function safeStructureItems(root, items, warnings) {
   const canonicalRoot = await realpath(root);
   const trackedRoutes = new Set(
@@ -184,6 +193,7 @@ async function safeStructureItems(root, items, warnings) {
           && isInstructionRoute(item.route)
           && isInstructionRoute(canonicalRoute)
           && dirnameRoute(item.route) === dirnameRoute(canonicalRoute)
+          && await isDirectSameDirectoryLink(absolute, canonical)
         );
       if (!metadata.isFile() || !isWithinRoot(canonicalRoot, canonical) || !safeRedirect) {
         warnings.push(warning("structure-entry-unsafe", item.route));
