@@ -183,6 +183,7 @@ async function safeStructureItems(root, items, warnings) {
           && trackedRoutes.has(canonicalRoute)
           && isInstructionRoute(item.route)
           && isInstructionRoute(canonicalRoute)
+          && dirnameRoute(item.route) === dirnameRoute(canonicalRoute)
         );
       if (!metadata.isFile() || !isWithinRoot(canonicalRoot, canonical) || !safeRedirect) {
         warnings.push(warning("structure-entry-unsafe", item.route));

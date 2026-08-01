@@ -417,6 +417,34 @@ test("workspace topology accepts a contained tracked structural symlink", async 
   }
 });
 
+test("workspace topology rejects a tracked instruction symlink across ownership scopes", async (t) => {
+  const repo = await makeGitRepo({
+    "packages/app/AGENTS.md": "# package instructions\n",
+  });
+  try {
+    try {
+      await symlink("packages/app/AGENTS.md", path.join(repo, "CLAUDE.md"));
+    } catch (error) {
+      t.skip(`symlink unavailable: ${error.message}`);
+      return;
+    }
+    git(repo, ["add", "CLAUDE.md"]);
+    git(repo, ["commit", "-q", "-m", "add cross-scope instruction symlink fixture"]);
+
+    const result = await resolveWorkspaceTopology({ workspace: repo });
+
+    assert.equal(result.topology.status, "partial");
+    assert.equal(
+      result.topology.instructionScopes.items.some((item) => item.route === "CLAUDE.md"),
+      false,
+    );
+    assert.ok(result.topology.discovery.warnings.some((item) =>
+      item.code === "structure-entry-unsafe" && item.route === "CLAUDE.md"));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test("workspace topology rejects a tracked structural symlink to an ignored in-root file", async (t) => {
   const repo = await makeGitRepo({
     ".gitignore": ".env\n",
