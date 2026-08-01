@@ -393,6 +393,30 @@ test("workspace topology resolves a symlinked package through its real path", as
   }
 });
 
+test("workspace topology accepts a contained tracked structural symlink", async (t) => {
+  const repo = await makeGitRepo({
+    "AGENTS.md": "# canonical instructions\n",
+  });
+  try {
+    try {
+      await symlink("AGENTS.md", path.join(repo, "CLAUDE.md"));
+    } catch (error) {
+      t.skip(`symlink unavailable: ${error.message}`);
+      return;
+    }
+    git(repo, ["add", "CLAUDE.md"]);
+    git(repo, ["commit", "-q", "-m", "add contained structural symlink fixture"]);
+
+    const result = await resolveWorkspaceTopology({ workspace: repo });
+
+    assert.equal(result.topology.status, "complete");
+    assert.ok(result.topology.instructionScopes.items.some((item) =>
+      item.route === "CLAUDE.md" && item.provider === "claude" && item.activation === "effective"));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test("workspace topology does not follow a tracked structural symlink outside the Git root", async () => {
   const repo = await makeGitRepo({
     "package.json": JSON.stringify({ workspaces: ["packages/*"] }),

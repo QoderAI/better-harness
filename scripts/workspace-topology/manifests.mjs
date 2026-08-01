@@ -154,17 +154,13 @@ async function safeStructureItems(root, items, warnings) {
   for (const item of items) {
     const absolute = path.resolve(root, ...item.route.split("/"));
     try {
-      const metadata = await lstat(absolute);
-      if (metadata.isSymbolicLink() || !metadata.isFile()) {
-        warnings.push(warning("structure-entry-unsafe", item.route));
-        continue;
-      }
       const canonical = await realpath(absolute);
-      if (!isWithinRoot(canonicalRoot, canonical)) {
+      const metadata = await lstat(canonical);
+      if (!metadata.isFile() || !isWithinRoot(canonicalRoot, canonical)) {
         warnings.push(warning("structure-entry-unsafe", item.route));
         continue;
       }
-      safe.push(item);
+      safe.push({ ...item, canonical });
     } catch {
       warnings.push(warning("structure-entry-unavailable", item.route));
     }
@@ -174,7 +170,7 @@ async function safeStructureItems(root, items, warnings) {
 
 async function readInventoryFile(root, item, warnings) {
   try {
-    return await readFile(path.join(root, ...item.route.split("/")), "utf8");
+    return await readFile(item.canonical, "utf8");
   } catch {
     warnings.push(warning("manifest-read-unavailable", item.route));
     return null;
