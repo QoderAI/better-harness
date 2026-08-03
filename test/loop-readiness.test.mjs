@@ -283,6 +283,40 @@ test("CLI human-mode invalid input reports the error on stderr", () => {
   assert.match(result.stderr, /Unknown readiness level/);
 });
 
+test("CLI accepts --level=<id> equals form", () => {
+  const result = runCli(["--level=read-only-observation", "--assessment", fixture("all-available.json"), "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  const decision = JSON.parse(result.stdout);
+  assert.equal(decision.status, "allowed");
+  assert.equal(decision.level, "read-only-observation");
+});
+
+test("CLI accepts --assessment=<file> equals form", () => {
+  const result = runCli(["--level", "read-only-observation", `--assessment=${fixture("all-available.json")}`, "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  const decision = JSON.parse(result.stdout);
+  assert.equal(decision.status, "allowed");
+});
+
+test("CLI -h short flag prints help and exits 0", () => {
+  const result = runCli(["-h"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Usage: better-harness loop readiness/);
+  for (const level of READINESS_LEVELS) {
+    assert.ok(result.stdout.includes(level), `help must document level ${level}`);
+  }
+  assert.match(result.stdout, /Exit codes:/);
+});
+
+test("CLI --assessment without value exits 1 with INVALID_USAGE", () => {
+  const result = runCli(["--json", "--level", "read-only-observation", "--assessment"]);
+  assert.equal(result.status, 1);
+  const envelope = JSON.parse(result.stdout);
+  assert.equal(envelope.kind, "loop-readiness-error");
+  assert.equal(envelope.code, "INVALID_USAGE");
+  assert.match(envelope.message, /--assessment/);
+});
+
 // AC-5: the gate reads only the assessment file.
 
 // Matches side-effect imports, default/named imports, and re-exports in both
