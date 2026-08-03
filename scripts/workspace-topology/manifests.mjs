@@ -1,7 +1,7 @@
 import { lstat, readFile, readlink, realpath } from "node:fs/promises";
 import path from "node:path";
 
-import { normalizeRoute, routeContains } from "./contract.mjs";
+import { normalizeRoute, pathIdentityKey, routeContains } from "./contract.mjs";
 
 const PACKAGE_MARKERS = new Set(["package.json", "go.mod", "Cargo.toml"]);
 const CONTAINER_ROOTS = new Set([
@@ -169,15 +169,17 @@ async function isDirectSameDirectoryLink(absolute, canonical) {
   const metadata = await lstat(absolute);
   if (!metadata.isSymbolicLink()) return false;
   const target = path.normalize(await readlink(absolute));
-  return !path.isAbsolute(target)
-    && path.dirname(target) === "."
-    && path.resolve(path.dirname(absolute), target) === canonical;
+  if (path.isAbsolute(target) || path.dirname(target) !== ".") return false;
+  const resolved = path.resolve(path.dirname(canonical), target);
+  return pathIdentityKey(resolved) === pathIdentityKey(canonical);
 }
 
 async function safeStructureItems(root, items, warnings) {
   const canonicalRoot = await realpath(root);
-  const trackedRoutes = new Set(
-    items.filter((item) => item.provenance === "tracked").map((item) => item.route),
+  const trackedRoutes = new Map(
+    items
+      .filter((item) => item.provenance === "tracked")
+      .map((item) => [pathIdentityKey(item.route), item.route]),
   );
   const safe = [];
   for (const item of items) {
@@ -186,20 +188,21 @@ async function safeStructureItems(root, items, warnings) {
       const canonical = await realpath(absolute);
       const metadata = await lstat(canonical);
       const canonicalRoute = path.relative(canonicalRoot, canonical).split(path.sep).join("/");
-      const safeRedirect = canonicalRoute === item.route
+      const targetRoute = trackedRoutes.get(pathIdentityKey(canonicalRoute));
+      const safeRedirect = pathIdentityKey(canonicalRoute) === pathIdentityKey(item.route)
         || (
           item.provenance === "tracked"
-          && trackedRoutes.has(canonicalRoute)
+          && targetRoute !== undefined
           && isInstructionRoute(item.route)
-          && isInstructionRoute(canonicalRoute)
-          && dirnameRoute(item.route) === dirnameRoute(canonicalRoute)
+          && isInstructionRoute(targetRoute)
+          && dirnameRoute(item.route) === dirnameRoute(targetRoute)
           && await isDirectSameDirectoryLink(absolute, canonical)
         );
       if (!metadata.isFile() || !isWithinRoot(canonicalRoot, canonical) || !safeRedirect) {
         warnings.push(warning("structure-entry-unsafe", item.route));
         continue;
       }
-      safe.push({ ...item, canonical });
+      safe.push(item);
     } catch {
       warnings.push(warning("structure-entry-unavailable", item.route));
     }
@@ -209,7 +212,7 @@ async function safeStructureItems(root, items, warnings) {
 
 async function readInventoryFile(root, item, warnings) {
   try {
-    return await readFile(item.canonical, "utf8");
+    return await readFile(path.join(root, ...item.route.split("/")), "utf8");
   } catch {
     warnings.push(warning("manifest-read-unavailable", item.route));
     return null;

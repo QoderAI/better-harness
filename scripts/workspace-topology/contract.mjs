@@ -35,6 +35,11 @@ function sameAbsolutePath(left, right) {
     : leftPath === rightPath;
 }
 
+export function pathIdentityKey(value) {
+  const text = String(value ?? "");
+  return process.platform === "win32" ? text.toLowerCase() : text;
+}
+
 export function normalizeRoute(value, name = "route") {
   let route = String(value ?? "").replaceAll("\\", "/").trim();
   route = route.replace(/^\.\/+/u, "").replace(/\/+$/u, "");

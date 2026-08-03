@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { main as topologyMain, parseArgs as parseTopologyArgs } from "../scripts/workspace-topology/cli.mjs";
+import { pathIdentityKey } from "../scripts/workspace-topology/contract.mjs";
 import {
   WORKSPACE_TOPOLOGY_KIND,
   findingTargetErrors,
@@ -415,6 +416,100 @@ test("workspace topology accepts a contained tracked structural symlink", async 
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
+});
+
+test("workspace topology accepts a contained tracked structural symlink inside a package", async (t) => {
+  const repo = await makeGitRepo({
+    "package.json": JSON.stringify({ workspaces: ["packages/*"] }),
+    "packages/app/package.json": JSON.stringify({ name: "app" }),
+    "packages/app/AGENTS.md": "# package instructions\n",
+  });
+  try {
+    try {
+      await symlink("AGENTS.md", path.join(repo, "packages", "app", "CLAUDE.md"));
+    } catch (error) {
+      t.skip(`symlink unavailable: ${error.message}`);
+      return;
+    }
+    git(repo, ["add", "packages/app/CLAUDE.md"]);
+    git(repo, ["commit", "-q", "-m", "add nested structural symlink fixture"]);
+
+    const result = await resolveWorkspaceTopology({ workspace: repo });
+
+    assert.equal(result.topology.status, "complete");
+    assert.ok(result.topology.instructionScopes.items.some((item) =>
+      item.route === "packages/app/CLAUDE.md" && item.provider === "claude"));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("workspace topology rejects a tracked instruction symlink written as an absolute path", async (t) => {
+  const repo = await makeGitRepo({
+    "AGENTS.md": "# canonical instructions\n",
+  });
+  try {
+    try {
+      await symlink(path.join(repo, "AGENTS.md"), path.join(repo, "CLAUDE.md"));
+    } catch (error) {
+      t.skip(`symlink unavailable: ${error.message}`);
+      return;
+    }
+    git(repo, ["add", "CLAUDE.md"]);
+    git(repo, ["commit", "-q", "-m", "add absolute-target instruction symlink fixture"]);
+
+    const result = await resolveWorkspaceTopology({ workspace: repo });
+
+    assert.equal(result.topology.status, "partial");
+    assert.equal(
+      result.topology.instructionScopes.items.some((item) => item.route === "CLAUDE.md"),
+      false,
+    );
+    assert.ok(result.topology.discovery.warnings.some((item) =>
+      item.code === "structure-entry-unsafe" && item.route === "CLAUDE.md"));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("workspace topology reports a dangling tracked structural symlink as unavailable", async (t) => {
+  const repo = await makeGitRepo({
+    "AGENTS.md": "# canonical instructions\n",
+  });
+  try {
+    try {
+      await symlink("MISSING.md", path.join(repo, "CLAUDE.md"));
+    } catch (error) {
+      t.skip(`symlink unavailable: ${error.message}`);
+      return;
+    }
+    git(repo, ["add", "CLAUDE.md"]);
+    git(repo, ["commit", "-q", "-m", "add dangling structural symlink fixture"]);
+
+    const result = await resolveWorkspaceTopology({ workspace: repo });
+
+    assert.equal(result.topology.status, "partial");
+    assert.ok(result.topology.discovery.warnings.some((item) =>
+      item.code === "structure-entry-unavailable" && item.route === "CLAUDE.md"));
+    assert.equal(
+      result.topology.discovery.warnings.some((item) =>
+        item.code === "structure-entry-unsafe" && item.route === "CLAUDE.md"),
+      false,
+    );
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("structural route identity folds case only on Windows", () => {
+  assert.equal(pathIdentityKey("packages/App/AGENTS.md"), process.platform === "win32"
+    ? "packages/app/agents.md"
+    : "packages/App/AGENTS.md");
+  assert.equal(pathIdentityKey(undefined), "");
+  assert.equal(
+    pathIdentityKey("AGENTS.md") === pathIdentityKey("agents.md"),
+    process.platform === "win32",
+  );
 });
 
 test("workspace topology rejects a tracked instruction symlink across ownership scopes", async (t) => {
