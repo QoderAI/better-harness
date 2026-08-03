@@ -33,13 +33,13 @@
   <rect width="1800" height="1360" fill="#101415"/>
 
   <!-- 1 · Host Integration -->
-  <text x="80" y="58" class="section">1 · HOST INTEGRATION · 8 CAPABILITY ADAPTERS</text>
+  <text x="80" y="58" class="section">1 · HOST INTEGRATION · 9 CAPABILITY ADAPTERS</text>
 
   <rect x="150" y="82" width="700" height="78" rx="14" class="host"/>
   <text x="500" y="115" class="label-sm" text-anchor="middle">6 verified Quickstart hosts</text>
   <text x="500" y="143" class="hint-sm" text-anchor="middle">Claude · Codex · Qoder · Cursor · Qwen · Copilot</text>
   <rect x="950" y="82" width="700" height="78" rx="14" class="host"/>
-  <text x="1300" y="115" class="label-sm" text-anchor="middle">Pi + WorkBuddy adapters</text>
+  <text x="1300" y="115" class="label-sm" text-anchor="middle">Pi + WorkBuddy + Grok adapters</text>
   <text x="1300" y="143" class="hint-sm" text-anchor="middle">support boundaries documented</text>
 
   <path d="M500 160V180H900" class="gray"/>

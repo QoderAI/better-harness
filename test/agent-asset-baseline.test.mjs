@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   ASSET_BASELINE_KIND,
   MAX_BASELINE_FINDINGS,
+  MAX_BASELINE_OWNER_ROUTES,
   collectAssetBaseline,
   formatAssetBaselineMarkdown,
 } from "../scripts/coding-agent-practices/asset-baseline.mjs";
@@ -123,9 +124,9 @@ test("asset baseline shares one inventory snapshot and emits compact AI envelope
   assert.equal(result.envelopes.inventory.data.ownerRoutes.truncated, true);
   assert.deepEqual(result.diagnostics.truncatedStages, [
     "lint-findings",
-    "inventory-owner-routes",
     "integrity-findings",
   ]);
+  assert.deepEqual(result.diagnostics.sampledStages, ["inventory-owner-routes"]);
   assert.equal(Object.hasOwn(result.envelopes.inventory.data.summary, "practiceCoverageRows"), false);
   const serialized = JSON.stringify(result);
   assert.ok(Buffer.byteLength(serialized) < 12_000, "fixture baseline must stay compact for AI reading");
@@ -150,6 +151,66 @@ test("asset baseline preserves partial stage failures without hiding healthy env
   const markdown = formatAssetBaselineMarkdown(result);
   assert.match(markdown, /lint: available/);
   assert.match(markdown, /inventory: unavailable/);
+});
+
+test("asset baseline samples the latest 16 owner routes with explicit freshness coverage", async () => {
+  const workspace = path.resolve("/tmp/better-harness-latest-owner-routes");
+  const observedAt = new Date("2026-08-03T08:00:00.000Z");
+  const modifiedBase = Date.parse("2026-08-01T00:00:00.000Z");
+  let activeStats = 0;
+  let maxActiveStats = 0;
+  const items = Array.from({ length: 40 }, (_, index) => ({
+    name: `skill-${String(index).padStart(2, "0")}`,
+    scope: "workspace",
+    path: path.join(workspace, `skill-${String(index).padStart(2, "0")}.md`),
+  }));
+  const result = await collectAssetBaseline({ provider: "codex", workspace }, {
+    now: () => observedAt,
+    stat: async (filePath) => {
+      activeStats += 1;
+      maxActiveStats = Math.max(maxActiveStats, activeStats);
+      await new Promise((resolve) => setImmediate(resolve));
+      activeStats -= 1;
+      return { mtime: new Date(modifiedBase + Number(path.basename(filePath).match(/\d+/u)?.[0]) * 1_000) };
+    },
+    collectRawInventory: async () => ({}),
+    runLint: async () => ({ kind: "agent-lint", profile: "agent-assets-review", summary: {}, findings: [] }),
+    collectPublicInventory: async () => ({
+      scope: { platform: "codex", includeUserHome: false },
+      summary: {},
+      surfaces: [{ type: "skills", scope: "workspace", items }],
+      memories: { included: false, categories: [] },
+      warnings: [],
+    }),
+    reviewIntegrity: () => ({
+      kind: "asset-integrity-review",
+      profile: "asset-integrity-review",
+      status: "reviewed",
+      summary: { findingCount: 0 },
+      findings: [],
+    }),
+  });
+
+  const routes = result.envelopes.inventory.data.ownerRoutes;
+  assert.equal(result.status, "complete");
+  assert.equal(routes.items.length, MAX_BASELINE_OWNER_ROUTES);
+  assert.deepEqual(routes.items.map((item) => item.name),
+    Array.from({ length: 16 }, (_, index) => `skill-${String(39 - index).padStart(2, "0")}`));
+  assert.equal(routes.items[0].modifiedAt, new Date(modifiedBase + 39_000).toISOString());
+  assert.equal(routes.total, 40);
+  assert.equal(routes.omitted, 24);
+  assert.equal(routes.truncated, true);
+  assert.deepEqual(routes.selection, {
+    strategy: "latest-modified",
+    limit: 16,
+    observedAt: observedAt.toISOString(),
+    timestampSource: "filesystem-mtime",
+    timestamped: 40,
+    untimestamped: 0,
+  });
+  assert.ok(maxActiveStats > 1 && maxActiveStats <= 32);
+  assert.deepEqual(result.diagnostics.truncatedStages, []);
+  assert.deepEqual(result.diagnostics.sampledStages, ["inventory-owner-routes"]);
 });
 
 test("Qoder asset baseline includes selected-project Memory titles by default", async () => {

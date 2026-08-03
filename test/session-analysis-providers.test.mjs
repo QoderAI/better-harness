@@ -36,6 +36,10 @@ import {
   workspaceToWorkbuddySlugVariants,
 } from "../scripts/session-analysis/platforms/workbuddy.mjs";
 import {
+  GrokSessionAnalyzer,
+  workspaceToGrokSessionDirName,
+} from "../scripts/session-analysis/platforms/grok.mjs";
+import {
   CopilotSessionAnalyzer,
   parseWorkspaceDescriptor,
 } from "../scripts/session-analysis/platforms/copilot.mjs";
@@ -60,12 +64,14 @@ test("root dispatcher creates Claude and Cursor provider analyzers", async () =>
   assert.ok(await createAnalyzer("copilot") instanceof CopilotSessionAnalyzer);
   assert.ok(await createAnalyzer("pi") instanceof PiSessionAnalyzer);
   assert.ok(await createAnalyzer("workbuddy") instanceof WorkbuddySessionAnalyzer);
+  assert.ok(await createAnalyzer("grok") instanceof GrokSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("claude") instanceof ClaudeSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("cursor") instanceof CursorSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("qwen") instanceof QwenSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("copilot") instanceof CopilotSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("pi") instanceof PiSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("workbuddy") instanceof WorkbuddySessionAnalyzer);
+  assert.ok(await createCapabilityAnalyzer("grok") instanceof GrokSessionAnalyzer);
 });
 
 test("public session-analysis main preserves the bare help alias", async () => {
@@ -88,11 +94,20 @@ test("Claude, Cursor, and Qwen workspace slugs cover Unix and Windows layouts", 
   assert.ok(workspaceToQwenSlugVariants("/workspace/project").includes("-workspace-project"));
   assert.equal(workspaceToPiSessionDirVariants("/workspace/project").exact, "--workspace-project--");
   assert.equal(workspaceToWorkbuddySlugVariants("/workspace/project").exact, "workspace-project");
+  // Grok encodes path.resolve()'d absolute paths; keep the assertion host-portable.
+  assert.equal(
+    workspaceToGrokSessionDirName("/workspace/project"),
+    encodeURIComponent(path.resolve("/workspace/project")),
+  );
   assert.ok(workspaceToClaudeSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToCursorSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToQwenSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToPiSessionDirVariants("C:\\workspace\\project").exact.includes("C--workspace-project"));
   assert.ok(workspaceToWorkbuddySlugVariants("C:\\workspace\\project").exact.includes("C--workspace-project"));
+  assert.equal(
+    workspaceToGrokSessionDirName("C:\\workspace\\project"),
+    encodeURIComponent(path.resolve("C:\\workspace\\project")),
+  );
 });
 
 test("Claude workspace slug folds dots the way Claude Code names project directories", () => {
@@ -1281,4 +1296,319 @@ test("WorkBuddy source roots stay absent without workspace-matching project dire
   const result = await new WorkbuddySessionAnalyzer().analyze({ command: "sources", workspace, home });
   assert.equal(result.sources[0].exists, false);
   assert.equal(result.sessions.length, 0);
+});
+
+test("Grok provider expands user/assistant/tool events and turn_completed usage", async () => {
+  const root = await fixtureRoot("session-grok-provider-");
+  const home = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const group = workspaceToGrokSessionDirName(workspace);
+  const sessionDir = path.join(home, "sessions", group, sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "summary.json"), JSON.stringify({
+    info: { id: sessionId, cwd: workspace },
+    created_at: "2026-08-01T10:00:00.000Z",
+    updated_at: "2026-08-01T10:05:00.000Z",
+    current_model_id: "grok-4",
+  }, null, 2));
+  await writeJsonl(path.join(sessionDir, "updates.jsonl"), [
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { text: "Implement the Grok provider" },
+          _meta: { isoTimestamp: "2026-08-01T10:00:01.000Z" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call",
+          toolName: "run_terminal_command",
+          toolCallId: "call_1",
+          status: "pending",
+          _meta: { isoTimestamp: "2026-08-01T10:00:02.000Z" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolName: "run_terminal_command",
+          toolCallId: "call_1",
+          status: null,
+          _meta: { isoTimestamp: "2026-08-01T10:00:02.500Z" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolName: "run_terminal_command",
+          toolCallId: "call_1",
+          status: "in_progress",
+          _meta: { isoTimestamp: "2026-08-01T10:00:02.750Z" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolName: "run_terminal_command",
+          toolCallId: "call_1",
+          status: "completed",
+          content: "ok",
+          _meta: { isoTimestamp: "2026-08-01T10:00:03.000Z" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { text: "Done." },
+          _meta: { isoTimestamp: "2026-08-01T10:00:04.000Z", modelId: "grok-4" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "thought_chunk",
+          content: { text: "thinking" },
+          _meta: { isoTimestamp: "2026-08-01T10:00:05.000Z" },
+        },
+      },
+    },
+    {
+      method: "_x.ai/session/update",
+      params: {
+        update: {
+          sessionUpdate: "turn_completed",
+          stop_reason: "end_turn",
+          usage: {
+            inputTokens: 120,
+            outputTokens: 40,
+            totalTokens: 160,
+            cachedReadTokens: 10,
+          },
+        },
+      },
+    },
+    {
+      method: "_x.ai/session/update",
+      params: {
+        update: {
+          sessionUpdate: "turn_completed",
+          stop_reason: "end_turn",
+          // Nested-only shape must still produce model usage (Grok 0.2.x).
+          usage: {
+            modelUsage: {
+              "grok-4": {
+                inputTokens: 1000,
+                outputTokens: 200,
+                totalTokens: 1200,
+                cachedReadTokens: 50,
+              },
+            },
+          },
+        },
+      },
+    },
+  ]);
+  // contextTokensUsed must not be treated as total token spend
+  await writeFile(path.join(sessionDir, "signals.json"), JSON.stringify({
+    contextTokensUsed: 44532,
+    contextWindowTokens: 500000,
+  }, null, 2));
+  // chat_history must not double-count when updates.jsonl exists
+  await writeJsonl(path.join(sessionDir, "chat_history.jsonl"), [
+    { role: "user", content: "duplicate user", timestamp: "2026-08-01T10:00:01.000Z" },
+    { role: "assistant", content: "duplicate assistant", timestamp: "2026-08-01T10:00:04.000Z" },
+  ]);
+
+  const analyzer = new GrokSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  assert.equal(discovery.sessions[0].sessionId, sessionId);
+  assert.deepEqual(discovery.sources.map((source) => source.kind), ["grok-session-dir"]);
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {
+    includeUserText: true,
+    includeContent: true,
+  });
+  assert.equal(events.filter((event) => event.type === "user").length, 1);
+  assert.equal(events.find((event) => event.type === "user")?.userText, "Implement the Grok provider");
+  assert.equal(events.filter((event) => event.type === "tool.call").length, 1);
+  assert.equal(events.filter((event) => event.type === "tool.result").length, 1);
+  assert.equal(events.filter((event) => event.type === "metadata.tool_call_update").length, 2);
+  assert.equal(events.filter((event) => event.type === "assistant").length, 1);
+  assert.ok(events.some((event) => event.type === "metadata.thought_chunk"));
+  const usageEvents = events.filter((event) => event.type === "model.response.completed");
+  assert.equal(usageEvents.length, 2);
+  assert.equal(usageEvents[0]?.modelUsage?.inputTokens, 120);
+  assert.equal(usageEvents[0]?.modelUsage?.outputTokens, 40);
+  assert.equal(usageEvents[0]?.modelUsage?.totalTokens, 160);
+  assert.equal(usageEvents[1]?.modelUsage?.inputTokens, 1000);
+  assert.equal(usageEvents[1]?.modelUsage?.outputTokens, 200);
+  assert.equal(usageEvents[1]?.modelUsage?.totalTokens, 1200);
+  assert.equal(usageEvents[1]?.model, "grok-4");
+  assert.ok(!events.some((event) => event.modelUsage?.totalTokens === 44532));
+  assert.ok(events.some((event) => event.type === "metadata.context_window"));
+  const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
+  assert.equal(facts.kind, "session-core-facts");
+  assert.equal(facts.scope.platform, "grok");
+  assert.doesNotMatch(JSON.stringify(facts), new RegExp(sessionId, "u"));
+});
+
+test("Grok provider discovers long-path session groups via .cwd marker", async () => {
+  const root = await fixtureRoot("session-grok-long-path-");
+  const home = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace", "deeply", "nested", "project");
+  const sessionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  // Simulate Grok long-path form: slug+hash group with .cwd (not encodeURIComponent name).
+  const group = "workspace-deeply-nested-project-a1b2c3d4";
+  const groupPath = path.join(home, "sessions", group);
+  const sessionDir = path.join(groupPath, sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(groupPath, ".cwd"), `${workspace}\n`);
+  await writeFile(path.join(sessionDir, "summary.json"), JSON.stringify({
+    info: { id: sessionId, cwd: workspace },
+    created_at: "2026-08-01T10:00:00.000Z",
+    updated_at: "2026-08-01T10:05:00.000Z",
+  }, null, 2));
+  await writeJsonl(path.join(sessionDir, "updates.jsonl"), [
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { text: "long path" },
+          _meta: { isoTimestamp: "2026-08-01T10:00:01.000Z" },
+        },
+      },
+    },
+  ]);
+  const result = await new GrokSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 1);
+  assert.equal(result.sessions[0].sessionId, sessionId);
+  assert.equal(result.sources[0].exists, true);
+});
+
+test("Grok turn usage completes partial flat records from nested modelUsage", async () => {
+  const root = await fixtureRoot("session-grok-partial-usage-");
+  const home = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const sessionDir = path.join(home, "sessions", encodeURIComponent(workspace), sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await mkdir(workspace, { recursive: true });
+  await writeFile(path.join(sessionDir, "summary.json"), JSON.stringify({
+    info: { id: sessionId, cwd: workspace },
+    created_at: "2026-08-01T10:00:00.000Z",
+    updated_at: "2026-08-01T10:05:00.000Z",
+  }, null, 2));
+  await writeJsonl(path.join(sessionDir, "updates.jsonl"), [
+    {
+      method: "_x.ai/session/update",
+      params: {
+        update: {
+          sessionUpdate: "turn_completed",
+          // Flat record reports input only; output/total live in nested modelUsage.
+          usage: {
+            inputTokens: 300,
+            modelUsage: {
+              "grok-4": { outputTokens: 80, totalTokens: 380 },
+            },
+          },
+        },
+      },
+    },
+  ]);
+
+  const analyzer = new GrokSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {});
+  const usage = events.find((event) => event.type === "model.response.completed")?.modelUsage;
+  assert.equal(usage?.inputTokens, 300);
+  assert.equal(usage?.outputTokens, 80);
+  assert.equal(usage?.totalTokens, 380);
+});
+
+test("Grok provider excludes foreign workspace session groups", async () => {
+  const root = await fixtureRoot("session-grok-isolation-");
+  const home = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace", "target");
+  const foreign = path.join(root, "workspace", "other");
+  const sessionId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const foreignGroup = workspaceToGrokSessionDirName(foreign);
+  const sessionDir = path.join(home, "sessions", foreignGroup, sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "summary.json"), JSON.stringify({
+    info: { id: sessionId, cwd: foreign },
+    created_at: "2026-08-01T10:00:00.000Z",
+    updated_at: "2026-08-01T10:05:00.000Z",
+  }, null, 2));
+  await writeJsonl(path.join(sessionDir, "updates.jsonl"), [
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { text: "foreign" },
+          _meta: { isoTimestamp: "2026-08-01T10:00:01.000Z" },
+        },
+      },
+    },
+  ]);
+  const result = await new GrokSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 0);
+  assert.equal(result.sources[0].exists, false);
+});
+
+test("Grok provider leaves usage unobserved when signals.json is missing", async () => {
+  const root = await fixtureRoot("session-grok-no-signals-");
+  const home = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const group = workspaceToGrokSessionDirName(workspace);
+  const sessionDir = path.join(home, "sessions", group, sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "summary.json"), JSON.stringify({
+    info: { id: sessionId, cwd: workspace },
+    created_at: "2026-08-01T10:00:00.000Z",
+    updated_at: "2026-08-01T10:05:00.000Z",
+  }, null, 2));
+  await writeJsonl(path.join(sessionDir, "updates.jsonl"), [
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { text: "no signals" },
+          _meta: { isoTimestamp: "2026-08-01T10:00:01.000Z" },
+        },
+      },
+    },
+  ]);
+  const analyzer = new GrokSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {});
+  assert.equal(events.filter((event) => event.type === "model.response.completed").length, 0);
+  assert.ok(!events.some((event) => event.modelUsage && Object.values(event.modelUsage).every((value) => value === 0)));
 });

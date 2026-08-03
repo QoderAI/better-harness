@@ -7,7 +7,8 @@ import path from "node:path";
 import test from "node:test";
 
 import { evaluateHtmlReport, renderHtml } from "../scripts/harness-analysis/renderers/html.mjs";
-import { renderReport } from "../scripts/harness-analysis/render-report.mjs";
+import { RENDER_REPORT_PLATFORMS, renderReport } from "../scripts/harness-analysis/render-report.mjs";
+import { SUPPORTED_SESSION_PLATFORMS } from "../scripts/session-analysis/analyzer.mjs";
 import { renderCanvasTsx } from "../scripts/harness-analysis/renderers/qoder-canvas.mjs";
 import { buildTaskLoopSourceCandidate } from "../scripts/harness-analysis/task-loop-source.mjs";
 import { applyEpisodeReviews } from "../scripts/harness-analysis/episode-evidence-review.mjs";
@@ -838,6 +839,38 @@ test("render command writes disk-openable HTML artifacts", async () => {
     assert.equal(Object.hasOwn(interactionData, "target"), false);
     assert.equal(Object.hasOwn(interactionData, "dataPath"), false);
   });
+});
+
+test("render routes html output by host id and fails closed on unknown platforms", async () => {
+  await withTempDir("better-harness-render-platform-", async (root) => {
+    const findingsPath = path.join(root, "input.findings.json");
+    await writeJson(findingsPath, sampleFindings());
+
+    const routed = runNode(
+      [renderPath, "--findings", findingsPath, "--mode", "html", "--platform", "grok", "--target", root, "--json"],
+      { cwd: root },
+    );
+    assert.equal(routed.status, 0, routed.stderr || routed.stdout);
+    const payload = parseRun(routed.stdout);
+    assert.equal(payload.outputLocation.requestedOut, ".grok/better-harness");
+    assert.equal(payload.runDir.includes(path.join(".grok", "better-harness")), true);
+
+    const rejected = runNode(
+      [renderPath, "--findings", findingsPath, "--mode", "html", "--platform", "grock", "--target", root, "--json"],
+      { cwd: root },
+    );
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, /unsupported render platform: grock/u);
+
+    // Help must stay usable even with an invalid platform so agents can self-correct.
+    const help = runNode([renderPath, "--help", "--platform", "grock"], { cwd: root });
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /Usage: better-harness harness render/u);
+  });
+});
+
+test("render platform allowlist matches the session platform registry", () => {
+  assert.deepEqual([...RENDER_REPORT_PLATFORMS].sort(), [...SUPPORTED_SESSION_PLATFORMS].sort());
 });
 
 test("HTML relative action metadata carries the finding's current repair revision", () => {

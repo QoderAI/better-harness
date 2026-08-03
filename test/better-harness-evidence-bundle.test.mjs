@@ -116,8 +116,9 @@ function leadEvidence(overrides = {}) {
 }
 
 test("evidence-bundle help advertises WorkBuddy and its isolated home override", () => {
-  assert.match(EVIDENCE_BUNDLE_HELP, /pi, or workbuddy/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /pi, workbuddy, or grok/u);
   assert.match(EVIDENCE_BUNDLE_HELP, /--workbuddy-home <dir>/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /--grok-home <dir>/u);
 });
 
 function topologyResolution(workspace = ".", status = "complete") {
@@ -415,6 +416,40 @@ test("Claude agentCustomize lane routes the provider and isolated config paths",
   assert.equal(received["claude-home"], "/tmp/fixture-claude-home");
   assert.equal(received["claude-state"], "/tmp/fixture-claude-state.json");
   assert.equal(received["include-user-home"], true);
+});
+
+test("normal agentCustomize evidence accepts a disclosed latest-route sample", async () => {
+  const context = freezeEvidenceBundleContext({
+    workspace: ".",
+    platform: "codex",
+    depth: "normal",
+    "include-user-home": true,
+  }, NOW);
+  const baseline = {
+    kind: "agent-asset-baseline",
+    status: "complete",
+    envelopes: {
+      inventory: {
+        status: "available",
+        data: {
+          ownerRoutes: {
+            items: Array.from({ length: 16 }, (_, index) => ({ name: `asset-${index}` })),
+            total: 55,
+            omitted: 39,
+            truncated: true,
+            selection: { strategy: "latest-modified", limit: 16 },
+          },
+        },
+      },
+    },
+    diagnostics: { truncatedStages: [], sampledStages: ["inventory-owner-routes"] },
+  };
+  const lane = await collectAgentCustomize(context, {}, {
+    collectAssetBaseline: async () => baseline,
+  });
+
+  assert.equal(lane.status, "available");
+  assert.equal(lane.data, baseline);
 });
 
 test("Qwen agentCustomize lane routes the provider and isolated config paths", async () => {

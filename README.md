@@ -33,7 +33,7 @@ Choose the host you already use to get its exact installation, verification,
 invocation, and report-output steps. Better Harness does not use one universal
 entrypoint across every host.
 
-The canonical registry covers eight host adapters. Pi and WorkBuddy currently
+The canonical registry covers nine host adapters. Pi, WorkBuddy, and Grok currently
 remain adapter-support entries rather than part of the six-host verified
 Quickstart; see the [public Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md)
 for their explicit boundaries.

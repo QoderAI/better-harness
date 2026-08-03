@@ -1,10 +1,10 @@
 # Host Adapter Matrix
 
 This is the single entry point for Claude Code, Codex, Qoder, Cursor, Qwen,
-GitHub Copilot, Pi, and WorkBuddy host boundaries. Do not create `docs/adapters/claude-code.md`,
+GitHub Copilot, Pi, WorkBuddy, and Grok host boundaries. Do not create `docs/adapters/claude-code.md`,
 `docs/adapters/codex.md`, `docs/adapters/qoder.md`, `docs/adapters/cursor.md`,
-`docs/adapters/qwen.md`, `docs/adapters/copilot.md`, `docs/adapters/pi.md`, or
-`docs/adapters/workbuddy.md` by default.
+`docs/adapters/qwen.md`, `docs/adapters/copilot.md`, `docs/adapters/pi.md`,
+`docs/adapters/workbuddy.md`, or `docs/adapters/grok.md` by default.
 
 Adding another host? Follow
 [Contributing a New Coding Agent Host](contributing-new-coding-agent.md) before
@@ -35,6 +35,7 @@ package through the `pi` manifest in `package.json`.
 | GitHub Copilot | Analysis-capable source-local host | `.github/plugin/` | `scripts/agent-customize/providers/copilot.mjs` | `scripts/session-analysis/platforms/copilot.mjs` | self-contained HTML + Markdown | `.github` + `AGENTS.md` + `~/.copilot` | `copilot plugin marketplace add .` -> `copilot plugin install better-harness@better-harness` -> configured-asset baseline -> validated `html` render |
 | Pi | Analysis-capable source-local host | `pi` manifest in `package.json` | `scripts/agent-customize/providers/pi.mjs` | `scripts/session-analysis/platforms/pi.mjs` | self-contained HTML + Markdown | `.pi` + `.agents` + `AGENTS.md` | `pi install <source>` or `pi -e <source>` -> `/better-harness` prompt template -> validated `html` render |
 | WorkBuddy | Analysis-capable source-local host | none (skills install into `~/.workbuddy/skills`) | `scripts/agent-customize/providers/workbuddy.mjs` | `scripts/session-analysis/platforms/workbuddy.mjs` | self-contained HTML + Markdown | `~/.workbuddy` `AGENTS.md` + identity files + `.agents` + `AGENTS.md` | `session-analysis --platform workbuddy sources` -> validated `html` render |
+| Grok | Analysis-capable source-local host | none (skills install into `~/.grok/skills`) | `scripts/agent-customize/providers/grok.mjs` | `scripts/session-analysis/platforms/grok.mjs` | self-contained HTML + Markdown | `~/.grok` + `.grok` + `.agents` + `AGENTS.md` | `session-analysis --platform grok sources` -> skill symlink -> validated `html` render |
 
 ## Discovery And Evidence
 
@@ -109,6 +110,17 @@ package through the `pi` manifest in `package.json`.
   override. WorkBuddy has no install shell in
   this repository; skills install manually into `~/.workbuddy/skills` or
   through WorkBuddy's own marketplace surfaces.
+- Grok configured assets are inventoried through
+  `scripts/agent-customize/providers/grok.mjs`, covering `~/.grok` user skills
+  (including bundled skills), hooks, MCP servers declared in `config.toml`,
+  installed plugins under `installed-plugins/`, shared `.agents/skills`, and
+  project `.grok` assets. Session evidence comes from
+  `scripts/session-analysis/platforms/grok.mjs`, which reads workspace-matching
+  session directories under `~/.grok/sessions/<url-encoded-cwd>/<session-id>/`
+  (`summary.json`, `updates.jsonl`, optional `chat_history.jsonl` and
+  `signals.json`). The adapter honors `GROK_HOME`. Grok has no install shell in
+  this repository; skills install manually into `~/.grok/skills` (symlink is
+  enough for `/better-harness`).
 
 ## Output Modes
 
@@ -118,7 +130,7 @@ Canonical templates live under `templates/reporting/`.
   `findings.json`, Canvas-only `canvas.json`, and `report.canvas.tsx`.
 - `cursor-canvas.md`: Cursor Canvas output contract, covering the complete
   report, native Context Usage projection, and public IDE actions.
-- `html-visual.md`: portable Claude Code/Codex/Qwen/Copilot/Pi/WorkBuddy visual output contract, covering
+- `html-visual.md`: portable Claude Code/Codex/Qwen/Copilot/Pi/WorkBuddy/Grok visual output contract, covering
   `findings.json`, `report.md`, and `report.html`.
 - Markdown-only output has no visual companion.
 

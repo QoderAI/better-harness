@@ -20,6 +20,7 @@ const PUBLIC_QUICKSTART_HOSTS = [
 const ADAPTER_SUPPORT_HOSTS = [
   { name: "Pi", anchor: "pi", id: "pi" },
   { name: "WorkBuddy", anchor: "workbuddy", id: "workBuddy" },
+  { name: "Grok", anchor: "grok", id: "grok" },
 ];
 
 const SUPPORTED_CARD_HOSTS = [
@@ -139,8 +140,8 @@ test("README.md Quickstart lists all seven product entries with valid installati
     content,
     /qoderai\.github\.io\/better-harness\/\?utm_source=github&utm_medium=referral&utm_campaign=repository_landing&utm_content=readme_hero/u,
   );
-  assert.match(content, /canonical registry covers eight host adapters/u);
-  assert.match(content, /Pi and WorkBuddy currently\nremain adapter-support entries/u);
+  assert.match(content, /canonical registry covers nine host adapters/u);
+  assert.match(content, /Pi, WorkBuddy, and Grok currently\nremain adapter-support entries/u);
 });
 
 test("README.zh-CN.md Quickstart lists all seven product entries with valid installation anchors", () => {
@@ -165,11 +166,11 @@ test("README.zh-CN.md Quickstart lists all seven product entries with valid inst
     content,
     /https:\/\/qoderai\.github\.io\/better-harness\/demo\/better-harness-report\//u,
   );
-  assert.match(content, /规范注册表当前包含八个宿主适配器/u);
-  assert.match(content, /Pi 与 WorkBuddy 仍属于适配器支持入口/u);
+  assert.match(content, /规范注册表当前包含九个宿主适配器/u);
+  assert.match(content, /Pi、WorkBuddy 与 Grok 仍属于适配器支持入口/u);
 });
 
-test("Docusaurus home page cards expose eight adapters without flattening support levels", () => {
+test("Docusaurus home page cards expose nine adapters without flattening support levels", () => {
   const source = readUtf8("docs", "src", "pages", "index.js");
 
   const anchors = [];
@@ -266,7 +267,7 @@ test("zh-Hans installation.mdx tabs match public Quickstart host anchors", () =>
   }
 });
 
-test("zh-Hans code.json has translations for all eight homepage host cards", () => {
+test("zh-Hans code.json has translations for all nine homepage host cards", () => {
   const codeJson = JSON.parse(readUtf8("docs", "i18n", "zh-Hans", "code.json"));
   for (const host of SUPPORTED_CARD_HOSTS) {
     for (const field of ["method", "setup"]) {
@@ -283,7 +284,7 @@ test("zh-Hans code.json has translations for all eight homepage host cards", () 
   assert.ok(codeJson["homepage.hosts.status.adapter"]?.message);
 });
 
-test("public adapter matrix documents all eight adapters and their support boundaries", () => {
+test("public adapter matrix documents all nine adapters and their support boundaries", () => {
   const matrix = readUtf8("docs", "docs", "hosts", "adapter-matrix.md");
   const tableRows = matrix
     .split("\n")
@@ -300,15 +301,16 @@ test("public adapter matrix documents all eight adapters and their support bound
 
   assert.match(
     matrix,
-    /Claude Code\/Codex\/Qwen\/Copilot\/Pi\/WorkBuddy/u,
+    /Claude Code\/Codex\/Qwen\/Copilot\/Pi\/WorkBuddy\/Grok/u,
     "docs/docs/hosts/adapter-matrix.md HTML visual contract omits supported HTML hosts",
   );
   assert.match(matrix, /\*\*Cursor Canvas\*\*[^]*`cursor\/canvas`/u);
   assert.match(matrix, /### Pi \{#pi\}/u);
   assert.match(matrix, /### WorkBuddy \{#workbuddy\}/u);
+  assert.match(matrix, /### Grok \{#grok\}/u);
 });
 
-test("zh-Hans public adapter matrix documents all eight adapters and their support boundaries", () => {
+test("zh-Hans public adapter matrix documents all nine adapters and their support boundaries", () => {
   const matrix = readUtf8("docs", "i18n", "zh-Hans", "docusaurus-plugin-content-docs", "current", "hosts", "adapter-matrix.md");
   const tableRows = matrix
     .split("\n")
@@ -325,12 +327,13 @@ test("zh-Hans public adapter matrix documents all eight adapters and their suppo
 
   assert.match(
     matrix,
-    /Claude Code\/Codex\/Qwen\/Copilot\/Pi\/WorkBuddy/u,
+    /Claude Code\/Codex\/Qwen\/Copilot\/Pi\/WorkBuddy\/Grok/u,
     "zh-Hans adapter-matrix.md HTML visual contract omits supported HTML hosts",
   );
   assert.match(matrix, /\*\*Cursor Canvas\*\*[^]*`cursor\/canvas`/u);
   assert.match(matrix, /### Pi \{#pi\}/u);
   assert.match(matrix, /### WorkBuddy \{#workbuddy\}/u);
+  assert.match(matrix, /### Grok \{#grok\}/u);
 });
 
 test("installation pages connect missing-host developers to matrices and pull requests", () => {

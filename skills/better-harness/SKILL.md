@@ -53,7 +53,7 @@ Agent Customize holds bounded `lint`, `inventory`, and `integrity` envelopes
 from one shared asset snapshot. Keep lane/stage status and providers distinct.
 Use the individual `session-analysis facts`, `core-change-watch
 evidence-pack`, `coding-agent-practices asset-baseline`, or `harness analyze`
-command only to diagnose a named unavailable or truncated owner; do not
+command only to diagnose a named unavailable or evidence-loss stage; do not
 substitute diagnostic output into the bundle or rerun all owners. Counts for
 Rules, Skills, MCP, Memory, Agents, Hooks, Commands, Workflows, and Plugins only
 route inspection. Zero or high counts never create findings or scores. A

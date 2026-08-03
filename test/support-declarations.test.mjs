@@ -9,7 +9,7 @@ import { createAnalyzer, SESSION_ANALYSIS_HELP } from "../scripts/session-analys
 
 // Canonical support declaration (roadmap A-06): CLI help, provider registry,
 // session platforms, report platforms, and docs must all agree on this set.
-const SUPPORTED_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"];
+const SUPPORTED_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy", "grok"];
 
 const cliPath = path.join(process.cwd(), "scripts", "better-harness.mjs");
 const adapterMatrixPath = path.join(process.cwd(), "docs", "adapters", "README.md");
@@ -156,8 +156,8 @@ test("adapter-matrix portable HTML hosts appear in the portable HTML report rout
   }
 
   const prefixCollisionRouting = routing.replace(
-    ", or WorkBuddy, or a portable visual is explicitly requested",
-    ", or WorkBuddy Enterprise, or a portable visual is explicitly requested",
+    ", WorkBuddy, or Grok, or a portable visual is explicitly requested",
+    ", WorkBuddy Enterprise, or Grok, or a portable visual is explicitly requested",
   );
   assert.notEqual(prefixCollisionRouting, routing, "prefix-collision fixture did not replace the WorkBuddy route entry");
   assert.deepEqual(missingPortableHtmlRouteHosts(matrix, prefixCollisionRouting), ["WorkBuddy"]);

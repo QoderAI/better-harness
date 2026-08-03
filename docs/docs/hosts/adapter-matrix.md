@@ -13,8 +13,8 @@ host-neutral.
 
 ## Support levels
 
-Better Harness currently declares eight capability-level host adapters. Six
-have verified public Quickstart paths. Pi and WorkBuddy are visible as adapter
+Better Harness currently declares nine capability-level host adapters. Six
+have verified public Quickstart paths. Pi, WorkBuddy, and Grok are visible as adapter
 support because their installation and end-to-end evidence boundaries differ
 from that six-host set. The [canonical adapter matrix](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)
 remains the complete capability-level source of truth.
@@ -31,6 +31,7 @@ remains the complete capability-level source of truth.
 | GitHub Copilot | Verified Quickstart | Analysis-capable source-local host | `.github/plugin/` | Workspace-matched Copilot CLI transcripts; partial coverage stays explicit | Self-contained HTML + Markdown |
 | Pi | Adapter support | Analysis-capable source-local host | `pi` manifest in `package.json` | Workspace-matching local Pi sessions | Self-contained HTML + Markdown |
 | WorkBuddy | Adapter support | Analysis-capable source-local host | None; skills use WorkBuddy-owned paths | Workspace-matching WorkBuddy JSONL transcripts | Self-contained HTML + Markdown |
+| Grok | Adapter support | Analysis-capable source-local host | None; skills use Grok-owned paths | Workspace-matching Grok session dirs (`updates.jsonl`) | Self-contained HTML + Markdown |
 
 The `@qoderai/better-harness` npm package includes all six plugin metadata
 roots. Pi reuses install metadata in the existing `package.json`, so it does
@@ -44,7 +45,7 @@ source-local.
   `canvas.json`, and `report.canvas.tsx`.
 - **Cursor Canvas** — the same complete report contract rendered with
   `cursor/canvas`, native Context Window evidence, and IDE actions.
-- **HTML visual** — portable Claude Code/Codex/Qwen/Copilot/Pi/WorkBuddy contract
+- **HTML visual** — portable Claude Code/Codex/Qwen/Copilot/Pi/WorkBuddy/Grok contract
   covering `findings.json`, `report.md`, and a self-contained `report.html`
   (see the [sample report](pathname:///demo/better-harness-report/)).
 - **Markdown-only** — no visual companion.
@@ -65,6 +66,15 @@ WorkBuddy configured assets, workspace-matched session evidence, and portable
 HTML routing are implemented. This repository does not ship a WorkBuddy install
 shell, plugin manifest, or npm-packaged host artifact; installation remains on
 WorkBuddy's own `~/.workbuddy/skills` or marketplace surfaces.
+
+### Grok {#grok}
+
+Grok configured assets, workspace-matched session evidence, and portable HTML
+routing are implemented. This repository does not ship a Grok install shell or
+npm-packaged host artifact; installation is a manual skill symlink into
+`~/.grok/skills/better-harness` (or project `.grok/skills`). Grok remains
+outside the verified Quickstart set until a complete interactive report-loop
+smoke is observed.
 
 ## Capability coverage
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import path from "node:path";
+import { stat as statPath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { collectAgentCustomizeInventory } from "../agent-customize/index.mjs";
@@ -13,8 +14,9 @@ export const ASSET_BASELINE_KIND = "agent-asset-baseline";
 export const ASSET_BASELINE_SCHEMA_VERSION = 1;
 export const MAX_BASELINE_FINDINGS = 16;
 export const MAX_BASELINE_OWNER_ROUTES = 16;
+const MAX_OWNER_ROUTE_STAT_CONCURRENCY = 32;
 
-const PROVIDERS = new Set(["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"]);
+const PROVIDERS = new Set(["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy", "grok"]);
 const SEVERITY_RANK = Object.freeze({ error: 0, warning: 1, advisory: 2 });
 const OWNER_KIND_RANK = Object.freeze({
   rules: 0,
@@ -78,13 +80,20 @@ function workspaceRoute(filePath, workspace) {
   return relative.split(path.sep).join("/");
 }
 
-function ownerRoutes(inventory, workspace) {
+function ownerRouteFallbackOrder(left, right) {
+  return (OWNER_KIND_RANK[left.kind] ?? 99) - (OWNER_KIND_RANK[right.kind] ?? 99)
+    || (OWNER_SCOPE_RANK[left.scope] ?? 9) - (OWNER_SCOPE_RANK[right.scope] ?? 9)
+    || String(left.name).localeCompare(String(right.name));
+}
+
+async function ownerRoutes(inventory, workspace, options = {}) {
   const routes = new Map();
   for (const surface of inventory?.surfaces ?? []) {
     if (!new Set(["rules", "skills", "mcps", "memories", "agents", "hooks", "commands", "workflows", "plugins"]).has(surface?.type)) continue;
     for (const item of surface.items ?? []) {
       const name = text(item?.displayName ?? item?.name ?? item?.label, 96);
       if (!name) continue;
+      const sourcePath = item?.path ?? item?.filePath ?? item?.rootPath;
       const route = Object.fromEntries(Object.entries({
         kind: text(surface.type, 32),
         scope: text(item?.scope ?? surface.scope, 24),
@@ -96,42 +105,56 @@ function ownerRoutes(inventory, workspace) {
         effectiveTarget: text(item?.effectiveTarget, 180),
       }).filter(([, value]) => value !== undefined && value !== ""));
       const key = [route.kind, route.scope, route.name, route.version, route.owner, route.route].join(":");
-      if (!routes.has(key)) routes.set(key, route);
+      if (!routes.has(key)) routes.set(key, { route, sourcePath });
     }
   }
-  const ordered = [...routes.values()].sort((left, right) =>
-    (OWNER_KIND_RANK[left.kind] ?? 99) - (OWNER_KIND_RANK[right.kind] ?? 99)
-      || (OWNER_SCOPE_RANK[left.scope] ?? 9) - (OWNER_SCOPE_RANK[right.scope] ?? 9)
-      || String(left.name).localeCompare(String(right.name)),
-  );
-  const byKind = new Map();
-  for (const route of ordered) {
-    const group = byKind.get(route.kind) ?? [];
-    group.push(route);
-    byKind.set(route.kind, group);
-  }
-  const selected = [];
-  const groups = [...byKind.values()];
-  for (let depth = 0; selected.length < MAX_BASELINE_OWNER_ROUTES; depth += 1) {
-    let found = false;
-    for (const group of groups) {
-      if (group[depth]) {
-        selected.push(group[depth]);
-        found = true;
-        if (selected.length === MAX_BASELINE_OWNER_ROUTES) break;
+  const stat = options.stat ?? statPath;
+  const candidates = [...routes.values()];
+  const timestamped = new Array(candidates.length);
+  let nextCandidate = 0;
+  await Promise.all(Array.from({ length: Math.min(MAX_OWNER_ROUTE_STAT_CONCURRENCY, candidates.length) }, async () => {
+    while (nextCandidate < candidates.length) {
+      const index = nextCandidate;
+      nextCandidate += 1;
+      const { route, sourcePath } = candidates[index];
+      if (!sourcePath) {
+        timestamped[index] = route;
+        continue;
+      }
+      try {
+        const info = await stat(sourcePath);
+        const modifiedAt = info?.mtime instanceof Date ? info.mtime.toISOString() : undefined;
+        timestamped[index] = modifiedAt ? { ...route, modifiedAt } : route;
+      } catch {
+        timestamped[index] = route;
       }
     }
-    if (!found) break;
-  }
+  }));
+  const ordered = timestamped.sort((left, right) => {
+    const leftTime = left.modifiedAt ? Date.parse(left.modifiedAt) : Number.NEGATIVE_INFINITY;
+    const rightTime = right.modifiedAt ? Date.parse(right.modifiedAt) : Number.NEGATIVE_INFINITY;
+    return rightTime - leftTime || ownerRouteFallbackOrder(left, right);
+  });
+  const selected = ordered.slice(0, MAX_BASELINE_OWNER_ROUTES);
+  const observedAt = (options.now?.() ?? new Date()).toISOString();
+  const timestampedCount = ordered.filter((route) => route.modifiedAt).length;
   return {
     items: selected,
     total: ordered.length,
     omitted: Math.max(0, ordered.length - MAX_BASELINE_OWNER_ROUTES),
     truncated: ordered.length > MAX_BASELINE_OWNER_ROUTES,
+    selection: {
+      strategy: "latest-modified",
+      limit: MAX_BASELINE_OWNER_ROUTES,
+      observedAt,
+      timestampSource: "filesystem-mtime",
+      timestamped: timestampedCount,
+      untimestamped: ordered.length - timestampedCount,
+    },
   };
 }
 
-function compactInventory(inventory, workspace) {
+async function compactInventory(inventory, workspace, options = {}) {
   const memoryCategories = (inventory?.memories?.categories ?? [])
     .map((category) => ({
       category: text(category?.category ?? category?.name, 72),
@@ -160,7 +183,7 @@ function compactInventory(inventory, workspace) {
     },
     summary: inventorySummary,
     coverageRows,
-    ownerRoutes: ownerRoutes(inventory, workspace),
+    ownerRoutes: await ownerRoutes(inventory, workspace, options),
     memories: {
       included: Boolean(inventory?.memories?.included),
       contentPolicy: inventory?.memories?.contentPolicy ?? "raw-memory-content-not-read",
@@ -278,7 +301,7 @@ function mergeInheritedInventories(projectInventory, inheritedInventories, topol
 export async function collectAssetBaseline(options = {}, dependencies = {}) {
   const provider = options.provider ?? options.platform ?? "qoder";
   if (!PROVIDERS.has(provider)) {
-    throw new Error(`Unsupported provider: ${provider}. Supported providers: qoder, codex, claude, cursor, qwen, copilot, pi, workbuddy.`);
+    throw new Error(`Unsupported provider: ${provider}. Supported providers: qoder, codex, claude, cursor, qwen, copilot, pi, workbuddy, grok.`);
   }
   const workspace = normalizeWorkspace(options.workspace ?? ".");
   const includeUserHome = parseBooleanFlag(options.includeUserHome ?? options["include-user-home"] ?? false);
@@ -339,7 +362,10 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
     ? available(compactLint(lintResult.value))
     : unavailable(lintResult.reason, "lint");
   const inventoryEnvelope = inventoryResult.status === "fulfilled"
-    ? available(compactInventory(inventoryResult.value, workspace))
+    ? available(await compactInventory(inventoryResult.value, workspace, {
+      stat: dependencies.stat,
+      now: dependencies.now,
+    }))
     : unavailable(inventoryResult.reason, "inventory");
   let integrityEnvelope;
   if (inventoryResult.status === "fulfilled") {
@@ -356,8 +382,10 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
   const availableCount = Object.values(envelopes).filter((envelope) => envelope.status === "available").length;
   const truncatedStages = [
     lintEnvelope.data?.findings?.truncated ? "lint-findings" : null,
-    inventoryEnvelope.data?.ownerRoutes?.truncated ? "inventory-owner-routes" : null,
     integrityEnvelope.data?.findings?.truncated ? "integrity-findings" : null,
+  ].filter(Boolean);
+  const sampledStages = [
+    inventoryEnvelope.data?.ownerRoutes?.truncated ? "inventory-owner-routes" : null,
   ].filter(Boolean);
   return {
     kind: ASSET_BASELINE_KIND,
@@ -376,6 +404,7 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
       ownerRouteLimit: MAX_BASELINE_OWNER_ROUTES,
       inheritedWorkspaceCount: rawInventory?.diagnostics?.inheritedWorkspaceCount ?? 0,
       truncatedStages,
+      sampledStages,
     },
   };
 }
@@ -403,7 +432,7 @@ export function formatAssetBaselineMarkdown(result) {
   return `${lines.join("\n")}\n`;
 }
 
-const USAGE = `Usage: better-harness coding-agent-practices asset-baseline [qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy] [options]
+const USAGE = `Usage: better-harness coding-agent-practices asset-baseline [qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok] [options]
 
 Collect one compact, read-only AI evidence envelope from a shared asset snapshot.
 

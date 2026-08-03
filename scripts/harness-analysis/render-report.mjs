@@ -41,6 +41,13 @@ function filesystemPathIdentity(value) {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
+// Host ids accepted for report routing. Kept local so `--help` stays cheap;
+// test/harness-report-render-cli.test.mjs guards it against the session
+// platform registry in scripts/session-analysis/analyzer.mjs.
+export const RENDER_REPORT_PLATFORMS = Object.freeze([
+  "qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy", "grok",
+]);
+
 // Each Canvas mode owns its own analyzer companion filename so the two routes
 // stay independent even though they currently agree on `canvas.json`.
 const ANALYZER_CANVAS_DATA_FILE_BY_MODE = Object.freeze({
@@ -57,7 +64,8 @@ Options:
   --canvas <file>      Explicit legacy canvas.json companion for a split Agent Work Loop bundle
   --source <file>      Reviewed Agent Work Loop report source; projection is performed in memory
   --mode <mode>        qoder-canvas, cursor-canvas, markdown, or html (default: qoder-canvas)
-  --out <dir>          Output root (default: .qoder/better-harness, or .cursor/better-harness for cursor-canvas)
+  --out <dir>          Output root (default: .qoder/better-harness, .cursor/better-harness for cursor-canvas, or .<platform>/better-harness for html)
+  --platform <name>    Host id used for default html out root (alias: --provider)
   --run-dir <dir>      Run directory: relative values resolve below --out; absolute values remain exact
   --target <path>      Target project path used for run-directory slug
   --language <lang>    en or zh-CN (default: input summary.locale, then en)
@@ -78,16 +86,29 @@ function parseArgs(argv) {
       options.validate = true;
     } else if (arg === "--json") {
       options.json = true;
-    } else if (["--findings", "--canvas", "--source", "--mode", "--out", "--run-dir", "--target", "--language", "--sdk-root", "--sdk-declarations"].includes(arg)) {
+    } else if (["--findings", "--canvas", "--source", "--mode", "--out", "--run-dir", "--target", "--language", "--sdk-root", "--sdk-declarations", "--platform", "--provider"].includes(arg)) {
       options[arg.slice(2)] = argv[++index];
-    } else if (arg.startsWith("--findings=") || arg.startsWith("--canvas=") || arg.startsWith("--source=") || arg.startsWith("--mode=") || arg.startsWith("--out=") || arg.startsWith("--run-dir=") || arg.startsWith("--target=") || arg.startsWith("--language=") || arg.startsWith("--sdk-root=") || arg.startsWith("--sdk-declarations=")) {
+    } else if (arg.startsWith("--findings=") || arg.startsWith("--canvas=") || arg.startsWith("--source=") || arg.startsWith("--mode=") || arg.startsWith("--out=") || arg.startsWith("--run-dir=") || arg.startsWith("--target=") || arg.startsWith("--language=") || arg.startsWith("--sdk-root=") || arg.startsWith("--sdk-declarations=") || arg.startsWith("--platform=") || arg.startsWith("--provider=")) {
       const [name, value] = arg.slice(2).split(/=(.*)/s);
       options[name] = value;
     } else {
       throw Object.assign(new Error(`Unknown argument: ${arg}`), { code: "UNKNOWN_ARGUMENT" });
     }
   }
-  options.out ??= options.mode === "cursor-canvas" ? ".cursor/better-harness" : ".qoder/better-harness";
+  const hostId = String(options.platform ?? options.provider ?? "").toLowerCase();
+  const supportedHtmlHosts = new Set(RENDER_REPORT_PLATFORMS);
+  // Allow --help even when a bad platform is present; validate only for real runs.
+  if (!options.help && hostId && !supportedHtmlHosts.has(hostId)) {
+    throw Object.assign(
+      new Error(`unsupported render platform: ${hostId}. Supported platforms: ${[...supportedHtmlHosts].join(", ")}.`),
+      { code: "UNSUPPORTED_RENDER_PLATFORM" },
+    );
+  }
+  options.out ??= options.mode === "cursor-canvas"
+    ? ".cursor/better-harness"
+    : options.mode === "html" && hostId && supportedHtmlHosts.has(hostId) && hostId !== "qoder"
+      ? `.${hostId}/better-harness`
+      : ".qoder/better-harness";
   return options;
 }
 

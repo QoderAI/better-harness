@@ -82,7 +82,7 @@ validation relevance, repair, delivery, recovery, and Learning Capture remain
 unobserved until the prepared source-bound review resolves them.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy>
+  --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok>
                                   Session platform (default: qoder)
   --workspace <path>            Target workspace (required)
   --source <path>               Candidate report.source.json path (required)
@@ -845,7 +845,7 @@ export function buildTaskLoopSourceCandidate({
 
 export async function collectAgentLintPracticeEvidence(options = {}) {
   const provider = options.platform ?? "qoder";
-  const assetReviewSupported = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"].includes(provider);
+  const assetReviewSupported = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy", "grok"].includes(provider);
   const common = {
     workspace: options.workspace,
     provider,
@@ -857,6 +857,7 @@ export async function collectAgentLintPracticeEvidence(options = {}) {
     copilotHome: options.copilotHome ?? options["copilot-home"],
     piHome: options.piHome ?? options["pi-home"],
     workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
+    grokHome: options.grokHome ?? options["grok-home"],
     topology: options.topology,
     analysisScope: options.analysisScope,
   };
@@ -977,6 +978,16 @@ export function collectTaskLoopPracticeInventory(options = {}, platform = option
       workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
     });
   }
+  if (platform === "grok") {
+    return collectProviderInventory({
+      platform,
+      workspace: options.workspace,
+      includeUserHome: includeGlobalCapabilities,
+      includeGlobalHooks: true,
+      includeMemories: false,
+      grokHome: options.grokHome ?? options["grok-home"],
+    });
+  }
   return Promise.resolve(null);
 }
 
@@ -1093,6 +1104,7 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     copilotHome: options.copilotHome ?? options["copilot-home"],
     piHome: options.piHome ?? options["pi-home"],
     workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
+    grokHome: options.grokHome ?? options["grok-home"],
     includeGlobalCapabilities: options.includeGlobalCapabilities
       ?? options["include-global-capabilities"]
       ?? false,

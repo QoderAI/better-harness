@@ -186,7 +186,7 @@ test("homepage leads search visitors from proof to a host-specific setup", async
   assert.match(source, /Verified Quickstart/u);
   assert.match(source, /Adapter support/u);
   assert.equal([...source.matchAll(/supportLevel: "quickstart"/gu)].length, 6);
-  assert.equal([...source.matchAll(/supportLevel: "adapter"/gu)].length, 2);
+  assert.equal([...source.matchAll(/supportLevel: "adapter"/gu)].length, 3);
   assert.doesNotMatch(
     source,
     /View live demo report|REPORT_PROMPT|CodeBlock|<code>\/better-harness<\/code>/u,
@@ -265,7 +265,7 @@ test("homepage leads search visitors from proof to a host-specific setup", async
   assert.match(zh["homepage.demo.historyCaption"].message, /静态最终帧/u);
 });
 
-test("architecture and public matrices explain the eight/six/two support boundary", async () => {
+test("architecture and public matrices explain the nine/six/three support boundary", async () => {
   const [architecture, matrix, matrixZh] = await Promise.all([
     readFile(
       path.join(process.cwd(), "assets", "better-harness-architecture-en.svg"),
@@ -290,18 +290,18 @@ test("architecture and public matrices explain the eight/six/two support boundar
     ),
   ]);
 
-  assert.match(architecture, /8 CAPABILITY ADAPTERS/u);
+  assert.match(architecture, /9 CAPABILITY ADAPTERS/u);
   assert.match(architecture, /6 verified Quickstart hosts/u);
-  assert.match(architecture, /Pi \+ WorkBuddy adapters/u);
+  assert.match(architecture, /Pi \+ WorkBuddy \+ Grok adapters/u);
   assert.match(architecture, /Qoder Canvas · portable HTML/u);
   assert.match(architecture, /Better Harness Skill Workflow/u);
   assert.doesNotMatch(architecture, />\/better-harness<\/text>/u);
   assert.doesNotMatch(architecture, /Claude · Codex · Qoder · Cursor<\/text>/u);
 
-  assert.match(matrix, /eight capability-level host adapters/u);
+  assert.match(matrix, /nine capability-level host adapters/u);
   assert.match(matrix, /Six\nhave verified public Quickstart paths/u);
-  assert.match(matrix, /Pi and WorkBuddy are visible as adapter\nsupport/u);
-  assert.match(matrixZh, /八个能力层宿主适配器/u);
+  assert.match(matrix, /Pi, WorkBuddy, and Grok are visible as adapter\nsupport/u);
+  assert.match(matrixZh, /九个能力层宿主适配器/u);
   assert.match(matrixZh, /六个已有验证过的公开\n快速开始路径/u);
-  assert.match(matrixZh, /Pi 与 WorkBuddy 以适配器支持展示/u);
+  assert.match(matrixZh, /Pi、WorkBuddy 与 Grok 以适配器支持展示/u);
 });

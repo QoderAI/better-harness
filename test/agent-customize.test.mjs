@@ -2356,3 +2356,313 @@ test("WorkBuddy provider collects user and project skills, MCP servers, and cont
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
+
+async function makeGrokFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-grok-"));
+  const grokHome = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace");
+
+  await writeText(
+    path.join(grokHome, "config.toml"),
+    [
+      '[mcp_servers.docs]',
+      'command = "npx"',
+      'args = ["-y", "docs-mcp"]',
+      "",
+      '[mcp_servers.disabled_search]',
+      "enabled = false",
+      'url = "https://example.invalid/mcp"',
+      "",
+    ].join("\n"),
+  );
+  await writeText(
+    path.join(grokHome, "skills", "frontend-slides", "SKILL.md"),
+    "---\nname: frontend-slides\ndescription: Build HTML slide decks.\n---\n",
+  );
+  await writeText(
+    path.join(grokHome, "bundled", "skills", "help", "SKILL.md"),
+    "---\nname: help\ndescription: Grok help skill.\n---\n",
+  );
+  await writeJson(path.join(grokHome, "hooks", "git-gh-only.json"), {
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "Bash",
+          hooks: [
+            { type: "command", command: "echo start" },
+          ],
+        },
+      ],
+    },
+  });
+
+  // Prefer native ~/.grok/plugins discovery path (also still accept installed-plugins).
+  const pluginRoot = path.join(grokHome, "plugins", "sample-plugin");
+  await writeJson(path.join(pluginRoot, "plugin.json"), {
+    name: "sample-plugin",
+    displayName: "Sample Plugin",
+    description: "A sample Grok plugin.",
+  });
+  await writeText(
+    path.join(pluginRoot, "skills", "sample-skill", "SKILL.md"),
+    "---\nname: sample-skill\ndescription: Sample plugin skill.\n---\n",
+  );
+
+  await writeText(
+    path.join(workspace, ".grok", "skills", "project-flow", "SKILL.md"),
+    "---\nname: project-flow\ndescription: Project Grok workflow.\n---\n",
+  );
+  await writeText(
+    path.join(workspace, ".grok", "config.toml"),
+    [
+      '[mcp_servers.project_docs]',
+      'command = "npx"',
+      "",
+    ].join("\n"),
+  );
+  await writeText(
+    path.join(workspace, ".agents", "skills", "shared-standard", "SKILL.md"),
+    "---\nname: shared-standard\ndescription: Shared Agent Skills standard workflow.\n---\n",
+  );
+  await writeText(path.join(workspace, "AGENTS.md"), "# Grok Project Instructions\n");
+
+  return { root, grokHome, workspace };
+}
+
+test("collectAgentCustomizeInventory returns Grok skills, MCP, hooks, and installed plugins", async () => {
+  const fixture = await makeGrokFixture();
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "grok",
+      grokHome: fixture.grokHome,
+      workspace: fixture.workspace,
+    });
+
+    assert.equal(inventory.provider, "grok");
+    assert.equal(inventory.grokHome, fixture.grokHome);
+    assert.equal(inventory.plugins.length, 1);
+    assert.equal(inventory.plugins[0].name, "sample-plugin");
+    assert.equal(inventory.plugins[0].installMatch, "grok-plugins-dir");
+    assert.deepEqual(inventory.plugins[0].skills.map((skill) => skill.name), ["sample-skill"]);
+    assert.equal(inventory.diagnostics.installedPluginState, "grok-plugins-dirs");
+
+    assert.ok(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "user" })
+        .some((item) => item.name === "frontend-slides"),
+    );
+    assert.ok(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "user" })
+        .some((item) => item.name === "help"),
+    );
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "project" }).map((item) => item.name).sort(),
+      ["project-flow", "shared-standard"],
+    );
+    assert.ok(
+      filterManageItems(inventory, { tab: "mcps", scopeKind: "user" })
+        .some((item) => item.name === "docs" && item.enabled !== false),
+    );
+    assert.ok(
+      filterManageItems(inventory, { tab: "mcps", scopeKind: "project" })
+        .some((item) => item.name === "project_docs"),
+    );
+    const disabled = filterManageItems(inventory, { tab: "mcps", scopeKind: "user" })
+      .find((item) => item.name === "disabled_search");
+    assert.ok(disabled);
+    assert.equal(disabled.enabled, false);
+    assert.ok(
+      filterManageItems(inventory, { tab: "hooks", scopeKind: "user" })
+        .some((item) => (item.label ?? item.name ?? "").includes("PreToolUse")
+          || item.evidence?.path?.includes("git-gh-only")),
+    );
+    assert.equal(inventory.diagnostics.configPath, path.join(fixture.grokHome, "config.toml"));
+    // Inventory may mention secret *policy* labels; values themselves must stay absent.
+    assert.doesNotMatch(JSON.stringify(inventory), /sk-[A-Za-z0-9]{10,}|Bearer\s+[A-Za-z0-9._-]+/u);
+    assert.ok(inventory.unsupported.some((item) => /auth\.json/u.test(item)));
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("agent-customize CLI honours --grok-home instead of the real user home", async () => {
+  const fixture = await makeGrokFixture();
+  try {
+    const result = runAgentCustomizeCli([
+      "inventory",
+      "--provider",
+      "grok",
+      "--workspace",
+      fixture.workspace,
+      "--grok-home",
+      fixture.grokHome,
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const inventory = JSON.parse(result.stdout);
+    assert.equal(inventory.grokHome, fixture.grokHome);
+    assert.notEqual(inventory.grokHome, path.join(os.homedir(), ".grok"));
+    assert.ok(inventory.manage.mcps.some((item) => item.name === "docs"));
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Grok plugin inventory dedupes one physical plugin reached through multiple roots", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-grok-plugin-dedupe-"));
+  const grokHome = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace");
+  const pluginDir = path.join(grokHome, "plugins", "sample-plugin");
+  await writeJson(path.join(pluginDir, "plugin.json"), {
+    name: "sample-plugin",
+    displayName: "Sample Plugin",
+  });
+  // Alias the same physical plugin directory via config paths and project tree.
+  const pluginsRoot = path.join(grokHome, "plugins");
+  await writeText(
+    path.join(grokHome, "config.toml"),
+    [
+      "[plugins]",
+      `paths = ["${pluginsRoot.replaceAll("\\", "/")}"]`,
+      "",
+    ].join("\n"),
+  );
+  await mkdir(path.join(workspace, ".grok"), { recursive: true });
+  try {
+    await symlink(path.join(grokHome, "plugins"), path.join(workspace, ".grok", "plugins"));
+  } catch {
+    // Windows without symlink privilege: copy path alias only via config.
+  }
+
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "grok",
+      grokHome,
+      workspace,
+    });
+    assert.equal(inventory.plugins.length, 1);
+    assert.equal(inventory.plugins[0].name, "sample-plugin");
+    assert.ok(inventory.plugins[0].installSources.includes("grok-plugins-dir"));
+    assert.ok(inventory.plugins[0].installSources.includes("grok-plugins-path-config"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Grok plugin inventory keeps distinct roots that share a plugin directory name", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-grok-plugin-name-clash-"));
+  const grokHome = path.join(root, "home", ".grok");
+  const workspace = path.join(root, "workspace");
+  await writeJson(path.join(grokHome, "plugins", "flow", "plugin.json"), { name: "flow" });
+  await writeJson(path.join(workspace, ".grok", "plugins", "flow", "plugin.json"), { name: "flow" });
+
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "grok",
+      grokHome,
+      workspace,
+    });
+    assert.equal(inventory.plugins.length, 2);
+    // Same directory name, different physical roots: ids must stay distinguishable
+    // so downstream collision diagnostics are not silently collapsed.
+    assert.equal(new Set(inventory.plugins.map((plugin) => plugin.id)).size, 2);
+    assert.deepEqual(
+      inventory.plugins.map((plugin) => plugin.installMatch).sort(),
+      ["grok-plugins-dir", "grok-project-plugins-dir"],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Grok plugin paths from the user and project config are unioned, not replaced", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-grok-plugin-paths-"));
+  const grokHome = path.join(root, "home", ".grok");
+  const workspace = path.join(root, "workspace");
+  const userExtraRoot = path.join(root, "user-extra-plugins");
+  const projectExtraRoot = path.join(root, "project-extra-plugins");
+  await writeJson(path.join(userExtraRoot, "alpha", "plugin.json"), { name: "alpha" });
+  await writeJson(path.join(projectExtraRoot, "beta", "plugin.json"), { name: "beta" });
+  await writeText(
+    path.join(grokHome, "config.toml"),
+    ["[plugins]", `paths = ["${userExtraRoot.replaceAll("\\", "/")}"]`, ""].join("\n"),
+  );
+  await writeText(
+    path.join(workspace, ".grok", "config.toml"),
+    ["[plugins]", `paths = ["${projectExtraRoot.replaceAll("\\", "/")}"]`, ""].join("\n"),
+  );
+
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "grok",
+      grokHome,
+      workspace,
+    });
+    assert.deepEqual(inventory.plugins.map((plugin) => plugin.name).sort(), ["alpha", "beta"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Grok inventory reports no user config path when the user home is out of scope", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-grok-project-scope-"));
+  const grokHome = path.join(root, "home", ".grok");
+  const workspace = path.join(root, "workspace");
+  await writeJson(path.join(grokHome, "plugins", "user-only", "plugin.json"), { name: "user-only" });
+  await writeText(path.join(workspace, ".grok", "config.toml"), "[plugins]\n");
+
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "grok",
+      grokHome,
+      workspace,
+      includeUserHome: false,
+    });
+    assert.equal(inventory.plugins.length, 0);
+    assert.deepEqual(inventory.diagnostics.installedPluginRecordFiles, []);
+    assert.equal(inventory.diagnostics.configPath, null);
+    assert.equal(
+      inventory.diagnostics.projectConfigPath,
+      path.join(workspace, ".grok", "config.toml"),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Grok project skills dedupe when .grok/skills symlinks to .agents/skills", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-grok-skill-symlink-"));
+  const grokHome = path.join(root, "home", ".grok");
+  const workspace = path.join(root, "workspace");
+  try {
+    await mkdir(path.join(grokHome), { recursive: true });
+    await writeText(
+      path.join(workspace, ".agents", "skills", "shared-flow", "SKILL.md"),
+      "---\nname: shared-flow\ndescription: Shared SoT skill.\n---\n",
+    );
+    await mkdir(path.join(workspace, ".grok"), { recursive: true });
+    await symlink(
+      path.join(workspace, ".agents", "skills"),
+      path.join(workspace, ".grok", "skills"),
+      "dir",
+    );
+
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "grok",
+      grokHome,
+      workspace,
+      includeUserHome: false,
+    });
+    const projectSkills = filterManageItems(inventory, {
+      tab: "skills",
+      scopeKind: "project",
+    });
+    assert.deepEqual(
+      projectSkills.map((item) => item.name).sort(),
+      ["shared-flow"],
+    );
+    assert.equal(projectSkills.length, 1);
+    const evidencePath = projectSkills[0]?.evidence?.path ?? projectSkills[0]?.filePath ?? "";
+    assert.match(evidencePath.replace(/\\/gu, "/"), /\.agents\/skills\/shared-flow\/SKILL\.md$/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

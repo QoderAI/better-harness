@@ -12,22 +12,22 @@ fails validation:
 
 ```bash
 # Discover evidence roots for a workspace
-<node> scripts/session-analysis.mjs sources --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo
+<node> scripts/session-analysis.mjs sources --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok> --workspace /path/to/repo
 
 # Session list with event counts and time range
-<node> scripts/session-analysis.mjs facets --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --limit 20
+<node> scripts/session-analysis.mjs facets --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok> --workspace /path/to/repo --limit 20
 
 # Compact insight cards and action candidates
-<node> scripts/session-analysis.mjs insights --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --limit 20
+<node> scripts/session-analysis.mjs insights --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok> --workspace /path/to/repo --limit 20
 
 # Read single session events
-<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --session-id <id> --include-events
+<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok> --workspace /path/to/repo --session-id <id> --include-events
 
 # Diagnose the facts admission funnel and resolve candidate refs to local sessions
-<node> scripts/session-analysis.mjs facts --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --selection all-eligible --limit 5 --debug --output /tmp/session-facts-debug.json
+<node> scripts/session-analysis.mjs facts --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok> --workspace /path/to/repo --selection all-eligible --limit 5 --debug --output /tmp/session-facts-debug.json
 
 # Expand one debug locator with normalized commands and user text
-<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --session-id <id> --include-events --include-command-text --include-user-text
+<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok> --workspace /path/to/repo --session-id <id> --include-events --include-command-text --include-user-text
 ```
 
 `facts --debug` is an operator-only diagnostic route. It exposes raw session
@@ -38,7 +38,7 @@ opening only the candidate sessions needed to explain a surprising aggregate.
 Command and user text flags are also local-only and must not be used for broad
 transcript dumps.
 
-Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, `copilot`, `pi`, and `workbuddy`. Do not invent
+Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, `copilot`, `pi`, `workbuddy`, and `grok`. Do not invent
 unsupported platform names.
 Always pass the absolute target workspace and load the matching Platform Notes
 before interpreting source roots or workspace bindings.
@@ -330,3 +330,18 @@ Route configured WorkBuddy rules (`AGENTS.md`, identity files), Skills,
 marketplace plugins, MCP config, and other project/user assets through
 `../agent-customize/global-assets.md`; configured presence does not prove
 use.
+
+### Grok
+
+For Grok, the analyzer reads workspace-matching session directories under
+`~/.grok/sessions/<url-encoded-cwd>/<session-id>/`. The group directory name is
+`encodeURIComponent(absoluteCwd)`, so `/Users/work` maps to
+`~/.grok/sessions/%2FUsers%2Fwork/`. Prefer `summary.json` `info.cwd` for
+qualification; fall back to decoding the group directory name. Primary
+transcript is `updates.jsonl` (ACP-style `session/update` records). Optional
+`chat_history.jsonl` is secondary, and `signals.json` may contribute sparse
+usage when present. Missing signals leave usage unobserved rather than
+zero-filled. The `GROK_HOME` environment variable relocates the data root.
+Route configured Grok skills, hooks, MCP servers in `config.toml`, installed
+plugins, and project `.grok` assets through `../agent-customize/global-assets.md`;
+configured presence does not prove use.
