@@ -5,6 +5,12 @@ import { stat as statPath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { collectAgentCustomizeInventory } from "../agent-customize/index.mjs";
+import {
+  HOST_CAPABILITIES,
+  hostIdSetFor,
+  hostIdsFor,
+  hostPipeList,
+} from "../host-support/index.mjs";
 import { runAgentLint } from "../agent-lint/index.mjs";
 import { normalizeWorkspace, parseArgs, parseBooleanFlag } from "../session-analysis/index.mjs";
 import { reviewAssetIntegrity } from "./asset-integrity.mjs";
@@ -16,7 +22,8 @@ export const MAX_BASELINE_FINDINGS = 16;
 export const MAX_BASELINE_OWNER_ROUTES = 16;
 const MAX_OWNER_ROUTE_STAT_CONCURRENCY = 32;
 
-const PROVIDERS = new Set(["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy", "grok"]);
+const ASSET_PRACTICE_HOSTS = hostIdsFor(HOST_CAPABILITIES.ASSET_PRACTICES);
+const PROVIDERS = hostIdSetFor(HOST_CAPABILITIES.ASSET_PRACTICES);
 const SEVERITY_RANK = Object.freeze({ error: 0, warning: 1, advisory: 2 });
 const OWNER_KIND_RANK = Object.freeze({
   rules: 0,
@@ -301,7 +308,7 @@ function mergeInheritedInventories(projectInventory, inheritedInventories, topol
 export async function collectAssetBaseline(options = {}, dependencies = {}) {
   const provider = options.provider ?? options.platform ?? "qoder";
   if (!PROVIDERS.has(provider)) {
-    throw new Error(`Unsupported provider: ${provider}. Supported providers: qoder, codex, claude, cursor, qwen, copilot, pi, workbuddy, grok.`);
+    throw new Error(`Unsupported provider: ${provider}. Supported providers: ${ASSET_PRACTICE_HOSTS.join(", ")}.`);
   }
   const workspace = normalizeWorkspace(options.workspace ?? ".");
   const includeUserHome = parseBooleanFlag(options.includeUserHome ?? options["include-user-home"] ?? false);
@@ -432,7 +439,7 @@ export function formatAssetBaselineMarkdown(result) {
   return `${lines.join("\n")}\n`;
 }
 
-const USAGE = `Usage: better-harness coding-agent-practices asset-baseline [qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok] [options]
+const USAGE = `Usage: better-harness coding-agent-practices asset-baseline [${hostPipeList(ASSET_PRACTICE_HOSTS)}] [options]
 
 Collect one compact, read-only AI evidence envelope from a shared asset snapshot.
 
@@ -442,6 +449,7 @@ Options:
   --include-memories         Include authorized Memory title metadata (default: selected Qoder project)
   --claude-home <dir>        Claude config root override
   --claude-state <file>      Claude state-file override
+  --kimi-home <dir>          Kimi Code data root override
   --language <en|zh-CN>      Integrity finding language (default: en)
   --format <json|markdown>   Output format (default: json)
   --json                     Emit JSON

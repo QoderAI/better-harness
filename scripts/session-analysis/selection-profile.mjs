@@ -4,6 +4,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  HOST_CAPABILITIES,
+  hostIdsFor,
+  hostPipeList,
+  normalizedHostHomeOptions,
+} from "../host-support/index.mjs";
 import { createAnalyzer } from "./analyzer.mjs";
 import { parseArgs } from "./cli.mjs";
 import {
@@ -19,7 +25,7 @@ a declarative session selection plan. Raw prompts, commands, paths, and session
 identifiers never enter the profile.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok>
+  --platform <${hostPipeList(hostIdsFor(HOST_CAPABILITIES.SESSION_ANALYSIS))}>
                             Session platform (default: qoder)
   --workspace <path>        Target workspace (required)
   --since <ISO timestamp>   Exclude earlier sessions
@@ -36,23 +42,18 @@ function positiveInteger(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
-export async function createSelectionProfileBundle(options = {}) {
+export async function createSelectionProfileBundle(options = {}, dependencies = {}) {
   const platform = options.platform ?? "qoder";
   const snapshotUntil = options.until ?? new Date().toISOString();
-  const analyzer = await createAnalyzer(platform);
+  const createPlatformAnalyzer = dependencies.createAnalyzer ?? createAnalyzer;
+  const analyzer = await createPlatformAnalyzer(platform);
   const analyzerOptions = {
+    ...options,
     platform,
     workspace: options.workspace,
-    home: options.home,
     since: options.since,
     until: snapshotUntil,
-    qoderHome: options.qoderHome ?? options["qoder-home"],
-    codexHome: options.codexHome ?? options["codex-home"],
-    claudeHome: options.claudeHome ?? options["claude-home"],
-    cursorHome: options.cursorHome ?? options["cursor-home"],
-    qwenHome: options.qwenHome ?? options["qwen-home"],
-    copilotHome: options.copilotHome ?? options["copilot-home"],
-    piHome: options.piHome ?? options["pi-home"],
+    ...normalizedHostHomeOptions(options, platform),
   };
   const discovery = await analyzer.analyze({ ...analyzerOptions, command: "sources" });
   const scope = await analyzer.resolveScope(analyzerOptions);

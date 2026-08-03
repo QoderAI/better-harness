@@ -12,6 +12,7 @@ import {
   tabAvailableForScope,
 } from "../scripts/agent-customize/index.mjs";
 import { pluginMetadataEvidencePath } from "../scripts/agent-customize/core/items.mjs";
+import { collectKimiCustomizeInventory } from "../scripts/agent-customize/providers/kimi.mjs";
 import { qoderWorkspaceSlugs } from "../scripts/agent-customize/providers/qoder.mjs";
 import { collectProviderInventory as collectPracticeInventory } from "../scripts/coding-agent-practices/inventory.mjs";
 
@@ -1589,6 +1590,290 @@ test("Claude public configured-asset surfaces exclude disabled Plugin children",
     assert.equal(inventory.scope.claudeStatePath, fixture.claudeStatePath);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("collectKimiCustomizeInventory collects scoped skills, rules, and MCPs with includeUserHome control", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-kimi-"));
+  const kimiHome = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "kimi-project");
+
+  try {
+    await writeText(
+      path.join(kimiHome, "skills", "user-skill", "SKILL.md"),
+      "---\nname: user-skill\ndescription: User-scoped Kimi skill.\n---\n",
+    );
+    await writeJson(path.join(kimiHome, "mcp.json"), {
+      mcpServers: { userMcp: { command: "npx", args: ["-y", "@user/mcp"] } },
+    });
+    await writeText(
+      path.join(workspace, ".kimi", "skills", "project-kimi-skill", "SKILL.md"),
+      "---\nname: project-kimi-skill\ndescription: Project skill from .kimi.\n---\n",
+    );
+    await writeText(
+      path.join(workspace, ".kimi-code", "skills", "project-kimi-code-skill", "SKILL.md"),
+      "---\nname: project-kimi-code-skill\ndescription: Project skill from .kimi-code.\n---\n",
+    );
+    await writeText(path.join(workspace, "AGENTS.md"), "# Project Agent Rules\n");
+
+    const inventory = await collectKimiCustomizeInventory({ kimiHome, workspace });
+
+    assert.equal(inventory.provider, "kimi");
+    assert.equal(inventory.kimiHome, path.resolve(kimiHome));
+    assert.equal(inventory.workspace, path.resolve(workspace));
+    assert.deepEqual(inventory.plugins, []);
+
+    assert.deepEqual(
+      inventory.manage.skills
+        .filter((item) => item.scope === "user")
+        .map((item) => `${item.name}:${item.sourceLabel}`),
+      ["user-skill:User"],
+    );
+    assert.deepEqual(
+      inventory.manage.skills
+        .filter((item) => item.scope === "project")
+        .map((item) => `${item.name}:${item.sourceLabel}`),
+      ["project-kimi-code-skill:kimi-project", "project-kimi-skill:kimi-project"],
+    );
+    assert.deepEqual(
+      inventory.manage.rules.map((item) => `${item.scope}:${item.name}:${item.sourceKind}`),
+      ["project:AGENTS.md:agents-md-compat"],
+    );
+    assert.deepEqual(
+      inventory.manage.mcps.map((item) => `${item.scope}:${item.name}`),
+      ["user:userMcp"],
+    );
+    assert.deepEqual(inventory.diagnostics.projectSkillRootsProbed, [
+      path.join(workspace, ".kimi-code", "skills"),
+      path.join(workspace, ".kimi", "skills"),
+    ]);
+    assert.ok(inventory.unsupported.length > 0);
+    assert.ok(inventory.unsupported.some((entry) => /memory/iu.test(entry)));
+    assert.equal(inventory.unsupported.some((entry) => /^plugins\b/iu.test(entry)), false);
+    assert.equal(inventory.unsupported.some((entry) => /^hooks\b/iu.test(entry)), false);
+
+    const projectOnly = await collectKimiCustomizeInventory({
+      kimiHome,
+      workspace,
+      includeUserHome: false,
+    });
+    assert.equal(projectOnly.manage.skills.some((item) => item.scope === "user"), false);
+    assert.deepEqual(projectOnly.manage.mcps, []);
+    assert.deepEqual(projectOnly.plugins, []);
+    assert.equal(projectOnly.diagnostics.pluginCollectionSkipped, "include-user-home-disabled");
+    assert.deepEqual(
+      projectOnly.manage.skills.filter((item) => item.scope === "project").map((item) => item.name),
+      ["project-kimi-code-skill", "project-kimi-skill"],
+    );
+    assert.deepEqual(
+      projectOnly.manage.rules.map((item) => `${item.scope}:${item.name}`),
+      ["project:AGENTS.md"],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("collectKimiCustomizeInventory inventories enabled plugin assets and skips disabled ones", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-kimi-plugins-"));
+  const kimiHome = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "kimi-project");
+  const managed = path.join(kimiHome, "plugins", "managed");
+  const alphaRoot = path.join(managed, "alpha");
+  const betaRoot = path.join(managed, "beta");
+  const gammaRoot = path.join(managed, "gamma");
+
+  try {
+    await mkdir(workspace, { recursive: true });
+    await writeJson(path.join(kimiHome, "plugins", "installed.json"), {
+      version: 1,
+      plugins: [
+        {
+          id: "alpha",
+          root: alphaRoot,
+          source: "local-path",
+          enabled: true,
+          installedAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          originalSource: "/srv/alpha",
+        },
+        { id: "beta", root: betaRoot, source: "local-path", enabled: false },
+        { id: "gamma", root: gammaRoot, source: "local-path", enabled: true },
+      ],
+    });
+    // alpha: full manifest, plus a shadow fallback manifest that must not win.
+    await writeJson(path.join(alphaRoot, "kimi.plugin.json"), {
+      name: "alpha",
+      version: "1.2.3",
+      description: "Alpha plugin.",
+      skills: ["./skills/", "../outside"],
+      agents: "./agents/",
+      commands: ["./commands/", "./solo.md"],
+      hooks: [
+        { event: "PreToolUse", matcher: "Bash", command: "node ${KIMI_PLUGIN_ROOT}/hooks/check.mjs", timeout: 30 },
+        { event: "SessionStart", command: "echo alpha-ready" },
+      ],
+      mcpServers: {
+        "alpha-stdio": { command: "npx", args: ["-y", "@alpha/mcp-server"], env: { ALPHA_TOKEN: "fixture-alpha-secret" } },
+        "alpha-http": { url: "https://mcp.example.com/alpha?key=fixture-alpha-secret" },
+      },
+      systemPrompt: "Always answer as alpha.",
+      sessionStart: { skill: "alpha-skill" },
+      interface: { displayName: "Alpha Plugin" },
+    });
+    await writeJson(path.join(alphaRoot, ".kimi-plugin", "plugin.json"), { name: "alpha", description: "shadow" });
+    await writeText(
+      path.join(alphaRoot, "skills", "alpha-skill", "SKILL.md"),
+      "---\nname: alpha-skill\ndescription: Alpha skill.\n---\n",
+    );
+    await writeText(
+      path.join(managed, "outside", "outside-skill", "SKILL.md"),
+      "---\nname: outside-skill\ndescription: Escapes the plugin root.\n---\n",
+    );
+    await writeText(
+      path.join(alphaRoot, "agents", "reviewer.md"),
+      "---\nname: alpha-reviewer\ndescription: Reviews code.\n---\n",
+    );
+    await writeText(
+      path.join(alphaRoot, "commands", "run.md"),
+      "---\nname: run-alpha\ndescription: Runs alpha.\n---\n",
+    );
+    await writeText(path.join(alphaRoot, "commands", "review", "deep.md"), "# Deep review\n");
+    await writeText(path.join(alphaRoot, "solo.md"), "# Solo\n");
+    // beta: installed but disabled; its assets must stay out of component collections.
+    await writeJson(path.join(betaRoot, "kimi.plugin.json"), {
+      name: "beta",
+      description: "Beta plugin.",
+      skills: "./skills/",
+      commands: "./commands/",
+    });
+    await writeText(path.join(betaRoot, "skills", "beta-skill", "SKILL.md"), "---\nname: beta-skill\n---\n");
+    await writeText(path.join(betaRoot, "commands", "beta-cmd.md"), "---\nname: beta-cmd\n---\n");
+    // gamma: fallback manifest location, root SKILL.md as single skill root, auto-picked agents/.
+    await writeJson(path.join(gammaRoot, ".kimi-plugin", "plugin.json"), {
+      name: "gamma",
+      description: "Gamma plugin.",
+    });
+    await writeText(path.join(gammaRoot, "SKILL.md"), "---\nname: gamma\ndescription: Gamma root skill.\n---\n");
+    await writeText(path.join(gammaRoot, "agents", "helper.md"), "---\nname: gamma-helper\n---\n");
+
+    const inventory = await collectKimiCustomizeInventory({ kimiHome, workspace });
+
+    assert.deepEqual(
+      inventory.manage.plugins.map((plugin) => `${plugin.kind}:${plugin.id}:${plugin.enabled}`),
+      ["plugin:alpha:true", "plugin:beta:false", "plugin:gamma:true"],
+    );
+    const alpha = inventory.plugins.find((plugin) => plugin.id === "alpha");
+    assert.equal(alpha.displayName, "Alpha Plugin");
+    assert.equal(alpha.description, "Alpha plugin.");
+    assert.equal(alpha.version, "1.2.3");
+    assert.equal(alpha.installSource, "user");
+    assert.equal(alpha.source, "local-path");
+    assert.equal(alpha.systemPrompt, "Always answer as alpha.");
+    assert.equal(alpha.sessionStartSkill, "alpha-skill");
+    // systemPrompt stays plugin metadata and is never merged into rules.
+    assert.deepEqual(inventory.manage.rules.filter((item) => item.scope === "plugin"), []);
+
+    assert.deepEqual(
+      inventory.manage.skills.filter((item) => item.scope === "plugin").map((item) => `${item.name}:${item.pluginId}`),
+      ["alpha-skill:alpha", "gamma:gamma"],
+    );
+    // Declared paths escaping the plugin root are skipped.
+    assert.equal(inventory.manage.skills.some((item) => item.name === "outside-skill"), false);
+    assert.deepEqual(
+      inventory.manage.subagents.filter((item) => item.scope === "plugin").map((item) => `${item.name}:${item.pluginId}`),
+      ["alpha-reviewer:alpha", "gamma-helper:gamma"],
+    );
+    const pluginCommands = inventory.manage.commands.filter((item) => item.scope === "plugin");
+    assert.deepEqual(pluginCommands.map((item) => item.name), ["review/deep", "run-alpha", "solo"]);
+    assert.equal(pluginCommands.every((item) => item.pluginId === "alpha"), true);
+
+    const pluginHooks = inventory.manage.hooks.filter((item) => item.scope === "plugin");
+    assert.deepEqual(pluginHooks.map((item) => item.step).sort(), ["PreToolUse", "SessionStart"]);
+    const preHook = pluginHooks.find((item) => item.step === "PreToolUse");
+    assert.equal(preHook.pluginId, "alpha");
+    assert.equal(preHook.matcher, "Bash");
+    assert.equal(preHook.timeoutMs, 30000);
+    assert.equal(preHook.commandDisplay, "node check.mjs");
+
+    const pluginMcps = inventory.manage.mcps.filter((item) => item.scope === "plugin");
+    assert.deepEqual(pluginMcps.map((item) => item.name), ["alpha-http", "alpha-stdio"]);
+    assert.equal(pluginMcps.find((item) => item.name === "alpha-http").url, "https://mcp.example.com/alpha");
+
+    // Disabled plugins stay listed but contribute no component assets.
+    const beta = inventory.plugins.find((plugin) => plugin.id === "beta");
+    assert.equal(beta.enabled, false);
+    assert.deepEqual(beta.skills, []);
+    assert.equal(inventory.manage.skills.some((item) => item.pluginId === "beta"), false);
+    assert.equal(inventory.manage.commands.some((item) => item.pluginId === "beta"), false);
+
+    assert.equal(inventory.diagnostics.installedPluginIndexExists, true);
+    assert.equal(inventory.diagnostics.installedPluginIndexParseFailed, false);
+    assert.equal(inventory.diagnostics.installedPluginRecordCount, 3);
+    assert.equal(inventory.diagnostics.enabledPluginCount, 2);
+    assert.equal(JSON.stringify(inventory).includes("fixture-alpha-secret"), false);
+
+    // A missing installed.json yields an empty plugin list without throwing.
+    const noIndex = await collectKimiCustomizeInventory({
+      kimiHome: path.join(root, "empty-home"),
+      workspace,
+    });
+    assert.deepEqual(noIndex.plugins, []);
+    assert.equal(noIndex.diagnostics.installedPluginIndexExists, false);
+    assert.equal(noIndex.diagnostics.installedPluginRecordCount, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("collectKimiCustomizeInventory drops plugin assets whose realpath escapes the plugin root", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-kimi-symlink-"));
+  const kimiHome = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "kimi-project");
+  const pluginRoot = path.join(kimiHome, "plugins", "managed", "escapee");
+  const external = path.join(root, "outside-plugin-root", "external-skill");
+
+  try {
+    await mkdir(workspace, { recursive: true });
+    await writeJson(path.join(kimiHome, "plugins", "installed.json"), {
+      version: 1,
+      plugins: [{ id: "escapee", root: pluginRoot, source: "local-path", enabled: true }],
+    });
+    await writeJson(path.join(pluginRoot, "kimi.plugin.json"), {
+      name: "escapee",
+      skills: "./skills/",
+      agents: "./agents/",
+      commands: "./commands/",
+    });
+    // A legitimate in-root skill stays inventoried.
+    await writeText(
+      path.join(pluginRoot, "skills", "inside-skill", "SKILL.md"),
+      "---\nname: inside-skill\ndescription: Lives inside the plugin root.\n---\n",
+    );
+    // A symlink inside the plugin root points at a directory outside it.
+    await writeText(
+      path.join(external, "SKILL.md"),
+      "---\nname: external-skill\ndescription: Lives outside the plugin root.\n---\n",
+    );
+    await symlink(external, path.join(pluginRoot, "skills", "linked-outside"), process.platform === "win32" ? "junction" : "dir");
+    // Agent and command files reached only through the escaping symlink are
+    // dropped as well.
+    await writeText(path.join(root, "outside-plugin-root", "agent.md"), "---\nname: external-agent\n---\n");
+    await writeText(path.join(root, "outside-plugin-root", "command.md"), "---\nname: external-command\n---\n");
+    await mkdir(path.join(pluginRoot, "agents"), { recursive: true });
+    await symlink(root, path.join(pluginRoot, "agents", "linked-outside"), process.platform === "win32" ? "junction" : "dir");
+    await writeText(path.join(pluginRoot, "commands", "inside.md"), "---\nname: inside-command\n---\n");
+
+    const inventory = await collectKimiCustomizeInventory({ kimiHome, workspace });
+
+    const pluginSkills = inventory.manage.skills.filter((item) => item.pluginId === "escapee");
+    assert.deepEqual(pluginSkills.map((item) => item.name), ["inside-skill"]);
+    assert.equal(pluginSkills.some((item) => item.name === "external-skill"), false);
+    assert.equal(inventory.manage.subagents.some((item) => item.name === "external-agent"), false);
+    const pluginCommands = inventory.manage.commands.filter((item) => item.pluginId === "escapee");
+    assert.deepEqual(pluginCommands.map((item) => item.name), ["inside-command"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

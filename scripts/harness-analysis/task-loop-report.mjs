@@ -5,6 +5,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HOST_CAPABILITIES, hostIdSetFor } from "../host-support/index.mjs";
+import { projectSemanticFacets, validateSemanticFacets } from "../session-analysis/index.mjs";
+import { findingTargetErrors } from "../workspace-topology/index.mjs";
 import {
   AGENT_WORK_LOOP_DIMENSIONS,
   AGENT_WORK_LOOP_DIMENSION_IDS,
@@ -29,9 +32,9 @@ import {
   readerOverviewTextErrors,
   validateHarnessReportSource,
 } from "./report-source.mjs";
-import { projectSemanticFacets, validateSemanticFacets } from "../session-analysis/index.mjs";
 import { restoreProjectedInterventionLedger, summarizeLearningCapture } from "./intervention-ledger.mjs";
-import { findingTargetErrors } from "../workspace-topology/index.mjs";
+
+const SESSION_ANALYSIS_HOST_SET = hostIdSetFor(HOST_CAPABILITIES.SESSION_ANALYSIS);
 
 const DIMENSIONS = AGENT_WORK_LOOP_DIMENSIONS;
 
@@ -1510,7 +1513,7 @@ function checkupReportFindings(source) {
 function usageOutcomeReviewLead(source, locale) {
   const usage = source?.sessionEvents?.usageEfficiency;
   if (!isObject(usage) || !isObject(usage.selection) || !isObject(usage.longSessions) || !isObject(usage.outcomeReview)) return null;
-  const platform = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"].includes(source?.manifest?.scope?.platform)
+  const platform = SESSION_ANALYSIS_HOST_SET.has(source?.manifest?.scope?.platform)
     ? source.manifest.scope.platform
     : "qoder";
   const activeCount = Number(usage?.longSessions?.activeCount ?? 0);

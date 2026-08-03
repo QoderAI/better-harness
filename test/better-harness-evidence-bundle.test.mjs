@@ -116,7 +116,7 @@ function leadEvidence(overrides = {}) {
 }
 
 test("evidence-bundle help advertises WorkBuddy and its isolated home override", () => {
-  assert.match(EVIDENCE_BUNDLE_HELP, /pi, workbuddy, or grok/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /pi, kimi, workbuddy, or grok/u);
   assert.match(EVIDENCE_BUNDLE_HELP, /--workbuddy-home <dir>/u);
   assert.match(EVIDENCE_BUNDLE_HELP, /--grok-home <dir>/u);
 });
@@ -498,6 +498,30 @@ test("Pi agentCustomize lane routes the provider and isolated config paths", asy
   assert.equal(received["include-user-home"], true);
 });
 
+test("Kimi agentCustomize lane routes the provider and isolated config paths", async () => {
+  const context = freezeEvidenceBundleContext({
+    workspace: ".",
+    platform: "kimi",
+    depth: "quick",
+    "include-user-home": true,
+  }, NOW);
+  let received;
+  const lane = await collectAgentCustomize(context, {
+    "kimi-home": "/tmp/fixture-kimi-home",
+  }, {
+    collectAssetBaseline: async (options) => {
+      received = options;
+      return { kind: "agent-asset-baseline", status: "complete" };
+    },
+  });
+
+  assert.equal(lane.status, "available");
+  assert.equal(received.provider, "kimi");
+  assert.equal(received["kimi-home"], "/tmp/fixture-kimi-home");
+  assert.equal(received["include-user-home"], true);
+});
+
+
 test("shared Session population excludes the active session before both lanes hydrate", async () => {
   const population = Object.freeze({
     sessions: Object.freeze([{ sessionId: "eligible-session" }]),
@@ -647,6 +671,7 @@ test("zero-signal Episode admission remains valid inside one bound population", 
     leadZeroSignalDiscardedEpisodes: 1,
   });
 });
+
 
 test("WorkBuddy agentCustomize lane routes the provider and isolated config paths", async () => {
   const context = freezeEvidenceBundleContext({

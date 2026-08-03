@@ -71,6 +71,12 @@
   "homepage.hosts.pi.setup": {
     "message": "安装与证据适配器已可用；完整交互式报告闭环仍待冒烟验证。"
   },
+  "homepage.hosts.kimiCode.method": {
+    "message": "插件 Manifest"
+  },
+  "homepage.hosts.kimiCode.setup": {
+    "message": "插件、证据与报告适配器已可用；完整交互式报告闭环仍待冒烟验证。"
+  },
   "homepage.hosts.workBuddy.method": {
     "message": "Skill / Marketplace 路径"
   },
@@ -192,16 +198,16 @@
     "message": "Agent Work Loop（智能体工作循环）"
   },
   "homepage.how.architectureCaption": {
-    "message": "九个能力层宿主适配器进入同一条证据流水线。其中六个已有验证过的快速开始路径；Pi、WorkBuddy 与 Grok 的当前适配器支持边界会明确展示。"
+    "message": "十个能力层宿主适配器进入同一条证据流水线。其中六个已有验证过的快速开始路径；Pi、Kimi Code、WorkBuddy 与 Grok 的当前适配器支持边界会明确展示。"
   },
   "homepage.how.architectureAlt": {
-    "message": "Better Harness 架构：六个公开快速开始宿主以及 Pi、WorkBuddy 与 Grok 适配器支持进入三个独立证据智能体，再进行统一分析、宿主中立输出和修复"
+    "message": "Better Harness 架构：六个公开快速开始宿主以及 Pi、Kimi Code、WorkBuddy 与 Grok 适配器支持进入三个独立证据智能体，再进行统一分析、宿主中立输出和修复"
   },
   "homepage.quickstart.title": {
     "message": "选择你的 Coding Agent"
   },
   "homepage.quickstart.intro": {
-    "message": "目前支持九个宿主适配器。其中六个已有验证过的配置路径；Pi、WorkBuddy 与 Grok 会进入各自当前的支持边界说明。"
+    "message": "目前支持十个宿主适配器。其中六个已有验证过的配置路径；Pi、Kimi Code、WorkBuddy 与 Grok 会进入各自当前的支持边界说明。"
   },
   "homepage.meta.title": {
     "message": "AI 编码智能体工作流洞察"

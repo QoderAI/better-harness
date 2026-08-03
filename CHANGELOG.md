@@ -16,6 +16,19 @@ observable behavior and compatibility, not every internal refactor.
   assessment contract rejects (unknown id/state/field, duplicate observation,
   empty evidence, unsupported version, malformed JSON) exits 1 without ever
   producing a decision. `--json` keeps stdout parser-safe.
+- Kimi Code is now a supported analysis-capable source-local host. The
+  repository installs as a Kimi Code plugin (`/plugins install <repo>`)
+  through a `.kimi-plugin/plugin.json` manifest, gains a Kimi configured-asset
+  provider (user `~/.kimi-code/skills` and `mcp.json`, project
+  `.kimi-code/skills` and `.kimi/skills`, and managed plugins from
+  `plugins/installed.json` with `enabled` filtering and plugin-root path
+  confinement) plus a Kimi session-evidence adapter that reads
+  workspace-matching wire transcripts under
+  `~/.kimi-code/sessions/<wd_*>/ses{sion}_*/agents/*/wire.jsonl`, resolving
+  the workspace mapping through `workspaces.json` and `session_index.jsonl`
+  with a `wd_<name>_*` prefix fallback that records a
+  `kimi-workspace-index-absent` warning. The public npm package now ships
+  seven host metadata roots; the Qoder runtime bundle remains Qoder-specific.
 - A read-only native Learning Capture review contract can now screen ordinary
   Task Episodes for repeated exact repair routes, emit a bounded privacy-safe
   packet, validate evidence-bound `match` or `abstain` decisions, and project

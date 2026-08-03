@@ -3,7 +3,17 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  getHostDescriptor,
+  HOST_CAPABILITIES,
+  hostIdSetFor,
+  hostIdsFor,
+  hostPipeList,
+} from "../host-support/index.mjs";
 import { runAgentLint } from "./index.mjs";
+
+const ASSET_HOSTS = hostIdsFor(HOST_CAPABILITIES.ASSET_PRACTICES);
+const ASSET_HOST_SET = hostIdSetFor(HOST_CAPABILITIES.ASSET_PRACTICES);
 
 function parseArgs(argv) {
   const options = { workspace: "." };
@@ -70,6 +80,13 @@ function parseArgs(argv) {
       options.provider = arg.slice("--provider=".length);
       continue;
     }
+    const homeMatch = arg.match(/^--([a-z][a-z0-9-]*)-home(?:=(.*))?$/u);
+    if (homeMatch && ASSET_HOST_SET.has(homeMatch[1])) {
+      const host = getHostDescriptor(homeMatch[1]);
+      options[host.homeProperty] = homeMatch[2] ?? argv[index + 1];
+      if (homeMatch[2] === undefined) index += 1;
+      continue;
+    }
     if (arg === "--skill") {
       options.skills = [...(options.skills ?? []), argv[index + 1]];
       index += 1;
@@ -77,15 +94,6 @@ function parseArgs(argv) {
     }
     if (arg.startsWith("--skill=")) {
       options.skills = [...(options.skills ?? []), arg.slice("--skill=".length)];
-      continue;
-    }
-    if (arg === "--qoder-home") {
-      options.qoderHome = argv[index + 1];
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith("--qoder-home=")) {
-      options.qoderHome = arg.slice("--qoder-home=".length);
       continue;
     }
     if (arg === "--qoder-shared-client-cache-root") {
@@ -97,20 +105,6 @@ function parseArgs(argv) {
       options.qoderSharedClientCacheRoot = arg.slice("--qoder-shared-client-cache-root=".length);
       continue;
     }
-    if (arg === "--codex-home") {
-      options.codexHome = argv[index + 1];
-      index += 1;
-      continue;
-    }
-    if (arg === "--claude-home") {
-      options.claudeHome = argv[index + 1];
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith("--claude-home=")) {
-      options.claudeHome = arg.slice("--claude-home=".length);
-      continue;
-    }
     if (arg === "--claude-state") {
       options.claudeStatePath = argv[index + 1];
       index += 1;
@@ -118,19 +112,6 @@ function parseArgs(argv) {
     }
     if (arg.startsWith("--claude-state=")) {
       options.claudeStatePath = arg.slice("--claude-state=".length);
-      continue;
-    }
-    if (arg.startsWith("--codex-home=")) {
-      options.codexHome = arg.slice("--codex-home=".length);
-      continue;
-    }
-    if (arg === "--cursor-home") {
-      options.cursorHome = argv[index + 1];
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith("--cursor-home=")) {
-      options.cursorHome = arg.slice("--cursor-home=".length);
       continue;
     }
     if (arg === "--max-reference-depth") {
@@ -167,7 +148,7 @@ function usage() {
   return [
     "Usage: better-harness agent-lint [--workspace <path>] [--profile agents-md-review|agent-assets-review] [--json|--format markdown]",
     "       better-harness agent-lint --workspace-root <dir> --scan-children --profile agents-md-review",
-    "       better-harness agent-lint --profile agent-assets-review --provider <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok> [--skill <path>]",
+    `       better-harness agent-lint --profile agent-assets-review --provider <${hostPipeList(ASSET_HOSTS)}> [--skill <path>]`,
     "",
     "Parse agent instruction entrypoints and bounded local Markdown references into review evidence.",
     "",

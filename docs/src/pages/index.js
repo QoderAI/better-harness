@@ -255,6 +255,24 @@ function hosts() {
       to: "/docs/hosts/adapter-matrix#pi",
     },
     {
+      name: "Kimi Code",
+      method: translate({
+        id: "homepage.hosts.kimiCode.method",
+        message: "Plugin manifest",
+      }),
+      output: htmlOutput,
+      setup: translate({
+        id: "homepage.hosts.kimiCode.setup",
+        message:
+          "Plugin, evidence, and report adapters are available; a full interactive report smoke remains pending.",
+      }),
+      anchor: "kimi-code",
+      supportLevel: "adapter",
+      status: adapterStatus,
+      action: supportAction,
+      to: "/docs/hosts/adapter-matrix#kimi-code",
+    },
+    {
       name: "WorkBuddy",
       method: translate({
         id: "homepage.hosts.workBuddy.method",
@@ -499,7 +517,7 @@ function HowItWorks() {
             alt={translate({
               id: "homepage.how.architectureAlt",
               message:
-                "Better Harness architecture: six public Quickstart hosts plus Pi, WorkBuddy, and Grok adapter support feed three independent evidence agents, unified analysis, host-neutral outputs, and repair",
+                "Better Harness architecture: six public Quickstart hosts plus Pi, Kimi Code, WorkBuddy, and Grok adapter support feed three independent evidence agents, unified analysis, host-neutral outputs, and repair",
             })}
             width="1800"
             height="1360"
@@ -509,8 +527,8 @@ function HowItWorks() {
         </p>
         <p className={styles.demoCaption}>
           <Translate id="homepage.how.architectureCaption">
-            Nine capability-level host adapters feed the same evidence
-            pipeline. Six have verified Quickstart paths; Pi, WorkBuddy, and Grok keep
+            Ten capability-level host adapters feed the same evidence
+            pipeline. Six have verified Quickstart paths; Pi, Kimi Code, WorkBuddy, and Grok keep
             their current adapter-support boundaries explicit.
           </Translate>
         </p>
@@ -533,8 +551,8 @@ function QuickStart() {
         </h2>
         <p>
           <Translate id="homepage.quickstart.intro">
-            Nine host adapters are supported. Six have verified setup paths;
-            Pi, WorkBuddy, and Grok link to their current support boundaries.
+            Ten host adapters are supported. Six have verified setup paths;
+            Pi, Kimi Code, WorkBuddy, and Grok link to their current support boundaries.
           </Translate>
         </p>
         <div className={styles.hostGrid}>

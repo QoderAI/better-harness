@@ -790,6 +790,7 @@ test("installed-like Canvas validation resolves its transform runtime from --sdk
     const renderPath = path.join(installedAnalysis, "render-report.mjs");
 
     await cp(path.resolve("scripts/harness-analysis"), installedAnalysis, { recursive: true });
+    await cp(path.resolve("scripts/host-support"), path.join(installedRoot, "scripts", "host-support"), { recursive: true });
     await cp(path.resolve("scripts/agent-guardrails"), path.join(installedRoot, "scripts", "agent-guardrails"), { recursive: true });
     await cp(path.resolve("scripts/core-change-watch"), path.join(installedRoot, "scripts", "core-change-watch"), { recursive: true });
     await cp(path.resolve("scripts/coding-agent-practices/asset-eval"), path.join(installedRoot, "scripts", "coding-agent-practices", "asset-eval"), { recursive: true });

@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readdir, realpath, rename, rm, writeFile } from "node:f
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HOST_CAPABILITIES, hostIdsFor } from "../host-support/index.mjs";
 import { evaluateHarnessReportQuality } from "./report-quality.mjs";
 import { canvasArtifactsFromReportData, readJsonFile, findingsJsonFromReportData, normalizeReportData } from "./report-data-schema.mjs";
 import { repairFindingsJsonData } from "./repair-findings-json.mjs";
@@ -45,7 +46,7 @@ function filesystemPathIdentity(value) {
 // test/harness-report-render-cli.test.mjs guards it against the session
 // platform registry in scripts/session-analysis/analyzer.mjs.
 export const RENDER_REPORT_PLATFORMS = Object.freeze([
-  "qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy", "grok",
+  ...hostIdsFor(HOST_CAPABILITIES.REPORT_RENDERING),
 ]);
 
 // Each Canvas mode owns its own analyzer companion filename so the two routes

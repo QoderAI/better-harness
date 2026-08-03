@@ -94,7 +94,7 @@ test("Qoder and Cursor default to Canvas while portable providers retain durable
   assert.match(skill, /Never hand-write\s+Canvas, Markdown, or HTML/);
   assert.match(
     routing,
-    /Portable HTML report \| Active host is Claude Code, Codex, Qwen Code, GitHub Copilot, Pi, WorkBuddy, or Grok, or a portable visual is explicitly requested \|/,
+    /Portable HTML report \| Active host is Claude Code, Codex, Qwen Code, GitHub Copilot, Pi, Kimi Code, WorkBuddy, or Grok, or a portable visual is explicitly requested \|/,
   );
   assert.match(routing, /Cursor Canvas report \| Active host is Cursor \|/);
   assert.match(routing, /Inline only \| Inline or no-files output is explicitly requested \| none; inline analysis writes nothing/);

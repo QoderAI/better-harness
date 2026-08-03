@@ -3,6 +3,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HOST_CAPABILITIES, hostIdsFor, hostPipeList } from "../host-support/index.mjs";
 import { createAnalyzer } from "./analyzer.mjs";
 import { parseArgs } from "./cli.mjs";
 
@@ -12,7 +13,7 @@ Emit a bounded, read-only usage boundary as JSON. This command never accepts
 --output and never writes report or scratch files.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok>
+  --platform <${hostPipeList(hostIdsFor(HOST_CAPABILITIES.SESSION_ANALYSIS))}>
                             Session provider (default: qoder)
   --workspace <path>        Target workspace (default: current directory)
   --selection <strategy>    Selection strategy (default: all-eligible)

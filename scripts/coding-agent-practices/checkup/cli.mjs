@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { normalizedHostHomeOptions } from "../../host-support/index.mjs";
 import { parseArgs, parseBooleanFlag } from "../../session-analysis/index.mjs";
 import { applyCheckupPlan } from "./apply.mjs";
 import { buildCheckupPlan } from "./plan.mjs";
@@ -20,8 +21,9 @@ Options:
 `;
 
 function optionsFromArgs(options) {
+  const provider = options.provider ?? "qoder";
   return {
-    provider: options.provider,
+    provider,
     locale: options.locale,
     workspace: options.workspace,
     workspaceLabel: options["workspace-label"],
@@ -34,12 +36,9 @@ function optionsFromArgs(options) {
     minimumSessions: options["minimum-sessions"],
     newInstallGraceDays: options["new-install-grace-days"],
     includeGlobalCapabilities: parseBooleanFlag(options["include-global-capabilities"] ?? false),
-    qoderHome: options["qoder-home"],
+    ...normalizedHostHomeOptions(options, provider),
     qoderSharedClientCacheRoot: options["qoder-shared-client-cache-root"] ?? options["shared-client-cache-root"],
-    codexHome: options["codex-home"],
-    claudeHome: options["claude-home"],
     claudeStatePath: options["claude-state"],
-    cursorHome: options["cursor-home"],
     friction: options.friction,
     frictionStrength: options["friction-strength"],
     frictionObservationCount: options["friction-observations"],

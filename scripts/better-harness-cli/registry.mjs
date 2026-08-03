@@ -1,3 +1,5 @@
+import { formatHostList, HOST_CAPABILITIES, hostIdsFor } from "../host-support/index.mjs";
+
 export const FORMAT_VERSION = "1.0";
 export const CLI_NAME = "better-harness";
 export const COMMAND_AUDIENCES = Object.freeze(["workflow", "advanced", "maintainer"]);
@@ -52,7 +54,7 @@ const COMMANDS = [
     kind: "direct",
     audience: "advanced",
     script: "session-analysis.mjs",
-    summary: "Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot, Pi, WorkBuddy, and Grok session evidence.",
+    summary: `Collect and normalize ${formatHostList(hostIdsFor(HOST_CAPABILITIES.SESSION_ANALYSIS), { displayNames: true, conjunction: "and" })} session evidence.`,
     subcommands: [
       {
         name: "sources",

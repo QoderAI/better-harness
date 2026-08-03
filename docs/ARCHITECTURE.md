@@ -21,6 +21,9 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   supplied copy, but they do not compose or translate it; host UIs render the
   persisted semantic copy instead of rebuilding it from structural metadata.
 - Keep host evidence adapters separate from packaging, and keep all automation cross-platform.
+- Keep stable host identity, display, home-option, and support-slice metadata in
+  `scripts/host-support/`. Executable adapter imports and construction remain in
+  capability-local registries; do not introduce a global host service locator.
 - Keep source-local host artifact assembly under `scripts/packaging/`; generated
   host artifacts are validation/install outputs, not canonical product owners or
   public package or Qoder runtime inputs.
@@ -71,7 +74,7 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   in the capability-owned agent-customize and session-analysis providers. The Codex shell
   owns local install/discovery metadata only; Codex evidence collection remains
   in the capability-owned provider and session-analysis modules. The public npm
-  package ships all six plugin metadata roots, while the Qoder runtime bundle
+  package ships all seven plugin metadata roots, while the Qoder runtime bundle
   includes only `.qoder-plugin/`.
 
 ## Developer Experience Routing

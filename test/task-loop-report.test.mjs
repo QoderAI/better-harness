@@ -1707,6 +1707,12 @@ test("task-loop projection preserves the all-eligible usage evidence boundary", 
   assert.match(codexReviewLead.aiFixPrompt, /--platform codex/);
   assert.doesNotMatch(codexReviewLead.aiFixPrompt, /--platform qoder/);
 
+  const grokSource = reportSource({ sessionEvents: { usageEfficiency: structuredClone(usageEfficiency) } });
+  grokSource.manifest.scope.platform = "grok";
+  const grokReviewLead = projectTaskLoopFindings(grokSource).summary.usageEfficiency.reviewLead;
+  assert.match(grokReviewLead.aiFixPrompt, /--platform grok/);
+  assert.doesNotMatch(grokReviewLead.aiFixPrompt, /--platform qoder/);
+
   findings.summary.usageEfficiency.accounting.unattributedResponseCount = 1;
   assert.ok(validateTaskLoopFindings(findings).some((error) => /response coverage/.test(error)));
   findings.summary.usageEfficiency.accounting.unattributedResponseCount = 0;

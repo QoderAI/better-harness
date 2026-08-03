@@ -31,12 +31,13 @@ Route by ownership before choosing a vendor-specific feature:
 
 - Agent guides (`AGENTS.md`, `CLAUDE.md`, Copilot, Cursor, Qoder rules) ->
   `agents-md-review.md`.
-- Cursor/Qoder/Codex/Claude/Qwen/Copilot project or user assets ->
+- Cursor/Qoder/Codex/Claude/Qwen/Copilot/Kimi project or user assets ->
   `global-assets.md`; for Claude-specific configured-asset scope, then load
   `platforms/claude.md`; for Codex-specific operating practice, then load
   `platforms/codex.md`; for Qoder-specific feature taxonomy, then load
   `platforms/qoder.md`; for Copilot-specific operating practice, then load
-  `platforms/copilot.md`. For installed, user-home, settings screenshot, plugin
+  `platforms/copilot.md`; for Kimi-specific configured-asset scope, then load
+  `platforms/kimi.md`. For installed, user-home, settings screenshot, plugin
   cache, or memory scope, run the Global/User Asset Pass.
 - Prior decision, user correction, remembered preference, stale recall,
   cross-window adoption, or memory-safety question -> `memory-review.md` after
@@ -401,6 +402,39 @@ user asks about Pi global assets such as `~/.pi/agent/skills`, installed pi
 packages, or extensions. Keep configured inventory evidence separate from
 observed session behavior.
 
+## Kimi Asset Route
+
+For Kimi Code-specific actions, use `platforms/kimi.md` as the operating
+practice reference for configured-asset locations, session evidence, MCP and
+privacy boundaries, and plugin inventory. Presence is not execution proof.
+
+Inspect configured surfaces before projecting readiness evidence:
+
+- `AGENTS.md` (project and ancestors) and `CLAUDE.md` (compatibility) for
+  durable repo context. Plugin-declared `systemPrompt`/`systemPromptPath`
+  content stays plugin metadata and is never merged into rules.
+- `~/.kimi-code/skills/**/SKILL.md` for user-scope workflows and project
+  `.kimi-code/skills/**/SKILL.md` plus `.kimi/skills/**/SKILL.md` for
+  repository-scope workflows. Skills are invoked with `/skill:<name>` or
+  triggered automatically from their descriptions, so the skill surface
+  doubles as the main invocation surface.
+- `~/.kimi-code/mcp.json#mcpServers` for external context. The collector
+  reads `mcp.json` only and never surfaces environment values, header
+  values, URL credentials, or authentication state.
+- Installed plugins indexed in `~/.kimi-code/plugins/installed.json`, each
+  record pointing at a managed copy under `~/.kimi-code/plugins/managed/<id>/`.
+  Assets are inventoried only for `enabled: true` records, from
+  `kimi.plugin.json` (falling back to `.kimi-plugin/plugin.json`), and
+  manifest-declared paths that escape the plugin root are skipped.
+- Session, diff, test, build, and review evidence for observed execution.
+
+Kimi Code has no memory equivalent, and `~/.kimi-code/config.toml` holds
+model/provider settings rather than customizable assets, so it is surfaced
+only as a diagnostics flag. Use the Global/User Asset Pass from
+`global-assets.md` when the user asks about Kimi Code global assets such as
+`~/.kimi-code/skills`, `~/.kimi-code/mcp.json`, or installed plugins; pass
+`--kimi-home <path>` for an isolated configuration root. Keep configured
+inventory evidence separate from observed session behavior.
 ## WorkBuddy Asset Route
 
 For WorkBuddy-specific actions, use `platforms/workbuddy.md` as the operating

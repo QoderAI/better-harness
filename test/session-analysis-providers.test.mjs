@@ -43,6 +43,7 @@ import {
   CopilotSessionAnalyzer,
   parseWorkspaceDescriptor,
 } from "../scripts/session-analysis/platforms/copilot.mjs";
+import { KimiSessionAnalyzer } from "../scripts/session-analysis/platforms/kimi.mjs";
 import { measureLongSessionRows } from "../scripts/session-analysis/long-sessions.mjs";
 
 async function fixtureRoot(prefix) {
@@ -872,6 +873,218 @@ test("Pi provider expands tool calls, tool results, and usage from v3 transcript
   assert.doesNotMatch(JSON.stringify(facts), new RegExp(home.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
 });
 
+test("Kimi provider resolves wd_* dirs through workspaces.json and normalizes wire events", async () => {
+  const root = await fixtureRoot("session-kimi-provider-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const foreign = path.join(root, "workspace", "other");
+  const sessionId = "session_77777777-7777-4777-8777-777777777777";
+  const sessionDir = path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId);
+  const foreignDir = path.join(home, "sessions", "wd_other_ab12cd34ef56", "session_88888888-8888-4888-8888-888888888888");
+  await mkdir(workspace, { recursive: true });
+  await mkdir(home, { recursive: true });
+  await writeFile(path.join(home, "workspaces.json"), JSON.stringify({
+    version: 1,
+    workspaces: {
+      wd_project_ab12cd34ef56: { root: workspace, name: "project" },
+      wd_other_ab12cd34ef56: { root: foreign, name: "other" },
+    },
+  }));
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "state.json"), JSON.stringify({
+    title: "Fixture session",
+    createdAt: "2026-07-20T01:00:00.000Z",
+    updatedAt: "2026-07-20T01:05:00.000Z",
+  }));
+  await writeJsonl(path.join(sessionDir, "agents", "main", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    {
+      type: "turn.prompt",
+      input: [{ type: "text", text: "Implement the kimi adapter" }],
+      origin: { kind: "user" },
+      time: Date.parse("2026-07-20T01:00:01.000Z"),
+    },
+    {
+      type: "context.append_loop_event",
+      event: { type: "step.begin", uuid: "step-1", turnId: "0", step: 1 },
+      time: Date.parse("2026-07-20T01:00:02.000Z"),
+    },
+    {
+      type: "context.append_loop_event",
+      event: {
+        type: "tool.call",
+        uuid: "tool-1",
+        turnId: "0",
+        step: 1,
+        toolCallId: "tool-1",
+        name: "Bash",
+        args: { command: "npm test" },
+      },
+      time: Date.parse("2026-07-20T01:01:00.000Z"),
+    },
+    {
+      type: "context.append_loop_event",
+      event: {
+        type: "tool.result",
+        parentUuid: "tool-1",
+        toolCallId: "tool-1",
+        result: { output: "3 tests passed", isError: false },
+      },
+      time: Date.parse("2026-07-20T01:02:00.000Z"),
+    },
+    {
+      type: "usage.record",
+      model: "kimi-code/kimi-fixture",
+      usage: { inputOther: 10, output: 4, inputCacheRead: 6, inputCacheCreation: 0 },
+      usageScope: "turn",
+      time: Date.parse("2026-07-20T01:03:00.000Z"),
+    },
+  ]);
+  await writeJsonl(path.join(foreignDir, "agents", "main", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+  ]);
+  await writeFile(path.join(foreignDir, "state.json"), JSON.stringify({
+    title: "Foreign session",
+    createdAt: "2026-07-20T01:00:00.000Z",
+    updatedAt: "2026-07-20T01:05:00.000Z",
+  }));
+
+  const analyzer = new KimiSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  assert.equal(discovery.sessions[0].sessionId, sessionId);
+  assert.equal(discovery.sessions[0].title, "Fixture session");
+  assert.deepEqual(
+    discovery.sources.map((source) => source.kind),
+    ["kimi-wire-jsonl", "kimi-session-index-jsonl", "kimi-workspaces-json"],
+  );
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {
+    includeCommandText: true,
+    includeUserText: true,
+  });
+  assert.equal(events.filter((event) => event.type === "tool.call").length, 1);
+  assert.equal(events.filter((event) => event.type === "tool.result").length, 1);
+  assert.equal(events.find((event) => event.type === "tool.result")?.success, true);
+  const usage = events.find((event) => event.model === "kimi-code/kimi-fixture");
+  assert.equal(usage?.modelUsage.inputTokens, 16);
+  assert.equal(usage?.modelUsage.outputTokens, 4);
+  const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
+  assert.equal(facts.kind, "session-core-facts");
+  assert.equal(facts.scope.platform, "kimi");
+  assert.doesNotMatch(JSON.stringify(facts), new RegExp(sessionId, "u"));
+});
+
+test("Kimi keeps partial and malformed usage explicit instead of zero-filling", async () => {
+  const root = await fixtureRoot("session-kimi-usage-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "session_66666666-6666-4666-8666-666666666666";
+  const sessionDir = path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId);
+  await mkdir(workspace, { recursive: true });
+  await mkdir(home, { recursive: true });
+  await writeFile(path.join(home, "workspaces.json"), JSON.stringify({
+    version: 1,
+    workspaces: { wd_project_ab12cd34ef56: { root: workspace, name: "project" } },
+  }));
+  await writeJsonl(path.join(sessionDir, "agents", "main", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    {
+      type: "usage.record",
+      model: "kimi-partial",
+      usage: { output: 4 },
+      time: Date.parse("2026-07-20T01:01:00.000Z"),
+    },
+    {
+      type: "usage.record",
+      model: "kimi-malformed",
+      usage: { inputOther: "10", inputCacheRead: null },
+      time: Date.parse("2026-07-20T01:02:00.000Z"),
+    },
+    {
+      type: "usage.record",
+      model: "kimi-missing",
+      time: Date.parse("2026-07-20T01:03:00.000Z"),
+    },
+  ]);
+
+  const analyzer = new KimiSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {});
+  const usageEvents = events.filter((event) => event.type === "model.response.completed");
+  // Partial usage carries only the observed fields; malformed or missing
+  // usage never becomes zero-filled, and without one finite field there is no
+  // usage event at all.
+  assert.equal(usageEvents.length, 1);
+  assert.equal(usageEvents[0].model, "kimi-partial");
+  assert.deepEqual(usageEvents[0].modelUsage, { outputTokens: 4 });
+  assert.equal(Object.hasOwn(usageEvents[0].modelUsage, "inputTokens"), false);
+  assert.equal(Object.hasOwn(usageEvents[0].modelUsage, "cacheReadInputTokens"), false);
+});
+
+test("Kimi currentSessionId reads KIMI_SESSION_ID and falls back to null", () => {
+  const analyzer = new KimiSessionAnalyzer();
+  const previous = process.env.KIMI_SESSION_ID;
+  try {
+    delete process.env.KIMI_SESSION_ID;
+    assert.equal(analyzer.currentSessionId(), null);
+    process.env.KIMI_SESSION_ID = "session_fixture-current";
+    assert.equal(analyzer.currentSessionId(), "session_fixture-current");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.KIMI_SESSION_ID;
+    } else {
+      process.env.KIMI_SESSION_ID = previous;
+    }
+  }
+});
+
+test("Kimi dedupe keeps a shared tool call id per agent but drops repeats within one agent", async () => {
+  const root = await fixtureRoot("session-kimi-dedupe-agents-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "session_77777777-7777-4777-8777-777777777777";
+  const sessionDir = path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId);
+  await mkdir(workspace, { recursive: true });
+  await mkdir(home, { recursive: true });
+  await writeFile(path.join(home, "workspaces.json"), JSON.stringify({
+    version: 1,
+    workspaces: { wd_project_ab12cd34ef56: { root: workspace, name: "project" } },
+  }));
+  const toolCall = (uuid, time) => ({
+    type: "context.append_loop_event",
+    event: {
+      type: "tool.call",
+      uuid,
+      toolCallId: "tool-1",
+      name: "Bash",
+      args: { command: "npm test" },
+    },
+    time,
+  });
+  await writeJsonl(path.join(sessionDir, "agents", "main", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    toolCall("main-1", Date.parse("2026-07-20T01:01:00.000Z")),
+    // A repeated record of the same tool call within one agent wire is a
+    // duplicate and must still be deduped.
+    toolCall("main-2", Date.parse("2026-07-20T01:01:01.000Z")),
+  ]);
+  // A subagent wire reusing the same toolCallId is a distinct event.
+  await writeJsonl(path.join(sessionDir, "agents", "helper-1", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    toolCall("helper-1", Date.parse("2026-07-20T01:02:00.000Z")),
+  ]);
+
+  const analyzer = new KimiSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {});
+  const calls = events.filter((event) => event.type === "tool.call");
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((event) => event.agentId).sort(), ["helper-1", "main"]);
+});
+
 test("Pi provider rejects a transcript whose header cwd belongs to another workspace", async () => {
   const root = await fixtureRoot("session-pi-isolation-");
   const home = path.join(root, ".pi", "agent");
@@ -1087,6 +1300,194 @@ test("Pi custom session roots require a directory", async () => {
   });
   assert.equal(result.sources[0].exists, false);
   assert.equal(result.sessions.length, 0);
+});
+
+test("Kimi provider falls back to session_index.jsonl when workspaces.json has no entry", async () => {
+  const root = await fixtureRoot("session-kimi-index-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "ses_99999999-9999-4999-8999-999999999999";
+  const sessionDir = path.join(home, "sessions", "wd_project_ff00ff00ff00", sessionId);
+  await mkdir(workspace, { recursive: true });
+  await writeJsonl(path.join(home, "session_index.jsonl"), [
+    { sessionId, sessionDir, workDir: workspace },
+  ]);
+  await writeJsonl(path.join(sessionDir, "agents", "main", "wire.jsonl"), [
+    {
+      type: "context.append_message",
+      message: { role: "user", content: [{ type: "text", text: "legacy protocol" }], toolCalls: [] },
+      time: Date.parse("2026-07-20T01:00:00.000Z"),
+    },
+  ]);
+  const discovery = await new KimiSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  assert.equal(discovery.sessions[0].sessionId, sessionId);
+});
+
+test("Kimi provider falls back to wd_<name>_* prefixes when both workspace indexes are absent", async () => {
+  const root = await fixtureRoot("session-kimi-prefix-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "ses_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const wire = [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+  ];
+  await mkdir(workspace, { recursive: true });
+  await writeJsonl(
+    path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId, "agents", "main", "wire.jsonl"),
+    wire,
+  );
+  await writeFile(
+    path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId, "state.json"),
+    JSON.stringify({
+      title: "Fallback session",
+      createdAt: "2026-07-20T01:00:00.000Z",
+      updatedAt: "2026-07-20T01:05:00.000Z",
+    }),
+  );
+  // wd_projectextra_* does not start with the wd_project_ prefix and must be excluded.
+  await writeJsonl(
+    path.join(home, "sessions", "wd_projectextra_ab12cd34ef56", "ses_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "agents", "main", "wire.jsonl"),
+    wire,
+  );
+  // A different project name must be excluded too.
+  await writeJsonl(
+    path.join(home, "sessions", "wd_other_ab12cd34ef56", "ses_cccccccc-cccc-4ccc-8ccc-cccccccccccc", "agents", "main", "wire.jsonl"),
+    wire,
+  );
+
+  const analyzer = new KimiSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.deepEqual(discovery.sessions.map((session) => session.sessionId), [sessionId]);
+  assert.ok(discovery.warnings.some((warning) => warning.code === "kimi-workspace-index-absent"));
+
+  const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
+  assert.ok(facts.warningCodes.includes("kimi-workspace-index-absent"));
+});
+
+test("Kimi prefix fallback lowercases the workspace basename and keeps raw directory characters", async () => {
+  const root = await fixtureRoot("session-kimi-prefix-case-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "My Project");
+  const sessionId = "ses_dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  await mkdir(workspace, { recursive: true });
+  // Actual behavior: the fallback lowercases both sides but applies no other
+  // sanitization, so an uppercase dir with a space and uppercase hex suffix still
+  // matches the wd_my project_ prefix.
+  await writeJsonl(
+    path.join(home, "sessions", "wd_MY PROJECT_AB12CD34EF56", sessionId, "agents", "main", "wire.jsonl"),
+    [{ type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") }],
+  );
+
+  const discovery = await new KimiSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.deepEqual(discovery.sessions.map((session) => session.sessionId), [sessionId]);
+  assert.ok(discovery.warnings.some((warning) => warning.code === "kimi-workspace-index-absent"));
+});
+
+test("Kimi provider emits kimi-workspace-index-absent only when both indexes are missing", async () => {
+  const root = await fixtureRoot("session-kimi-index-warning-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "ses_eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  await mkdir(workspace, { recursive: true });
+  await writeJsonl(
+    path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId, "agents", "main", "wire.jsonl"),
+    [{ type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") }],
+  );
+
+  const analyzer = new KimiSessionAnalyzer();
+  const missing = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(missing.sessions.length, 1);
+  assert.ok(missing.warnings.some((warning) => warning.code === "kimi-workspace-index-absent"));
+
+  // An existing (even empty) workspaces.json marks the index as present, so the
+  // warning disappears. The prefix fallback itself keys off the empty index maps,
+  // not file existence, so the session is still attributed.
+  await writeFile(
+    path.join(home, "workspaces.json"),
+    JSON.stringify({ version: 1, workspaces: {} }),
+  );
+  const indexed = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(indexed.sessions.length, 1);
+  assert.equal(
+    indexed.warnings.some((warning) => warning.code === "kimi-workspace-index-absent"),
+    false,
+  );
+});
+
+test("Kimi provider merges main and subagent wire files and dedupes repeated tool events", async () => {
+  const root = await fixtureRoot("session-kimi-subagent-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "ses_ffffffff-ffff-4fff-8fff-ffffffffffff";
+  const sessionDir = path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId);
+  await mkdir(workspace, { recursive: true });
+  await mkdir(home, { recursive: true });
+  await writeFile(path.join(home, "workspaces.json"), JSON.stringify({
+    version: 1,
+    workspaces: { wd_project_ab12cd34ef56: { root: workspace, name: "project" } },
+  }));
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "state.json"), JSON.stringify({
+    title: "Subagent session",
+    createdAt: "2026-07-20T01:00:00.000Z",
+    updatedAt: "2026-07-20T01:10:00.000Z",
+  }));
+  await writeJsonl(path.join(sessionDir, "agents", "main", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    {
+      type: "context.append_loop_event",
+      event: { type: "tool.call", uuid: "tool-1", toolCallId: "tool-1", name: "Bash", args: { command: "npm test" } },
+      time: Date.parse("2026-07-20T01:01:00.000Z"),
+    },
+    {
+      type: "context.append_loop_event",
+      event: { type: "tool.result", toolCallId: "tool-1", result: { output: "ok", isError: false } },
+      time: Date.parse("2026-07-20T01:02:00.000Z"),
+    },
+  ]);
+  await writeJsonl(path.join(sessionDir, "agents", "researcher", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    // Same toolInvocationId + lifecyclePhase as the main wire record, but from
+    // another agent's file: tool call ids are only unique per agent, so
+    // dedupeEvents must keep this distinct subagent event.
+    {
+      type: "context.append_loop_event",
+      event: { type: "tool.call", uuid: "tool-1", toolCallId: "tool-1", name: "Bash", args: { command: "npm test" } },
+      time: Date.parse("2026-07-20T01:03:00.000Z"),
+    },
+    {
+      type: "context.append_loop_event",
+      event: {
+        type: "tool.call",
+        uuid: "tool-2",
+        toolCallId: "tool-2",
+        name: "Read",
+        args: { file_path: path.join(workspace, "notes.md") },
+      },
+      time: Date.parse("2026-07-20T01:04:00.000Z"),
+    },
+  ]);
+
+  const analyzer = new KimiSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  assert.deepEqual(
+    discovery.sessions[0].sourceRefs.map((ref) => `${ref.agentId}:${ref.role}`),
+    ["main:session-transcript", "researcher:subagent-transcript"],
+  );
+
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, { includeCommandText: true });
+  const toolCalls = events.filter((event) => event.type === "tool.call");
+  // The subagent copy of tool-1 survives: dedupe keys include the agent id.
+  assert.deepEqual(toolCalls.map((event) => event.toolInvocationId), ["tool-1", "tool-1", "tool-2"]);
+  assert.deepEqual(toolCalls.map((event) => event.agentId), ["main", "researcher", "researcher"]);
+  assert.equal(toolCalls[0].isSubagent, false);
+  assert.equal(toolCalls[1].isSubagent, true);
+  assert.equal(toolCalls[2].isSubagent, true);
+  assert.equal(events.filter((event) => event.type === "tool.result").length, 1);
+  assert.equal(events.filter((event) => event.type === "metadata.wire").length, 2);
 });
 
 test("WorkBuddy provider expands tool calls, tool results, and usage from JSONL transcripts", async () => {

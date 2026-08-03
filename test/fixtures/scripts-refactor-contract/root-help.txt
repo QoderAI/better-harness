@@ -26,7 +26,7 @@ Commands:
 
   Project Evidence
     session-analysis         Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot,
-                             Pi, WorkBuddy, and Grok session evidence
+                             Pi, Kimi, WorkBuddy, and Grok session evidence
     dependency-governance    Detect dependency governance files, automation, audit signals, and
                              stale dependency evidence
     cloc                     Count code, comments, and blank lines

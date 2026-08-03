@@ -36,6 +36,7 @@
     ".cursor-plugin/",
     ".github/plugin/",
     ".qoder-plugin/",
+    ".kimi-plugin/",
     "qwen-extension.json",
     "AGENTS.md",
     "CHANGELOG.md",

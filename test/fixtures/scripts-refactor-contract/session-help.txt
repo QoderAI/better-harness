@@ -1,7 +1,7 @@
-Usage: session-analysis <command> --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy|grok> --workspace <path> [options]
+Usage: session-analysis <command> --platform <qoder|codex|claude|cursor|qwen|copilot|pi|kimi|workbuddy|grok> --workspace <path> [options]
 
 Commands: sources, sessions, facets, insights, facts, file-reads, show, events, claude-facets
 
-Options: --workbuddy-home <dir> overrides the WorkBuddy data root (default: ~/.workbuddy); --grok-home <dir> overrides the Grok data root (default: ~/.grok or $GROK_HOME).
+Options: --kimi-home <dir> overrides the Kimi Code data root (default: ~/.kimi-code); --workbuddy-home <dir> overrides the WorkBuddy data root (default: ~/.workbuddy); --grok-home <dir> overrides the Grok data root (default: ~/.grok or $GROK_HOME).
 
 Use facts --debug only for local diagnosis; it exposes raw session ids and must not be passed to report agents.

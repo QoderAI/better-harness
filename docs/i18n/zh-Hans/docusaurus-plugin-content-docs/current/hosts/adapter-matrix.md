@@ -12,8 +12,8 @@ Better Harness 运行在你现有的编码智能体内。宿主差异只进入�
 
 ## 支持层级
 
-Better Harness 当前声明了九个能力层宿主适配器，其中六个已有验证过的公开
-快速开始路径。Pi、WorkBuddy 与 Grok 以适配器支持展示，因为它们的安装方式和端到端
+Better Harness 当前声明了十个能力层宿主适配器，其中六个已有验证过的公开
+快速开始路径。Pi、Kimi Code、WorkBuddy 与 Grok 以适配器支持展示，因为它们的安装方式和端到端
 证据边界与这六个宿主不同。完整能力层事实源仍是
 [规范适配器矩阵](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)。
 
@@ -28,12 +28,13 @@ Better Harness 当前声明了九个能力层宿主适配器，其中六个已�
 | Qwen Code | 已验证快速开始 | 具备分析能力的源码本地宿主 | `qwen-extension.json` | 匹配当前工作区的本地 Qwen 转录（存在时） | 自包含 HTML + Markdown |
 | GitHub Copilot | 已验证快速开始 | 具备分析能力的源码本地宿主 | `.github/plugin/` | 工作区匹配的 Copilot CLI 转录；部分覆盖保持显式标注 | 自包含 HTML + Markdown |
 | Pi | 适配器支持 | 具备分析能力的源码本地宿主 | `package.json` 中的 `pi` manifest | 匹配当前工作区的本地 Pi 会话 | 自包含 HTML + Markdown |
+| Kimi Code | 适配器支持 | 具备分析能力的源码本地宿主 | `.kimi-plugin/plugin.json` | 匹配工作区的 Kimi wire 转录 | 自包含 HTML + Markdown |
 | WorkBuddy | 适配器支持 | 具备分析能力的源码本地宿主 | 无；Skill 使用 WorkBuddy 自有路径 | 匹配工作区的 WorkBuddy JSONL 转录 | 自包含 HTML + Markdown |
 | Grok | 适配器支持 | 具备分析能力的源码本地宿主 | 无；Skill 使用 Grok 自有路径 | 匹配工作区的 Grok 会话目录（`updates.jsonl`） | 自包含 HTML + Markdown |
 
-`@qoderai/better-harness` npm 包含全部六个插件元数据根目录。生成的 Qoder
+`@qoderai/better-harness` npm 包含全部七个插件元数据根目录。生成的 Qoder
 运行时 bundle 只包含 Qoder shell。Pi 复用现有 `package.json` 中的安装元数据，
-因此不会新增第七个文件系统元数据根目录；非 Qoder 的生成宿主产物保持源码本地。
+因此不会新增第八个文件系统元数据根目录；非 Qoder 的生成宿主产物保持源码本地。
 
 ## 输出模式
 
@@ -41,7 +42,7 @@ Better Harness 当前声明了九个能力层宿主适配器，其中六个已�
   `canvas.json` 和 `report.canvas.tsx`。
 - **Cursor Canvas** —— 使用 `cursor/canvas`、原生 Context Window 证据和
   IDE actions 渲染同一份完整报告契约。
-- **HTML 可视化** —— 面向 Claude Code/Codex/Qwen/Copilot/Pi/WorkBuddy/Grok 的可移植契约，覆盖
+- **HTML 可视化** —— 面向 Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok 的可移植契约，覆盖
   `findings.json`、`report.md` 和自包含的 `report.html`
   （见[示例报告](pathname:///demo/better-harness-report/)）。
 - **纯 Markdown** —— 无视觉版本。
@@ -53,6 +54,13 @@ Better Harness 当前声明了九个能力层宿主适配器，其中六个已�
 Pi 可以通过 `pi install <source>` 安装本仓库，或使用 `pi -e <source>` 加载。
 包发现、已配置资产、工作区匹配的会话证据与可移植 HTML 路由均已实现。
 在观察到完整交互式报告闭环冒烟验证前，Pi 仍不进入已验证快速开始集合。
+
+### Kimi Code {#kimi-code}
+
+Kimi Code 通过 `/plugins install <source>` 和 `.kimi-plugin/plugin.json`
+manifest 安装本仓库，reload 后使用 `/skill:better-harness`。已配置资产、
+工作区匹配的 wire 转录与可移植 HTML 路由均已实现。在观察到完整交互式报告
+闭环冒烟验证前，Kimi Code 仍不进入已验证快速开始集合。
 
 ### WorkBuddy {#workbuddy}
 

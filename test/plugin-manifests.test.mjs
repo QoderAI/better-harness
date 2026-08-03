@@ -106,6 +106,7 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   const codex = readJson(".codex-plugin/plugin.json");
   const qwen = readJson("qwen-extension.json");
   const copilot = readJson(".github/plugin/plugin.json");
+  const kimi = readJson(".kimi-plugin/plugin.json");
   const copilotMarketplace = readJson(".github/plugin/marketplace.json");
   const cursorMarketplace = readJson(".cursor-plugin/marketplace.json");
   const packageJson = readJson("package.json");
@@ -171,6 +172,18 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   assert.equal(copilot.hooks, undefined);
   assert.equal(copilot.license, "MIT");
 
+  assert.equal(kimi.name, qoder.name);
+  assert.equal(kimi.version, qoder.version);
+  assert.equal(kimi.description, qoder.description);
+  assert.equal(kimi.author.name, qoder.author.name);
+  assert.equal(kimi.author.email, qoder.author.email);
+  assert.deepEqual(Object.keys(kimi.author).sort(), ["email", "name"]);
+  assert.ok(kimi.keywords.includes("skills"));
+  assert.equal(kimi.skills, "./skills/");
+  assert.equal(kimi.license, "MIT");
+  assert.equal(kimi.homepage, "https://github.com/QoderAI/better-harness");
+  assert.equal(kimi.interface.displayName, qoder.displayName);
+
   assert.deepEqual(packageJson.pi, { skills: ["./skills"], prompts: ["./prompts"] });
   assert.ok(packageJson.keywords.includes("pi-package"), "package keywords should mark the pi package");
   assert.equal(cursor.license, "MIT");
@@ -183,7 +196,7 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   assert.equal(packageLock.packages[""].name, packageJson.name);
   assert.equal(packageLock.packages[""].license, packageJson.license);
   assert.match(packageJson.scripts["publish:dry-run"], /registry\.npmjs\.org/u);
-  for (const manifest of [qoder, claude, cursor, codex, copilot]) {
+  for (const manifest of [qoder, claude, cursor, codex, copilot, kimi]) {
     assert.equal(manifest.homepage, "https://github.com/QoderAI/better-harness");
     assert.equal(manifest.repository, "https://github.com/QoderAI/better-harness");
   }
@@ -237,6 +250,7 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
     ".cursor-plugin/",
     ".github/plugin/",
     ".qoder-plugin/",
+    ".kimi-plugin/",
     "qwen-extension.json",
     "prompts/",
     "AGENTS.md",
@@ -292,6 +306,7 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
   assert.match(verifyScript, /package\/\.cursor-plugin\/plugin\.json/u);
   assert.match(verifyScript, /package\/\.cursor-plugin\/marketplace\.json/u);
   assert.match(verifyScript, /package\/qwen-extension\.json/u);
+  assert.match(verifyScript, /package\/\.kimi-plugin\/plugin\.json/u);
   assert.match(verifyScript, /package\/prompts\/better-harness\.md/u);
   assert.doesNotMatch(verifyScript, /package\/schemas\/proactive-trigger\.v1\.schema\.json/u);
   assert.doesNotMatch(verifyScript, /package\/scripts\/proactive\/trigger\.mjs/u);
@@ -302,6 +317,7 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
   assert.match(verifyScript, /"\.claude-plugin\/"/u);
   assert.match(verifyScript, /"\.codex-plugin\/"/u);
   assert.match(verifyScript, /"\.cursor-plugin\/"/u);
+  assert.match(verifyScript, /"\.kimi-plugin\/"/u);
   assert.match(verifyScript, /"qwen-extension\.json"/u);
   assert.match(verifyScript, /package\/scripts\/packaging\//u);
   assert.match(verifyScript, /"scripts\/packaging\/"/u);

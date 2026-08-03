@@ -1,16 +1,30 @@
 #!/usr/bin/env node
 
 import { parseArgs } from "../session-analysis/index.mjs";
+import {
+  HOST_CAPABILITIES,
+  hostHomeOptionKeys,
+  hostIdsFor,
+  hostPipeList,
+  normalizedHostHomeOptions,
+} from "../host-support/index.mjs";
 import { collectAgentCustomizeInventory, filterManageItems, groupManageItems } from "./index.mjs";
+
+const CUSTOMIZE_HOSTS = hostIdsFor(HOST_CAPABILITIES.AGENT_CUSTOMIZE);
+const CUSTOMIZE_HELP_HOSTS = Object.freeze([
+  "cursor",
+  ...CUSTOMIZE_HOSTS.filter((hostId) => hostId !== "cursor"),
+]);
+const CUSTOMIZE_HOME_OPTIONS = hostHomeOptionKeys(CUSTOMIZE_HELP_HOSTS).map((option) => `--${option}`);
 
 function usage() {
   return [
-    "Usage: better-harness agent-customize [inventory|manage] --provider <cursor|qoder|codex|claude|qwen|copilot|pi|workbuddy|grok> [--workspace <path>]",
+    `Usage: better-harness agent-customize [inventory|manage] --provider <${hostPipeList(CUSTOMIZE_HELP_HOSTS)}> [--workspace <path>]`,
     "       better-harness agent-customize manage --provider <provider> [--tab <tab>] [--query <text>] [--scope <scope>] [--group-by <key>]",
     "",
     "Collect configured agent-customize inventory for one provider as JSON.",
-    "Provider home overrides: --cursor-home, --qoder-home, --codex-home, --claude-home,",
-    "--qwen-home, --copilot-home, --pi-home, --workbuddy-home, --grok-home, --claude-state, --codex-app-path, --qoder-shared-client-cache-root.",
+    `Provider home overrides: ${CUSTOMIZE_HOME_OPTIONS.slice(0, 4).join(", ")},`,
+    `${CUSTOMIZE_HOME_OPTIONS.slice(4).join(", ")}, --claude-state, --codex-app-path, --qoder-shared-client-cache-root.`,
     "",
   ].join("\n");
 }
@@ -35,6 +49,7 @@ function summarize(inventory, options) {
     workbuddyHome: inventory.workbuddyHome,
     grokHome: inventory.grokHome,
     claudeStatePath: inventory.claudeStatePath,
+    kimiHome: inventory.kimiHome,
     codexAppPath: inventory.codexAppPath,
     sharedClientCacheRoot: inventory.sharedClientCacheRoot,
     workspace: inventory.workspace,
@@ -71,15 +86,7 @@ async function main() {
   }
   const inventory = await collectAgentCustomizeInventory({
     provider: options.provider,
-    cursorHome: options["cursor-home"],
-    qoderHome: options["qoder-home"],
-    codexHome: options["codex-home"],
-    claudeHome: options["claude-home"],
-    qwenHome: options["qwen-home"],
-    copilotHome: options["copilot-home"],
-    piHome: options["pi-home"],
-    workbuddyHome: options["workbuddy-home"],
-    grokHome: options["grok-home"],
+    ...normalizedHostHomeOptions(options, options.provider),
     claudeStatePath: options["claude-state"] ?? options["claude-state-path"],
     codexAppPath: options["codex-app-path"],
     qoderSharedClientCacheRoot: options["qoder-shared-client-cache-root"] ?? options["shared-client-cache-root"],

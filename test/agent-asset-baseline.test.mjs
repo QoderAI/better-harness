@@ -565,6 +565,37 @@ test("Pi asset baseline completes from a native project fixture", async () => {
   }
 });
 
+test("Kimi asset baseline completes from a native project fixture", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-asset-baseline-kimi-"));
+  const workspace = path.join(root, "project");
+  const kimiHome = path.join(root, ".kimi-home");
+  try {
+    await mkdir(kimiHome, { recursive: true });
+    await mkdir(path.join(workspace, ".kimi-code", "skills", "review"), { recursive: true });
+    await writeFile(path.join(workspace, "AGENTS.md"), "# Kimi project\n\nRun npm test.\n");
+    await writeFile(
+      path.join(workspace, ".kimi-code", "skills", "review", "SKILL.md"),
+      "---\nname: review\ndescription: Review a bounded Kimi project change.\n---\n",
+    );
+
+    const result = await collectAssetBaseline({
+      provider: "kimi",
+      workspace,
+      kimiHome,
+      includeUserHome: false,
+    });
+
+    assert.equal(result.status, "complete");
+    assert.equal(result.scope.provider, "kimi");
+    assert.equal(result.envelopes.inventory.status, "available");
+    assert.equal(result.envelopes.lint.data.assetInventory.summary.skills, 1);
+    assert.equal(result.envelopes.inventory.data.ownerRoutes.items.some((item) =>
+      item.kind === "skills" && item.name === "review"), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("WorkBuddy asset baseline completes from a native project fixture", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-asset-baseline-workbuddy-"));
   const workspace = path.join(root, "project");

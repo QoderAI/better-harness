@@ -4,6 +4,13 @@ import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  formatHostList,
+  HOST_CAPABILITIES,
+  hostHomeOptionKeys,
+  hostHomeValue,
+  hostIdsFor,
+} from "../host-support/index.mjs";
 import { parseArgs } from "../session-analysis/index.mjs";
 import { formatHarnessEvidence } from "./evidence-brief.mjs";
 import { validateHarnessReportSource } from "./report-source/index.mjs";
@@ -12,6 +19,8 @@ import { createTaskLoopSourceFromSessions } from "./task-loop-source.mjs";
 
 export const HARNESS_ANALYSIS_EVIDENCE_SCHEMA_VERSION = 1;
 
+const REPORT_PLATFORMS = hostIdsFor(HOST_CAPABILITIES.HARNESS_REPORT);
+
 export const ANALYZE_HELP = `Usage: better-harness harness analyze --workspace <target> [options]
 
 Return neutral, budgeted Harness evidence. This command writes no files unless
@@ -19,7 +28,7 @@ an explicit Qoder Canvas output is requested.
 
 Options:
   --workspace <path>       Target workspace (required)
-  --platform <name>        qoder, codex, claude, cursor, qwen, copilot, pi, workbuddy, or grok (default: qoder)
+  --platform <name>        ${formatHostList(REPORT_PLATFORMS)} (default: qoder)
   --language <locale>      en or zh-CN (default: en)
   --since <ISO timestamp>  Include sessions at or after the frozen window start
   --until <ISO timestamp>  Include sessions at or before the frozen window end
@@ -33,8 +42,6 @@ Options:
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
-
-const REPORT_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy", "grok"];
 
 function reportPlatform(value = "qoder") {
   const platform = String(value || "qoder").toLowerCase();
@@ -58,7 +65,7 @@ function flagEnabled(value) {
 function assertCliOptions(options) {
   const allowed = new Set([
     "workspace", "platform", "language", "since", "until", "format", "canvas-out", "replace-canvas", "include-global-capabilities",
-    "qoder-home", "codex-home", "claude-home", "cursor-home", "qwen-home", "copilot-home", "pi-home", "workbuddy-home", "grok-home",
+    ...hostHomeOptionKeys(REPORT_PLATFORMS),
   ]);
   const positional = Array.isArray(options._) ? options._ : [];
   const unknown = Object.keys(options).filter((key) => key !== "_" && !allowed.has(key));
@@ -163,16 +170,8 @@ export async function analyzeHarnessEvidence(options = {}) {
         selection: options.selection ?? "stratified",
         includeUsage: true,
         includeGlobalCapabilities: flagEnabled(options["include-global-capabilities"]),
-        qoderHome: options["qoder-home"],
-        codexHome: options["codex-home"],
-        claudeHome: options["claude-home"],
-        cursorHome: options["cursor-home"],
-        qwenHome: options["qwen-home"],
-        copilotHome: options["copilot-home"],
-        piHome: options["pi-home"],
+        home: hostHomeValue(options, platform),
         sessionPopulation: options.sessionPopulation,
-        workbuddyHome: options["workbuddy-home"],
-        grokHome: options["grok-home"],
         topology: options.topology,
         analysisScope: options.analysisScope,
       });

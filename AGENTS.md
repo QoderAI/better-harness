@@ -25,6 +25,24 @@ Adding support for a new Coding Agent host starts with
   project metadata. Change them only when the user explicitly requests it or a pre-existing issue, spec, or acceptance
   criterion requires it; user-visible behavior alone is not authorization.
 
+## Host Adapters
+
+- The supported host set is deliberately bounded. Do not add a new host adapter
+  without an explicit maintainer decision or a pre-existing issue/spec; a host
+  being technically installable is not by itself justification to add one.
+- `README.md` and `README.zh-CN.md` Installation sections are reserved for the
+  most common hosts with inline setup steps. Do not add a full per-host install
+  section for an additional or adapter-support host. Document its setup and
+  boundaries in the installation guide
+  ([docs/docs/installation.mdx](docs/docs/installation.mdx)) and the Host Adapter
+  Matrix ([docs/docs/hosts/adapter-matrix.md](docs/docs/hosts/adapter-matrix.md)
+  and [docs/adapters/README.md](docs/adapters/README.md)), and reference it from
+  the README "More adapters" list instead.
+- Keep support-level claims honest: a host's placement in the README is a
+  display choice, not its verification level. Do not downgrade a host's matrix
+  positioning (for example, from Verified Quickstart to adapter support) only to
+  shorten the README.
+
 ## Test and Verify
 
 - Design scripts and code for AI-friendly automated use, and validate automation with an AI agent when relevant,

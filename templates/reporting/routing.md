@@ -29,6 +29,6 @@ files from other routes.
 | --- | --- | --- | --- |
 | Qoder Canvas report | Active host is Qoder | renderer-owned `findings.json`, `canvas.json`, `report.canvas.tsx` | `qoder-canvas.md` |
 | Cursor Canvas report | Active host is Cursor | renderer-owned `findings.json`, `canvas.json`, `report.canvas.tsx` | `cursor-canvas.md` |
-| Portable HTML report | Active host is Claude Code, Codex, Qwen Code, GitHub Copilot, Pi, WorkBuddy, or Grok, or a portable visual is explicitly requested | renderer-owned `findings.json`, `report.md`, `report.html` | `html-visual.md` |
+| Portable HTML report | Active host is Claude Code, Codex, Qwen Code, GitHub Copilot, Pi, Kimi Code, WorkBuddy, or Grok, or a portable visual is explicitly requested | renderer-owned `findings.json`, `report.md`, `report.html` | `html-visual.md` |
 | Markdown only | Markdown without a visual companion is explicitly requested | `report.md`, `findings.json` | none |
 | Inline only | Inline or no-files output is explicitly requested | none; inline analysis writes nothing | none |

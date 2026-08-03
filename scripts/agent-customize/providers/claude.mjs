@@ -16,9 +16,12 @@ import {
   collectSkillFiles,
   evidence,
   normalizePluginDisplayName,
+  pathInsideRoot,
   pluginMetadataEvidencePath,
+  pluginPathValues,
   readJson,
   readText,
+  sanitizeMcpItems,
   sortByName,
   titleCase,
   uniqueAssetsByRealPath,
@@ -68,32 +71,6 @@ function pluginKey(value) {
 function normalizeInstallScope(value) {
   const scope = String(value ?? "user").trim().toLowerCase();
   return scope === "project" || scope === "local" || scope === "workspace" ? "project" : "user";
-}
-
-function pluginPathValues(value) {
-  if (typeof value === "string" && value.trim()) return [value.trim()];
-  if (Array.isArray(value)) return value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
-  return [];
-}
-
-async function pathInsideRoot(root, relativePath) {
-  if (!root || typeof relativePath !== "string" || !relativePath.trim()) return undefined;
-  const base = path.resolve(root);
-  const candidate = path.resolve(base, relativePath);
-  const lexicalRelative = path.relative(base, candidate);
-  if (lexicalRelative === ".." || lexicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(lexicalRelative)) {
-    return undefined;
-  }
-  if (!(await pathExists(candidate))) return undefined;
-  const [realBase, realCandidate] = await Promise.all([
-    realpath(base).catch(() => base),
-    realpath(candidate).catch(() => candidate),
-  ]);
-  const resolvedRelative = path.relative(realBase, realCandidate);
-  if (resolvedRelative === ".." || resolvedRelative.startsWith(`..${path.sep}`) || path.isAbsolute(resolvedRelative)) {
-    return undefined;
-  }
-  return candidate;
 }
 
 async function pathsReferToSameRoot(left, right) {
@@ -146,62 +123,6 @@ async function collectMarkdownFromRoots(roots, kind, scope, sourceLabel, rootFor
   return uniqueAssetsByRealPath((await Promise.all(
     roots.map((root) => collectMarkdownItems(root, kind, scope, sourceLabel, rootForEvidence)),
   )).flat());
-}
-
-function sanitizeMcpUrl(value) {
-  if (typeof value !== "string" || !value.trim()) return undefined;
-  try {
-    const parsed = new URL(value);
-    parsed.username = "";
-    parsed.password = "";
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return undefined;
-  }
-}
-
-function sanitizeMcpCommand(value) {
-  if (typeof value !== "string" || !value.trim()) return undefined;
-  const executable = value.trim().split(/\s+/u)[0];
-  return executable.split(/[\\/]/u).filter(Boolean).at(-1);
-}
-
-function sanitizeMcpArgs(args, command) {
-  const values = Array.isArray(args) ? args : [];
-  const runner = sanitizeMcpCommand(command)?.toLowerCase();
-  let packageRetained = false;
-  return values.map((value, index) => {
-    const text = String(value);
-    const previous = String(values[index - 1] ?? "");
-    if (/(?:token|secret|password|credential|api[_-]?key|authorization)/iu.test(previous)) return "<redacted>";
-    if (/(?:token|secret|password|credential|api[_-]?key|authorization|bearer)/iu.test(text)) return "<redacted>";
-    if (/^--?[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(text)) return text;
-    if (/^(?:\$\{?[A-Z0-9_]+\}?|%[A-Z0-9_]+%)$/u.test(text)) return text;
-    if (/\.(?:c?m?js|ts|py|sh|rb|ps1|cmd|bat)$/iu.test(text)) return path.basename(text);
-    if (["npx", "bunx", "uvx"].includes(runner) && !packageRetained && /^(?:@[A-Za-z0-9_.-]+\/)?[A-Za-z0-9_.-]+(?:@[A-Za-z0-9_.^~*-]+)?$/u.test(text)) {
-      packageRetained = true;
-      return text;
-    }
-    return "<redacted>";
-  });
-}
-
-function sanitizeMcpItem(item) {
-  const command = sanitizeMcpCommand(item.command);
-  const args = sanitizeMcpArgs(item.args, command);
-  return {
-    ...item,
-    command,
-    args,
-    argCount: args.length,
-    url: sanitizeMcpUrl(item.url),
-  };
-}
-
-function sanitizeMcpItems(items) {
-  return items.map(sanitizeMcpItem);
 }
 
 async function collectClaudeHooks(files, scope, sourceLabel, rootForEvidence, options = {}) {

@@ -56,6 +56,7 @@ function verifyReleaseVersionAlignment() {
     [".github/plugin/plugin.json", readJson(".github/plugin/plugin.json").version],
     [".github/plugin/marketplace.json", readJson(".github/plugin/marketplace.json").plugins?.[0]?.version],
     ["qwen-extension.json", readJson("qwen-extension.json").version],
+    [".kimi-plugin/plugin.json", readJson(".kimi-plugin/plugin.json").version],
   ];
   for (const [source, version] of versions) {
     if (version !== packageVersion) {
@@ -142,11 +143,13 @@ const required = [
   "package/.github/plugin/plugin.json",
   "package/.github/plugin/marketplace.json",
   "package/.qoder-plugin/plugin.json",
+  "package/.kimi-plugin/plugin.json",
   "package/qwen-extension.json",
   "package/prompts/better-harness.md",
   "package/case-studies/factory/model/factory-readiness.md",
   "package/docs/glossary.md",
   "package/scripts/better-harness.mjs",
+  "package/scripts/host-support/index.mjs",
   "package/scripts/findings-recommend/findings-recommend.json",
   "package/scripts/findings-recommend/index.mjs",
   "package/scripts/review-trigger/cli.mjs",
@@ -276,6 +279,7 @@ const requiredBundleEntries = [
   "case-studies/factory/model/factory-readiness.md",
   "docs/glossary.md",
   "scripts/better-harness.mjs",
+  "scripts/host-support/index.mjs",
   "scripts/findings-recommend/findings-recommend.json",
   "scripts/findings-recommend/index.mjs",
   "scripts/review-trigger/cli.mjs",
@@ -353,6 +357,7 @@ const forbiddenBundlePrefixes = [
   ".codex-plugin/",
   ".cursor-plugin/",
   ".github/plugin/",
+  ".kimi-plugin/",
   "qwen-extension.json",
   "prompts/",
   "test/",
