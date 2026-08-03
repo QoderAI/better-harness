@@ -220,7 +220,7 @@ test("analyze can initialize machine-owned Canvas summary facts", async () => {
   });
 });
 
-test("analyze Canvas output requires Qoder JSON and the canonical filename", async () => {
+test("analyze Canvas output requires Qoder or Cursor JSON and the canonical filename", async () => {
   const sourceInput = candidateSourceWithUsage("/workspace/example");
   await assert.rejects(
     analyzeHarnessEvidence({
@@ -238,7 +238,7 @@ test("analyze Canvas output requires Qoder JSON and the canonical filename", asy
       format: "json",
       "canvas-out": "/tmp/canvas.json",
     }),
-    /supported only for the Better Harness bundle/u,
+    /supported for Qoder and Cursor Canvas bundles/u,
   );
   await assert.rejects(
     analyzeHarnessEvidence({

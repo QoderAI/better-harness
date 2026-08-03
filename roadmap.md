@@ -125,9 +125,9 @@ not duplicate that matrix.
 
 Completed adapter-enablement work includes the help-only `agent-customize` path
 (`A-04`), support-declaration consistency tests (`A-06`), deterministic Cursor
-plugin-ID matching removal (`U-01`), and the new-host contribution checklist
-(`X-02`). These are prerequisites, not proof that a closed improvement loop is
-available.
+plugin-ID matching removal (`U-01`), the new-host contribution checklist
+(`X-02`), and provider-aware checkup plan/apply fail-closed binding (`HA-02`).
+These are prerequisites, not proof that a closed improvement loop is available.
 
 ## System Invariants
 
@@ -157,7 +157,7 @@ execution dependency above.
 | Done | Priority | ID | Capability | Acceptance |
 | --- | --- | --- | --- | --- |
 | [ ] | P0 | HA-01 | Add explicit `full-session`, `inventory-only`, and `unsupported` checkup capability profiles. | A configured-only provider can complete inventory without session evidence and cannot emit cleanup or mutation candidates. |
-| [ ] | P0 | HA-02 | Make checkup planning provider-aware and fail closed. | Source references and provider-home paths bind to one explicit provider; no plan can route through another host's executor or configuration root. |
+| [x] | P0 | HA-02 | Make checkup planning provider-aware and fail closed. | Source references and provider-home paths bind to one explicit provider; no plan can route through another host's executor or configuration root. |
 | [ ] | P1 | HA-03 | Close provider-specific evidence-depth gaps. | Model, usage, hook, lifecycle, and mutation fields remain unavailable until a stable native source and drift fixtures exist; provider-native apply stays read-only where no accepted mutation contract exists. |
 | [ ] | P2 | HA-04 | Add Host x OS native smoke coverage. | Every claimed host/OS combination separately proves install or discovery, inventory, evidence collection, analysis, output validation, upgrade or reinstall, and privacy boundaries. |
 

@@ -19,9 +19,10 @@ your host's **Verify installation** section—the syntax is host-specific:
   does not claim an unverified slash-command alias.
 
 Better Harness scopes behavior claims to relevant Task Episodes and the
-surrounding project mechanisms. Qoder produces a Canvas report; Claude Code,
-Codex, Cursor, Qwen Code, and GitHub Copilot produce self-contained HTML with
-paired Markdown. Missing or partial evidence remains explicit.
+surrounding project mechanisms. Qoder and Cursor produce host-native Canvas
+reports; Claude Code, Codex, Qwen Code, and GitHub Copilot produce
+self-contained HTML with paired Markdown. Missing or partial evidence remains
+explicit.
 
 See the [sample report](pathname:///demo/better-harness-report/) for
 what the HTML output looks like.

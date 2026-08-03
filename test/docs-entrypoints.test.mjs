@@ -300,9 +300,10 @@ test("public adapter matrix documents all eight adapters and their support bound
 
   assert.match(
     matrix,
-    /Claude Code\/Codex\/Cursor\/Qwen\/Copilot\/Pi\/WorkBuddy/u,
+    /Claude Code\/Codex\/Qwen\/Copilot\/Pi\/WorkBuddy/u,
     "docs/docs/hosts/adapter-matrix.md HTML visual contract omits supported HTML hosts",
   );
+  assert.match(matrix, /\*\*Cursor Canvas\*\*[^]*`cursor\/canvas`/u);
   assert.match(matrix, /### Pi \{#pi\}/u);
   assert.match(matrix, /### WorkBuddy \{#workbuddy\}/u);
 });
@@ -324,9 +325,10 @@ test("zh-Hans public adapter matrix documents all eight adapters and their suppo
 
   assert.match(
     matrix,
-    /Claude Code\/Codex\/Cursor\/Qwen\/Copilot\/Pi\/WorkBuddy/u,
+    /Claude Code\/Codex\/Qwen\/Copilot\/Pi\/WorkBuddy/u,
     "zh-Hans adapter-matrix.md HTML visual contract omits supported HTML hosts",
   );
+  assert.match(matrix, /\*\*Cursor Canvas\*\*[^]*`cursor\/canvas`/u);
   assert.match(matrix, /### Pi \{#pi\}/u);
   assert.match(matrix, /### WorkBuddy \{#workbuddy\}/u);
 });

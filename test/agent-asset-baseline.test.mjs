@@ -265,6 +265,87 @@ test("Claude asset baseline completes from a native project fixture", async () =
   }
 });
 
+test("Claude asset baseline treats its designated config root as bounded project scope", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-asset-baseline-claude-home-"));
+  const workspace = path.join(root, ".claude");
+  const claudeStatePath = path.join(root, ".claude.json");
+  const containedPluginId = "contained@fixture-marketplace";
+  const escapingPluginId = "escaping@fixture-marketplace";
+  const containedPluginRoot = path.join(workspace, "plugins", "cache", "fixture-marketplace", "contained", "1.0.0");
+  const escapingPluginRoot = path.join(root, "outside-plugin");
+  try {
+    await mkdir(path.join(workspace, "skills", "review"), { recursive: true });
+    await mkdir(path.join(workspace, "commands"), { recursive: true });
+    await mkdir(path.join(containedPluginRoot, ".claude-plugin"), { recursive: true });
+    await mkdir(path.join(escapingPluginRoot, ".claude-plugin"), { recursive: true });
+    await writeFile(
+      path.join(workspace, "skills", "review", "SKILL.md"),
+      "---\nname: review\ndescription: Review the designated Claude config workspace.\n---\n",
+    );
+    await writeFile(path.join(workspace, "commands", "project-check.md"), "# Project Check\n");
+    await writeFile(path.join(workspace, "CLAUDE.md"), "# Claude config project\n\nRun the focused tests.\n");
+    await writeFile(path.join(workspace, "settings.json"), `${JSON.stringify({
+      enabledPlugins: {
+        [containedPluginId]: true,
+        [escapingPluginId]: true,
+      },
+      hooks: {
+        SessionStart: [{ hooks: [{ type: "command", command: "node hooks/check.mjs" }] }],
+      },
+    }, null, 2)}\n`);
+    await writeFile(path.join(containedPluginRoot, ".claude-plugin", "plugin.json"), `${JSON.stringify({
+      name: "contained",
+      version: "1.0.0",
+    }, null, 2)}\n`);
+    await writeFile(path.join(escapingPluginRoot, ".claude-plugin", "plugin.json"), `${JSON.stringify({
+      name: "escaping",
+      version: "1.0.0",
+    }, null, 2)}\n`);
+    await mkdir(path.join(workspace, "plugins"), { recursive: true });
+    await writeFile(path.join(workspace, "plugins", "installed_plugins.json"), `${JSON.stringify({
+      version: 2,
+      plugins: {
+        [containedPluginId]: [{ scope: "user", installPath: containedPluginRoot, version: "1.0.0" }],
+        [escapingPluginId]: [{ scope: "user", installPath: escapingPluginRoot, version: "1.0.0" }],
+      },
+    }, null, 2)}\n`);
+    await writeFile(claudeStatePath, `${JSON.stringify({
+      mcpServers: {
+        outsideState: { command: "node", args: ["outside-state-server.mjs"] },
+      },
+    }, null, 2)}\n`);
+
+    const result = await collectAssetBaseline({
+      provider: "claude",
+      workspace,
+      claudeHome: workspace,
+      claudeStatePath,
+      includeUserHome: false,
+    });
+
+    assert.equal(result.status, "complete");
+    assert.equal(result.scope.includeUserHome, false);
+    assert.deepEqual(result.envelopes.lint.data.assetInventory.summary, {
+      skills: 1,
+      mcps: 0,
+      commands: 1,
+      hooks: 1,
+      rules: 1,
+      agents: 0,
+      plugins: 1,
+    });
+    const ownerRoutes = result.envelopes.inventory.data.ownerRoutes.items;
+    assert.equal(ownerRoutes.some((item) => item.kind === "skills" && item.name === "review"), true);
+    assert.equal(ownerRoutes.some((item) => item.kind === "commands" && item.name === "project-check"), true);
+    assert.equal(ownerRoutes.some((item) => item.kind === "hooks"), true);
+    assert.equal(ownerRoutes.some((item) => item.kind === "plugins" && item.name === "Contained"), true);
+    assert.equal(JSON.stringify(result).includes("escaping"), false);
+    assert.equal(JSON.stringify(result).includes("outsideState"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Qwen asset baseline completes from a native project fixture", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-asset-baseline-qwen-"));
   const workspace = path.join(root, "project");

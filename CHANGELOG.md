@@ -16,8 +16,32 @@ observable behavior and compatibility, not every internal refactor.
   assessment contract rejects (unknown id/state/field, duplicate observation,
   empty evidence, unsupported version, malformed JSON) exits 1 without ever
   producing a decision. `--json` keeps stdout parser-safe.
+- A read-only native Learning Capture review contract can now screen ordinary
+  Task Episodes for repeated exact repair routes, emit a bounded privacy-safe
+  packet, validate evidence-bound `match` or `abstain` decisions, and project
+  accepted `recurring-correction` opportunities through the existing Learning
+  Loop candidate model without requiring adapter-supplied pattern labels.
 
 ### Fixed
+
+- Portable HTML finding-bound fixes now record against the HTML report contract
+  without requiring Qoder's `canvas.json`, and refresh `findings.json`,
+  `report.md`, and `report.html` to the same repair revision. Qoder split reports
+  retain their Canvas-sidecar validation boundary.
+
+- Root CLI delegation failures now keep machine mode parseable: spawn errors,
+  signal termination, and output-buffer exhaustion each emit one stable JSON
+  error document, while normal child stdout, stderr, and numeric exit status
+  remain capability-owned.
+
+- Checkup plan/apply is provider-aware: only `provider=qoder` can emit or execute
+  `qodercli` disable mutations. Other hosts keep candidates as `manual-review`
+  until a provider-native apply contract exists. `provider-home` source
+  resolution and fingerprints bind to the explicit host home (for example
+  Codex uses `codexHome`, never Qoder home).
+
+- Make `command describe` resolve exact registered leaf paths instead of
+  returning the parent command metadata.
 
 - The Portable HTML report route in `templates/reporting/routing.md` now
   lists WorkBuddy, so agents on WorkBuddy are routed to the self-contained

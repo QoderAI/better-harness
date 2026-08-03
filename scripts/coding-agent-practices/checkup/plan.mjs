@@ -20,6 +20,10 @@ function scopeForPlugin(scope) {
   return scope === "project" ? "project" : "user";
 }
 
+function manualReviewMutation() {
+  return { type: "manual-review", executable: null, argv: [] };
+}
+
 function qoderMutation(asset) {
   if (asset.kind === "skill") {
     return {
@@ -38,7 +42,15 @@ function qoderMutation(asset) {
       argv: ["plugin", "disable", asset.pluginId ?? asset.name, "--scope", scopeForPlugin(asset.scope)],
     };
   }
-  return { type: "manual-review", executable: null, argv: [] };
+  return manualReviewMutation();
+}
+
+function providerMutation(provider, asset) {
+  if (String(provider ?? "").toLowerCase() === "qoder") {
+    return qoderMutation(asset);
+  }
+  // No accepted provider-native automatic disable contract for other hosts yet.
+  return manualReviewMutation();
 }
 
 function inverseMutation(mutation) {
@@ -49,16 +61,26 @@ function inverseMutation(mutation) {
   };
 }
 
+function boundSourceRef(scan, sourceRef) {
+  if (!sourceRef) return sourceRef;
+  const provider = String(scan.provider ?? "").toLowerCase();
+  return {
+    ...sourceRef,
+    provider: sourceRef.provider ?? provider,
+  };
+}
+
 function buildAction(scan, finding) {
   const asset = findAsset(scan, finding);
   if (!asset) return null;
+  const provider = String(scan.provider ?? "").toLowerCase();
   const duplicateHook = finding.evidence?.some((item) => item.code === "hook-duplicate-registration");
   const fingerprintKey = sourceRefKey(asset.sourceRef);
   const fingerprint = fingerprintKey ? scan.configuredInventory.sourceFingerprints?.[fingerprintKey] : null;
   const mutation = duplicateHook && asset.sourceRef && fingerprint
     ? {
         type: "source-patch",
-        sourceRef: asset.sourceRef,
+        sourceRef: boundSourceRef(scan, asset.sourceRef),
         patch: {
           type: "remove-hook-registration",
           event: asset.event,
@@ -67,11 +89,16 @@ function buildAction(scan, finding) {
           expectedConfigurationDigest: asset.configurationDigest,
         },
       }
-    : qoderMutation(asset);
+    : providerMutation(provider, asset);
+  const automaticDisable = mutation.type === "qoder-cli";
   const actionId = finding.candidateActions[0] ?? `disable-${asset.kind}-${shortHash(asset.id)}`;
   return {
     id: actionId,
-    operation: duplicateHook ? "deduplicate" : asset.kind === "hook" ? "manual-review" : "disable",
+    operation: duplicateHook
+      ? "deduplicate"
+      : asset.kind === "hook" || !automaticDisable
+        ? "manual-review"
+        : "disable",
     target: {
       id: asset.id,
       kind: asset.kind,
@@ -83,7 +110,9 @@ function buildAction(scan, finding) {
       ? "An identical later hook registration has the same private full-config digest and owning source; remove only that duplicate."
       : asset.kind === "hook"
       ? "Attributed runtime evidence crossed the hook review budget; inspect matcher, duplication, blocking need, and command work before any confirmed source patch."
-      : "No mapped use was observed in a complete all-eligible, scope-appropriate window outside the install grace period.",
+      : automaticDisable
+      ? "No mapped use was observed in a complete all-eligible, scope-appropriate window outside the install grace period."
+      : `No provider-native automatic disable contract is available for ${provider || "this provider"}; review the candidate manually.`,
     evidenceStatus: finding.status,
     expectedReduction: {
       configuredAssets: 1,
@@ -109,6 +138,10 @@ function buildAction(scan, finding) {
   };
 }
 
+function mutationIsApplyable(mutation) {
+  return mutation?.type === "qoder-cli" || mutation?.type === "source-patch";
+}
+
 export function buildCheckupPlan(scan) {
   if (scan?.kind !== CHECKUP_KIND || scan?.phase !== "scan") {
     throw new Error("checkup plan requires a phase=scan checkup payload");
@@ -118,6 +151,7 @@ export function buildCheckupPlan(scan) {
     .map((finding) => buildAction(scan, finding))
     .filter(Boolean)
     .sort((left, right) => left.id.localeCompare(right.id));
+  const applyableActions = actions.filter((action) => mutationIsApplyable(action.mutation));
   const planCore = {
     provider: scan.provider,
     workspace: scan.workspace,
@@ -143,8 +177,10 @@ export function buildCheckupPlan(scan) {
     confirmation: {
       requiredForApply: true,
       selectedActionIdsRequired: true,
-      applyAvailable: true,
-      reason: "apply requires this plan digest, explicit selected action ids, and current source evidence",
+      applyAvailable: applyableActions.length > 0,
+      reason: applyableActions.length > 0
+        ? "apply requires this plan digest, explicit selected action ids, and current source evidence"
+        : "no provider-native automatic apply contract is available for the selected actions",
     },
   };
 }

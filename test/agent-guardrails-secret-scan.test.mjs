@@ -195,7 +195,8 @@ test("workspace-contained scanning refuses a swap to an external symlink at read
   assert.equal(swapped, true);
   assert.equal(report.summary.totalFindings, 0);
   assert.equal(report.stats.scannedFiles, 0);
-  assert.ok(report.stats.errors.length > 0 || report.stats.skippedFiles > 0);
+  assert.equal(report.coverageStatus, "failed");
+  assert.ok(report.stats.errors.length > 0);
   assert.doesNotMatch(JSON.stringify(report.findings), new RegExp(outsideKey));
 });
 
@@ -256,6 +257,99 @@ test("secret-scan CLI hook mode reads JSON stdin and emits a block payload", () 
   assert.equal(payload.decision, "block");
   assert.doesNotMatch(result.stdout, new RegExp(fakeKey));
   assert.equal(result.stderr, "");
+});
+
+test("secret-scan CLI fails closed when an explicit path cannot be scanned", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-secret-scan-missing-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const result = spawnSync(process.execPath, [scannerCli, "missing.txt", "--json"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 3);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.coverageStatus, "failed");
+  assert.ok(report.stats.errors.length > 0);
+  assert.equal(result.stderr, "");
+});
+
+test("secret-scan CLI reports complete coverage and exits zero for a clean explicit file", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-secret-scan-clean-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path.join(root, "clean.txt"), "ordinary fixture text\n");
+  const result = spawnSync(process.execPath, [scannerCli, "clean.txt", "--json"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.coverageStatus, "complete");
+  assert.equal(report.summary.totalFindings, 0);
+  assert.deepEqual(report.stats.errors, []);
+  assert.equal(result.stderr, "");
+});
+
+test("secret-scan CLI treats an explicitly supplied symbolic-link file as incomplete coverage", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-secret-scan-link-"));
+  const target = path.join(root, "target.txt");
+  const link = path.join(root, "linked.txt");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(target, "safe fixture\n");
+  try {
+    await symlink(target, link);
+  } catch (error) {
+    t.skip(`symlink unavailable: ${error.message}`);
+    return;
+  }
+
+  const result = spawnSync(process.execPath, [scannerCli, link, "--json"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 3);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.coverageStatus, "failed");
+  assert.ok(report.stats.errors.length > 0);
+});
+
+test("secret-scan CLI treats symbolic links nested in a scanned directory as incomplete coverage", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-secret-scan-nested-link-"));
+  const scanRoot = path.join(root, "scan");
+  const target = path.join(root, "target.txt");
+  const link = path.join(scanRoot, "linked.txt");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(scanRoot, { recursive: true });
+  await writeFile(target, "safe fixture\n");
+  try {
+    await symlink(target, link);
+  } catch (error) {
+    t.skip(`symlink unavailable: ${error.message}`);
+    return;
+  }
+
+  const result = spawnSync(process.execPath, [scannerCli, scanRoot, "--json"], {
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 3);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.coverageStatus, "failed");
+  assert.equal(report.stats.scannedFiles, 0);
+  assert.equal(report.stats.skippedFiles, 1);
+  assert.match(report.stats.errors.join("\n"), /symbolic-link scan targets are not inspected/u);
+
+  await writeFile(path.join(scanRoot, "clean.txt"), "ordinary fixture text\n");
+  const partialResult = spawnSync(process.execPath, [scannerCli, scanRoot, "--json"], {
+    encoding: "utf8",
+  });
+  assert.equal(partialResult.status, 3);
+  const partialReport = JSON.parse(partialResult.stdout);
+  assert.equal(partialReport.coverageStatus, "partial");
+  assert.equal(partialReport.stats.scannedFiles, 1);
+  assert.equal(partialReport.stats.skippedFiles, 1);
 });
 
 test("install-secret-guard CLI keeps --host as a compatibility alias", () => {

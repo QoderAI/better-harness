@@ -95,6 +95,35 @@ test("Claude, Cursor, and Qwen workspace slugs cover Unix and Windows layouts", 
   assert.ok(workspaceToWorkbuddySlugVariants("C:\\workspace\\project").exact.includes("C--workspace-project"));
 });
 
+test("Claude workspace slug folds dots the way Claude Code names project directories", () => {
+  assert.equal(workspaceToClaudeSlugVariants("/Users/twurm/.claude")[0], "-Users-twurm--claude");
+  assert.deepEqual(workspaceToClaudeSlugVariants("/work/my.project"), [
+    "-work-my-project",
+    "-work-my.project",
+  ]);
+  assert.deepEqual(workspaceToClaudeSlugVariants("/workspace/project"), ["-workspace-project"]);
+});
+
+test("Claude provider discovers transcripts for dotted workspace paths", async () => {
+  const root = await fixtureRoot("session-claude-dotted-");
+  const home = path.join(root, ".claude");
+  const workspace = path.join(root, "work", "my.project");
+  const sessionId = "33333333-3333-4333-8333-333333333333";
+  const dottedSlug = workspaceToClaudeSlugVariants(workspace)[0];
+  assert.ok(dottedSlug.endsWith("-work-my-project"));
+  await writeJsonl(path.join(home, "projects", dottedSlug, `${sessionId}.jsonl`), [{
+    type: "user",
+    sessionId,
+    cwd: workspace,
+    timestamp: "2026-07-20T01:00:00.000Z",
+    message: { role: "user", content: [{ type: "text", text: "hello from a dotted workspace" }] },
+  }]);
+  const result = await new ClaudeSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 1);
+  assert.equal(result.sessions[0].sessionId, sessionId);
+  assert.equal(result.sources.find((source) => source.kind === "claude-project-jsonl")?.exists, true);
+});
+
 test("Claude provider expands nested tool requests and results without using generated facets", async () => {
   const root = await fixtureRoot("session-claude-provider-");
   const home = path.join(root, ".claude");

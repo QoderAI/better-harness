@@ -92,7 +92,10 @@ workspace is a member package. This keeps an ancestor-owned result such as
 Author one standalone `assignmentSummary` in the report's exact locale. Its
 title and body explain the finding-level verified outcome and validation
 boundary; do not build it by joining artifact summaries. Write both fields to a
-temporary result object.
+temporary result object outside the directory that owns the callback's
+`findings.json`. Use an operating-system temporary directory or another
+workspace-controlled scratch location; never add the result object as a fourth
+durable report artifact beside `findings.json`, `report.md`, or `report.html`.
 
 ### Reassess the Repair Independently
 
@@ -145,5 +148,5 @@ Report success only when the writer returns `status: pass` and the next
 revision. Reuse the recorded Assignment Summary and report `repairProgress`;
 `scoreRefresh` must remain unchanged for the current outcome window. If target
 validation fails, no material change exists, or the writer fails, do not edit
-`findings.json`; preserve the temporary result for diagnosis and surface the
-exact blocker.
+the report artifacts; preserve the temporary result outside the report
+directory for diagnosis and surface the exact blocker.

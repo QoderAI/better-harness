@@ -25,6 +25,7 @@ import { analyzeChangeDrift } from "./change-drift.mjs";
 import { analyzeCoreCandidates } from "./core-candidates.mjs";
 import { analyzeDiffImpact } from "./diff-impact.mjs";
 import { analyzeGitHistoryProfile } from "./git-history-profile.mjs";
+import { printCoreChangeWatchHelp } from "./help.mjs";
 import { analyzeProjectProfile } from "./project-profile.mjs";
 
 function addRead(reads, path, reason, priority = 50, currentPaths = null) {
@@ -597,6 +598,7 @@ export async function buildEvidencePack(options = {}) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (printCoreChangeWatchHelp("evidence-pack", argv)) return;
   const args = parseArgs(argv);
   const result = await buildEvidencePack({
     cwd: option(args, "cwd"),

@@ -96,6 +96,31 @@ async function pathInsideRoot(root, relativePath) {
   return candidate;
 }
 
+async function pathsReferToSameRoot(left, right) {
+  const [resolvedLeft, resolvedRight] = await Promise.all([
+    realpath(path.resolve(left)).catch(() => path.resolve(left)),
+    realpath(path.resolve(right)).catch(() => path.resolve(right)),
+  ]);
+  return path.relative(resolvedLeft, resolvedRight) === "";
+}
+
+async function canonicalPathInsideRoot(root, candidate) {
+  if (!root || !candidate || !(await pathExists(candidate))) return false;
+  let realRoot;
+  let realCandidate;
+  try {
+    [realRoot, realCandidate] = await Promise.all([
+      realpath(path.resolve(root)),
+      realpath(path.resolve(candidate)),
+    ]);
+  } catch {
+    return false;
+  }
+  const relative = path.relative(realRoot, realCandidate);
+  return relative === ""
+    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
 async function componentRoots(pluginRoot, manifest, key, fallback, options = {}) {
   const declared = pluginPathValues(manifest?.[key]);
   const requested = options.addDefault
@@ -210,14 +235,22 @@ async function collectUserRules(claudeHome) {
   ];
 }
 
-async function collectProjectRules(workspace, sourceLabel) {
+async function collectProjectRules(workspace, sourceLabel, claudeRoot = path.join(workspace, ".claude")) {
   const fileDefinitions = [
     [path.join(workspace, "CLAUDE.md"), "CLAUDE.md", "claude-project", "claude-project"],
-    [path.join(workspace, ".claude", "CLAUDE.md"), ".claude/CLAUDE.md", "claude-project", "claude-project"],
+    [
+      path.join(claudeRoot, "CLAUDE.md"),
+      path.relative(workspace, path.join(claudeRoot, "CLAUDE.md")).split(path.sep).join("/") || "CLAUDE.md",
+      "claude-project",
+      "claude-project",
+    ],
     [path.join(workspace, "CLAUDE.local.md"), "CLAUDE.local.md", "claude-local", "claude-local"],
   ];
   const files = [];
+  const visited = new Set();
   for (const [filePath, name, sourceKind, precedence] of fileDefinitions) {
+    if (visited.has(filePath)) continue;
+    visited.add(filePath);
     files.push(...await collectMarkdownFileRuleItem(filePath, "project", sourceLabel, workspace, {
       name,
       sourceKind,
@@ -227,7 +260,7 @@ async function collectProjectRules(workspace, sourceLabel) {
   return [
     ...files,
     ...await collectMarkdownRuleItems(
-      path.join(workspace, ".claude", "rules"),
+      path.join(claudeRoot, "rules"),
       "project",
       sourceLabel,
       workspace,
@@ -268,9 +301,14 @@ async function collectClaudeUserPrimitives(claudeHome, statePath, state, workspa
   };
 }
 
-async function collectClaudeWorkspacePrimitives(workspace, statePath, state, includeState) {
+async function collectClaudeWorkspacePrimitives(
+  workspace,
+  statePath,
+  state,
+  includeState,
+  claudeRoot = path.join(workspace, ".claude"),
+) {
   const sourceLabel = await workspaceSourceLabel(workspace);
-  const claudeRoot = path.join(workspace, ".claude");
   const stateMcps = includeState
     ? await collectStateMcp(
         state,
@@ -285,7 +323,7 @@ async function collectClaudeWorkspacePrimitives(workspace, statePath, state, inc
   return {
     skills: await collectSkillFiles(path.join(claudeRoot, "skills"), "project", sourceLabel, workspace),
     subagents: await collectMarkdownItems(path.join(claudeRoot, "agents"), "subagent", "project", sourceLabel, workspace),
-    rules: await collectProjectRules(workspace, sourceLabel),
+    rules: await collectProjectRules(workspace, sourceLabel, claudeRoot),
     commands: await collectMarkdownItems(path.join(claudeRoot, "commands"), "command", "project", sourceLabel, workspace),
     hooks: await collectClaudeHooks(
       [path.join(claudeRoot, "settings.json"), path.join(claudeRoot, "settings.local.json")],
@@ -305,11 +343,12 @@ function enabledPluginMap(settings) {
     : new Map();
 }
 
-async function readClaudeSettings(claudeHome, workspace, includeUserHome) {
+async function readClaudeSettings(claudeHome, workspace, includeUserHome, workspaceIsClaudeHome) {
+  const projectRoot = workspaceIsClaudeHome ? workspace : path.join(workspace, ".claude");
   const [user, project, local] = await Promise.all([
-    includeUserHome ? readJson(path.join(claudeHome, "settings.json")) : undefined,
-    readJson(path.join(workspace, ".claude", "settings.json")),
-    readJson(path.join(workspace, ".claude", "settings.local.json")),
+    includeUserHome && !workspaceIsClaudeHome ? readJson(path.join(claudeHome, "settings.json")) : undefined,
+    readJson(path.join(projectRoot, "settings.json")),
+    readJson(path.join(projectRoot, "settings.local.json")),
   ]);
   return {
     user: enabledPluginMap(user),
@@ -454,6 +493,7 @@ async function collectClaudePlugin(record, settings, workspace) {
     projectPath: record.projectPath,
     applicable,
     enabled,
+    workspaceScoped: record.workspaceScoped === true,
     enabledSettingScope: configured?.scope,
     evidence: evidence(metadataPath, claudeHomeForPluginIndex(pluginRoot)),
   };
@@ -483,22 +523,55 @@ async function collectClaudePlugins(records, settings, workspace) {
   return plugins.sort(sortByName);
 }
 
+async function annotateWorkspacePluginRecords(records, workspace) {
+  const annotated = [];
+  for (const record of records) {
+    const workspaceScoped = await canonicalPathInsideRoot(workspace, record.installPath);
+    annotated.push({ ...record, workspaceScoped });
+  }
+  return annotated;
+}
+
 export async function collectClaudeCustomizeInventory(options = {}) {
   const claudeHome = resolveClaudeHome(options);
   const claudeStatePath = resolveClaudeStatePath(options, claudeHome);
   const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   const includeUserHome = options.includeUserHome !== false;
+  const workspaceIsClaudeHome = await pathsReferToSameRoot(workspace, claudeHome);
+  const claudeProjectRoot = workspaceIsClaudeHome ? workspace : path.join(workspace, ".claude");
   const state = includeUserHome ? await readJson(claudeStatePath) : undefined;
-  const [settings, installState] = await Promise.all([
-    readClaudeSettings(claudeHome, workspace, includeUserHome),
-    includeUserHome
+  const [settings, rawInstallState] = await Promise.all([
+    readClaudeSettings(claudeHome, workspace, includeUserHome, workspaceIsClaudeHome),
+    includeUserHome || workspaceIsClaudeHome
       ? readClaudeInstalledPluginState(claudeHome, options)
       : Promise.resolve({ source: "not-authorized", records: [], indexPath: undefined, indexVersion: undefined }),
   ]);
+  const annotatedRecords = workspaceIsClaudeHome
+    ? await annotateWorkspacePluginRecords(rawInstallState.records, workspace)
+    : rawInstallState.records;
+  const installState = {
+    ...rawInstallState,
+    records: includeUserHome ? annotatedRecords : annotatedRecords.filter((record) => record.workspaceScoped === true),
+  };
+  const userPrimitives = includeUserHome && !workspaceIsClaudeHome
+    ? await collectClaudeUserPrimitives(claudeHome, claudeStatePath, state, workspace)
+    : includeUserHome
+      ? {
+          ...emptyPrimitives(),
+          mcps: await collectStateMcp(
+            state,
+            (value) => value?.mcpServers,
+            claudeStatePath,
+            "user",
+            "User",
+            claudeHome,
+          ),
+        }
+      : emptyPrimitives();
   const [plugins, user, project] = await Promise.all([
-    includeUserHome ? collectClaudePlugins(installState.records, settings, workspace) : [],
-    includeUserHome ? collectClaudeUserPrimitives(claudeHome, claudeStatePath, state, workspace) : emptyPrimitives(),
-    collectClaudeWorkspacePrimitives(workspace, claudeStatePath, state, includeUserHome),
+    includeUserHome || workspaceIsClaudeHome ? collectClaudePlugins(installState.records, settings, workspace) : [],
+    Promise.resolve(userPrimitives),
+    collectClaudeWorkspacePrimitives(workspace, claudeStatePath, state, includeUserHome, claudeProjectRoot),
   ]);
   return {
     generatedAt: new Date().toISOString(),
@@ -518,6 +591,7 @@ export async function collectClaudeCustomizeInventory(options = {}) {
       unresolvedProjectPluginCount: plugins.filter((plugin) => plugin.installSource === "project" && !plugin.applicable).length,
       marketplaceCatalogsAreNotInstallEvidence: true,
       runtimeMcpProbeExecuted: false,
+      designatedClaudeHomeWorkspace: workspaceIsClaudeHome,
     },
     unsupported: [
       "enterprise managed settings",

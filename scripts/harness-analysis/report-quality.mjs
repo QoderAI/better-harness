@@ -14,6 +14,16 @@ const REQUIRED_SECTIONS = [
   "Unverified Items",
 ];
 
+const REPORT_QUALITY_HELP = `Usage: better-harness harness report-quality (--report <path> | --canvas <path>)
+
+Validate Better Harness Markdown reports or Qoder Canvas artifacts.
+
+Options:
+  --report <path>    Validate a Markdown report
+  --canvas <path>    Validate a Canvas artifact
+  -h, --help         Print help
+`;
+
 const LEGACY_REQUIRED_SECTION_KEYS = [
   "executiveVerdict",
   "evidenceBoundary",
@@ -1188,6 +1198,10 @@ function parseArgs(argv) {
 }
 
 export function main(argv = process.argv.slice(2)) {
+  if (argv.some((arg) => arg === "--help" || arg === "-h")) {
+    process.stdout.write(REPORT_QUALITY_HELP);
+    return;
+  }
   const args = parseArgs(argv);
   const input = args.report || args.canvas
     ? readFileSync(resolve(String(args.report ?? args.canvas)), "utf8")

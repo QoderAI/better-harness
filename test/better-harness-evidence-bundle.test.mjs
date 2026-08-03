@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -8,7 +10,11 @@ import {
   freezeEvidenceBundleContext,
 } from "../scripts/harness-analysis/evidence-bundle/index.mjs";
 import { availableLane } from "../scripts/harness-analysis/evidence-bundle/contract.mjs";
-import { collectSessionEvidence } from "../scripts/harness-analysis/evidence-bundle/session-evidence.mjs";
+import {
+  collectSessionEvidence,
+  collectSessionPopulation,
+} from "../scripts/harness-analysis/evidence-bundle/session-evidence.mjs";
+import { workspaceToClaudeSlugVariants } from "../scripts/session-analysis/platforms/claude.mjs";
 import { collectAgentCustomize } from "../scripts/harness-analysis/evidence-bundle/agent-customize.mjs";
 import { EVIDENCE_BUNDLE_HELP } from "../scripts/harness-analysis/evidence-bundle/cli.mjs";
 
@@ -542,6 +548,55 @@ test("Session facts reject counts that contradict the shared all-eligible popula
     }),
     (error) => error?.code === "SESSION_POPULATION_BINDING_MISMATCH",
   );
+});
+
+test("Claude population freeze and Session facts agree under one frozen topology", async () => {
+  const fixture = await realpath(await mkdtemp(path.join(os.tmpdir(), "evidence-bundle-claude-binding-")));
+  try {
+    const workspace = path.join(fixture, "workspace");
+    const elsewhere = path.join(fixture, "elsewhere");
+    const home = path.join(fixture, ".claude");
+    await mkdir(workspace, { recursive: true });
+    const projectRoot = path.join(home, "projects", workspaceToClaudeSlugVariants(workspace)[0]);
+    await mkdir(projectRoot, { recursive: true });
+    const row = (sessionId, cwd, second) => JSON.stringify({
+      type: "user",
+      sessionId,
+      cwd,
+      timestamp: `2026-07-20T10:00:0${second}.000Z`,
+      message: { role: "user", content: [{ type: "text", text: "Inspect the selected workspace" }] },
+    });
+    await writeFile(
+      path.join(projectRoot, "clean-private.jsonl"),
+      `${row("clean-private", workspace, 0)}\n${row("clean-private", workspace, 1)}\n`,
+    );
+    await writeFile(
+      path.join(projectRoot, "conflict-private.jsonl"),
+      `${row("conflict-private", workspace, 0)}\n${row("conflict-private", elsewhere, 1)}\n`,
+    );
+    const resolution = topologyResolution(workspace);
+    const context = freezeEvidenceBundleContext({
+      workspace,
+      platform: "claude",
+      depth: "normal",
+      since: "2026-07-01T00:00:00.000Z",
+      until: "2026-07-24T08:00:00.000Z",
+      topology: resolution.topology,
+      analysisScope: resolution.analysisScope,
+    }, NOW);
+    const options = { "claude-home": home };
+
+    const population = await collectSessionPopulation(context, options);
+    assert.equal(population.binding.eligible.count, 1);
+
+    const lane = await collectSessionEvidence(context, options, { sessionPopulation: population });
+    assert.equal(lane.status, "available");
+    assert.equal(lane.data.scope.eligibleSessions, population.binding.eligible.count);
+    assert.equal(lane.data.scope.selectedSessions, population.binding.eligible.count);
+    assert.doesNotMatch(JSON.stringify(lane.data), /clean-private|conflict-private/u);
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
 });
 
 test("zero-signal Episode admission remains valid inside one bound population", async () => {

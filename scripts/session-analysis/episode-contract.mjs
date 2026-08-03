@@ -580,7 +580,6 @@ function learningSignalsFor(episode) {
     if (!patternId) return [];
     const signal = {
       patternId,
-      userCorrection: source.userCorrection === true,
       assetLoaded: source.assetLoaded === true,
       assetChanged: source.assetChanged === true,
       assetRelevant: source.assetRelevant === true,
@@ -592,6 +591,10 @@ function learningSignalsFor(episode) {
       tokens: source.tokens ?? 0,
       evidenceRefs: eventEvidenceRefs(event),
     };
+    if (typeof source.userCorrection === "boolean") {
+      signal.userCorrection = source.userCorrection;
+      signal.fieldProvenance = { userCorrection: "host-observed" };
+    }
     const asset = safeLearningAsset(source.asset);
     if (asset) signal.asset = asset;
     const textFields = ["normalizedSignature", "taskFamily", "repoArea", "changeType", "frictionType", "validationResult", "deliveryResult", "harnessVersion"];
@@ -601,12 +604,15 @@ function learningSignalsFor(episode) {
       if (value) signal[field] = value;
     }
     if (source.fieldProvenance && typeof source.fieldProvenance === "object" && !Array.isArray(source.fieldProvenance)) {
-      signal.fieldProvenance = Object.fromEntries(learningFields.flatMap((field) => {
+      signal.fieldProvenance = {
+        ...(signal.fieldProvenance ?? {}),
+        ...Object.fromEntries(learningFields.flatMap((field) => {
         const provenance = source.fieldProvenance[field];
         return ["host-observed", "deterministic-derived", "ai-reviewed"].includes(provenance)
           ? [[field, provenance]]
           : [];
-      }));
+        })),
+      };
     }
     return [signal];
   });
@@ -711,6 +717,8 @@ function publicEpisode(episode, platform) {
   const rawValidationSets = summarizeValidationSets(episode);
   const closure = closureFor(episode, changeSets, rawValidationSets);
   const permissionSummary = permissionBoundarySummary(episode.events);
+  const protectiveInterventionObserved = episode.events.some((event) =>
+    classifyExecutionSignal(event).kind.startsWith("protective-"));
   return {
     id: episode.id,
     sessionCount: episode.sessionIds.size,
@@ -730,6 +738,7 @@ function publicEpisode(episode, platform) {
     toolCalls: episode.events.filter((event) => event?.toolName || event?.functionCallName).length,
     lifecycleSignals: lifecycleSignalsFor(episode, platform),
     ...(permissionSummary ? { permissionSummary } : {}),
+    ...(protectiveInterventionObserved ? { protectiveInterventionObserved: true } : {}),
     learningSignals: learningSignalsFor(episode),
     evidenceRefs: episode.events.flatMap(eventEvidenceRefs),
   };

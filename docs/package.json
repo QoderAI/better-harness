@@ -21,6 +21,10 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
+  "overrides": {
+    "serialize-javascript": "^7.0.5",
+    "uuid": "^11.1.1"
+  },
   "browserslist": {
     "production": [">0.5%", "not dead", "not op_mini all"],
     "development": [

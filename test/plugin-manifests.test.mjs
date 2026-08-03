@@ -159,7 +159,7 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   assert.equal(qwen.version, qoder.version);
   assert.equal(qwen.description, qoder.description);
   assert.equal(qwen.displayName, qoder.displayName);
-  assert.equal(qwen.contextFileName, "QWEN.md");
+  assert.equal(qwen.contextFileName, undefined);
   assert.equal(qwen.skills, "./skills/");
 
   assert.equal(copilot.name, qoder.name);

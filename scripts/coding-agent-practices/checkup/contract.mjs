@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
+
+import { expandHome } from "../../session-analysis/index.mjs";
 
 export const CHECKUP_KIND = "harness-customization-checkup";
 export const CHECKUP_SCHEMA_VERSION = 1;
@@ -143,6 +146,65 @@ export function safeLabel(value, fallback = "unknown") {
     return text.split(/[\\/]/u).filter(Boolean).at(-1) ?? fallback;
   }
   return text.slice(0, 160);
+}
+
+/** Inventory/options field names for each checkup host's configuration root. */
+export const PROVIDER_HOME_FIELDS = Object.freeze({
+  qoder: "qoderHome",
+  codex: "codexHome",
+  cursor: "cursorHome",
+  claude: "claudeHome",
+  qwen: "qwenHome",
+  copilot: "copilotHome",
+  pi: "piHome",
+  workbuddy: "workbuddyHome",
+});
+
+export function providerHomeField(provider) {
+  return PROVIDER_HOME_FIELDS[String(provider ?? "").toLowerCase()] ?? null;
+}
+
+/**
+ * Resolve the configuration-home root for an explicit provider.
+ * Prefer inventory/options values, then well-known env defaults for that host.
+ * Never falls back across providers (for example Codex must not use Qoder home).
+ */
+export function resolveProviderHome(provider, source = {}) {
+  const normalized = String(provider ?? "").toLowerCase();
+  const field = providerHomeField(normalized);
+  if (!field) {
+    throw new Error(`unsupported provider for provider-home binding: ${provider ?? "missing"}`);
+  }
+  const kebab = field.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
+  const explicit = source[field] ?? source[kebab];
+  if (explicit) {
+    return path.resolve(expandHome(String(explicit)));
+  }
+
+  const env = process.env ?? {};
+  const userHome = os.homedir();
+  const defaults = {
+    qoder: env.QODER_HOME ?? path.join(userHome, ".qoder"),
+    codex: env.CODEX_HOME ?? path.join(userHome, ".codex"),
+    cursor: env.CURSOR_HOME ?? path.join(userHome, ".cursor"),
+    claude: env.CLAUDE_CONFIG_DIR ?? env.CLAUDE_HOME ?? path.join(userHome, ".claude"),
+    qwen: env.QWEN_HOME ?? path.join(userHome, ".qwen"),
+    copilot: env.COPILOT_HOME ?? path.join(userHome, ".copilot"),
+    pi: env.PI_CODING_AGENT_DIR ?? path.join(userHome, ".pi", "agent"),
+    workbuddy: env.WORKBUDDY_DIR ?? path.join(userHome, ".workbuddy"),
+  };
+  return path.resolve(expandHome(defaults[normalized]));
+}
+
+/**
+ * Read the provider-owned home from an inventory object without inventing a
+ * foreign-host fallback. Returns null when the inventory does not expose that
+ * host's home field.
+ */
+export function inventoryProviderHome(provider, inventory = {}) {
+  const field = providerHomeField(provider);
+  if (!field || !inventory?.[field]) return null;
+  return path.resolve(String(inventory[field]));
 }
 
 export function countBy(items, key) {

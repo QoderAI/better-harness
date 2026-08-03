@@ -56,7 +56,7 @@ test("host architecture docs keep matrix, providers, and thin shells separate", 
   assert.match(adapterReadme, /Codex \| Analysis-capable source-local host \| `\.codex-plugin\/`/u);
   assert.match(adapterReadme, /npm package includes six filesystem metadata\s+roots for Qoder, Claude Code, Codex, Cursor, Qwen, and Copilot, plus Pi install\s+metadata in the existing `package\.json`/u);
   assert.match(adapterReadme, /generated\s+Qoder runtime bundle\s+includes only the Qoder shell/u);
-  assert.match(adapterReadme, /Cursor \| Analysis-capable source-local host[^\n]+platforms\/cursor\.mjs/u);
+  assert.match(adapterReadme, /Cursor \| Canvas-capable source-local host[^\n]+platforms\/cursor\.mjs/u);
   assert.doesNotMatch(adapterReadme, /Cursor has no session-evidence adapter/u);
   assert.match(adapterReadme, /Split a host into `docs\/adapters\/<host>\.md` only when/u);
   assert.match(adapterReadme, /Canonical product\s+judgment stays in `skills\/`/u);
@@ -64,6 +64,7 @@ test("host architecture docs keep matrix, providers, and thin shells separate", 
   assert.match(directoryAdr, /\.cursor-plugin\/\s+# \[active\] thin Cursor shell/u);
   assert.match(directoryAdr, /\.codex-plugin\/\s+# \[active\] thin Codex shell/u);
   assert.match(directoryAdr, /qoder-canvas\.md\s+# \[active\] Qoder Canvas output contract/u);
+  assert.match(directoryAdr, /cursor-canvas\.md\s+# \[active\] Cursor Canvas output contract/u);
   assert.match(directoryAdr, /npm-package\/\s+# \[active\] current bundle/u);
   assert.match(directoryAdr, /Host matrix entry\s+\| `docs\/adapters\/README\.md`/u);
   assert.match(directoryAdr, /build-host-plugin\.mjs\s+# assemble an existing thin host shell/u);

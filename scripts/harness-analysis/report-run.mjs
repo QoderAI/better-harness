@@ -24,7 +24,7 @@ Options:
   --since <ISO timestamp>  Include sessions at or after the frozen window start
   --until <ISO timestamp>  Include sessions at or before the frozen window end
   --format <text|json>     Plain-text evidence or evidence plus exact summary facts (default: text)
-  --canvas-out <file>      With Qoder JSON output, initialize canvas.json from exact summary facts
+  --canvas-out <file>      With Qoder or Cursor JSON output, initialize canvas.json from exact summary facts
   --replace-canvas         Replace that exact canvas.json when overwrite was explicitly authorized
   --include-global-capabilities
                            Include authorized user/global capability metadata
@@ -137,9 +137,9 @@ export async function analyzeHarnessEvidence(options = {}) {
       code: "CANVAS_OUTPUT_REQUIRES_JSON",
     });
   }
-  if (requestedCanvasOut && platform !== "qoder") {
-    throw Object.assign(new Error("--canvas-out is supported only for the Better Harness bundle"), {
-      code: "CANVAS_OUTPUT_REQUIRES_QODER",
+  if (requestedCanvasOut && !new Set(["qoder", "cursor"]).has(platform)) {
+    throw Object.assign(new Error("--canvas-out is supported for Qoder and Cursor Canvas bundles"), {
+      code: "CANVAS_OUTPUT_REQUIRES_CANVAS_HOST",
     });
   }
   if (requestedCanvasOut && path.basename(String(requestedCanvasOut)) !== "canvas.json") {

@@ -34,7 +34,11 @@ function isScopedWorkspaceMatch(candidate, scope) {
 export function workspaceToClaudeSlugVariants(workspace) {
   const expanded = expandHome(workspace ?? process.cwd());
   const normalized = path.win32.isAbsolute(expanded) ? path.win32.normalize(expanded) : normalizeWorkspace(expanded);
+  // Claude Code folds "." into "-" per character (".claude" -> "--claude"), so the
+  // dot-substituted forms come first; slash-only forms stay as legacy fallbacks.
   return [...new Set([
+    normalized.replace(/:/g, "-").replace(/[\\/.]/g, "-"),
+    normalized.replace(/:/g, "").replace(/[\\/.]/g, "-"),
     normalized.replace(/:/g, "-").replace(/[\\/]+/g, "-"),
     normalized.replace(/:/g, "").replace(/[\\/]+/g, "-"),
   ])];

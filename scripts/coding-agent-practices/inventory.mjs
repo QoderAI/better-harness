@@ -496,6 +496,7 @@ function customizeItem(item) {
     originScope: item.originScope,
     originRoute: item.originRoute,
     effectiveTarget: item.effectiveTarget,
+    workspaceScoped: item.workspaceScoped,
     pluginId: item.pluginId,
     pluginName: item.pluginName,
     pluginEnabled: item.pluginEnabled,
@@ -525,9 +526,11 @@ function scopeItems(inventory, collection, scope) {
     .map(customizeItem);
 }
 
-function pluginScopedItems(inventory, collection) {
+function pluginScopedItems(inventory, collection, includeUserHome) {
   return (inventory.manage?.[collection] ?? [])
-    .filter((item) => item.scope === "plugin" && item.pluginEnabled !== false)
+    .filter((item) => item.scope === "plugin"
+      && item.pluginEnabled !== false
+      && (includeUserHome || item.workspaceScoped === true))
     .map(customizeItem);
 }
 
@@ -619,8 +622,10 @@ async function buildConfiguredAssetSurfaces(inventory, scope) {
     }
   }
 
-  if (scope.includeUserHome) {
-    const effectivePlugins = inventory.plugins.filter((plugin) => plugin.enabled !== false);
+  const workspaceScopedPlugins = inventory.plugins.filter((plugin) => plugin.workspaceScoped === true);
+  if (scope.includeUserHome || workspaceScopedPlugins.length > 0) {
+    const effectivePlugins = inventory.plugins.filter((plugin) =>
+      plugin.enabled !== false && (scope.includeUserHome || plugin.workspaceScoped === true));
     if (effectivePlugins.length > 0) {
       surfaces.push(customizeSurface({
         provider,
@@ -633,7 +638,7 @@ async function buildConfiguredAssetSurfaces(inventory, scope) {
       }));
     }
     for (const [collection, type, label] of surfaceTypes) {
-      const items = pluginScopedItems(inventory, collection);
+      const items = pluginScopedItems(inventory, collection, scope.includeUserHome);
       if (items.length > 0) {
         surfaces.push(customizeSurface({
           provider,

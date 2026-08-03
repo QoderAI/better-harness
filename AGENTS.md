@@ -19,6 +19,12 @@ Adding support for a new Coding Agent host starts with
 - Keep `docs/specs/*.md` titles human-readable. Do not put Story ids, status, or review state in titles, and do not use YAML front matter by default.
 - Put traceability metadata in the body: `Spec ID`, optional `Story`, and `Status` in a short `## Traceability` section.
 
+## Change Scope
+
+- Do not proactively edit `CHANGELOG.md`, release notes, version files, roadmap/status documents, or other task-external
+  project metadata. Change them only when the user explicitly requests it or a pre-existing issue, spec, or acceptance
+  criterion requires it; user-visible behavior alone is not authorization.
+
 ## Test and Verify
 
 - Design scripts and code for AI-friendly automated use, and validate automation with an AI agent when relevant,

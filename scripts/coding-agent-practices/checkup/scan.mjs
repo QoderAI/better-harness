@@ -15,8 +15,10 @@ import {
   assertFindingStatus,
   countBy,
   digest,
+  inventoryProviderHome,
   normalizeCheckupOptions,
   publicSource,
+  resolveProviderHome,
   safeLabel,
   shortHash,
 } from "./contract.mjs";
@@ -59,18 +61,23 @@ function sourceIdentity(item) {
   return [item.kind, item.scope, item.name, item.sourceLabel, item.ownerId].filter(Boolean).join(":");
 }
 
-function relativeSourceRef(item, inventory) {
+function relativeSourceRef(item, inventory, provider) {
   if (!item.filePath || item.scope === "plugin") return null;
   const filePath = path.resolve(item.filePath);
+  const providerHome = inventoryProviderHome(provider, inventory);
   const roots = [
     { base: "workspace", root: inventory.workspace },
-    { base: "provider-home", root: inventory.qoderHome },
+    { base: "provider-home", root: providerHome },
   ].filter((entry) => entry.root);
   for (const entry of roots) {
     const root = path.resolve(entry.root);
     const relativePath = path.relative(root, filePath);
     if (relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
-      return { base: entry.base, relativePath: relativePath.split(path.sep).join("/") };
+      return {
+        base: entry.base,
+        relativePath: relativePath.split(path.sep).join("/"),
+        provider: String(provider ?? inventory.provider ?? "").toLowerCase() || undefined,
+      };
     }
   }
   return null;
@@ -127,7 +134,7 @@ function publicAsset(item, ownerId, sourceRef = null) {
   };
 }
 
-function configuredAssets(inventory = {}) {
+function configuredAssets(inventory = {}, provider = inventory.provider) {
   const assets = [];
   const plugins = Array.isArray(inventory.plugins) ? inventory.plugins : [];
   for (const plugin of plugins) {
@@ -140,7 +147,7 @@ function configuredAssets(inventory = {}) {
       const ownerId = owner
         ? publicAsset({ ...owner, kind: "plugin", scope: pluginScope(owner) }).id
         : undefined;
-      assets.push(publicAsset(item, ownerId, relativeSourceRef(item, inventory)));
+      assets.push(publicAsset(item, ownerId, relativeSourceRef(item, inventory, provider)));
     }
   }
   const projectMcpNames = new Set(
@@ -755,7 +762,7 @@ export function buildCheckupScan({
     minimumSessions: normalized.minimumSessions,
     newInstallGraceDays: normalized.newInstallGraceDays,
   };
-  const assets = configuredAssets(inventory);
+  const assets = configuredAssets(inventory, normalized.provider);
   const observed = observedIndexes(inventory, sessionResult.facets);
   const repeatedFrictionTriage = normalized.frictionSignals.length > 0
     ? buildRepeatedFrictionTriage({
@@ -906,10 +913,22 @@ export async function runCheckupScan(options = {}, dependencies = {}) {
     options: normalized,
   });
   const fingerprints = {};
+  const providerHome = inventoryProviderHome(normalized.provider, inventory)
+    ?? (() => {
+      try {
+        return resolveProviderHome(normalized.provider, normalized);
+      } catch {
+        return null;
+      }
+    })();
   for (const sourceRef of scan.configuredInventory.assets.map((asset) => asset.sourceRef).filter(Boolean)) {
     const key = `${sourceRef.base}:${sourceRef.relativePath}`;
     if (fingerprints[key]) continue;
-    const root = sourceRef.base === "workspace" ? normalized.workspace : inventory.qoderHome;
+    const root = sourceRef.base === "workspace"
+      ? normalized.workspace
+      : sourceRef.base === "provider-home"
+        ? providerHome
+        : null;
     if (!root) continue;
     const filePath = path.resolve(root, sourceRef.relativePath);
     const relative = path.relative(path.resolve(root), filePath);

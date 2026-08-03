@@ -59,15 +59,26 @@ Mirror the Markdown report and the parity rules in
 conclusions.
 
 Keep first-screen labels short. Put long paths, command output, screenshots, and
-raw evidence anchors in an evidence table or appendix.
+raw evidence anchors in an evidence table or appendix. Render retained UTC activity dates left-to-right; use shared cell/tick grid columns and gaps, and keep long-range scrolling inside the chart.
 
 HTML cannot assume a host chat API, native prompt injection, or host-specific
 deep links. For each shared finding/action row, render compact `Copy AI Fix`
-and `View details` controls when an AI fix exists. Copy the exact reviewed
-prompt locally, report copy success truthfully, and fall back to selected
-manual-copy text when browser clipboard paths fail. Keep the full cause,
-expected output, and acceptance checks available in the scoped details dialog
-and as readable no-JavaScript and print content.
+and `View details` controls only when a non-empty reviewed AI fix exists; keep
+`View details` when it does not. Keep `aiFixPrompt` unchanged in
+`findings.json`. Embed only the actionable id/prompt projection plus a separate
+machine binding containing the final `report.html` workspace-relative POSIX
+route, finding id, and current output revision. Do not embed renderer-added
+absolute workspace or artifact paths.
+
+When opened from its original matching `file:` location, derive the workspace
+and sibling final `findings.json` paths at copy time and append one
+renderer-owned `<better-harness-fix-output>` callback. For HTTP previews, moved
+files, or intentionally context-free renders, copy the unchanged reviewed
+prompt without a callback. Keep malformed declared bindings fail-closed. Report
+copy success truthfully and use the same computed text for clipboard, legacy,
+and selected manual-copy fallbacks. Keep the full cause, expected output, and
+acceptance checks in the scoped details dialog and readable no-JavaScript and
+print content.
 
 ## Markdown Report Addendum
 

@@ -38,7 +38,7 @@
 [公开宿主适配矩阵](docs/docs/hosts/adapter-matrix.md)。
 
 Better Harness 会将行为断言限定在相关的任务过程片段（Task Episode）及其周边项目机制内。
-Qoder 生成 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub Copilot 生成自包含的 HTML 报告及配套 Markdown。
+Qoder 与 Cursor 生成宿主原生 Canvas 报告；Claude Code、Codex、Qwen Code 和 GitHub Copilot 生成自包含的 HTML 报告及配套 Markdown。
 缺失或不完整的证据会被明确标注。有关当前覆盖范围和输出差异，请参阅
 [宿主适配器矩阵](docs/adapters/README.md)。
 

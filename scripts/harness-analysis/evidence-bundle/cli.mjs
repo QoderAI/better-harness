@@ -24,7 +24,7 @@ Options:
   --claude-home <dir>      Claude config root override
   --claude-state <file>    Claude state-file override
   --workbuddy-home <dir>   WorkBuddy data root override
-  --canvas-out <file>      With Qoder, initialize canvas.json from lead facts
+  --canvas-out <file>      With Qoder or Cursor, initialize canvas.json from lead facts
   --replace-canvas         Replace that canvas.json when explicitly authorized
   --format json            JSON only
   --json                   Emit JSON

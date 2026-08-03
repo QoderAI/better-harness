@@ -1,19 +1,140 @@
 export function installHtmlReportInteractions({
   document,
   navigator,
+  location,
   labels,
   schedule = (callback, delay) => globalThis.setTimeout(callback, delay),
 }) {
   document.documentElement.classList.remove("no-js");
 
-  const reportDataElement = document.getElementById("harness-report-data");
-  const reportData = reportDataElement
-    ? JSON.parse(reportDataElement.textContent || "{}")
-    : {};
-  const findings = new Map(
-    (Array.isArray(reportData.findings) ? reportData.findings : [])
-      .map((finding) => [String(finding?.id ?? ""), finding]),
-  );
+  function readJson(id) {
+    const element = document.getElementById(id);
+    if (!element) return { ok: false, value: null };
+    try {
+      return { ok: true, value: JSON.parse(element.textContent || "{}") };
+    } catch {
+      return { ok: false, value: null };
+    }
+  }
+
+  function hasOnlyKeys(value, keys) {
+    return value && typeof value === "object" && !Array.isArray(value)
+      && Object.keys(value).every((key) => keys.includes(key));
+  }
+
+  function safeReportRoute(value) {
+    if (typeof value !== "string" || value.length === 0 || value.includes("\\")) return false;
+    if (value.startsWith("/") || /^[A-Za-z]:/u.test(value)) return false;
+    const segments = value.split("/");
+    return segments.at(-1) === "report.html"
+      && segments.every((segment) => segment && segment !== "." && segment !== "..");
+  }
+
+  const reportDataState = readJson("harness-report-data");
+  const reportActionsState = readJson("harness-report-actions");
+  const prompts = new Map();
+  const actions = new Map();
+  let bindingMode = "invalid";
+  let reportRoute = null;
+
+  if (reportDataState.ok
+    && hasOnlyKeys(reportDataState.value, ["findings"])
+    && Array.isArray(reportDataState.value.findings)) {
+    let validPrompts = true;
+    for (const finding of reportDataState.value.findings) {
+      const id = String(finding?.id ?? "");
+      if (!hasOnlyKeys(finding, ["id", "aiFixPrompt"])
+        || !id
+        || typeof finding.aiFixPrompt !== "string"
+        || finding.aiFixPrompt.trim().length === 0
+        || prompts.has(id)) {
+        validPrompts = false;
+        break;
+      }
+      prompts.set(id, finding.aiFixPrompt);
+    }
+
+    const payload = reportActionsState.value;
+    if (validPrompts
+      && reportActionsState.ok
+      && hasOnlyKeys(payload, ["reportRoute", "findings"])
+      && Array.isArray(payload.findings)) {
+      let validActions = true;
+      for (const finding of payload.findings) {
+        const id = String(finding?.id ?? "");
+        if (!hasOnlyKeys(finding, ["id", "expectedRevision"])
+          || !id
+          || !Number.isInteger(finding.expectedRevision)
+          || finding.expectedRevision < 0
+          || actions.has(id)) {
+          validActions = false;
+          break;
+        }
+        actions.set(id, finding);
+      }
+      const sameIds = actions.size === prompts.size
+        && [...prompts.keys()].every((id) => actions.has(id));
+      if (validActions && payload.reportRoute === null && actions.size === 0) {
+        bindingMode = "empty";
+      } else if (validActions && safeReportRoute(payload.reportRoute) && sameIds) {
+        bindingMode = "bound";
+        reportRoute = payload.reportRoute;
+      }
+    }
+  }
+
+  function resolveBindingPaths() {
+    try {
+      const url = new URL(String(location?.href ?? ""));
+      if (url.protocol !== "file:") return null;
+      const pathname = decodeURIComponent(url.pathname);
+      const windowsDrive = /^\/[A-Za-z]:\//u.test(pathname);
+      const windowsUnc = Boolean(url.hostname);
+      const suffix = `/${reportRoute}`;
+      const comparablePath = windowsDrive || windowsUnc ? pathname.toLowerCase() : pathname;
+      const comparableSuffix = windowsDrive || windowsUnc ? suffix.toLowerCase() : suffix;
+      if (!comparablePath.endsWith(comparableSuffix)) return null;
+
+      const workspaceUrlPath = pathname.slice(0, pathname.length - suffix.length);
+      const reportDirectory = pathname.slice(0, pathname.lastIndexOf("/"));
+      const findingsUrlPath = `${reportDirectory}/findings.json`;
+      const toNativePath = (value) => {
+        if (windowsDrive) return value.slice(1).replace(/\//gu, "\\");
+        if (windowsUnc) {
+          const host = decodeURIComponent(url.hostname);
+          return `\\\\${host}${value.replace(/\//gu, "\\")}`;
+        }
+        return value || "/";
+      };
+      return {
+        workspacePath: toNativePath(workspaceUrlPath),
+        findingsPath: toNativePath(findingsUrlPath),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function promptForFinding(findingId) {
+    if (bindingMode === "invalid") return null;
+    const id = String(findingId);
+    const prompt = prompts.get(id);
+    if (typeof prompt !== "string" || prompt.trim().length === 0) return null;
+    if (bindingMode === "empty") return prompt;
+    const paths = resolveBindingPaths();
+    if (!paths) return prompt;
+    const action = actions.get(id);
+    if (!action) return null;
+    const callback = {
+      contract: "better-harness-fix-output/v1",
+      workspacePath: paths.workspacePath,
+      findingsPath: paths.findingsPath,
+      findingId: id,
+      expectedRevision: action.expectedRevision,
+    };
+    return `${prompt}\n\n<better-harness-fix-output>\n${JSON.stringify(callback)}\n</better-harness-fix-output>`;
+  }
+
   const status = document.getElementById("copy-status");
   const manualDialog = document.getElementById("manual-copy-dialog");
   const manualText = document.getElementById("manual-copy-text");
@@ -55,7 +176,7 @@ export function installHtmlReportInteractions({
   }
 
   async function copyFinding(findingId, trigger) {
-    const prompt = findings.get(String(findingId))?.aiFixPrompt;
+    const prompt = promptForFinding(findingId);
     if (typeof prompt !== "string" || prompt.length === 0) {
       report(labels.missingPrompt, "error");
       return false;
@@ -155,5 +276,5 @@ export function renderHtmlInteractionScript(language) {
         manualCopy: "Automatic copy was blocked. Copy the selected prompt manually.",
         missingPrompt: "No AI Fix prompt is available for this finding.",
       };
-  return `<script id="harness-report-interactions">(${installHtmlReportInteractions.toString()})({document,navigator,labels:${serializeForScript(labels)}});</script>`;
+  return `<script id="harness-report-interactions">(${installHtmlReportInteractions.toString()})({document,navigator,location:globalThis.location,labels:${serializeForScript(labels)}});</script>`;
 }

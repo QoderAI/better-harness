@@ -146,6 +146,7 @@ templates/                             # [active] runtime-selected contracts
     routing.md                         # [active] report/style/output route selection
     report-structure.md                # [active] Markdown report skeleton
     qoder-canvas.md                    # [active] Qoder Canvas output contract
+    cursor-canvas.md                   # [active] Cursor Canvas output contract
     html-visual.md                     # [active] HTML visual contract
   style/                               # visual grammar and style routing
   components/                          # [target] reusable component profiles, 2+ consumers

@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { isAgentWorkLoopReport } from "../fluency-dimensions.mjs";
 import { renderHtmlInteractionScript } from "./html-interactions.mjs";
 import { renderMarkdown } from "./markdown.mjs";
@@ -65,6 +67,48 @@ function serializeForScript(value) {
     .replace(/&/gu, "\\u0026")
     .replace(/\u2028/gu, "\\u2028")
     .replace(/\u2029/gu, "\\u2029");
+}
+
+function hasAiFixPrompt(finding) {
+  return typeof finding?.aiFixPrompt === "string" && finding.aiFixPrompt.trim().length > 0;
+}
+
+export function buildHtmlInteractionData(reportData) {
+  return {
+    findings: list(reportData?.findings)
+      .flatMap((finding, index) => (hasAiFixPrompt(finding)
+        ? [{ id: String(finding?.id ?? index), aiFixPrompt: finding.aiFixPrompt }]
+        : [])),
+  };
+}
+
+function finalReportRoute(workspacePath, findingsPath) {
+  if (!path.isAbsolute(workspacePath) || !path.isAbsolute(findingsPath)) return null;
+  const reportPath = path.join(path.dirname(findingsPath), "report.html");
+  const relative = path.relative(workspacePath, reportPath);
+  if (!relative || path.isAbsolute(relative)) return null;
+  const segments = relative.split(/[\\/]/u);
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) return null;
+  return segments.join("/");
+}
+
+export function buildHtmlReportActions(reportData, { findingsPath } = {}) {
+  const workspacePath = String(reportData?.target?.path ?? "");
+  const resolvedFindingsPath = String(findingsPath ?? "");
+  const reportRoute = finalReportRoute(workspacePath, resolvedFindingsPath);
+  if (!reportRoute) return { reportRoute: null, findings: [] };
+  return {
+    reportRoute,
+    findings: list(reportData?.findings)
+      .flatMap((finding, index) => (hasAiFixPrompt(finding)
+        ? [{
+            id: String(finding?.id ?? index),
+            expectedRevision: Number.isInteger(finding?.actualOutputRevision)
+              ? finding.actualOutputRevision
+              : 0,
+          }]
+        : [])),
+  };
 }
 
 function findingPromptParts(prompt, language) {
@@ -174,6 +218,18 @@ function heatLevel(value, max) {
   return Math.max(1, Math.min(4, Math.ceil((value / max) * 4)));
 }
 
+function activityTickIndexes(dayCount) {
+  if (dayCount <= 4) return Array.from({ length: dayCount }, (_, index) => index);
+
+  const lastIndex = dayCount - 1;
+  const indexes = [0];
+  for (let index = 7; index < lastIndex; index += 7) {
+    if (lastIndex - index > 3) indexes.push(index);
+  }
+  indexes.push(lastIndex);
+  return indexes;
+}
+
 function renderActivity(summary, language) {
   const activity = summary?.usageActivity;
   const usage = summary?.usageEfficiency;
@@ -188,8 +244,15 @@ function renderActivity(summary, language) {
     const label = activeMinutes.length > 0
       ? copy(language, `${date}: ${formatNumber(active, language)} active minutes`, `${date}：${formatNumber(active, language)} 活跃分钟`)
       : copy(language, `${date}: ${formatNumber(sessions, language)} sessions`, `${date}：${formatNumber(sessions, language)} 个会话`);
-    return `<span class="heat-cell l${heatLevel(values[index], max)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"></span>`;
+    return `<span class="heat-cell l${heatLevel(values[index], max)}" data-date="${escapeHtml(date)}" style="grid-column:${index + 1}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"></span>`;
   }).join("");
+  const ticks = activityTickIndexes(dates.length).map((index) => {
+    const position = dates.length > 4
+      ? index === 0 ? " first" : index === dates.length - 1 ? " last" : ""
+      : "";
+    return `<span class="heat-tick${position}" data-date="${escapeHtml(dates[index])}" style="grid-column:${index + 1}">${escapeHtml(dates[index])}</span>`;
+  }).join("");
+  const heatWidth = Math.max(13, (dates.length * 17) - 4);
   const coverage = summary?.atAGlance?.coverage ?? {};
   const selection = usage?.selection ?? coverage?.selection ?? {};
   const analyzed = selection.analyzedSessionCount ?? selection.analyzedCount ?? 0;
@@ -199,8 +262,10 @@ function renderActivity(summary, language) {
 
   return `<div class="activity-layout">
     <div class="activity-panel">
-      <div class="heatmap" role="img" aria-label="${copy(language, "Session activity heatmap", "会话活跃度热力图")}">${cells || `<span class="empty">${renderVisibleText(copy(language, "No dated activity was retained.", "没有保留按日期聚合的活动数据。"), language)}</span>`}</div>
-      ${dates.length > 0 ? `<div class="heat-legend"><span>${escapeHtml(dates[0])}</span><span>${escapeHtml(dates.at(-1))}</span></div>` : ""}
+      ${dates.length > 0 ? `<div class="heat-scroll" style="--heat-days:${dates.length};--heat-min-width:${heatWidth}px">
+        <div class="heatmap" role="img" aria-label="${copy(language, "Session activity heatmap", "会话活跃度热力图")}">${cells}</div>
+        <div class="heat-axis" aria-hidden="true">${ticks}</div>
+      </div>` : `<div class="heatmap-empty" role="img" aria-label="${copy(language, "Session activity heatmap", "会话活跃度热力图")}"><span class="empty">${renderVisibleText(copy(language, "No dated activity was retained.", "没有保留按日期聚合的活动数据。"), language)}</span></div>`}
     </div>
     <div class="stacked-metrics">
       ${metric(copy(language, "Sessions reviewed", "已分析会话"), `${formatNumber(analyzed, language)} / ${formatNumber(eligible, language)}`, copy(language, "all-eligible usage census", "全量合格用量普查"), language)}
@@ -234,6 +299,7 @@ function renderFindings(reportData, language) {
   const findings = list(reportData.findings);
   if (findings.length === 0) return `<p class="empty">${renderVisibleText(copy(language, "No reviewed findings were retained.", "没有保留已复核 finding。"), language)}</p>`;
   return `<div class="finding-list">${findings.map((row, index) => {
+    const actionable = hasAiFixPrompt(row);
     const prompt = findingPromptParts(row.aiFixPrompt, language);
     const expected = textLines(row.expectedOutput ?? row.expectedOutcome);
     const refs = list(row.dimensionRefs).map((ref) => dimensions.get(ref) ?? ref);
@@ -254,7 +320,7 @@ function renderFindings(reportData, language) {
         <p class="finding-preview">${renderVisibleText(row.reason ?? "", language)}</p>
       </div>
       <div class="finding-actions">
-        <button type="button" class="action-button secondary" data-copy-finding="${escapeHtml(findingId)}" aria-label="${escapeHtml(`${copyLabel}: ${title}`)}">${renderVisibleText(copyLabel, language)}</button>
+        ${actionable ? `<button type="button" class="action-button secondary" data-copy-finding="${escapeHtml(findingId)}" aria-label="${escapeHtml(`${copyLabel}: ${title}`)}">${renderVisibleText(copyLabel, language)}</button>` : ""}
         <button type="button" class="action-button ghost" data-view-finding-dialog="${dialogId}" aria-label="${escapeHtml(`${detailsLabel}: ${title}`)}">${renderVisibleText(detailsLabel, language)}</button>
       </div>
       <dialog class="finding-dialog" id="${dialogId}" data-finding-dialog-id="${escapeHtml(findingId)}" aria-labelledby="${dialogTitleId}">
@@ -266,7 +332,7 @@ function renderFindings(reportData, language) {
         ${expected.length ? `<div class="dialog-section"><span class="label">${renderVisibleText(copy(language, "Expected Output", "预期结果"), language)}</span><ol>${expected.map((item) => `<li>${renderVisibleText(item, language)}</li>`).join("")}</ol></div>` : ""}
         ${prompt.checks.length ? `<div class="dialog-section"><span class="label">${renderVisibleText(copy(language, "Acceptance Checks", "验收检查"), language)}</span><ul>${prompt.checks.map((item) => `<li>${renderVisibleText(item, language)}</li>`).join("")}</ul></div>` : ""}
         <div class="dialog-actions">
-          <button type="button" class="action-button secondary" data-copy-finding="${escapeHtml(findingId)}" aria-label="${escapeHtml(`${copyLabel}: ${title}`)}">${renderVisibleText(copyLabel, language)}</button>
+          ${actionable ? `<button type="button" class="action-button secondary" data-copy-finding="${escapeHtml(findingId)}" aria-label="${escapeHtml(`${copyLabel}: ${title}`)}">${renderVisibleText(copyLabel, language)}</button>` : ""}
           <button type="button" class="action-button ghost" data-close-finding-dialog="${dialogId}">${renderVisibleText(closeLabel, language)}</button>
         </div>
       </dialog>
@@ -375,9 +441,11 @@ function renderHtmlBody(reportData) {
   ${section("methodology", copy(language, "05 · Boundary", "05 · 边界"), copy(language, "Evidence and methodology", "证据与方法"), renderEvidence(summary, language), copy(language, "Reader-safe evidence only.", "仅使用读者安全证据。"), language)}`;
 }
 
-export function renderHtml(reportData) {
+export function renderHtml(reportData, actionContext) {
   const language = reportData.language === "zh-CN" ? "zh-CN" : "en";
   const title = copy(reportData.language, "Harness Insights", "Harness 洞察");
+  const reportActions = buildHtmlReportActions(reportData, actionContext);
+  const interactionData = buildHtmlInteractionData(reportData);
   return `<!doctype html>
 <html lang="${language}" class="no-js">
 <head>
@@ -410,7 +478,7 @@ export function renderHtml(reportData) {
     .metric > span,.metric > small { display:block; color:var(--muted); }.metric > strong { display:block; margin:5px 0 2px; font-size:34px; line-height:1.1; }.metric > small { font-size:12px; }
     .section { margin-top:64px; scroll-margin-top:24px; }.section-heading { display:flex; justify-content:space-between; gap:30px; align-items:end; margin-bottom:20px; }.section-heading h2 { margin:5px 0 0; font-size:30px; letter-spacing:-.025em; }.section-heading > p { max-width:420px; margin:0; color:var(--muted); text-align:right; font-size:14px; }
     .dimension-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; }.dimension-card { min-height:230px; padding:19px; border:1px solid var(--line); border-radius:19px; background:linear-gradient(180deg,var(--panel-2),var(--panel)); }.dimension-top { display:flex; min-height:52px; justify-content:space-between; gap:8px; align-items:flex-start; font-weight:700; }.score-line { display:flex; align-items:baseline; gap:4px; margin-top:14px; }.score-line strong { font-size:34px; }.score-line span { color:var(--muted); font-size:12px; }.track { height:8px; margin:8px 0 16px; overflow:hidden; border-radius:999px; background:#30353a; }.track i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--blue-2),var(--blue)); }.dimension-card p { margin:0; color:var(--muted); font-size:13px; }
-    .activity-layout { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(230px,.7fr); gap:14px; }.activity-panel,.subpanel,.finding,.custom-grid article,.evidence-grid,.evidence-note { border:1px solid var(--line); border-radius:19px; background:var(--panel); }.activity-panel { padding:22px; overflow:hidden; }.heatmap { display:grid; grid-template-rows:repeat(7,13px); grid-auto-flow:column; grid-auto-columns:13px; gap:4px; min-height:115px; overflow-x:auto; padding-bottom:8px; }.heat-cell { border-radius:3px; background:#2b3035; }.heat-cell.l1{background:#174d70}.heat-cell.l2{background:#206f9e}.heat-cell.l3{background:#319bd1}.heat-cell.l4{background:#70c9ff}.heat-legend { display:flex; justify-content:space-between; color:var(--muted); font-size:11px; }.stacked-metrics { display:grid; gap:14px; }.stacked-metrics .metric { min-height:0; }
+    .activity-layout { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(230px,.7fr); gap:14px; }.activity-panel,.subpanel,.finding,.custom-grid article,.evidence-grid,.evidence-note { border:1px solid var(--line); border-radius:19px; background:var(--panel); }.activity-panel { display:flex; min-width:0; flex-direction:column; justify-content:center; padding:22px; overflow:hidden; }.heat-scroll { width:100%; min-width:0; overflow-x:auto; padding-bottom:8px; }.heatmap,.heat-axis { display:grid; grid-template-columns:repeat(var(--heat-days),minmax(13px,1fr)); column-gap:4px; min-width:var(--heat-min-width); }.heatmap { align-items:center; }.heat-cell { width:13px; height:13px; justify-self:center; border-radius:3px; background:#2b3035; }.heat-cell.l1{background:#174d70}.heat-cell.l2{background:#206f9e}.heat-cell.l3{background:#319bd1}.heat-cell.l4{background:#70c9ff}.heat-axis { margin-top:10px; color:var(--muted); font-size:10px; }.heat-tick { justify-self:center; white-space:nowrap; }.heat-tick.first { justify-self:start; }.heat-tick.last { justify-self:end; }.heatmap-empty { color:var(--muted); }.stacked-metrics { display:grid; gap:14px; }.stacked-metrics .metric { min-height:0; }
     .two-column { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }.subpanel { padding:22px; }.subpanel h3 { font-size:15px; }.usage-list { display:grid; gap:12px; }.usage-row { display:grid; grid-template-columns:minmax(100px,.75fr) 1fr 52px; gap:12px; align-items:center; font-size:12px; }.usage-row > span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.usage-row i { height:7px; overflow:hidden; border-radius:999px; background:#30353a; }.usage-row b { display:block; height:100%; background:linear-gradient(90deg,var(--blue-2),var(--blue)); }.usage-row strong { text-align:right; }
     .finding-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.finding-card { min-width:0; min-height:220px; display:flex; flex-direction:column; padding:18px; border:1px solid var(--line); border-radius:19px; background:linear-gradient(180deg,#1c2329,var(--panel)); }.finding-card-main { display:grid; gap:10px; }.finding-meta { display:flex; flex-wrap:wrap; gap:7px; }.finding-card h3 { min-height:2.8em; margin:0; display:-webkit-box; overflow:hidden; font-size:17px; line-height:1.4; -webkit-box-orient:vertical; -webkit-line-clamp:2; }.finding-preview { margin:0; color:#c7ced6; display:-webkit-box; overflow:hidden; font-size:13px; line-height:1.55; -webkit-box-orient:vertical; -webkit-line-clamp:2; }.finding-actions,.dialog-actions { display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; margin-top:auto; padding-top:16px; }.action-button { min-height:38px; padding:8px 13px; border:1px solid transparent; border-radius:10px; color:var(--text); background:#30363d; font:inherit; font-size:13px; font-weight:700; cursor:pointer; }.action-button:hover { filter:brightness(1.12); }.action-button:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }.action-button.secondary { color:#cceaff; border-color:#286d9b; background:#164e75; }.action-button.ghost { color:#d4dae0; border-color:var(--line); background:transparent; }.finding-dialog,.manual-copy-dialog { width:min(880px,calc(100vw - 32px)); max-height:calc(100vh - 32px); overflow:auto; padding:24px; border:1px solid var(--line); border-radius:20px; color:var(--text); background:var(--panel); box-shadow:0 30px 90px rgba(0,0,0,.55); }.finding-dialog::backdrop,.manual-copy-dialog::backdrop { background:rgba(4,8,12,.72); }.dialog-heading { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }.dialog-heading h3 { margin:6px 0 0; font-size:24px; }.dialog-section { margin-top:18px; }.dialog-section p { margin:7px 0 0; color:#d1d7de; }.dialog-section ol,.dialog-section ul { margin:8px 0 0; padding-left:22px; color:#d1d7de; }.manual-copy-dialog textarea { width:100%; min-height:260px; margin-top:14px; padding:14px; resize:vertical; border:1px solid var(--line); border-radius:12px; color:var(--text); background:#11161b; font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; }.no-js .finding-actions,.no-js .manual-copy-dialog { display:none!important; }.no-js .finding-dialog:not([open]) { display:block; position:static; width:auto; max-height:none; margin-top:16px; box-shadow:none; }
     .suggestion-block { margin-top:28px; padding-top:24px; border-top:1px solid var(--line); }.suggestion-heading { display:flex; justify-content:space-between; gap:20px; align-items:end; margin-bottom:14px; }.suggestion-heading h3 { margin:4px 0 0; font-size:20px; }.suggestion-heading p { margin:0; color:var(--muted); font-size:12px; }.suggestion-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }.suggestion { padding:18px; border:1px solid var(--line); border-radius:17px; background:linear-gradient(180deg,#1b252d,var(--panel)); }.suggestion-top { display:flex; justify-content:space-between; gap:8px; }.suggestion h3 { margin:13px 0 7px; font-size:16px; }.suggestion > p { color:#c7ced6; font-size:13px; }.suggestion dl { display:grid; gap:9px; margin:14px 0 0; }.suggestion dl div { display:grid; gap:2px; }.suggestion dt { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }.suggestion dd { margin:0; color:#d7dde4; font-size:12px; }
@@ -443,14 +511,15 @@ ${renderHtmlBody(reportData)}
     <button type="button" class="action-button ghost" data-close-finding-dialog="manual-copy-dialog">${renderVisibleText(copy(reportData.language, "Close", "关闭"), language)}</button>
   </div>
 </dialog>
-<script id="harness-report-data" type="application/json">${serializeForScript(reportData)}</script>
+<script id="harness-report-data" type="application/json">${serializeForScript(interactionData)}</script>
+<script id="harness-report-actions" type="application/json">${serializeForScript(reportActions)}</script>
 ${renderHtmlInteractionScript(reportData.language)}
 </body>
 </html>
 `;
 }
 
-export function evaluateHtmlReport(htmlText, reportData) {
+export function evaluateHtmlReport(htmlText, reportData, actionContext) {
   const text = String(htmlText ?? "");
   const errors = [];
   const warnings = [];
@@ -459,6 +528,7 @@ export function evaluateHtmlReport(htmlText, reportData) {
     ["viewport", /<meta\s+name="viewport"/iu],
     ["report landmark", /<main\s+id="harness-report"/iu],
     ["embedded report data", /<script\s+id="harness-report-data"\s+type="application\/json">/iu],
+    ["embedded report actions", /<script\s+id="harness-report-actions"\s+type="application\/json">/iu],
     ["interaction controller", /<script\s+id="harness-report-interactions">/iu],
     ["copy status", /id="copy-status"[^>]+role="status"[^>]+aria-live="polite"/iu],
     ["manual copy fallback", /<dialog\s+id="manual-copy-dialog"/iu],
@@ -485,6 +555,34 @@ export function evaluateHtmlReport(htmlText, reportData) {
   for (const [label, pattern] of forbidden) {
     if (pattern.test(text)) errors.push(`report.html contains forbidden ${label}`);
   }
+  const actionPayloadText = text.match(
+    /<script\s+id="harness-report-actions"\s+type="application\/json">([\s\S]*?)<\/script>/iu,
+  )?.[1];
+  if (actionPayloadText !== undefined) {
+    try {
+      const actualActions = JSON.parse(actionPayloadText);
+      const expectedActions = buildHtmlReportActions(reportData, actionContext);
+      if (JSON.stringify(actualActions) !== JSON.stringify(expectedActions)) {
+        errors.push("report.html finding action payload does not match the exact relative binding metadata");
+      }
+    } catch (error) {
+      errors.push(`report.html finding action payload is invalid: ${error.message}`);
+    }
+  }
+  const interactionPayloadText = text.match(
+    /<script\s+id="harness-report-data"\s+type="application\/json">([\s\S]*?)<\/script>/iu,
+  )?.[1];
+  if (interactionPayloadText !== undefined) {
+    try {
+      const actualData = JSON.parse(interactionPayloadText);
+      const expectedData = buildHtmlInteractionData(reportData);
+      if (JSON.stringify(actualData) !== JSON.stringify(expectedData)) {
+        errors.push("report.html interaction data does not match the minimal reviewed prompt projection");
+      }
+    } catch (error) {
+      errors.push(`report.html interaction data is invalid: ${error.message}`);
+    }
+  }
   const interactionController = text.match(
     /<script\s+id="harness-report-interactions">([\s\S]*?)<\/script>/iu,
   )?.[1] ?? "";
@@ -508,8 +606,9 @@ export function evaluateHtmlReport(htmlText, reportData) {
     errors.push(`report.html finding dialog count ${findingDialogs} does not match reviewed findings ${list(reportData?.findings).length}`);
   }
   const copyActions = (text.match(/data-copy-finding=/gu) ?? []).length;
-  if (copyActions !== list(reportData?.findings).length * 2) {
-    errors.push(`report.html copy action count ${copyActions} does not match expected ${list(reportData?.findings).length * 2}`);
+  const actionableFindings = list(reportData?.findings).filter(hasAiFixPrompt);
+  if (copyActions !== actionableFindings.length * 2) {
+    errors.push(`report.html copy action count ${copyActions} does not match expected ${actionableFindings.length * 2}`);
   }
   const detailActions = (text.match(/data-view-finding-dialog=/gu) ?? []).length;
   if (detailActions !== list(reportData?.findings).length) {
@@ -521,7 +620,7 @@ export function evaluateHtmlReport(htmlText, reportData) {
     const bindings = [
       ["card", `data-finding-id="${findingId}"`, 1],
       ["dialog", `data-finding-dialog-id="${findingId}"`, 1],
-      ["copy action", `data-copy-finding="${findingId}"`, 2],
+      ["copy action", `data-copy-finding="${findingId}"`, hasAiFixPrompt(finding) ? 2 : 0],
       ["detail action", `data-view-finding-dialog="${dialogId}"`, 1],
       ["close action", `data-close-finding-dialog="${dialogId}"`, 1],
     ];

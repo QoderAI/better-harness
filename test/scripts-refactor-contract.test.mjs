@@ -107,17 +107,17 @@ test("scripts refactor contract freezes machine-readable CLI output", () => {
     {
       label: "command inventory",
       args: ["commands", "--json"],
-      sha256: "4d76d8187af5e9c5574e8448bb422be07228821ff8a17477fcd93b60c5a08ac0",
+      sha256: "7d022fd564ffb90f50db1d60c28f328519347e4d131d4eaa44dfdfe1ec236efc",
     },
     {
       label: "OpenCLI schema",
       args: ["schema"],
-      sha256: "26f868e9a7d5a53b4f57706c2277af739c8a9e22a7bcf8bcc811ce36847cfc00",
+      sha256: "b5b48c7855d9f253fa9bbd5cfc7931d77f337ddaaca69c4a9d363aa6431dd9e1",
     },
     {
       label: "Harness command description",
       args: ["command", "describe", "harness", "--json"],
-      sha256: "7bfdf90239d7c021dc97375a6b82c40ea435847fe57e2774fcdc56ec7c56bacd",
+      sha256: "a2562f1719b53a24c9e1a39d9fe32924ad5a1c38253177a2dc6f5970461b9303",
     },
   ];
 

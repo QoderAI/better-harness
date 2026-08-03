@@ -64,6 +64,8 @@ export function sanitizePrivateReviewText(value, { limit = 800 } = {}) {
     .replace(/\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+\/-]{8,}\b/giu, "Bearer <redacted>")
     .replace(/\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)\s*[:=]\s*[^\s,;]+/giu, "$1=<redacted>")
     .replace(/\b(?:sk|ghp|github_pat|xox[abprs])[-_][A-Za-z0-9_-]{8,}\b/giu, "<secret>")
+    .replace(/\bglpat-[A-Za-z0-9_-]{20,}\b/giu, "<secret>")
+    .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@]+@/giu, "$1<redacted>@")
     .replace(/\bAKIA[0-9A-Z]{12,}\b/gu, "<secret>")
     .replace(/(^|[\s("'`@])(?:\.{1,2}[\\/])?(?:[\p{L}\p{N}._-]+[\\/])+[\p{L}\p{N}._-]+/gmu, "$1<path>")
     .replace(/(^|[^\p{L}\p{N}_])\/(?:Users|home|var|private|tmp|opt)\/[^\s"'`<>]+/gmu, "$1<path>")

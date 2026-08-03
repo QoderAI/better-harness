@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -1501,6 +1501,68 @@ test("Claude provider collects native scoped assets from settings, state, and in
     assert.doesNotMatch(serialized, /fixture-(?:hook|prompt|agent|oauth|user-mcp|project|plugin|local|unrelated)-secret/u);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Claude provider recognizes a symlink alias of the designated config workspace", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-customize-claude-alias-"));
+  const claudeHome = path.join(root, ".claude");
+  const workspaceAlias = path.join(root, "claude-workspace");
+  const pluginId = "aliased@fixture-marketplace";
+  const escapingPluginId = "escaping@fixture-marketplace";
+  const pluginRoot = path.join(claudeHome, "plugins", "cache", "fixture-marketplace", "aliased", "1.0.0");
+  const escapingPluginRoot = path.join(claudeHome, "plugins", "escaping-link");
+  const outsidePluginRoot = path.join(root, "outside-plugin");
+  try {
+    await writeText(
+      path.join(claudeHome, "skills", "review", "SKILL.md"),
+      "---\nname: review\ndescription: Review the aliased Claude config workspace.\n---\n",
+    );
+    await writeJson(path.join(claudeHome, "settings.json"), {
+      enabledPlugins: { [pluginId]: true, [escapingPluginId]: true },
+    });
+    await writeJson(path.join(pluginRoot, ".claude-plugin", "plugin.json"), {
+      name: "aliased",
+      version: "1.0.0",
+    });
+    await writeJson(path.join(outsidePluginRoot, ".claude-plugin", "plugin.json"), {
+      name: "escaping",
+      version: "1.0.0",
+    });
+    await writeJson(path.join(claudeHome, "plugins", "installed_plugins.json"), {
+      version: 2,
+      plugins: {
+        [pluginId]: [{ scope: "user", installPath: pluginRoot, version: "1.0.0" }],
+        [escapingPluginId]: [{ scope: "user", installPath: escapingPluginRoot, version: "1.0.0" }],
+      },
+    });
+    try {
+      await symlink(outsidePluginRoot, escapingPluginRoot, process.platform === "win32" ? "junction" : "dir");
+      await symlink(claudeHome, workspaceAlias, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      t.skip(`symlink unavailable: ${error.message}`);
+      return;
+    }
+
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "claude",
+      workspace: workspaceAlias,
+      claudeHome,
+      claudeStatePath: path.join(root, ".claude.json"),
+      includeUserHome: false,
+    });
+
+    assert.equal(inventory.diagnostics.designatedClaudeHomeWorkspace, true);
+    assert.deepEqual(
+      inventory.manage.skills.map((item) => `${item.scope}:${item.name}`),
+      ["project:review"],
+    );
+    assert.deepEqual(
+      inventory.plugins.map((plugin) => `${plugin.name}:${plugin.workspaceScoped}`),
+      ["aliased:true"],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

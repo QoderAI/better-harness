@@ -23,6 +23,7 @@ import {
   sortedCounts,
   writeJsonResult,
 } from "./common.mjs";
+import { printCoreChangeWatchHelp } from "./help.mjs";
 
 function parseLogWithNumstat(output, analysisScope) {
   const commits = [];
@@ -290,6 +291,7 @@ export async function analyzeGitHistoryProfile(options = {}) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (printCoreChangeWatchHelp("git-history-profile", argv)) return;
   const args = parseArgs(argv);
   const result = await analyzeGitHistoryProfile({
     cwd: option(args, "cwd"),

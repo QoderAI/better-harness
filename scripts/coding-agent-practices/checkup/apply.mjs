@@ -1,22 +1,23 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import {
   chmod,
   copyFile,
+  lstat,
   mkdir,
   readFile,
+  realpath,
   rename,
   rm,
   stat,
   writeFile,
 } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import { collectAgentCustomizeInventory } from "../../agent-customize/index.mjs";
 import { hookConfigurationDigest } from "../../agent-customize/core/items.mjs";
-import { expandHome } from "../../session-analysis/index.mjs";
-import { CHECKUP_KIND, CHECKUP_SCHEMA_VERSION } from "./contract.mjs";
+import { CHECKUP_KIND, CHECKUP_SCHEMA_VERSION, resolveProviderHome } from "./contract.mjs";
 import { computePlanDigest } from "./plan.mjs";
 
 const ALLOWED_SOURCE_EXTENSIONS = new Set([".json", ".md", ".mdc", ".markdown"]);
@@ -54,14 +55,19 @@ function containedPath(root, relativePath) {
 
 export function resolveSourceRef(sourceRef, options = {}) {
   const workspace = path.resolve(options.workspace ?? process.cwd());
-  const providerHome = path.resolve(expandHome(
-    options.qoderHome ?? options["qoder-home"] ?? process.env.QODER_HOME ?? path.join(os.homedir(), ".qoder"),
-  ));
-  const root = sourceRef?.base === "workspace"
-    ? workspace
-    : sourceRef?.base === "provider-home"
-      ? providerHome
-      : null;
+  const provider = String(options.provider ?? sourceRef?.provider ?? "").toLowerCase();
+  let root = null;
+  if (sourceRef?.base === "workspace") {
+    root = workspace;
+  } else if (sourceRef?.base === "provider-home") {
+    if (!provider) {
+      throw new Error("provider-home source patches require an explicit provider");
+    }
+    if (sourceRef.provider && String(sourceRef.provider).toLowerCase() !== provider) {
+      throw new Error("sourceRef.provider does not match the apply provider");
+    }
+    root = resolveProviderHome(provider, options);
+  }
   if (!root) {
     throw new Error("source patches support only workspace and provider-home owners");
   }
@@ -73,7 +79,68 @@ export function resolveSourceRef(sourceRef, options = {}) {
   if (!ALLOWED_SOURCE_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
     throw new Error("source patch target must be a supported instruction or hook source file");
   }
-  return { filePath, workspace, key: sourceKey(sourceRef) };
+  return { filePath, root, workspace, key: sourceKey(sourceRef), provider: provider || null };
+}
+
+async function assertSafeSourceTarget({ filePath, root }) {
+  const canonicalRoot = await realpath(root);
+  const relativeTarget = path.relative(path.resolve(root), filePath);
+  let current = path.resolve(root);
+  for (const part of relativeTarget.split(path.sep)) {
+    current = path.join(current, part);
+    const metadata = await lstat(current);
+    if (metadata.isSymbolicLink()) {
+      throw new Error("source patch target path must not contain a symbolic link");
+    }
+  }
+  const canonicalTarget = await realpath(filePath);
+  const canonicalRelative = path.relative(canonicalRoot, canonicalTarget);
+  if (canonicalRelative === "" || canonicalRelative === ".." || canonicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(canonicalRelative)) {
+    throw new Error("source patch target escapes its declared base");
+  }
+}
+
+function isWithinCanonicalRoot(root, target, { allowRoot = false } = {}) {
+  const relative = path.relative(root, target);
+  if (relative === "") return allowRoot;
+  return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+async function ensureSafeBackupDirectory({ directoryPath, root }) {
+  const resolvedRoot = path.resolve(root);
+  const resolvedDirectory = path.resolve(directoryPath);
+  const relativeDirectory = path.relative(resolvedRoot, resolvedDirectory);
+  if (!isWithinCanonicalRoot(resolvedRoot, resolvedDirectory)) {
+    throw new Error("backup path escapes the workspace");
+  }
+
+  const canonicalRoot = await realpath(resolvedRoot);
+  let current = resolvedRoot;
+  for (const part of relativeDirectory.split(path.sep)) {
+    current = path.join(current, part);
+    let metadata;
+    try {
+      metadata = await lstat(current);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      try {
+        await mkdir(current);
+      } catch (mkdirError) {
+        if (mkdirError.code !== "EEXIST") throw mkdirError;
+      }
+      metadata = await lstat(current);
+    }
+    if (metadata.isSymbolicLink()) {
+      throw new Error("backup path must not contain a symbolic link");
+    }
+    if (!metadata.isDirectory()) {
+      throw new Error("backup path components must be directories");
+    }
+    const canonicalCurrent = await realpath(current);
+    if (!isWithinCanonicalRoot(canonicalRoot, canonicalCurrent, { allowRoot: true })) {
+      throw new Error("backup path escapes the workspace");
+    }
+  }
 }
 
 function replaceLines(content, patch) {
@@ -159,7 +226,11 @@ async function atomicReplace(filePath, content) {
 
 export async function applySourcePatch(action, options = {}) {
   const sourceRef = action.mutation?.sourceRef;
-  const resolved = resolveSourceRef(sourceRef, options);
+  const resolved = resolveSourceRef(sourceRef, {
+    ...options,
+    provider: options.provider ?? sourceRef?.provider,
+  });
+  await assertSafeSourceTarget(resolved);
   const content = await readFile(resolved.filePath, "utf8");
   const expectedFingerprint = action.sourceFingerprints?.[resolved.key];
   if (!expectedFingerprint || sha256(content) !== expectedFingerprint) {
@@ -172,8 +243,15 @@ export async function applySourcePatch(action, options = {}) {
   const backupRoot = path.join(resolved.workspace, ".better-harness-checkup-backups");
   const relativeBackup = backupName(sourceRef, options.now);
   const backupPath = path.join(backupRoot, relativeBackup);
-  await mkdir(path.dirname(backupPath), { recursive: true });
-  await copyFile(resolved.filePath, backupPath);
+  await ensureSafeBackupDirectory({ directoryPath: path.dirname(backupPath), root: resolved.workspace });
+  await assertSafeSourceTarget(resolved);
+  await ensureSafeBackupDirectory({ directoryPath: path.dirname(backupPath), root: resolved.workspace });
+  await copyFile(resolved.filePath, backupPath, fsConstants.COPYFILE_EXCL);
+  const canonicalWorkspace = await realpath(resolved.workspace);
+  const canonicalBackup = await realpath(backupPath);
+  if (!isWithinCanonicalRoot(canonicalWorkspace, canonicalBackup)) {
+    throw new Error("backup path escapes the workspace");
+  }
   await atomicReplace(resolved.filePath, replacement);
   const verifiedContent = await readFile(resolved.filePath, "utf8");
   let parser = "readable";
@@ -311,6 +389,7 @@ export async function applyCheckupPlan(plan, options = {}, dependencies = {}) {
     throw new Error("current evidence or source fingerprints drifted after planning");
   }
 
+  const planProvider = String(plan.provider ?? "").toLowerCase();
   const executeQoder = dependencies.executeQoder ?? createQoderCliExecutor(dependencies.executorOptions);
   const queryQoder = dependencies.queryQoder ?? createQoderCliVerificationExecutor(dependencies.executorOptions);
   const results = [];
@@ -318,9 +397,15 @@ export async function applyCheckupPlan(plan, options = {}, dependencies = {}) {
     const action = actionById.get(actionId);
     try {
       if (action.mutation?.type === "source-patch") {
-        const result = await applySourcePatch(action, options);
+        const result = await applySourcePatch(action, {
+          ...options,
+          provider: planProvider,
+        });
         results.push({ actionId, operation: action.operation, ...result });
       } else if (action.mutation?.type === "qoder-cli") {
+        if (planProvider !== "qoder") {
+          throw new Error("qoder-cli mutations are only supported when plan.provider is qoder");
+        }
         const execution = await executeQoder(action.mutation, { workspace: options.workspace });
         if (!execution.ok) {
           throw new Error(`Qoder CLI operation failed with exit code ${execution.exitCode}`);

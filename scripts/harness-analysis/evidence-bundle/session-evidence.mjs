@@ -28,7 +28,12 @@ export async function collectSessionPopulation(context, options = {}, dependenci
   const create = dependencies.createAnalyzer ?? createAnalyzer;
   const analyzer = await create(context.provider);
   const runOptions = analyzerOptions(context, options);
-  const discovery = await analyzer.analyze({ ...runOptions, command: "sources" });
+  const discovery = await analyzer.analyze({
+    ...runOptions,
+    command: "sources",
+    topology: context.topology,
+    analysisScope: context.analysisScope,
+  });
   if (!Array.isArray(discovery?.sessions)) {
     throw Object.assign(new Error("Session population discovery returned an invalid contract"), {
       code: "INVALID_SESSION_POPULATION",

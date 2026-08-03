@@ -1,30 +1,31 @@
 ---
 name: better-harness
-description: Use when /better-harness reviews the outer coding-agent Harness for lifecycle controls, repeated work, project feedback, agent assets, session outcomes, repair planning, durable reports, or finding-bound fixes. Invoke only via slash command.
+description: Use when /better-harness reviews the outer coding-agent Harness for lifecycle controls, repeated work, project feedback, agent assets, session outcomes, repair planning, durable reports, finding-bound fixes, or manual direct fixes. Invoke only via slash command.
 ---
 
 # Better Harness
 
-Review the coding-agent operating system: context, execution, control, feedback,
-and learning. Sessions, project, and Agent assets stay independent until joined.
+Review the coding-agent system: context, execution, control, feedback,
+and learning; keep Sessions, project, and Agent assets independent.
 
 ## Step 1: Resolve Scope and Collect the Evidence Bundle
 
-If the prompt contains `<better-harness-fix-output>`, read
-[Finding-bound Fix](references/finding-bound-fix.md) before any probe.
+Route:
+- `<better-harness-fix-output>`: [Finding-bound Fix](references/finding-bound-fix.md).
+- No callback plus leading `fix`, `repair`, or `\u4fee\u590d`: [Manual Direct Fix](references/manual-direct-fix.md).
+- Review/evaluation/reporting or mixed review-and-fix: Step 1.
 
 Resolve the Skill path, `<better-harness-root>` as `../..`, a supported `<node>`,
-and `<cli>` as
-`<node> <better-harness-root>/scripts/better-harness.mjs`. Stop if any owner is
-missing; never select another cache or runtime by search order.
+and `<cli>` as `<node> <better-harness-root>/scripts/better-harness.mjs`. Stop if
+any owner is missing; never select another cache or runtime by search order.
 
 Resolve the absolute target, decision, acceptance boundary, risks, locale (the
 user's request language unless explicitly changed), output mode, provider
 scope, and evidence depth. Quick uses three assets or Episodes and the previous 7 days; normal uses five and the previous 30 days.
-Default Qoder to durable Canvas and other providers to durable HTML. Only an
-explicit inline or no-files request writes nothing.
-Keep providers separate. Use the current provider by default; include multiple
-supported providers only for an explicitly authorized project-wide review.
+Default Qoder/Cursor to durable Canvas; default others to durable HTML.
+Only an explicit inline or no-files request writes nothing.
+Keep providers separate. Use the current one unless project-wide review
+explicitly authorizes multiple supported providers.
 Qoder project Memory title metadata is part of
 the selected workspace baseline. Memory bodies, Codex Memory, Qoder global
 Memory, user-home, raw Session, installed-plugin, marketplace, and
@@ -37,21 +38,20 @@ provider:
 <cli> harness evidence-bundle --platform <provider> --workspace <target> --language <locale> --depth <quick|normal> --since <window-start> --until <window-end> --format json [--include-memories] [--include-user-home] [--canvas-out <run-dir>/canvas.json]
 ```
 
-Use `--canvas-out` only for Qoder durable-report runs. For Qoder, keep the
+Use `--canvas-out` only for Qoder/Cursor durable reports. For Qoder, keep the
 default project Memory-title scan; `--include-user-home`
 widens it to authorized global Memory/config and other user assets. For Codex,
 Memory metadata requires `--include-memories`; user/global or installed-Plugin
 metadata requires `--include-user-home`. Apply both when both scopes are
 authorized. Neither flag authorizes Memory bodies.
 
-It freezes resolved topology, provider, window, depth, limit, and authority.
-Before delegation, read
-`bundle.context.topology.target`; report `kind`, `route`, and `packageRoute`
-(`memberRoute` or `null`). Providers must agree. It returns `sessionEvidence`,
-`projectHarness`, `agentCustomize`, and the lead envelope. The Agent Customize
-lane contains the bounded `lint`, `inventory`, and `integrity` envelopes from
-one shared asset snapshot. Keep every lane and stage status and each provider
-distinct. Use the individual `session-analysis facts`, `core-change-watch
+It freezes topology, provider, window, depth, limit, and authority. Before
+delegation, read `bundle.context.topology.target`; report `kind`, `route`, and `packageRoute`
+(`memberRoute` or `null`). Providers must agree. It returns
+`sessionEvidence`, `projectHarness`, `agentCustomize`, and the lead envelope.
+Agent Customize holds bounded `lint`, `inventory`, and `integrity` envelopes
+from one shared asset snapshot. Keep lane/stage status and providers distinct.
+Use the individual `session-analysis facts`, `core-change-watch
 evidence-pack`, `coding-agent-practices asset-baseline`, or `harness analyze`
 command only to diagnose a named unavailable or truncated owner; do not
 substitute diagnostic output into the bundle or rerun all owners. Counts for
@@ -62,9 +62,9 @@ unavailable; do not replace the missing review with an `unobserved`
 disposition.
 
 If the provider discovers or the user supplies a historical insight source,
-the lead may inspect only the few explicitly authorized architecture/history
-notes. Never assume or search a conventional path. Historical notes cannot
-prove current behavior, configured capability, or effectiveness.
+the lead may inspect only a few authorized architecture/history notes.
+Never assume or search a conventional path; notes cannot prove current behavior,
+configured capability, or effectiveness.
 
 ## Step 2: Run Three Independent Evidence Passes
 
@@ -181,14 +181,13 @@ Inline analysis writes nothing. After lead checks pass, treat the draft as the o
 final `findings.json`, then render and validate it once:
 
 ```text
-Qoder: <mode>=qoder-canvas; <host-root>=<target>/.qoder/better-harness
+Qoder/Cursor: <mode>=<provider>-canvas; <host-root>=<target>/.<provider>/better-harness
 Other providers: <mode>=html; <host-root>=<target>/.<provider>/better-harness
-HTML artifacts: findings.json, report.md, report.html
 <cli> harness render --findings <run-dir>/findings.json --mode <mode> --out <host-root> --run-dir <run-dir> --target <target> --validate --json
 ```
 
-Qoder analysis owns adjacent `canvas.json`; do not copy its `summaryFacts` into
-findings. HTML keeps analyzer `summaryFacts` verbatim. Succeed only on
+Qoder/Cursor analysis owns adjacent `canvas.json`; do not copy its `summaryFacts`
+into findings. HTML keeps analyzer `summaryFacts` verbatim. Succeed only on
 `status: pass` and return the exact paths reported by render. Never hand-write
 Canvas, Markdown, or HTML.
 
@@ -198,8 +197,8 @@ bare directory, or an output-file inventory.
 
 ## Step 5: Follow Up
 
-- Finding-bound repair uses [Finding-bound Fix](references/finding-bound-fix.md).
-  A separate independent post-fix agent may update verified finding state and
+- Finding-bound repair uses [Finding-bound Fix](references/finding-bound-fix.md);
+  a separate independent post-fix agent may update verified finding state and
   Repair Progress; Loop Effectiveness waits for comparable later Task Episodes.
 - Usage/model questions use `session-analysis usage-summary` once.
 - Repeated work continues through
@@ -209,8 +208,8 @@ bare directory, or an output-file inventory.
   [Core Change Watch](../../references/project-harness/core-change-watch.md),
   and [Report Routing](../../templates/reporting/routing.md).
 
-The default durable route authorizes only renderer-owned report artifacts in
-the resolved host root. Other creation, activation, mutation, cleanup,
-scheduling, external writes, and high-risk access require task-local authority.
-When an owner or required value is unresolved, stop with the exact condition to
-resume; do not invent a substitute artifact or inspect internal validators.
+The durable route authorizes only renderer-owned artifacts in its host
+root. Other creation, activation, mutation, cleanup, scheduling, external
+writes, and high-risk access require task-local authority. If an owner or value
+is unresolved, stop with the condition to resume; do not invent a
+substitute artifact or inspect internal validators.

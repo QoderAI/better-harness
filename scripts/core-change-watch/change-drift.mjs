@@ -25,6 +25,7 @@ import {
   unique,
   writeJsonResult,
 } from "./common.mjs";
+import { printCoreChangeWatchHelp } from "./help.mjs";
 
 const TYPE_METADATA = {
   "public-api-docs": {
@@ -302,6 +303,7 @@ export async function analyzeChangeDrift(options = {}) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (printCoreChangeWatchHelp("change-drift", argv)) return;
   const args = parseArgs(argv);
   const result = await analyzeChangeDrift({
     cwd: option(args, "cwd"),

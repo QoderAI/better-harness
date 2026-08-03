@@ -24,7 +24,7 @@ Better Harness 当前声明了八个能力层宿主适配器，其中六个已�
 | Qoder | 已验证快速开始 | 一等产品宿主 | `.qoder-plugin/` | Qoder 会话 | Qoder Canvas 报告 |
 | Claude Code | 已验证快速开始 | 具备分析能力的源码本地宿主 | `.claude-plugin/` | 匹配当前工作区的本地 Claude 转录（存在时） | 自包含 HTML + Markdown |
 | Codex | 已验证快速开始 | 具备分析能力的源码本地宿主 | `.codex-plugin/` | Codex 会话 | 自包含 HTML + Markdown |
-| Cursor | 已验证快速开始 | 具备分析能力的源码本地宿主 | `.cursor-plugin/` | 工作区匹配的转录、元数据和审计日志；部分覆盖保持显式标注 | 自包含 HTML + Markdown |
+| Cursor | 已验证快速开始 | 支持 Canvas 的源码本地宿主 | `.cursor-plugin/` | 工作区匹配的转录、元数据、审计日志和可选原生 Context Usage 快照；部分覆盖保持显式标注 | Cursor Canvas 报告 |
 | Qwen Code | 已验证快速开始 | 具备分析能力的源码本地宿主 | `qwen-extension.json` | 匹配当前工作区的本地 Qwen 转录（存在时） | 自包含 HTML + Markdown |
 | GitHub Copilot | 已验证快速开始 | 具备分析能力的源码本地宿主 | `.github/plugin/` | 工作区匹配的 Copilot CLI 转录；部分覆盖保持显式标注 | 自包含 HTML + Markdown |
 | Pi | 适配器支持 | 具备分析能力的源码本地宿主 | `package.json` 中的 `pi` manifest | 匹配当前工作区的本地 Pi 会话 | 自包含 HTML + Markdown |
@@ -38,7 +38,9 @@ Better Harness 当前声明了八个能力层宿主适配器，其中六个已�
 
 - **Qoder Canvas** —— 渲染器负责的 `findings.json`、仅 Canvas 使用的
   `canvas.json` 和 `report.canvas.tsx`。
-- **HTML 可视化** —— 面向 Claude Code/Codex/Cursor/Qwen/Copilot/Pi/WorkBuddy 的可移植契约，覆盖
+- **Cursor Canvas** —— 使用 `cursor/canvas`、原生 Context Window 证据和
+  IDE actions 渲染同一份完整报告契约。
+- **HTML 可视化** —— 面向 Claude Code/Codex/Qwen/Copilot/Pi/WorkBuddy 的可移植契约，覆盖
   `findings.json`、`report.md` 和自包含的 `report.html`
   （见[示例报告](pathname:///demo/better-harness-report/)）。
 - **纯 Markdown** —— 无视觉版本。

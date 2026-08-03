@@ -717,6 +717,7 @@ export function buildTaskLoopSourceCandidate({
   priorLearningCaptureEvidenceRef = null,
   includeUsage = false,
   memoryInventory,
+  contextUsage = null,
 } = {}) {
   const readerLocale = normalizeReaderLocale(locale);
   const episodeAnalysis = buildTaskEpisodes(
@@ -789,6 +790,7 @@ export function buildTaskLoopSourceCandidate({
         ? { usageActivity: insights.keySignals.usageEfficiency.activity }
         : {}),
       ...(usageSummary ? { usageEfficiency: usageSummary } : {}),
+      ...(contextUsage ? { contextUsage: JSON.parse(JSON.stringify(contextUsage)) } : {}),
     },
     taskEpisodes,
     deliveryEvidence: focusedCheckEvidence(taskEpisodes),
@@ -1243,6 +1245,7 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     priorLearningCaptureEvidenceRef: priorLearningCaptureState.evidenceRef,
     includeUsage,
     memoryInventory: practiceInventory?.memories ?? { included: false, categories: [] },
+    contextUsage: insightResult.contextUsage ?? null,
   });
   assertStandardUsageComplete(source, selected, includeUsage);
   if (!population) return { source, selection: selected };

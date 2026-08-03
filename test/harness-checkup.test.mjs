@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
+  applySourcePatch,
   applyCheckupPlan,
   createQoderCliExecutor,
   resolveSourceRef,
@@ -572,7 +573,7 @@ test("source patch apply verifies fingerprints, backs up, writes atomically, and
 });
 
 test("source patch resolution rejects traversal, generated runtime files, and plugin caches", () => {
-  const options = { workspace: "/tmp/workspace", qoderHome: "/tmp/qoder-home" };
+  const options = { workspace: "/tmp/workspace", provider: "qoder", qoderHome: "/tmp/qoder-home" };
   assert.throws(
     () => resolveSourceRef({ base: "workspace", relativePath: "../outside.json" }, options),
     /escapes/u,
@@ -585,6 +586,150 @@ test("source patch resolution rejects traversal, generated runtime files, and pl
     () => resolveSourceRef({ base: "provider-home", relativePath: "plugins/cache/tool/hooks.json" }, options),
     /generated, cached/u,
   );
+});
+
+test("non-qoder plans never emit qodercli and provider-home binds to the explicit host", () => {
+  const baseScan = buildFixtureScan();
+  for (const provider of ["codex", "cursor", "claude", "qwen", "copilot", "pi", "workbuddy"]) {
+    const scan = structuredClone(baseScan);
+    scan.provider = provider;
+    const plan = buildCheckupPlan(scan);
+    assert.equal(plan.provider, provider);
+    for (const action of plan.actions) {
+      assert.notEqual(action.mutation?.type, "qoder-cli");
+      assert.notEqual(action.mutation?.executable, "qodercli");
+      if (Array.isArray(action.mutation?.argv)) {
+        assert.equal(action.mutation.argv.includes("qodercli"), false);
+      }
+    }
+    assert.equal(
+      plan.actions.every((action) => action.mutation?.type === "manual-review"),
+      true,
+    );
+    assert.equal(plan.confirmation.applyAvailable, false);
+  }
+
+  const codexPath = resolveSourceRef(
+    { base: "provider-home", relativePath: "hooks.json", provider: "codex" },
+    { workspace: "/tmp/ws", provider: "codex", codexHome: "/tmp/codex-home-only", qoderHome: "/tmp/qoder-home-only" },
+  );
+  assert.equal(codexPath.filePath, path.resolve("/tmp/codex-home-only/hooks.json"));
+  assert.equal(codexPath.filePath.startsWith(path.resolve("/tmp/qoder-home-only")), false);
+
+  assert.throws(
+    () => resolveSourceRef(
+      { base: "provider-home", relativePath: "hooks.json" },
+      { workspace: "/tmp/ws", codexHome: "/tmp/codex-home-only", qoderHome: "/tmp/qoder-home-only" },
+    ),
+    /explicit provider/u,
+  );
+});
+
+test("apply rejects qoder-cli mutations when plan.provider is not qoder", async () => {
+  const plan = buildCheckupPlan(buildFixtureScan());
+  plan.provider = "codex";
+  plan.actions[0].mutation = {
+    type: "qoder-cli",
+    executable: "qodercli",
+    argv: ["skills", "disable", "stale-flow", "--scope", "workspace"],
+  };
+  plan.planDigest = computePlanDigest(plan);
+  let calls = 0;
+  const result = await applyCheckupPlan(plan, {
+    workspace: "/tmp/demo",
+    confirmationDigest: plan.planDigest,
+    selectedActionIds: [plan.actions[0].id],
+    currentPlan: plan,
+  }, {
+    executeQoder: async () => {
+      calls += 1;
+      return { ok: true, exitCode: 0 };
+    },
+  });
+  assert.equal(result.results[0].status, "failed");
+  assert.equal(calls, 0);
+});
+
+test("source patch rejects symbolic links in the target path", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "harness-checkup-symlink-"));
+  const workspace = path.join(root, "workspace");
+  const outside = path.join(root, "outside");
+  const original = '{\n  "enabled": true\n}\n';
+  const action = {
+    mutation: {
+      sourceRef: { base: "workspace", relativePath: "linked/settings.json" },
+      patch: {
+        type: "replace-lines",
+        startLine: 2,
+        endLine: 2,
+        expectedHash: sha256('  "enabled": true'),
+        replacement: '  "enabled": false',
+      },
+    },
+    sourceFingerprints: {
+      "workspace:linked/settings.json": sha256(original),
+    },
+  };
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(workspace, { recursive: true });
+  await mkdir(outside, { recursive: true });
+  await writeFile(path.join(outside, "settings.json"), original);
+  try {
+    await symlink(outside, path.join(workspace, "linked"), "dir");
+  } catch (error) {
+    t.skip(`symlink unavailable: ${error.message}`);
+    return;
+  }
+
+  await assert.rejects(
+    applySourcePatch(action, { workspace, now: NOW }),
+    /symbolic link/u,
+  );
+  assert.equal(await readFile(path.join(outside, "settings.json"), "utf8"), original);
+});
+
+test("source patch rejects a symbolic-link backup root", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "harness-checkup-backup-symlink-"));
+  const workspace = path.join(root, "workspace");
+  const outside = path.join(root, "outside");
+  const sourcePath = path.join(workspace, "settings.json");
+  const original = '{\n  "enabled": true\n}\n';
+  const action = {
+    mutation: {
+      sourceRef: { base: "workspace", relativePath: "settings.json" },
+      patch: {
+        type: "replace-lines",
+        startLine: 2,
+        endLine: 2,
+        expectedHash: sha256('  "enabled": true'),
+        replacement: '  "enabled": false',
+      },
+    },
+    sourceFingerprints: {
+      "workspace:settings.json": sha256(original),
+    },
+  };
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(workspace, { recursive: true });
+  await mkdir(outside, { recursive: true });
+  await writeFile(sourcePath, original);
+  try {
+    await symlink(
+      outside,
+      path.join(workspace, ".better-harness-checkup-backups"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  } catch (error) {
+    t.skip(`symlink unavailable: ${error.message}`);
+    return;
+  }
+
+  await assert.rejects(
+    applySourcePatch(action, { workspace, now: NOW }),
+    /backup path must not contain a symbolic link/u,
+  );
+  assert.equal(await readFile(sourcePath, "utf8"), original);
+  assert.deepEqual(await readdir(outside), []);
 });
 
 test("same sanitized Hook identity with different arguments never produces a deduplication action", () => {

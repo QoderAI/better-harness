@@ -28,6 +28,7 @@ import {
 } from "./common.mjs";
 import { analyzeCoreCandidates } from "./core-candidates.mjs";
 import { analyzeGitHistoryProfile } from "./git-history-profile.mjs";
+import { printCoreChangeWatchHelp } from "./help.mjs";
 import { analyzeProjectProfile } from "./project-profile.mjs";
 
 function severityFor(score) {
@@ -232,6 +233,7 @@ export async function analyzeDiffImpact(options = {}) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (printCoreChangeWatchHelp("diff-impact", argv)) return;
   const args = parseArgs(argv);
   const result = await analyzeDiffImpact({
     cwd: option(args, "cwd"),

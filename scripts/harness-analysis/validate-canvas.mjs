@@ -31,6 +31,20 @@ import { findingTargetErrors } from "../workspace-topology/index.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = path.resolve(__dirname, "../..");
+const VALIDATE_CANVAS_HELP = `Usage: better-harness harness validate-canvas --canvas <path> [options]
+
+Validate Qoder Canvas artifacts and their linked report inputs.
+
+Options:
+  --canvas <path>             Canvas artifact to validate
+  --report <path>             Linked Markdown report
+  --findings <path>           Linked findings JSON
+  --repo-root <path>          Repository root for path validation
+  --preview                   Start a local preview during validation
+  --browser                   Open the preview in a browser
+  --json                      Emit JSON output
+  -h, --help                  Print help
+`;
 
 const SECTION_LABELS = {
   riskFindings: ["Risk Findings", "风险发现"],
@@ -2001,6 +2015,10 @@ function parseArgs(argv) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (argv.some((arg) => arg === "--help" || arg === "-h")) {
+    process.stdout.write(VALIDATE_CANVAS_HELP);
+    return;
+  }
   const args = parseArgs(argv);
   const result = await validateHarnessCanvasArtifacts(args);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

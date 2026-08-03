@@ -60,7 +60,7 @@ Examples:
 
 Discovery:
   commands                 List available commands; add --json for machine-readable inventory
-  command describe         Describe one command; add --json for the command contract
+  command describe         Describe one command path; add --json for the command contract
   schema                   Emit the OpenCLI schema as JSON
   --help --audience advanced Include workflow and advanced commands
   --help --audience maintainer Include every registered command

@@ -197,7 +197,7 @@ const COMMANDS = [
         audience: "workflow",
         script: "harness-analysis/report-run.mjs",
         summary: "Return a neutral, budgeted Harness evidence brief.",
-        description: "Scan evidence read-only and return bounded natural text for AI interpretation, plus exact report summary facts in JSON mode; explicit Qoder canvas-out initializes them and replace-canvas refreshes only that authorized path.",
+        description: "Scan evidence read-only and return bounded natural text for AI interpretation, plus exact report summary facts in JSON mode; explicit Qoder or Cursor canvas-out initializes them and replace-canvas refreshes only that authorized path.",
       },
       {
         name: "checkup",
@@ -232,7 +232,7 @@ const COMMANDS = [
         audience: "advanced",
         script: "harness-analysis/render-report.mjs",
         summary: "Render reviewed findings data into report artifacts.",
-        description: "Render reviewed findings.json data into qoder-canvas, markdown, or html, and optionally run the selected validators.",
+        description: "Render reviewed findings.json data into qoder-canvas, cursor-canvas, markdown, or html, and optionally run the selected validators.",
       },
       {
         name: "preview-canvas",
@@ -383,6 +383,21 @@ export function commandMetadata(name, { audience = "all" } = {}) {
   }
   const metadata = COMMAND_METADATA.find((entry) => entry.name === command.name);
   return filterCommandAudience(metadata, normalizedAudience);
+}
+
+export function commandPathMetadata(name, subcommandName, { audience = "all" } = {}) {
+  const command = commandMetadata(name, { audience });
+  if (!command || subcommandName === undefined) {
+    return command;
+  }
+  const subcommand = command.subcommands?.find((entry) => entry.name === subcommandName);
+  if (!subcommand) {
+    return undefined;
+  }
+  return {
+    ...subcommand,
+    path: [command.name, subcommand.name],
+  };
 }
 
 export function directDispatchFor(name, subcommandName) {

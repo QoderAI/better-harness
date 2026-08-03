@@ -687,6 +687,7 @@ export function flattenPlugins(plugins, key) {
       pluginId: plugin.id,
       pluginName: plugin.name,
       pluginEnabled: plugin.enabled,
+      workspaceScoped: item.workspaceScoped ?? plugin.workspaceScoped,
       sourceLabel: plugin.displayName,
     })),
   );

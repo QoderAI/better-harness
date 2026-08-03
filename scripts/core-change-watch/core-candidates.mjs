@@ -27,6 +27,7 @@ import {
   writeJsonResult,
 } from "./common.mjs";
 import { analyzeGitHistoryProfile } from "./git-history-profile.mjs";
+import { printCoreChangeWatchHelp } from "./help.mjs";
 import { analyzeProjectProfile } from "./project-profile.mjs";
 
 const CORE_PATH_PATTERNS = [
@@ -290,6 +291,7 @@ export async function analyzeCoreCandidates(options = {}) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (printCoreChangeWatchHelp("core-candidates", argv)) return;
   const args = parseArgs(argv);
   const result = await analyzeCoreCandidates({
     cwd: option(args, "cwd"),

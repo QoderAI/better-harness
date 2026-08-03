@@ -26,7 +26,7 @@ remains the complete capability-level source of truth.
 | Qoder | Verified Quickstart | First-class product host | `.qoder-plugin/` | Qoder sessions | Qoder Canvas report |
 | Claude Code | Verified Quickstart | Analysis-capable source-local host | `.claude-plugin/` | Workspace-matching local Claude transcripts when present | Self-contained HTML + Markdown |
 | Codex | Verified Quickstart | Analysis-capable source-local host | `.codex-plugin/` | Codex sessions | Self-contained HTML + Markdown |
-| Cursor | Verified Quickstart | Analysis-capable source-local host | `.cursor-plugin/` | Workspace-matched transcripts, metadata, and audit logs; partial coverage stays explicit | Self-contained HTML + Markdown |
+| Cursor | Verified Quickstart | Canvas-capable source-local host | `.cursor-plugin/` | Workspace-matched transcripts, metadata, audit logs, and optional native Context Usage snapshots; partial coverage stays explicit | Cursor Canvas report |
 | Qwen Code | Verified Quickstart | Analysis-capable source-local host | `qwen-extension.json` | Workspace-matching local Qwen transcripts when present | Self-contained HTML + Markdown |
 | GitHub Copilot | Verified Quickstart | Analysis-capable source-local host | `.github/plugin/` | Workspace-matched Copilot CLI transcripts; partial coverage stays explicit | Self-contained HTML + Markdown |
 | Pi | Adapter support | Analysis-capable source-local host | `pi` manifest in `package.json` | Workspace-matching local Pi sessions | Self-contained HTML + Markdown |
@@ -42,7 +42,9 @@ source-local.
 
 - **Qoder Canvas** — renderer-owned `findings.json`, Canvas-only
   `canvas.json`, and `report.canvas.tsx`.
-- **HTML visual** — portable Claude Code/Codex/Cursor/Qwen/Copilot/Pi/WorkBuddy contract
+- **Cursor Canvas** — the same complete report contract rendered with
+  `cursor/canvas`, native Context Window evidence, and IDE actions.
+- **HTML visual** — portable Claude Code/Codex/Qwen/Copilot/Pi/WorkBuddy contract
   covering `findings.json`, `report.md`, and a self-contained `report.html`
   (see the [sample report](pathname:///demo/better-harness-report/)).
 - **Markdown-only** — no visual companion.

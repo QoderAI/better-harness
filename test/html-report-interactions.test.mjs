@@ -15,6 +15,37 @@ Fix <unsafe> & verify the finding-specific route.
 - Run npm test
 - Confirm the exact prompt is preserved`;
 
+const REPORT_ROUTE = ".codex/better-harness/run/report.html";
+const REPORT_DATA = { findings: [{ id: "finding-a", aiFixPrompt: PROMPT }] };
+const REPORT_ACTIONS = {
+  reportRoute: REPORT_ROUTE,
+  findings: [{ id: "finding-a", expectedRevision: 0 }],
+};
+const WINDOWS_PATHS = {
+  workspacePath: "C:\\work\\fixture",
+  findingsPath: "C:\\work\\fixture\\.codex\\better-harness\\run\\findings.json",
+};
+
+function actionPrompt(paths = WINDOWS_PATHS, expectedRevision = 0) {
+  const callback = {
+    contract: "better-harness-fix-output/v1",
+    ...paths,
+    findingId: "finding-a",
+    expectedRevision,
+  };
+  return `${PROMPT}\n\n<better-harness-fix-output>\n${JSON.stringify(callback)}\n</better-harness-fix-output>`;
+}
+
+function callbackFromPrompt(prompt) {
+  const match = prompt.match(
+    /<better-harness-fix-output>\n([\s\S]+?)\n<\/better-harness-fix-output>/u,
+  );
+  assert.ok(match, "copied prompt must contain a callback");
+  return JSON.parse(match[1]);
+}
+
+const ACTION_PROMPT = actionPrompt();
+
 const LABELS = {
   copy: "Copy AI Fix",
   copied: "Copied",
@@ -95,10 +126,20 @@ class FakeElement {
   }
 }
 
-function interactionFixture({ clipboardWrite, legacyCopyResult = true } = {}) {
-  const reportData = new FakeElement({
+function interactionFixture({
+  clipboardWrite,
+  legacyCopyResult = true,
+  reportData = REPORT_DATA,
+  reportActions = REPORT_ACTIONS,
+  href = "file:///C:/work/fixture/.codex/better-harness/run/report.html",
+} = {}) {
+  const reportDataElement = new FakeElement({
     id: "harness-report-data",
-    textContent: JSON.stringify({ findings: [{ id: "finding-a", aiFixPrompt: PROMPT }] }),
+    textContent: JSON.stringify(reportData),
+  });
+  const reportActionsElement = new FakeElement({
+    id: "harness-report-actions",
+    textContent: JSON.stringify(reportActions),
   });
   const status = new FakeElement({ id: "copy-status" });
   const manualDialog = new FakeElement({ id: "manual-copy-dialog" });
@@ -126,7 +167,8 @@ function interactionFixture({ clipboardWrite, legacyCopyResult = true } = {}) {
   const created = [];
   const scheduled = [];
   const byId = new Map([
-    [reportData.id, reportData],
+    [reportDataElement.id, reportDataElement],
+    [reportActionsElement.id, reportActionsElement],
     [status.id, status],
     [manualDialog.id, manualDialog],
     [manualText.id, manualText],
@@ -173,6 +215,7 @@ function interactionFixture({ clipboardWrite, legacyCopyResult = true } = {}) {
   const controller = installHtmlReportInteractions({
     document,
     navigator,
+    location: { href },
     labels: LABELS,
     schedule(callback) {
       scheduled.push(callback);
@@ -195,12 +238,12 @@ function interactionFixture({ clipboardWrite, legacyCopyResult = true } = {}) {
   };
 }
 
-test("copy action writes the exact finding prompt and reports success", async () => {
+test("copy action writes the exact finding-bound action prompt and reports success", async () => {
   const fixture = interactionFixture({ clipboardWrite: async () => undefined });
 
   await fixture.copyButton.dispatch("click");
 
-  assert.deepEqual(fixture.writes, [PROMPT]);
+  assert.deepEqual(fixture.writes, [ACTION_PROMPT]);
   assert.equal(fixture.status.textContent, LABELS.copySuccess);
   assert.equal(fixture.status.dataset.state, "success");
   assert.equal(fixture.copyButton.textContent, LABELS.copied);
@@ -220,9 +263,9 @@ test("copy action uses the local fallback when Clipboard API rejects", async () 
 
   await fixture.copyButton.dispatch("click");
 
-  assert.deepEqual(fixture.writes, [PROMPT]);
+  assert.deepEqual(fixture.writes, [ACTION_PROMPT]);
   assert.equal(fixture.created.length, 1);
-  assert.equal(fixture.created[0].value, PROMPT);
+  assert.equal(fixture.created[0].value, ACTION_PROMPT);
   assert.equal(fixture.created[0].selected, true);
   assert.equal(fixture.created[0].removed, true);
   assert.equal(fixture.status.dataset.state, "success");
@@ -240,7 +283,7 @@ test("copy action exposes selected manual text when all copy paths fail", async 
   await fixture.copyButton.dispatch("click");
 
   assert.equal(fixture.manualDialog.open, true);
-  assert.equal(fixture.manualText.value, PROMPT);
+  assert.equal(fixture.manualText.value, ACTION_PROMPT);
   assert.equal(fixture.manualText.focused, true);
   assert.equal(fixture.manualText.selected, true);
   assert.equal(fixture.status.textContent, LABELS.manualCopy);
@@ -250,6 +293,110 @@ test("copy action exposes selected manual text when all copy paths fail", async 
   await fixture.manualCloseButton.dispatch("click");
   assert.equal(fixture.manualDialog.open, false);
   assert.equal(fixture.copyButton.focused, true);
+});
+
+test("an intentionally empty binding preserves the reviewed raw prompt", async () => {
+  const fixture = interactionFixture({
+    clipboardWrite: async () => undefined,
+    reportActions: { reportRoute: null, findings: [] },
+  });
+
+  await fixture.copyButton.dispatch("click");
+
+  assert.deepEqual(fixture.writes, [PROMPT]);
+  assert.doesNotMatch(fixture.writes[0], /better-harness-fix-output/u);
+});
+
+test("HTTP previews and moved local reports fall back to the reviewed raw prompt", async () => {
+  for (const href of [
+    "http://127.0.0.1:8080/report.html",
+    "file:///C:/downloads/report.html",
+  ]) {
+    const fixture = interactionFixture({
+      clipboardWrite: async () => undefined,
+      href,
+    });
+
+    await fixture.copyButton.dispatch("click");
+
+    assert.deepEqual(fixture.writes, [PROMPT], href);
+  }
+});
+
+test("malformed and cross-bound action metadata fails closed", async () => {
+  const malformedBindings = [
+    { reportRoute: "../report.html", findings: [{ id: "finding-a", expectedRevision: 0 }] },
+    { reportRoute: REPORT_ROUTE, findings: [{ id: "finding-b", expectedRevision: 0 }] },
+    { reportRoute: REPORT_ROUTE, findings: [{ id: "finding-a", expectedRevision: -1 }] },
+    {
+      reportRoute: REPORT_ROUTE,
+      findings: [{ id: "finding-a", expectedRevision: 0, workspacePath: "C:\\private" }],
+    },
+  ];
+
+  for (const reportActions of malformedBindings) {
+    const fixture = interactionFixture({
+      clipboardWrite: async () => undefined,
+      reportActions,
+    });
+
+    await fixture.copyButton.dispatch("click");
+
+    assert.deepEqual(fixture.writes, [], JSON.stringify(reportActions));
+    assert.equal(fixture.status.textContent, LABELS.missingPrompt);
+    assert.equal(fixture.status.dataset.state, "error");
+  }
+});
+
+test("file bindings derive parseable platform-native callback paths", async () => {
+  const cases = [
+    {
+      name: "Windows drive",
+      href: "file:///C:/work/fixture/.codex/better-harness/run/report.html",
+      paths: WINDOWS_PATHS,
+    },
+    {
+      name: "Windows UNC",
+      href: "file://server/share/team/project/.codex/better-harness/run/report.html",
+      paths: {
+        workspacePath: "\\\\server\\share\\team\\project",
+        findingsPath: "\\\\server\\share\\team\\project\\.codex\\better-harness\\run\\findings.json",
+      },
+    },
+    {
+      name: "macOS",
+      href: "file:///Users/abel/My%20Project/.codex/better-harness/run/report.html",
+      paths: {
+        workspacePath: "/Users/abel/My Project",
+        findingsPath: "/Users/abel/My Project/.codex/better-harness/run/findings.json",
+      },
+    },
+    {
+      name: "Linux Unicode",
+      href: "file:///home/abel/%E6%B5%8B%E8%AF%95-project/.codex/better-harness/run/report.html",
+      paths: {
+        workspacePath: "/home/abel/测试-project",
+        findingsPath: "/home/abel/测试-project/.codex/better-harness/run/findings.json",
+      },
+    },
+  ];
+
+  for (const row of cases) {
+    const fixture = interactionFixture({
+      clipboardWrite: async () => undefined,
+      href: row.href,
+    });
+
+    await fixture.copyButton.dispatch("click");
+
+    assert.equal(fixture.writes.length, 1, row.name);
+    assert.deepEqual(callbackFromPrompt(fixture.writes[0]), {
+      contract: "better-harness-fix-output/v1",
+      ...row.paths,
+      findingId: "finding-a",
+      expectedRevision: 0,
+    }, row.name);
+  }
 });
 
 test("detail actions stay bound to one dialog and restore trigger focus", async () => {

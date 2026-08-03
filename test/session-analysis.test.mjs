@@ -399,6 +399,32 @@ test("privacy-safe user input summaries skip injected context and redact private
   assert.equal(hostContextSummary.includes("continuation state"), false);
 });
 
+test("privacy-safe user input summaries redact GitLab tokens and hierarchical URL userinfo", () => {
+  // secret-scan: allow synthetic provider-shaped regression fixture
+  const gitlabToken = ["glpat", "AbCdEfGhIjKlMnOpQrStUvWx"].join("-");
+  const tokenSummary = privacySafeUserInputSummary([{
+    type: "user",
+    userText: `Use ${gitlabToken}`,
+  }]);
+
+  assert.ok(tokenSummary);
+  assert.doesNotMatch(tokenSummary, new RegExp(gitlabToken));
+
+  const cases = [
+    ["https://build-user:url-password-value@git.example.test/repo.git", ["build-user", "url-password-value"]],
+    ["postgresql://db-user:db-password@db.example.test/database", ["db-user", "db-password"]],
+    ["ssh://ssh-user:ssh-password@git.example.test/repo", ["ssh-user", "ssh-password"]],
+    ["postgresql://db%2Duser:db%40password@db.example.test/database", ["db%2Duser", "db%40password"]],
+    ["https://token-only-value@git.example.test/repo", ["token-only-value"]],
+  ];
+  for (const [url, credentials] of cases) {
+    const summary = privacySafeUserInputSummary([{ type: "user", userText: `Fetch ${url}` }]);
+    assert.ok(summary);
+    assert.match(summary, /<redacted>@/u);
+    for (const credential of credentials) assert.equal(summary.includes(credential), false);
+  }
+});
+
 async function makeQoderFixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-session-analysis-"));
   const workspace = path.join(root, "workspace", "better-harness");

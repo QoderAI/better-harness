@@ -1,6 +1,25 @@
 #!/usr/bin/env node
 
+import { realpathSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { analyzeCloc } from "./analyze.mjs";
+
+const CLOC_HELP = `Usage: better-harness cloc [paths...] [options]
+
+Count code, comments, and blank lines.
+
+Options:
+  --cwd <path>              Analyze this directory
+  --workers <count>         Set the worker count
+  --no-git                  Do not use Git for file discovery
+  --tracked-only            Count tracked files only
+  --markdown-code           Include Markdown code blocks
+  --files                   Include counted file paths
+  --json                    Emit JSON output
+  -h, --help                Print help
+`;
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = { _: [] };
@@ -46,6 +65,10 @@ function printTextReport(report) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (argv.some((arg) => arg === "--help" || arg === "-h")) {
+    process.stdout.write(CLOC_HELP);
+    return;
+  }
   const args = parseArgs(argv);
   const report = await analyzeCloc({
     cwd: args.cwd,
@@ -64,7 +87,17 @@ export async function main(argv = process.argv.slice(2)) {
   printTextReport(report);
 }
 
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replaceAll("\\", "/"))) {
+function isDirectEntrypoint(entrypoint) {
+  if (!entrypoint) return false;
+  const currentFile = fileURLToPath(import.meta.url);
+  try {
+    return realpathSync(entrypoint) === realpathSync(currentFile);
+  } catch {
+    return path.resolve(entrypoint) === path.resolve(currentFile);
+  }
+}
+
+if (isDirectEntrypoint(process.argv[1])) {
   main().catch((error) => {
     process.stderr.write(`cloc failed: ${error.stack ?? error.message}\n`);
     process.exitCode = 1;
