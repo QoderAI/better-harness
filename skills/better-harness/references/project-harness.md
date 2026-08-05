@@ -25,7 +25,7 @@ testing, or observability alone, and do not silently omit unavailable evidence.
 | Dimension | Core question | Original submetrics to preserve |
 |---|---|---|
 | **Context Map** | Can an agent reach the right context, boundary, risk, and next step? | Task Entrypoint; Context & Boundary Map; Risk & Next-Step Route |
-| **Environment Readiness** | Can it set up, run, diagnose, reset, and isolate the project without guessing? | Environment Readiness Entry; Run & Doctor Command Surface; State Reset & Isolation |
+| **Environment Readiness** | Can it enter a versioned, bounded, diagnosable environment and run/reset resources without guessing? | Environment Readiness Entry; Run & Doctor Command Surface; State Reset & Isolation |
 | **Fast Feedback** | Do affected checks return timely, actionable behavior evidence? | Validation Signal Layers; Signal Speed & Actionability; Affected Check Routing |
 | **Quality Gates** | Are relevant rules mechanically checked and repairable? | Rule Coverage; Enforcement Gate Strength; Rule Repair Path |
 | **Change Safety** | Are agent changes bounded, accepted through evidence, and recoverable? | Agent Lifecycle Guardrails; Merge Acceptance Path; Side-Effect, Permission & Recovery Boundary |

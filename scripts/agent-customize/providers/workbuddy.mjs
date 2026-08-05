@@ -55,8 +55,9 @@ async function collectWorkbuddyMarketplacePlugin({ pluginRoot, pluginName, marke
     description: manifest?.description || "",
     publisher: { displayName: `WorkBuddy Marketplace (${marketplaceName})` },
     version: manifest?.version,
-    installSources: ["marketplace"],
-    installSource: "marketplace",
+    installSources: ["user"],
+    installSource: "user",
+    originSource: "marketplace",
     installMatch: "workbuddy-marketplace-dir",
     installType: "marketplace",
     enabled: enabledPlugins?.[enabledKey] === true,
@@ -99,8 +100,7 @@ async function agentsSkillsDir(base) {
   return path.join(base, ".agents", "skills");
 }
 
-async function collectWorkbuddyUserPrimitives(workbuddyHome) {
-  const userHomeBase = path.dirname(workbuddyHome);
+async function collectWorkbuddyUserPrimitives(workbuddyHome, workbuddyUserHome) {
   // Global AGENTS.md plus the SOUL/IDENTITY/USER identity files enter every
   // WorkBuddy conversation as standing context; inventory them as user rules.
   const globalRules = await collectRuleSources(
@@ -119,7 +119,7 @@ async function collectWorkbuddyUserPrimitives(workbuddyHome) {
   return {
     skills: [
       ...(await collectSkillFiles(path.join(workbuddyHome, "skills"), "user", "User", workbuddyHome)),
-      ...(await collectSkillFiles(await agentsSkillsDir(userHomeBase), "user", "User", userHomeBase)),
+      ...(await collectSkillFiles(await agentsSkillsDir(workbuddyUserHome), "user", "User", workbuddyUserHome)),
     ].sort(sortByName),
     subagents: [],
     rules: globalRules,
@@ -156,13 +156,16 @@ export async function collectWorkbuddyCustomizeInventory(options = {}) {
   const workbuddyHome = path.resolve(expandHome(
     options.workbuddyHome ?? options["workbuddy-home"] ?? defaultWorkbuddyHome(),
   ));
+  const workbuddyUserHome = path.resolve(expandHome(
+    options.workbuddyUserHome ?? path.dirname(workbuddyHome),
+  ));
   const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   const includeUserHome = options.includeUserHome !== false;
   const settingsPath = path.join(workbuddyHome, "settings.json");
   const settings = includeUserHome ? (await readJson(settingsPath)) ?? {} : {};
   const [marketplacePlugins, user, project] = await Promise.all([
     includeUserHome ? collectWorkbuddyMarketplacePlugins(workbuddyHome, settings) : [],
-    includeUserHome ? collectWorkbuddyUserPrimitives(workbuddyHome) : emptyPrimitives(),
+    includeUserHome ? collectWorkbuddyUserPrimitives(workbuddyHome, workbuddyUserHome) : emptyPrimitives(),
     collectWorkbuddyWorkspacePrimitives(workspace),
   ]);
   const plugins = [...marketplacePlugins].sort(sortByName);
@@ -170,6 +173,7 @@ export async function collectWorkbuddyCustomizeInventory(options = {}) {
     generatedAt: new Date().toISOString(),
     provider: "workbuddy",
     workbuddyHome,
+    workbuddyUserHome,
     workspace,
     tabs: MANAGE_TABS,
     plugins,

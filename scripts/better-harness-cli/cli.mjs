@@ -25,7 +25,7 @@ const HELP_GROUPS = [
   {
     title: "Quickstart",
     audience: "workflow",
-    commands: ["report"],
+    commands: ["report", "doctor"],
   },
   {
     title: "Workflows",
@@ -45,7 +45,7 @@ const HELP_GROUPS = [
   {
     title: "Agent Assets",
     audience: "advanced",
-    commands: ["agent-customize", "agent-lint", "coding-agent-practices"],
+    commands: ["agent-customize", "plugin", "agent-lint", "coding-agent-practices"],
   },
   {
     title: "Maintainer Diagnostics",
@@ -56,6 +56,7 @@ const HELP_GROUPS = [
 
 const ROOT_EXAMPLES = [
   { audience: "workflow", text: "better-harness report" },
+  { audience: "workflow", text: "better-harness doctor --platform all --json" },
   { audience: "workflow", text: "better-harness harness analyze --workspace . --language en --format json" },
   { audience: "workflow", text: "better-harness harness checkup --phase scan --provider qoder --workspace . --json" },
   { audience: "advanced", text: "better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json" },
@@ -90,6 +91,11 @@ const GROUP_EXAMPLES = {
   ],
   "loop": [
     { audience: "advanced", text: "better-harness loop readiness --level read-only-observation --assessment <file> --json" },
+  ],
+  "plugin": [
+    { audience: "advanced", text: "better-harness plugin status --host all" },
+    { audience: "advanced", text: "better-harness plugin plan install --host qwen --scope user" },
+    { audience: "advanced", text: "better-harness plugin verify --host codex --surface cli --json" },
   ],
 };
 

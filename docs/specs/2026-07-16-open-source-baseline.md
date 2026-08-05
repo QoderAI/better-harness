@@ -20,7 +20,7 @@ change.
 - AC-1: Qoder, Codex, and Cursor plugin manifests exist, share the same product
   identity and version, route to the canonical root `skills/`, and pass the
   repository and Codex plugin validators.
-- AC-2: The npm package uses the public `@qoderai/better-harness` identity, contains
+- AC-2: The npm package uses the public `@qoder-ai/better-harness` identity, contains
   public registry and repository metadata, has no internal registry references,
   and includes every Markdown document reachable from packaged runtime guidance.
 - AC-3: Every npm, runtime zip, and generated host-plugin artifact contains the
@@ -54,7 +54,7 @@ change.
    core-boundary configuration, using the existing Qoder shell and Superpowers
    manifests as structural references.
 2. Align npm, lockfile, host-manifest, documentation, and generated-artifact
-   metadata around `@qoderai/better-harness` and the planned public repository URL.
+   metadata around `@qoder-ai/better-harness` and the planned public repository URL.
 3. Make license and reachable documentation inclusion explicit in package and
    host-artifact builders and verifiers.
 4. Make help paths side-effect free, add the quickstart session opt-out, and

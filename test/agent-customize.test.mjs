@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -388,7 +388,7 @@ async function makeQoderFixture() {
     { name: "list_events" },
   );
 
-  return { root, qoderHome, sharedClientCacheRoot, workspace };
+  return { root, qoderHome, sharedClientCacheRoot, workspace, betterHarnessRoot };
 }
 
 async function makeCodexFixture() {
@@ -688,7 +688,15 @@ async function makeClaudeFixture() {
     },
   });
 
-  return { root, claudeHome, claudeStatePath, workspace, enabledPluginId, disabledPluginId };
+  return {
+    root,
+    claudeHome,
+    claudeStatePath,
+    workspace,
+    enabledPluginId,
+    disabledPluginId,
+    enabledPluginRoot,
+  };
 }
 
 async function makeQwenFixture() {
@@ -751,6 +759,27 @@ async function makeQwenFixture() {
   await writeJson(path.join(qwenHome, "extensions", "extension-enablement.json"), {
     [disabledPluginName]: { overrides: ["!/*"] },
   });
+  await mkdir(workspace, { recursive: true });
+  const canonicalWorkspace = await realpath(workspace);
+  await writeJson(path.join(qwenHome, "extension-store", "state.json"), {
+    version: 2,
+    generation: 1,
+    legacyProjectionHash: "0".repeat(64),
+    extensions: {
+      ["a".repeat(64)]: {
+        name: deliveryPluginName,
+        artifactGeneration: 1,
+        defaultActivation: "enabled",
+        workspaceOverrides: {},
+      },
+      ["b".repeat(64)]: {
+        name: disabledPluginName,
+        artifactGeneration: 1,
+        defaultActivation: "enabled",
+        workspaceOverrides: { [canonicalWorkspace]: "disabled" },
+      },
+    },
+  });
 
   await writeText(
     path.join(qwenHome, "skills", "local-review", "SKILL.md"),
@@ -804,15 +833,17 @@ async function makeQwenFixture() {
     "[remote \"origin\"]\n\turl = https://github.com/example/better-harness.git\n",
   );
 
-  return { root, qwenHome, workspace };
+  return { root, qwenHome, workspace, canonicalWorkspace };
 }
 
 test("collectAgentCustomizeInventory returns Cursor-style manage tabs and scoped sources", async () => {
   const fixture = await makeCursorFixture();
 
   try {
+    const stateDbPath = path.join(fixture.root, "isolated", "state.vscdb");
     const inventory = await collectAgentCustomizeInventory({
       cursorHome: fixture.cursorHome,
+      stateDbPath,
       workspace: fixture.workspace,
       installedPluginRecords: [
         { id: "hex-id", sources: ["user"] },
@@ -833,6 +864,7 @@ test("collectAgentCustomizeInventory returns Cursor-style manage tabs and scoped
       inventory.plugins.map((plugin) => plugin.cursorPluginId),
       ["hex-id", "paper-id"],
     );
+    assert.equal(inventory.stateDbPath, stateDbPath);
     const hex = inventory.plugins.find((plugin) => plugin.name === "hex");
     const paper = inventory.plugins.find((plugin) => plugin.name === "paper-desktop");
     assert.ok(hex);
@@ -1195,6 +1227,7 @@ test("collectAgentCustomizeInventory returns Qoder installed plugins and scoped 
 
     assert.equal(inventory.provider, "qoder");
     assert.equal(inventory.qoderHome, fixture.qoderHome);
+    assert.equal(inventory.qoderSharedClientCacheRoot, fixture.sharedClientCacheRoot);
     assert.equal(inventory.sharedClientCacheRoot, fixture.sharedClientCacheRoot);
     assert.deepEqual(
       inventory.plugins.map((plugin) => plugin.displayName),
@@ -1207,7 +1240,7 @@ test("collectAgentCustomizeInventory returns Qoder installed plugins and scoped 
 
     const betterHarness = inventory.plugins.find((plugin) => plugin.name === "better-harness-plugin");
     assert.ok(betterHarness);
-    assert.deepEqual(betterHarness.installSources, ["user", "project"]);
+    assert.deepEqual(betterHarness.installSources, ["user", "local"]);
     assert.equal(betterHarness.installMatch, "qoder-installed-index");
     assert.equal(betterHarness.installedAt, "2026-06-23T07:15:07.153Z");
     assert.equal(betterHarness.enabled, true);
@@ -1248,7 +1281,7 @@ test("collectAgentCustomizeInventory returns Qoder installed plugins and scoped 
       filterManageItems(inventory, { tab: "plugins", scopeKind: "project" }).map(
         (item) => item.displayName,
       ),
-      ["Better Harness"],
+      [],
     );
     assert.deepEqual(inventory.diagnostics.installedPluginRecordCount, 2);
     assert.equal(inventory.diagnostics.enabledInstalledPluginCount, 2);
@@ -1260,6 +1293,33 @@ test("collectAgentCustomizeInventory returns Qoder installed plugins and scoped 
       "installed_plugins.json",
       "installed_plugins_v2.json",
     ]);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qoder inventory preserves current local scope and excludes explicit foreign local records", async () => {
+  const fixture = await makeQoderFixture();
+
+  try {
+    await writeJson(path.join(fixture.qoderHome, "plugins", "installed_plugins.json"), { plugins: {} });
+    await writeJson(path.join(fixture.qoderHome, "plugins", "installed_plugins_v2.json"), {
+      version: 2,
+      plugins: {
+        "better-harness-plugin@local": [{
+          scope: "local",
+          installPath: fixture.betterHarnessRoot,
+          projectPath: path.join(fixture.root, "foreign-workspace"),
+        }],
+      },
+    });
+    const foreign = await collectAgentCustomizeInventory({
+      provider: "qoder",
+      qoderHome: fixture.qoderHome,
+      qoderSharedClientCacheRoot: fixture.sharedClientCacheRoot,
+      workspace: fixture.workspace,
+    });
+    assert.equal(foreign.plugins.some((plugin) => plugin.name === "better-harness-plugin"), false);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
@@ -1374,6 +1434,49 @@ test("collectAgentCustomizeInventory returns Codex installed plugins from instal
     ]);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Codex inventory honors the native CODEX_HOME environment override", () => {
+  const codexHome = path.join(os.tmpdir(), "better-harness-codex-env-home");
+  const source = `
+    import { collectAgentCustomizeInventory } from "./scripts/agent-customize/index.mjs";
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "codex",
+      includeUserHome: false,
+      codexAppPath: "",
+      workspace: process.cwd(),
+    });
+    process.stdout.write(inventory.codexHome);
+  `;
+  const result = spawnSync(process.execPath, ["--input-type=module", "--eval", source], {
+    cwd: process.cwd(),
+    env: { ...process.env, CODEX_HOME: codexHome },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, codexHome);
+});
+
+test("Codex inventory returns and probes an explicitly isolated desktop app route", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-codex-app-route-"));
+  try {
+    const codexHome = path.join(root, ".codex");
+    const codexAppPath = path.join(root, "Applications", "Codex.app");
+    await mkdir(codexAppPath, { recursive: true });
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "codex",
+      codexHome,
+      codexAppPath,
+      workspace: root,
+      includeUserHome: false,
+    });
+    assert.equal(inventory.codexHome, codexHome);
+    assert.equal(inventory.codexAppPath, codexAppPath);
+    assert.equal(inventory.diagnostics.appBundleExists, true);
+    assert.deepEqual(inventory.plugins, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -1588,6 +1691,40 @@ test("Claude public configured-asset surfaces exclude disabled Plugin children",
     assert.equal(JSON.stringify(inventory).includes("disabled-skill"), false);
     assert.equal(inventory.scope.claudeHome, fixture.claudeHome);
     assert.equal(inventory.scope.claudeStatePath, fixture.claudeStatePath);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Claude inventory preserves local scope and marks explicit foreign local records inapplicable", async () => {
+  const fixture = await makeClaudeFixture();
+
+  try {
+    const record = {
+      id: fixture.enabledPluginId,
+      installPath: fixture.enabledPluginRoot,
+      scope: "local",
+      projectPath: fixture.workspace,
+    };
+    const current = await collectAgentCustomizeInventory({
+      provider: "claude",
+      claudeHome: fixture.claudeHome,
+      claudeStatePath: fixture.claudeStatePath,
+      claudeInstalledPluginRecords: [record],
+      workspace: fixture.workspace,
+    });
+    assert.deepEqual(current.plugins[0].installSources, ["local"]);
+    assert.equal(current.plugins[0].applicable, true);
+
+    const foreign = await collectAgentCustomizeInventory({
+      provider: "claude",
+      claudeHome: fixture.claudeHome,
+      claudeStatePath: fixture.claudeStatePath,
+      claudeInstalledPluginRecords: [{ ...record, projectPath: path.join(fixture.root, "foreign") }],
+      workspace: fixture.workspace,
+    });
+    assert.equal(foreign.plugins[0].installSource, "local");
+    assert.equal(foreign.plugins[0].applicable, false);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
@@ -1945,6 +2082,8 @@ test("collectAgentCustomizeInventory returns Qwen installed plugins from extensi
     const delivery = inventory.plugins.find((plugin) => plugin.name === "delivery");
     assert.ok(delivery);
     assert.equal(delivery.installMatch, "qwen-extension-install");
+    assert.equal(delivery.installSource, "user");
+    assert.equal(delivery.originSource, "QwenCode");
     assert.equal(delivery.skills[0].name, "ship-release");
     assert.equal(delivery.mcpServers[0].name, "deliveryMcp");
     assert.equal(delivery.hooks[0].command, "node hooks/audit-delivery.mjs");
@@ -1968,9 +2107,107 @@ test("collectAgentCustomizeInventory returns Qwen installed plugins from extensi
     assert.deepEqual(inventory.diagnostics.installedPluginRecordFiles.map((file) => path.basename(file)), [
       ".qwen-extension-install.json",
       ".qwen-extension-install.json",
+      "state.json",
     ]);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qwen inventory derives project scope from extension-store activation state, not UI preferences", async () => {
+  const fixture = await makeQwenFixture();
+
+  try {
+    await writeJson(path.join(fixture.qwenHome, "extensions", "extension-preferences.json"), {
+      favorites: [],
+      scopes: { delivery: "user" },
+      disabledMcpServers: {},
+    });
+    await writeJson(path.join(fixture.qwenHome, "extension-store", "state.json"), {
+      version: 2,
+      generation: 2,
+      legacyProjectionHash: "0".repeat(64),
+      extensions: {
+        ["a".repeat(64)]: {
+          name: "delivery",
+          artifactGeneration: 2,
+          defaultActivation: "disabled",
+          workspaceOverrides: { [fixture.canonicalWorkspace]: "enabled" },
+        },
+        ["b".repeat(64)]: {
+          name: "disabled-ext",
+          artifactGeneration: 1,
+          defaultActivation: "enabled",
+          workspaceOverrides: { [fixture.canonicalWorkspace]: "disabled" },
+        },
+      },
+    });
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "qwen",
+      qwenHome: fixture.qwenHome,
+      workspace: fixture.workspace,
+    });
+    const delivery = inventory.plugins.find((plugin) => plugin.name === "delivery");
+    assert.deepEqual(delivery.installSources, ["project"]);
+    assert.equal(delivery.installSource, "project");
+    assert.equal(delivery.originSource, "QwenCode");
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "plugins", scopeKind: "project" }).map((item) => item.displayName),
+      ["Delivery"],
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qwen inventory fails closed when v2 scope state is missing, corrupt, or foreign", async () => {
+  for (const stateKind of ["missing", "corrupt", "foreign"]) {
+    const fixture = await makeQwenFixture();
+    try {
+      const statePath = path.join(fixture.qwenHome, "extension-store", "state.json");
+      if (stateKind === "missing") {
+        await rm(statePath);
+      } else if (stateKind === "corrupt") {
+        await writeJson(statePath, { version: 2, extensions: {} });
+      } else {
+        await writeJson(statePath, {
+          version: 2,
+          generation: 2,
+          legacyProjectionHash: "0".repeat(64),
+          extensions: {
+            ["a".repeat(64)]: {
+              name: "delivery",
+              artifactGeneration: 2,
+              defaultActivation: "disabled",
+              workspaceOverrides: { [path.join(fixture.root, "foreign-workspace")]: "enabled" },
+            },
+            ["b".repeat(64)]: {
+              name: "disabled-ext",
+              artifactGeneration: 1,
+              defaultActivation: "enabled",
+              workspaceOverrides: { [fixture.canonicalWorkspace]: "disabled" },
+            },
+          },
+        });
+      }
+      await writeJson(path.join(fixture.qwenHome, "extensions", "extension-preferences.json"), {
+        scopes: { delivery: "user" },
+      });
+      const inventory = await collectAgentCustomizeInventory({
+        provider: "qwen",
+        qwenHome: fixture.qwenHome,
+        workspace: fixture.workspace,
+      });
+      const delivery = inventory.plugins.find((plugin) => plugin.name === "delivery");
+      assert.deepEqual(delivery.installSources, [stateKind === "foreign" ? "foreign" : "unknown"]);
+      assert.equal(
+        inventory.diagnostics.installedPluginScopeState,
+        stateKind === "foreign" ? "extension-store-v2" : (stateKind === "corrupt" ? "invalid" : stateKind),
+      );
+      assert.equal(inventory.diagnostics.installedPluginScopeStateFile, statePath);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -2111,12 +2348,15 @@ test("Copilot inventory separates plugin, user, and project assets", async () =>
 
     assert.equal(inventory.provider, "copilot");
     assert.equal(inventory.copilotHome, fixture.copilotHome);
+    assert.equal(inventory.copilotUserHome, fixture.root);
     assert.equal(inventory.diagnostics.installedPluginState, "copilot-config");
 
     // The record whose cache path is absent must not become an installed plugin.
     assert.equal(inventory.plugins.length, 1);
     assert.equal(inventory.plugins[0].id, "acme/delivery");
     assert.equal(inventory.plugins[0].installMatch, "copilot-marketplace");
+    assert.deepEqual(inventory.plugins[0].installSources, ["user"]);
+    assert.equal(inventory.plugins[0].originSource, "marketplace");
     assert.equal(inventory.plugins[0].skills.length, 1);
 
     const skillNames = inventory.manage.skills.map((skill) => skill.name).sort();
@@ -2271,7 +2511,13 @@ test("collectAgentCustomizeInventory returns Pi packages and extensions as plugi
 
     assert.equal(inventory.provider, "pi");
     assert.equal(inventory.piHome, fixture.piHome);
+    assert.equal(inventory.piUserHome, os.homedir());
     assert.equal(inventory.plugins.length, 3);
+    assert.equal(
+      inventory.plugins.every((plugin) => plugin.installSources.every((scope) => ["user", "project"].includes(scope))),
+      true,
+      "persistent Pi inventory must not manufacture session-scoped installation evidence",
+    );
 
     const delivery = inventory.plugins.find((plugin) => plugin.name === "@scope/delivery-pack");
     assert.ok(delivery);
@@ -2557,11 +2803,14 @@ test("collectAgentCustomizeInventory returns WorkBuddy marketplace plugins with 
 
     assert.equal(inventory.provider, "workbuddy");
     assert.equal(inventory.workbuddyHome, fixture.workbuddyHome);
+    assert.equal(inventory.workbuddyUserHome, fixture.root);
     assert.equal(inventory.plugins.length, 2);
 
     const findSkills = inventory.plugins.find((plugin) => plugin.name === "find-skills");
     assert.ok(findSkills);
     assert.equal(findSkills.installMatch, "workbuddy-marketplace-dir");
+    assert.deepEqual(findSkills.installSources, ["user"]);
+    assert.equal(findSkills.originSource, "marketplace");
     assert.equal(findSkills.enabled, true);
     assert.equal(findSkills.version, "1.0.0");
     assert.deepEqual(findSkills.skills.map((skill) => skill.name), ["find-skills"]);

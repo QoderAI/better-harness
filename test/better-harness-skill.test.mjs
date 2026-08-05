@@ -233,6 +233,8 @@ test("Agent Customize consumes integrity evidence and investigates quality, not 
   const root = read("skills/better-harness/SKILL.md");
   const ownerPath = "skills/better-harness/references/agent-customize.md";
   const customize = read(ownerPath);
+  const skillEvalPath = "references/agent-customize/skill-eval.md";
+  const skillEval = read(skillEvalPath);
 
   assert.ok(customize.split("\n").length < 120);
   assert.ok(Buffer.byteLength(customize) < 7_000);
@@ -266,6 +268,7 @@ test("Agent Customize consumes integrity evidence and investigates quality, not 
   assert.match(customize, /Never return user-home Memory paths or\s+titles/);
   for (const reference of [
     "agents-md-review.md",
+    "skill-eval.md",
     "skill-review.md",
     "skill-discovery.md",
     "mcp-review.md",
@@ -278,6 +281,17 @@ test("Agent Customize consumes integrity evidence and investigates quality, not 
     assert.match(customize, new RegExp(`references/agent-customize/${reference.replace(".", "\\.")}`));
     assertReferencedPathExists(ownerPath, `../../../references/agent-customize/${reference}`);
   }
+  assert.match(skillEval, /JSON as the machine\s+source of truth/);
+  assert.match(skillEval, /Apply the E0 ceiling of 59/);
+  assert.match(skillEval, /has no simulated dry-run mode/);
+  assert.match(skillEval, /node scripts\/better-harness\.mjs agent-lint --profile agent-assets-review --skill/);
+  assert.match(skillEval, /plugin-eval> analyze <skill-path> --format json/);
+  assert.match(skillEval, /Plugin Eval's JSON intact as an input artifact/);
+  assert.match(skillEval, /Reconcile cross-tool disagreements/);
+  assert.match(skillEval, /never edit the canonical Plugin Eval result/);
+  assert.match(skillEval, /Do not report E1-E3, lift, stability, or outcome improvement/);
+  assertReferencedPathExists(skillEvalPath, "skill-review.md");
+  assertReferencedPathExists(skillEvalPath, "routing.md");
   assert.match(customize, /do not expand authority or asset limits/);
 });
 

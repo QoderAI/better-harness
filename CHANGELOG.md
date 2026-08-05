@@ -3,7 +3,7 @@
 This file records notable public changes to Better Harness. Entries describe
 observable behavior and compatibility, not every internal refactor.
 
-## Unreleased
+## 0.5.0 - 2026-08-04
 
 ### Added
 
@@ -16,6 +16,16 @@ observable behavior and compatibility, not every internal refactor.
   assessment contract rejects (unknown id/state/field, duplicate observation,
   empty evidence, unsupported version, malformed JSON) exits 1 without ever
   producing a decision. `--json` keeps stdout parser-safe.
+- `better-harness plugin status`, `plugin plan`, `plugin verify`, and
+  `better-harness doctor` expose a read-only lifecycle control plane over eight
+  host profiles and eleven host surfaces. Status reports installation,
+  enablement, observed-version relation, and verification per surface from the
+  public configured-asset inventory; `plugin plan` emits typed native argv or
+  manual steps for install, update, and remove without executing them; `doctor`
+  reports bounded runtime and host diagnostics with redacted authorized roots.
+  Unknown, mixed, foreign, or unbound host state fails closed, `plugin apply`
+  stays unregistered, and Kimi Code and Grok are rejected with `UNKNOWN_HOST`
+  until their native lifecycle contracts are validated.
 - Kimi Code is now a supported analysis-capable source-local host. The
   repository installs as a Kimi Code plugin (`/plugins install <repo>`)
   through a `.kimi-plugin/plugin.json` manifest, gains a Kimi configured-asset
@@ -61,6 +71,19 @@ observable behavior and compatibility, not every internal refactor.
   HTML + Markdown output the 0.4.0 host adapter already ships. A derived
   support-declaration check now requires every adapter-matrix host claiming
   portable HTML output to appear in that routing row.
+
+## 0.4.1 - 2026-08-04
+
+### Fixed
+
+- The published npm package identity is `@qoder-ai/better-harness`. The
+  previously documented `@qoderai/better-harness` scope was never a valid
+  registry name, so package metadata, the lockfile, the adapter matrices, and
+  the documentation site now all reference the hyphenated scope.
+
+- The repository `test` script runs the automated suite again, so the release
+  workflow verifies tests before publishing instead of reporting success
+  without running them.
 
 ## 0.4.0 - 2026-07-30
 

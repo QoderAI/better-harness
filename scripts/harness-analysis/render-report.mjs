@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -288,9 +288,13 @@ async function validateArtifacts({ reportData, artifactDir, runDir, artifacts, o
     checks.push(...result.checks);
   } else {
     const findingsPath = path.join(artifactDir, "findings.json");
-    const findingsText = readFileSync(findingsPath, "utf8");
     const reportPath = path.join(artifactDir, "report.md");
-    const reportText = readFileSync(reportPath, "utf8");
+    const htmlPath = reportData.mode === "html" ? path.join(artifactDir, "report.html") : null;
+    const [findingsText, reportText, htmlText] = await Promise.all([
+      readFile(findingsPath, "utf8"),
+      readFile(reportPath, "utf8"),
+      htmlPath ? readFile(htmlPath, "utf8") : Promise.resolve(null),
+    ]);
     if (!isAgentWorkLoopReport(reportData)) {
       const reportQuality = evaluateHarnessReportQuality(reportText);
       checks.push(checkResult("report-quality", reportQuality.status, reportQuality.errors, reportQuality.warnings, reportQuality.summary));
@@ -300,7 +304,7 @@ async function validateArtifacts({ reportData, artifactDir, runDir, artifacts, o
     }));
     if (reportData.mode === "html") {
       checks.push(evaluateHtmlReport(
-        readFileSync(path.join(artifactDir, "report.html"), "utf8"),
+        htmlText,
         reportData,
         { findingsPath: path.join(runDir, "findings.json") },
       ));

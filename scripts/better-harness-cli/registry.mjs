@@ -1,4 +1,5 @@
 import { formatHostList, HOST_CAPABILITIES, hostIdsFor } from "../host-support/index.mjs";
+import { PLUGIN_COMMAND_MANIFEST } from "../plugin-lifecycle/command-manifest.mjs";
 
 export const FORMAT_VERSION = "1.0";
 export const CLI_NAME = "better-harness";
@@ -27,6 +28,26 @@ const COMMANDS = [
     script: "agent-customize/cli.mjs",
     summary: "Inspect agent-facing Skills, MCPs, hooks, plugins, settings, and memory surfaces.",
     aliases: [{ name: "customize", hidden: true }],
+  },
+  {
+    name: "plugin",
+    kind: "group",
+    audience: "advanced",
+    summary: "Inspect, plan, and verify the Better Harness plugin lifecycle without applying changes.",
+    description: "Normalize Better Harness installation evidence across Coding Agent hosts, emit read-only native lifecycle plans, and verify local plugin assets without executing host commands.",
+    subcommands: PLUGIN_COMMAND_MANIFEST.map(({ name, audience, entryScript: script, summary }) => ({
+      name,
+      audience,
+      script,
+      summary,
+    })),
+  },
+  {
+    name: "doctor",
+    kind: "direct",
+    audience: "workflow",
+    script: "harness-doctor/cli.mjs",
+    summary: "Run bounded read-only Better Harness runtime and host diagnostics.",
   },
   {
     name: "agent-lint",

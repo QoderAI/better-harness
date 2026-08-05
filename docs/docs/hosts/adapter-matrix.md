@@ -34,11 +34,33 @@ remains the complete capability-level source of truth.
 | WorkBuddy | Adapter support | Analysis-capable source-local host | None; skills use WorkBuddy-owned paths | Workspace-matching WorkBuddy JSONL transcripts | Self-contained HTML + Markdown |
 | Grok | Adapter support | Analysis-capable source-local host | None; skills use Grok-owned paths | Workspace-matching Grok session dirs (`updates.jsonl`) | Self-contained HTML + Markdown |
 
-The `@qoderai/better-harness` npm package includes all seven plugin metadata
+The `@qoder-ai/better-harness` npm package includes all seven plugin metadata
 roots. Pi reuses install metadata in the existing `package.json`, so it does
 not add an eighth filesystem metadata root. The generated Qoder runtime bundle
 includes only the Qoder shell; non-Qoder generated host artifacts remain
 source-local.
+
+## Read-only plugin lifecycle
+
+The standalone CLI can normalize local Better Harness installation evidence
+without flattening host capability differences:
+
+```bash
+better-harness plugin status --host all
+better-harness plugin verify --host all
+better-harness doctor --platform all
+```
+
+`plugin plan` requires one explicit host and emits typed native argv or manual
+steps without executing them. Qoder Desktop remains bundled, Codex Desktop uses
+manual UI steps, Cursor installation stays unavailable while its local help
+contract is stale, persistent Pi operations without native evidence stay
+unavailable, transient Pi update/remove are not applicable, and WorkBuddy
+returns `PLUGIN_LIFECYCLE_UNSUPPORTED`. Kimi Code and Grok have no validated
+native lifecycle contract yet, so lifecycle targets reject them with
+`UNKNOWN_HOST` while their adapter evidence stays available. The shadow host
+profiles do not replace the canonical adapter matrix while ADR-0002 remains
+proposed.
 
 ## Output modes
 
@@ -56,10 +78,13 @@ source-local.
 ### Pi {#pi}
 
 Pi can install the repository through `pi install <source>` or load it with
-`pi -e <source>`. Package discovery, configured assets, workspace-matched
-session evidence, and portable HTML routing are implemented. Pi remains outside
-the verified Quickstart set until a complete interactive report-loop smoke is
-observed.
+`pi -e <source>`. Lifecycle status treats persisted user/project package
+settings as the `cli` inventory surface and one-run `pi -e` activation as the
+separate `cli-session` session-only surface; empty settings do not prove that a
+running session omitted the package. Package discovery, configured assets,
+workspace-matched session evidence, and portable HTML routing are implemented.
+Pi remains outside the verified Quickstart set until a complete interactive
+report-loop smoke is observed.
 
 ### Kimi Code {#kimi-code}
 

@@ -95,8 +95,9 @@ Route by ownership before choosing a vendor-specific feature:
   `skill-discovery.md` only when the loop decision is
   `Create Skill` or `Extend Skill`.
 - Existing Skill evaluation, audit, score explanation, benchmark design, or
-  "what should I fix first" request -> `skill-review.md`; keep static quality,
-  measured task lift, and evidence level separate.
+  "what should I fix first" request -> `skill-eval.md`; load
+  `skill-review.md` for the Gates, scorecard, and evidence ceilings, and keep
+  static quality, measured task lift, and evidence level separate.
 - Short manual shortcut or prompt alias -> Command/Prompt shell; keep canonical
   behavior in a Skill, script, or reference.
 - Host agent hook practice -> `agent-hooks.md`; then load
@@ -157,7 +158,7 @@ Route by ownership before choosing a vendor-specific feature:
 |---|---|---|
 | Missing repo fact, command, or path rule | Add or tune Rule / `AGENTS.md` | `agents-md-review.md` |
 | Stable repeated prompt with repeatable inputs/steps/output | Discover loop owner first; create or extend Skill only when selected | `../loop-engineering/loop-discovery.md`, then `skill-discovery.md` for Skill decisions |
-| Existing Skill quality, routing, safety, or benchmark review | Evaluate the Skill with Gates, weighted quality, and evidence ceilings | `skill-review.md` |
+| Existing Skill quality, routing, safety, or benchmark review | Run the project evaluation protocol, then apply Gates, weighted quality, and evidence ceilings | `skill-eval.md`, then `skill-review.md` |
 | Short manually invoked shortcut | Command / Prompt shell | canonical Skill, script, or reference |
 | Large conditional detail for a Skill | Add Skill reference | `skill-discovery.md` |
 | Visual design source of truth for generated UI | `DESIGN.md` contract or design-review Skill | [DESIGN.md contract](../project-harness/design-md-contract.md) |

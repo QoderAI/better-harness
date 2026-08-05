@@ -172,7 +172,7 @@ const config = {
               { label: "GitHub", href: GITHUB_URL },
               {
                 label: "npm",
-                href: "https://www.npmjs.com/package/@qoderai/better-harness",
+                href: "https://www.npmjs.com/package/@qoder-ai/better-harness",
               },
             ],
           },

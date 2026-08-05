@@ -112,7 +112,7 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   const packageJson = readJson("package.json");
   const packageLock = readJson("package-lock.json");
 
-  assert.equal(packageJson.name, "@qoderai/better-harness");
+  assert.equal(packageJson.name, "@qoder-ai/better-harness");
   assert.equal(packageJson.description, qoder.description);
   assert.deepEqual(packageJson.bin, {
     "better-harness": "scripts/better-harness.mjs",

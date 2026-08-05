@@ -1,0 +1,122 @@
+{
+  "schemaVersion": "1",
+  "observedAt": "2026-07-31",
+  "privacy": "command names, versions, option contracts, and environment variable names only; executable paths and user data omitted",
+  "hosts": {
+    "claude": {
+      "executable": "claude",
+      "version": "2.1.214",
+      "observation": "native-help",
+      "nativeHomeBinding": {
+        "evidenceId": "claude-config-dir-environment",
+        "kind": "environment",
+        "variable": "CLAUDE_CONFIG_DIR",
+        "observation": "installed provider source and isolated config smoke"
+      },
+      "contracts": [
+        "plugin install <plugin> --scope <user|project|local>",
+        "plugin update <plugin> --scope <user|project|local|managed>",
+        "plugin uninstall <plugin> --scope <user|project|local>",
+        "plugin details <name>"
+      ]
+    },
+    "codex": {
+      "executable": "codex",
+      "version": "0.144.5",
+      "observation": "native-help",
+      "nativeHomeBinding": {
+        "evidenceId": "codex-home-environment",
+        "kind": "environment",
+        "variable": "CODEX_HOME",
+        "observation": "codex-rs config loader source and isolated config tests"
+      },
+      "contracts": [
+        "plugin marketplace add <repository> --ref <ref>",
+        "plugin add <plugin@marketplace>",
+        "plugin list --marketplace <name> --json",
+        "plugin marketplace upgrade <name>",
+        "plugin remove <plugin@marketplace>"
+      ]
+    },
+    "qoder": {
+      "executable": "qodercli",
+      "version": "1.0.20",
+      "observation": "native-help-with-drift",
+      "contracts": [
+        "plugin install <plugin-or-local-directory> --scope <user|project|local>",
+        "plugin list --json",
+        "plugin uninstall <plugin> --scope <user|project|local>"
+      ],
+      "missingContracts": [
+        "plugin marketplace add",
+        "plugin update"
+      ]
+    },
+    "cursor": {
+      "executable": "cursor-agent",
+      "version": "2025.09.18-7ae6800",
+      "observation": "native-help-with-drift",
+      "contracts": [],
+      "missingContracts": [
+        "--plugin-dir"
+      ]
+    },
+    "qwen": {
+      "executable": "qwen",
+      "version": "0.21.0",
+      "observation": "native-help",
+      "nativeHomeBinding": {
+        "evidenceId": "qwen-home-environment",
+        "kind": "environment",
+        "variable": "QWEN_HOME",
+        "observation": "installed provider and extension runtime source"
+      },
+      "scopeArtifactPolicy": {
+        "evidenceId": "qwen-shared-extension-artifact",
+        "kind": "shared",
+        "observation": "extension manager source uses one extension directory and activation state store"
+      },
+      "contracts": [
+        "extensions install <source> --scope <user|project|workspace>",
+        "extensions list",
+        "extensions update <name>",
+        "extensions uninstall <name>"
+      ]
+    },
+    "copilot": {
+      "executable": "copilot",
+      "version": "1.0.74-3",
+      "observation": "native-help",
+      "contracts": [
+        "plugin marketplace add <source>",
+        "plugin install <plugin@marketplace|repository>",
+        "plugin list",
+        "plugin update <name>",
+        "plugin uninstall <name>",
+        "skill list --json"
+      ]
+    },
+    "pi": {
+      "executable": "pi",
+      "version": null,
+      "observation": "unobserved",
+      "contracts": [],
+      "installedPackageSource": {
+        "package": "@earendil-works/pi-coding-agent",
+        "version": "0.83.0",
+        "observation": "installed-package-source",
+        "nativeExecutableObservation": "unobserved",
+        "evidence": [
+          {
+            "evidenceId": "pi-persistent-package-settings-source",
+            "contract": "package manager persists user and project package sources in their respective settings"
+          },
+          {
+            "evidenceId": "pi-temporary-extension-source",
+            "contract": "-e/--extension resolves package resources with temporary scope for the current process"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -26,24 +26,30 @@ undetermined and name the smallest evidence needed next.
 ## Shape the Recommendation
 
 Propose the smallest useful owner and include only project-specific facts that
-an agent cannot safely infer:
+an agent cannot safely infer. Name an existing command or verifier rather than
+inventing one, and prefer a short draft plus scoped routes over a comprehensive
+generated handbook.
 
-- use a root `AGENTS.md` or shared Rule for cross-project commands, safety, and
-  routing;
-- use a scoped instruction file for directory-specific practices;
-- keep provider-specific commands in a provider-specific owner when shared
-  policy would otherwise drift; and
-- name an existing command or verifier rather than inventing one.
+This track stays thin. Recommendation depth lives in the Bootstrap reference
+domain; load a route from it only when a supported move needs more than owner
+placement:
 
-For instruction quality and progressive disclosure, read
-[AGENTS.md Review](../../../references/agent-customize/agents-md-review.md).
+- [Specification Structure](../../../references/bootstrap/spec-structure.md) when
+  the retained gap is an underspecified requirement rather than a missing asset.
+  It owns the required sections, the `BR`, `E`, and `AC` id schemes, and the
+  completeness gates.
+- [Specification Examples](../../../references/bootstrap/examples/README.md) to
+  calibrate one section against a comparable backend, frontend, or mobile shape.
+
+For instruction owner placement, quality, and progressive disclosure, read
+[AGENTS.md Review](../../../references/agent-customize/agents-md-review.md) and
+[Agent Customize Routing](../../../references/agent-customize/routing.md).
 Calibrate concrete fragments against
 [Good AGENTS.md Example Fragments](../../../case-studies/agent-customize/agents-md-good-examples.md),
 but never copy the catalog wholesale or copy values not observed in the target.
 
 Each retained move must state the target owner, project facts to preserve,
 expected artifact, verification command or inspection, and approval boundary.
-Prefer a short draft plus scoped routes over a comprehensive generated handbook.
 
 ## Preserve Boundaries
 

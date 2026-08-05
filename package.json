@@ -1,6 +1,6 @@
 {
-  "name": "@qoderai/better-harness",
-  "version": "0.4.0",
+  "name": "@qoder-ai/better-harness",
+  "version": "0.5.0",
   "description": "Build an AI-ready engineering system for safe coding-agent delivery and continuous software improvement.",
   "license": "MIT",
   "author": {
@@ -27,8 +27,12 @@
   ],
   "type": "module",
   "pi": {
-    "skills": ["./skills"],
-    "prompts": ["./prompts"]
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
   },
   "files": [
     ".claude-plugin/",

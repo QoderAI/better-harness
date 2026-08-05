@@ -9,6 +9,7 @@ import {
   HOST_CAPABILITIES,
   HOST_IDS,
   hostIdsFor,
+  listHostProfiles,
 } from "../scripts/host-support/index.mjs";
 import { createAnalyzer, SESSION_ANALYSIS_HELP } from "../scripts/session-analysis/index.mjs";
 
@@ -65,6 +66,34 @@ test("agent-customize provider registry matches its declared capability slice", 
     const providerModule = path.join(process.cwd(), "scripts", "agent-customize", "providers", `${platform}.mjs`);
     assert.ok(existsSync(providerModule), `missing configured-asset provider module: ${providerModule}`);
   }
+});
+
+// Hosts whose native plugin lifecycle has no validated contract yet. They stay
+// listed here so `plugin` commands fail closed for them instead of inheriting a
+// fabricated install route from another host.
+const HOSTS_WITHOUT_LIFECYCLE_PROFILE = ["kimi", "grok"];
+
+test("shadow host-support profiles retain parity with canonical providers", () => {
+  const profiles = listHostProfiles();
+  const catalogHosts = new Set(hostIdsFor(HOST_CAPABILITIES.AGENT_CUSTOMIZE));
+
+  assert.deepEqual(
+    sortedSet(profiles.map((profile) => profile.provider)),
+    sortedSet(profiles.map((profile) => profile.hostId)),
+    "host-support provider references disagree with their host ids",
+  );
+  for (const profile of profiles) {
+    assert.ok(catalogHosts.has(profile.hostId), `host-support profile is not a catalog host: ${profile.hostId}`);
+    assert.ok(PROVIDER_COLLECTORS.has(profile.provider), `missing public inventory provider for ${profile.hostId}`);
+    assert.ok(profile.surfaces.length > 0, `host-support profile has no surfaces: ${profile.hostId}`);
+  }
+
+  const profiledHosts = new Set(profiles.map((profile) => profile.hostId));
+  assert.deepEqual(
+    [...catalogHosts].filter((hostId) => !profiledHosts.has(hostId)),
+    HOSTS_WITHOUT_LIFECYCLE_PROFILE,
+    "hosts without a lifecycle profile must stay explicit",
+  );
 });
 
 test("session-analysis platform loader matches its declared capability slice", async () => {

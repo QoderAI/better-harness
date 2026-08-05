@@ -103,6 +103,7 @@ function normalizeProvidedCopilotRecord(record) {
     return undefined;
   }
   const marketplaceName = record.marketplace || "_direct";
+  const originSource = record.source?.source ?? (record.marketplace ? "marketplace" : "direct");
   return {
     id: `${marketplaceName}/${name}`,
     name,
@@ -110,8 +111,9 @@ function normalizeProvidedCopilotRecord(record) {
     installPath: path.resolve(expandHome(installPath)),
     version: record.version,
     enabled: record.enabled !== false,
-    source: record.source?.source ?? (record.marketplace ? "marketplace" : "direct"),
-    sources: [record.marketplace ? "marketplace" : "direct"],
+    source: "user",
+    sources: ["user"],
+    originSource,
     installMatch: record.marketplace ? "copilot-marketplace" : "copilot-direct",
     installedAt: record.installed_at ?? record.installedAt,
   };
@@ -206,6 +208,7 @@ async function collectCopilotPlugin(record) {
     installSources: record.sources,
     installSource: record.source,
     installMatch: record.installMatch,
+    originSource: record.originSource,
     installedAt: record.installedAt,
     enabled: record.enabled,
     evidence: evidence(metadataEvidencePath, path.dirname(path.dirname(pluginRoot))),
@@ -263,7 +266,7 @@ async function collectCopilotPlugins(records) {
   return [...byId.values()].sort(sortByName);
 }
 
-async function collectCopilotUserPrimitives(copilotHome) {
+async function collectCopilotUserPrimitives(copilotHome, copilotUserHome) {
   const settingsPath = path.join(copilotHome, "settings.json");
   const settings = (await readCopilotJson(settingsPath)) ?? {};
   const mcps = [];
@@ -295,10 +298,10 @@ async function collectCopilotUserPrimitives(copilotHome) {
   const skills = await uniqueAssetsByRealPath([
     ...(await collectSkillFiles(path.join(copilotHome, "skills"), "user", "User", copilotHome)),
     ...(await collectSkillFiles(
-      path.join(path.dirname(copilotHome), ".agents", "skills"),
+      path.join(copilotUserHome, ".agents", "skills"),
       "user",
       "User",
-      copilotHome,
+      copilotUserHome,
     )),
   ]);
 
@@ -388,6 +391,9 @@ export async function collectCopilotCustomizeInventory(options = {}) {
   const copilotHome = path.resolve(
     expandHome(options.copilotHome ?? options["copilot-home"] ?? defaultCopilotHome()),
   );
+  const copilotUserHome = path.resolve(expandHome(
+    options.copilotUserHome ?? path.dirname(copilotHome),
+  ));
   const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   const includeUserHome = options.includeUserHome !== false;
   const installState = includeUserHome
@@ -395,13 +401,14 @@ export async function collectCopilotCustomizeInventory(options = {}) {
     : { records: [], source: "not-authorized", installRecordFiles: [] };
   const [plugins, user, project] = await Promise.all([
     includeUserHome ? collectCopilotPlugins(installState.records ?? []) : [],
-    includeUserHome ? collectCopilotUserPrimitives(copilotHome) : emptyPrimitives(),
+    includeUserHome ? collectCopilotUserPrimitives(copilotHome, copilotUserHome) : emptyPrimitives(),
     collectCopilotWorkspacePrimitives(workspace),
   ]);
   return {
     generatedAt: new Date().toISOString(),
     provider: "copilot",
     copilotHome,
+    copilotUserHome,
     workspace,
     tabs: MANAGE_TABS,
     plugins,

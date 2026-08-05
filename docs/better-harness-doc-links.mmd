@@ -29,23 +29,30 @@ flowchart LR
     n_references_agent_customize_memory_review_md["memory-review.md"]
     n_references_agent_customize_routing_md["routing.md"]
     n_references_agent_customize_skill_discovery_md["skill-discovery.md"]
+    n_references_agent_customize_skill_eval_md["skill-eval.md"]
     n_references_agent_customize_skill_review_md["skill-review.md"]
   end
-  subgraph sg6["references/loop-engineering/"]
+  subgraph sg6["references/bootstrap/"]
+    n_references_bootstrap_spec_structure_md["spec-structure.md"]
+  end
+  subgraph sg7["references/bootstrap/examples/"]
+    n_references_bootstrap_examples_README_md["README.md"]
+  end
+  subgraph sg8["references/loop-engineering/"]
     n_references_loop_engineering_loop_discovery_md["loop-discovery.md"]
   end
-  subgraph sg7["references/project-harness/"]
+  subgraph sg9["references/project-harness/"]
     n_references_project_harness_core_change_watch_md["core-change-watch.md"]
     n_references_project_harness_design_md_contract_md["design-md-contract.md"]
     n_references_project_harness_observability_md["observability.md"]
   end
-  subgraph sg8["references/session-evidence/"]
+  subgraph sg10["references/session-evidence/"]
     n_references_session_evidence_sessions_diagnostics_md["sessions-diagnostics.md"]
   end
-  subgraph sg9["skills/better-harness/"]
+  subgraph sg11["skills/better-harness/"]
     n_skills_better_harness_SKILL_md["SKILL.md"]
   end
-  subgraph sg10["skills/better-harness/references/"]
+  subgraph sg12["skills/better-harness/references/"]
     n_skills_better_harness_references_agent_customize_md["agent-customize.md"]
     n_skills_better_harness_references_asset_demand_reconciliation_md["asset-demand-reconciliation.md"]
     n_skills_better_harness_references_finding_bound_fix_md["finding-bound-fix.md"]
@@ -58,7 +65,7 @@ flowchart LR
     n_skills_better_harness_references_support_operationalize_md["support-operationalize.md"]
     n_skills_better_harness_references_support_optimize_md["support-optimize.md"]
   end
-  subgraph sg11["templates/reporting/"]
+  subgraph sg13["templates/reporting/"]
     n_templates_reporting_routing_md["routing.md"]
   end
   n_skills_better_harness_SKILL_md --> n_models_agent_work_loop_md
@@ -86,6 +93,7 @@ flowchart LR
   n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_mcp_review_md
   n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_memory_review_md
   n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_skill_discovery_md
+  n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_skill_eval_md
   n_skills_better_harness_references_agent_customize_md --> n_references_agent_customize_skill_review_md
   n_skills_better_harness_references_asset_demand_reconciliation_md --> n_references_agent_customize_memory_review_md
   n_skills_better_harness_references_asset_demand_reconciliation_md --> n_references_agent_customize_skill_discovery_md
@@ -99,6 +107,9 @@ flowchart LR
   n_skills_better_harness_references_session_evidence_md --> n_skills_better_harness_references_session_repeated_workflows_md
   n_skills_better_harness_references_support_bootstrap_md --> n_case_studies_agent_customize_agents_md_good_examples_md
   n_skills_better_harness_references_support_bootstrap_md --> n_references_agent_customize_agents_md_review_md
+  n_skills_better_harness_references_support_bootstrap_md --> n_references_agent_customize_routing_md
+  n_skills_better_harness_references_support_bootstrap_md --> n_references_bootstrap_examples_README_md
+  n_skills_better_harness_references_support_bootstrap_md --> n_references_bootstrap_spec_structure_md
   n_skills_better_harness_references_support_bootstrap_md --> n_skills_better_harness_references_agent_customize_md
   n_skills_better_harness_references_support_bootstrap_md --> n_skills_better_harness_references_findings_review_md
   n_skills_better_harness_references_support_operationalize_md --> n_case_studies_project_harness_project_capability_artifact_examples_md

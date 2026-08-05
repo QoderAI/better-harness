@@ -511,6 +511,7 @@ export async function collectPiCustomizeInventory(options = {}) {
     generatedAt: new Date().toISOString(),
     provider: "pi",
     piHome,
+    piUserHome: userHome,
     workspace,
     tabs: MANAGE_TABS,
     plugins,

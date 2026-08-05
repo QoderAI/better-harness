@@ -19,7 +19,7 @@ providers, real session-evidence adapters, and output modes. Canonical product
 judgment stays in `skills/`, `models/`, `references/`, `templates/`, and
 `scripts/<capability>/`.
 
-The `@qoderai/better-harness` npm package includes seven filesystem metadata
+The `@qoder-ai/better-harness` npm package includes seven filesystem metadata
 roots for Qoder, Claude Code, Codex, Cursor, Qwen, Copilot, and Kimi Code,
 plus Pi install metadata in the existing `package.json`.
 The generated Qoder runtime bundle includes only the Qoder shell,
@@ -36,13 +36,56 @@ project `.kimi-code/skills/`), then runs `/skill:better-harness`.
 | Claude Code | Analysis-capable source-local host | `.claude-plugin/` | `scripts/agent-customize/providers/claude.mjs` | `scripts/session-analysis/platforms/claude.mjs` | self-contained HTML + Markdown | `.claude` + `CLAUDE.md` + Plugin assets | `claude plugin validate --strict .` -> isolated install/discovery -> configured-asset baseline -> validated `html` render |
 | Codex | Analysis-capable source-local host | `.codex-plugin/` | `scripts/agent-customize/providers/codex.mjs` | `scripts/session-analysis/platforms/codex.mjs` | self-contained HTML + Markdown | `.codex` + `.agents` + `AGENTS.md` | `harness prepare --platform codex` -> finalize with `html-report` validation |
 | Qoder | First-class product host | `.qoder-plugin/` | `scripts/agent-customize/providers/qoder.mjs` | `scripts/session-analysis/platforms/qoder.mjs` | `better-harness` | `.qoder/rules` + `AGENTS.md` + output templates | `better-harness harness render --mode qoder-canvas --validate` |
-| Cursor | Canvas-capable source-local host | `.cursor-plugin/` | `scripts/agent-customize/providers/cursor.mjs` | `scripts/session-analysis/platforms/cursor.mjs` | `cursor-canvas` | `.cursor` + `.codex` compatibility + `AGENTS.md` | `agent --plugin-dir . --mode ask --print` -> Cursor evidence bundle -> validated `cursor-canvas` render |
+| Cursor | Canvas-capable source-local host | `.cursor-plugin/` | `scripts/agent-customize/providers/cursor.mjs` | `scripts/session-analysis/platforms/cursor.mjs` | `cursor-canvas` | `.cursor` + `.codex` compatibility + `AGENTS.md` | native `cursor-agent --help` contract check -> unavailable install plan -> Cursor evidence bundle -> validated `cursor-canvas` render |
 | Qwen Code | Analysis-capable source-local host | `qwen-extension.json` | `scripts/agent-customize/providers/qwen.mjs` | `scripts/session-analysis/platforms/qwen.mjs` | self-contained HTML + Markdown | `.qwen` + `QWEN.md` + `AGENTS.md` | `harness prepare --platform qwen` -> finalize with `html-report` validation |
 | GitHub Copilot | Analysis-capable source-local host | `.github/plugin/` | `scripts/agent-customize/providers/copilot.mjs` | `scripts/session-analysis/platforms/copilot.mjs` | self-contained HTML + Markdown | `.github` + `AGENTS.md` + `~/.copilot` | `copilot plugin marketplace add .` -> `copilot plugin install better-harness@better-harness` -> configured-asset baseline -> validated `html` render |
 | Pi | Analysis-capable source-local host | `pi` manifest in `package.json` | `scripts/agent-customize/providers/pi.mjs` | `scripts/session-analysis/platforms/pi.mjs` | self-contained HTML + Markdown | `.pi` + `.agents` + `AGENTS.md` | `pi install <source>` or `pi -e <source>` -> `/better-harness` prompt template -> validated `html` render |
 | Kimi Code | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | `scripts/agent-customize/providers/kimi.mjs` | `scripts/session-analysis/platforms/kimi.mjs` | self-contained HTML + Markdown | `AGENTS.md` + `~/.kimi-code/skills` + project `.kimi-code/skills`/`.kimi/skills` + `~/.kimi-code/mcp.json` | `harness evidence-bundle --platform kimi` -> validated `html` render |
 | WorkBuddy | Analysis-capable source-local host | none (skills install into `~/.workbuddy/skills`) | `scripts/agent-customize/providers/workbuddy.mjs` | `scripts/session-analysis/platforms/workbuddy.mjs` | self-contained HTML + Markdown | `~/.workbuddy` `AGENTS.md` + identity files + `.agents` + `AGENTS.md` | `session-analysis --platform workbuddy sources` -> validated `html` render |
 | Grok | Analysis-capable source-local host | none (skills install into `~/.grok/skills`) | `scripts/agent-customize/providers/grok.mjs` | `scripts/session-analysis/platforms/grok.mjs` | self-contained HTML + Markdown | `~/.grok` + `.grok` + `.agents` + `AGENTS.md` | `session-analysis --platform grok sources` -> skill symlink -> validated `html` render |
+
+## Read-only Plugin Lifecycle
+
+`better-harness plugin status`, `plan`, and `verify` expose a Better Harness-only
+view over these adapters. The shadow declarations in `scripts/host-support/`
+record lifecycle evidence without replacing this matrix while ADR-0002 is
+proposed. Each host declaration lives in `scripts/host-support/profiles/<host>.mjs`
+and uses the shared typed constructors rather than copying registry logic. Each
+module is locally validated and deeply frozen before registry composition;
+aggregate validation adds only cross-host id and alias uniqueness. The
+same profile declares its provider home option and each surface's observation
+kind, so status collection does not carry a second host lookup table or
+host-specific branches. Lifecycle status and plan also share one private target
+resolver for aliases, explicit host requirements, surfaces, and scopes, keeping
+usage diagnostics consistent as profiles grow. Plugin leaf metadata is declared
+once and projected into the root command registry; runtime definitions bind the
+same entries to executors and human renderers without leaf-name branches. Every
+observed or inventory-failure status instance passes through one validated row
+factory, so host additions cannot invent a second status shape. Every lifecycle
+plan likewise passes through one transition and validation model: mutation
+steps declare external host-plugin-state effects, while follow-up verification
+steps declare read-only host-observation effects. The thin plan core does not
+copy lifecycle state policy when a host profile is added.
+Plans never execute and always preserve native surface differences:
+
+| Host surface | Lifecycle disposition |
+| --- | --- |
+| Claude Code CLI | Native install, update, remove, and details verification steps |
+| Codex CLI / Desktop | Native CLI argv; manual Desktop UI steps |
+| Qoder Desktop / CLI | Bundled Desktop; manual CLI install, verified list/remove, unavailable update |
+| Cursor Agent | Session-only evidence; install remains unavailable while the local help contract is stale |
+| Qwen Code | Native extension install/list argv; update and remove remain unavailable until safe scope-targeted mutation semantics are evidenced |
+| GitHub Copilot CLI | Native marketplace install, list, update, and uninstall argv |
+| Pi CLI / CLI session | Persistent user/project install guidance and inventory; separate `pi -e` session-only activation whose update/remove operations are not applicable |
+| WorkBuddy | `PLUGIN_LIFECYCLE_UNSUPPORTED`; adapter evidence remains available |
+
+Kimi Code and Grok are absent from this table on purpose: neither host has a
+validated native lifecycle contract yet, so lifecycle targets reject them with
+`UNKNOWN_HOST` instead of borrowing another host's install route. Their adapter,
+configured-asset, and session evidence remain available through the matrix above.
+
+The lifecycle commands do not read raw session transcripts, contact a registry,
+edit host settings, or register an `apply` path.
 
 ## Discovery And Evidence
 

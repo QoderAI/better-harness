@@ -9,6 +9,17 @@ sidebar_position: 4
 先对失败步骤做最小检查。不要把删除宿主缓存、插件目录、报告或用户配置作为第一
 反应。诊断输出和公开 issue 中不要包含凭据、原始会话记录、私密提示词或完整报告。
 
+如果独立 CLI 可用，请先运行只读生命周期检查：
+
+```bash
+better-harness plugin status --host all
+better-harness doctor --platform all
+```
+
+这两个命令不访问远程注册表、不写配置、不执行安装命令，也不读取原始会话正文。
+`partial`、`unobserved`、`manual` 或 `unavailable` 表示保留证据边界，不能据此推断
+宿主已经加载插件。
+
 ## 看不到插件或 Skill
 
 安装或更新 Better Harness 后，请开启新的宿主会话或任务。已有会话可能仍在使用
@@ -18,23 +29,25 @@ sidebar_position: 4
 | --- | --- |
 | [Claude Code](./installation?host=claude-code#claude-code) | 运行 `claude plugin details better-harness@better-harness`；详情中应包含 `Skills (1) better-harness`。 |
 | [Codex](./installation?host=codex#codex) | Desktop 在 **Settings > Plugins** 中检查；CLI 运行 `codex plugin list --marketplace better-harness`。 |
-| [Qoder](./installation?host=qoder#qoder) | Desktop 已内置；手动安装 CLI 插件后运行 `qodercli plugin list`。 |
-| [Cursor](./installation?host=cursor#cursor) | 使用 `cursor-agent --plugin-dir /path/to/better-harness` 启动，保持该进程打开，并在同一会话运行报告提示词。 |
-| [Qwen Code](./installation?host=qwen-code#qwen-code) | 开启新会话并运行报告提示词；本指南不会假定未经验证的扩展列表命令。 |
+| [Qoder](./installation?host=qoder#qoder) | Desktop 已内置；手动安装 CLI 插件后运行 `qodercli plugin list`；生命周期计划不会输出已经漂移的安装语法。 |
+| [Cursor](./installation?host=cursor#cursor) | 运行 `better-harness plugin status --host cursor --surface agent`；在本机 Cursor help 合同完成核对前，安装保持不可用。 |
+| [Qwen Code](./installation?host=qwen-code#qwen-code) | 运行 `qwen extensions list` 并确认其中包含 Better Harness，然后开启新会话并运行报告提示词。 |
 | [GitHub Copilot](./installation?host=github-copilot#github-copilot) | 运行 `copilot plugin list` 和 `copilot skill list`；两处都应包含 `better-harness`。 |
 
 如果 marketplace 命令失败，请返回对应宿主的安装标签页，逐字核对仓库源和命令。
-特别是当前 Codex 先对仓库 URL 使用 `marketplace add`，再使用 `plugin add`；
-Qoder CLI 使用 `plugin install`。
+特别是当前 Codex 先对仓库 URL 使用 `marketplace add`，再使用 `plugin add`。
+如果本机原生 help 没有公开同样的合同，请不要复制旧版 Qoder 或 Cursor 安装示例；
+生命周期计划会刻意返回手工或不可用状态。
 
-## Cursor 无法加载源码本地插件
+## Cursor 源码本地加载当前不可用
 
-传给 `--plugin-dir` 的值必须是本仓库根目录，而不是其中的 `.cursor-plugin` 或
-`skills` 子目录。该根目录同时包含 `.cursor-plugin/plugin.json` 和
-`skills/better-harness/SKILL.md`。
+已核对的原生 `cursor-agent` help 没有公开受支持的源码本地插件参数。不要复用旧版
+启动命令，也不要因为仓库包含 `.cursor-plugin/plugin.json` 就推断当前运行时可以
+加载这个源码检出。
 
-插件只对使用该参数启动的 Cursor Agent 进程生效。如果进程已经关闭，请用同一个
-仓库路径重新启动。不要为了排查问题把检出目录复制到全局插件目录。
+请用 `better-harness plugin status --host cursor --surface agent` 检查有边界的会话
+证据。在 Cursor 发布匹配的原生合同之前，Better Harness 没有可供排查的受支持安装
+命令；应保留生命周期结果 `unavailable`，而不是把检出目录复制到全局插件目录。
 
 ## 独立或源码 CLI 报告运行时版本不受支持
 

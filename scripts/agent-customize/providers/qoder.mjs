@@ -98,13 +98,11 @@ function splitQoderPluginKey(key) {
 }
 
 function qoderScopeForRecord(record, workspace) {
-  const rawScope = String(record?.scope ?? "user").trim();
-  if (rawScope === "local") {
-    const projectPath = record?.projectPath ? normalizeWorkspace(record.projectPath) : "";
-    return projectPath && projectPath === workspace ? "project" : "other";
-  }
-  if (rawScope === "workspace") {
-    return "project";
+  const rawScope = String(record?.scope ?? "user").trim().toLowerCase();
+  if (["project", "local", "workspace"].includes(rawScope)) {
+    if (!record?.projectPath) return "other";
+    if (normalizeWorkspace(record.projectPath) !== workspace) return undefined;
+    return rawScope === "workspace" ? "project" : rawScope;
   }
   return rawScope || "user";
 }
@@ -151,25 +149,29 @@ function mergeQoderInstalledRecord(existing, next) {
 }
 
 async function readQoderInstalledPluginState(options = {}) {
+  const qoderHome = path.resolve(expandHome(options.qoderHome ?? defaultQoderHome()));
+  const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   if (Array.isArray(options.qoderInstalledPluginRecords) || Array.isArray(options.installedPluginRecords)) {
     const records = (options.qoderInstalledPluginRecords ?? options.installedPluginRecords)
       .map((record) => {
         const key = splitQoderPluginKey(record.id);
+        const sources = (Array.isArray(record.sources) ? record.sources : [record.source ?? "user"])
+          .map((source) => qoderScopeForRecord({ ...record, scope: source }, workspace))
+          .filter((source) => source != null);
+        if (sources.length === 0) return undefined;
         return {
           ...key,
           installPath: record.installPath,
           version: record.version,
-          sources: Array.isArray(record.sources) ? record.sources : [record.source ?? "user"],
-          source: record.source ?? "user",
+          sources: [...new Set(sources)],
+          source: sources[0],
           indexSources: record.indexSources ?? ["provided"],
         };
       })
-      .filter((record) => record.id && record.installPath);
+      .filter((record) => record?.id && record.installPath);
     return { records, source: "provided", indexFiles: [] };
   }
 
-  const qoderHome = path.resolve(expandHome(options.qoderHome ?? defaultQoderHome()));
-  const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   const legacyIndexPath = path.join(qoderHome, "plugins", "installed_plugins.json");
   const scopedIndexPath = path.join(qoderHome, "plugins", "installed_plugins_v2.json");
   const recordsById = new Map();
@@ -181,6 +183,7 @@ async function readQoderInstalledPluginState(options = {}) {
     for (const [id, value] of Object.entries(legacyIndex.plugins)) {
       const key = splitQoderPluginKey(id);
       const source = qoderScopeForRecord(value, workspace);
+      if (source == null) continue;
       recordsById.set(
         key.id,
         mergeQoderInstalledRecord(recordsById.get(key.id), {
@@ -204,6 +207,7 @@ async function readQoderInstalledPluginState(options = {}) {
       const records = Array.isArray(values) ? values : [values];
       for (const value of records) {
         const source = qoderScopeForRecord(value, workspace);
+        if (source == null) continue;
         recordsById.set(
           key.id,
           mergeQoderInstalledRecord(recordsById.get(key.id), {
@@ -552,6 +556,7 @@ export async function collectQoderCustomizeInventory(options = {}) {
     generatedAt: new Date().toISOString(),
     provider: "qoder",
     qoderHome,
+    qoderSharedClientCacheRoot: sharedClientCacheRoot,
     sharedClientCacheRoot,
     workspace,
     tabs: MANAGE_TABS,

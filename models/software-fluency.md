@@ -80,7 +80,7 @@ Change Safety.
 | Test surface and feedback proof | Tests, coverage, focused commands, failure artifacts, duration, or change-to-check routing are missing or too generic. | Fast Feedback |
 | Artifact route integrity | Docs, scripts, plans, generated assets, config paths, or workflow references are missing, stale, or unchecked as navigation or source-of-truth routes. | Context Map |
 | Artifact enforcement integrity | Generated assets, schema outputs, lockfiles, migrations, or design-contract artifacts are referenced but not checked for drift or regeneration. | Quality Gates |
-| Environment Readiness reproducibility | Runtime pins, package manager, dependency access, fixtures, services, cache, reset flow, doctor flow, or platform limits are not reproducible. | Environment Readiness |
+| Environment Readiness reproducibility | Runtime pins, package manager, dependency access, service or resource declarations, fixtures, cache, reset flow, sandbox/container path, network/web access assumptions, credential templates, diagnostic logs, doctor repair hints, or platform limits are not reproducible. | Environment Readiness |
 | Security rule enforcement | Security scans, secret hygiene, dependency checks, auth lint, or SQL/XSS rules are absent, unopened, optional, or not blocking relevant changes. | Quality Gates |
 | Agent permission boundary | Agent tool allowlists, automation permissions, production credential isolation, sandboxing, or least privilege are absent, unopened, or too broad. | Change Safety |
 | Merge acceptance path | The route that takes a current change into the default/base branch is absent, unopened, or confused with post-merge automation. GitHub Actions, GitLab CI, Aone CI, Jenkins, CircleCI, and similar platforms are examples, not defaults; do not prescribe host-specific paths unless evidence names that host. | Change Safety |
@@ -104,7 +104,7 @@ Change Safety.
 | Dimension              | Core Question                                                                          | Typical Evidence                                                                                                                                 | Evolution Goal                                                        |
 | ---------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
 | **Context Map**       | Can the agent follow the task to the right context, boundary, risk area, and next step? | README, AGENTS.md, architecture map, risk map, domain map, task routes, deeper-context links                                                  | From scattered context to validated progressive disclosure            |
-| **Environment Readiness**     | Can the agent automatically complete environment setup and get the project running (setup, run, reset, doctor)?   | Setup scripts, package scripts, lockfiles, environment templates, dev containers, reset flows, doctor checks                                     | From machine-specific environments to reproducible, diagnosable paths |
+| **Environment Readiness**     | Can the agent enter a versioned, bounded, diagnosable environment and get the project running without guessing?   | Setup scripts, package scripts, lockfiles, environment templates, service/resource declarations, dev containers or sandboxes, network/credential templates, reset flows, doctor checks, diagnostic logs | From machine-specific environments to reproducible, diagnosable operating environments |
 | **Fast Feedback**    | After the agent makes a change, do lint, tests, and similar checks quickly return actionable feedback on that change?      | Linting, type checks, unit tests, focused tests, smoke tests, affected-scope checks, clear failure output                                        | From slow full-suite feedback to change-aware fast feedback paths     |
 | **Quality Gates**     | Are architecture, security, schema, migration, generated-drift, and design rules enforced by mechanisms? | Architecture tests, schema/API diffs, generated-code drift checks, security scans, migration linting, design-token contracts for visual projects | From rules on paper to quality gates that preserve invariants         |
 | **Change Safety**   | Can agent-produced changes be constrained at runtime, checked before acceptance, and prevented from unsafe side effects or uncontrolled delivery? | Agent lifecycle hooks, permission or sandbox rules, review-trigger or Stop hooks, merge acceptance paths, required validation, approval flows, release gates, rollback docs, audit trails | From human trust to hook-backed, pre-merge delivery assurance        |
@@ -127,8 +127,10 @@ L5 evidence may be satisfied by instrumented or automated observation, not only 
 
 Evidence ownership:
 
-- Environment Readiness owns setup/install, run/start, and reset/clean/doctor
-  command surfaces.
+- Environment Readiness owns setup/install, run/start, reset/clean/doctor,
+  runtime/service/resource/network/credential discovery, environment health
+  checks, and diagnostics for setup or run failures. Permission decisions,
+  approval, and production access boundaries belong to Change Safety.
 - Fast Feedback owns test, lint, typecheck, focused test, smoke, and E2E
   commands: they must exist, run quickly, fail actionably, and map to changes.
 - Change Safety owns agent lifecycle guardrails, merge acceptance, and
@@ -253,12 +255,37 @@ Change.
 
 ### Dimension 2: Environment Readiness
 
-**Core question**: Can an agent automatically complete environment setup and get
-the project running—setup, run, reset, and doctor flows—without guessing,
-interaction, or implicit environment knowledge?
+**Core question**: Can an agent enter a versioned, bounded, diagnosable
+operating environment and get the project running—setup, run, reset, doctor,
+and resource discovery—without guessing, interaction, or implicit environment
+knowledge?
+
+Environment Readiness applies environment engineering as platform engineering
+for agent work: evaluate whether runtime, resources, services, network
+assumptions, credential templates, setup feedback, and isolation are explicit,
+versioned, and diagnosable. Tool authorization, human approval, least
+privilege, production access, and side-effect boundaries remain Change Safety;
+post-change validation failures remain Fast Feedback.
 
 #### Problem Signals
 
+- **Implicit environment dependencies**: services, ports, network/web access,
+  private registries, credential templates, fixtures, and system packages that
+  exist only in local machine state or oral knowledge are Environment Readiness
+  gaps; do not let agents infer them from ecosystem defaults.
+- **Undiagnosable setup or run failures**: setup/run/doctor commands that return
+  generic errors without health checks, logs, traces, or repair hints force
+  agents into exploration instead of task execution.
+- **Unbounded resource exposure**: read-only resources, side-effecting resources,
+  compute-expensive actions, and external services need discoverable scope,
+  cost/latency/impact, and read/write semantics. Environment Readiness owns
+  missing resource declarations; Change Safety owns permission and side-effect
+  risk.
+- **Workflow environments are not separated**: planning, implementation,
+  validation, and release workflows may need different resources, write access,
+  and runtime assumptions. If one undifferentiated environment mixes
+  exploration, edits, and side effects, record the environment-layering gap here
+  and route approvals or denials to Change Safety.
 - **Sparse checkout or inaccessible runtime paths block judgement**: sparse checkout, partial clone,
   missing generated artifacts, or inaccessible runtime paths constrain the evidence boundary; state
   the boundary and reduce confidence instead of filling gaps with project reputation or ecosystem
@@ -281,34 +308,35 @@ interaction, or implicit environment knowledge?
 
 | Level | Decision rule | Concrete evidence |
 | --- | --- | --- |
-| L1 | No runtime pinning, package lock, or dependency access path; setup depends on oral knowledge. | No lockfile, no `.nvmrc` or `.tool-versions`, no `.env.example`, and install needs private manual steps. |
-| L2 | Basic dependency and environment declarations exist but are incomplete or slow. | Lockfile, `.env.example`, or package manager is present, but runtime or registry assumptions remain implicit. |
-| L3 | Runtime version, package manager, lockfile, and dependency access path are explicit. | `.nvmrc` plus `packageManager`, `go.mod`, `Gemfile.lock`, or equivalent one-command dependency setup. |
-| L4 | Cache, container, devcontainer, or compose path makes setup repeatable across machines. | `.devcontainer/`, Docker Compose, Nix, mise, or CI/local cache with documented health checks. |
-| L5 | Per-worktree or sandboxed setup lets agent tasks start independently without cross-task pollution. | Isolated ports, databases, caches, credentials, and cleanup policy; cold start to working state is under two minutes or prebuilt. |
+| L1 | No runtime pinning, dependency access path, or environment/resource contract; setup depends on oral knowledge or local machine state. | No lockfile, runtime pin, system dependency list, service/port declaration, `.env.example`, registry note, or credential template. |
+| L2 | Basic dependency and environment declarations exist but services, network, credentials, or platform assumptions remain implicit. | Lockfile, `.env.example`, or package manager is present, but registry access, system packages, ports, or external services require manual inference. |
+| L3 | Runtime version, package manager, lockfile, dependency access, required services, and credential template are explicit. | `.nvmrc` plus `packageManager`, `go.mod`, `Gemfile.lock`, `.env.example`, service list, port list, or equivalent one-command dependency setup. |
+| L4 | Versioned cache, container, devcontainer, compose, Nix, or mise path makes setup repeatable across supported machines. | `.devcontainer/`, Docker Compose, Nix, mise, or CI/local cache with documented service health checks and network assumptions. |
+| L5 | Per-worktree, per-task, sandboxed, or prebuilt setup lets agent tasks start independently without cross-task pollution. | Isolated ports, services, databases, caches, credentials, network policy, and cleanup policy; cold start to working state is under two minutes or prebuilt. |
 
 #### Submetric 2.2: Run & Doctor Command Surface
 
 | Level | Decision rule | Concrete evidence |
 | --- | --- | --- |
-| L1 | Setup, run, and reset commands are scattered or contradictory. | The same operation is written differently across README, CI, and scripts. |
-| L2 | Basic command entrypoints exist but common operations still require manual assembly. | Some package scripts, Make targets, or Taskfile tasks exist. |
-| L3 | One command surface covers setup/install, run/start, and reset/clean/doctor. | `make setup`, `npm run dev`, `make clean`, `make doctor`, or equivalent. |
-| L4 | Commands are named by intent, documented by help output, and work across supported platforms. | `make help`, `npm run doctor`, `task --list`, or cross-platform scripts. |
-| L5 | Commands include preflight, dry-run, and self-diagnosis for agent use. | Doctor command checks runtime, ports, services, credentials, and common repair steps. |
+| L1 | Setup, run, reset, and doctor commands are missing, scattered, contradictory, or require interactive manual assembly. | The same operation is written differently across README, CI, and scripts, or fails without hidden prompts. |
+| L2 | Basic command entrypoints exist but common operations and failure diagnosis still require manual assembly. | Some package scripts, Make targets, or Taskfile tasks exist, but no single route names setup, run, reset, health, and repair. |
+| L3 | One command surface covers setup/install, run/start, reset/clean/doctor, and basic resource health checks. | `make setup`, `npm run dev`, `make clean`, `make doctor`, health check endpoint, service probe, or equivalent. |
+| L4 | Commands are named by intent, documented by help output, cross-platform, and return actionable setup/run errors. | `make help`, `npm run doctor`, `task --list`, cross-platform scripts, port/service checks, and repair hints. |
+| L5 | Commands include preflight, dry-run, self-diagnosis, logs/traces, and model-friendly repair guidance for agent use. | Doctor command checks runtime, ports, services, credentials, network access, caches, and common repair steps with concise failure output. |
 
 Validation commands are not scored here. Test, lint, typecheck, focused test,
-smoke, and E2E commands belong to Fast Feedback.
+smoke, E2E, and post-change runtime assertions belong to Fast Feedback. Setup,
+run, doctor, service health, and environment diagnostics stay here.
 
 #### Submetric 2.3: State Reset & Isolation
 
 | Level | Decision rule | Concrete evidence |
 | --- | --- | --- |
-| L1 | No state management; tests and local runs depend on real external data or manual preparation. | No seed, fixture, or reset command. |
-| L2 | Basic fixtures, sample data, or environment templates exist. | `fixtures/` exists or `.env.example` exists. |
-| L3 | Explicit state reset commands exist for database reset, seed, cache cleanup, or workspace cleanup. | `make reset-db`, `npm run db:seed`, `make clean`, or equivalent. |
-| L4 | Fixtures are deterministic, snapshot update policy is clear, and tests or local runs are isolated. | Versioned fixtures, documented snapshot update flow, isolated state. |
-| L5 | State lifecycle is fully automated: create, use, validate, and clean up from a known state. | testcontainers, per-test databases, or automatic seed plus teardown. |
+| L1 | No state or resource lifecycle management; tests and local runs depend on real external data, shared services, or manual preparation. | No seed, fixture, reset command, service reset, cache cleanup, or data boundary. |
+| L2 | Basic fixtures, sample data, environment templates, or read-only resource notes exist. | `fixtures/`, `.env.example`, sample database, static data dump, or read-only resource prose exists. |
+| L3 | Explicit state and resource reset commands exist for database reset, seed, cache cleanup, service cleanup, or workspace cleanup. | `make reset-db`, `npm run db:seed`, `make clean`, compose teardown target, cache cleanup, or equivalent. |
+| L4 | Fixtures are deterministic, read/write semantics are clear, snapshot update policy is documented, and local runs are isolated from shared external state. | Versioned fixtures, documented snapshot update flow, read-only data sources, isolated state, and teardown notes. |
+| L5 | State and resource lifecycle is automated: create, use, validate environment health, and clean up from a known state. | testcontainers, per-test databases, per-task containers, automatic seed plus teardown, or resource lifecycle logs. |
 
 ### Dimension 3: Fast Feedback
 

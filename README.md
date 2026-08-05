@@ -15,6 +15,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@qoder-ai/better-harness"><img src="https://img.shields.io/npm/v/@qoder-ai/better-harness.svg" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
@@ -270,35 +271,40 @@ session in the repository you want to analyze and run the report prompt:
 /better-harness analyze this project's AI coding workflow and generate an evidence-backed report
 ```
 
-Only when using Qoder CLI without Qoder Desktop, add this repository as a
-marketplace and install Better Harness manually:
+Only when using Qoder CLI without Qoder Desktop, inspect the current manual
+installation disposition before following Qoder's native marketplace flow:
 
 ```bash
-qodercli plugin marketplace add \
-  'https://github.com/QoderAI/better-harness.git'
-qodercli plugin install better-harness@better-harness
+better-harness plugin plan install --host qoder --surface cli --scope user
 ```
 
-Verify the manual installation:
+The planner does not emit the older install syntax because the current native
+help and this repository's historical documentation disagree. After a manual
+installation, verify only the currently observed inventory command:
 
 ```bash
 qodercli plugin list
+better-harness plugin verify --host qoder --surface cli
 ```
 
 Then start a new Qoder CLI session before using `/better-harness`.
 
 ### Cursor
 
-The Cursor plugin is not published to the marketplace yet. Load the
-source-local plugin for one Cursor Agent session:
+The Cursor plugin is not published to the marketplace. The repository carries
+the source-local manifest, but the current local Cursor help does not verify the
+historical `--plugin-dir` contract. Better Harness therefore reports the
+installation plan as unavailable instead of emitting that command:
 
 ```bash
 git clone https://github.com/QoderAI/better-harness.git
-cursor-agent --plugin-dir /path/to/better-harness
+better-harness plugin plan install --host cursor --surface agent --scope session
 ```
 
 Cursor session evidence is supported through workspace-matched transcripts,
-metadata, and audit logs. Partial or unavailable coverage remains explicit.
+metadata, and audit logs. A session that was loaded through a separately
+verified native route can be checked with `better-harness plugin verify --host
+cursor --surface agent`; partial or unavailable coverage remains explicit.
 
 ### GitHub Copilot
 
@@ -323,6 +329,32 @@ Copilot session evidence is supported through workspace-matched Copilot CLI
 transcripts under `~/.copilot/session-state/`. Copilot records no per-response
 token usage, and VS Code Copilot Chat has no supported durable transcript; both
 remain explicit evidence boundaries.
+
+### Inspect and plan plugin lifecycle changes (Beta)
+
+The standalone CLI can inspect local Better Harness installation evidence for
+every host without contacting a registry or changing host configuration:
+
+```bash
+better-harness plugin status --host all
+better-harness doctor --platform all
+```
+
+Build a host-specific install, update, or removal plan before using that host's
+native UI or CLI. Plans preserve native steps as typed argv data for deliberate
+external execution; the human view does not turn them into shell command
+strings, and Better Harness does not execute them:
+
+```bash
+better-harness plugin plan install --host qwen --surface cli --scope user
+better-harness plugin verify --host qwen --surface cli
+```
+
+Host differences remain explicit. Qoder Desktop is bundled, Cursor is
+session-only while its native command contract is being reconciled, Pi
+lifecycle commands without current native evidence remain manual or
+unavailable, and WorkBuddy has no managed Better Harness plugin lifecycle
+surface.
 
 ### More adapters
 

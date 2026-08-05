@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@qoder-ai/better-harness"><img src="https://img.shields.io/npm/v/@qoder-ai/better-harness.svg" alt="npm 版本"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT 许可证"></a>
 </p>
 
@@ -150,6 +151,29 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 需要为每个宿主单独安装 Better Harness。安装或更新插件后，请启动新的会话或任务，
 让宿主重新加载插件清单。
 
+### 检查并规划插件生命周期变更
+
+独立 CLI 可以检查所有宿主的本地 Better Harness 安装证据，不访问远程注册表，
+也不修改宿主配置：
+
+```bash
+better-harness plugin status --host all
+better-harness doctor --platform all
+```
+
+在使用宿主原生 UI 或 CLI 前，可以先生成指定宿主的安装、更新或移除计划。
+计划会把原生步骤保留为带类型的 argv 数据，供用户审阅后在外部有意执行；
+人类可读视图不会把它们拼成 shell 命令字符串，Better Harness 也不会执行这些步骤：
+
+```bash
+better-harness plugin plan install --host qwen --surface cli --scope user
+better-harness plugin verify --host qwen --surface cli
+```
+
+宿主差异会保持显式：Qoder Desktop 为内置分发；Cursor 在原生命令合同完成核对前
+只保留会话级状态；Pi 缺少当前原生证据的生命周期操作会标记为手工或不可用；
+WorkBuddy 没有可管理的 Better Harness 插件生命周期入口。
+
 ### Claude Code
 
 将本仓库注册为 Claude Code Marketplace：
@@ -256,34 +280,37 @@ Better Harness 已内置于 [Qoder](https://qoder.com/) 桌面应用，因此无
 /better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
 ```
 
-只有在未安装 Qoder Desktop、单独使用 Qoder CLI 时，才需要手动添加本仓库作为
-Marketplace 并安装 Better Harness：
+只有在未安装 Qoder Desktop、单独使用 Qoder CLI 时，才需要在遵循 Qoder 原生
+Marketplace 流程前检查当前手工安装状态：
 
 ```bash
-qodercli plugin marketplace add \
-  'https://github.com/QoderAI/better-harness.git'
-qodercli plugin install better-harness@better-harness
+better-harness plugin plan install --host qoder --surface cli --scope user
 ```
 
-验证手动安装：
+由于当前原生 help 与本仓库历史文档不一致，计划器不会输出旧版安装语法。
+手工安装后，只使用已经观察到的 inventory 命令验证：
 
 ```bash
 qodercli plugin list
+better-harness plugin verify --host qoder --surface cli
 ```
 
 然后启动新的 Qoder CLI 会话，再使用 `/better-harness`。
 
 ### Cursor
 
-Cursor 插件尚未发布到 Marketplace。可以在单次 Cursor Agent 会话中从源码加载本地插件：
+Cursor 插件尚未发布到 Marketplace。仓库包含源码本地 manifest，但当前本机
+Cursor help 没有验证历史 `--plugin-dir` 合同，因此 Better Harness 会把安装计划
+标记为不可用，而不会输出该命令：
 
 ```bash
 git clone https://github.com/QoderAI/better-harness.git
-cursor-agent --plugin-dir /path/to/better-harness
+better-harness plugin plan install --host cursor --surface agent --scope session
 ```
 
 Cursor 会话证据来自与工作区匹配的会话记录、元数据和审计日志。
-覆盖范围不完整或不可用时会被明确标注。
+通过其他已验证原生路径加载的会话可以运行 `better-harness plugin verify --host
+cursor --surface agent`；覆盖范围不完整或不可用时会被明确标注。
 
 ### GitHub Copilot
 
