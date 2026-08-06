@@ -18,9 +18,24 @@ import {
   sessionWorkspaceCwd,
   workspaceMatchScopeFromOptions,
 } from "../provider-runner.mjs";
+import { buildProviderCoverage } from "../provider-coverage.mjs";
 import { parseResultFacts } from "../result-facts.mjs";
 import { mergeTimeRange, normalizeCliDate, normalizeTimestamp, timestampMillis, withinTimeRange } from "../time.mjs";
 import { WORKSPACE_CWD_MATCH, classifyWorkspaceCwd } from "../workspace-match.mjs";
+
+const WORKBUDDY_KNOWN_RECORD_TYPES = new Set([
+  "message",
+  "reasoning",
+  "function_call",
+  "function_call_result",
+  "ai-title",
+  "custom-title",
+  "file-history-snapshot",
+  "session",
+  "response",
+  "tool_call",
+  "tool_result",
+]);
 
 function isWorkspaceMatch(candidate, workspace) {
   if (!candidate) return false;
@@ -54,6 +69,15 @@ function inferTimestamp(raw) {
     return normalizeTimestamp(Number(value));
   }
   return normalizeTimestamp(value);
+}
+
+function isKnownRecordShape(raw) {
+  const type = String(raw?.type ?? "");
+  if (WORKBUDDY_KNOWN_RECORD_TYPES.has(type)) return true;
+  // A few WorkBuddy builds omitted `type` on ordinary message rows but kept a
+  // role/content pair.  Treat that shape as compatible; everything else is
+  // surfaced as an unknown record rather than silently projected as metadata.
+  return !type && typeof raw?.role === "string" && Object.hasOwn(raw, "content");
 }
 
 function contentBlocks(raw) {
@@ -291,8 +315,12 @@ async function probeTranscript(filePath, scope, directoryCandidate) {
     cwdObserved: false,
     foreignCwd: false,
     cwd: null,
+    directoryInferred: false,
+    unknownRecordShapeCount: 0,
+    invalidLines: 0,
   };
-  await forEachJsonLine(filePath, (raw) => {
+  const scan = await forEachJsonLine(filePath, (raw) => {
+    if (!isKnownRecordShape(raw)) summary.unknownRecordShapeCount += 1;
     if (raw?.sessionId) summary.sessionId = raw.sessionId;
     if (typeof raw?.cwd === "string" && raw.cwd.length > 0) {
       summary.cwdObserved = true;
@@ -309,7 +337,9 @@ async function probeTranscript(filePath, scope, directoryCandidate) {
     : directoryCandidate.matchKind === "exact";
   if (!summary.cwdObserved && summary.workspaceMatch) {
     summary.cwd = directoryCandidate.workspaceIdentity;
+    summary.directoryInferred = true;
   }
+  summary.invalidLines = scan.invalidLines;
   return summary;
 }
 
@@ -351,7 +381,16 @@ async function listProjectDirectories(projectsRoot, contracts) {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .map((name) => {
-      const exact = contracts.find((contract) => name === contract.variants.exact);
+      const exactMatches = contracts.filter((contract) => name === contract.variants.exact);
+      if (exactMatches.length > 1) {
+        return {
+          path: path.join(projectsRoot, name),
+          matchKind: "collision",
+          workspaceIdentity: null,
+          collisionCount: exactMatches.length,
+        };
+      }
+      const exact = exactMatches[0];
       if (exact) {
         return {
           path: path.join(projectsRoot, name),
@@ -359,9 +398,19 @@ async function listProjectDirectories(projectsRoot, contracts) {
           workspaceIdentity: exact.workspaceIdentity,
         };
       }
-      const prefix = contracts
+      const prefixMatches = contracts
         .filter((contract) => name.startsWith(contract.variants.prefix))
-        .sort((left, right) => right.variants.prefix.length - left.variants.prefix.length)[0];
+        .sort((left, right) => right.variants.prefix.length - left.variants.prefix.length);
+      const prefix = prefixMatches[0];
+      if (prefixMatches.length > 1
+        && prefixMatches[0].variants.prefix.length === prefixMatches[1].variants.prefix.length) {
+        return {
+          path: path.join(projectsRoot, name),
+          matchKind: "collision",
+          workspaceIdentity: null,
+          collisionCount: prefixMatches.filter((item) => item.variants.prefix.length === prefix.variants.prefix.length).length,
+        };
+      }
       return prefix ? {
         path: path.join(projectsRoot, name),
         matchKind: "prefix",
@@ -373,7 +422,7 @@ async function listProjectDirectories(projectsRoot, contracts) {
 
 export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
   currentSessionId() {
-    return process.env.WORKBUDDY_SESSION_ID ?? null;
+    return process.env.CODEBUDDY_SESSION_ID ?? process.env.WORKBUDDY_SESSION_ID ?? null;
   }
 
   async resolveScope(options = {}) {
@@ -388,6 +437,14 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
     const projectsDir = path.resolve(expandHome(
       options.projectsDir ?? options["projects-dir"] ?? path.join(home, "projects"),
     ));
+    const codebuddySessionId = options.codebuddySessionId
+      ?? options["codebuddy-session-id"]
+      ?? process.env.CODEBUDDY_SESSION_ID
+      ?? null;
+    const legacySessionId = options.workbuddySessionId
+      ?? options["workbuddy-session-id"]
+      ?? process.env.WORKBUDDY_SESSION_ID
+      ?? null;
     return {
       platform: "workbuddy",
       workspace,
@@ -405,7 +462,8 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
       sinceTime: since.time,
       until: until.label,
       untilTime: until.time,
-      sessionId: options["session-id"] ?? options.sessionId ?? options._?.[0] ?? null,
+      sessionId: options["session-id"] ?? options.sessionId ?? options._?.[0] ?? codebuddySessionId ?? legacySessionId ?? null,
+      _sessionIdConflict: Boolean(codebuddySessionId && legacySessionId && codebuddySessionId !== legacySessionId),
       includeGlobalCapabilities: parseBooleanFlag(options["include-global-capabilities"] ?? false),
       _workspaceMatchScope: workspaceMatchScope,
     };
@@ -425,18 +483,29 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
       workspaceScoped: true,
       coverage: "primary",
       // A shared projects parent is not itself workspace evidence.
-      exists: matchingDirs.length > 0,
+      exists: matchingDirs.some((candidate) => candidate.matchKind !== "collision"),
     }];
   }
 
   async discoverSessions(scope, roots) {
     const sessions = new Map();
+    const diagnostics = {
+      unknownRecordShapeCount: 0,
+      invalidRecordCount: 0,
+      cwdlessSessionCount: 0,
+      slugCollisionCount: 0,
+      codes: [],
+    };
     const transcriptRoot = roots.find((root) => root.kind === "workbuddy-session-jsonl");
     if (!transcriptRoot) return [];
     const seenDirs = new Set();
     for (const projectsRoot of transcriptRoot.paths ?? []) {
       if (!await pathExists(projectsRoot)) continue;
       for (const candidate of await listProjectDirectories(projectsRoot, scope._workspaceDirContracts)) {
+        if (candidate.matchKind === "collision") {
+          diagnostics.slugCollisionCount += 1;
+          continue;
+        }
         const dirPath = candidate.path;
         let realDir;
         try { realDir = realpathSync.native(dirPath); } catch { realDir = path.resolve(dirPath); }
@@ -445,6 +514,9 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
         const files = await walkFiles(dirPath, { maxDepth: 1, limit: 20_000, match: (file) => file.endsWith(".jsonl") });
         for (const filePath of files) {
           const probe = await probeTranscript(filePath, scope, candidate);
+          diagnostics.unknownRecordShapeCount += Number(probe.unknownRecordShapeCount ?? 0);
+          diagnostics.invalidRecordCount += Number(probe.invalidLines ?? 0);
+          if (probe.directoryInferred) diagnostics.cwdlessSessionCount += 1;
           if (!probe.workspaceMatch || !withinTimeRange(probe.lastSeen ?? probe.firstSeen, scope)) continue;
           addRef(sessions, probe.sessionId, scope.workspace, {
             kind: transcriptRoot.kind,
@@ -453,10 +525,22 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
             firstSeen: probe.firstSeen,
             lastSeen: probe.lastSeen,
             cwd: probe.cwd,
+            cwdEvidence: probe.directoryInferred ? "directory-inferred" : "record-observed",
           });
         }
       }
     }
+    diagnostics.status = diagnostics.slugCollisionCount > 0
+      || diagnostics.unknownRecordShapeCount > 0
+      || diagnostics.invalidRecordCount > 0
+      || diagnostics.cwdlessSessionCount > 0
+      ? "partial"
+      : "verified";
+    if (diagnostics.slugCollisionCount > 0) diagnostics.codes.push("workbuddy-slug-collision");
+    if (diagnostics.unknownRecordShapeCount > 0) diagnostics.codes.push("workbuddy-unknown-record-shape");
+    if (diagnostics.invalidRecordCount > 0) diagnostics.codes.push("workbuddy-invalid-jsonl-record");
+    if (diagnostics.cwdlessSessionCount > 0) diagnostics.codes.push("workbuddy-directory-inferred-cwd");
+    scope._workbuddySchemaDiagnostics = diagnostics;
     return [...sessions.values()].map(finalizeSession)
       .sort((left, right) => (timestampMillis(right.lastSeen) ?? 0) - (timestampMillis(left.lastSeen) ?? 0));
   }
@@ -505,6 +589,85 @@ export class WorkbuddySessionAnalyzer extends SessionAnalyzer {
 
   async analyze(options = {}) {
     return runProviderAnalysis(this, options, { platform: "workbuddy", adapterVersion: "workbuddy-v1" });
+  }
+
+  async analysisWarnings(scope, _roots, _sessions) {
+    const diagnostics = scope._workbuddySchemaDiagnostics ?? {};
+    const warnings = [];
+    if (scope._sessionIdConflict) warnings.push({
+      code: "workbuddy-session-id-conflict",
+      message: "WorkBuddy current-session identity sources conflict; evidence is blocked until one identity is selected.",
+    });
+    if (diagnostics.slugCollisionCount > 0) warnings.push({
+      code: "workbuddy-slug-collision",
+      message: "One or more WorkBuddy project slugs matched multiple workspace identities and were excluded.",
+    });
+    if (diagnostics.cwdlessSessionCount > 0) warnings.push({
+      code: "workbuddy-directory-inferred-cwd",
+      message: "Some WorkBuddy sessions were admitted from an exact directory slug without an observed cwd; they remain partial evidence.",
+    });
+    if (diagnostics.unknownRecordShapeCount > 0) warnings.push({
+      code: "workbuddy-unknown-record-shape",
+      message: "Some WorkBuddy records used an unknown shape and were retained only as partial metadata evidence.",
+    });
+    return warnings;
+  }
+
+  factsSourceCoverage(scope) {
+    return scope._workbuddySourceCoverage ?? null;
+  }
+
+  coverageDiagnostics(scope, { roots = [], eligibleSessions = [] } = {}) {
+    const schemaDiagnostics = {
+      ...(scope._workbuddySchemaDiagnostics ?? {
+        unknownRecordShapeCount: 0,
+        invalidRecordCount: 0,
+        cwdlessSessionCount: 0,
+        slugCollisionCount: 0,
+        status: "unknown",
+        codes: [],
+      }),
+      sessionIdConflict: scope._sessionIdConflict === true,
+    };
+    if (schemaDiagnostics.sessionIdConflict) schemaDiagnostics.codes = [...new Set([...(schemaDiagnostics.codes ?? []), "workbuddy-session-id-conflict"])]
+      .sort();
+    const root = roots.find((entry) => entry.kind === "workbuddy-session-jsonl");
+    const partial = schemaDiagnostics.status === "partial"
+      || schemaDiagnostics.sessionIdConflict
+      || schemaDiagnostics.unknownRecordShapeCount > 0
+      || schemaDiagnostics.cwdlessSessionCount > 0;
+    const sourceCoverage = {
+      status: root?.exists === false
+        ? "absent"
+        : partial
+          ? "partial"
+          : eligibleSessions.length === 0
+            ? "unobserved"
+            : "observed",
+      transcript: {
+        workspaceSessions: eligibleSessions.length,
+        inWindowSessions: eligibleSessions.length,
+        outOfWindowSessions: 0,
+        timeUnobservedSessions: eligibleSessions.filter((session) => !session.firstSeen && !session.lastSeen).length,
+        relevantSessions: eligibleSessions.length,
+        withConversation: 0,
+        withRequest: 0,
+        terminalOnly: 0,
+        unreadable: schemaDiagnostics.invalidRecordCount,
+      },
+      joins: { chatMetadata: {}, audit: {} },
+    };
+    scope._workbuddySourceCoverage = sourceCoverage;
+    return buildProviderCoverage({
+      provider: "workbuddy",
+      sourceCoverage,
+      configured: Boolean(root),
+      enabled: root?.enabled === true,
+      observed: eligibleSessions.length > 0,
+      verified: !partial && eligibleSessions.length > 0,
+      unavailable: root?.exists === false ? ["workbuddy-session-transcript"] : [],
+      schemaDiagnostics,
+    });
   }
 }
 

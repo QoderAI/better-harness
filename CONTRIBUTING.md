@@ -31,7 +31,7 @@ compatibility boundaries, or more than one canonical owner.
 
 ## Development Setup
 
-Better Harness 0.4.0 supports Node.js `>=22.20.0 <25.0.0` and npm
+Better Harness 0.4.0 supports Node.js `>=22.20.0 <26.0.0` and npm
 `>=10.9.3 <12.0.0`. The supported project targets are Windows, macOS, and Linux.
 
 ```bash

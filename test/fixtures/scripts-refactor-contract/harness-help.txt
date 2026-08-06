@@ -9,6 +9,9 @@ Subcommands:
   Audience: maintainer
   evidence-bundle          Collect the three specialist lanes and lead evidence in one
                            frozen-context bundle
+  host-doctor              Check a Pi or WorkBuddy host before independent specialist execution
+  prepare-run              Freeze one private three-lane host run plan
+  verify-run               Verify three independent specialist results against a run plan
   workspace-topology       Resolve the Git-aware workspace target and member topology
   analyze                  Return a neutral, budgeted Harness evidence brief
   checkup                  Scan agent customizations and produce a read-only cleanup plan
@@ -29,6 +32,7 @@ Examples:
   better-harness harness workspace-topology --workspace . --json
   better-harness harness source --workspace . --source <scratch>/report.source.json --language en
   better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json
+  better-harness harness host-doctor --platform pi --workspace . --json
   better-harness harness preview-canvas <run>/report.canvas.tsx --open
   better-harness harness report-quality --report <run>/report.md
   better-harness harness validate-canvas --canvas <run>/report.canvas.tsx

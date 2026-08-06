@@ -30,6 +30,7 @@ import {
   validateHarnessReportSource,
 } from "./report-source.mjs";
 import { projectSemanticFacets, validateSemanticFacets } from "../session-analysis/index.mjs";
+import { sanitizeProviderCoverage } from "../session-analysis/index.mjs";
 import { restoreProjectedInterventionLedger, summarizeLearningCapture } from "./intervention-ledger.mjs";
 import { findingTargetErrors } from "../workspace-topology/index.mjs";
 
@@ -1938,6 +1939,7 @@ function reportOverview(source, strengths, findings, locale) {
 
 function evidenceBoundary(source) {
   const manifest = source?.manifest ?? {};
+  const providerCoverage = sanitizeProviderCoverage(manifest.providerCoverage);
   return {
     manifest: {
       schemaVersion: manifest.schemaVersion ?? null,
@@ -1954,6 +1956,20 @@ function evidenceBoundary(source) {
     episodeCoverage: episodeCoverage(source),
     deliveryEvidenceLevels: unique(rows(source?.deliveryEvidence).map((row) => row?.level)).sort(),
     sourceGaps: rows(manifest?.warnings).map((warning) => String(warning?.code ?? warning)).filter(Boolean),
+    ...(providerCoverage ? {
+      providerCoverage,
+      coverageStates: {
+        configured: providerCoverage.configured,
+        enabled: providerCoverage.enabled,
+        observed: providerCoverage.observed,
+        verified: providerCoverage.verified,
+        unsupported: providerCoverage.unsupported,
+        ...(providerCoverage.unsupportedCapabilities?.length > 0
+          ? { unsupportedCapabilities: providerCoverage.unsupportedCapabilities }
+          : {}),
+        unavailable: providerCoverage.unavailable,
+      },
+    } : {}),
   };
 }
 
@@ -3740,7 +3756,7 @@ export function validateTaskLoopFindings(data) {
   if (!isObject(summary.evidenceBoundary)) errors.push("findings.json summary.evidenceBoundary must be an object");
   else {
     const boundary = summary.evidenceBoundary;
-    errors.push(...unsupportedFields(boundary, ["manifest", "episodeCoverage", "deliveryEvidenceLevels", "sourceGaps"], "summary.evidenceBoundary"));
+    errors.push(...unsupportedFields(boundary, ["manifest", "episodeCoverage", "deliveryEvidenceLevels", "sourceGaps", "providerCoverage", "coverageStates"], "summary.evidenceBoundary"));
     if (!isObject(boundary.manifest)) errors.push("summary.evidenceBoundary.manifest must be an object");
     else {
       errors.push(...unsupportedFields(boundary.manifest, ["schemaVersion", "sourceFingerprint", "adapterVersion", "platform", "selection"], "summary.evidenceBoundary.manifest"));
@@ -3774,6 +3790,45 @@ export function validateTaskLoopFindings(data) {
     }
     if (!Array.isArray(boundary.sourceGaps) || boundary.sourceGaps.some((value) => typeof value !== "string" || value.trim() === "")) {
       errors.push("summary.evidenceBoundary.sourceGaps must be an array of non-empty strings");
+    }
+    if (boundary.providerCoverage !== undefined) {
+      const providerCoverage = sanitizeProviderCoverage(boundary.providerCoverage);
+      if (!providerCoverage) {
+        errors.push("summary.evidenceBoundary.providerCoverage must be a reader-safe provider coverage object");
+      } else {
+      errors.push(...unsupportedFields(
+          providerCoverage,
+          ["schemaVersion", "provider", "status", "configured", "enabled", "observed", "verified", "unsupported", "unsupportedCapabilities", "unavailable", "sourceCoverage", "schemaDiagnostics"],
+          "summary.evidenceBoundary.providerCoverage",
+        ));
+        if (!Array.isArray(providerCoverage.unsupported) || !Array.isArray(providerCoverage.unavailable)) {
+          errors.push("summary.evidenceBoundary.providerCoverage unsupported/unavailable must be arrays");
+        }
+        if (providerCoverage.unsupportedCapabilities !== undefined
+          && (!Array.isArray(providerCoverage.unsupportedCapabilities)
+            || providerCoverage.unsupportedCapabilities.some((value) => typeof value !== "string" || !value.trim()))) {
+          errors.push("summary.evidenceBoundary.providerCoverage unsupportedCapabilities must be an array of non-empty strings");
+        }
+      }
+    }
+    if (boundary.coverageStates !== undefined) {
+      const states = boundary.coverageStates;
+      if (!isObject(states)) {
+        errors.push("summary.evidenceBoundary.coverageStates must be an object");
+      } else {
+        errors.push(...unsupportedFields(states, ["configured", "enabled", "observed", "verified", "unsupported", "unsupportedCapabilities", "unavailable"], "summary.evidenceBoundary.coverageStates"));
+        for (const field of ["configured", "enabled", "observed", "verified"]) {
+          if (typeof states[field] !== "boolean") errors.push(`summary.evidenceBoundary.coverageStates.${field} must be boolean`);
+        }
+        for (const field of ["unsupported", "unavailable"]) {
+          if (!Array.isArray(states[field])) errors.push(`summary.evidenceBoundary.coverageStates.${field} must be an array`);
+        }
+        if (states.unsupportedCapabilities !== undefined
+          && (!Array.isArray(states.unsupportedCapabilities)
+            || states.unsupportedCapabilities.some((value) => typeof value !== "string" || !value.trim()))) {
+          errors.push("summary.evidenceBoundary.coverageStates.unsupportedCapabilities must be an array of non-empty strings");
+        }
+      }
     }
   }
   errors.push(...readerFindingEligibilityErrors(data));

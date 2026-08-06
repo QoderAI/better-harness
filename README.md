@@ -33,6 +33,10 @@ Choose the host you already use to get its exact installation, verification,
 invocation, and report-output steps. Better Harness does not use one universal
 entrypoint across every host.
 
+Pi and WorkBuddy also have native local plugin entrypoints documented below.
+They remain outside the verified Quickstart list until a complete interactive
+three-lane report smoke is observed on each host.
+
 The canonical registry covers eight host adapters. Pi and WorkBuddy currently
 remain adapter-support entries rather than part of the six-host verified
 Quickstart; see the [public Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md)
@@ -355,9 +359,11 @@ Or try it for a single run without changing settings:
 pi -e git:github.com/QoderAI/better-harness
 ```
 
-Pi discovers the `better-harness` Skill and the `/better-harness` prompt
-template through the `pi` manifest in `package.json`. Start a new Pi session
-in the repository you want to analyze and run the report prompt:
+Pi discovers the canonical `better-harness` Skill and native extension through
+the `pi` manifest in `package.json`. The extension registers exactly one
+`/better-harness` command, starts three isolated RPC lanes, and passes only
+verified results to the current lead turn. Start a new Pi session in the
+repository you want to analyze and run:
 
 ```text
 /better-harness analyze this project's AI coding workflow and generate an evidence-backed report
@@ -369,9 +375,33 @@ session evidence is read from workspace-matching JSONL transcripts under
 `~/.pi/agent/sessions/`; missing evidence stays explicit rather than being
 inferred.
 
+### WorkBuddy
+
+Install the repository as a WorkBuddy Team expert plugin from the checkout:
+
+```bash
+codebuddy --plugin-dir /path/to/better-harness
+```
+
+The plugin card is **Better Harness Review Team / Better Harness 评审专家团**.
+It discovers the canonical Skill, one review director, and three fixed members
+for Session Evidence, Project Harness, and Agent Customize. The director runs
+one `prepare-run`, one `TeamCreate`, three independent member returns, and one
+verification/reconciliation pass before rendering `findings.json`, `report.md`,
+and `report.html` under `.workbuddy/better-harness`.
+
+For an offline manifest/archive check from the source checkout, run:
+
+```bash
+npm run workbuddy:verify
+```
+
+An authorized interactive WorkBuddy model smoke is a separate host-verification
+gate; absence of the local CLI or model keeps that status explicit.
+
 ## Develop and package from source
 
-Development requires Node.js `>=22.20.0 <25.0.0` and npm
+Development requires Node.js `>=22.20.0 <26.0.0` and npm
 `>=10.9.3 <12.0.0` on Windows, macOS, or Linux.
 
 ```bash

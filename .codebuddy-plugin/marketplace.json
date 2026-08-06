@@ -1,0 +1,37 @@
+{
+  "name": "better-harness",
+  "description": "Better Harness Review Team / Better Harness 评审专家团",
+  "description_en": "Better Harness Review Team for privacy-safe, evidence-grounded AI coding-agent delivery reviews.",
+  "owner": {
+    "name": "Qoder",
+    "email": "dev@qoder.com"
+  },
+  "metadata": {
+    "version": "0.4.0"
+  },
+  "plugins": [
+    {
+      "name": "better-harness",
+      "description": "A four-role evidence review team for AI coding-agent delivery readiness.",
+      "source": "./",
+      "version": "0.4.0",
+      "categoryId": "10-ProjectQuality",
+      "expertType": "team",
+      "agents": [
+        "./agents/better-harness-review-director.md",
+        "./agents/session-evidence-reviewer.md",
+        "./agents/project-harness-reviewer.md",
+        "./agents/agent-customize-reviewer.md"
+      ],
+      "skills": ["./skills/better-harness"],
+      "teamInfo": {
+        "leadAgent": "better-harness-review-director",
+        "memberAgents": [
+          "session-evidence-reviewer",
+          "project-harness-reviewer",
+          "agent-customize-reviewer"
+        ]
+      }
+    }
+  ]
+}

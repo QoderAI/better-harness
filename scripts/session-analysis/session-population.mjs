@@ -116,6 +116,7 @@ export function freezeSessionPopulation({
     scope: Object.freeze(structuredClone(discovery?.scope ?? scope)),
     sources: Object.freeze(rows(discovery?.sources).map((source) => Object.freeze(structuredClone(source)))),
     warnings: Object.freeze(rows(discovery?.warnings).map((warning) => Object.freeze(structuredClone(warning)))),
+    ...(discovery?.providerCoverage ? { providerCoverage: Object.freeze(structuredClone(discovery.providerCoverage)) } : {}),
   }));
   return Object.freeze(population);
 }

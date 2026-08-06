@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { privacySafeUserInputEvidence } from "./privacy-safe-text.mjs";
+import { sanitizeProviderCoverage } from "./provider-coverage.mjs";
 
 export const SESSION_CORE_FACTS_SCHEMA_VERSION = 3;
 export const EPISODE_FACTS_SCHEMA_VERSION = 2;
@@ -116,10 +117,12 @@ export function finalizeSessionCoreFacts({
   warnings = [],
   omitted = {},
   sourceCoverage = null,
+  providerCoverage = null,
   maxBytes = MAX_SESSION_CORE_FACT_BYTES,
 } = {}) {
   const entries = (episodeFacts?.entries ?? []).map((entry) => structuredClone(entry));
   const boundedSourceCoverage = safeSourceCoverage(sourceCoverage);
+  const boundedProviderCoverage = sanitizeProviderCoverage(providerCoverage);
   const envelope = {
     schemaVersion: SESSION_CORE_FACTS_SCHEMA_VERSION,
     kind: "session-core-facts",
@@ -162,6 +165,7 @@ export function finalizeSessionCoreFacts({
     },
     warningCodes: [...new Set(warnings.map((warning) => safeLabel(warning?.code, 64)).filter(Boolean))].slice(0, 5),
     ...(boundedSourceCoverage ? { sourceCoverage: boundedSourceCoverage } : {}),
+    ...(boundedProviderCoverage ? { providerCoverage: boundedProviderCoverage } : {}),
     excludes: [
       "assistantText",
       "rawPrompts",

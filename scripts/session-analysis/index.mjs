@@ -28,3 +28,9 @@ export {
 } from "./session-population.mjs";
 export { projectSemanticFacets, validateSemanticFacets } from "./semantic-facets.mjs";
 export { sessionAnalysisRef } from "./session-ref.mjs";
+export {
+  appendUnsupportedCapabilities,
+  buildProviderCoverage,
+  providerCoverageStates,
+  sanitizeProviderCoverage,
+} from "./provider-coverage.mjs";

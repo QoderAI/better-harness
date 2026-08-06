@@ -35,6 +35,7 @@ import {
   sessionPopulationDiscovery,
   stableFingerprint,
 } from "../session-analysis/index.mjs";
+import { appendUnsupportedCapabilities } from "../session-analysis/index.mjs";
 import {
   createHarnessReportSource,
   LEARNING_CAPTURE_FINDING_POLICY,
@@ -717,6 +718,8 @@ export function buildTaskLoopSourceCandidate({
   priorLearningCaptureEvidenceRef = null,
   includeUsage = false,
   memoryInventory,
+  providerCoverage = null,
+  unsupportedCapabilities = [],
 } = {}) {
   const readerLocale = normalizeReaderLocale(locale);
   const episodeAnalysis = buildTaskEpisodes(
@@ -732,6 +735,8 @@ export function buildTaskLoopSourceCandidate({
     : null;
   const discardedEpisodeCount = episodeAnalysis.episodes.length - taskEpisodes.length;
   const permissionSummary = sourcePermissionCoverageSummary(episodeAnalysis.permissionSummary);
+  const manifestProviderCoverage = appendUnsupportedCapabilities(providerCoverage, unsupportedCapabilities)
+    ?? providerCoverage;
   const manifest = buildObservationManifest({
     scope,
     sources,
@@ -742,6 +747,7 @@ export function buildTaskLoopSourceCandidate({
     selectionStrata: selection.strata ?? [],
     selectionPlan: selection.plan ?? null,
     adapterVersion,
+    providerCoverage: manifestProviderCoverage,
   });
 
   const semanticFacets = insightSemanticFacets(insights, readerLocale, { includeUsage });
@@ -1243,6 +1249,8 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     priorLearningCaptureEvidenceRef: priorLearningCaptureState.evidenceRef,
     includeUsage,
     memoryInventory: practiceInventory?.memories ?? { included: false, categories: [] },
+    providerCoverage: discovery.providerCoverage ?? insightResult.providerCoverage ?? null,
+    unsupportedCapabilities: practiceInventory?.unsupported ?? [],
   });
   assertStandardUsageComplete(source, selected, includeUsage);
   if (!population) return { source, selection: selected };

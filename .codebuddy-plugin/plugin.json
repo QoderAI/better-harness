@@ -1,0 +1,103 @@
+{
+  "name": "better-harness",
+  "version": "0.4.0",
+  "description": "A read-only, evidence-grounded review team for AI coding-agent delivery readiness.",
+  "author": {
+    "name": "Qoder",
+    "email": "dev@qoder.com"
+  },
+  "homepage": "https://github.com/QoderAI/better-harness",
+  "repository": "https://github.com/QoderAI/better-harness",
+  "license": "MIT",
+  "keywords": [
+    "better-harness",
+    "agent-work-loop",
+    "evidence-review",
+    "harness-governance"
+  ],
+  "expertType": "team",
+  "agentName": "better-harness-review-director",
+  "agents": [
+    "./agents/better-harness-review-director.md",
+    "./agents/session-evidence-reviewer.md",
+    "./agents/project-harness-reviewer.md",
+    "./agents/agent-customize-reviewer.md"
+  ],
+  "skills": ["./skills/better-harness"],
+  "teamInfo": {
+    "leadAgent": "better-harness-review-director",
+    "memberAgents": [
+      "session-evidence-reviewer",
+      "project-harness-reviewer",
+      "agent-customize-reviewer"
+    ]
+  },
+  "displayName": {
+    "en": "Better Harness Review Team",
+    "zh": "Better Harness 评审专家团"
+  },
+  "profession": {
+    "en": "Evidence-led coding-agent delivery review",
+    "zh": "证据驱动的智能体交付评审"
+  },
+  "displayDescription": {
+    "en": "A four-role review team that freezes one privacy-safe evidence bundle, independently reviews session, project, and agent lanes, then validates a single reconciled Markdown and HTML report.",
+    "zh": "四角色专家团一次冻结隐私安全证据包，独立评审会话、项目与智能体三路护栏，汇总并验证唯一 Markdown 与 HTML 报告。"
+  },
+  "avatar": "avatars/team.svg",
+  "categoryId": "10-ProjectQuality",
+  "defaultInitPrompt": {
+    "en": "Review this workspace's AI coding-agent delivery readiness with Better Harness.",
+    "zh": "请用 Better Harness 评审这个工作区的 AI 编码智能体交付准备度。"
+  },
+  "plugin": "better-harness",
+  "tags": [
+    { "en": "Agent Work Loop", "zh": "Agent Work Loop" },
+    { "en": "Evidence Review", "zh": "证据评审" },
+    { "en": "Harness Governance", "zh": "Harness 治理" }
+  ],
+  "quickPrompts": [
+    {
+      "en": "Review this workspace's AI coding-agent delivery readiness with Better Harness.",
+      "zh": "请用 Better Harness 评审这个工作区的 AI 编码智能体交付准备度。"
+    },
+    {
+      "en": "Find the highest-confidence evidence gaps in this coding-agent workflow.",
+      "zh": "找出这个编码智能体工作流中证据最充分的能力缺口。"
+    },
+    {
+      "en": "Validate the latest Better Harness findings and report artifacts.",
+      "zh": "验证最近一次 Better Harness 发现与报告产物。"
+    }
+  ],
+  "members": [
+    {
+      "id": "better-harness-review-director",
+      "name": { "en": "Heng", "zh": "衡审" },
+      "profession": { "en": "Harness Review Director", "zh": "评审总监" },
+      "avatar": "avatars/better-harness-review-director.svg",
+      "role": "lead"
+    },
+    {
+      "id": "session-evidence-reviewer",
+      "name": { "en": "Zheng", "zh": "证安" },
+      "profession": { "en": "Session Evidence Analyst", "zh": "会话证据分析师" },
+      "avatar": "avatars/session-evidence-reviewer.svg",
+      "role": "member"
+    },
+    {
+      "id": "project-harness-reviewer",
+      "name": { "en": "Hu", "zh": "护程" },
+      "profession": { "en": "Project Guardrail Analyst", "zh": "项目护栏分析师" },
+      "avatar": "avatars/project-harness-reviewer.svg",
+      "role": "member"
+    },
+    {
+      "id": "agent-customize-reviewer",
+      "name": { "en": "Zhi", "zh": "智配" },
+      "profession": { "en": "Agent Asset Analyst", "zh": "智能体资产分析师" },
+      "avatar": "avatars/agent-customize-reviewer.svg",
+      "role": "member"
+    }
+  ]
+}

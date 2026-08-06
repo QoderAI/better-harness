@@ -46,8 +46,20 @@ export async function forEachJsonLine(filePath, onRecord, options = {}) {
           shouldStop = true;
           lines.close();
         }
-      } catch {
+      } catch (error) {
         invalidLines += 1;
+        // Adapters that require an authoritative first record (for example
+        // Pi's session header) must be able to distinguish a malformed JSON
+        // line from an empty file. Keep this opt-in so existing collectors
+        // retain their current fail-soft behavior.
+        if (typeof options.onInvalid === "function") {
+          try {
+            await options.onInvalid(error, line, lineNumber);
+          } catch {
+            // Diagnostics are best-effort and must not turn a malformed input
+            // into an unbounded reader failure.
+          }
+        }
       }
     }
   } finally {

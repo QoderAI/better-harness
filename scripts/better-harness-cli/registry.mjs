@@ -170,6 +170,27 @@ const COMMANDS = [
         description: "Return versioned Session Evidence, Project Harness, and Agent Customize envelopes with explicit lane status and unchanged diagnostic commands.",
       },
       {
+        name: "host-doctor",
+        audience: "advanced",
+        script: "harness-analysis/host-runtime/host-doctor.mjs",
+        summary: "Check a Pi or WorkBuddy host before independent specialist execution.",
+        description: "Validate runtime resources, Node version, provider support, current-session binding, model boundary, and output route without reading raw sessions.",
+      },
+      {
+        name: "prepare-run",
+        audience: "advanced",
+        script: "harness-analysis/host-runtime/prepare-run.mjs",
+        summary: "Freeze one private three-lane host run plan.",
+        description: "Collect one evidence bundle and write bounded lane envelopes plus input hashes to an explicitly supplied temporary path.",
+      },
+      {
+        name: "verify-run",
+        audience: "advanced",
+        script: "harness-analysis/host-runtime/verify-run.mjs",
+        summary: "Verify three independent specialist results against a run plan.",
+        description: "Check lane count, context identities, input hashes, output shape, privacy fields, and quick/normal failure policy.",
+      },
+      {
         name: "workspace-topology",
         audience: "advanced",
         script: "workspace-topology/cli.mjs",

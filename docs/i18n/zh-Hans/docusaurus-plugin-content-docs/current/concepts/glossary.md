@@ -63,7 +63,7 @@ sidebar_position: 3
 | --- | --- |
 | Skill | 由 `SKILL.md` frontmatter 加简洁工作流定义的可重复智能体工作流。 |
 | 宿主适配层 | 按宿主的发现与证据形态胶水层；保持引擎与宿主无关。 |
-| 宿主 shell | 轻量宿主元数据（`.claude-plugin/`、`.qoder-plugin/`、`.cursor-plugin/`、`.codex-plugin/`、`.github/plugin/`、`qwen-extension.json` 或未来的生命周期 shell），暴露规范行为但不拥有产品逻辑；公共 npm 包包含当前六个元数据根目录，而 Qoder 运行时 bundle 只包含 `.qoder-plugin/`。 |
+| 宿主 shell | 轻量宿主元数据（`.claude-plugin/`、`.qoder-plugin/`、`.cursor-plugin/`、`.codex-plugin/`、`.github/plugin/`、`qwen-extension.json`、`package.json` 中的 `pi` manifest、`.codebuddy-plugin/` + `settings.json` + `agents/` 或未来的生命周期 shell），暴露规范行为但不拥有产品逻辑；公共 npm 包包含当前八个原生元数据根目录，而 Qoder 运行时 bundle 只包含 `.qoder-plugin/`。 |
 | 规范负责目录 | 唯一拥有某行为产品判断的目录；宿主 shell 和镜像都指回它。 |
 
 带负责方链接的完整术语表见

@@ -66,6 +66,21 @@ export function freezeEvidenceBundleContext(options = {}, now = new Date()) {
       code: "INVALID_EVIDENCE_WINDOW",
     });
   }
+  if (provider === "workbuddy") {
+    const codebuddySessionId = options.codebuddySessionId
+      ?? options["codebuddy-session-id"]
+      ?? process.env.CODEBUDDY_SESSION_ID
+      ?? null;
+    const legacySessionId = options.workbuddySessionId
+      ?? options["workbuddy-session-id"]
+      ?? process.env.WORKBUDDY_SESSION_ID
+      ?? null;
+    if (codebuddySessionId && legacySessionId && codebuddySessionId !== legacySessionId) {
+      throw Object.assign(new Error("CODEBUDDY_SESSION_ID and WORKBUDDY_SESSION_ID conflict"), {
+        code: "WORKBUDDY_SESSION_ID_CONFLICT",
+      });
+    }
+  }
   const topology = options.topology;
   const analysisScope = options.analysisScope;
   const requestedWorkspace = path.resolve(String(options.workspace));

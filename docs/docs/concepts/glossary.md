@@ -66,7 +66,7 @@ progressive detail you load when a task needs it.
 | --- | --- |
 | Skill | A repeatable agent workflow defined by `SKILL.md` frontmatter plus a concise workflow. |
 | Host adapter | Per-host discovery and evidence-shape glue; keeps the engine host-neutral. |
-| Host shell | Thin host metadata (`.claude-plugin/`, `.qoder-plugin/`, `.cursor-plugin/`, `.codex-plugin/`, `.github/plugin/`, `qwen-extension.json`, or a future lifecycle shell) that exposes canonical behavior without owning product logic; the public npm package ships all six current metadata roots, while the Qoder runtime bundle includes only `.qoder-plugin/`. |
+| Host shell | Thin host metadata (`.claude-plugin/`, `.qoder-plugin/`, `.cursor-plugin/`, `.codex-plugin/`, `.github/plugin/`, `qwen-extension.json`, the `pi` manifest in `package.json`, `.codebuddy-plugin/` + `settings.json` + `agents/`, or a future lifecycle shell) that exposes canonical behavior without owning product logic; the public npm package ships all eight current native metadata roots, while the Qoder runtime bundle includes only `.qoder-plugin/`. |
 | Canonical owner | The single directory that owns a behavior's product judgment; host shells and mirrors point back to it. |
 
 The full glossary with owner links lives in

@@ -100,6 +100,8 @@ test("Cursor manifests conform to the pinned official schemas", () => {
 
 test("host plugin manifests expose canonical Better Harness resources", () => {
   const qoder = readJson(".qoder-plugin/plugin.json");
+  const workbuddy = readJson(".codebuddy-plugin/plugin.json");
+  const workbuddyMarketplace = readJson(".codebuddy-plugin/marketplace.json");
   const claude = readJson(".claude-plugin/plugin.json");
   const claudeMarketplace = readJson(".claude-plugin/marketplace.json");
   const cursor = readJson(".cursor-plugin/plugin.json");
@@ -119,6 +121,16 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   assert.equal(qoder.name, "better-harness");
   assert.equal(qoder.displayName, "Better Harness");
   assert.equal(qoder.version, packageJson.version);
+  assert.equal(workbuddy.name, qoder.name);
+  assert.equal(workbuddy.version, qoder.version);
+  assert.equal(workbuddy.expertType, "team");
+  assert.equal(workbuddy.categoryId, "10-ProjectQuality");
+  assert.equal(workbuddy.teamInfo.memberAgents.length, 3);
+  assert.equal(workbuddy.teamInfo.memberAgents.includes(workbuddy.teamInfo.leadAgent), false);
+  assert.deepEqual(workbuddy.defaultInitPrompt, workbuddy.quickPrompts[0]);
+  assert.equal(workbuddy.tags.length, 3);
+  assert.equal(workbuddyMarketplace.plugins[0].version, packageJson.version);
+  assert.equal(readJson("settings.json").agent, workbuddy.teamInfo.leadAgent);
 
   assert.equal(claude.name, qoder.name);
   assert.equal(claude.version, qoder.version);
@@ -171,7 +183,14 @@ test("host plugin manifests expose canonical Better Harness resources", () => {
   assert.equal(copilot.hooks, undefined);
   assert.equal(copilot.license, "MIT");
 
-  assert.deepEqual(packageJson.pi, { skills: ["./skills"], prompts: ["./prompts"] });
+  assert.deepEqual(packageJson.pi, {
+    extensions: ["./extensions/pi/better-harness.ts"],
+    skills: ["./skills"],
+    prompts: [],
+  });
+  assertExistingPath("extensions/pi/better-harness.ts");
+  assert.equal(packageJson.peerDependencies["@earendil-works/pi-coding-agent"], "*");
+  assert.match(packageJson.engines.node, /<26\.0\.0/u);
   assert.ok(packageJson.keywords.includes("pi-package"), "package keywords should mark the pi package");
   assert.equal(cursor.license, "MIT");
   assert.equal(qoder.license, "MIT");
@@ -237,6 +256,7 @@ test("npm packaging includes every host manifest while the runtime bundle stays 
     ".cursor-plugin/",
     ".github/plugin/",
     ".qoder-plugin/",
+    ".codebuddy-plugin/",
     "qwen-extension.json",
     "prompts/",
     "AGENTS.md",

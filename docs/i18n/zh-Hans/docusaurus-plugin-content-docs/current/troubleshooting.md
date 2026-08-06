@@ -22,6 +22,8 @@ sidebar_position: 4
 | [Cursor](./installation?host=cursor#cursor) | 使用 `cursor-agent --plugin-dir /path/to/better-harness` 启动，保持该进程打开，并在同一会话运行报告提示词。 |
 | [Qwen Code](./installation?host=qwen-code#qwen-code) | 开启新会话并运行报告提示词；本指南不会假定未经验证的扩展列表命令。 |
 | [GitHub Copilot](./installation?host=github-copilot#github-copilot) | 运行 `copilot plugin list` 和 `copilot skill list`；两处都应包含 `better-harness`。 |
+| [Pi](./hosts/adapter-matrix#pi) | 运行 `pi --version`，然后在加载该 package 的新 Pi 会话中运行 `/better-harness`。 |
+| [WorkBuddy](./hosts/adapter-matrix#workbuddy) | 运行 `codebuddy --plugin-dir .` 做本地专家团发现，并运行 `npm run workbuddy:verify` 做离线 manifest 校验。 |
 
 如果 marketplace 命令失败，请返回对应宿主的安装标签页，逐字核对仓库源和命令。
 特别是当前 Codex 先对仓库 URL 使用 `marketplace add`，再使用 `plugin add`；
@@ -39,7 +41,7 @@ Qoder CLI 使用 `plugin install`。
 ## 独立或源码 CLI 报告运行时版本不受支持
 
 独立和源码 CLI 在 Windows、macOS 和 Linux 上支持 Node.js
-`>=22.20.0 <25.0.0` 及 npm `>=10.9.3 <12.0.0`。请检查当前实际使用的可执行文件：
+`>=22.20.0 <26.0.0` 及 npm `>=10.9.3 <12.0.0`。请检查当前实际使用的可执行文件：
 
 ```bash
 node --version
@@ -90,6 +92,8 @@ node scripts/better-harness.mjs report --qoder-home /path/to/qoder-data
 | Cursor | `<target>/.cursor/better-harness/<run>/` | `findings.json`、`report.md`、`report.html` |
 | Qwen Code | `<target>/.qwen/better-harness/<run>/` | `findings.json`、`report.md`、`report.html` |
 | GitHub Copilot | `<target>/.copilot/better-harness/<run>/` | `findings.json`、`report.md`、`report.html` |
+| Pi | `<target>/.pi/better-harness/` | `findings.json`、`report.md`、`report.html` |
+| WorkBuddy | `<target>/.workbuddy/better-harness/` | `findings.json`、`report.md`、`report.html` |
 
 `<target>` 指正在接受评审的仓库；只有当 Better Harness 源码仓库本身就是选定目标
 时，它才表示当前源码检出。

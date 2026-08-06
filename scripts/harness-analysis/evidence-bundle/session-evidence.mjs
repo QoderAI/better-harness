@@ -48,6 +48,7 @@ export async function collectSessionPopulation(context, options = {}, dependenci
       scope,
       sources: discovery.sources,
       warnings: discovery.warnings,
+      providerCoverage: discovery.providerCoverage ?? null,
     },
     excludedSessionId: options["exclude-session-id"] ?? options.excludeSessionId,
     providerSessionId: typeof analyzer.currentSessionId === "function" ? analyzer.currentSessionId() : null,

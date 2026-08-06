@@ -245,8 +245,8 @@ test("homepage leads search visitors from proof to a host-specific setup", async
   assert.match(zh["homepage.hosts.qoder.setup"].message, /Qoder CLI.*单独安装/u);
   assert.equal(zh["homepage.hosts.qoder.method"].message, "Desktop 内置");
   assert.equal(zh["homepage.hosts.output.canvas"].message, "Canvas 报告");
-  assert.match(zh["homepage.hosts.pi.setup"].message, /完整交互式报告闭环/u);
-  assert.match(zh["homepage.hosts.workBuddy.setup"].message, /WorkBuddy 自有路径/u);
+  assert.match(zh["homepage.hosts.pi.setup"].message, /原生扩展.*真实模型 E2E/u);
+  assert.match(zh["homepage.hosts.workBuddy.setup"].message, /codebuddy --plugin-dir/u);
   assert.equal(zh["homepage.hosts.status.quickstart"].message, "已验证快速开始");
   assert.equal(zh["homepage.hosts.status.adapter"].message, "适配器支持");
   assert.equal(

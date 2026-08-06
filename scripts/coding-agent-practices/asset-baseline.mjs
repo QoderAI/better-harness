@@ -132,6 +132,9 @@ function ownerRoutes(inventory, workspace) {
 }
 
 function compactInventory(inventory, workspace) {
+  const unsupported = [...new Set((Array.isArray(inventory?.unsupported) ? inventory.unsupported : [])
+    .map((item) => text(item, 180))
+    .filter(Boolean))].sort().slice(0, 16);
   const memoryCategories = (inventory?.memories?.categories ?? [])
     .map((category) => ({
       category: text(category?.category ?? category?.name, 72),
@@ -160,6 +163,7 @@ function compactInventory(inventory, workspace) {
     },
     summary: inventorySummary,
     coverageRows,
+    unsupported,
     ownerRoutes: ownerRoutes(inventory, workspace),
     memories: {
       included: Boolean(inventory?.memories?.included),

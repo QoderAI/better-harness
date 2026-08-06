@@ -27,8 +27,9 @@
   ],
   "type": "module",
   "pi": {
+    "extensions": ["./extensions/pi/better-harness.ts"],
     "skills": ["./skills"],
-    "prompts": ["./prompts"]
+    "prompts": []
   },
   "files": [
     ".claude-plugin/",
@@ -36,6 +37,7 @@
     ".cursor-plugin/",
     ".github/plugin/",
     ".qoder-plugin/",
+    ".codebuddy-plugin/",
     "qwen-extension.json",
     "AGENTS.md",
     "CHANGELOG.md",
@@ -55,6 +57,10 @@
     "!docs/package.json",
     "!docs/package-lock.json",
     "hooks/",
+    "extensions/",
+    "agents/",
+    "avatars/",
+    "settings.json",
     "models/",
     "prompts/",
     "references/",
@@ -69,6 +75,8 @@
   },
   "scripts": {
     "bundle:zip": "node scripts/npm-package/create-bundle.mjs",
+    "workbuddy:verify": "node scripts/packaging/workbuddy-plugin.mjs --verify --json",
+    "workbuddy:pack": "node scripts/packaging/workbuddy-plugin.mjs --out dist/workbuddy/better-harness.zip --json",
     "check": "npm test && npm run pack:verify",
     "pack:verify": "node scripts/npm-package/verify-pack.mjs",
     "publish:dry-run": "npm publish --dry-run --access public --registry https://registry.npmjs.org",
@@ -84,11 +92,14 @@
     "registry": "https://registry.npmjs.org/"
   },
   "engines": {
-    "node": ">=22.20.0 <25.0.0",
+    "node": ">=22.20.0 <26.0.0",
     "npm": ">=10.9.3 <12.0.0"
   },
   "dependencies": {
     "@vscode/tree-sitter-wasm": "0.3.1",
     "esbuild-wasm": "0.28.1"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
   }
 }

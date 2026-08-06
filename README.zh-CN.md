@@ -33,6 +33,9 @@
 选择你正在使用的宿主，查看对应的安装、验证、调用和报告输出说明。
 不同宿主的入口并不完全相同，请直接使用对应章节给出的命令。
 
+Pi 和 WorkBuddy 也提供原生本地插件入口，详见下方安装说明。在两个宿主均完成
+完整的交互式三路报告 smoke 之前，它们仍不进入“已验证快速开始”列表。
+
 规范注册表当前包含八个宿主适配器。Pi 与 WorkBuddy 仍属于适配器支持入口，
 没有进入包含六个宿主的已验证快速开始；具体边界见
 [公开宿主适配矩阵](docs/docs/hosts/adapter-matrix.md)。
@@ -336,8 +339,9 @@ pi install https://github.com/QoderAI/better-harness
 pi -e git:github.com/QoderAI/better-harness
 ```
 
-Pi 通过 `package.json` 中的 `pi` manifest 发现 `better-harness` Skill 和
-`/better-harness` 提示模板。在需要分析的仓库中启动新的 Pi 会话，运行报告提示词：
+Pi 通过 `package.json` 中的 `pi` manifest 发现规范 `better-harness` Skill 和原生扩展。
+扩展注册唯一的 `/better-harness` 命令，启动三路隔离 RPC，并将验证后的结果交给当前主理人回合。
+在需要分析的仓库中启动新的 Pi 会话，运行：
 
 ```text
 /better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
@@ -347,11 +351,34 @@ Pi 默认在仓库的 `.pi/better-harness` 报告根目录下生成自包含的 
 及配套的 `report.md` 和 `findings.json`。Pi 会话证据读自
 `~/.pi/agent/sessions/` 下与工作区匹配的 JSONL 会话记录；缺失的证据会被明确标注而不会被推断。
 
+### WorkBuddy
+
+从源码检出目录以 WorkBuddy Team 专家插件启动：
+
+```bash
+codebuddy --plugin-dir /path/to/better-harness
+```
+
+插件卡片名称为 **Better Harness Review Team / Better Harness 评审专家团**。
+它发现规范 Skill、一个评审总监以及 Session Evidence、Project Harness、Agent Customize
+三个固定成员。总监只收集一次 `prepare-run`，只调用一次 `TeamCreate`，接收三次独立回传，
+完成一次验证/汇总后，才将 `findings.json`、`report.md`、`report.html` 写入
+`.workbuddy/better-harness`。
+
+在源码检出目录执行离线 manifest/归档检查：
+
+```bash
+npm run workbuddy:verify
+```
+
+经授权的真实 WorkBuddy 模型 smoke 属于独立的宿主验证门禁；当前 CLI 或模型不可用时，
+必须保留这一未验证状态。
+
 <a id="develop-and-package-from-source"></a>
 
 ## 从源码开发和打包
 
-开发环境需要 Node.js `>=22.20.0 <25.0.0` 和 npm
+开发环境需要 Node.js `>=22.20.0 <26.0.0` 和 npm
 `>=10.9.3 <12.0.0`，支持 Windows、macOS 和 Linux。
 
 ```bash

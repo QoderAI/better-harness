@@ -327,8 +327,10 @@ function renderEvidence(summary, language) {
     [copy(language, "Learning state", "学习状态"), learning.state ?? "—"],
   ];
   const gaps = textLines(boundary.sourceGaps);
+  const unsupportedCapabilities = textLines(boundary.providerCoverage?.unsupportedCapabilities);
   return `<div class="evidence-grid">${facts.map(([label, value]) => `<div><span>${renderVisibleText(label, language)}</span><strong>${renderVisibleText(value, language)}</strong></div>`).join("")}</div>
     ${gaps.length ? `<div class="evidence-note"><strong>${renderVisibleText(copy(language, "Source gaps", "来源缺口"), language)}</strong><ul>${gaps.map((gap) => `<li>${renderVisibleText(gap, language)}</li>`).join("")}</ul></div>` : ""}
+    ${unsupportedCapabilities.length ? `<div class="evidence-note"><strong>${renderVisibleText(copy(language, "Unsupported capabilities", "未支持能力"), language)}</strong><ul>${unsupportedCapabilities.map((item) => `<li>${renderVisibleText(item, language)}</li>`).join("")}</ul></div>` : ""}
     <p class="method-note">${renderVisibleText(copy(language,
       "Activity totals describe volume, not quality or savings. Fluency conclusions come from the reviewed task sample and remain bounded by the retained evidence.",
       "活动总量只描述用量，不直接代表质量、效率或节省。流畅度结论来自已复核任务样本，并受已保留证据边界约束。"), language)}</p>`;

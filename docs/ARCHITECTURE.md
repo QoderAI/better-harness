@@ -71,8 +71,9 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   in the capability-owned agent-customize and session-analysis providers. The Codex shell
   owns local install/discovery metadata only; Codex evidence collection remains
   in the capability-owned provider and session-analysis modules. The public npm
-  package ships all six plugin metadata roots, while the Qoder runtime bundle
-  includes only `.qoder-plugin/`.
+  package ships all eight native plugin metadata roots (including the Pi
+  manifest and WorkBuddy Team shell), while the Qoder runtime bundle includes
+  only `.qoder-plugin/`.
 
 ## Developer Experience Routing
 

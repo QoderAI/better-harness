@@ -187,6 +187,26 @@ function candidate(events, insights = {}, options = {}) {
   });
 }
 
+test("task-loop source carries asset unsupported capabilities into the observation manifest", () => {
+  const source = candidate([], {}, {
+    providerCoverage: {
+      provider: "pi",
+      status: "observed",
+      configured: true,
+      enabled: true,
+      observed: true,
+      verified: true,
+      unsupported: [],
+      unavailable: [],
+      sourceCoverage: { status: "observed" },
+    },
+    unsupportedCapabilities: ["native MCP inventory"],
+  });
+
+  assert.deepEqual(source.manifest.providerCoverage.unsupportedCapabilities, ["native MCP inventory"]);
+  assert.deepEqual(validateHarnessReportSource(source), []);
+});
+
 test("routine permission volume stays aggregate and does not retain permission-only Episodes", () => {
   const start = Date.parse("2026-07-10T10:00:00.000Z");
   const events = Array.from({ length: 171 }, (_, index) => event({

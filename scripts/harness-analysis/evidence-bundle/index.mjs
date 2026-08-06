@@ -16,6 +16,10 @@ import {
   collectSessionEvidence,
   collectSessionPopulation,
 } from "./session-evidence.mjs";
+import {
+  appendUnsupportedCapabilities,
+  sanitizeProviderCoverage,
+} from "../../session-analysis/index.mjs";
 
 async function capture(owner, operation) {
   try {
@@ -107,6 +111,15 @@ function populationDiagnostics(population, sessionEvidence, lead) {
   };
 }
 
+function assetUnsupportedCapabilities(lane) {
+  const values = lane?.data?.envelopes?.inventory?.data?.unsupported;
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value ?? "").replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 180))
+    .filter(Boolean))]
+    .slice(0, 16)
+    .sort();
+}
+
 export async function collectEvidenceBundle(options = {}, dependencies = {}) {
   const now = dependencies.now?.() ?? new Date();
   const baseContext = freezeEvidenceBundleContext(options, now);
@@ -160,6 +173,15 @@ export async function collectEvidenceBundle(options = {}, dependencies = {}) {
   const partialLanes = EVIDENCE_LANE_NAMES.filter((name) => lanes[name]?.status === "partial");
   const leadFailed = !laneIsAvailable(lead);
   const topologyIncomplete = context.topology.status !== "complete";
+  const baseProviderCoverage = sanitizeProviderCoverage(
+    sessionEvidence?.data?.providerCoverage
+      ?? lead?.data?.summaryFacts?.evidenceBoundary?.providerCoverage
+      ?? null,
+  );
+  const unsupportedCapabilities = assetUnsupportedCapabilities(agentCustomize);
+  const providerCoverage = appendUnsupportedCapabilities(baseProviderCoverage, unsupportedCapabilities)
+    ?? baseProviderCoverage;
+  const schemaDiagnostics = providerCoverage?.schemaDiagnostics ?? null;
   const status = leadFailed || (context.depth === "normal" && (incompleteLanes.length > 0 || topologyIncomplete))
     ? "failed"
     : incompleteLanes.length > 0 || topologyIncomplete
@@ -184,6 +206,9 @@ export async function collectEvidenceBundle(options = {}, dependencies = {}) {
       topologyIncomplete,
       individualCommandsRemainDiagnostic: true,
       sessionPopulationBinding,
+      ...(providerCoverage ? { providerCoverage } : {}),
+      ...(unsupportedCapabilities.length > 0 ? { unsupportedCapabilities } : {}),
+      ...(schemaDiagnostics ? { schemaDiagnostics } : {}),
     },
   };
 }

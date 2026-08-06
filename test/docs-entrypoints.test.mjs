@@ -294,8 +294,8 @@ test("public adapter matrix documents all eight adapters and their support bound
 
   assert.match(
     matrix,
-    /all six plugin metadata\nroots/u,
-    "docs/docs/hosts/adapter-matrix.md does not declare six plugin metadata roots",
+    /native metadata for all\neight adapters/u,
+    "docs/docs/hosts/adapter-matrix.md does not declare eight native adapter metadata roots",
   );
 
   assert.match(
@@ -318,8 +318,8 @@ test("zh-Hans public adapter matrix documents all eight adapters and their suppo
 
   assert.match(
     matrix,
-    /全部六个插件元数据根目录/u,
-    "zh-Hans adapter-matrix.md does not declare six plugin metadata roots",
+    /八个宿主的原生元数据/u,
+    "zh-Hans adapter-matrix.md does not declare eight native adapter metadata roots",
   );
 
   assert.match(

@@ -195,6 +195,35 @@ test("evidence bundle freezes the three canonical lane names and normal scope", 
   assert.equal(result.diagnostics.collectionMode, "frozen-context-multi-owner");
 });
 
+test("asset provider unsupported capabilities reach the frozen bundle coverage boundary", async () => {
+  const result = await collectEvidenceBundle({ workspace: ".", platform: "pi", depth: "quick" }, dependencies({
+    collectSessionEvidence: async () => availableLane(sessionFacts({
+      providerCoverage: {
+        provider: "pi",
+        status: "observed",
+        configured: true,
+        enabled: true,
+        observed: true,
+        verified: true,
+        unsupported: [],
+        unavailable: [],
+        sourceCoverage: { status: "observed" },
+      },
+    })),
+    collectAgentCustomize: async () => availableLane({
+      kind: "agent-asset-baseline",
+      status: "complete",
+      envelopes: {
+        inventory: { status: "available", data: { unsupported: ["pi runtime registration", "pi runtime registration"] } },
+      },
+    }),
+  }));
+
+  assert.equal(result.status, "complete");
+  assert.deepEqual(result.diagnostics.unsupportedCapabilities, ["pi runtime registration"]);
+  assert.deepEqual(result.diagnostics.providerCoverage.unsupportedCapabilities, ["pi runtime registration"]);
+});
+
 test("evidence bundle resolves topology once and shares the frozen binding with every consumer", async () => {
   let resolutions = 0;
   let canonicalTopology;

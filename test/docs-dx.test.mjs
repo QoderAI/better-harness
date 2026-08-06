@@ -50,7 +50,7 @@ test("installation prerequisites and verification paths stay aligned across loca
   assert.match(installation, /## Prerequisites \{#prerequisites\}/u);
   assert.match(installationZh, /## 前置条件 \{#prerequisites\}/u);
   for (const content of [installation, installationZh]) {
-    assert.match(content, /Node\.js `>=22\.20\.0 <25\.0\.0`/u);
+    assert.match(content, /Node\.js `>=22\.20\.0 <26\.0\.0`/u);
     assert.match(content, /npm `>=10\.9\.3 <12\.0\.0`/u);
     assert.match(content, /Windows/u);
     assert.match(content, /macOS/u);

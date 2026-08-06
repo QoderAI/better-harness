@@ -1045,6 +1045,31 @@ test("Pi custom session roots require a directory", async () => {
   assert.equal(result.sessions.length, 0);
 });
 
+test("Pi malformed first records and unknown header versions remain partial evidence", async () => {
+  const root = await fixtureRoot("session-pi-schema-diagnostics-");
+  const home = path.join(root, ".pi", "agent");
+  const workspace = path.join(root, "workspace", "target");
+  const dirName = workspaceToPiSessionDirVariants(workspace).exact;
+  await mkdir(path.join(home, "sessions", dirName), { recursive: true });
+  await writeFile(path.join(home, "sessions", dirName, "malformed.jsonl"), [
+    "not-json",
+    JSON.stringify({ type: "session", version: 3, id: "late-header", timestamp: "2026-07-20T01:00:00.000Z", cwd: workspace }),
+  ].join("\n") + "\n");
+  await writeJsonl(path.join(home, "sessions", dirName, "unknown-version.jsonl"), [
+    { type: "session", version: 4, id: "unknown-version", timestamp: "2026-07-20T01:00:00.000Z", cwd: workspace },
+    { type: "message", id: "v4-message", timestamp: "2026-07-20T01:00:01.000Z", message: { role: "user", content: "not admitted" } },
+  ]);
+
+  const result = await new PiSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 0);
+  assert.equal(result.providerCoverage.status, "unsupported");
+  assert.ok(result.providerCoverage.unsupported.includes("pi-session-schema-version"));
+  assert.equal(result.providerCoverage.schemaDiagnostics.unknownVersionCount, 1);
+  assert.equal(result.providerCoverage.schemaDiagnostics.invalidHeaderCount, 2);
+  assert.equal(result.providerCoverage.schemaDiagnostics.invalidRecordCount, 1);
+  assert.equal(result.providerCoverage.schemaDiagnostics.status, "partial");
+});
+
 test("WorkBuddy provider expands tool calls, tool results, and usage from JSONL transcripts", async () => {
   const root = await fixtureRoot("session-workbuddy-provider-");
   const home = path.join(root, ".workbuddy");

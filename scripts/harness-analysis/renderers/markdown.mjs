@@ -296,6 +296,7 @@ ${smallCheckRows.join("\n")}
 - Session selection: ${value(boundary.manifest?.selection?.strategy)}; ${value(boundary.manifest?.selection?.analyzedCount, 0)} sessions analyzed of ${value(boundary.manifest?.selection?.eligibleCount, 0)} eligible sessions; ${value(boundary.manifest?.selection?.confidence)} confidence
 - Delivery grades observed: ${value(boundary.deliveryEvidenceLevels)}
 - Source gaps: ${value(boundary.sourceGaps)}
+- Provider coverage: ${value(boundary.providerCoverage?.status, "not observed")}; unsupported capabilities: ${value(boundary.providerCoverage?.unsupportedCapabilities, "none")}
 - Learning comparison: ${readerLearningState(learning.state)}; ${value(learning.interventions?.length, 0)} declared intervention(s)
 `;
 }

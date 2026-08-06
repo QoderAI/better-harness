@@ -25,6 +25,8 @@ startup. Then use the check supported by that host:
 | [Cursor](./installation?host=cursor#cursor) | Start the agent with `cursor-agent --plugin-dir /path/to/better-harness`, keep that process open, and run the report prompt in the same session. |
 | [Qwen Code](./installation?host=qwen-code#qwen-code) | Start a new session and run the report prompt. This guide does not assume an unverified extension-list command. |
 | [GitHub Copilot](./installation?host=github-copilot#github-copilot) | Run `copilot plugin list` and `copilot skill list`; both should include `better-harness`. |
+| [Pi](./hosts/adapter-matrix#pi) | Run `pi --version`, then start a new Pi session with the package and run `/better-harness`. |
+| [WorkBuddy](./hosts/adapter-matrix#workbuddy) | Run `codebuddy --plugin-dir .` for local Team discovery and `npm run workbuddy:verify` for the offline manifest check. |
 
 If a marketplace command fails, return to the linked host tab and compare the
 repository source and command spelling exactly. In particular, current Codex
@@ -43,7 +45,7 @@ copy the checkout into a global plugin directory as a troubleshooting step.
 
 ## The standalone or source CLI reports an unsupported runtime
 
-The standalone and source CLIs support Node.js `>=22.20.0 <25.0.0` and npm
+The standalone and source CLIs support Node.js `>=22.20.0 <26.0.0` and npm
 `>=10.9.3 <12.0.0` on Windows, macOS, and Linux. Check the active executables:
 
 ```bash
@@ -99,6 +101,8 @@ artifacts are:
 | Cursor | `<target>/.cursor/better-harness/<run>/` | `findings.json`, `report.md`, `report.html` |
 | Qwen Code | `<target>/.qwen/better-harness/<run>/` | `findings.json`, `report.md`, `report.html` |
 | GitHub Copilot | `<target>/.copilot/better-harness/<run>/` | `findings.json`, `report.md`, `report.html` |
+| Pi | `<target>/.pi/better-harness/` | `findings.json`, `report.md`, `report.html` |
+| WorkBuddy | `<target>/.workbuddy/better-harness/` | `findings.json`, `report.md`, `report.html` |
 
 `<target>` is the repository being reviewed, not the Better Harness source
 checkout unless that is the selected target.

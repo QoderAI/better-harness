@@ -1,4 +1,5 @@
 import { stableFingerprint } from "./episode-contract.mjs";
+import { sanitizeProviderCoverage } from "./provider-coverage.mjs";
 
 export const OBSERVATION_MANIFEST_SCHEMA_VERSION = 2;
 
@@ -25,6 +26,7 @@ export function buildObservationManifest({
   adapterVersion = "session-analysis-v2",
   generatedAt = null,
   privacyMode = "reader-safe",
+  providerCoverage = null,
 } = {}) {
   const sourceInventory = sources.map(sourceShape).sort((left, right) => left.id.localeCompare(right.id));
   const sampled = analyzedCount < eligibleCount;
@@ -71,6 +73,7 @@ export function buildObservationManifest({
       rawCommandIncluded: false,
       absoluteHomePathIncluded: false,
     },
+    ...(sanitizeProviderCoverage(providerCoverage) ? { providerCoverage: sanitizeProviderCoverage(providerCoverage) } : {}),
     warningCodes: [...new Set(warnings.map((warning) => warning?.code).filter(Boolean))].sort(),
   };
 }

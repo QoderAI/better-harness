@@ -24,6 +24,7 @@ import {
   summarizeWorkspaceQualifications,
   validateWorkspaceMatchTopology,
 } from "./workspace-match.mjs";
+import { buildProviderCoverage, sanitizeProviderCoverage } from "./provider-coverage.mjs";
 
 const DEFAULT_LIMIT = 50;
 const DEFAULT_WORKSPACE_PREFLIGHT_MAX_LINES = 2_000;
@@ -416,6 +417,26 @@ export function buildProviderFacets({ indexedSessions = [], detailedSessions = [
   };
 }
 
+async function providerCoverage(analyzer, scope, context = {}) {
+  if (typeof analyzer.coverageDiagnostics === "function") {
+    const value = await analyzer.coverageDiagnostics(scope, context);
+    const normalized = sanitizeProviderCoverage(value);
+    if (normalized) return normalized;
+  }
+  const roots = Array.isArray(context.roots) ? context.roots : [];
+  const enabled = roots.some((root) => root?.enabled === true);
+  const configured = roots.length > 0;
+  const observed = Number(context.eligibleSessions?.length ?? context.discoveredSessions?.length ?? 0) > 0;
+  return buildProviderCoverage({
+    provider: scope.platform,
+    configured,
+    enabled,
+    observed,
+    verified: observed && enabled,
+    unavailable: enabled ? [] : ["provider-source"],
+  });
+}
+
 async function pricingTable(options) {
   if (!options["pricing-table"]) return undefined;
   return JSON.parse(await readFile(path.resolve(options["pricing-table"]), "utf8"));
@@ -445,6 +466,11 @@ export async function runProviderAnalysis(analyzer, options = {}, config = {}) {
     ? prepareFactsSessionInventory(qualifiedSessions, factsContext)
     : { sessions: qualifiedSessions, omitted: {} };
   const sessions = factsInventory.sessions;
+  const coverage = await providerCoverage(analyzer, scope, {
+    roots,
+    discoveredSessions: discovered,
+    eligibleSessions: sessions,
+  });
   const warnings = [
     ...sourceWarnings(roots),
     ...(typeof analyzer.analysisWarnings === "function" ? await analyzer.analysisWarnings(scope, roots, sessions) : []),
@@ -455,6 +481,9 @@ export async function runProviderAnalysis(analyzer, options = {}, config = {}) {
     sessions,
     facets: null,
     warnings,
+    providerCoverage: coverage,
+    coverageStatus: coverage?.status ?? "unobserved",
+    ...(coverage?.schemaDiagnostics ? { schemaDiagnostics: coverage.schemaDiagnostics } : {}),
   }, workspaceRun);
   if (options.command === "sources") return resultBase;
   if (options.command === "sessions") {
@@ -511,6 +540,19 @@ export async function runProviderAnalysis(analyzer, options = {}, config = {}) {
           warnings,
         })
       : null;
+    const factsCoverage = sourceCoverage
+      ? buildProviderCoverage({
+          provider: scope.platform,
+          sourceCoverage,
+          configured: coverage.configured,
+          enabled: coverage.enabled,
+          observed: coverage.observed,
+          verified: coverage.verified,
+          unsupported: coverage.unsupported,
+          unavailable: coverage.unavailable,
+          schemaDiagnostics: coverage.schemaDiagnostics,
+        })
+      : coverage;
     return withWorkspaceMatchDiagnostics(buildSessionCoreFacts({
       scope,
       events,
@@ -520,6 +562,7 @@ export async function runProviderAnalysis(analyzer, options = {}, config = {}) {
       episodeLimit: options["episode-limit"] ?? options.episodeLimit ?? options.limit,
       debug: parseBooleanFlag(options.debug ?? false),
       sourceCoverage,
+      providerCoverage: factsCoverage,
     }), workspaceRun, hydration.hydrationQualifications);
   }
   if (fileReadMode) {

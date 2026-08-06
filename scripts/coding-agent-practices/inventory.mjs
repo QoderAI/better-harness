@@ -39,6 +39,16 @@ const CODEX_MEMORY_CONFIG_KEYS = new Set([
   "memories.consolidation_model",
 ]);
 
+const MAX_PUBLIC_UNSUPPORTED = 16;
+
+function publicUnsupported(value) {
+  return [...new Set((Array.isArray(value) ? value : [])
+    .map((item) => String(item ?? "").replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 180))
+    .filter(Boolean))]
+    .sort()
+    .slice(0, MAX_PUBLIC_UNSUPPORTED);
+}
+
 function normalizeBoolean(value) {
   return parseBooleanFlag(value);
 }
@@ -729,6 +739,7 @@ export async function collectProviderInventory(options = {}) {
     sessionSourceHints,
     memories,
     customizeDiagnostics: inventory.diagnostics,
+    unsupported: publicUnsupported(inventory.unsupported),
     warnings: scope.includeMemories && !["qoder", "codex"].includes(platform)
       ? [`Memory inventory is only implemented for qoder and codex; skipped ${platform} memories.`]
       : [],
@@ -863,6 +874,7 @@ export async function collectQoderInventory(options = {}) {
     sessionSourceHints: providerInventory.sessionSourceHints,
     memories,
     customizeDiagnostics: providerInventory.customizeDiagnostics,
+    unsupported: publicUnsupported(providerInventory.unsupported),
     warnings: [],
   };
 }

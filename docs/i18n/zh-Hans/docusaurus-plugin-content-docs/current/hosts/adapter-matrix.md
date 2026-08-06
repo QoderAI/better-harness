@@ -27,12 +27,11 @@ Better Harness 当前声明了八个能力层宿主适配器，其中六个已�
 | Cursor | 已验证快速开始 | 具备分析能力的源码本地宿主 | `.cursor-plugin/` | 工作区匹配的转录、元数据和审计日志；部分覆盖保持显式标注 | 自包含 HTML + Markdown |
 | Qwen Code | 已验证快速开始 | 具备分析能力的源码本地宿主 | `qwen-extension.json` | 匹配当前工作区的本地 Qwen 转录（存在时） | 自包含 HTML + Markdown |
 | GitHub Copilot | 已验证快速开始 | 具备分析能力的源码本地宿主 | `.github/plugin/` | 工作区匹配的 Copilot CLI 转录；部分覆盖保持显式标注 | 自包含 HTML + Markdown |
-| Pi | 适配器支持 | 具备分析能力的源码本地宿主 | `package.json` 中的 `pi` manifest | 匹配当前工作区的本地 Pi 会话 | 自包含 HTML + Markdown |
-| WorkBuddy | 适配器支持 | 具备分析能力的源码本地宿主 | 无；Skill 使用 WorkBuddy 自有路径 | 匹配工作区的 WorkBuddy JSONL 转录 | 自包含 HTML + Markdown |
+| Pi | 适配器支持 | 原生扩展包 | `pi` manifest + `extensions/pi/better-harness.ts` | 匹配当前工作区的本地 Pi 会话 | 自包含 HTML + Markdown |
+| WorkBuddy | 适配器支持 | 原生 Team 专家插件 | `.codebuddy-plugin/` + `settings.json` + `agents/` | 匹配工作区的 WorkBuddy JSONL 转录 | 自包含 HTML + Markdown |
 
-`@qoderai/better-harness` npm 包含全部六个插件元数据根目录。生成的 Qoder
-运行时 bundle 只包含 Qoder shell。Pi 复用现有 `package.json` 中的安装元数据，
-因此不会新增第七个文件系统元数据根目录；非 Qoder 的生成宿主产物保持源码本地。
+`@qoderai/better-harness` npm 包含八个宿主的原生元数据。生成的 Qoder
+运行时 bundle 只包含 Qoder shell；非 Qoder 的生成宿主产物保持源码本地。
 
 ## 输出模式
 
@@ -48,14 +47,14 @@ Better Harness 当前声明了八个能力层宿主适配器，其中六个已�
 ### Pi {#pi}
 
 Pi 可以通过 `pi install <source>` 安装本仓库，或使用 `pi -e <source>` 加载。
-包发现、已配置资产、工作区匹配的会话证据与可移植 HTML 路由均已实现。
+原生扩展注册唯一的 `/better-harness` 命令，编排三路隔离 RPC；证据收集与渲染仍由规范脚本负责。
 在观察到完整交互式报告闭环冒烟验证前，Pi 仍不进入已验证快速开始集合。
 
 ### WorkBuddy {#workbuddy}
 
 WorkBuddy 的已配置资产、工作区匹配的会话证据与可移植 HTML 路由均已实现。
-本仓库不提供 WorkBuddy 安装 Shell、插件 manifest 或 npm 打包的宿主产物；安装
-仍通过 WorkBuddy 自有的 `~/.workbuddy/skills` 或 Marketplace 入口完成。
+原生 Team 插件使用一个主理人和三个固定成员；`npm run workbuddy:verify` 会验证
+manifest/归档且不会复制私有宿主状态。在完整交互式报告闭环 smoke 通过前，仍保留适配器支持边界。
 
 ## 能力覆盖
 

@@ -46,7 +46,11 @@ function readJson(relativePath) {
 }
 
 function verifyReleaseVersionAlignment() {
-  const packageVersion = readJson("package.json").version;
+  const packageJson = readJson("package.json");
+  const packageVersion = packageJson.version;
+  if (packageJson.peerDependencies?.["@earendil-works/pi-coding-agent"] !== "*") {
+    fail("package.json must declare @earendil-works/pi-coding-agent as a wildcard peer dependency");
+  }
   const versions = [
     [".qoder-plugin/plugin.json", readJson(".qoder-plugin/plugin.json").version],
     [".claude-plugin/plugin.json", readJson(".claude-plugin/plugin.json").version],
@@ -142,7 +146,20 @@ const required = [
   "package/.github/plugin/plugin.json",
   "package/.github/plugin/marketplace.json",
   "package/.qoder-plugin/plugin.json",
+  "package/.codebuddy-plugin/plugin.json",
+  "package/.codebuddy-plugin/marketplace.json",
   "package/qwen-extension.json",
+  "package/extensions/pi/better-harness.ts",
+  "package/settings.json",
+  "package/agents/better-harness-review-director.md",
+  "package/agents/session-evidence-reviewer.md",
+  "package/agents/project-harness-reviewer.md",
+  "package/agents/agent-customize-reviewer.md",
+  "package/avatars/team.svg",
+  "package/avatars/better-harness-review-director.svg",
+  "package/avatars/session-evidence-reviewer.svg",
+  "package/avatars/project-harness-reviewer.svg",
+  "package/avatars/agent-customize-reviewer.svg",
   "package/prompts/better-harness.md",
   "package/case-studies/factory/model/factory-readiness.md",
   "package/docs/glossary.md",
@@ -173,6 +190,12 @@ const required = [
   "package/scripts/harness-analysis/evidence-bundle/session-evidence.mjs",
   "package/scripts/harness-analysis/evidence-bundle/project-harness.mjs",
   "package/scripts/harness-analysis/evidence-bundle/agent-customize.mjs",
+  "package/scripts/harness-analysis/host-runtime/cli.mjs",
+  "package/scripts/harness-analysis/host-runtime/contract.mjs",
+  "package/scripts/harness-analysis/host-runtime/index.mjs",
+  "package/scripts/harness-analysis/host-runtime/host-doctor.mjs",
+  "package/scripts/harness-analysis/host-runtime/prepare-run.mjs",
+  "package/scripts/harness-analysis/host-runtime/verify-run.mjs",
   "package/scripts/harness-analysis/report-source/apply-review.mjs",
   "package/scripts/harness-analysis/report-source/episode-review.mjs",
   "package/scripts/harness-analysis/report-source/index.mjs",
@@ -187,6 +210,7 @@ const required = [
   "package/scripts/session-analysis/episode-facts.mjs",
   "package/scripts/session-analysis/result-facts.mjs",
   "package/scripts/session-analysis/session-core-facts.mjs",
+  "package/scripts/session-analysis/provider-coverage.mjs",
   "package/references/loop-engineering/loop-blueprint.md",
   "package/skills/better-harness/SKILL.md",
   "package/skills/better-harness/references/agent-customize.md",

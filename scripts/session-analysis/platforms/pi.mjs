@@ -18,9 +18,12 @@ import {
   sessionWorkspaceCwd,
   workspaceMatchScopeFromOptions,
 } from "../provider-runner.mjs";
+import { buildProviderCoverage } from "../provider-coverage.mjs";
 import { parseResultFacts } from "../result-facts.mjs";
 import { mergeTimeRange, normalizeCliDate, normalizeTimestamp, timestampMillis, withinTimeRange } from "../time.mjs";
 import { WORKSPACE_CWD_MATCH, classifyWorkspaceCwd } from "../workspace-match.mjs";
+
+const PI_SESSION_SCHEMA_VERSION = 3;
 
 function isWorkspaceMatch(candidate, workspace) {
   if (!candidate) return false;
@@ -238,14 +241,22 @@ async function probeTranscript(filePath, scope) {
     workspaceMatch: false,
     validHeader: false,
     cwd: null,
+    schemaVersion: null,
+    unknownVersion: false,
+    invalidLines: 0,
   };
   let firstRecord = true;
-  await forEachJsonLine(filePath, (raw) => {
+  const scan = await forEachJsonLine(filePath, (raw) => {
     if (firstRecord) {
       firstRecord = false;
       // Pi requires the first parsed record to be the session header. Do not
       // let a later injected header qualify an otherwise foreign transcript.
-      if (raw?.type !== "session" || typeof raw.id !== "string" || !isScopedWorkspaceMatch(raw.cwd, scope)) {
+      summary.schemaVersion = raw?.version ?? null;
+      summary.unknownVersion = raw?.version !== PI_SESSION_SCHEMA_VERSION;
+      if (raw?.type !== "session"
+        || typeof raw.id !== "string"
+        || raw.version !== PI_SESSION_SCHEMA_VERSION
+        || !isScopedWorkspaceMatch(raw.cwd, scope)) {
         return false;
       }
       summary.validHeader = true;
@@ -260,7 +271,21 @@ async function probeTranscript(filePath, scope) {
       return false;
     }
     mergeTimeRange(summary, inferTimestamp(raw));
+  }, {
+    onInvalid: (_error, _line, lineNumber) => {
+      // A malformed first line is not an absent header. Mark the first
+      // physical record as consumed so a later valid header cannot silently
+      // turn an invalid transcript into a complete Pi session.
+      if (firstRecord) {
+        firstRecord = false;
+        summary.invalidLines = Number(summary.invalidLines ?? 0) + 1;
+        summary.invalidHeader = true;
+        summary.invalidHeaderLine = lineNumber;
+      }
+    },
   });
+  summary.invalidLines = scan.invalidLines;
+  if (summary.invalidHeader) summary.validHeader = false;
   return summary;
 }
 
@@ -410,8 +435,19 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
 
   async discoverSessions(scope, roots) {
     const sessions = new Map();
+    const diagnostics = {
+      expectedVersion: PI_SESSION_SCHEMA_VERSION,
+      observedVersions: [],
+      unknownVersionCount: 0,
+      invalidHeaderCount: 0,
+      invalidRecordCount: 0,
+      codes: [],
+    };
     const transcriptRoot = roots.find((root) => root.kind === "pi-session-jsonl");
-    if (!transcriptRoot) return [];
+    if (!transcriptRoot) {
+      scope._piSchemaDiagnostics = { ...diagnostics, status: "unavailable" };
+      return [];
+    }
     const custom = scope.sessionDirMode === "custom";
     const seenDirs = new Set();
     for (const sessionsRoot of transcriptRoot.paths ?? []) {
@@ -433,6 +469,12 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
           // Both modes qualify each transcript by the session-header cwd, so a
           // shared custom directory never leaks foreign-workspace sessions.
           const probe = await probeTranscript(filePath, scope);
+          if (probe.schemaVersion !== null && !diagnostics.observedVersions.includes(probe.schemaVersion)) {
+            diagnostics.observedVersions.push(probe.schemaVersion);
+          }
+          diagnostics.invalidRecordCount += Number(probe.invalidLines ?? 0);
+          if (probe.unknownVersion) diagnostics.unknownVersionCount += 1;
+          if (!probe.validHeader) diagnostics.invalidHeaderCount += 1;
           if (!probe.validHeader || !probe.workspaceMatch || !withinTimeRange(probe.lastSeen ?? probe.firstSeen, scope)) continue;
           addRef(sessions, probe.sessionId, scope.workspace, {
             kind: transcriptRoot.kind,
@@ -445,6 +487,16 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
         }
       }
     }
+    diagnostics.observedVersions.sort((left, right) => String(left).localeCompare(String(right)));
+    diagnostics.status = diagnostics.unknownVersionCount > 0
+      || diagnostics.invalidHeaderCount > 0
+      || diagnostics.invalidRecordCount > 0
+      ? "partial"
+      : "verified";
+    if (diagnostics.unknownVersionCount > 0) diagnostics.codes.push("pi-unknown-session-version");
+    if (diagnostics.invalidHeaderCount > 0) diagnostics.codes.push("pi-invalid-session-header");
+    if (diagnostics.invalidRecordCount > 0) diagnostics.codes.push("pi-invalid-jsonl-record");
+    scope._piSchemaDiagnostics = diagnostics;
     return [...sessions.values()].map(finalizeSession)
       .sort((left, right) => (timestampMillis(right.lastSeen) ?? 0) - (timestampMillis(left.lastSeen) ?? 0));
   }
@@ -495,6 +547,51 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
 
   async analyze(options = {}) {
     return runProviderAnalysis(this, options, { platform: "pi", adapterVersion: "pi-v1" });
+  }
+
+  coverageDiagnostics(scope, { roots = [], eligibleSessions = [] } = {}) {
+    const schemaDiagnostics = scope._piSchemaDiagnostics ?? {
+      expectedVersion: PI_SESSION_SCHEMA_VERSION,
+      observedVersions: [],
+      unknownVersionCount: 0,
+      invalidHeaderCount: 0,
+      invalidRecordCount: 0,
+      status: "unknown",
+      codes: [],
+    };
+    const root = roots.find((entry) => entry.kind === "pi-session-jsonl");
+    const sourceCoverage = {
+      status: root?.exists === false
+        ? "absent"
+        : schemaDiagnostics.status === "partial"
+          ? "partial"
+          : eligibleSessions.length === 0
+            ? "unobserved"
+            : "observed",
+      transcript: {
+        workspaceSessions: eligibleSessions.length,
+        inWindowSessions: eligibleSessions.length,
+        outOfWindowSessions: 0,
+        timeUnobservedSessions: eligibleSessions.filter((session) => !session.firstSeen && !session.lastSeen).length,
+        relevantSessions: eligibleSessions.length,
+        withConversation: 0,
+        withRequest: 0,
+        terminalOnly: 0,
+        unreadable: 0,
+      },
+      joins: { chatMetadata: {}, audit: {} },
+    };
+    return buildProviderCoverage({
+      provider: "pi",
+      sourceCoverage,
+      configured: Boolean(root),
+      enabled: root?.enabled === true,
+      observed: eligibleSessions.length > 0,
+      verified: schemaDiagnostics.status === "verified" && eligibleSessions.length > 0,
+      unsupported: schemaDiagnostics.unknownVersionCount > 0 ? ["pi-session-schema-version"] : [],
+      unavailable: root?.exists === false ? ["pi-session-transcript"] : [],
+      schemaDiagnostics,
+    });
   }
 }
 

@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { buildTaskEpisodes } from "./episode-contract.mjs";
 import { finalizeSessionCoreFacts } from "./episode-facts.mjs";
+import { sanitizeProviderCoverage } from "./provider-coverage.mjs";
 
 const DEFAULT_ACTIVE_WINDOW_MS = 60_000;
 const MIN_FACT_SESSION_POOL = 12;
@@ -93,6 +94,7 @@ export function buildSessionCoreFacts({
   episodeLimit,
   debug = false,
   sourceCoverage = null,
+  providerCoverage = null,
 } = {}) {
   const executionEvents = events.filter((event) => event?.lifecyclePhase !== "pre");
   const episodeAnalysis = buildTaskEpisodes(executionEvents, {
@@ -117,6 +119,7 @@ export function buildSessionCoreFacts({
     warnings,
     omitted,
     sourceCoverage,
+    providerCoverage: sanitizeProviderCoverage(providerCoverage),
   });
 }
 

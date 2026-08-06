@@ -15,10 +15,10 @@ Commands:
 
   Workflows
     harness                  Check Better Harness readiness reports and Canvas outputs
-                             subcommands: evidence-bundle, workspace-topology, analyze, checkup,
-                             selection-profile, source, task-loop-report, render,
-                             preview-canvas, report-quality, repair-findings, record-fix-output,
-                             validate-canvas
+                             subcommands: evidence-bundle, host-doctor, prepare-run, verify-run,
+                             workspace-topology, analyze, checkup, selection-profile, source,
+                             task-loop-report, render, preview-canvas, report-quality,
+                             repair-findings, record-fix-output, validate-canvas
 
   Project Evidence
     session-analysis         Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot,
@@ -47,6 +47,7 @@ Examples:
   better-harness harness checkup --phase scan --provider qoder --workspace . --json
   better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json
   better-harness harness report-quality --report <run>/report.md
+  better-harness harness host-doctor --platform pi --workspace . --json
   better-harness harness validate-canvas --canvas <run>/report.canvas.tsx
   better-harness core-change-watch project-profile --json
   better-harness core-change-watch change-drift --json

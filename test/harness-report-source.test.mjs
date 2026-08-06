@@ -127,3 +127,32 @@ test("report source accepts only versioned, privacy-safe semantic facets", () =>
   }] };
   assert.ok(validateHarnessReportSource(invalid).some((error) => error.includes("rawPrompt")));
 });
+
+test("report source preserves provider unsupported capabilities and rejects unknown coverage fields", () => {
+  const source = createHarnessReportSource({
+    manifest: buildObservationManifest({
+      scope: { platform: "pi", workspace: "/workspace/example" },
+      eligibleCount: 1,
+      analyzedCount: 1,
+      selectionStrategy: "all-eligible",
+      providerCoverage: {
+        provider: "pi",
+        status: "observed",
+        configured: true,
+        enabled: true,
+        observed: true,
+        verified: true,
+        unsupported: [],
+        unsupportedCapabilities: ["native MCP inventory"],
+        unavailable: [],
+        sourceCoverage: { status: "observed" },
+      },
+    }),
+  });
+  assert.deepEqual(validateHarnessReportSource(source), []);
+  assert.deepEqual(source.manifest.providerCoverage.unsupportedCapabilities, ["native MCP inventory"]);
+
+  const malformed = structuredClone(source);
+  malformed.manifest.providerCoverage.extra = true;
+  assert.ok(validateHarnessReportSource(malformed).some((error) => error.includes("providerCoverage has unsupported field: extra")));
+});

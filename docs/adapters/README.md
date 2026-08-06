@@ -17,11 +17,10 @@ providers, real session-evidence adapters, and output modes. Canonical product
 judgment stays in `skills/`, `models/`, `references/`, `templates/`, and
 `scripts/<capability>/`.
 
-The `@qoderai/better-harness` npm package includes six filesystem metadata
-roots for Qoder, Claude Code, Codex, Cursor, Qwen, and Copilot, plus Pi install
-metadata in the existing `package.json`. The generated Qoder runtime bundle
-includes only the Qoder shell, `.qoder-plugin/`; non-Qoder generated host
-artifacts remain source-local. Claude Code installs its shell through the
+The `@qoderai/better-harness` npm package includes native metadata for Qoder,
+Claude Code, Codex, Cursor, Qwen, Copilot, Pi, and WorkBuddy. The generated
+Qoder runtime bundle includes only the Qoder shell, `.qoder-plugin/`; non-Qoder
+generated host artifacts remain source-local. Claude Code installs its shell through the
 repository's native marketplace manifest. Pi installs the repository as a pi
 package through the `pi` manifest in `package.json`.
 
@@ -33,8 +32,8 @@ package through the `pi` manifest in `package.json`.
 | Cursor | Analysis-capable source-local host | `.cursor-plugin/` | `scripts/agent-customize/providers/cursor.mjs` | `scripts/session-analysis/platforms/cursor.mjs` | self-contained HTML + Markdown | `.cursor` + `.codex` compatibility + `AGENTS.md` | `agent --plugin-dir . --mode ask --print` -> Cursor evidence bundle -> validated `html` render |
 | Qwen Code | Analysis-capable source-local host | `qwen-extension.json` | `scripts/agent-customize/providers/qwen.mjs` | `scripts/session-analysis/platforms/qwen.mjs` | self-contained HTML + Markdown | `.qwen` + `QWEN.md` + `AGENTS.md` | `harness prepare --platform qwen` -> finalize with `html-report` validation |
 | GitHub Copilot | Analysis-capable source-local host | `.github/plugin/` | `scripts/agent-customize/providers/copilot.mjs` | `scripts/session-analysis/platforms/copilot.mjs` | self-contained HTML + Markdown | `.github` + `AGENTS.md` + `~/.copilot` | `copilot plugin marketplace add .` -> `copilot plugin install better-harness@better-harness` -> configured-asset baseline -> validated `html` render |
-| Pi | Analysis-capable source-local host | `pi` manifest in `package.json` | `scripts/agent-customize/providers/pi.mjs` | `scripts/session-analysis/platforms/pi.mjs` | self-contained HTML + Markdown | `.pi` + `.agents` + `AGENTS.md` | `pi install <source>` or `pi -e <source>` -> `/better-harness` prompt template -> validated `html` render |
-| WorkBuddy | Analysis-capable source-local host | none (skills install into `~/.workbuddy/skills`) | `scripts/agent-customize/providers/workbuddy.mjs` | `scripts/session-analysis/platforms/workbuddy.mjs` | self-contained HTML + Markdown | `~/.workbuddy` `AGENTS.md` + identity files + `.agents` + `AGENTS.md` | `session-analysis --platform workbuddy sources` -> validated `html` render |
+| Pi | Native extension-capable package | `pi` manifest in `package.json` | `scripts/agent-customize/providers/pi.mjs` | `scripts/session-analysis/platforms/pi.mjs` | self-contained HTML + Markdown | `.pi` + `.agents` + `AGENTS.md` | `pi install <source>` or `pi -e <source>` -> `/better-harness` native extension -> validated `html` render |
+| WorkBuddy | Native Team expert plugin | `.codebuddy-plugin/` + `settings.json` + `agents/` | `scripts/agent-customize/providers/workbuddy.mjs` | `scripts/session-analysis/platforms/workbuddy.mjs` | self-contained HTML + Markdown | `~/.workbuddy` `AGENTS.md` + identity files + `.agents` + `AGENTS.md` | `codebuddy --plugin-dir .` -> Review Team -> validated `html` render |
 
 ## Discovery And Evidence
 
@@ -92,9 +91,11 @@ package through the `pi` manifest in `package.json`.
   `scripts/session-analysis/platforms/pi.mjs`, which reads workspace-matching
   JSONL transcripts under `~/.pi/agent/sessions/--<cwd-slug>--/` and honors the
   `PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` overrides. Pi
-  discovers the canonical root `skills/` directory and the `prompts/`
-  templates through the `pi` manifest in `package.json`; that manifest is
-  install/discovery metadata and does not own Pi evidence collection.
+  discovers the canonical root `skills/` directory and the native
+  `extensions/pi/better-harness.ts` through the `pi` manifest in
+  `package.json`. The extension registers exactly one `/better-harness`
+  command and owns only orchestration; evidence and rendering remain in the
+  canonical scripts.
 - WorkBuddy configured assets are inventoried through
   `scripts/agent-customize/providers/workbuddy.mjs`, covering `~/.workbuddy`
   user skills, marketplace plugins under `plugins/marketplaces/` with enabled
@@ -106,9 +107,10 @@ package through the `pi` manifest in `package.json`.
   workspace-matching JSONL transcripts under `~/.workbuddy/projects/<cwd-slug>/`.
   Embedded `cwd` values are authoritative; cwd-less 5.x transcripts qualify
   only from an exact workspace slug. The adapter honors the `WORKBUDDY_DIR`
-  override. WorkBuddy has no install shell in
-  this repository; skills install manually into `~/.workbuddy/skills` or
-  through WorkBuddy's own marketplace surfaces.
+  override. The native `.codebuddy-plugin/` Team shell points at the canonical
+  Skill and fixed lead/member Agent files; `scripts/packaging/workbuddy-plugin.mjs`
+  validates the Marketplace metadata and produces an offline archive without
+  copying private WorkBuddy state.
 
 ## Output Modes
 

@@ -69,13 +69,13 @@
     "message": "包 + CLI 扩展"
   },
   "homepage.hosts.pi.setup": {
-    "message": "安装与证据适配器已可用；完整交互式报告闭环仍待冒烟验证。"
+    "message": "安装原生扩展；经授权的真实模型 E2E 仍是独立验证门禁。"
   },
   "homepage.hosts.workBuddy.method": {
-    "message": "Skill / Marketplace 路径"
+    "message": "原生 Team 专家插件"
   },
   "homepage.hosts.workBuddy.setup": {
-    "message": "证据与报告适配器已可用；安装仍通过 WorkBuddy 自有路径完成。"
+    "message": "使用 codebuddy --plugin-dir . 发现仓库根目录并运行评审专家团。"
   },
   "homepage.hosts.output.html": {
     "message": "HTML + Markdown 报告"

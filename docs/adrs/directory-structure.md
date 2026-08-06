@@ -246,8 +246,8 @@ Use the tree first. These rules resolve common collisions:
   `.cursor-plugin/`, `.codex-plugin/`, and `.github/plugin/` are
   install/discovery shells for one host. Existing active shells may be
   hand-maintained narrowly, but the Qoder
-  public npm package ships all six plugin metadata roots, while the Qoder
-  runtime bundle ships only `.qoder-plugin/`. New host shells start from the
+  public npm package ships all eight native plugin metadata roots, while the
+  Qoder runtime bundle ships only `.qoder-plugin/`. New host shells start from the
   `docs/adapters/README.md` matrix; split to `docs/adapters/<host>.md` and add a
   source-local `scripts/packaging/` builder only for an accepted host-artifact
   contract. New host identities still require the matrix split triggers.

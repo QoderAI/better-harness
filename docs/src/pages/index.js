@@ -246,7 +246,7 @@ function hosts() {
       setup: translate({
         id: "homepage.hosts.pi.setup",
         message:
-          "Install and evidence adapters are available; a full interactive report smoke remains pending.",
+          "Install the native extension; authorized real-model E2E remains a separate verification gate.",
       }),
       anchor: "pi",
       supportLevel: "adapter",
@@ -258,13 +258,13 @@ function hosts() {
       name: "WorkBuddy",
       method: translate({
         id: "homepage.hosts.workBuddy.method",
-        message: "Skill / marketplace path",
+        message: "Native Team expert plugin",
       }),
       output: htmlOutput,
       setup: translate({
         id: "homepage.hosts.workBuddy.setup",
         message:
-          "Evidence and report adapters are available; installation stays on WorkBuddy-owned paths.",
+          "Discover the repository root with codebuddy --plugin-dir . and run the Review Team.",
       }),
       anchor: "workbuddy",
       supportLevel: "adapter",

@@ -85,6 +85,7 @@ test("asset baseline shares one inventory snapshot and emits compact AI envelope
             { category: "project", count: 2, titleEntries: [{ title: "private title only", path: "one.md" }] },
           ],
         },
+        unsupported: ["runtime-registration", "runtime-registration", "private\nmetadata"],
         warnings: [],
       };
     },
@@ -116,6 +117,7 @@ test("asset baseline shares one inventory snapshot and emits compact AI envelope
     route: "skills/review/SKILL.md",
   });
   assert.equal(result.envelopes.inventory.data.memories.titleCount, 1);
+  assert.deepEqual(result.envelopes.inventory.data.unsupported, ["private metadata", "runtime-registration"]);
   assert.deepEqual(result.envelopes.inventory.data.memories.categories, [{ category: "project", count: 1 }]);
   assert.equal(result.envelopes.inventory.data.ownerRoutes.items.some((item) => item.kind === "plugins"), true);
   assert.equal(result.envelopes.inventory.data.ownerRoutes.items.some((item) => item.kind === "agents"), true);
@@ -415,6 +417,7 @@ test("Pi asset baseline completes from a native project fixture", async () => {
     assert.equal(result.status, "complete");
     assert.equal(result.scope.provider, "pi");
     assert.equal(result.envelopes.inventory.status, "available");
+    assert.ok(result.envelopes.inventory.data.unsupported.includes("pi manifest glob source expansion outside declared resource directories"));
     assert.equal(result.envelopes.lint.data.assetInventory.summary.skills, 1);
     assert.equal(result.envelopes.inventory.data.ownerRoutes.items.some((item) =>
       item.kind === "skills" && item.name === "review"), true);
@@ -446,6 +449,7 @@ test("WorkBuddy asset baseline completes from a native project fixture", async (
     assert.equal(result.status, "complete");
     assert.equal(result.scope.provider, "workbuddy");
     assert.equal(result.envelopes.inventory.status, "available");
+    assert.ok(result.envelopes.inventory.data.unsupported.includes("workbuddy.db and other binary state stores"));
     assert.equal(result.envelopes.lint.data.assetInventory.summary.skills, 1);
     assert.equal(result.envelopes.inventory.data.ownerRoutes.items.some((item) =>
       item.kind === "skills" && item.name === "review"), true);

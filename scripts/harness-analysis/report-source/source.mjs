@@ -1,4 +1,5 @@
 import { validateSemanticFacets } from "../../session-analysis/index.mjs";
+import { sanitizeProviderCoverage } from "../../session-analysis/index.mjs";
 import { validateCheckupReportEvidence } from "../../coding-agent-practices/checkup/contract.mjs";
 import { validateInterventionLedger } from "../intervention-ledger.mjs";
 import {
@@ -107,6 +108,10 @@ const EPISODE_PERMISSION_SUMMARY_FIELDS = new Set([
 ]);
 const READER_OVERVIEW_MAX_LENGTH = Object.freeze({ en: 160, "zh-CN": 80 });
 const GENERIC_OVERVIEW_PREFIX_RE = /^(?:The project has a usable foundation|The first improvement is|项目已有可用基础|当前首要改进是)/iu;
+const PROVIDER_COVERAGE_FIELDS = new Set([
+  "schemaVersion", "provider", "status", "configured", "enabled", "observed", "verified",
+  "unsupported", "unsupportedCapabilities", "unavailable", "sourceCoverage", "schemaDiagnostics",
+]);
 
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -223,6 +228,16 @@ function permissionSummaryErrors(source) {
     }
   }
   return errors;
+}
+
+function providerCoverageErrors(value, prefix) {
+  if (value === undefined) return [];
+  if (!isObject(value)) return [`${prefix} must be an object`];
+  const normalized = sanitizeProviderCoverage(value);
+  if (!normalized) return [`${prefix} must be a reader-safe provider coverage object`];
+  return Object.keys(value)
+    .filter((field) => !PROVIDER_COVERAGE_FIELDS.has(field))
+    .map((field) => `${prefix} has unsupported field: ${field}`);
 }
 
 function isSafeRelativeScope(value) {
@@ -1054,6 +1069,8 @@ export function validateHarnessReportSource(source) {
   }
   if (!isObject(source.manifest) || source.manifest.kind !== "session-observation-manifest") {
     errors.push("report source manifest must be a session-observation-manifest");
+  } else {
+    errors.push(...providerCoverageErrors(source.manifest.providerCoverage, "report source manifest.providerCoverage"));
   }
   for (const key of ["taskEpisodes", "deliveryEvidence", "semanticFacets", "interventionLedger", "evidenceRefs", "assessmentDecisions"]) {
     if (!Array.isArray(source[key])) errors.push(`report source ${key} must be an array`);
