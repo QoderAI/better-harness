@@ -21,6 +21,10 @@ Commands:
                              preview-canvas, report-quality, repair-findings, record-fix-output,
                              validate-canvas
 
+  Loop Control
+    loop                     Gate loop run levels with the fail-closed readiness contract
+                             subcommands: readiness
+
   Project Evidence
     session-analysis         Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot,
                              Pi, Kimi, WorkBuddy, and Grok session evidence

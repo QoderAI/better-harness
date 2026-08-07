@@ -28,6 +28,10 @@ Recommend automation only when all fields are concrete:
 If any field is missing, return `needs more evidence` or recommend a one-time
 manual follow-up instead of recurring automation.
 
+For an executable, fail-closed decision on a concrete loop run level, hand the
+declared capability observations to the gate described in
+[readiness-gate.md](readiness-gate.md) (`better-harness loop readiness`).
+
 ## Automation Shapes
 
 - **Standalone automation**: use when each run should start fresh from stable

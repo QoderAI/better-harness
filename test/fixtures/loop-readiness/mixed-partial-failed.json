@@ -1,0 +1,41 @@
+{
+  "kind": "loop-readiness-assessment",
+  "readinessContractVersion": 1,
+  "observations": [
+    {
+      "id": "workspace-read",
+      "state": "available",
+      "evidence": "fixture: workspace-read verified by caller"
+    },
+    {
+      "id": "evidence-source",
+      "state": "available",
+      "evidence": "fixture: evidence-source verified by caller"
+    },
+    {
+      "id": "privacy-boundary",
+      "state": "available",
+      "evidence": "fixture: privacy-boundary verified by caller"
+    },
+    {
+      "id": "schedule-trigger",
+      "state": "available",
+      "evidence": "fixture: schedule-trigger verified by caller"
+    },
+    {
+      "id": "stop-condition",
+      "state": "failed",
+      "evidence": "fixture: stop probe returned an error"
+    },
+    {
+      "id": "triage-path",
+      "state": "available",
+      "evidence": "fixture: triage-path verified by caller"
+    },
+    {
+      "id": "budget-policy",
+      "state": "partial",
+      "evidence": "fixture: budget declared without exhaustion policy"
+    }
+  ]
+}

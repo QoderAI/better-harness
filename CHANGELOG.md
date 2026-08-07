@@ -7,6 +7,15 @@ observable behavior and compatibility, not every internal refactor.
 
 ### Added
 
+- `better-harness loop readiness` (audience `advanced`) is a new fail-closed
+  gate for loop run levels. It evaluates a caller-declared capability
+  assessment against the versioned LC-01 readiness contract (v1, 14
+  capabilities across 5 run levels) without probing hosts, network, or the
+  workspace: absent or non-`available` required capabilities prevent the
+  level (exit 2 with every blocking capability listed), and any input the
+  assessment contract rejects (unknown id/state/field, duplicate observation,
+  empty evidence, unsupported version, malformed JSON) exits 1 without ever
+  producing a decision. `--json` keeps stdout parser-safe.
 - `better-harness plugin status`, `plugin plan`, `plugin verify`, and
   `better-harness doctor` expose a read-only lifecycle control plane over eight
   host profiles and eleven host surfaces. Status reports installation,
@@ -17,7 +26,6 @@ observable behavior and compatibility, not every internal refactor.
   Unknown, mixed, foreign, or unbound host state fails closed, `plugin apply`
   stays unregistered, and Kimi Code and Grok are rejected with `UNKNOWN_HOST`
   until their native lifecycle contracts are validated.
-
 - Kimi Code is now a supported analysis-capable source-local host. The
   repository installs as a Kimi Code plugin (`/plugins install <repo>`)
   through a `.kimi-plugin/plugin.json` manifest, gains a Kimi configured-asset
@@ -31,7 +39,6 @@ observable behavior and compatibility, not every internal refactor.
   with a `wd_<name>_*` prefix fallback that records a
   `kimi-workspace-index-absent` warning. The public npm package now ships
   seven host metadata roots; the Qoder runtime bundle remains Qoder-specific.
-
 - A read-only native Learning Capture review contract can now screen ordinary
   Task Episodes for repeated exact repair routes, emit a bounded privacy-safe
   packet, validate evidence-bound `match` or `abstain` decisions, and project

@@ -1,0 +1,21 @@
+{
+  "kind": "loop-readiness-assessment",
+  "readinessContractVersion": 1,
+  "observations": [
+    {
+      "id": "workspace-read",
+      "state": "available",
+      "evidence": "fixture: workspace-read verified by caller"
+    },
+    {
+      "id": "evidence-source",
+      "state": "unavailable",
+      "evidence": "fixture: evidence root not found"
+    },
+    {
+      "id": "privacy-boundary",
+      "state": "available",
+      "evidence": "fixture: privacy-boundary verified by caller"
+    }
+  ]
+}

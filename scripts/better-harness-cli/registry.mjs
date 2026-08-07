@@ -179,6 +179,22 @@ const COMMANDS = [
     ],
   },
   {
+    name: "loop",
+    kind: "group",
+    audience: "advanced",
+    summary: "Gate loop run levels with the fail-closed readiness contract.",
+    description: "Evaluate caller-declared capability assessments against the versioned LC-01 readiness contract; required capabilities that are not available prevent the applicable run level.",
+    subcommands: [
+      {
+        name: "readiness",
+        audience: "advanced",
+        script: "loop-readiness/cli.mjs",
+        summary: "Decide whether a declared capability assessment allows a readiness level.",
+        description: "Read one assessment file, apply the v1 required-capability matrix, and return an allowed or prevented decision envelope with exit codes 0, 2, and 1.",
+      },
+    ],
+  },
+  {
     name: "harness",
     kind: "group",
     audience: "workflow",

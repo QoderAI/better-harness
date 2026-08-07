@@ -1,0 +1,11 @@
+{
+  "kind": "loop-readiness-assessment",
+  "readinessContractVersion": 1,
+  "observations": [
+    {
+      "id": "workspace-read",
+      "state": "ready",
+      "evidence": "fixture: unknown state string"
+    }
+  ]
+}
