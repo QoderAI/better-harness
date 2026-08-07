@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1180" viewBox="0 0 1800 1180" role="img" aria-labelledby="title desc">
+  <title id="title">Browser verify loop for one user journey</title>
+  <desc id="desc">A concrete browser verify loop showing one checkout journey flowing through case selection, isolated browser execution, evidence collection, verdict, repair, and an evidence bundle.</desc>
+
+  <defs>
+    <style>
+      text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .section { fill: #8e9a94; font-size: 18px; font-weight: 700; letter-spacing: 2px; }
+      .title { fill: #f4f7f5; font-size: 34px; font-weight: 800; }
+      .label { fill: #f4f7f5; font-size: 24px; font-weight: 750; }
+      .label-sm { fill: #f4f7f5; font-size: 20px; font-weight: 730; }
+      .hint { fill: #aeb9b3; font-size: 17px; font-weight: 400; }
+      .hint-sm { fill: #aeb9b3; font-size: 15px; font-weight: 400; }
+      .edge-label { fill: #77b7f2; font-size: 15px; font-weight: 650; }
+      .step { fill: #17231c; stroke: #72c77c; stroke-width: 2.5; }
+      .browser { fill: #151f27; stroke: #669fd0; stroke-width: 2.3; }
+      .evidence { fill: #1a1d1c; stroke: #6f7a75; stroke-width: 2; }
+      .warn { fill: #241e15; stroke: #d8a648; stroke-width: 2.2; }
+      .repair { fill: #22191d; stroke: #d77b92; stroke-width: 2.2; }
+      .green { fill: none; stroke: #79cf83; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .blue { fill: none; stroke: #77b7f2; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .gray { fill: none; stroke: #68756e; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+      .pink { fill: none; stroke: #d77b92; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .mono { fill: #d6efe0; font-size: 15px; font-weight: 550; }
+    </style>
+
+    <marker id="arrow-green" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L10 6L1 11" fill="none" stroke="#79cf83" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L10 6L1 11" fill="none" stroke="#77b7f2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L10 6L1 11" fill="none" stroke="#68756e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-pink" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L10 6L1 11" fill="none" stroke="#d77b92" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1800" height="1180" fill="#101312"/>
+
+  <text x="90" y="72" class="title">Browser Verify Loop</text>
+  <text x="90" y="106" class="hint">A concrete path from one user journey to proof, verdict, and repair.</text>
+
+  <!-- Example case -->
+  <text x="90" y="168" class="section">EXAMPLE USER JOURNEY</text>
+  <rect x="90" y="190" width="1620" height="96" rx="16" class="step"/>
+  <text x="900" y="229" class="label" text-anchor="middle">Checkout flow</text>
+  <text x="900" y="260" class="hint" text-anchor="middle">open /checkout → sign in as demo user → fill shipping form → submit order → see confirmation</text>
+
+  <!-- Main loop -->
+  <text x="90" y="350" class="section">THE LOOP</text>
+
+  <rect x="90" y="378" width="360" height="150" rx="16" class="step"/>
+  <text x="270" y="418" class="label-sm" text-anchor="middle">1 · Pick the case</text>
+  <text x="270" y="452" class="hint-sm" text-anchor="middle">story · design · changed route</text>
+  <text x="270" y="477" class="hint-sm" text-anchor="middle">select checkout cases only</text>
+  <text x="270" y="505" class="mono" text-anchor="middle">Discover + Scope</text>
+
+  <path d="M450 453H523" class="green" marker-end="url(#arrow-green)"/>
+
+  <rect x="540" y="378" width="420" height="150" rx="16" class="browser"/>
+  <text x="750" y="418" class="label-sm" text-anchor="middle">2 · Run in browser</text>
+  <text x="750" y="452" class="hint-sm" text-anchor="middle">isolated session · snapshot refs</text>
+  <text x="750" y="477" class="hint-sm" text-anchor="middle">explicit waits before actions</text>
+  <text x="750" y="505" class="mono" text-anchor="middle">Exercise</text>
+
+  <path d="M960 453H1033" class="green" marker-end="url(#arrow-green)"/>
+
+  <rect x="1050" y="378" width="360" height="150" rx="16" class="evidence"/>
+  <text x="1230" y="418" class="label-sm" text-anchor="middle">3 · Collect evidence</text>
+  <text x="1230" y="452" class="hint-sm" text-anchor="middle">screenshot · snapshot · console</text>
+  <text x="1230" y="477" class="hint-sm" text-anchor="middle">network · persisted state</text>
+  <text x="1230" y="505" class="mono" text-anchor="middle">Feeds Judge</text>
+
+  <path d="M1410 453H1483" class="green" marker-end="url(#arrow-green)"/>
+
+  <rect x="1500" y="378" width="210" height="150" rx="16" class="warn"/>
+  <text x="1605" y="418" class="label-sm" text-anchor="middle">4 · Verdict</text>
+  <text x="1605" y="449" class="hint-sm" text-anchor="middle">pass · fail</text>
+  <text x="1605" y="474" class="hint-sm" text-anchor="middle">unobserved</text>
+  <text x="1605" y="499" class="hint-sm" text-anchor="middle">blocked</text>
+
+  <!-- Handle -->
+  <rect x="540" y="560" width="870" height="76" rx="14" class="step"/>
+  <text x="975" y="591" class="label-sm" text-anchor="middle">Pinned handle: rerun the same situation, not a similar one</text>
+  <text x="975" y="620" class="mono" text-anchor="middle">/checkout + demo-user + desktop viewport + mocked payment network</text>
+  <path d="M750 528V548" class="gray" marker-end="url(#arrow-gray)"/>
+
+  <!-- Browser modes -->
+  <text x="90" y="704" class="section">BROWSER MODES</text>
+  <rect x="90" y="730" width="780" height="116" rx="15" class="browser"/>
+  <text x="480" y="770" class="label-sm" text-anchor="middle">Regression browser</text>
+  <text x="480" y="803" class="hint-sm" text-anchor="middle">controlled browser · fixed fixtures · repeatable CI</text>
+  <text x="480" y="828" class="hint-sm" text-anchor="middle">best place for stable baselines</text>
+
+  <rect x="930" y="730" width="780" height="116" rx="15" class="browser"/>
+  <text x="1320" y="770" class="label-sm" text-anchor="middle">Real-state browser</text>
+  <text x="1320" y="803" class="hint-sm" text-anchor="middle">live login · isolated agent workspace · real SSO/payment</text>
+  <text x="1320" y="828" class="hint-sm" text-anchor="middle">use only when the controlled browser cannot represent the case</text>
+  <path d="M870 788H908" class="gray" marker-end="url(#arrow-gray)"/>
+  <text x="889" y="775" class="edge-label" text-anchor="middle">escalate</text>
+
+  <!-- Evidence details -->
+  <text x="90" y="914" class="section">WHAT COUNTS AS PROOF</text>
+  <rect x="90" y="940" width="500" height="104" rx="15" class="evidence"/>
+  <text x="340" y="978" class="label-sm" text-anchor="middle">UI evidence</text>
+  <text x="340" y="1010" class="hint-sm" text-anchor="middle">confirmation visible · expected roles/text</text>
+
+  <rect x="650" y="940" width="500" height="104" rx="15" class="evidence"/>
+  <text x="900" y="978" class="label-sm" text-anchor="middle">Runtime evidence</text>
+  <text x="900" y="1010" class="hint-sm" text-anchor="middle">no console error · expected network calls</text>
+
+  <rect x="1210" y="940" width="500" height="104" rx="15" class="evidence"/>
+  <text x="1460" y="978" class="label-sm" text-anchor="middle">State evidence</text>
+  <text x="1460" y="1010" class="hint-sm" text-anchor="middle">order record · emitted event · analytics</text>
+
+  <!-- Repair and bundle -->
+  <path d="M1605 528V674H1446" class="pink" marker-end="url(#arrow-pink)"/>
+  <rect x="1030" y="658" width="410" height="76" rx="14" class="repair"/>
+  <text x="1235" y="688" class="label-sm" text-anchor="middle">If fail: repair loop</text>
+  <text x="1235" y="716" class="hint-sm" text-anchor="middle">reproduce → localize → fix → rerun same handle</text>
+
+  <path d="M1030 696H975V647" class="pink" marker-end="url(#arrow-pink)"/>
+  <text x="1002" y="681" class="edge-label" text-anchor="middle">same case</text>
+
+  <path d="M1605 528V1100H1038" class="green" marker-end="url(#arrow-green)"/>
+  <rect x="610" y="1068" width="420" height="76" rx="14" class="evidence"/>
+  <text x="820" y="1098" class="label-sm" text-anchor="middle">Evidence bundle</text>
+  <text x="820" y="1126" class="hint-sm" text-anchor="middle">verdict · screenshot · snapshot · console · network · state</text>
+</svg>

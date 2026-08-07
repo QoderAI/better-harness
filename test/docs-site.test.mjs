@@ -227,7 +227,7 @@ test("homepage leads search visitors from proof to a host-specific setup", async
   assert.match(mobileDemoAction, /overflow-wrap:\s*anywhere/u);
   assert.match(
     styles,
-    /@media \(min-width: 1200px\)[\s\S]*grid-template-columns:\s*repeat\(4, 1fr\)/u,
+    /@media \(min-width: 1200px\)[\s\S]*grid-template-columns:\s*repeat\(5, 1fr\)/u,
   );
 
   const heroBackgrounds = [

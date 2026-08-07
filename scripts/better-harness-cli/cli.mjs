@@ -75,6 +75,7 @@ const GROUP_EXAMPLES = {
     { audience: "workflow", text: "better-harness harness checkup --phase scan --provider qoder --workspace . --json" },
     { audience: "advanced", text: "better-harness harness workspace-topology --workspace . --json" },
     { audience: "maintainer", text: "better-harness harness source --workspace . --source <scratch>/report.source.json --language en" },
+    { audience: "maintainer", text: "better-harness harness source-review create --source <scratch>/report.source.json --packet <scratch>/review.packet.json --decision <scratch>/lead.decision.json --json" },
     { audience: "advanced", text: "better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json" },
     { audience: "advanced", text: "better-harness harness preview-canvas <run>/report.canvas.tsx --open" },
     { audience: "advanced", text: "better-harness harness report-quality --report <run>/report.md" },
@@ -269,6 +270,10 @@ function hasHelpFlag(argv) {
   return argv.some((value) => value === "--help" || value === "-h");
 }
 
+function requiresOwnerHelpValidation(command, subcommand) {
+  return command === "harness" && subcommand === "source-review";
+}
+
 function hasJsonFlag(argv) {
   for (const value of argv) {
     if (value === "--") return false;
@@ -434,7 +439,9 @@ export function resolveDispatch(argv = []) {
     return commandSchema(argv.slice(1));
   }
 
-  if (hasHelpFlag(argv)) {
+  const ownerValidatedHelp = requiresOwnerHelpValidation(command, subcommand);
+  const canonicalOwnerHelp = ownerValidatedHelp && rest.length === 1 && hasHelpFlag(rest);
+  if (hasHelpFlag(argv) && (!ownerValidatedHelp || canonicalOwnerHelp)) {
     const direct = directDispatchFor(command, subcommand);
     if (direct) {
       const metadata = commandMetadata(command);

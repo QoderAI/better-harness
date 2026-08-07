@@ -125,6 +125,6 @@ The canonical matrix, discovery rules, and split triggers live in
 
 ## Contributing another host
 
-Start with [Contributing a Coding Agent Host](./contributing-new-coding-agent).
+Start with [Contributing a Coding Agent Host](./contributing-new-coding-agent.md).
 It separates native shell, configured-asset, session, output, and packaging
 claims and links Qwen Code and GitHub Copilot pull requests as worked examples.

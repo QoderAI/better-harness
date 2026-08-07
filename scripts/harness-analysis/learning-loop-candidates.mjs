@@ -6,11 +6,13 @@ import {
   NATIVE_LEARNING_PATTERN_IDS,
   NATIVE_LEARNING_REVIEW_PACKET_SCHEMA_VERSION,
   validateNativeLearningReviewPacket,
+  validateStoredNativeLearningReviewPacket,
 } from "./learning-loop-review-packet.mjs";
 
 export {
   buildNativeLearningReviewPacket,
   nativeLearningReviewPacketDigest,
+  nativeLearningReviewSourceDigest,
   NATIVE_LEARNING_ABSTAIN_REASON_CODES,
   NATIVE_LEARNING_MATCH_REASON_CODES,
   NATIVE_LEARNING_PATTERN_IDS,
@@ -18,6 +20,7 @@ export {
   NATIVE_LEARNING_REVIEW_KIND,
   NATIVE_LEARNING_REVIEW_PACKET_SCHEMA_VERSION,
   validateNativeLearningReviewPacket,
+  validateStoredNativeLearningReviewPacket,
 } from "./learning-loop-review-packet.mjs";
 
 export const LEARNING_LOOP_REVIEW_SCHEMA_VERSION = 1;
@@ -97,6 +100,12 @@ const CURRENT_TRUTH_ASSET_PATTERN_IDS = new Set([
   "cross-asset-duplication-or-contradiction",
   "memory-skill-duplication",
 ]);
+const LEARNING_LOOP_FIELD_EVIDENCE_FIELDS = new Set([
+  "taskFamily", "repoArea", "changeType", "frictionType", "normalizedSignature",
+  "userCorrection", "asset", "assetLoaded", "assetRelevant", "requiredStepApplied",
+  "assetChanged", "validationResult", "deliveryResult", "elapsedMs", "toolCalls",
+  "tokens", "harnessVersion",
+]);
 
 function rows(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
@@ -104,6 +113,16 @@ function rows(value) {
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
+}
+
+function sameCanonicalValue(left, right) {
+  return JSON.stringify(canonicalValue(left)) === JSON.stringify(canonicalValue(right));
 }
 
 function text(value, fallback = "") {
@@ -565,8 +584,8 @@ function validateNativeDecision(decision, index, group, errors) {
   if (!hasCorrectionReason) errors.push(location + ".reasonCodes requires a supported recurring correction reason");
 }
 
-export function validateNativeLearningCandidateReview({ episodes = [], packet, review } = {}) {
-  const errors = [...validateNativeLearningReviewPacket({ episodes, packet })];
+export function validateStoredNativeLearningCandidateReview({ packet, review } = {}) {
+  const errors = [...validateStoredNativeLearningReviewPacket(packet)];
   nativeReviewAllowedFields(
     review,
     new Set(["schemaVersion", "sourceDigest", "packetDigest", "decisions"]),
@@ -607,6 +626,13 @@ export function validateNativeLearningCandidateReview({ episodes = [], packet, r
     }
   }
   return [...new Set(errors)].sort();
+}
+
+export function validateNativeLearningCandidateReview({ episodes = [], packet, review } = {}) {
+  return [...new Set([
+    ...validateStoredNativeLearningCandidateReview({ packet, review }),
+    ...validateNativeLearningReviewPacket({ episodes, packet }),
+  ])].sort();
 }
 
 function nativeSignalSignature(group) {
@@ -697,7 +723,96 @@ function appliedNativeCoverage(packet, decisions) {
   };
 }
 
-export function applyNativeLearningCandidateReview({
+function expectedNativeAppliedRows({ episodes, packet, review }) {
+  const episodesById = new Map(rows(episodes).map((episode) => [String(episode?.id ?? ""), episode]));
+  const groupsById = new Map(rows(packet?.groups).map((group) => [group.groupRef, group]));
+  const matches = [];
+  const abstentions = [];
+  for (const decision of orderedByGroupRef(review?.decisions)) {
+    const group = groupsById.get(decision.groupRef);
+    if (!group) continue;
+    if (decision.decision === "abstain") {
+      abstentions.push({ groupRef: decision.groupRef, reasonCodes: [...decision.reasonCodes] });
+      continue;
+    }
+    const sourceEpisodes = group.episodeRefs.map((episodeRef) => episodesById.get(episodeRef));
+    const normalizedSignature = commonProviderSignature(sourceEpisodes, decision.patternId)
+      || nativeSignalSignature(group);
+    matches.push({
+      groupRef: decision.groupRef,
+      patternId: decision.patternId,
+      sourceEpisodes: [...group.episodeRefs],
+      normalizedSignature,
+      evidenceRefs: decision.evidenceRefs.map((reference) => ({
+        kind: "native-learning-evidence",
+        id: reference,
+      })),
+      reasonCodes: [...decision.reasonCodes],
+      claimType: "opportunity",
+    });
+  }
+  return { matches, abstentions };
+}
+
+export function validateStoredNativeLearningAppliedReview({
+  episodes = [],
+  packet,
+  review,
+  result,
+  signals = {},
+  interventions = [],
+  assetCoverage = [],
+} = {}) {
+  const errors = [...validateStoredNativeLearningCandidateReview({ packet, review })];
+  if (!isObject(result)) return [...new Set([...errors, "native learning applied result must be an object"])].sort();
+  const allowedFields = new Set([
+    "schemaVersion", "kind", "status", "sourceDigest", "packetDigest",
+    "matches", "abstentions", "coverage", "learningLoop",
+  ]);
+  for (const field of Object.keys(result)) {
+    if (!allowedFields.has(field)) errors.push(`native learning applied result has unsupported field: ${field}`);
+  }
+  if (result.schemaVersion !== NATIVE_LEARNING_APPLIED_REVIEW_SCHEMA_VERSION) {
+    errors.push(`native learning applied result schemaVersion must be ${NATIVE_LEARNING_APPLIED_REVIEW_SCHEMA_VERSION}`);
+  }
+  if (result.kind !== "native-learning-candidate-review") errors.push("native learning applied result kind is invalid");
+  if (result.status !== "reviewed") errors.push("native learning applied result status must be reviewed");
+  if (result.sourceDigest !== packet?.sourceDigest) errors.push("native learning applied result sourceDigest does not match the packet");
+  if (result.packetDigest !== packet?.packetDigest) errors.push("native learning applied result packetDigest does not match the packet");
+  if (!Array.isArray(result.matches)) errors.push("native learning applied result matches must be an array");
+  if (!Array.isArray(result.abstentions)) errors.push("native learning applied result abstentions must be an array");
+  if (!isObject(result.coverage)) errors.push("native learning applied result coverage must be an object");
+  const expected = expectedNativeAppliedRows({ episodes, packet, review });
+  if (!sameCanonicalValue(result.matches, expected.matches)) {
+    errors.push("native learning applied result matches do not match the packet-bound decisions");
+  }
+  if (!sameCanonicalValue(result.abstentions, expected.abstentions)) {
+    errors.push("native learning applied result abstentions do not match the packet-bound decisions");
+  }
+  const expectedCoverage = appliedNativeCoverage(packet, rows(review?.decisions));
+  if (!sameCanonicalValue(result.coverage, expectedCoverage)) {
+    errors.push("native learning applied result coverage does not match the packet-bound decisions");
+  }
+  errors.push(...validateLearningLoopReview(result.learningLoop, {
+    episodeIds: rows(episodes).map((episode) => String(episode?.id ?? "")),
+  }).map((error) => `native learning applied result ${error}`));
+  if (validateStoredNativeLearningCandidateReview({ packet, review }).length === 0) {
+    const expectedLearningLoop = buildNativeLearningAppliedResult({
+      episodes,
+      packet,
+      review,
+      signals,
+      interventions,
+      assetCoverage,
+    }).learningLoop;
+    if (!sameCanonicalValue(result.learningLoop, expectedLearningLoop)) {
+      errors.push("native learning applied result learningLoop does not match deterministic packet-bound reconstruction");
+    }
+  }
+  return [...new Set(errors)].sort();
+}
+
+function buildNativeLearningAppliedResult({
   episodes = [],
   packet,
   review,
@@ -705,9 +820,6 @@ export function applyNativeLearningCandidateReview({
   interventions = [],
   assetCoverage = [],
 } = {}) {
-  const errors = validateNativeLearningCandidateReview({ episodes, packet, review });
-  if (errors.length > 0) return { result: null, errors };
-
   const reviewedEpisodes = structuredClone(rows(episodes));
   const episodesById = new Map(rows(reviewedEpisodes).map((episode) => [String(episode?.id ?? ""), episode]));
   const episodeFactsById = new Map(rows(packet?.episodeFacts).map((episode) => [episode.episodeRef, episode]));
@@ -758,19 +870,28 @@ export function applyNativeLearningCandidateReview({
 
   const learningLoop = buildLearningLoopReview({ episodes: reviewedEpisodes, signals, interventions, assetCoverage });
   return {
-    result: {
-      schemaVersion: NATIVE_LEARNING_APPLIED_REVIEW_SCHEMA_VERSION,
-      kind: "native-learning-candidate-review",
-      status: "reviewed",
-      sourceDigest: packet.sourceDigest,
-      packetDigest: packet.packetDigest,
-      matches,
-      abstentions,
-      coverage: appliedNativeCoverage(packet, review.decisions),
-      learningLoop,
-    },
-    errors: [],
+    schemaVersion: NATIVE_LEARNING_APPLIED_REVIEW_SCHEMA_VERSION,
+    kind: "native-learning-candidate-review",
+    status: "reviewed",
+    sourceDigest: packet.sourceDigest,
+    packetDigest: packet.packetDigest,
+    matches,
+    abstentions,
+    coverage: appliedNativeCoverage(packet, review.decisions),
+    learningLoop,
   };
+}
+
+export function applyNativeLearningCandidateReview(options = {}) {
+  const errors = validateNativeLearningCandidateReview(options);
+  if (errors.length > 0) return { result: null, errors };
+  return { result: buildNativeLearningAppliedResult(options), errors: [] };
+}
+
+export function applyStoredNativeLearningCandidateReview(options = {}) {
+  const errors = validateStoredNativeLearningCandidateReview(options);
+  if (errors.length > 0) return { result: null, errors };
+  return { result: buildNativeLearningAppliedResult(options), errors: [] };
 }
 
 export function validateLearningLoopReview(value, { episodeIds = [] } = {}) {
@@ -784,8 +905,33 @@ export function validateLearningLoopReview(value, { episodeIds = [] } = {}) {
   if (!Array.isArray(value.candidates)) errors.push("learning loop review candidates must be an array");
   if (!isObject(value.coverage)) errors.push("learning loop review coverage must be an object");
   const knownEpisodes = new Set(episodeIds);
+  const rejectUnknownFields = (row, fields, at) => {
+    if (!isObject(row)) {
+      errors.push(`${at} must be an object`);
+      return false;
+    }
+    for (const field of Object.keys(row)) {
+      if (!fields.has(field)) errors.push(`${at} has unsupported field: ${field}`);
+    }
+    return true;
+  };
+  const validateEvidenceRefs = (references, at) => {
+    if (!Array.isArray(references)) {
+      errors.push(`${at} must be an array`);
+      return;
+    }
+    for (const [index, reference] of references.entries()) {
+      rejectUnknownFields(reference, new Set(["kind", "id"]), `${at}[${index}]`);
+    }
+  };
   for (const [index, candidate] of rows(value.candidates).entries()) {
     const at = `learning loop review candidates[${index}]`;
+    rejectUnknownFields(candidate, new Set([
+      "id", "patternId", "claimType", "provenance", "sourceEpisodes", "taskFingerprint",
+      "normalizedSignature", "asset", "observedBehavior", "currentCost", "candidateCauses",
+      "brokenStage", "recommendedOwner", "intervention", "primaryMetric", "guardrails",
+      "stopOrRevert", "confidence", "priorityScore", "evidenceRefs",
+    ]), at);
     if (!PATTERN_SET.has(candidate?.patternId)) errors.push(`${at}.patternId is invalid`);
     if (!CLAIM_SET.has(candidate?.claimType)) errors.push(`${at}.claimType is invalid`);
     if (!FIELD_PROVENANCE.has(candidate?.provenance)) errors.push(`${at}.provenance is invalid`);
@@ -805,10 +951,16 @@ export function validateLearningLoopReview(value, { episodeIds = [] } = {}) {
     if (!isObject(candidate?.taskFingerprint)
       || !text(candidate.taskFingerprint.family)
       || !text(candidate.taskFingerprint.repoArea)) errors.push(`${at}.taskFingerprint must name family and repoArea`);
+    else rejectUnknownFields(candidate.taskFingerprint, new Set(["family", "repoArea"]), `${at}.taskFingerprint`);
     if (!isObject(candidate?.currentCost)
       || !Number.isInteger(candidate.currentCost.episodeCount)
       || candidate.currentCost.episodeCount < 0) errors.push(`${at}.currentCost must contain a non-negative episodeCount`);
-    if (!Array.isArray(candidate?.evidenceRefs)) errors.push(`${at}.evidenceRefs must be an array`);
+    else rejectUnknownFields(
+      candidate.currentCost,
+      new Set(["episodeCount", "toolCalls", "elapsedMs", "tokens", "userCorrections"]),
+      `${at}.currentCost`,
+    );
+    validateEvidenceRefs(candidate?.evidenceRefs, `${at}.evidenceRefs`);
     if (candidate?.asset !== undefined) {
       if (!isObject(candidate.asset)
         || !text(candidate.asset.kind)
@@ -817,8 +969,11 @@ export function validateLearningLoopReview(value, { episodeIds = [] } = {}) {
         errors.push(`${at}.asset must name kind, ref, and scope`);
       }
       for (const field of ["currentTruthRefs", "requiredStepRefs", "updateEvidenceRefs", "outcomeEvidenceRefs"]) {
-        if (!Array.isArray(candidate?.asset?.[field])) errors.push(`${at}.asset.${field} must be an array`);
+        validateEvidenceRefs(candidate?.asset?.[field], `${at}.asset.${field}`);
       }
+      rejectUnknownFields(candidate.asset, new Set([
+        "kind", "ref", "scope", "currentTruthRefs", "requiredStepRefs", "updateEvidenceRefs", "outcomeEvidenceRefs",
+      ]), `${at}.asset`);
     }
     if (value.status === "reviewed" && ASSET_SPECIFIC_PATTERN_IDS.has(candidate?.patternId) && candidate?.asset === undefined) {
       errors.push(`${at}.asset is required for a reviewed asset-specific candidate`);
@@ -838,13 +993,35 @@ export function validateLearningLoopReview(value, { episodeIds = [] } = {}) {
     if (!Number.isInteger(candidate?.priorityScore) || candidate.priorityScore < 0) errors.push(`${at}.priorityScore must be a non-negative integer`);
   }
   for (const [episodeIndex, episode] of rows(value.episodeRecords).entries()) {
+    const episodeAt = `learning loop review episodeRecords[${episodeIndex}]`;
+    rejectUnknownFields(episode, new Set(["episodeId", "targetKeys", "signals"]), episodeAt);
+    if (!Array.isArray(episode?.targetKeys)) errors.push(`${episodeAt}.targetKeys must be an array`);
+    if (!Array.isArray(episode?.signals)) errors.push(`${episodeAt}.signals must be an array`);
     for (const [signalIndex, signal] of rows(episode?.signals).entries()) {
       const at = `learning loop review episodeRecords[${episodeIndex}].signals[${signalIndex}]`;
+      rejectUnknownFields(signal, new Set([
+        "patternId", "normalizedSignature", "taskFamily", "repoArea", "changeType", "frictionType",
+        "userCorrection", "asset", "assetLoaded", "assetChanged", "assetRelevant",
+        "requiredStepApplied", "mandatory", "procedural", "validationResult", "deliveryResult",
+        "elapsedMs", "toolCalls", "tokens", "harnessVersion", "fieldEvidence",
+        "normalizationVersion", "evidenceRefs",
+      ]), at);
       if (signal?.normalizationVersion !== NORMALIZATION_VERSION) errors.push(`${at}.normalizationVersion is invalid`);
       if (!isObject(signal?.fieldEvidence)) errors.push(`${at}.fieldEvidence must be an object`);
       for (const [field, evidence] of Object.entries(signal?.fieldEvidence ?? {})) {
+        if (!LEARNING_LOOP_FIELD_EVIDENCE_FIELDS.has(field)) errors.push(`${at}.fieldEvidence has unsupported field: ${field}`);
+        rejectUnknownFields(evidence, new Set(["provenance", "coverage"]), `${at}.fieldEvidence.${field}`);
         if (!FIELD_PROVENANCE.has(evidence?.provenance)) errors.push(`${at}.fieldEvidence.${field}.provenance is invalid`);
         if (!FIELD_COVERAGE.has(evidence?.coverage)) errors.push(`${at}.fieldEvidence.${field}.coverage is invalid`);
+      }
+      validateEvidenceRefs(signal?.evidenceRefs, `${at}.evidenceRefs`);
+      if (signal?.asset !== undefined) {
+        rejectUnknownFields(signal.asset, new Set([
+          "kind", "ref", "scope", "currentTruthRefs", "requiredStepRefs", "updateEvidenceRefs", "outcomeEvidenceRefs",
+        ]), `${at}.asset`);
+        for (const field of ["currentTruthRefs", "requiredStepRefs", "updateEvidenceRefs", "outcomeEvidenceRefs"]) {
+          validateEvidenceRefs(signal.asset?.[field], `${at}.asset.${field}`);
+        }
       }
     }
   }

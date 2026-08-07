@@ -471,24 +471,43 @@ async function collectQoderUserHooks(qoderHome) {
   ].sort(sortByName);
 }
 
-async function collectQoderWorkspacePrimitives(workspace, sharedClientCacheRoot, includeRuntime = true) {
+const QODER_PROJECT_COLLECTIONS = Object.freeze(["rules", "skills", "hooks", "commands", "agents", "mcps"]);
+
+function normalizeProjectCollections(value) {
+  if (value === undefined) return new Set(QODER_PROJECT_COLLECTIONS);
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new TypeError("projectCollections must be an array of supported Qoder project collection names");
+  }
+  const collections = new Set(value);
+  if (collections.size !== value.length || [...collections].some((item) => !QODER_PROJECT_COLLECTIONS.includes(item))) {
+    throw new TypeError("projectCollections must contain unique supported Qoder project collection names");
+  }
+  return collections;
+}
+
+async function collectQoderWorkspacePrimitives(workspace, sharedClientCacheRoot, options = {}) {
   const sourceLabel = await workspaceSourceLabel(workspace);
   const qoderRoot = path.join(workspace, ".qoder");
   const agentRoot = path.join(workspace, ".agents");
-  const slugs = qoderWorkspaceSlugs(workspace);
-  const settingsHooks = [
-    ...(await collectHooksFromFile(path.join(qoderRoot, "settings.json"), "project", sourceLabel, workspace)),
-    ...(await collectHooksFromFile(path.join(qoderRoot, "settings.local.json"), "project", sourceLabel, workspace)),
-  ];
+  const collections = options.projectCollections ?? new Set(QODER_PROJECT_COLLECTIONS);
+  const includes = (collection) => collections.has(collection);
+  const settingsHooks = includes("hooks")
+    ? [
+        ...(await collectHooksFromFile(path.join(qoderRoot, "settings.json"), "project", sourceLabel, workspace)),
+        ...(await collectHooksFromFile(path.join(qoderRoot, "settings.local.json"), "project", sourceLabel, workspace)),
+      ]
+    : [];
   const projectQoderMcpPath = path.join(qoderRoot, "mcp.json");
   const projectFallbackMcpPath = path.join(workspace, ".mcp.json");
-  const configuredMcps = await firstConfiguredMcpSource([
-    { filePath: projectQoderMcpPath, rootForEvidence: workspace },
-    { filePath: projectFallbackMcpPath, rootForEvidence: workspace },
-  ], "project", sourceLabel);
+  const configuredMcps = includes("mcps")
+    ? await firstConfiguredMcpSource([
+        { filePath: projectQoderMcpPath, rootForEvidence: workspace },
+        { filePath: projectFallbackMcpPath, rootForEvidence: workspace },
+      ], "project", sourceLabel)
+    : { items: [], source: null };
   let runtimeMcps = [];
-  if (includeRuntime) {
-    for (const slug of slugs) {
+  if (includes("mcps") && options.includeRuntime !== false) {
+    for (const slug of qoderWorkspaceSlugs(workspace)) {
       runtimeMcps = await collectQoderRuntimeMcpItems(
         path.join(sharedClientCacheRoot, "projects", slug, "mcps"),
         "project",
@@ -498,20 +517,30 @@ async function collectQoderWorkspacePrimitives(workspace, sharedClientCacheRoot,
       if (runtimeMcps.length > 0) break;
     }
   }
-  const skills = await uniqueAssetsByRealPath([
-    ...(await collectSkillFiles(path.join(qoderRoot, "skills"), "project", sourceLabel, workspace)),
-    ...(await collectSkillFiles(path.join(agentRoot, "skills"), "project", sourceLabel, workspace)),
-  ]);
-  const subagents = await uniqueAssetsByRealPath([
-    ...(await collectMarkdownItems(path.join(qoderRoot, "agents"), "subagent", "project", sourceLabel, workspace)),
-    ...(await collectMarkdownItems(path.join(agentRoot, "agents"), "subagent", "project", sourceLabel, workspace)),
-  ]);
+  const skills = includes("skills")
+    ? await uniqueAssetsByRealPath([
+        ...(await collectSkillFiles(path.join(qoderRoot, "skills"), "project", sourceLabel, workspace)),
+        ...(await collectSkillFiles(path.join(agentRoot, "skills"), "project", sourceLabel, workspace)),
+      ])
+    : [];
+  const subagents = includes("agents")
+    ? await uniqueAssetsByRealPath([
+        ...(await collectMarkdownItems(path.join(qoderRoot, "agents"), "subagent", "project", sourceLabel, workspace)),
+        ...(await collectMarkdownItems(path.join(agentRoot, "agents"), "subagent", "project", sourceLabel, workspace)),
+      ])
+    : [];
   return {
     skills: skills.sort(sortByName),
     subagents: subagents.sort(sortByName),
-    rules: await collectRuleSources(qoderWorkspaceRuleSources(workspace, qoderRoot, sourceLabel)),
-    commands: await collectMarkdownItems(path.join(qoderRoot, "commands"), "command", "project", sourceLabel, workspace),
-    hooks: [...settingsHooks, ...(await collectHookItems(qoderRoot, "project", sourceLabel, workspace))].sort(sortByName),
+    rules: includes("rules")
+      ? await collectRuleSources(qoderWorkspaceRuleSources(workspace, qoderRoot, sourceLabel))
+      : [],
+    commands: includes("commands")
+      ? await collectMarkdownItems(path.join(qoderRoot, "commands"), "command", "project", sourceLabel, workspace)
+      : [],
+    hooks: includes("hooks")
+      ? [...settingsHooks, ...(await collectHookItems(qoderRoot, "project", sourceLabel, workspace))].sort(sortByName)
+      : [],
     mcps: enrichConfiguredMcpItems(configuredMcps.items, runtimeMcps),
     mcpSource: configuredMcps.source,
     runtimeMcps,
@@ -537,6 +566,7 @@ export async function collectQoderCustomizeInventory(options = {}) {
   const sharedClientCacheRoot = resolveQoderSharedClientCacheRoot(options);
   const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   const includeUserHome = options.includeUserHome !== false;
+  const projectCollections = normalizeProjectCollections(options.projectCollections);
   const installState = includeUserHome
     ? await readQoderInstalledPluginState({ ...options, qoderHome, workspace })
     : { records: [], source: "not-authorized", indexFiles: [] };
@@ -549,7 +579,10 @@ export async function collectQoderCustomizeInventory(options = {}) {
       : includeGlobalHooks
         ? collectQoderUserHooks(qoderHome).then((hooks) => ({ ...emptyPrimitives(), hooks }))
         : emptyPrimitives(),
-    collectQoderWorkspacePrimitives(workspace, sharedClientCacheRoot, includeUserHome),
+    collectQoderWorkspacePrimitives(workspace, sharedClientCacheRoot, {
+      includeRuntime: includeUserHome,
+      projectCollections,
+    }),
   ]);
   const installedPluginIds = new Set(plugins.map((plugin) => plugin.id));
   return {

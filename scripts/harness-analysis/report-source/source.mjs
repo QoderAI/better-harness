@@ -6,7 +6,7 @@ import {
   learningLoopStateErrors,
   projectLaterValidationState,
 } from "../learning-loop-contract.mjs";
-import { validateLearningLoopReview } from "../learning-loop-candidates.mjs";
+import { validateLearningLoopReview, validateNativeLearningReviewPacket, validateStoredNativeLearningAppliedReview } from "../learning-loop-candidates.mjs";
 import { validateLearningCaptureEvidence } from "../learning-capture-evidence.mjs";
 import { validateWorkflowDemandDiagnostics } from "../workflow-demand-diagnostics.mjs";
 import { findingTargetErrors } from "../../workspace-topology/index.mjs";
@@ -89,7 +89,10 @@ const POSITIVE_RESULT_STATES = new Set([
   "outcome-supported", "passed", "success", "succeeded", "unchanged",
 ]);
 const LEARNING_CAPTURE_DIAGNOSTIC_FIELDS = new Set([
-  "signals", "learningCaptureSchemaVersion", "episodeRecords", "recurringIssueCandidates", "coverage",
+  "signals", "learningCaptureSchemaVersion", "episodeRecords", "recurringIssueCandidates", "coverage", "nativeLearningReview",
+]);
+const NATIVE_LEARNING_REVIEW_DIAGNOSTIC_FIELDS = new Set([
+  "schemaVersion", "status", "packet", "review", "result",
 ]);
 const LEARNING_CAPTURE_SIGNAL_FIELDS = new Set(["observedSkills", "unscopedObservedSkills", "apparentSkillReads", "configuredSkills", "memories", "memoryActivity", "memoryScan", "frictionSignals", "priorInterventionCount"]);
 const MEMORY_SCAN_FIELDS = new Set(["status", "provider", "candidateCount", "contentPolicy"]);
@@ -348,7 +351,69 @@ function validateStringArray(value, location) {
     : [];
 }
 
-export function validateLearningCaptureDiagnostics(value) {
+function nativeLearningReviewDiagnosticErrors(value, episodes, diagnostics, prefix, {
+  interventions = [],
+  assetCoverage = [],
+} = {}) {
+  if (!isObject(value)) return [`${prefix}.nativeLearningReview must be an object`];
+  const location = `${prefix}.nativeLearningReview`;
+  const errors = [];
+  for (const field of Object.keys(value)) {
+    if (!NATIVE_LEARNING_REVIEW_DIAGNOSTIC_FIELDS.has(field)) errors.push(`${location} has unsupported field: ${field}`);
+  }
+  if (value.schemaVersion !== 1) {
+    errors.push(`${location}.schemaVersion must be 1`);
+  }
+  if (!new Set(["review-required", "reviewed"]).has(value.status)) {
+    errors.push(`${location}.status must be review-required or reviewed`);
+    return errors;
+  }
+  if (value.status === "review-required") {
+    errors.push(...validateNativeLearningReviewPacket({ episodes, packet: value.packet })
+      .map((error) => `${location}.packet: ${error}`));
+    if (value.review !== undefined || value.result !== undefined) {
+      errors.push(`${location} review-required must omit review and result`);
+    }
+    return errors;
+  }
+  if (!isObject(value.packet) || value.review === undefined || value.result === undefined) {
+    errors.push(`${location} reviewed requires review and result`);
+    return errors;
+  }
+  if (value.review?.schemaVersion !== value.packet.schemaVersion
+    || value.review?.sourceDigest !== value.packet.sourceDigest
+    || value.review?.packetDigest !== value.packet.packetDigest
+    || !Array.isArray(value.review?.decisions)) {
+    errors.push(`${location}.review must retain the packet-bound native decision`);
+  }
+  errors.push(...validateStoredNativeLearningAppliedReview({
+    episodes,
+    packet: value.packet,
+    review: value.review,
+    result: value.result,
+    signals: diagnostics.signals,
+    interventions,
+    assetCoverage,
+  })
+    .map((error) => `${location}: ${error}`));
+  const learningLoop = value.result?.learningLoop;
+  if (!isObject(value.result) || !isObject(learningLoop)) {
+    errors.push(`${location}.result must retain the applied native Learning Loop result`);
+    return errors;
+  }
+  if (JSON.stringify(diagnostics.episodeRecords) !== JSON.stringify(learningLoop.episodeRecords)
+    || JSON.stringify(diagnostics.recurringIssueCandidates) !== JSON.stringify(learningLoop.candidates)
+    || JSON.stringify(diagnostics.coverage) !== JSON.stringify(learningLoop.coverage)) {
+    errors.push(`${location} reviewed result must own the canonical Learning Capture projection`);
+  }
+  return errors;
+}
+
+export function validateLearningCaptureDiagnostics(value, {
+  episodes = [],
+  interventions = [],
+  assetCoverage = [],
+} = {}) {
   if (value === undefined) return [];
   if (!isObject(value)) return ["report source repositoryEvidence.learningCaptureDiagnostics must be an object"];
   const prefix = "report source repositoryEvidence.learningCaptureDiagnostics";
@@ -404,6 +469,12 @@ export function validateLearningCaptureDiagnostics(value) {
     candidates: value.recurringIssueCandidates,
     coverage: value.coverage,
   }).map((error) => `${prefix}.${error}`));
+  if (value.nativeLearningReview !== undefined) {
+    errors.push(...nativeLearningReviewDiagnosticErrors(value.nativeLearningReview, episodes, value, prefix, {
+      interventions,
+      assetCoverage,
+    }));
+  }
   return errors;
 }
 
@@ -1065,7 +1136,11 @@ export function validateHarnessReportSource(source) {
   if (source.repositoryEvidence?.learningCaptureReview !== undefined) {
     errors.push("report source repositoryEvidence.learningCaptureReview is retired");
   }
-  errors.push(...validateLearningCaptureDiagnostics(source.repositoryEvidence?.learningCaptureDiagnostics));
+  errors.push(...validateLearningCaptureDiagnostics(source.repositoryEvidence?.learningCaptureDiagnostics, {
+    episodes: source.taskEpisodes,
+    interventions: source.interventionLedger,
+    assetCoverage: source.repositoryEvidence?.aiAgentPractice?.coverageRows,
+  }));
   if (source.repositoryEvidence?.workflowDemandDiagnostics !== undefined) {
     errors.push(...validateWorkflowDemandDiagnostics(
       source.repositoryEvidence.workflowDemandDiagnostics,

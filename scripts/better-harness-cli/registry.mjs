@@ -244,6 +244,13 @@ const COMMANDS = [
         description: "Collect repository, practice, and session candidates into report.source.json while preserving evidence boundaries.",
       },
       {
+        name: "source-review",
+        audience: "maintainer",
+        script: "harness-analysis/report-source/cli.mjs",
+        summary: "Create, compile, and apply a bounded report-source review.",
+        description: "Expose an explicit local create, caller-authored decision, and confirmed apply lifecycle without calling a model or merging native evidence aliases into the outer evidence namespace.",
+      },
+      {
         name: "task-loop-report",
         audience: "maintainer",
         script: "harness-analysis/task-loop-report.mjs",

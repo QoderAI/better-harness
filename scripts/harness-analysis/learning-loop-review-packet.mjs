@@ -33,6 +33,8 @@ const SAFE_ROUTE_RE = /^(?:lifecycle:)?[a-z0-9][a-z0-9._:/-]{0,79}$/u;
 const SAFE_EVIDENCE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/u;
 const SAFE_EVIDENCE_FINGERPRINT_RE = /^[a-f0-9]{16,128}$/u;
 const PRIVATE_EVIDENCE_ID_RE = /(?:^session(?:[-_:]|$)|@|:\/\/|^[A-Za-z]:[\\/]|^\\\\|^\/(?:Users|home)\/)/iu;
+const SAFE_EVIDENCE_ALIAS_RE = /^evidence-ref-[a-f0-9]{20}$/u;
+const SAFE_DIGEST_RE = /^[a-f0-9]{64}$/u;
 const FAILED_STATUS = new Set(["failed", "failure", "error", "errored"]);
 const PROTECTIVE_FRICTION = "protective-intervention";
 const OBSERVED_PROVENANCE = new Set(["host-observed", "deterministic-derived", "ai-reviewed"]);
@@ -400,6 +402,165 @@ export function nativeLearningReviewPacketDigest(packet) {
   return digest(packetPayload(packet));
 }
 
+export function nativeLearningReviewSourceDigest({ episodeFacts, groups, limits } = {}) {
+  return digest({ episodeFacts, groups, limits });
+}
+
+function storedObjectFields(value, allowedFields, location, errors) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    errors.push(`${location} must be an object`);
+    return false;
+  }
+  for (const field of Object.keys(value)) {
+    if (!allowedFields.has(field)) errors.push(`${location} has unsupported field: ${field}`);
+  }
+  return true;
+}
+
+function storedSortedStrings(value, predicate, location, errors, { sorted = true } = {}) {
+  if (!Array.isArray(value)) {
+    errors.push(`${location} must be an array`);
+    return [];
+  }
+  if (value.some((item) => typeof item !== "string" || !predicate(item))) {
+    errors.push(`${location} contains an invalid value`);
+  }
+  const expected = sorted ? uniqueSorted(value) : [...new Set(value)];
+  if (JSON.stringify(value) !== JSON.stringify(expected)) {
+    errors.push(`${location} must contain distinct${sorted ? " sorted" : ""} values`);
+  }
+  return value;
+}
+
+function storedEpisodeFactErrors(fact, index, limits) {
+  const location = `native learning review packet episodeFacts[${index}]`;
+  const errors = [];
+  if (!storedObjectFields(
+    fact,
+    new Set(["episodeRef", "taskRoutes", "targetRefs", "checkRefs", "facts", "frictionKinds", "evidenceRefs", "evidenceCoverage"]),
+    location,
+    errors,
+  )) return errors;
+  if (!SAFE_EPISODE_ID_RE.test(String(fact.episodeRef ?? ""))) errors.push(`${location}.episodeRef is invalid`);
+  storedSortedStrings(fact.taskRoutes, (value) => safeRoute(value) === value, `${location}.taskRoutes`, errors);
+  storedSortedStrings(fact.targetRefs, (value) => safeTarget(value) === value, `${location}.targetRefs`, errors);
+  storedSortedStrings(fact.checkRefs, (value) => safeCheck(value) === value, `${location}.checkRefs`, errors);
+  const factStates = fact.facts;
+  if (storedObjectFields(
+    factStates,
+    new Set(["userCorrection", "protectiveIntervention", "sameCheckRepair", "validationFailure"]),
+    `${location}.facts`,
+    errors,
+  )) {
+    const observationStates = new Set(["true", "false", "unavailable"]);
+    if (!observationStates.has(factStates.userCorrection)) errors.push(`${location}.facts.userCorrection is invalid`);
+    if (!observationStates.has(factStates.protectiveIntervention)) errors.push(`${location}.facts.protectiveIntervention is invalid`);
+    if (!new Set(["true", "false"]).has(factStates.sameCheckRepair)) errors.push(`${location}.facts.sameCheckRepair is invalid`);
+    if (!new Set(["true", "false"]).has(factStates.validationFailure)) errors.push(`${location}.facts.validationFailure is invalid`);
+  }
+  const expectedFriction = uniqueSorted([
+    factStates?.userCorrection === "true" ? "explicit-user-correction" : "",
+    factStates?.sameCheckRepair === "true" ? "same-check-repair" : "",
+    factStates?.validationFailure === "true" ? "validation-failure" : "",
+  ]);
+  storedSortedStrings(
+    fact.frictionKinds,
+    (value) => ["explicit-user-correction", "same-check-repair", "validation-failure"].includes(value),
+    `${location}.frictionKinds`,
+    errors,
+  );
+  if (JSON.stringify(fact.frictionKinds) !== JSON.stringify(expectedFriction)) {
+    errors.push(`${location}.frictionKinds does not match observed facts`);
+  }
+  const evidenceRefs = storedSortedStrings(
+    fact.evidenceRefs,
+    (value) => SAFE_EVIDENCE_ALIAS_RE.test(value),
+    `${location}.evidenceRefs`,
+    errors,
+    { sorted: false },
+  );
+  if (evidenceRefs.length > limits.maxEvidenceRefsPerEpisode) {
+    errors.push(`${location}.evidenceRefs exceeds the packet limit`);
+  }
+  const coverage = fact.evidenceCoverage;
+  if (storedObjectFields(
+    coverage,
+    new Set(["status", "includedCount", "totalCount", "identitySetDigest"]),
+    `${location}.evidenceCoverage`,
+    errors,
+  )) {
+    const includedCount = Number(coverage.includedCount);
+    const totalCount = Number(coverage.totalCount);
+    if (!Number.isInteger(includedCount) || includedCount !== evidenceRefs.length) {
+      errors.push(`${location}.evidenceCoverage.includedCount does not match evidenceRefs`);
+    }
+    if (!Number.isInteger(totalCount) || totalCount < includedCount) {
+      errors.push(`${location}.evidenceCoverage.totalCount is invalid`);
+    }
+    const expectedStatus = totalCount === 0 ? "unavailable" : totalCount > includedCount ? "truncated" : "bounded";
+    if (coverage.status !== expectedStatus) errors.push(`${location}.evidenceCoverage.status is invalid`);
+    if (!SAFE_DIGEST_RE.test(String(coverage.identitySetDigest ?? ""))) {
+      errors.push(`${location}.evidenceCoverage.identitySetDigest is invalid`);
+    }
+  }
+  return errors;
+}
+
+export function validateStoredNativeLearningReviewPacket(packet) {
+  const errors = [];
+  const allowedFields = new Set(["schemaVersion", "kind", "sourceDigest", "limits", "allowed", "episodeFacts", "groups", "coverage", "packetDigest"]);
+  if (!packet || typeof packet !== "object" || Array.isArray(packet)) return ["native learning review packet must be an object"];
+  for (const field of Object.keys(packet)) if (!allowedFields.has(field)) errors.push(`native learning review packet has unsupported field: ${field}`);
+  if (packet.schemaVersion !== NATIVE_LEARNING_REVIEW_PACKET_SCHEMA_VERSION) errors.push(`native learning review packet schemaVersion must be ${NATIVE_LEARNING_REVIEW_PACKET_SCHEMA_VERSION}`);
+  if (packet.kind !== NATIVE_LEARNING_REVIEW_KIND) errors.push("native learning review packet kind is invalid");
+  if (packet.packetDigest !== nativeLearningReviewPacketDigest(packet)) errors.push("native learning review packet digest does not match its content");
+  if (packet.sourceDigest !== nativeLearningReviewSourceDigest(packet)) errors.push("native learning review packet sourceDigest does not match episode facts, groups, and limits");
+  const limitsAreObject = packet.limits && typeof packet.limits === "object" && !Array.isArray(packet.limits);
+  const limits = limitsAreObject ? normalizedLimits(packet.limits) : normalizedLimits();
+  if (!limitsAreObject || JSON.stringify(packet.limits) !== JSON.stringify(limits)) errors.push("native learning review packet limits are invalid");
+  const expectedAllowed = {
+    decisions: [...NATIVE_LEARNING_REVIEW_DECISIONS],
+    patternIds: [...NATIVE_LEARNING_PATTERN_IDS],
+    matchReasonCodes: [...NATIVE_LEARNING_MATCH_REASON_CODES],
+    abstainReasonCodes: [...NATIVE_LEARNING_ABSTAIN_REASON_CODES],
+  };
+  if (JSON.stringify(canonicalValue(packet.allowed)) !== JSON.stringify(canonicalValue(expectedAllowed))) errors.push("native learning review packet allowed enums are invalid");
+  if (!Array.isArray(packet.episodeFacts) || !Array.isArray(packet.groups) || !packet.coverage || typeof packet.coverage !== "object" || Array.isArray(packet.coverage)) {
+    errors.push("native learning review packet requires episodeFacts, groups, and coverage");
+    return [...new Set(errors)].sort();
+  }
+  if (packet.episodeFacts.length > limits.maxEpisodes) errors.push("native learning review packet episodeFacts exceeds the packet limit");
+  for (const [index, fact] of packet.episodeFacts.entries()) {
+    errors.push(...storedEpisodeFactErrors(fact, index, limits));
+  }
+  const episodeRefs = packet.episodeFacts.map((fact) => fact?.episodeRef);
+  if (JSON.stringify(episodeRefs) !== JSON.stringify(uniqueSorted(episodeRefs))) {
+    errors.push("native learning review packet episodeFacts must have distinct sorted Episode refs");
+  }
+  if (errors.some((error) => error.includes("episodeFacts"))) return [...new Set(errors)].sort();
+  const { groups: allGroups, subsumedCount } = screeningGroups(packet.episodeFacts);
+  const expectedGroups = allGroups.slice(0, limits.maxGroups);
+  if (JSON.stringify(canonicalValue(packet.groups)) !== JSON.stringify(canonicalValue(expectedGroups))) {
+    errors.push("native learning review packet groups do not match retained Episode facts");
+  }
+  const inputEpisodeCount = Number(packet.coverage.inputEpisodeCount);
+  if (!Number.isInteger(inputEpisodeCount) || inputEpisodeCount < packet.episodeFacts.length) {
+    errors.push("native learning review packet coverage inputEpisodeCount is invalid");
+  } else {
+    const expectedCoverage = coverageFor(
+      inputEpisodeCount,
+      packet.episodeFacts,
+      allGroups,
+      expectedGroups,
+      subsumedCount,
+    );
+    if (JSON.stringify(canonicalValue(packet.coverage)) !== JSON.stringify(canonicalValue(expectedCoverage))) {
+      errors.push("native learning review packet coverage does not match retained groups and Episode facts");
+    }
+  }
+  return [...new Set(errors)].sort();
+}
+
 export function buildNativeLearningReviewPacket({ episodes = [], limits: suppliedLimits = {} } = {}) {
   const limits = normalizedLimits(suppliedLimits);
   const byId = new Map();
@@ -428,7 +589,7 @@ export function buildNativeLearningReviewPacket({ episodes = [], limits: supplie
   const packet = {
     schemaVersion: NATIVE_LEARNING_REVIEW_PACKET_SCHEMA_VERSION,
     kind: NATIVE_LEARNING_REVIEW_KIND,
-    sourceDigest: digest(safeSourceProjection),
+    sourceDigest: nativeLearningReviewSourceDigest(safeSourceProjection),
     limits,
     allowed: {
       decisions: [...NATIVE_LEARNING_REVIEW_DECISIONS],
@@ -445,14 +606,7 @@ export function buildNativeLearningReviewPacket({ episodes = [], limits: supplie
 }
 
 export function validateNativeLearningReviewPacket({ episodes = [], packet } = {}) {
-  const errors = [];
-  if (packet?.schemaVersion !== NATIVE_LEARNING_REVIEW_PACKET_SCHEMA_VERSION) {
-    errors.push(`native learning review packet schemaVersion must be ${NATIVE_LEARNING_REVIEW_PACKET_SCHEMA_VERSION}`);
-  }
-  if (packet?.kind !== NATIVE_LEARNING_REVIEW_KIND) errors.push("native learning review packet kind is invalid");
-  if (packet?.packetDigest !== nativeLearningReviewPacketDigest(packet)) {
-    errors.push("native learning review packet digest does not match its content");
-  }
+  const errors = [...validateStoredNativeLearningReviewPacket(packet)];
   let expected;
   try {
     expected = buildNativeLearningReviewPacket({ episodes, limits: packet?.limits });

@@ -5,6 +5,10 @@ import {
 } from "../task-loop-report.mjs";
 import { validateHarnessReviewBinding } from "./review-packet.mjs";
 import { applyEpisodeReviews, normalizeDeliveryReviews } from "./episode-review.mjs";
+import {
+  applyStoredNativeLearningCandidateReview,
+  validateNativeLearningCandidateReview,
+} from "../learning-loop-candidates.mjs";
 
 function rows(value) {
   return Array.isArray(value) ? value : [];
@@ -113,6 +117,26 @@ export function applyReportSourceReview(sourceInput, reviewInput, { packet } = {
   if (review.repositoryEvidence?.workflowDemandDiagnostics !== undefined) {
     throw new Error("repositoryEvidence.workflowDemandDiagnostics is generated and cannot be authored in review input");
   }
+  const diagnostics = source.repositoryEvidence?.learningCaptureDiagnostics;
+  const native = diagnostics?.nativeLearningReview;
+  let pendingNativeReview = null;
+  if (native?.status === "review-required" && review.nativeLearningReview === undefined) {
+    throw new Error("nativeLearningReview is required for a generated pending native Learning Capture packet");
+  }
+  if (review.nativeLearningReview !== undefined) {
+    if (native?.status !== "review-required" || !native.packet) {
+      throw new Error("nativeLearningReview requires a generated pending native Learning Capture packet");
+    }
+    const nativeErrors = validateNativeLearningCandidateReview({
+      episodes: source.taskEpisodes,
+      packet: native.packet,
+      review: review.nativeLearningReview,
+    });
+    if (nativeErrors.length > 0) {
+      throw Object.assign(new Error(nativeErrors.join("; ")), { errors: nativeErrors });
+    }
+    pendingNativeReview = { packet: native.packet, review: clone(review.nativeLearningReview) };
+  }
 
   source.assessmentDecisions = rows(source.assessmentDecisions).map((decision) => {
     if (decision.kind === "source-candidate") {
@@ -160,6 +184,35 @@ export function applyReportSourceReview(sourceInput, reviewInput, { packet } = {
     } : {}),
   };
   if (review.episodeReviews !== undefined) applyEpisodeReviews(source, review.episodeReviews);
+  if (review.interventionLedger !== undefined) source.interventionLedger = clone(review.interventionLedger);
+  if (pendingNativeReview) {
+    const currentDiagnostics = source.repositoryEvidence.learningCaptureDiagnostics;
+    const applied = applyStoredNativeLearningCandidateReview({
+      episodes: source.taskEpisodes,
+      packet: pendingNativeReview.packet,
+      review: pendingNativeReview.review,
+      signals: currentDiagnostics.signals,
+      interventions: source.interventionLedger,
+      assetCoverage: source.repositoryEvidence?.aiAgentPractice?.coverageRows,
+    });
+    if (applied.errors.length > 0) {
+      throw Object.assign(new Error(applied.errors.join("; ")), { errors: applied.errors });
+    }
+    source.repositoryEvidence.learningCaptureDiagnostics = {
+      ...currentDiagnostics,
+      learningCaptureSchemaVersion: applied.result.learningLoop.schemaVersion,
+      episodeRecords: applied.result.learningLoop.episodeRecords,
+      recurringIssueCandidates: applied.result.learningLoop.candidates,
+      coverage: applied.result.learningLoop.coverage,
+      nativeLearningReview: {
+        schemaVersion: 1,
+        status: "reviewed",
+        packet: pendingNativeReview.packet,
+        review: pendingNativeReview.review,
+        result: applied.result,
+      },
+    };
+  }
   const reviewedDelivery = review.deliveryReviews === undefined
     ? []
     : normalizeDeliveryReviews(source, review.deliveryReviews);
@@ -177,8 +230,6 @@ export function applyReportSourceReview(sourceInput, reviewInput, { packet } = {
       evidenceRefs: clone(episode.closure.evidenceRefs),
     }));
   source.deliveryEvidence = [...existingDelivery, ...reviewedFocusedChecks, ...reviewedDelivery];
-  if (review.interventionLedger !== undefined) source.interventionLedger = clone(review.interventionLedger);
-
   const sourceErrors = validateHarnessReportSource(source);
   if (sourceErrors.length > 0) throw Object.assign(new Error(sourceErrors.join("; ")), { errors: sourceErrors });
   const projected = projectTaskLoopFindings(source);

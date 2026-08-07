@@ -105,6 +105,11 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   its bounded human-review integrity chain: packet binding, episode/delivery
   normalization, and review application. Non-facade consumers import its public
   `index.mjs`; historical flat paths remain compatibility entrypoints.
+- `scripts/harness-component-snapshot/` owns the versioned, read-only Qoder
+  project component snapshot, validation, bounded diff, and non-authorizing
+  rollback-reference contracts. It composes only allowlisted public
+  `agent-customize` project collections, keeps its direct CLI capability-local,
+  and does not claim runtime activation or mutation authority.
 - `schemas/` is a target owner, not yet created, for versioned public runtime contracts consumed by multiple repo surfaces or packaged hosts; see the directory-structure ADR for adoption criteria. Capability-private schemas stay under `scripts/<capability>/`.
 
 ## AI Directory Routing

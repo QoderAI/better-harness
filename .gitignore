@@ -1,5 +1,6 @@
 .DS_Store
 .qoder/
+!test/fixtures/**/.qoder/
 node_modules/
 dist/
 outputs/

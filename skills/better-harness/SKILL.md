@@ -203,10 +203,10 @@ bare directory, or an output-file inventory.
 - Usage/model questions use `session-analysis usage-summary` once.
 - Repeated work continues through
   [Loop Discovery](../../references/loop-engineering/loop-discovery.md).
-- Detailed routes are available through
-  [Agent Customize](../../references/agent-customize/routing.md),
+- Routes: [Agent Customize](../../references/agent-customize/routing.md),
   [Core Change Watch](../../references/project-harness/core-change-watch.md),
-  and [Report Routing](../../templates/reporting/routing.md).
+  [Report Routing](../../templates/reporting/routing.md),
+  [Source Review](references/report-source-review.md).
 
 The durable route authorizes only renderer-owned artifacts in its host
 root. Other creation, activation, mutation, cleanup, scheduling, external

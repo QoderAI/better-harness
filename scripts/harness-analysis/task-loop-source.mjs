@@ -55,7 +55,7 @@ import {
 import { projectAgentLintPracticeEvidence } from "./practice-findings.mjs";
 import { loadPriorLearningCaptureState } from "./learning-capture-state.mjs";
 import { scanTaskLoopRepositoryEvidence } from "./task-loop-repository-evidence.mjs";
-import { buildLearningLoopReview } from "./learning-loop-candidates.mjs";
+import { buildLearningLoopReview, buildNativeLearningReviewPacket } from "./learning-loop-candidates.mjs";
 import { buildWorkflowDemandDiagnostics } from "./workflow-demand-diagnostics.mjs";
 import { findingTargetFromTopology } from "../workspace-topology/index.mjs";
 
@@ -314,12 +314,20 @@ function learningCaptureDiagnosticsCandidate(insights, repositoryEvidence, inter
     interventions,
     assetCoverage: repositoryEvidence?.aiAgentPractice?.coverageRows,
   });
+  const nativePacket = buildNativeLearningReviewPacket({ episodes: taskEpisodes });
   return {
     signals,
     learningCaptureSchemaVersion: learningLoop.schemaVersion,
     episodeRecords: learningLoop.episodeRecords,
     recurringIssueCandidates: learningLoop.candidates,
     coverage: learningLoop.coverage,
+    ...(nativePacket.groups.length > 0 ? {
+      nativeLearningReview: {
+        schemaVersion: 1,
+        status: "review-required",
+        packet: nativePacket,
+      },
+    } : {}),
   };
 }
 

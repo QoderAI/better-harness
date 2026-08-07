@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { applyReportSourceReview } from "../scripts/harness-analysis/apply-source-review.mjs";
+import { buildHarnessReviewPacket, compileHarnessLeadDecision } from "../scripts/harness-analysis/report-review-packet.mjs";
 import { projectTaskLoopFindings } from "../scripts/harness-analysis/task-loop-report.mjs";
 import { buildTaskLoopRepositoryEvidence } from "../scripts/harness-analysis/task-loop-repository-evidence.mjs";
 import { buildTaskLoopSourceCandidate } from "../scripts/harness-analysis/task-loop-source.mjs";
@@ -11,7 +16,11 @@ import {
   validateHarnessReportSource,
 } from "../scripts/harness-analysis/report-source.mjs";
 import { buildWorkflowDemandDiagnostics } from "../scripts/harness-analysis/workflow-demand-diagnostics.mjs";
-import { buildLearningLoopReview } from "../scripts/harness-analysis/learning-loop-candidates.mjs";
+import {
+  buildLearningLoopReview,
+  nativeLearningReviewPacketDigest,
+  nativeLearningReviewSourceDigest,
+} from "../scripts/harness-analysis/learning-loop-candidates.mjs";
 import {
   LEARNING_CAPTURE_REVIEWED_SCORE_FLOOR,
 } from "../scripts/harness-analysis/fluency-dimensions.mjs";
@@ -63,6 +72,29 @@ function sourceCandidate() {
     aiFixPrompt: "/better-harness fix this issue\n\nUpdate the project Rule so each task records its goal, supported operation, focused validation command, and acceptance evidence before completion.\n\n## Validation\n\n- Run the repository Agent Work Loop fixture\n- Regenerate the Harness report and confirm the four current-task dimensions retain the reviewed chain",
   }];
   return source;
+}
+
+function nativeCorrectionSource() {
+  const repairEvents = (sessionId, minute, suffix) => {
+    const base = `2026-08-02T10:${String(minute).padStart(2, "0")}`;
+    return [{
+      sessionId, timestamp: `${base}:00.000Z`, type: "tool", toolName: "Bash",
+      commandText: "node --test test/shared.test.mjs", validationCategory: "node --test",
+      targetPaths: ["src/shared.mjs"], success: false, evidenceRef: { kind: "fixture", id: `${suffix}-failure` },
+    }, {
+      sessionId, timestamp: `${base}:01.000Z`, type: "tool", toolName: "Edit",
+      filePath: "src/shared.mjs", evidenceRef: { kind: "fixture", id: `${suffix}-edit` },
+    }, {
+      sessionId, timestamp: `${base}:02.000Z`, type: "tool", toolName: "Bash",
+      commandText: "node --test test/shared.test.mjs", validationCategory: "node --test",
+      targetPaths: ["src/shared.mjs"], success: true, evidenceRef: { kind: "fixture", id: `${suffix}-rerun` },
+    }];
+  };
+  return buildTaskLoopSourceCandidate({
+    scope: { platform: "qoder", workspace: "/tmp/project" },
+    selection: { strategy: "latest-n", eligibleCount: 2, analyzedCount: 2, strata: [] },
+    events: [...repairEvents("native-a", 0, "a"), ...repairEvents("native-b", 5, "b")],
+  });
 }
 
 function attachRecurringWorkflowFriction(source, intent) {
@@ -329,6 +361,127 @@ function completeReview(source) {
   };
 }
 
+function completeNativeReview(source) {
+  const decision = completeReview(source);
+  const sourceRef = { kind: "session-selection", id: "bounded-selection" };
+  decision.readerOverview.evidenceRefs = [sourceRef];
+  for (const group of [
+    decision.repositoryReview.reviewedFrameworks,
+    decision.repositoryReview.reviewedChecks,
+    decision.repositoryReview.reviewedSoftwareFluencyCapabilities,
+    decision.scoreReview.dimensions,
+  ]) for (const row of group) row.evidenceRefs = [sourceRef];
+  const checks = new Map(decision.repositoryReview.reviewedChecks.map((row) => [row.id, row]));
+  Object.assign(checks.get("lifecycle-repeat-detection"), {
+    state: "Exercised",
+    evidenceRefs: source.taskEpisodes.map((episode) => ({ kind: "task-episode", id: episode.id })),
+  });
+  Object.assign(checks.get("loop-engineering"), {
+    state: "Present",
+    mechanisms: ["skill"],
+    candidateOwner: "skill",
+    ownerSelectionEvidenceRefs: [sourceRef],
+  });
+  decision.repositoryEvidence.diagnosticCoverageReviews = [{
+    id: "core-diagnostic-coverage",
+    status: "covered",
+    affectedScope: "repository-wide",
+    summary: "Core diagnostics were reviewed in the bounded native fixture.",
+    evidenceRefs: [sourceRef],
+  }];
+  const nativePacket = source.repositoryEvidence.learningCaptureDiagnostics.nativeLearningReview.packet;
+  decision.nativeLearningDecisions = nativePacket.groups.map((group) => ({
+    groupRef: group.groupRef,
+    decision: "match",
+    patternId: "recurring-correction",
+    episodeRefs: group.episodeRefs,
+    evidenceRefs: group.evidenceRefs,
+    reasonCodes: group.reasonCodes,
+  }));
+  return decision;
+}
+
+function fillNativeDecisionTemplate(template, source) {
+  const decision = template.decision;
+  const sourceRef = { kind: "session-selection", id: "bounded-selection" };
+  decision.sourceCandidate.evidenceRefs = [sourceRef];
+  decision.readerOverview.text = "The bounded recurring correction was reviewed without claiming later effectiveness.";
+  decision.readerOverview.evidenceRefs = [sourceRef];
+  for (const group of [
+    decision.repositoryReview.reviewedFrameworks,
+    decision.repositoryReview.reviewedChecks,
+    decision.repositoryReview.reviewedSoftwareFluencyCapabilities,
+  ]) for (const row of group) {
+    row.summary = `${row.id} was reviewed from the bounded decision template.`;
+    row.evidenceRefs = [sourceRef];
+  }
+  const checks = new Map(decision.repositoryReview.reviewedChecks.map((row) => [row.id, row]));
+  Object.assign(checks.get("lifecycle-repeat-detection"), {
+    state: "Exercised",
+    evidenceRefs: source.taskEpisodes.map((episode) => ({ kind: "task-episode", id: episode.id })),
+  });
+  Object.assign(checks.get("loop-engineering"), {
+    state: "Present",
+    mechanisms: ["skill"],
+    candidateOwner: "skill",
+    ownerSelectionEvidenceRefs: [sourceRef],
+  });
+  decision.repositoryEvidence.diagnosticCoverageReviews = [{
+    id: "core-diagnostic-coverage",
+    status: "covered",
+    affectedScope: "repository-wide",
+    summary: "Core diagnostics were reviewed from the generated decision template.",
+    evidenceRefs: [sourceRef],
+  }];
+  for (const row of decision.scoreReview.dimensions) {
+    Object.assign(row, {
+      score: 59,
+      confidence: "medium",
+      reason: `${row.id} was judged from the reviewed evidence boundary.`,
+      readerSummary: "Reviewed evidence supports this judgment without claiming later effectiveness.",
+      evidenceRefs: [sourceRef],
+    });
+  }
+  decision.episodeReviews = source.taskEpisodes.map((episode) => {
+    const episodeReview = structuredClone(template.optionalShapes.episodeReviews.item);
+    episodeReview.episodeRef = episode.id;
+    for (const row of episodeReview.taskUnderstanding) {
+      Object.assign(row, {
+        state: "Exercised",
+        summary: `${row.id} was reviewed for this bounded task episode`,
+        evidenceRefs: episode.evidenceRefs,
+      });
+    }
+    episodeReview.validationAssociations = episode.changeSets.flatMap((change) => episode.validationSets
+      .filter((validation) => validation.status === "passed"
+        && validation.ordinal > change.lastOrdinal
+        && change.targetKeys.some((target) => validation.targetKeys.includes(target)))
+      .slice(0, 1)
+      .map((validation) => ({
+        id: `${episode.id}:reviewed-association`,
+        changeSetRef: change.id,
+        validationSetRef: validation.id,
+        relation: "relevant-after-change",
+        summary: "The retained validation directly checks the bounded change set",
+        evidenceRefs: validation.evidenceRefs,
+      })));
+    episodeReview.repairReview = { state: "Unobserved" };
+    return episodeReview;
+  });
+  const groups = new Map(template.nativeGroups.map((group) => [group.groupRef, group]));
+  for (const row of decision.nativeLearningDecisions) {
+    const group = groups.get(row.groupRef);
+    Object.assign(row, {
+      decision: "match",
+      patternId: "recurring-correction",
+      episodeRefs: group.episodeRefs,
+      evidenceRefs: group.evidenceRefs,
+      reasonCodes: group.supportedReasonCodes,
+    });
+  }
+  return template;
+}
+
 function pendingIntervention() {
   const ref = (id) => ({ kind: "fixture", id });
   return {
@@ -446,6 +599,221 @@ test("source review owner merges a complete review without direct source editing
   assert.equal(reviewed.assessmentDecisions.find((row) => row.kind === "repository-review").status, "reviewed");
   assert.equal(reviewed.assessmentDecisions.find((row) => row.kind === "score-review").status, "reviewed");
   assert.equal(reviewed.repositoryEvidence.readerOverview.text, completeReview(source).readerOverview.text);
+});
+
+test("native recurring-correction decisions travel through the standard review packet", () => {
+  const source = nativeCorrectionSource();
+  const native = source.repositoryEvidence.learningCaptureDiagnostics.nativeLearningReview;
+  assert.equal(native.status, "review-required");
+  assert.equal(native.packet.groups.length, 1);
+
+  const packet = buildHarnessReviewPacket(source);
+  assert.equal(packet.schemaVersion, 3);
+  assert.deepEqual(packet.nativeLearningReview.packet, native.packet);
+  assert.equal(packet.allowedEvidenceRefs.some((ref) => ref.id === native.packet.groups[0].evidenceRefs[0]), false);
+
+  const missingNativeDecision = completeNativeReview(source);
+  delete missingNativeDecision.nativeLearningDecisions;
+  const missingCompiled = compileHarnessLeadDecision(source, packet, missingNativeDecision);
+  assert.match(missingCompiled.errors.join("; "), /nativeLearningDecisions is required/u);
+  assert.throws(
+    () => applyReportSourceReview(source, missingCompiled.review, { packet }),
+    /nativeLearningReview is required/u,
+  );
+
+  const decision = completeNativeReview(source);
+  const compiled = compileHarnessLeadDecision(source, packet, decision);
+  assert.deepEqual(compiled.errors, []);
+  const reviewed = applyReportSourceReview(source, compiled.review, { packet });
+  const applied = reviewed.repositoryEvidence.learningCaptureDiagnostics.nativeLearningReview;
+  assert.equal(applied.status, "reviewed");
+  assert.equal(applied.result.matches.length, 1);
+  assert.equal(reviewed.repositoryEvidence.learningCaptureDiagnostics.recurringIssueCandidates[0].patternId, "recurring-correction");
+  const replayPacket = buildHarnessReviewPacket(reviewed);
+  assert.equal(replayPacket.allowedEvidenceRefs.some((ref) => ref.kind === "native-learning-evidence"), false);
+
+  const stale = structuredClone(compiled.review);
+  stale.nativeLearningReview.packetDigest = "0".repeat(64);
+  assert.throws(() => applyReportSourceReview(source, stale, { packet }), /packetDigest|does not match/u);
+
+  const assertStoredTamper = (mutate, pattern) => {
+    const tampered = structuredClone(reviewed);
+    mutate(tampered.repositoryEvidence.learningCaptureDiagnostics.nativeLearningReview);
+    assert.ok(validateHarnessReportSource(tampered).some((error) => pattern.test(error)));
+  };
+  assertStoredTamper((stored) => {
+    stored.packet.sourceDigest = "0".repeat(64);
+    stored.packet.packetDigest = nativeLearningReviewPacketDigest(stored.packet);
+  }, /sourceDigest/u);
+  assertStoredTamper((stored) => {
+    stored.packet.groups[0].reasonCodes = ["same-check"];
+    stored.packet.packetDigest = nativeLearningReviewPacketDigest(stored.packet);
+  }, /sourceDigest/u);
+  assertStoredTamper((stored) => {
+    stored.packet.groups[0].privatePath = "C:\\Users\\Alice\\token.txt";
+    stored.packet.sourceDigest = nativeLearningReviewSourceDigest(stored.packet);
+    stored.packet.packetDigest = nativeLearningReviewPacketDigest(stored.packet);
+  }, /groups do not match/u);
+  assertStoredTamper((stored) => { stored.review.decisions[0].reasonCodes = ["same-check"]; }, /correction reason/u);
+  assertStoredTamper((stored) => {
+    stored.review.decisions[0].reasonCodes = ["same-check", "same-check-repair"];
+  }, /matches do not match/u);
+  assertStoredTamper((stored) => { stored.review.decisions[0].evidenceRefs.push(stored.review.decisions[0].evidenceRefs[0]); }, /distinct packet evidence refs/u);
+  assertStoredTamper((stored) => { stored.review.decisions[0].unexpected = true; }, /unsupported field/u);
+  assertStoredTamper((stored) => { stored.result.matches = []; }, /matches/u);
+  assertStoredTamper((stored) => { stored.result.matches[0].privatePath = "C:\\Users\\Alice\\token.txt"; }, /matches do not match/u);
+  assertStoredTamper((stored) => {
+    stored.result.learningLoop.candidates[0].privatePath = "C:\\Users\\Alice\\token.txt";
+  }, /candidates\[0\] has unsupported field: privatePath/u);
+  assertStoredTamper((stored) => {
+    stored.result.learningLoop.candidates[0].priorityScore += 1;
+    stored.result.learningLoop.candidates[0].currentCost.toolCalls += 1;
+  }, /deterministic packet-bound reconstruction/u);
+  assertStoredTamper((stored) => { stored.result.status = "effectiveness-proven"; }, /status must be reviewed/u);
+});
+
+test("public source-review CLI completes create, decision, and confirmed apply", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-source-review-"));
+  const sourcePath = path.join(root, "report.source.json");
+  const packetPath = path.join(root, "review.packet.json");
+  const decisionPath = path.join(root, "lead.decision.json");
+  const reviewPath = path.join(root, "review.json");
+  const cli = path.resolve("scripts/better-harness.mjs");
+  const run = (args) => spawnSync(process.execPath, [cli, "harness", "source-review", ...args, "--json"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  try {
+    const source = nativeCorrectionSource();
+    await writeFile(sourcePath, `${JSON.stringify(source, null, 2)}\n`);
+
+    const created = run([
+      "create", "--source", sourcePath, "--packet", packetPath, "--decision", decisionPath,
+    ]);
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    assert.equal(created.stderr, "");
+    const createPayload = JSON.parse(created.stdout);
+    assert.equal(createPayload.status, "packet-created");
+    assert.equal(createPayload.decisionRequired, true);
+    assert.equal(createPayload.decisionTemplateCreated, true);
+    assert.equal(created.stdout.includes(root), false, "machine output must not echo local absolute paths");
+    const template = JSON.parse(await readFile(decisionPath, "utf8"));
+    assert.equal(template.kind, "harness-lead-decision-template");
+    assert.deepEqual(template.required.dimensions, template.decision.scoreReview.dimensions.map((row) => row.id));
+    assert.deepEqual(template.nativeGroups.map((group) => group.groupRef), template.decision.nativeLearningDecisions.map((row) => row.groupRef));
+    assert.equal(template.decision.episodeReviews, undefined);
+    assert.equal(template.decision.deliveryReviews, undefined);
+    assert.ok(template.optionalShapes.episodeReviews.item);
+    const duplicateCreate = run([
+      "create", "--source", sourcePath, "--packet", packetPath, "--decision", decisionPath,
+    ]);
+    assert.equal(duplicateCreate.status, 1);
+    assert.equal(JSON.parse(duplicateCreate.stdout).code, "EEXIST");
+    assert.equal(duplicateCreate.stdout.includes(root), false, "machine errors must not echo local absolute paths");
+    const rollbackPacketPath = path.join(root, "rollback.packet.json");
+    const decisionConflict = run([
+      "create", "--source", sourcePath, "--packet", rollbackPacketPath, "--decision", decisionPath,
+    ]);
+    assert.equal(decisionConflict.status, 1);
+    await assert.rejects(readFile(rollbackPacketPath, "utf8"), { code: "ENOENT" });
+
+    const rawDecision = completeNativeReview(source);
+    rawDecision.privatePath = "E:\\private\\alice\\raw-decision.json";
+    await writeFile(decisionPath, `${JSON.stringify(rawDecision, null, 2)}\n`);
+    const rawDecisionResult = run([
+      "decision", "--source", sourcePath, "--packet", packetPath,
+      "--decision", decisionPath, "--review", reviewPath,
+    ]);
+    assert.equal(rawDecisionResult.status, 1);
+    const rawDecisionPayload = JSON.parse(rawDecisionResult.stdout);
+    assert.equal(rawDecisionPayload.code, "INVALID_LEAD_DECISION_TEMPLATE");
+    assert.equal(rawDecisionPayload.errors, undefined);
+    assert.equal(rawDecisionResult.stdout.includes("E:\\private\\alice"), false);
+    await assert.rejects(readFile(reviewPath, "utf8"), { code: "ENOENT" });
+
+    const privateDecision = structuredClone(template);
+    privateDecision.decision.repositoryReview.reviewedChecks[0].id = "E:\\private\\alice\\invented-check";
+    await writeFile(decisionPath, `${JSON.stringify(privateDecision, null, 2)}\n`);
+    const privateDecisionResult = run([
+      "decision", "--source", sourcePath, "--packet", packetPath,
+      "--decision", decisionPath, "--review", reviewPath,
+    ]);
+    assert.equal(privateDecisionResult.status, 1);
+    assert.equal(privateDecisionResult.stdout.includes("E:\\private\\alice"), false);
+    assert.equal(JSON.parse(privateDecisionResult.stdout).errors, undefined);
+    await writeFile(decisionPath, `${JSON.stringify(template, null, 2)}\n`);
+    const incomplete = run([
+      "decision", "--source", sourcePath, "--packet", packetPath,
+      "--decision", decisionPath, "--review", reviewPath,
+    ]);
+    assert.equal(incomplete.status, 1);
+    const incompletePayload = JSON.parse(incomplete.stdout);
+    assert.equal(incompletePayload.code, "INVALID_LEAD_DECISION");
+    assert.equal(incompletePayload.errors, undefined);
+    await writeFile(decisionPath, `${JSON.stringify(fillNativeDecisionTemplate(template, source), null, 2)}\n`);
+
+    const compiled = run([
+      "decision", "--source", sourcePath, "--packet", packetPath,
+      "--decision", decisionPath, "--review", reviewPath,
+    ]);
+    assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
+    assert.equal(compiled.stderr, "");
+    assert.equal(JSON.parse(compiled.stdout).status, "decision-compiled");
+    assert.equal(compiled.stdout.includes(root), false, "machine output must not echo local absolute paths");
+
+    const unconfirmed = run([
+      "apply", "--source", sourcePath, "--packet", packetPath, "--review", reviewPath,
+    ]);
+    assert.equal(unconfirmed.status, 1);
+    assert.equal(unconfirmed.stderr, "");
+    assert.equal(JSON.parse(unconfirmed.stdout).code, "APPLY_CONFIRMATION_REQUIRED");
+    assert.equal(
+      JSON.parse(await readFile(sourcePath, "utf8")).repositoryEvidence.learningCaptureDiagnostics.nativeLearningReview.status,
+      "review-required",
+    );
+
+    const applied = run([
+      "apply", "--source", sourcePath, "--packet", packetPath, "--review", reviewPath, "--yes",
+    ]);
+    const applyDiagnostic = applied.status === 0 ? "" : spawnSync(process.execPath, [
+      cli, "harness", "source-review", "apply", "--source", sourcePath,
+      "--packet", packetPath, "--review", reviewPath, "--yes",
+    ], { cwd: process.cwd(), encoding: "utf8" }).stderr;
+    assert.equal(applied.status, 0, applyDiagnostic || applied.stderr || applied.stdout);
+    assert.equal(applied.stderr, "");
+    const applyPayload = JSON.parse(applied.stdout);
+    assert.equal(applyPayload.status, "review-applied");
+    assert.equal(applyPayload.nativeStatus, "reviewed");
+    assert.equal(applied.stdout.includes(root), false, "machine output must not echo local absolute paths");
+    assert.equal(
+      JSON.parse(await readFile(sourcePath, "utf8")).repositoryEvidence.learningCaptureDiagnostics.nativeLearningReview.status,
+      "reviewed",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("source-review read errors never echo selected absolute paths", () => {
+  const cli = path.resolve("scripts/better-harness.mjs");
+  const privatePath = "E:\\private\\alice\\missing.source.json";
+  const args = [
+    "harness", "source-review", "create", "--source", privatePath,
+    "--packet", "E:\\private\\alice\\packet.json",
+    "--decision", "E:\\private\\alice\\decision.json",
+  ];
+  const machine = spawnSync(process.execPath, [cli, ...args, "--json"], { encoding: "utf8" });
+  assert.equal(machine.status, 1);
+  assert.equal(machine.stderr, "");
+  assert.equal(JSON.parse(machine.stdout).code, "INVALID_REPORT_SOURCE");
+  assert.equal(`${machine.stdout}${machine.stderr}`.includes("E:\\private\\alice"), false);
+  assert.equal(JSON.parse(machine.stdout).errors, undefined);
+
+  const human = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
+  assert.equal(human.status, 1);
+  assert.equal(human.stdout, "");
+  assert.equal(`${human.stdout}${human.stderr}`.includes("E:\\private\\alice"), false);
+  assert.match(human.stderr, /report source is not a readable local JSON file/u);
 });
 
 test("an adequate inspected window can retain an explicit no-candidate Learning Capture result", () => {
