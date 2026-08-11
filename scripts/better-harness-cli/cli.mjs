@@ -263,7 +263,7 @@ function hasHelpFlag(argv) {
 }
 
 function requiresOwnerHelpValidation(command, subcommand) {
-  return command === "harness" && subcommand === "source-review";
+  return command === "harness" && (subcommand === "source-review" || subcommand === "experience-trace");
 }
 
 function hasJsonFlag(argv) {

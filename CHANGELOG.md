@@ -32,6 +32,11 @@ observable behavior and compatibility, not every internal refactor.
   `kimi-workspace-index-absent` warning. The public npm package now ships
   seven host metadata roots; the Qoder runtime bundle remains Qoder-specific.
 
+- `better-harness harness experience-trace` adds a read-only Qoder
+  report-source create/validate v1. Callers explicitly bind task, workspace,
+  and run keys and select either one Episode or no-session evidence; output is
+  bounded, privacy-safe canonical JSONL.
+
 - A read-only native Learning Capture review contract can now screen ordinary
   Task Episodes for repeated exact repair routes, emit a bounded privacy-safe
   packet, validate evidence-bound `match` or `abstain` decisions, and project

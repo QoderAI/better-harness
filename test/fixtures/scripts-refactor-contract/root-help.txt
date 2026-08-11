@@ -17,9 +17,9 @@ Commands:
   Workflows
     harness                  Check Better Harness readiness reports and Canvas outputs
                              subcommands: evidence-bundle, workspace-topology, analyze, checkup,
-                             selection-profile, source, source-review, task-loop-report, render,
-                             preview-canvas, report-quality, repair-findings, record-fix-output,
-                             validate-canvas
+                             selection-profile, source, source-review, experience-trace,
+                             task-loop-report, render, preview-canvas, report-quality,
+                             repair-findings, record-fix-output, validate-canvas
 
   Project Evidence
     session-analysis         Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot,

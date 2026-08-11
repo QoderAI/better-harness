@@ -1,4 +1,5 @@
 import { formatHostList, HOST_CAPABILITIES, hostIdsFor } from "../host-support/index.mjs";
+import { EXPERIENCE_TRACE_COMMAND_MANIFEST } from "../experience-trace/command-manifest.mjs";
 import { PLUGIN_COMMAND_MANIFEST } from "../plugin-lifecycle/command-manifest.mjs";
 
 export const FORMAT_VERSION = "1.0";
@@ -233,6 +234,13 @@ const COMMANDS = [
         script: "harness-analysis/report-source/cli.mjs",
         summary: "Create, compile, and apply a bounded report-source review.",
         description: "Expose an explicit local create, caller-authored decision, and confirmed apply lifecycle without calling a model or merging native evidence aliases into the outer evidence namespace.",
+      },
+      {
+        name: EXPERIENCE_TRACE_COMMAND_MANIFEST.name,
+        audience: EXPERIENCE_TRACE_COMMAND_MANIFEST.audience,
+        script: EXPERIENCE_TRACE_COMMAND_MANIFEST.entryScript,
+        summary: EXPERIENCE_TRACE_COMMAND_MANIFEST.summary,
+        description: EXPERIENCE_TRACE_COMMAND_MANIFEST.description,
       },
       {
         name: "task-loop-report",

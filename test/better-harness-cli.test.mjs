@@ -340,6 +340,11 @@ test("better-harness CLI exposes command inventory as JSON", () => {
     harness.subcommands.find((subcommand) => subcommand.name === "source-review").script,
     "scripts/harness-analysis/report-source/cli.mjs",
   );
+  assert.equal(harness.subcommands.find((subcommand) => subcommand.name === "experience-trace").audience, "maintainer");
+  assert.equal(
+    harness.subcommands.find((subcommand) => subcommand.name === "experience-trace").script,
+    "scripts/experience-trace/cli.mjs",
+  );
   assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "prepare"), false);
   assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "finalize"), false);
   assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "apply-review"), false);
@@ -713,7 +718,7 @@ test("better-harness CLI short-circuits help for every registered terminal path"
       // same dispatch (identical script, `invalid-before-help` stripped, trailing
       // `--help`); an identical dispatch yields byte-identical execution, so a
       // per-variant guarded subprocess would only re-run canonical's own args.
-      if (pathSegments.join(" ") === "harness source-review") continue;
+      if (["harness source-review", "harness experience-trace"].includes(pathSegments.join(" "))) continue;
 
       for (const helpFlag of ["--help", "-h"]) {
         const args = [...pathSegments, "invalid-before-help", helpFlag];
@@ -746,6 +751,21 @@ test("source-review help does not hide invalid phase or trailing arguments", () 
   }
 });
 
+test("experience-trace owner validates trailing help arguments", () => {
+  for (const args of [
+    ["harness", "experience-trace", "bogus", "--help"],
+    ["harness", "experience-trace", "--help", "trailing"],
+  ]) {
+    const dispatch = resolveDispatch(args);
+    assert.equal(dispatch.kind, "dispatch");
+    assert.deepEqual(dispatch.args, args.slice(2));
+    const result = runBetterHarness(args);
+    assert.equal(result.status, 64);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "INVALID_USAGE: invalid experience-trace arguments\n");
+  }
+});
+
 test("better-harness CLI preserves built-in discovery help and literal positional help", () => {
   const commands = runBetterHarness(["commands", "--help", "--audience", "advanced"]);
   assert.equal(commands.status, 0, commands.stderr);
@@ -772,6 +792,7 @@ test("better-harness CLI group help projects workflow commands", () => {
   assert.equal(commands.includes("checkup"), true);
   assert.equal(commands.includes("record-fix-output"), true);
   assert.equal(commands.includes("source"), false);
+  assert.equal(commands.includes("experience-trace"), false);
   assert.equal(commands.includes("render"), false);
 });
 
@@ -790,6 +811,7 @@ test("better-harness CLI group help expands advanced and maintainer subcommands"
   const maintainerCommands = listedSubcommands(maintainer.stdout);
   assert.equal(maintainerCommands.includes("source"), true);
   assert.equal(maintainerCommands.includes("source-review"), true);
+  assert.equal(maintainerCommands.includes("experience-trace"), true);
   assert.equal(maintainerCommands.includes("repair-findings"), true);
 });
 
@@ -859,7 +881,7 @@ test("better-harness CLI emits a machine-readable schema", () => {
 });
 
 test("registered harness commands remain executable through the Node facade", () => {
-  for (const subcommand of ["evidence-bundle", "analyze", "selection-profile", "source", "source-review", "task-loop-report", "render", "record-fix-output"]) {
+  for (const subcommand of ["evidence-bundle", "analyze", "selection-profile", "source", "source-review", "experience-trace", "task-loop-report", "render", "record-fix-output"]) {
     const result = runBetterHarness(["harness", subcommand, "--help"]);
     assert.equal(result.status, 0, `${subcommand}: ${result.stderr}`);
     assert.match(result.stdout, /Usage:/, subcommand);

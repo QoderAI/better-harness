@@ -105,6 +105,14 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   its bounded human-review integrity chain: packet binding, episode/delivery
   normalization, and review application. Non-facade consumers import its public
   `index.mjs`; historical flat paths remain compatibility entrypoints.
+- `scripts/experience-trace/` owns bounded, read-only Experience Trace JSONL:
+  its exact wire contract, Qoder report-source allowlist projection, and
+  create/validate command. It may consume report-source validation only through
+  that capability's public `index.mjs`; report-source, session-analysis,
+  Learning Capture, Harness Run Checkpoints, and component snapshots do not
+  import Experience Trace. Its `index.mjs` is the sole cross-capability
+  behavioral import surface; the root registry may project only its pure command
+  manifest so root help does not load runtime behavior.
 - `scripts/harness-component-snapshot/` owns the versioned, read-only Qoder
   project component snapshot, validation, bounded diff, and non-authorizing
   rollback-reference contracts. It composes only allowlisted public

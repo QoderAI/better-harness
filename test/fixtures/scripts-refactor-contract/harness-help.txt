@@ -15,6 +15,7 @@ Subcommands:
   selection-profile        Build a privacy-safe session selection profile
   source                   Build the deterministic Agent Work Loop source envelope
   source-review            Create, compile, and apply a bounded report-source review
+  experience-trace         Create and validate task-scoped, privacy-safe Experience Trace JSONL
   task-loop-report         Project deterministic task-loop findings from report.source.json
   render                   Render reviewed findings data into report artifacts
   preview-canvas           Preview a Qoder Canvas report on this machine
