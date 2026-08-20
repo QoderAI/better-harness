@@ -137,7 +137,7 @@ when concurrent threads could edit the same files.
 
 Use subagents for bounded exploration, testing, triage, or independent review
 while the main thread owns the final decision and implementation.
-Use [Custom Agent Review](custom-agents-review.md) when configured Agent
+Use [Custom Agent Review](../custom-agents-review.md) when configured Agent
 profiles, their descriptions, prompts, tool boundaries, or inventory count need
 quality review.
 

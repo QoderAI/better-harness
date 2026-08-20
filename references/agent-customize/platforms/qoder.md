@@ -206,7 +206,7 @@ Official scenario examples:
 
 > Official documentation: https://docs.qoder.com/extensions/subagent
 
-Use [Custom Agent Review](custom-agents-review.md) for provider-neutral content
+Use [Custom Agent Review](../custom-agents-review.md) for provider-neutral content
 quality, tool-boundary, count, and report-summary checks. This section owns the
 Qoder file format and invocation examples only.
 
