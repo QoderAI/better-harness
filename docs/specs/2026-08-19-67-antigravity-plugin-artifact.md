@@ -161,6 +161,15 @@ self-contained without changing product behavior:
 3. the observability instructions link to the canonical Agent instructions
    review reference.
 
+Groups 2 and 3 correct links that were already broken in the repository. They
+survived because `classify` in `scripts/doc-link-graph/cli.mjs` cannot tell a
+slash-free `custom-agents-review.md` (a real sibling one directory up) from
+`AGENTS.md` (a file convention in a repository under analysis), so it checks
+neither. `test/skills-docs/doc-link-graph.test.mjs` now checks slash-free
+targets written as link syntax, excluding the convention names, and checks that
+repository URLs at a mutable ref still resolve — the guarantee group 1 gives up
+by leaving the artifact boundary.
+
 ## Build, Boundary, and Publication Contract
 
 `build-antigravity-plugin.mjs` stages into a unique sibling container, assembles

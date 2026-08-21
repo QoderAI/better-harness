@@ -126,8 +126,13 @@ export class AntigravityArtifactError extends Error {
   }
 }
 
-function fail(code, message) {
-  throw new AntigravityArtifactError(code, message);
+// `details` carries repository- or artifact-relative paths only. An absolute
+// path would leak the operator's filesystem layout into an error a caller may
+// log, which is why the messages themselves stay location-free.
+function fail(code, message, details = {}) {
+  const error = new AntigravityArtifactError(code, message);
+  Object.assign(error, details);
+  throw error;
 }
 
 function isObject(value) {
@@ -780,7 +785,11 @@ async function resolveMarkdownTarget(rawTarget, sourceRelative, candidateExists)
     isAllowedArtifactPath(candidate)
   ));
   if (candidates.length === 0) {
-    fail("markdown-target-forbidden", "Markdown closure target is outside the artifact allowlist");
+    fail(
+      "markdown-target-forbidden",
+      "Markdown closure target is outside the artifact allowlist",
+      { source: sourceRelative, target: unresolved },
+    );
   }
   const matches = [];
   for (const candidate of candidates) {
@@ -1179,7 +1188,7 @@ function assertAllowedRuntimeRelative(relativePath) {
     || normalized === "scripts/packaging"
     || normalized.startsWith("scripts/packaging/")
   ) {
-    fail("runtime-target-forbidden", "Runtime module target is outside the allowed runtime roots");
+    fail("runtime-target-forbidden", "Runtime module target is outside the allowed runtime roots", { target: relativePath });
   }
 }
 

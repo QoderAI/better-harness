@@ -23,6 +23,35 @@ const DOC_DIRS = [
   "schemas",
 ];
 const ROOT_DOCS = ["AGENTS.md", "README.md"];
+// Docs that cannot reach a target with a relative path — the Docusaurus site
+// tree, and repository docs that ship inside a host plugin artifact whose
+// allowlist excludes `.agents/` and `.github/` — cite it as a repository URL
+// instead. Those citations are real links to real files, so they need the same
+// integrity guarantee a relative link gets.
+const REPO_BLOB_URL = /https:\/\/github\.com\/QoderAI\/better-harness\/blob\/([^/\s)]+)\/([^)\s#]+)/g;
+const PINNED_COMMIT = /^[0-9a-f]{40}$/u;
+// A bare `foo.md` link usually names a file convention in an analyzed target
+// repository rather than a file here, which is why `classify` leaves it
+// conceptual. These names are the conventions; anything else that is written as
+// link syntax is meant to resolve.
+const CONVENTION_DOC_NAMES = new Set([
+  "AGENTS.md",
+  "CHANGELOG.md",
+  "CLAUDE.local.md",
+  "CLAUDE.md",
+  "CODEX.md",
+  "CONTRIBUTING.md",
+  "DESIGN.md",
+  "GEMINI.md",
+  "MEMORY.md",
+  "QODER.md",
+  "README.md",
+  "SECURITY.md",
+  "SKILL.md",
+  "SUPPORT.md",
+  "report.md",
+]);
+const MARKDOWN_LINK = /\]\(([^)\s#]+\.md)(?:#[^)]*)?\)/g;
 const MD_TOKEN = /(?:\.\.?\/)*(?:[\w.-]+\/)*[\w.-]+\.md\b/g;
 // Bilingual reader surfaces: the Docusaurus site tree (including its zh-Hans
 // locale mirror and specs that quote Chinese reader copy) and the root README
@@ -78,6 +107,49 @@ test("all relative markdown doc links across the repo resolve", () => {
     broken,
     [],
     `Broken doc links (fix the reference or the moved file):\n${broken.join("\n")}`,
+  );
+});
+
+test("repository URLs pointing at a mutable ref resolve to real files", () => {
+  // A relative link rots loudly when its target moves, because the link graph
+  // fails. A repository URL rots silently. Checking the path component keeps
+  // both citation styles under the same guarantee. Commit-pinned URLs are
+  // deliberate references to history and stay out of scope.
+  const broken = [];
+  for (const file of allRepoDocs()) {
+    for (const [, ref, target] of readFileSync(file, "utf8").matchAll(REPO_BLOB_URL)) {
+      if (PINNED_COMMIT.test(ref)) continue;
+      if (!existsSync(path.join(repoRoot, target))) {
+        broken.push(`${relId(file)} -> ${ref}/${target}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    broken,
+    [],
+    `Repository URLs whose path no longer exists:\n${broken.join("\n")}`,
+  );
+});
+
+test("bare filename markdown links resolve unless they name a file convention", () => {
+  // `classify` cannot tell `custom-agents-review.md` (a real sibling doc one
+  // directory up) from `AGENTS.md` (a convention in a repository under
+  // analysis), so it treats every slash-free token as conceptual and checks
+  // neither. Restricting the check to link syntax and excluding the convention
+  // names recovers the first case without reintroducing false positives.
+  const broken = [];
+  for (const file of allRepoDocs()) {
+    for (const [, target] of readFileSync(file, "utf8").matchAll(MARKDOWN_LINK)) {
+      if (target.includes("/") || target.startsWith(".") || CONVENTION_DOC_NAMES.has(target)) continue;
+      if (!existsSync(path.resolve(path.dirname(file), target))) {
+        broken.push(`${relId(file)} -> ${target}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    broken,
+    [],
+    `Bare filename links that do not resolve next to their doc:\n${broken.join("\n")}`,
   );
 });
 

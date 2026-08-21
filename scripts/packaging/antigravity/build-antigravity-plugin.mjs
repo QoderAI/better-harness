@@ -139,18 +139,23 @@ function shouldSkipSource(relativePath) {
 async function copyRegularTree({ source, destination, relativePath, canonicalBoundary }) {
   if (shouldSkipSource(relativePath)) return;
   for (const component of relativePath.split("/")) validatePortablePathComponent(component);
-  if (!isAllowedArtifactPath(relativePath)) fail("source-path-forbidden", "Source path is outside the artifact allowlist");
+  // Name the entry. A dependency release that starts shipping a `dist/` or a
+  // stray `.log` fails the build here, and an error without the path leaves no
+  // way to tell which of a few hundred entries caused it.
+  if (!isAllowedArtifactPath(relativePath)) {
+    fail("source-path-forbidden", "Source path is outside the artifact allowlist", { path: relativePath });
+  }
   let stats;
   try {
     stats = await lstat(source);
   } catch {
-    fail("source-entry-unreadable", "Allowlisted source entry is missing or unreadable");
+    fail("source-entry-unreadable", "Allowlisted source entry is missing or unreadable", { path: relativePath });
   }
-  if (stats.isSymbolicLink()) fail("source-symlink-forbidden", "Source artifact input must not be a symbolic link");
-  if (!stats.isDirectory() && !stats.isFile()) fail("source-special-file-forbidden", "Source artifact input must be regular");
+  if (stats.isSymbolicLink()) fail("source-symlink-forbidden", "Source artifact input must not be a symbolic link", { path: relativePath });
+  if (!stats.isDirectory() && !stats.isFile()) fail("source-special-file-forbidden", "Source artifact input must be regular", { path: relativePath });
   const canonical = await realpath(source).catch(() => null);
   if (!canonical || !isContained(canonical, canonicalBoundary)) {
-    fail("source-path-escape", "Source artifact input escapes its canonical root");
+    fail("source-path-escape", "Source artifact input escapes its canonical root", { path: relativePath });
   }
   if (stats.isFile()) {
     await mkdir(path.dirname(destination), { recursive: true });
@@ -159,7 +164,7 @@ async function copyRegularTree({ source, destination, relativePath, canonicalBou
   }
   await mkdir(destination, { recursive: true });
   const entries = await readdir(source, { withFileTypes: true }).catch(() => {
-    fail("source-directory-unreadable", "Allowlisted source directory cannot be read");
+    fail("source-directory-unreadable", "Allowlisted source directory cannot be read", { path: relativePath });
   });
   entries.sort((left, right) => left.name.localeCompare(right.name, "en"));
   for (const entry of entries) {
