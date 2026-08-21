@@ -249,11 +249,25 @@ async function createSourceRepo({ manifestText, packageJson } = {}) {
 }
 
 async function expectCode(promise, code) {
-  await assert.rejects(promise, (error) => {
-    assert.equal(error.code, code);
-    assert.equal(error.message.includes(path.parse(os.tmpdir()).root), false);
-    return true;
-  });
+  const outcome = promise.then(
+    (value) => ({ status: "fulfilled", value }),
+    (error) => ({ status: "rejected", error }),
+  );
+  const tempPrefixes = [...new Set([path.resolve(os.tmpdir()), await realpath(os.tmpdir())])]
+    .filter((tempPrefix) => tempPrefix !== path.parse(tempPrefix).root);
+  await assert.rejects(
+    outcome.then((result) => {
+      if (result.status === "rejected") throw result.error;
+      return result.value;
+    }),
+    (error) => {
+      assert.equal(error.code, code);
+      for (const tempPrefix of tempPrefixes) {
+        assert.equal(error.message.includes(tempPrefix), false);
+      }
+      return true;
+    },
+  );
 }
 
 test("verifies the closed Agy CLI manifest variants with recursive Markdown and runtime closure", async () => {
