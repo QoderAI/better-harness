@@ -4,7 +4,7 @@
 
 - Spec ID: deepseek-harness-skill-discovery
 - Story: #99
-- Status: Draft
+- Status: Implemented
 
 ## Intent
 
