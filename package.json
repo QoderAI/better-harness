@@ -101,7 +101,8 @@
     "preview": "node scripts/harness-analysis/canvas-preview-server.mjs",
     "preview:canvas": "node scripts/harness-analysis/canvas-preview-server.mjs",
     "test": "vitest run",
-    "test:ci": "vitest run --config vitest.ci.config.mjs"
+    "test:ci": "vitest run --config vitest.ci.config.mjs",
+    "test:dsh-native": "node scripts/dsh-skill-discovery/native-smoke.mjs"
   },
   "packageManager": "npm@10.9.3",
   "publishConfig": {
