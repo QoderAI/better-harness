@@ -28,19 +28,25 @@ const DSH_PACKAGES = [
 ];
 
 async function installNativeOwners(prefix) {
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const specs = ["@deepseek-ai/cordis@4.0.1", ...DSH_PACKAGES.map((entry) => `${entry}@${DSH_NATIVE_VERSION}`)];
+  const args = [
+    "install",
+    "--prefix", prefix,
+    "--no-package-lock",
+    "--no-save",
+    "--ignore-scripts",
+    "--no-audit",
+    "--no-fund",
+    ...specs,
+  ];
+  const npmCli = process.env.npm_execpath;
+  const command = npmCli ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
+  const commandArgs = npmCli ? [npmCli, ...args] : args;
   await new Promise((resolve, reject) => {
-    const child = spawn(npm, [
-      "install",
-      "--prefix", prefix,
-      "--no-package-lock",
-      "--no-save",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      ...specs,
-    ], { stdio: "inherit" });
+    const child = spawn(command, commandArgs, {
+      stdio: "inherit",
+      shell: !npmCli && process.platform === "win32",
+    });
     child.once("error", reject);
     child.once("exit", (code, signal) => {
       if (code === 0) resolve();
