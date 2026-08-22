@@ -2,7 +2,8 @@
 
 This is the single entry point for Claude Code, Codex, Qoder, Cursor, Qwen,
 GitHub Copilot, Pi, Kimi Code, WorkBuddy, and Grok host boundaries, plus the
-DeepSeek Harness (DSH) developer-preview session-only slice. Do not
+DeepSeek Harness (DSH) verified install/discovery and developer-preview session
+slices. Do not
 create `docs/adapters/claude-code.md`, `docs/adapters/codex.md`,
 `docs/adapters/qoder.md`, `docs/adapters/cursor.md`, `docs/adapters/qwen.md`,
 `docs/adapters/copilot.md`, `docs/adapters/pi.md`,
@@ -44,7 +45,7 @@ project `.kimi-code/skills/`), then runs `/skill:better-harness`.
 | Kimi Code | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | `scripts/agent-customize/providers/kimi.mjs` | `scripts/session-analysis/platforms/kimi.mjs` | self-contained HTML + Markdown | `AGENTS.md` + `~/.kimi-code/skills` + project `.kimi-code/skills`/`.kimi/skills` + `~/.kimi-code/mcp.json` | `harness evidence-bundle --platform kimi` -> validated `html` render |
 | WorkBuddy | Analysis-capable source-local host | none (skills install into `~/.workbuddy/skills`) | `scripts/agent-customize/providers/workbuddy.mjs` | `scripts/session-analysis/platforms/workbuddy.mjs` | self-contained HTML + Markdown | `~/.workbuddy` `AGENTS.md` + identity files + `.agents` + `AGENTS.md` | `session-analysis --platform workbuddy sources` -> validated `html` render |
 | Grok | Analysis-capable source-local host | none (skills install into `~/.grok/skills`) | `scripts/agent-customize/providers/grok.mjs` | `scripts/session-analysis/platforms/grok.mjs` | self-contained HTML + Markdown | `~/.grok` + `.grok` + `.agents` + `AGENTS.md` | `session-analysis --platform grok sources` -> skill symlink -> validated `html` render |
-| DeepSeek Harness (DSH) | Partial session-evidence adapter (developer preview) | none / unavailable | unavailable | `scripts/session-analysis/platforms/dsh.mjs`; `dsh-v1` for the audited format-0 session-evidence slice from DSH `dsh-v0.1.0-rc.7` and `dsh-v0.1.0-rc.8`, raw `.jsonl` and feature-detected `.jsonl.zstd` | unavailable; no report route | unavailable | read-only `node scripts/session-analysis.mjs sources --platform dsh --workspace <path> [--dsh-home <dir>]` or `node scripts/session-analysis.mjs facts --platform dsh --workspace <path> [--dsh-home <dir>]` |
+| DeepSeek Harness (DSH) | Verified install/discovery for headless/base and Web `standard`/`code`/`cordis`; partial session evidence (developer preview) | local DSH Cordis policy at `scripts/dsh-skill-discovery/index.mjs`; no lifecycle shell | unavailable | `scripts/session-analysis/platforms/dsh.mjs`; `dsh-v1` for the audited format-0 session-evidence slice from DSH `dsh-v0.1.0-rc.7` and `dsh-v0.1.0-rc.8`, raw `.jsonl` and feature-detected `.jsonl.zstd` | unavailable; no report route | canonical Skill from the complete root; model Skill calls rejected | `npm run test:dsh-native`; read-only session `sources`/`facts` commands remain separate |
 
 ## Read-only Plugin Lifecycle
 
@@ -84,9 +85,9 @@ Plans never execute and always preserve native surface differences:
 Kimi Code, Grok, and DSH are absent from this table on purpose: none has a
 validated native lifecycle contract yet, so lifecycle targets reject them with
 `UNKNOWN_HOST` instead of borrowing another host's install route. Kimi Code and
-Grok retain their configured-asset and session evidence. DSH retains only its
-partial session-evidence slice and has no lifecycle profile or native lifecycle
-claim.
+Grok retain their configured-asset and session evidence. DSH retains its
+bounded verified discovery and partial session-evidence slices, but has no
+lifecycle profile or native lifecycle claim.
 
 The lifecycle commands do not read raw session transcripts, contact a registry,
 edit host settings, or register an `apply` path.
@@ -192,8 +193,28 @@ edit host settings, or register an `apply` path.
   `signals.json`). The adapter honors `GROK_HOME`. Grok has no install shell in
   this repository; skills install manually into `~/.grok/skills` (symlink is
   enough for `/better-harness`).
-- DeepSeek Harness has a developer-preview, JSONL-only session adapter at
-  `scripts/session-analysis/platforms/dsh.mjs`. Home resolution is strictly
+- DeepSeek Harness has two independent bounded slices. Verified
+  install/discovery uses DSH `0.1.1-rc.2` at audited source
+  `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`. The sole supported discovery
+  route points the active DSH `skill-filesystem.customSkillDirs` at the
+  absolute `<BETTER_HARNESS_ROOT>/skills` directory and loads the local Cordis
+  policy at `scripts/dsh-skill-discovery/index.mjs` with the same complete root.
+  The policy verifies the winning DSH definition's `custom` source, absolute
+  `SKILL.md` path, directory `resourceBase`, two-parent root invariant, and
+  required `scripts/`, `references/`, `models/`, and `templates/` resources
+  before direct `/better-harness` injection. It rejects model-facing
+  `skill({ name: "better-harness" })` calls without changing shared Skill
+  frontmatter or other hosts. The route is qualified for headless/base and for
+  a Web user preset copied from `standard`, `code`, or `cordis`, where the
+  active scoped `skill-filesystem` row is edited. Web `minimal` mounts no Skill
+  loader and remains unsupported. Project `.dsh/skills` and `.agents/skills`
+  candidates retain DSH precedence; a same-name shadow fails canonical
+  verification. Copies, symlinks/junctions, relative paths, and literal `~`
+  values are not canonical routes. Moving the Better Harness root requires
+  updating every configured absolute path. The credential-free native owner
+  smoke is `npm run test:dsh-native`.
+- Separately, DeepSeek Harness has a developer-preview, JSONL-only session
+  adapter at `scripts/session-analysis/platforms/dsh.mjs`. Home resolution is strictly
   `--dsh-home` over `DSH_HOME` over `~/.dsh`, and the only source root is
   `<home>/sessions`. Discovery is read-only and accepts only the fixed nested
   `session.jsonl` or `session.jsonl.zstd` layout. Workspace qualification uses
@@ -216,12 +237,12 @@ edit host settings, or register an `apply` path.
   feature-detected; where it is absent, including Node.js 23.0 through 23.7,
   compressed evidence is unavailable while independent raw JSONL evidence
   remains readable. There is no fallback dependency or shell.
-  This slice does not provide native DSH installation or invocation, live PTY
-  or process state, configured assets or Skills, plugin lifecycle, a shell,
-  manifest or package integration, report/output routing, README Quickstart or
-  Installation placement, SQLite or custom persistence, automatic
-  optimization, plugin fault or causality attribution, or artifact repair or
-  writes. See [Story #93](https://github.com/QoderAI/better-harness/issues/93)
+  The combined DSH boundary does not provide live PTY or process state,
+  configured assets, plugin lifecycle, a managed shell, manifest or package
+  integration, report/output routing, README Quickstart, SQLite or custom
+  persistence, automatic optimization, plugin fault or causality attribution,
+  or artifact repair or writes. See
+  [Story #93](https://github.com/QoderAI/better-harness/issues/93)
   and the [dated support specification](../specs/2026-08-18-93-deepseek-harness-session-evidence.md).
 
 ## Output Modes

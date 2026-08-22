@@ -58,10 +58,92 @@ managed plugin lifecycle surface. There is no `plugin apply` command.
 Git can clone the Cursor manifest for inspection, but manifest presence alone
 does not establish a supported installation route.
 
+## DeepSeek Harness verified discovery (not Quickstart) {#deepseek-harness-dsh}
+
+DeepSeek Harness (DSH) has a bounded **Verified install/discovery** route for
+the qualified DSH `0.1.1-rc.2` contract. This is not a public Quickstart or a
+complete report loop.
+
+Start from a complete Better Harness source checkout or npm package directory.
+Call its absolute directory `<BETTER_HARNESS_ROOT>` below. It must contain
+`skills/better-harness/SKILL.md`, `scripts/better-harness.mjs`, `references/`,
+`models/`, and `templates/`.
+
+### Headless/base
+
+In the active headless profile's `cordis.patch.yml`, configure the existing
+global Skill filesystem row and insert the Better Harness DSH policy:
+
+```yaml
+- id: skill-filesystem
+  config:
+    customSkillDirs:
+      - /absolute/path/to/better-harness/skills
+
+- insert:
+    - id: better-harness-explicit-only
+      name: /absolute/path/to/better-harness/scripts/dsh-skill-discovery/index.mjs
+      config:
+        betterHarnessRoot: /absolute/path/to/better-harness
+```
+
+The profile file is normally
+`$DSH_HOME/profiles/headless/cordis.patch.yml`. Replace every example with the
+same real absolute root before starting a new session.
+
+### Web `standard`, `code`, or `cordis`
+
+The Web host owns Skill discovery inside the selected agent preset. In Web's
+Agent Presets settings, copy `standard`, `code`, or `cordis` to a user preset.
+Edit that copy's active `skill-filesystem` row in
+`$DSH_HOME/.agent-presets/<your-preset>/agent.cordis.yml`:
+
+```yaml
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - /absolute/path/to/better-harness/skills
+```
+
+Then insert the same `better-harness-explicit-only` policy row shown above in
+`$DSH_HOME/profiles/web/cordis.patch.yml`, select the copied user preset, and
+start a new session. Editing only the global Web `skill-filesystem` row is not
+the qualified route. Web `minimal` does not mount the Skill loader and remains
+unsupported.
+
+### Verify the boundary
+
+Enter the gesture directly as the user:
+
+```text
+/better-harness
+```
+
+DSH must inject the canonical Skill before model request derivation. The local
+policy checks DSH's winning source, path, directory resource base, complete-root
+invariant, and required root resources. It rejects a higher-precedence
+project-local same-name Skill and rejects model-facing
+`skill({ name: "better-harness" })` calls.
+
+Use an absolute path on macOS, Linux, and Windows, including when it contains
+spaces or Unicode. DSH resolves relative `customSkillDirs` from its process
+working directory and does not expand a literal `~`. Do not install a standalone
+Skill copy or use a symlink/junction as the canonical route. If the complete
+Better Harness root moves, update both the `customSkillDirs` value and policy
+plugin path/configuration. Repository contributors can repeat the pinned,
+credential-free native proof with `npm run test:dsh-native`.
+
+This maturity level does not provide configured assets, evidence-bundle or
+report registration, output routing, rendering, lifecycle management,
+MCP/profile product support, Web `minimal`, or a full report workflow. The
+[adapter matrix](./hosts/adapter-matrix#deepseek-harness-dsh) tracks the exact
+boundary.
+
 :::tip Don't see your Coding Agent?
 
 The six tabs below are the verified Quickstart paths, while the project tracks
-ten host adapters in total. [Compare all adapter support boundaries](./hosts/adapter-matrix),
+ten fuller host adapters plus bounded DSH slices. [Compare all adapter support boundaries](./hosts/adapter-matrix),
 then [follow the new-host contribution workflow and worked pull requests](./hosts/contributing-new-coding-agent)
 if you want to add or complete an integration. You can also
 [browse current repository pull requests](https://github.com/QoderAI/better-harness/pulls)

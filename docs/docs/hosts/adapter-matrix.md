@@ -14,11 +14,12 @@ host-neutral.
 ## Support levels
 
 Better Harness currently declares ten more complete capability-level host
-adapters plus one DSH session-only partial slice. Six have verified public
+adapters plus bounded DSH discovery and session slices. Six have verified public
 Quickstart paths. Pi, Kimi Code, WorkBuddy, and Grok are visible as adapter
 support because their installation and end-to-end evidence boundaries differ
-from that six-host set. DSH is visible only as a developer-preview session
-evidence contract, not as a runnable report adapter. The [canonical adapter matrix](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)
+from that six-host set. DSH has Verified install/discovery for a qualified
+runtime/preset boundary plus a developer-preview session-evidence contract; it
+is not a runnable report adapter. The [canonical adapter matrix](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)
 remains the complete capability-level source of truth.
 
 ## Supported host adapters
@@ -35,7 +36,7 @@ remains the complete capability-level source of truth.
 | Kimi Code | Adapter support | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | Workspace-matching Kimi wire transcripts | Self-contained HTML + Markdown |
 | WorkBuddy | Adapter support | Analysis-capable source-local host | None; skills use WorkBuddy-owned paths | Workspace-matching WorkBuddy JSONL transcripts | Self-contained HTML + Markdown |
 | Grok | Adapter support | Analysis-capable source-local host | None; skills use Grok-owned paths | Workspace-matching Grok session dirs (`updates.jsonl`) | Self-contained HTML + Markdown |
-| DeepSeek Harness (DSH) | Session analysis only | Partial, developer-preview contract | None | DSH JSONL backend session format `0`: raw `.jsonl` and feature-detected `.jsonl.zstd` | Unavailable |
+| DeepSeek Harness (DSH) | Verified install/discovery | Qualified headless/base and Web `standard`/`code`/`cordis`; partial session evidence | Local DSH Cordis policy; no lifecycle shell | DSH JSONL backend session format `0`: raw `.jsonl` and feature-detected `.jsonl.zstd` | Unavailable |
 
 The `@qoder-ai/better-harness` npm package includes all seven plugin metadata
 roots. Pi reuses install metadata in the existing `package.json`, so it does
@@ -62,10 +63,11 @@ unavailable, transient Pi update/remove are not applicable, and WorkBuddy
 returns `PLUGIN_LIFECYCLE_UNSUPPORTED`. Kimi Code and Grok have no validated
 native lifecycle contract yet, so lifecycle targets reject them with
 `UNKNOWN_HOST` while their adapter evidence stays available. DSH likewise has
-no lifecycle profile: lifecycle targets reject it with `UNKNOWN_HOST`, and only
-its partial session evidence remains available. The shadow host
-profiles do not replace the canonical adapter matrix while ADR-0002 remains
-proposed.
+no lifecycle profile: lifecycle targets reject it with `UNKNOWN_HOST`; its
+manually configured verified discovery and partial session evidence remain
+available. The shadow host profiles do not replace the canonical adapter matrix
+while ADR-0002 remains proposed. DSH's verified discovery does not add a
+lifecycle target.
 
 ## Output modes
 
@@ -120,8 +122,31 @@ smoke is observed.
 
 ### DeepSeek Harness (DSH) {#deepseek-harness-dsh}
 
-DSH coverage is a developer-preview, JSONL-only session slice, with Better
-Harness adapter metadata `dsh-v1`. Its format-0 session-evidence slice is
+DSH has Verified install/discovery against DSH `0.1.1-rc.2` at audited source
+`b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`. The only supported route points
+the active `skill-filesystem.customSkillDirs` at the absolute
+`<BETTER_HARNESS_ROOT>/skills` directory and loads the Better Harness DSH policy
+from the same complete root. The policy fails closed unless DSH's winning
+definition has the expected `custom` source, `SKILL.md` path, directory
+`resourceBase`, two-parent root, and required root resources. A direct user
+`/better-harness` gesture then injects the canonical Skill at DSH's pre-model
+step boundary, while a model-facing Better Harness `skill` tool call is
+rejected.
+
+This route is qualified for headless/base. In Web it is qualified only for an
+active user preset copied from `standard`, `code`, or `cordis` and configured
+through that preset's scoped `skill-filesystem` row. Web `minimal` has no Skill
+loader and remains unsupported. DSH's project-local same-name roots keep their
+native higher precedence, but such a winner is reported unverified rather than
+canonical. Standalone copies and symlinks/junctions are not supported install
+routes. Paths must be absolute; DSH resolves relative paths from its process
+working directory and does not expand a literal `~`. Moving the complete Better
+Harness root requires reconfiguring every absolute path. See the
+[installation boundary](../installation.mdx#deepseek-harness-dsh) and run the
+pinned, credential-free owner smoke with `npm run test:dsh-native`.
+
+Separately, DSH has a developer-preview JSONL session slice with Better Harness
+adapter metadata `dsh-v1`. Its format-0 session-evidence slice is
 validated against DSH `dsh-v0.1.0-rc.7` and `dsh-v0.1.0-rc.8`, including RC8
 interrupted assistant messages and required team-event vocabulary. Team events
 are validated and accounted, not projected as team analytics. Home resolution
@@ -150,10 +175,10 @@ The implemented source-checkout smoke boundary is read-only:
 node scripts/session-analysis.mjs sources --platform dsh --workspace <path> [--dsh-home <dir>]
 ```
 
-This is not evidence of native DSH installation or invocation. DSH has no live
-PTY/process integration, configured-asset or Skill discovery, plugin lifecycle,
-shell, manifest, package integration, report/output route, README Quickstart or
-Installation path, SQLite or custom persistence support, automatic
+Verified discovery does not imply a complete report loop. DSH has no live
+PTY/process integration, configured-assets support, plugin lifecycle, managed
+shell, manifest, package integration, report/output route, public Quickstart,
+SQLite or custom persistence support, automatic
 optimization, plugin-fault attribution, or artifact mutation/recovery. See the
 [canonical source matrix](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)
 and [Story #93](https://github.com/QoderAI/better-harness/issues/93).
