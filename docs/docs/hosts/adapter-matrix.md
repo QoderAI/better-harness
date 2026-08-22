@@ -141,9 +141,9 @@ native higher precedence, but such a winner is reported unverified rather than
 canonical. Standalone copies and symlinks/junctions are not supported install
 routes. Paths must be absolute; DSH resolves relative paths from its process
 working directory and does not expand a literal `~`. Moving the complete Better
-Harness root requires reconfiguring every absolute path. See the
-[installation boundary](../installation.mdx#deepseek-harness-dsh) and run the
-pinned, credential-free owner smoke with `npm run test:dsh-native`.
+Harness root requires reconfiguring every absolute path. The Installation page
+documents the configuration boundary; run the pinned, credential-free owner
+smoke with `npm run test:dsh-native`.
 
 Separately, DSH has a developer-preview JSONL session slice with Better Harness
 adapter metadata `dsh-v1`. Its format-0 session-evidence slice is
