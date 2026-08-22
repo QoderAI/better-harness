@@ -21,6 +21,7 @@ const DSH_PACKAGES = [
   "@deepseek-ai/dsh-session",
   "@deepseek-ai/dsh-skill",
   "@deepseek-ai/dsh-skill-filesystem",
+  "@deepseek-ai/dsh-scope",
   "@deepseek-ai/dsh-system-prompt",
   "@deepseek-ai/dsh-tool-skill",
   "@deepseek-ai/dsh-tools",
@@ -66,6 +67,7 @@ async function runSmoke(nodeModules, scratch) {
   const SkillFileSystem = await load("@deepseek-ai/dsh-skill-filesystem");
   const toolSkill = await load("@deepseek-ai/dsh-tool-skill");
   const { Session, SessionId } = await load("@deepseek-ai/dsh-session");
+  const { createScope } = await load("@deepseek-ai/dsh-scope");
   const { CallId, createUserMessage } = await load("@deepseek-ai/dsh-llm");
 
   let sequence = 0;
@@ -151,6 +153,32 @@ async function runSmoke(nodeModules, scratch) {
   assert.equal(modelResult.isError, true);
   assert.match(modelResult.content[0].text, /explicit \/better-harness/);
 
+  const webHome = await mkdtemp(path.join(scratch, "web-home-"));
+  const webCtx = new Context();
+  await webCtx.plugin(SystemPrompt);
+  await webCtx.plugin(ToolRuntime);
+  await webCtx.plugin(AgentRegistry);
+  await webCtx.plugin(SkillRegistry);
+  await webCtx.plugin(policy, { betterHarnessRoot: REPOSITORY_ROOT });
+  const webAgent = agentFor(workspace);
+  assert.equal(await webCtx.skills.get("better-harness", { cwd: workspace, scope: webAgent }), undefined);
+  let webScope;
+  await webCtx.plugin(Object.assign((inner) => {
+    webScope = createScope(inner, webAgent);
+  }, { inject: ["tools"] }));
+  await webScope.ctx.plugin(SkillFileSystem, {
+    dshHome: path.join(webHome, ".dsh"),
+    agentsHome: path.join(webHome, ".agents"),
+    customSkillDirs: [path.join(REPOSITORY_ROOT, "skills")],
+    watch: false,
+  });
+  await webScope.ctx.plugin(toolSkill);
+  const webWinner = await webCtx.skills.get("better-harness", { cwd: workspace, scope: webAgent });
+  assert.equal(webWinner?.source, "custom");
+  const webExplicit = await preStep(webCtx, webAgent, [userMessage("/better-harness")]);
+  assert.equal(webExplicit.kind, "enter");
+  assert.equal(webExplicit.messages.some((message) => message.source?.kind === "skill-invocation"), true);
+
   const shadowWorkspace = await mkdtemp(path.join(scratch, "shadow-"));
   const shadowDirectory = path.join(shadowWorkspace, ".dsh", "skills", "better-harness");
   await mkdir(path.join(shadowWorkspace, ".git"));
@@ -211,6 +239,9 @@ async function runSmoke(nodeModules, scratch) {
     discovery: "verified",
     explicitInvocation: "injected before model request derivation",
     modelInvocation: "rejected",
+    headlessBase: "verified global skill-filesystem owner",
+    webSelectedPreset: "verified scoped skill-filesystem owner",
+    webMinimal: "unsupported without scoped Skill loader",
     shadow: "rejected",
     malformedShadow: "canonical fallback verified",
     standaloneCopy: "unverified",
