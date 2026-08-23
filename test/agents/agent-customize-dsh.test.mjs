@@ -5,6 +5,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -88,6 +89,34 @@ async function createRepository(root, workspaceSegments = []) {
 
 function names(items) {
   return items.map((item) => item.name);
+}
+
+function probeDshHome({ workspace, cwd, syntheticHome, envDshHome, explicitDshHome }) {
+  const options = {
+    workspace,
+    cwd,
+    includeUserHome: false,
+    dshAgentsHome: path.join(syntheticHome, ".agents"),
+  };
+  if (explicitDshHome !== undefined) options.dshHome = explicitDshHome;
+  const script = [
+    `const module = await import(${JSON.stringify(pathToFileURL(PROVIDER_PATH).href)});`,
+    `const result = await module.collectDshCustomizeInventory(${JSON.stringify(options)});`,
+    "process.stdout.write(JSON.stringify({ dshHome: result.dshHome }));",
+  ].join("\n");
+  const env = {
+    ...process.env,
+    HOME: syntheticHome,
+    USERPROFILE: syntheticHome,
+    DSH_HOME: envDshHome,
+  };
+  const result = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+    cwd,
+    encoding: "utf8",
+    env,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout).dshHome;
 }
 
 function itemByName(items, name) {
@@ -416,6 +445,47 @@ test("DSH user opt-in and explicit external roots obey distinct authorization bo
   });
 });
 
+test("DSH home normalization matches native blank-environment and tilde semantics", async () => {
+  await withTempRoot("better-harness-dsh-home-normalization-", async (root) => {
+    const { workspace } = await createRepository(root, ["workspace"]);
+    const syntheticHome = path.join(root, "synthetic home");
+    await mkdir(syntheticHome, { recursive: true });
+
+    for (const envDshHome of ["", "   "]) {
+      assert.equal(
+        probeDshHome({ workspace, cwd: workspace, syntheticHome, envDshHome }),
+        path.join(syntheticHome, ".dsh"),
+      );
+    }
+    for (const envDshHome of ["~/dsh-test", "~\\dsh-test"]) {
+      assert.equal(
+        probeDshHome({ workspace, cwd: workspace, syntheticHome, envDshHome }),
+        path.join(syntheticHome, "dsh-test"),
+      );
+    }
+    assert.equal(
+      probeDshHome({
+        workspace,
+        cwd: workspace,
+        syntheticHome,
+        envDshHome: path.join(root, "environment-home"),
+        explicitDshHome: "~\\dsh-test",
+      }),
+      path.join(syntheticHome, "dsh-test"),
+    );
+    assert.equal(
+      probeDshHome({
+        workspace,
+        cwd: workspace,
+        syntheticHome,
+        envDshHome: path.join(root, "environment-home"),
+        explicitDshHome: "",
+      }),
+      await realpath(workspace),
+    );
+  });
+});
+
 test("DSH workspace and cwd select the nearest native project root above workspace", async () => {
   await withTempRoot("better-harness-dsh-project-root-", async (root) => {
     const parentInstruction = path.join(root, "AGENTS.md");
@@ -659,6 +729,35 @@ test("DSH aggregate budgeting exposes only natively represented Instruction sour
       assert.deepEqual(sourceDisabled.manage.rules, []);
       assert.equal(sourceDisabled.diagnostics.instructionCollection, "disabled-by-byte-limit");
     }
+  });
+});
+
+test("DSH aggregate budgeting preserves raw whitespace-heavy Instruction bytes", async () => {
+  await withTempRoot("better-harness-dsh-raw-budget-", async (root) => {
+    const { repository, workspace } = await createRepository(root, ["nested"]);
+    const rootContent = `ROOT${" ".repeat(400)}`;
+    const leafContent = `LEAF${" ".repeat(400)}`;
+    assert.equal(Buffer.byteLength(rootContent, "utf8"), 404);
+    assert.equal(Buffer.byteLength(leafContent, "utf8"), 404);
+    await write(path.join(repository, "AGENTS.md"), rootContent);
+    await write(path.join(workspace, "AGENTS.md"), leafContent);
+
+    const collect = await loadDshProvider();
+    const inventory = await collect({
+      workspace,
+      cwd: workspace,
+      maxBytes: 512,
+      maxSourceBytes: 1_048_576,
+    });
+
+    assert.deepEqual(names(inventory.manage.rules), [path.join("nested", "AGENTS.md")]);
+    assert.ok(inventory.diagnostics.instructionDecisions.some((item) => (
+      item.path === "AGENTS.md" && item.reason === "budget-omitted"
+    )));
+    assert.ok(inventory.diagnostics.instructionDecisions.some((item) => (
+      item.path === path.join("nested", "AGENTS.md") && item.reason === "budget-truncated"
+    )));
+    assert.doesNotMatch(JSON.stringify(inventory), /ROOT|LEAF/u);
   });
 });
 

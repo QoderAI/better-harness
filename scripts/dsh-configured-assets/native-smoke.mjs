@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   access,
   mkdir,
@@ -81,13 +81,17 @@ async function directorySkill(root, entry, name, description) {
   return filePath;
 }
 
-async function loadPackage(nodeModules, packageName) {
+async function packageEntryPath(nodeModules, packageName) {
   const packageRoot = path.join(nodeModules, ...packageName.split("/"));
   const manifest = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
   if (packageName.startsWith("@deepseek-ai/dsh-")) {
     assert.equal(manifest.version, DSH_NATIVE_VERSION, `${packageName} must remain pinned`);
   }
-  return import(pathToFileURL(path.join(packageRoot, manifest.main ?? "lib/index.js")));
+  return path.join(packageRoot, manifest.main ?? "lib/index.js");
+}
+
+async function loadPackage(nodeModules, packageName) {
+  return import(pathToFileURL(await packageEntryPath(nodeModules, packageName)));
 }
 
 async function createFixture(scratch) {
@@ -100,8 +104,18 @@ async function createFixture(scratch) {
   const customTwo = path.join(scratch, "custom-two");
   const bundled = path.join(scratch, "bundled");
   const external = path.join(scratch, "external targets");
+  const budgetRepository = path.join(scratch, "budget repo");
+  const budgetCwd = path.join(budgetRepository, "nested");
+  const normalizationRepository = path.join(scratch, "normalization repo");
+  const normalizationCwd = path.join(normalizationRepository, "workspace");
+  const syntheticHome = path.join(scratch, "synthetic home");
   await mkdir(path.join(repository, ".git"), { recursive: true });
   await mkdir(cwd, { recursive: true });
+  await mkdir(path.join(budgetRepository, ".git"), { recursive: true });
+  await mkdir(budgetCwd, { recursive: true });
+  await mkdir(path.join(normalizationRepository, ".git"), { recursive: true });
+  await mkdir(normalizationCwd, { recursive: true });
+  await mkdir(syntheticHome, { recursive: true });
 
   await directorySkill(path.join(repository, ".dsh", "skills"), "alpha", "alpha", "project dsh");
   await write(path.join(repository, ".dsh", "skills", "flat.md"), skill("flat-skill", "flat"));
@@ -152,6 +166,8 @@ async function createFixture(scratch) {
   await write(path.join(workspace, "CLAUDE.md"), "  SAME API INSTRUCTION  \n");
   await write(path.join(workspace, "AGENTS.local.md"), "API LOCAL INSTRUCTION");
   await write(path.join(cwd, "AGENTS.md"), "🙂".repeat(2_000));
+  await write(path.join(budgetRepository, "AGENTS.md"), `ROOT${" ".repeat(400)}`);
+  await write(path.join(budgetCwd, "AGENTS.md"), `LEAF${" ".repeat(400)}`);
 
   return {
     repository,
@@ -164,7 +180,66 @@ async function createFixture(scratch) {
     bundled,
     external,
     symlinkCases,
+    budgetRepository,
+    budgetCwd,
+    normalizationCwd,
+    syntheticHome,
   };
+}
+
+async function probeHomeNormalization(nodeModules, fixture) {
+  const nativeHomePath = await packageEntryPath(nodeModules, "@deepseek-ai/dsh-home-paths");
+  const cases = [
+    { label: "blank environment", envDshHome: "" },
+    { label: "whitespace environment", envDshHome: "   " },
+    { label: "forward-slash environment tilde", envDshHome: "~/dsh-test" },
+    { label: "backslash environment tilde", envDshHome: "~\\dsh-test" },
+    { label: "explicit backslash tilde", envDshHome: "~/environment-home", explicitDshHome: "~\\dsh-test" },
+    { label: "explicit blank", envDshHome: "~/environment-home", explicitDshHome: "" },
+  ];
+  const script = [
+    `const NativeHome = await import(${JSON.stringify(pathToFileURL(nativeHomePath).href)});`,
+    `const BetterHarness = await import(${JSON.stringify(pathToFileURL(AGENT_CUSTOMIZE_PATH).href)});`,
+    `const cases = ${JSON.stringify(cases)};`,
+    `const baseOptions = ${JSON.stringify({
+      provider: "dsh",
+      workspace: fixture.normalizationCwd,
+      cwd: fixture.normalizationCwd,
+      dshAgentsHome: path.join(fixture.syntheticHome, ".agents"),
+      includeUserHome: false,
+    })};`,
+    "const results = [];",
+    "for (const current of cases) {",
+    "  process.env.DSH_HOME = current.envDshHome;",
+    "  const configured = Object.hasOwn(current, 'explicitDshHome') ? current.explicitDshHome : undefined;",
+    "  const native = NativeHome.resolveDshHome(configured, process.env);",
+    "  const options = { ...baseOptions };",
+    "  if (Object.hasOwn(current, 'explicitDshHome')) options.dshHome = current.explicitDshHome;",
+    "  const inventory = await BetterHarness.collectAgentCustomizeInventory(options);",
+    "  results.push({ label: current.label, native, betterHarness: inventory.dshHome });",
+    "}",
+    "process.stdout.write(JSON.stringify({ cwd: process.cwd(), results }));",
+  ].join("\n");
+  const result = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+    cwd: fixture.normalizationCwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: fixture.syntheticHome,
+      USERPROFILE: fixture.syntheticHome,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const probe = JSON.parse(result.stdout);
+  assert.deepEqual(probe.results.map((entry) => entry.native), [
+    path.join(fixture.syntheticHome, ".dsh"),
+    path.join(fixture.syntheticHome, ".dsh"),
+    path.join(fixture.syntheticHome, "dsh-test"),
+    path.join(fixture.syntheticHome, "dsh-test"),
+    path.join(fixture.syntheticHome, "dsh-test"),
+    probe.cwd,
+  ]);
+  return probe;
 }
 
 async function verifyNativeOwners(nodeModules, fixture) {
@@ -252,18 +327,34 @@ async function verifyNativeOwners(nodeModules, fixture) {
   assert.ok(budgeted.omitted.length > 0 || budgeted.truncated.length > 0);
   assert.doesNotMatch(budgeted.text, /�/u);
 
+  const whitespaceBudgeted = await Instructions.loadBaselineInstructions({
+    cwd: fixture.budgetCwd,
+    maxSourceBytes: 1_048_576,
+    maxBytes: 512,
+  });
+  assert.ok(whitespaceBudgeted);
+  assert.equal(Buffer.byteLength(`ROOT${" ".repeat(400)}`, "utf8"), 404);
+  assert.equal(Buffer.byteLength(`LEAF${" ".repeat(400)}`, "utf8"), 404);
+  const whitespaceBudgetRules = ["AGENTS.md", path.join("nested", "AGENTS.md")].filter((displayPath) => (
+    whitespaceBudgeted.text.includes(`Instructions from: ${displayPath}`)
+  ));
+  assert.deepEqual(whitespaceBudgetRules, [path.join("nested", "AGENTS.md")]);
+  assert.ok(whitespaceBudgeted.omitted.length > 0);
+  assert.ok(whitespaceBudgeted.truncated.length > 0);
+
   return {
     skillNames,
     instructionCandidates: discovered.map((file) => file.displayPath),
     deduplicatedApiClaude: !full.text.includes(`Instructions from: ${path.join("packages", "api", "CLAUDE.md")}`),
     sourceLimit: "verified",
     aggregateBudget: "verified",
+    whitespaceBudgetRules,
     utf8: "verified",
     symlinkCases: fixture.symlinkCases,
   };
 }
 
-async function compareBetterHarness(fixture, native) {
+async function compareBetterHarness(fixture, native, homeNormalization) {
   try {
     await access(AGENT_CUSTOMIZE_PATH);
   } catch {
@@ -326,6 +417,28 @@ async function compareBetterHarness(fixture, native) {
   assert.ok(budgeted.diagnostics.instructionDecisions.some((entry) => (
     entry.reason === "budget-omitted" || entry.reason === "budget-truncated"
   )));
+
+  const whitespaceBudgeted = await collectAgentCustomizeInventory({
+    provider: "dsh",
+    workspace: fixture.budgetCwd,
+    cwd: fixture.budgetCwd,
+    maxBytes: 512,
+    maxSourceBytes: 1_048_576,
+  });
+  assert.deepEqual(
+    whitespaceBudgeted.manage.rules.map((entry) => entry.name),
+    native.whitespaceBudgetRules,
+  );
+  assert.ok(whitespaceBudgeted.diagnostics.instructionDecisions.some((entry) => (
+    entry.path === "AGENTS.md" && entry.reason === "budget-omitted"
+  )));
+  assert.ok(whitespaceBudgeted.diagnostics.instructionDecisions.some((entry) => (
+    entry.path === path.join("nested", "AGENTS.md") && entry.reason === "budget-truncated"
+  )));
+  assert.doesNotMatch(JSON.stringify(whitespaceBudgeted), /ROOT|LEAF/u);
+  for (const entry of homeNormalization.results) {
+    assert.equal(entry.betterHarness, entry.native, entry.label);
+  }
   assert.doesNotMatch(JSON.stringify(optedIn), /NATIVE PRIVATE SKILL BODY|NATIVE INSTRUCTION|SAME API INSTRUCTION/u);
 }
 
@@ -345,6 +458,7 @@ try {
   scratch = await mkdtemp(path.join(os.tmpdir(), "better-harness-dsh-assets-smoke-"));
   const fixture = await createFixture(scratch);
   const native = await verifyNativeOwners(installation, fixture);
+  const homeNormalization = await probeHomeNormalization(installation, fixture);
   process.stdout.write(`${JSON.stringify({
     phase: "native-dsh",
     status: "pass",
@@ -352,9 +466,10 @@ try {
     sourceSha: DSH_NATIVE_SOURCE_SHA,
     credentialUsed: false,
     platform: process.platform,
+    homeNormalization: "verified",
     ...native,
   })}\n`);
-  await compareBetterHarness(fixture, native);
+  await compareBetterHarness(fixture, native, homeNormalization);
   process.stdout.write(`${JSON.stringify({ phase: "better-harness-comparison", status: "pass" })}\n`);
 } finally {
   if (scratch) await rm(scratch, { recursive: true, force: true });

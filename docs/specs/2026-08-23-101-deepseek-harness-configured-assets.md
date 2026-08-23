@@ -4,7 +4,7 @@
 
 - Spec ID: deepseek-harness-configured-assets
 - Story: #101
-- Status: Draft
+- Status: Implemented
 - Approved scope: [Issue #101](https://github.com/QoderAI/better-harness/issues/101)
 - Qualified DSH release: `0.1.1-rc.2`
 - Qualified DSH source: `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`
@@ -139,8 +139,12 @@ user-home opt-in.
 
 Explicit-root scope is `project` inside workspace, `user` inside the operating
 system home, and `other` otherwise. Relative custom/bundled/agents-home values
-resolve from `process.cwd()` and do not expand literal `~`; DSH home uses DSH's
-supported tilde expansion.
+resolve from `process.cwd()` and do not expand literal `~`. DSH home alone uses
+native `resolveDshHome` semantics: an explicit `dshHome`/`dsh-home`/`home`
+value has precedence (including an explicit blank value); a blank or
+whitespace-only ambient `DSH_HOME` is treated as unset and falls back to
+`<operating-system-home>/.dsh`; and `~`, `~/`, and `~\` prefixes expand against
+the operating-system home.
 
 ### AC-8: Native Instruction discovery and order
 
@@ -166,9 +170,10 @@ file symlink is followed. Stat size and streaming UTF-8 byte count enforce
 and non-file candidates are excluded independently without collapsing other
 Instruction sources.
 
-Loaded content is trimmed, SHA-1 hashed, and deduplicated only within the same
+Loaded raw content is preserved for native render-byte budgeting. A SHA-1
+digest of the trimmed content is used only for deduplication within the same
 `dirname(displayPath)`. The earliest same-directory duplicate wins; identical
-content in different directories remains. Content and digests are never
+content in different directories remains. Raw content and digests are never
 serialized.
 
 ### AC-10: Aggregate Instruction budget

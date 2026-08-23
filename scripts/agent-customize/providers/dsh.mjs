@@ -25,7 +25,9 @@ const COMPACT_WORKSPACE_CONTEXT_INTRO = "Workspace instructions were omitted or 
 
 function expandDshHome(value) {
   if (value === "~") return os.homedir();
-  if (value.startsWith("~/")) return path.join(os.homedir(), value.slice(2));
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return path.join(os.homedir(), value.slice(2));
+  }
   return value;
 }
 
@@ -474,7 +476,7 @@ async function readBoundedInstruction(candidate, maxSourceBytes, diagnostics) {
     });
     return undefined;
   }
-  return { ...candidate, content: chunks.join("").trim() };
+  return { ...candidate, content: chunks.join("") };
 }
 
 function instructionDigest(content) {
@@ -694,8 +696,13 @@ export async function collectDshCustomizeInventory(options = {}) {
   await requireDirectory(workspace, "workspace");
   await requireDirectory(cwd, "cwd");
 
-  const dshHomeInput = options.dshHome ?? options["dsh-home"] ?? options.home
-    ?? process.env.DSH_HOME ?? path.join(os.homedir(), ".dsh");
+  const explicitDshHome = options.dshHome ?? options["dsh-home"] ?? options.home;
+  const environmentDshHome = process.env.DSH_HOME;
+  const dshHomeInput = explicitDshHome ?? (
+    environmentDshHome !== undefined && environmentDshHome.trim().length > 0
+      ? environmentDshHome
+      : path.join(os.homedir(), ".dsh")
+  );
   const dshHome = path.resolve(expandDshHome(dshHomeInput));
   const dshAgentsHome = path.resolve(
     options.dshAgentsHome ?? process.env.DSH_AGENTS_HOME ?? path.join(os.homedir(), ".agents"),
