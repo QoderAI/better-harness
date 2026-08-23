@@ -563,7 +563,7 @@ test("DSH Instruction source limits exclude failed sources without collapsing in
         const watched = path.resolve(process.env.DSH_DISAPPEARING_SOURCE);
         let removed = false;
         mock.module("node:fs/promises", {
-          exports: {
+          namedExports: {
             ...actual,
             stat: async (candidate, ...args) => {
               const result = await actual.stat(candidate, ...args);
