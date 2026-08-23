@@ -152,6 +152,19 @@ function collectEsbuildWasmFiles() {
   return entries;
 }
 
+function collectYamlFiles() {
+  let packageJson;
+  try {
+    packageJson = require.resolve("yaml/package.json");
+  } catch {
+    throw new Error("Missing yaml. Run npm install before creating the runtime bundle.");
+  }
+
+  const entries = [];
+  collectPathEntries(path.dirname(packageJson), "node_modules/yaml", entries);
+  return entries;
+}
+
 function collectPathEntries(rootPath, relativePath, entries) {
   if (!fs.existsSync(rootPath) || shouldSkip(rootPath) || shouldSkipRuntimePath(relativePath)) {
     return;
@@ -186,6 +199,7 @@ function collectEntries() {
   }
   entries.push(...collectTreeSitterFiles().filter((entry) => fs.existsSync(entry.source)));
   entries.push(...collectEsbuildWasmFiles().filter((entry) => fs.existsSync(entry.source)));
+  entries.push(...collectYamlFiles().filter((entry) => fs.existsSync(entry.source)));
 
   const byPath = new Map();
   for (const entry of entries) {

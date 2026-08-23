@@ -38,6 +38,8 @@ jobs:
       - run: npm ci
       - name: Run native DSH Skill discovery smoke
         run: npm run test:dsh-native
+      - name: Run native DSH configured-assets smoke
+        run: npm run test:dsh-configured-assets-native
       - name: Run Vitest
         run: npm run test:ci
       - name: Verify Harness DSL generated sources

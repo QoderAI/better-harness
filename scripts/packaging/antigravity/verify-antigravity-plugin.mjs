@@ -14,10 +14,12 @@ export const RUNTIME_ENTRY = "scripts/better-harness.mjs";
 export const RUNTIME_DEPENDENCIES = Object.freeze([
   "@vscode/tree-sitter-wasm",
   "esbuild-wasm",
+  "yaml",
 ]);
 export const RUNTIME_DEPENDENCY_LICENSES = Object.freeze({
   "@vscode/tree-sitter-wasm": "LICENSE",
   "esbuild-wasm": "LICENSE.md",
+  yaml: "LICENSE",
 });
 export const GRAPH_LIMITS = Object.freeze({
   markdownNodes: 128,
@@ -116,6 +118,8 @@ const REQUIRED_FILES = Object.freeze([
   "node_modules/@vscode/tree-sitter-wasm/LICENSE",
   "node_modules/esbuild-wasm/package.json",
   "node_modules/esbuild-wasm/LICENSE.md",
+  "node_modules/yaml/package.json",
+  "node_modules/yaml/LICENSE",
 ]);
 
 export class AntigravityArtifactError extends Error {
@@ -156,10 +160,10 @@ function isContained(candidate, parent) {
   );
 }
 
-function hasGeneratedName(relativePath) {
+function hasGeneratedName(relativePath, { allowDist = false } = {}) {
   const names = relativePath.split("/");
   return names.some((name) => (
-    GENERATED_NAMES.has(name)
+    (GENERATED_NAMES.has(name) && !(allowDist && name === "dist"))
     || name === ".env"
     || name.startsWith(".env.")
     || name.endsWith(".tmp")
@@ -172,6 +176,8 @@ export function isAllowedArtifactPath(relativePath) {
     return false;
   }
   const normalized = path.posix.normalize(relativePath);
+  const isYamlDependency = normalized === "node_modules/yaml"
+    || normalized.startsWith("node_modules/yaml/");
   if (
     normalized !== relativePath
     || normalized === "."
@@ -179,7 +185,7 @@ export function isAllowedArtifactPath(relativePath) {
     || normalized.startsWith("../")
     || path.posix.isAbsolute(normalized)
     || normalized.includes("\\")
-    || hasGeneratedName(normalized)
+    || hasGeneratedName(normalized, { allowDist: isYamlDependency })
   ) {
     return false;
   }
@@ -221,6 +227,7 @@ export function isAllowedArtifactPath(relativePath) {
   ) {
     return true;
   }
+  if (isYamlDependency) return true;
   return false;
 }
 

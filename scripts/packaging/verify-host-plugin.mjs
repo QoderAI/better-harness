@@ -11,10 +11,12 @@ export const SUPPORTED_HOSTS = Object.freeze(["codex"]);
 export const RUNTIME_DEPENDENCIES = Object.freeze([
   "@vscode/tree-sitter-wasm",
   "esbuild-wasm",
+  "yaml",
 ]);
 export const RUNTIME_DEPENDENCY_LICENSES = Object.freeze({
   "@vscode/tree-sitter-wasm": "LICENSE",
   "esbuild-wasm": "LICENSE.md",
+  yaml: "LICENSE",
 });
 
 const HOSTS = Object.freeze({

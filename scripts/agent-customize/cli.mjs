@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { parseArgs } from "../session-analysis/index.mjs";
+import { parseArgs, parseBooleanFlag } from "../session-analysis/index.mjs";
 import {
   HOST_CAPABILITIES,
   hostHomeOptionKeys,
@@ -25,6 +25,7 @@ function usage() {
     "Collect configured agent-customize inventory for one provider as JSON.",
     `Provider home overrides: ${CUSTOMIZE_HOME_OPTIONS.slice(0, 4).join(", ")},`,
     `${CUSTOMIZE_HOME_OPTIONS.slice(4).join(", ")}, --claude-state, --codex-app-path, --qoder-shared-client-cache-root.`,
+    "DSH configured-assets options: --cwd <path>, --include-user-home[=<boolean>].",
     "",
   ].join("\n");
 }
@@ -48,11 +49,14 @@ function summarize(inventory, options) {
     piHome: inventory.piHome,
     workbuddyHome: inventory.workbuddyHome,
     grokHome: inventory.grokHome,
+    dshHome: inventory.dshHome,
     claudeStatePath: inventory.claudeStatePath,
     kimiHome: inventory.kimiHome,
     codexAppPath: inventory.codexAppPath,
     sharedClientCacheRoot: inventory.sharedClientCacheRoot,
     workspace: inventory.workspace,
+    cwd: inventory.cwd,
+    projectRoot: inventory.projectRoot,
     tab,
     query: options.query ?? "",
     scopeKind: options.scope ?? options["scope-kind"],
@@ -91,6 +95,12 @@ async function main() {
     codexAppPath: options["codex-app-path"],
     qoderSharedClientCacheRoot: options["qoder-shared-client-cache-root"] ?? options["shared-client-cache-root"],
     workspace: options.workspace,
+    ...(options.provider === "dsh"
+      ? {
+          cwd: options.cwd,
+          includeUserHome: parseBooleanFlag(options["include-user-home"] ?? false),
+        }
+      : {}),
   });
   const payload =
     command === "manage"

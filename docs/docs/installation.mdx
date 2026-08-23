@@ -134,16 +134,36 @@ Better Harness root moves, update both the `customSkillDirs` value and policy
 plugin path/configuration. Repository contributors can repeat the pinned,
 credential-free native proof with `npm run test:dsh-native`.
 
-This maturity level does not provide configured assets, evidence-bundle or
-report registration, output routing, rendering, lifecycle management,
-MCP/profile product support, Web `minimal`, or a full report workflow. The
+### Inventory configured assets
+
+The independent developer-preview configured-assets provider reports native
+filesystem Skill winners and cwd-sensitive Instruction sources as
+configured-not-observed evidence:
+
+```bash
+better-harness agent-customize inventory --provider dsh --workspace <path> [--cwd <path>] [--dsh-home <path>] [--include-user-home[=true]]
+```
+
+The default excludes user-home DSH and Agents roots. Add
+`--include-user-home` only when those sources are intentionally in scope.
+Runtime/in-process Skills and active Cordis, Profile, and Preset composition
+remain unresolved, so the inventory does not prove that any asset was used.
+Repository contributors can repeat the pinned, credential-free native
+comparison with `npm run test:dsh-configured-assets-native`. The complete
+configured-assets boundary is documented in the
+[adapter matrix](./hosts/adapter-matrix#deepseek-harness-dsh).
+
+This maturity level does not provide complete runtime configured-asset
+resolution, evidence-bundle or report registration, output routing, rendering,
+lifecycle management, MCP/profile product support, Web `minimal`, or a full
+report workflow. The
 [adapter matrix](./hosts/adapter-matrix#deepseek-harness-dsh) tracks the exact
 boundary.
 
 :::tip Don't see your Coding Agent?
 
 The six tabs below are the verified Quickstart paths, while the project tracks
-ten fuller host adapters plus bounded DSH slices. [Compare all adapter support boundaries](./hosts/adapter-matrix),
+ten fuller host adapters plus bounded DSH capabilities. [Compare all adapter support boundaries](./hosts/adapter-matrix),
 then [follow the new-host contribution workflow and worked pull requests](./hosts/contributing-new-coding-agent)
 if you want to add or complete an integration. You can also
 [browse current repository pull requests](https://github.com/QoderAI/better-harness/pulls)

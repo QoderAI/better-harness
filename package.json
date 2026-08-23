@@ -102,6 +102,7 @@
     "preview:canvas": "node scripts/harness-analysis/canvas-preview-server.mjs",
     "test": "vitest run",
     "test:ci": "vitest run --config vitest.ci.config.mjs",
+    "test:dsh-configured-assets-native": "node scripts/dsh-configured-assets/native-smoke.mjs",
     "test:dsh-native": "node scripts/dsh-skill-discovery/native-smoke.mjs"
   },
   "packageManager": "npm@10.9.3",
@@ -116,7 +117,8 @@
   },
   "dependencies": {
     "@vscode/tree-sitter-wasm": "0.3.1",
-    "esbuild-wasm": "0.28.2"
+    "esbuild-wasm": "0.28.2",
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "conventional-changelog-cli": "^4.1.0",

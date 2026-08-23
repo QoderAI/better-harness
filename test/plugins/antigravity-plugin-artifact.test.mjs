@@ -85,6 +85,7 @@ function basePackage(overrides = {}) {
     dependencies: {
       "@vscode/tree-sitter-wasm": "1.0.0",
       "esbuild-wasm": "1.0.0",
+      "yaml": "1.0.0",
     },
     ...overrides,
   };
@@ -101,6 +102,7 @@ function baseSourcePackage(overrides = {}) {
     dependencies: {
       "@vscode/tree-sitter-wasm": "1.0.0",
       "esbuild-wasm": "1.0.0",
+      "yaml": "1.0.0",
     },
     ...overrides,
   };
@@ -197,6 +199,12 @@ async function createArtifact({
   );
   await writeArtifactFile(pluginRoot, "node_modules/esbuild-wasm/worker.mjs", "export default true;\n");
   await writeArtifactFile(pluginRoot, "node_modules/esbuild-wasm/LICENSE.md");
+  await writeArtifactFile(
+    pluginRoot,
+    "node_modules/yaml/package.json",
+    '{"name":"yaml","version":"1.0.0"}\n',
+  );
+  await writeArtifactFile(pluginRoot, "node_modules/yaml/LICENSE");
   return { container, pluginRoot };
 }
 
@@ -454,7 +462,7 @@ test("freezes the pinned canonical Markdown closure and source link classificati
   const closure = await verifyMarkdownSourceClosure(repositoryRoot);
   assert.deepEqual(
     { nodes: closure.nodes, edges: closure.edges, files: closure.files.length },
-    { nodes: 104, edges: 302, files: 107 },
+    { nodes: 106, edges: 305, files: 109 },
   );
   for (const required of [
     "AGENTS.md",
@@ -644,6 +652,7 @@ test("enforces the closed Better Harness artifact package schema", async () => {
         dependencies: {
           "@vscode/tree-sitter-wasm": "",
           "esbuild-wasm": "1.0.0",
+          "yaml": "1.0.0",
         },
       }),
       code: "package-dependency-version-invalid",
@@ -653,6 +662,7 @@ test("enforces the closed Better Harness artifact package schema", async () => {
         dependencies: {
           "@vscode/tree-sitter-wasm": 1,
           "esbuild-wasm": "1.0.0",
+          "yaml": "1.0.0",
         },
       }),
       code: "package-dependency-version-invalid",
@@ -809,6 +819,8 @@ test("requires the complete artifact and dependency license profile", async () =
     "node_modules/@vscode/tree-sitter-wasm/package.json",
     "node_modules/@vscode/tree-sitter-wasm/LICENSE",
     "node_modules/esbuild-wasm/LICENSE.md",
+    "node_modules/yaml/package.json",
+    "node_modules/yaml/LICENSE",
   ]) {
     await withArtifact({}, async ({ pluginRoot }) => {
       await rm(path.join(pluginRoot, ...relativePath.split("/")));
@@ -971,7 +983,7 @@ test("builds, verifies, runs, and atomically replaces the real pinned artifact",
     const verified = await verifyAntigravityPluginArtifact(outputRoot);
     assert.deepEqual(
       { nodes: verified.markdownClosure.nodes, edges: verified.markdownClosure.edges, files: verified.markdownClosure.files.length },
-      { nodes: 104, edges: 302, files: 107 },
+      { nodes: 106, edges: 305, files: 109 },
     );
     assert.equal(verified.runtimeClosure.modules, 19);
     const help = spawnSync(process.execPath, ["scripts/better-harness.mjs", "--help"], {
@@ -1036,6 +1048,7 @@ test("fails closed on source metadata, dependency, and staged closure errors", a
         dependencies: {
           "@vscode/tree-sitter-wasm": "1.0.0",
           "esbuild-wasm": "1.0.0",
+          "yaml": "1.0.0",
           unexpected: "1.0.0",
         },
       }),

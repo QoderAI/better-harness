@@ -111,7 +111,10 @@ export const HOST_DESCRIPTORS = Object.freeze([
     id: "dsh",
     displayName: "DeepSeek Harness",
     aliases: ["DeepSeek Harness"],
-    capabilities: [HOST_CAPABILITIES.SESSION_ANALYSIS],
+    capabilities: [
+      HOST_CAPABILITIES.SESSION_ANALYSIS,
+      HOST_CAPABILITIES.AGENT_CUSTOMIZE,
+    ],
     sessionScopeTokens: [".dsh", "dsh", "deepseek-harness"],
   }),
 ]);

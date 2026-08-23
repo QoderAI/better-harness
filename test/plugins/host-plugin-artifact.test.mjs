@@ -57,10 +57,20 @@ test("runtime bundle includes the project license and runtime docs", async () =>
       "scripts/workspace-topology/manifests.mjs",
       "vendor/tree-sitter-wasm/LICENSE",
       "vendor/esbuild-wasm/LICENSE.md",
+      "node_modules/yaml/package.json",
+      "node_modules/yaml/LICENSE",
+      "node_modules/yaml/dist/index.js",
     ]) {
       assert.ok(bundle.entries.includes(requiredPath), requiredPath);
       assert.ok(archiveEntries.has(requiredPath), requiredPath);
     }
+    assert.equal(
+      bundle.entries.some((entry) => (
+        entry.startsWith("node_modules/") && !entry.startsWith("node_modules/yaml/")
+      )),
+      false,
+      "runtime bundle contains an undeclared node_modules package",
+    );
     for (const forbiddenPrefix of [
       "docs/.docusaurus",
       "docs/.gitignore",
@@ -143,6 +153,8 @@ async function createMinimalHostArtifact(root) {
     "node_modules/@vscode/tree-sitter-wasm/LICENSE",
     "node_modules/esbuild-wasm/package.json",
     "node_modules/esbuild-wasm/LICENSE.md",
+    "node_modules/yaml/package.json",
+    "node_modules/yaml/LICENSE",
   ]) {
     await writeArtifactFile(root, relativePath);
   }
@@ -276,6 +288,7 @@ test("Codex host plugin artifact is isolated and portable", async () => {
       "docs/glossary.md",
       "node_modules/@vscode/tree-sitter-wasm/LICENSE",
       "node_modules/esbuild-wasm/LICENSE.md",
+      "node_modules/yaml/LICENSE",
     ]) {
       assert.equal((await lstat(path.join(pluginRoot, requiredPath))).isFile(), true, requiredPath);
     }
@@ -298,7 +311,7 @@ test("Codex host plugin artifact is isolated and portable", async () => {
       assert.equal(await lstat(path.join(pluginRoot, forbidden)).catch(() => null), null, forbidden);
     }
 
-    for (const dependency of ["@vscode/tree-sitter-wasm", "esbuild-wasm"]) {
+    for (const dependency of ["@vscode/tree-sitter-wasm", "esbuild-wasm", "yaml"]) {
       const stats = await lstat(path.join(pluginRoot, "node_modules", dependency, "package.json"));
       assert.equal(stats.isFile(), true);
       assert.equal(stats.isSymbolicLink(), false);

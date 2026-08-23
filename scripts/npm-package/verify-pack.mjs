@@ -356,6 +356,9 @@ const requiredBundleEntries = [
   "vendor/esbuild-wasm/LICENSE.md",
   "vendor/esbuild-wasm/lib/main.js",
   "vendor/esbuild-wasm/esbuild.wasm",
+  "node_modules/yaml/package.json",
+  "node_modules/yaml/LICENSE",
+  "node_modules/yaml/dist/index.js",
 ];
 const forbiddenBundlePrefixes = [
   ".claude-plugin/",
@@ -370,7 +373,6 @@ const forbiddenBundlePrefixes = [
   ".idea/",
   ".qoder/",
   "assets/wasm/",
-  "node_modules/",
   "scripts/packaging/",
   "skills/loop-blueprint/",
   "skills/harness/",
@@ -401,6 +403,11 @@ verifyPreviewScriptTarget(bundleEntries, packageJson, "preview:canvas", "");
 for (const prefix of forbiddenBundlePrefixes) {
   if (hasPrefix(bundleEntries, prefix)) {
     fail(`runtime bundle has unexpected path ${prefix}`);
+  }
+}
+for (const entry of bundleEntries) {
+  if (entry.startsWith("node_modules/") && !entry.startsWith("node_modules/yaml/")) {
+    fail(`runtime bundle has unexpected dependency path ${entry}`);
   }
 }
 if (hasPathSegment(bundleEntries, ".plugin-eval")) {

@@ -14,12 +14,14 @@ host-neutral.
 ## Support levels
 
 Better Harness currently declares ten more complete capability-level host
-adapters plus bounded DSH discovery and session slices. Six have verified public
+adapters plus bounded DSH discovery, configured-assets, and session slices. Six
+have verified public
 Quickstart paths. Pi, Kimi Code, WorkBuddy, and Grok are visible as adapter
 support because their installation and end-to-end evidence boundaries differ
 from that six-host set. DSH has Verified install/discovery for a qualified
-runtime/preset boundary plus a developer-preview session-evidence contract; it
-is not a runnable report adapter. The [canonical adapter matrix](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)
+runtime/preset boundary plus developer-preview configured-assets and
+session-evidence contracts; it is not a runnable report adapter. The
+[canonical adapter matrix](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)
 remains the complete capability-level source of truth.
 
 ## Supported host adapters
@@ -36,7 +38,7 @@ remains the complete capability-level source of truth.
 | Kimi Code | Adapter support | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | Workspace-matching Kimi wire transcripts | Self-contained HTML + Markdown |
 | WorkBuddy | Adapter support | Analysis-capable source-local host | None; skills use WorkBuddy-owned paths | Workspace-matching WorkBuddy JSONL transcripts | Self-contained HTML + Markdown |
 | Grok | Adapter support | Analysis-capable source-local host | None; skills use Grok-owned paths | Workspace-matching Grok session dirs (`updates.jsonl`) | Self-contained HTML + Markdown |
-| DeepSeek Harness (DSH) | Verified install/discovery | Qualified headless/base and Web `standard`/`code`/`cordis`; partial session evidence | Local DSH Cordis policy; no lifecycle shell | DSH JSONL backend session format `0`: raw `.jsonl` and feature-detected `.jsonl.zstd` | Unavailable |
+| DeepSeek Harness (DSH) | Verified install/discovery | Qualified headless/base and Web `standard`/`code`/`cordis`; partial configured-assets and session evidence | Local DSH Cordis policy; no lifecycle shell | DSH JSONL backend session format `0`: raw `.jsonl` and feature-detected `.jsonl.zstd` | Unavailable |
 
 The `@qoder-ai/better-harness` npm package includes all seven plugin metadata
 roots. Pi reuses install metadata in the existing `package.json`, so it does
@@ -145,6 +147,22 @@ Harness root requires reconfiguring every absolute path. The Installation page
 documents the configuration boundary; run the pinned, credential-free owner
 smoke with `npm run test:dsh-native`.
 
+DSH also has a developer-preview configured-assets provider. It reports native
+filesystem Skill winners and cwd-sensitive Instruction sources as
+configured-not-observed evidence:
+
+```bash
+better-harness agent-customize inventory --provider dsh --workspace <path> [--cwd <path>] [--dsh-home <dir>] [--include-user-home[=true]]
+```
+
+User-home Skills and Instructions are not read by default. Runtime/in-process
+Skills and active Cordis, Profile, and Preset composition remain unresolved.
+The host advertises exactly `sessionAnalysis` and `agentCustomize`; this does
+not add asset-practices, evidence-bundle, report, rendering, or output support.
+Repository contributors can run the pinned credential-free comparison with
+`npm run test:dsh-configured-assets-native`. See
+[DeepSeek Harness Configured Assets](https://github.com/QoderAI/better-harness/blob/main/references/agent-customize/platforms/dsh.md).
+
 Separately, DSH has a developer-preview JSONL session slice with Better Harness
 adapter metadata `dsh-v1`. Its format-0 session-evidence slice is
 validated against DSH `dsh-v0.1.0-rc.7` and `dsh-v0.1.0-rc.8`, including RC8
@@ -153,8 +171,7 @@ are validated and accounted, not projected as team analytics. Home resolution
 is strictly `--dsh-home` over `DSH_HOME` over `~/.dsh`; the only source root is
 `<home>/sessions`. The adapter reads the fixed nested `session.jsonl` or
 `session.jsonl.zstd` layout without writing or repairing artifacts, and it
-qualifies a workspace only from the header's absolute `cwd`. DSH is registered
-only for the `sessionAnalysis` capability.
+qualifies a workspace only from the header's absolute `cwd`.
 
 Compressed artifacts are concatenated independently checksummed Zstandard
 frames and are validated and decompressed one complete frame at a time. The
@@ -176,9 +193,9 @@ node scripts/session-analysis.mjs sources --platform dsh --workspace <path> [--d
 ```
 
 Verified discovery does not imply a complete report loop. DSH has no live
-PTY/process integration, configured-assets support, plugin lifecycle, managed
-shell, manifest, package integration, report/output route, public Quickstart,
-SQLite or custom persistence support, automatic
+PTY/process integration, complete runtime configured-asset resolution, plugin
+lifecycle, managed shell, manifest, package integration, report/output route,
+public Quickstart, SQLite or custom persistence support, automatic
 optimization, plugin-fault attribution, or artifact mutation/recovery. See the
 [canonical source matrix](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)
 and [Story #93](https://github.com/QoderAI/better-harness/issues/93).

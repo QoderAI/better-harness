@@ -45,10 +45,13 @@ test("capability projections are immutable, ordered, and independently addressed
   }
   const dsh = getHostDescriptor("dsh");
   assert.ok(Object.isFrozen(dsh.capabilities));
-  assert.deepEqual(dsh.capabilities, [HOST_CAPABILITIES.SESSION_ANALYSIS]);
-  assert.equal(hostIdsFor(HOST_CAPABILITIES.SESSION_ANALYSIS).includes("dsh"), true);
-  for (const capability of [
+  assert.deepEqual(dsh.capabilities, [
+    HOST_CAPABILITIES.SESSION_ANALYSIS,
     HOST_CAPABILITIES.AGENT_CUSTOMIZE,
+  ]);
+  assert.equal(hostIdsFor(HOST_CAPABILITIES.SESSION_ANALYSIS).includes("dsh"), true);
+  assert.equal(hostIdsFor(HOST_CAPABILITIES.AGENT_CUSTOMIZE).includes("dsh"), true);
+  for (const capability of [
     HOST_CAPABILITIES.ASSET_PRACTICES,
     HOST_CAPABILITIES.HARNESS_REPORT,
     HOST_CAPABILITIES.REPORT_RENDERING,

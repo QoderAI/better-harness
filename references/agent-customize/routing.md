@@ -31,13 +31,15 @@ Route by ownership before choosing a vendor-specific feature:
 
 - Agent guides (`AGENTS.md`, `CLAUDE.md`, Copilot, Cursor, Qoder rules) ->
   `agents-md-review.md`.
-- Cursor/Qoder/Codex/Claude/Qwen/Copilot/Kimi project or user assets ->
+- Cursor/Qoder/Codex/Claude/Qwen/Copilot/Kimi/DSH project or user assets ->
   `global-assets.md`; for Claude-specific configured-asset scope, then load
   `platforms/claude.md`; for Codex-specific operating practice, then load
   `platforms/codex.md`; for Qoder-specific feature taxonomy, then load
   `platforms/qoder.md`; for Copilot-specific operating practice, then load
   `platforms/copilot.md`; for Kimi-specific configured-asset scope, then load
-  `platforms/kimi.md`. For installed, user-home, settings screenshot, plugin
+  `platforms/kimi.md`; for DSH filesystem Skills and cwd-sensitive
+  Instructions, then load `platforms/dsh.md`. For installed, user-home,
+  settings screenshot, plugin
   cache, or memory scope, run the Global/User Asset Pass.
 - Prior decision, user correction, remembered preference, stale recall,
   cross-window adoption, or memory-safety question -> `memory-review.md` after

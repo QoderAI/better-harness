@@ -108,8 +108,8 @@ The generated root basename is `better-harness`. Its positive allowlist is:
 - `scripts/**` except `scripts/packaging/**`;
 - `references/**`, `templates/**`, `models/**`, `hooks/**`, `docs/**`, and
   `case-studies/**`;
-- `node_modules/@vscode/tree-sitter-wasm/**` and
-  `node_modules/esbuild-wasm/**`, including package metadata and licenses.
+- `node_modules/@vscode/tree-sitter-wasm/**`, `node_modules/esbuild-wasm/**`,
+  and `node_modules/yaml/**`, including package metadata and licenses.
 
 The builder copies only regular files and directories reached without following
 symbolic links. The verifier rejects unknown roots, other Skills and host
@@ -125,8 +125,8 @@ and `dependencies`. It binds:
   `module`;
 - `bin` to the singleton `{ "better-harness": "scripts/better-harness.mjs" }`;
 - `engines` to exact nonblank `node` and `npm` entries projected from source;
-- `dependencies` to exact version-bound `@vscode/tree-sitter-wasm` and
-  `esbuild-wasm` entries.
+- `dependencies` to exact version-bound `@vscode/tree-sitter-wasm`,
+  `esbuild-wasm`, and `yaml` entries.
 
 The builder projects fresh nested objects and rejects missing, extra, blank,
 non-string, or wrong source runtime metadata rather than aliasing source
@@ -145,10 +145,10 @@ Repository-only navigation uses absolute upstream HTTPS URLs and is not copied
 or traversed. `pathname:` is treated only as a non-local Docusaurus route;
 `file:` and unknown schemes fail closed.
 
-The verified pinned artifact contains a Markdown closure of exactly 93 nodes,
-290 edges, and 96 files. Runtime analysis starts at
+The verified pinned artifact contains a Markdown closure of exactly 106 nodes,
+305 edges, and 109 files. Runtime analysis starts at
 `scripts/better-harness.mjs` and proves a syntax-aware ESM closure of 19 modules
-and 39 edges, plus the exact two packaged dependencies and their licenses.
+and 39 edges, plus the exact three packaged dependencies and their licenses.
 Limits bound files, bytes, depth, nodes, and edges.
 
 Three target-only source-integrity repair groups make that shipped closure
