@@ -5,7 +5,6 @@ import {
   chmod,
   mkdir,
   mkdtemp,
-  realpath,
   rm,
   symlink,
   writeFile,
@@ -102,7 +101,7 @@ function probeDshHome({ workspace, cwd, syntheticHome, envDshHome, explicitDshHo
   const script = [
     `const module = await import(${JSON.stringify(pathToFileURL(PROVIDER_PATH).href)});`,
     `const result = await module.collectDshCustomizeInventory(${JSON.stringify(options)});`,
-    "process.stdout.write(JSON.stringify({ dshHome: result.dshHome }));",
+    "process.stdout.write(JSON.stringify({ dshHome: result.dshHome, cwd: process.cwd() }));",
   ].join("\n");
   const env = {
     ...process.env,
@@ -116,7 +115,7 @@ function probeDshHome({ workspace, cwd, syntheticHome, envDshHome, explicitDshHo
     env,
   });
   assert.equal(result.status, 0, result.stderr);
-  return JSON.parse(result.stdout).dshHome;
+  return JSON.parse(result.stdout);
 }
 
 function itemByName(items, name) {
@@ -453,13 +452,13 @@ test("DSH home normalization matches native blank-environment and tilde semantic
 
     for (const envDshHome of ["", "   "]) {
       assert.equal(
-        probeDshHome({ workspace, cwd: workspace, syntheticHome, envDshHome }),
+        probeDshHome({ workspace, cwd: workspace, syntheticHome, envDshHome }).dshHome,
         path.join(syntheticHome, ".dsh"),
       );
     }
     for (const envDshHome of ["~/dsh-test", "~\\dsh-test"]) {
       assert.equal(
-        probeDshHome({ workspace, cwd: workspace, syntheticHome, envDshHome }),
+        probeDshHome({ workspace, cwd: workspace, syntheticHome, envDshHome }).dshHome,
         path.join(syntheticHome, "dsh-test"),
       );
     }
@@ -470,19 +469,17 @@ test("DSH home normalization matches native blank-environment and tilde semantic
         syntheticHome,
         envDshHome: path.join(root, "environment-home"),
         explicitDshHome: "~\\dsh-test",
-      }),
+      }).dshHome,
       path.join(syntheticHome, "dsh-test"),
     );
-    assert.equal(
-      probeDshHome({
-        workspace,
-        cwd: workspace,
-        syntheticHome,
-        envDshHome: path.join(root, "environment-home"),
-        explicitDshHome: "",
-      }),
-      await realpath(workspace),
-    );
+    const explicitBlank = probeDshHome({
+      workspace,
+      cwd: workspace,
+      syntheticHome,
+      envDshHome: path.join(root, "environment-home"),
+      explicitDshHome: "",
+    });
+    assert.equal(explicitBlank.dshHome, explicitBlank.cwd);
   });
 });
 
