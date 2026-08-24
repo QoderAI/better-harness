@@ -3,7 +3,7 @@ import { readFile, rm } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vitest";
 
 import {
   buildWorkBuddyPluginArtifact,
@@ -55,7 +55,7 @@ test("WB-AC-02 builds a replaceable directory artifact with no symlinks", async 
     const first = await buildWorkBuddyPluginArtifact({ outputRoot: output });
     assert.equal(first.pluginRoot, output);
     const verified = await verifyWorkBuddyPluginRoot(output);
-    assert.equal(verified.version, "0.5.0");
+    assert.equal(verified.version, "0.6.4");
     const second = await buildWorkBuddyPluginArtifact({ outputRoot: output });
     assert.equal(second.pluginRoot, output);
   } finally {

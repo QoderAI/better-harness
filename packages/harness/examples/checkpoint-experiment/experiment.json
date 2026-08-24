@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "harness-experiment.v1",
+  "harness": "./checkpoint-compare.harness",
+  "checkpointRef": {
+    "plan": "./checkpoint.json",
+    "digest": "sha256:3f786850e387550fdab836ed7e6dc881de23001b8e2f4a1c9b2a2f9a3d5d3f3f"
+  },
+  "task": {
+    "prompt": "./prompt.md",
+    "expectedFiles": ["README.md"],
+    "grader": {
+      "kind": "readme-package-v1",
+      "contract": "./grader-contract.json"
+    }
+  },
+  "runtime": {
+    "host": "qoder",
+    "tools": ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
+    "allowedTools": [],
+    "disallowedTools": ["WebFetch", "WebSearch", "Task"],
+    "permissionMode": "default",
+    "maxTurns": 24,
+    "timeoutMs": 600000,
+    "network": "deny",
+    "enableFileCheckpointing": true
+  },
+  "lanes": [
+    {
+      "id": "history",
+      "origin": "observed",
+      "trajectory": "./history/trajectory.jsonl",
+      "identity": {
+        "harnessId": "readme-grounded",
+        "model": "performance"
+      }
+    },
+    {
+      "id": "fresh-default",
+      "origin": "execute",
+      "harnessId": "readme-grounded",
+      "trials": 5,
+      "runtime": {
+        "profile": "qoder-default-v1",
+        "model": "performance"
+      }
+    },
+    {
+      "id": "fresh-minimal",
+      "origin": "execute",
+      "harnessId": "readme-grounded",
+      "trials": 5,
+      "runtime": {
+        "profile": "qoder-minimal-v1",
+        "model": "performance"
+      }
+    }
+  ],
+  "contrasts": [
+    {
+      "id": "profile-effect",
+      "lanes": ["fresh-default", "fresh-minimal"]
+    },
+    {
+      "id": "history-context",
+      "lanes": ["history", "fresh-default", "fresh-minimal"]
+    }
+  ],
+  "trials": {
+    "seed": 20260817,
+    "order": "randomized"
+  }
+}

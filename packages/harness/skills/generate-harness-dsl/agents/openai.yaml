@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate Harness DSL"
+  short_description: "Generate and validate Harness as Code DSL"
+  default_prompt: "Use $generate-harness-dsl to create a validated Harness as Code harness for my coding-agent workflow."

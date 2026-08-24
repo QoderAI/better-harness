@@ -1,0 +1,28 @@
+// The smallest useful v0.3 harness: one delivered skill, one real host session,
+// one concrete runtime, and one named deployment.
+language 0.3
+
+skill require-tests {
+  description "Do not report the task complete until tests or a diff review prove it."
+}
+
+workflow single-pass {
+  session coder
+}
+
+harness my-agent {
+  workflow single-pass
+
+  agent coder {
+    use skill require-tests
+  }
+}
+
+runtime qoder {
+  adapter "@harness/adapter-qoder"
+}
+
+deployment my-agent-qoder {
+  harness my-agent
+  runtime qoder
+}

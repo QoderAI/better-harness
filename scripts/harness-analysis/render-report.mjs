@@ -43,7 +43,7 @@ function filesystemPathIdentity(value) {
 }
 
 // Host ids accepted for report routing. Kept local so `--help` stays cheap;
-// test/harness-report-render-cli.test.mjs guards it against the session
+// test/reporting/harness-report-render-cli.test.mjs guards it against the session
 // platform registry in scripts/session-analysis/analyzer.mjs.
 export const RENDER_REPORT_PLATFORMS = Object.freeze([
   ...hostIdsFor(HOST_CAPABILITIES.REPORT_RENDERING),

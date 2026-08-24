@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+{{BH_ROBOTS_META}}
+<link rel="icon" href="data:,">
+<title>{{BH_PAGE_TITLE}}</title>
+<style>{{BH_STYLES}}</style>
+</head>
+<body{{BH_BODY_ATTRIBUTES}}>
+<div class="app" data-harness-inspector>
+  <aside class="scope-picker" aria-label="Scope picker">
+    <div class="brand"><div class="brand-copy"><strong>Harness Inspector</strong><span>{{BH_WORKSPACE_CONTEXT}}</span></div><button class="picker-toggle" data-toggle-picker aria-expanded="true" aria-label="Collapse capability tree"><span class="collapse-label">Hide</span><span class="expand-label">Show tree</span></button></div>
+    <div class="mode-tabs" role="tablist" aria-label="Picker mode"><button id="mode-feature" role="tab" aria-controls="panel-feature" aria-selected="{{BH_FEATURE_TAB_SELECTED}}" data-mode="feature" class="{{BH_FEATURE_TAB_CLASS}}">Capability</button><button id="mode-date" role="tab" aria-controls="panel-date" aria-selected="{{BH_DATE_TAB_SELECTED}}" data-mode="date" class="{{BH_DATE_TAB_CLASS}}">Date</button></div>
+    <section id="panel-feature" class="picker-panel {{BH_FEATURE_PANEL_CLASS}}" role="tabpanel" aria-labelledby="mode-feature" data-panel="feature"><div class="picker-heading"><strong>Capability tree</strong><span>{{BH_FEATURE_NODE_COUNT}} nodes</span></div>{{BH_FEATURE_PICKER}}</section>
+    <section id="panel-date" class="picker-panel {{BH_DATE_PANEL_CLASS}}" role="tabpanel" aria-labelledby="mode-date" data-panel="date">{{BH_DATE_PICKER}}</section>
+  </aside>
+  <main class="workspace">
+    <header class="workspace-header">
+      <nav class="workspace-breadcrumb" aria-label="Workbench breadcrumb"><span>Harness Inspector</span><i>/</i><strong id="workspace-scope-crumb">Delivery Workbench</strong></nav>
+      <div class="workspace-header-meta">
+        <label class="scope-index" hidden><span class="visually-hidden">Jump to a workbench in this scope</span><select id="scope-index" data-scope-index></select></label>
+        <div class="scope-metrics" aria-label="Scope metrics">
+          <span class="metric" data-metric="stories" data-metric-label="stories" data-metric-singular="story"><strong id="metric-stories">0</strong><span class="metric-label">stories</span><span class="metric-short" aria-hidden="true">story</span></span>
+          <span class="metric" data-metric="sessions" data-metric-label="sessions" data-metric-singular="session"><strong id="metric-sessions">0</strong><span class="metric-label">sessions</span><span class="metric-short" aria-hidden="true">sess</span></span>
+          <span class="metric" data-metric="calls" data-metric-label="calls" data-metric-singular="call"><strong id="metric-calls">0</strong><span class="metric-label">calls</span><span class="metric-short" aria-hidden="true">calls</span></span>
+          <span class="metric" data-metric="commits" data-metric-label="commits" data-metric-singular="commit"><strong id="metric-commits">0</strong><span class="metric-label">commits</span><span class="metric-short" aria-hidden="true">commits</span></span>
+        </div>
+        <span class="window-badge">{{BH_PLATFORM}} · {{BH_SESSION_COUNT}} sessions</span>
+      </div>
+    </header>
+    <div class="workspace-scroll">
+      <section class="workbench-list" id="workbench-list" aria-live="polite"></section>
+    </div>
+  </main>
+</div>
+<section class="session-view" id="session-view" role="dialog" aria-modal="true" aria-labelledby="session-view-title" hidden>
+  <header class="session-nav"><nav class="session-crumbs" aria-label="Session breadcrumb"><span>{{BH_WORKSPACE_NAME}}</span><i>/</i><span>Sessions</span><i>/</i><strong id="session-view-title">Session</strong></nav><button class="session-close" id="session-view-close" data-close-session>Close</button></header>
+  <div id="session-view-body"></div>
+</section>
+<script type="application/json" id="inspector-data">{{BH_REPORT_JSON}}</script>
+<script>{{BH_SCRIPT}}</script>
+</body>
+</html>

@@ -4,8 +4,10 @@
 node_modules/
 dist/
 outputs/
+test-results/
 .qoder-cache/
 .harness/state/
+.harness-studio-runs/
 .codex-plugin/skills/
 skills/**/.plugin-eval/
 .codex-plugin/hooks/
@@ -17,3 +19,11 @@ skills/**/.plugin-eval/
 assets/wasm
 dev/terminal-demo/*.cast
 /.codex/better-harness/
+/harness-readme-compare-evidence/
+/harness-qoder-profile-evidence/
+design-qa.md
+
+# Local Artifact View scratch decks and their inspection dumps.
+/*.pptx
+/*.pptx.inspect.ndjson
+/Better-Harness-one-page-en/

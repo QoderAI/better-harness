@@ -1,0 +1,101 @@
+import { describe, expect, it } from "vitest";
+import {
+  ARTIFACT_PROVIDER_API_VERSION,
+  defineArtifactProvider,
+  isArtifactCatalogResponse,
+  isArtifactDataSnapshot,
+  type ArtifactDataSnapshot,
+  type ExternalArtifactProvider,
+} from "../src/artifacts/index.js";
+
+const DIGEST = `sha256:${"a".repeat(64)}` as const;
+
+describe("Artifact provider SDK", () => {
+  it("preserves provider literal types without importing a Studio host", () => {
+    const receipt: ExternalArtifactProvider["receipt"] = {
+      kind: "HarnessStudioExternalArtifactProviderReceiptV1",
+      providerId: "fixture",
+      providerVersion: "1",
+      providerDescriptorDigest: DIGEST,
+      assets: [],
+      driverVersions: {},
+    };
+    const provider = defineArtifactProvider({
+      id: "fixture",
+      label: "Fixture",
+      version: "1",
+      acquisition: "operator-provisioned",
+      fingerprint: DIGEST,
+      receipt,
+      contributions: [],
+    });
+
+    expect(ARTIFACT_PROVIDER_API_VERSION).toBe("1");
+    expect(provider.id).toBe("fixture");
+  });
+
+  it("keeps custom provider payloads forward compatible inside the common envelope", () => {
+    const snapshot: ArtifactDataSnapshot = {
+      kind: "ArtifactDataSnapshotV1",
+      artifactId: "diagram",
+      revisionId: DIGEST,
+      snapshotId: DIGEST,
+      adapter: { id: "fixture", version: "1" },
+      schemaId: "fixture/v1",
+      summary: { label: "diagram.dsl", family: "images-diagrams", format: "dsl" },
+      structure: [],
+      semanticIndex: [],
+      resources: [],
+      diagnostics: [],
+      payload: { kind: "external:homology/structurizr-v1", viewKey: "SystemContext" },
+    };
+    expect(isArtifactDataSnapshot(snapshot)).toBe(true);
+  });
+
+  it("accepts an optional renderer binding identity and rejects malformed identities", () => {
+    const catalog = {
+      kind: "HarnessStudioArtifactCatalogV2",
+      snapshot: { catalogId: "fixture", revision: DIGEST },
+      artifacts: [{
+        id: "notes",
+        threadId: "thread-notes",
+        label: "notes.md",
+        size: 12,
+        family: "source-text",
+        format: "md",
+        backing: "data",
+        revision: {
+          id: DIGEST,
+          digest: DIGEST,
+          content: {
+            uri: `/api/artifacts/notes/revisions/${"a".repeat(64)}/content`,
+            mediaType: "text/markdown; charset=utf-8",
+            digest: DIGEST,
+          },
+        },
+        adapter: {
+          id: "studio.markdown",
+          version: "1",
+          schemaId: "artifact/markdown-v1",
+          snapshotId: DIGEST,
+          snapshotUri: `/api/artifacts/notes/revisions/${"a".repeat(64)}/snapshot`,
+        },
+        renderer: {
+          id: "studio.markdown",
+          label: "Studio Markdown",
+          provider: "studio",
+          type: "native",
+          status: "ready",
+        },
+        capabilities: ["navigate", "outline"],
+      }],
+      omitted: [],
+    };
+
+    expect(isArtifactCatalogResponse(catalog)).toBe(true);
+    catalog.artifacts[0]!.renderer.bindingId = DIGEST;
+    expect(isArtifactCatalogResponse(catalog)).toBe(true);
+    catalog.artifacts[0]!.renderer.bindingId = "not-a-digest";
+    expect(isArtifactCatalogResponse(catalog)).toBe(false);
+  });
+});

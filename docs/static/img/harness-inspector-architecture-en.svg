@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1040" viewBox="0 0 1800 1040" role="img" aria-labelledby="title desc">
+  <title id="title">Harness Inspector architecture</title>
+  <desc id="desc">A local, read-only evidence pipeline. Feature Tree, coding-agent sessions, Git history, and Entire checkpoints enter a bounded collector, are privacy-filtered and normalized, correlated with explicit evidence limits, projected into HarnessInspectorReportV1, and rendered as a self-contained HTML workbench.</desc>
+
+  <defs>
+    <style>
+      text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .section { fill: #8e9a94; font-size: 18px; font-weight: 700; letter-spacing: 2px; }
+      .label { fill: #f4f7f5; font-size: 26px; font-weight: 700; }
+      .label-sm { fill: #f4f7f5; font-size: 21px; font-weight: 700; }
+      .hint { fill: #aeb9b3; font-size: 17px; font-weight: 400; }
+      .source { fill: #171b1d; stroke: #59655f; stroke-width: 2; }
+      .process { fill: #151f27; stroke: #669fd0; stroke-width: 2.4; }
+      .evidence { fill: #17231c; stroke: #72c77c; stroke-width: 2.4; }
+      .output { fill: #1a1d1c; stroke: #8e9a94; stroke-width: 2; }
+      .blue { fill: none; stroke: #77b7f2; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .green { fill: none; stroke: #79cf83; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .gray { fill: none; stroke: #68756e; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L10 6L1 11" fill="none" stroke="#77b7f2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L10 6L1 11" fill="none" stroke="#79cf83" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1L10 6L1 11" fill="none" stroke="#68756e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1800" height="1040" fill="#101415"/>
+
+  <text x="80" y="58" class="section">1 · LOCAL EVIDENCE SOURCES</text>
+  <rect x="80" y="86" width="500" height="112" rx="16" class="source"/>
+  <text x="330" y="130" class="label-sm" text-anchor="middle">Feature Tree</text>
+  <text x="330" y="163" class="hint" text-anchor="middle">Feature · Story · reviewed references</text>
+  <rect x="650" y="86" width="500" height="112" rx="16" class="source"/>
+  <text x="900" y="130" class="label-sm" text-anchor="middle">10 session adapters</text>
+  <text x="900" y="163" class="hint" text-anchor="middle">prompts · dialogue · tool calls</text>
+  <rect x="1220" y="86" width="500" height="112" rx="16" class="source"/>
+  <text x="1470" y="130" class="label-sm" text-anchor="middle">Git + Entire</text>
+  <text x="1470" y="163" class="hint" text-anchor="middle">commits · files · checkpoints</text>
+
+  <path d="M330 198V246H900" class="gray"/>
+  <path d="M900 198V246" class="gray"/>
+  <path d="M1470 198V246H900" class="gray"/>
+  <path d="M900 246V276" class="blue" marker-end="url(#arrow-blue)"/>
+
+  <text x="80" y="278" class="section">2 · BOUNDED LOCAL PROJECTION</text>
+  <rect x="170" y="300" width="430" height="118" rx="16" class="process"/>
+  <text x="385" y="345" class="label-sm" text-anchor="middle">Collect a bounded window</text>
+  <text x="385" y="378" class="hint" text-anchor="middle">time · sessions · commits · providers</text>
+  <path d="M600 359H708" class="blue" marker-end="url(#arrow-blue)"/>
+  <rect x="730" y="300" width="430" height="118" rx="16" class="process"/>
+  <text x="945" y="345" class="label-sm" text-anchor="middle">Normalize safely</text>
+  <text x="945" y="378" class="hint" text-anchor="middle">redaction · relative paths · actions</text>
+  <path d="M1160 359H1268" class="blue" marker-end="url(#arrow-blue)"/>
+  <rect x="1290" y="300" width="340" height="118" rx="16" class="process"/>
+  <text x="1460" y="345" class="label-sm" text-anchor="middle">Preserve gaps</text>
+  <text x="1460" y="378" class="hint" text-anchor="middle">missing stays unobserved</text>
+
+  <path d="M900 418V486" class="green" marker-end="url(#arrow-green)"/>
+
+  <text x="80" y="478" class="section">3 · EVIDENCE-BOUNDED CORRELATION</text>
+  <rect x="180" y="506" width="1440" height="132" rx="18" class="evidence"/>
+  <text x="900" y="551" class="label" text-anchor="middle">Relate intent, sessions, tool calls, paths, and commits</text>
+  <text x="360" y="599" class="label-sm" text-anchor="middle">Explicit / direct</text>
+  <text x="720" y="599" class="label-sm" text-anchor="middle">Observed same-path</text>
+  <text x="1080" y="599" class="label-sm" text-anchor="middle">Candidate</text>
+  <text x="1440" y="599" class="label-sm" text-anchor="middle">Contextual</text>
+
+  <path d="M900 638V700" class="green" marker-end="url(#arrow-green)"/>
+
+  <text x="80" y="690" class="section">4 · READ-ONLY INSPECTOR</text>
+  <rect x="560" y="720" width="680" height="86" rx="18" class="evidence"/>
+  <text x="900" y="773" class="label" text-anchor="middle">HarnessInspectorReportV1</text>
+  <path d="M900 806V846" class="gray" marker-end="url(#arrow-gray)"/>
+
+  <rect x="70" y="870" width="380" height="100" rx="15" class="output"/>
+  <text x="260" y="913" class="label-sm" text-anchor="middle">Delivery Tree / Date</text>
+  <text x="260" y="945" class="hint" text-anchor="middle">choose the review scope</text>
+  <rect x="490" y="870" width="380" height="100" rx="15" class="output"/>
+  <text x="680" y="913" class="label-sm" text-anchor="middle">Three evidence lanes</text>
+  <text x="680" y="945" class="hint" text-anchor="middle">prompt · activity · delivery</text>
+  <rect x="910" y="870" width="380" height="100" rx="15" class="output"/>
+  <text x="1100" y="913" class="label-sm" text-anchor="middle">Evidence Drawer</text>
+  <text x="1100" y="945" class="hint" text-anchor="middle">facts · source · limitations</text>
+  <rect x="1330" y="870" width="400" height="100" rx="15" class="output"/>
+  <text x="1530" y="913" class="label-sm" text-anchor="middle">Session Trace / Replay</text>
+  <text x="1530" y="945" class="hint" text-anchor="middle">observe; never rerun or resume</text>
+
+  <path d="M900 846H260V870" class="gray"/>
+  <path d="M900 846H680V870" class="gray"/>
+  <path d="M900 846H1100V870" class="gray"/>
+  <path d="M900 846H1530V870" class="gray"/>
+</svg>

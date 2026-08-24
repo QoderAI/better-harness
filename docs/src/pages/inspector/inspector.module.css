@@ -1,0 +1,486 @@
+.layout {
+  display: flex;
+  min-height: calc(100vh - var(--ifm-navbar-height));
+  flex-direction: column;
+}
+
+.page {
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  padding: 34px clamp(22px, 3vw, 48px) 42px;
+  background:
+    radial-gradient(circle at 8% -20%, rgba(54, 133, 191, 0.13), transparent 32rem),
+    var(--ifm-background-color);
+}
+
+.intro {
+  width: min(1600px, 100%);
+  margin: 0 auto 28px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+.copy {
+  max-width: 850px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--ifm-color-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.intro h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.lead {
+  max-width: 780px;
+  margin: 12px 0 0;
+  color: var(--ifm-color-emphasis-700);
+  font-size: clamp(1rem, 1.35vw, 1.16rem);
+  line-height: 1.55;
+}
+
+.quickstart {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 18px;
+  padding: 10px 13px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 42%, var(--ifm-color-emphasis-300));
+  border-radius: 10px;
+  background: var(--ifm-background-surface-color, var(--ifm-background-color));
+  box-shadow: var(--bh-shadow-sm);
+}
+
+.quickstart span {
+  color: var(--ifm-color-primary);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.quickstart code {
+  padding: 0;
+  color: var(--ifm-color-emphasis-900);
+  background: transparent;
+  font-size: 0.83rem;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.boundaries {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+  list-style: none;
+}
+
+.boundaries li {
+  padding: 5px 9px;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 999px;
+  color: var(--ifm-color-emphasis-700);
+  background: var(--ifm-background-surface-color, var(--ifm-background-color));
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.fullscreen {
+  display: inline-flex;
+  min-height: 38px;
+  padding: 8px 12px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--ifm-color-primary);
+  border-radius: 8px;
+  color: var(--ifm-color-primary);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-decoration: none;
+  transition: background var(--ifm-transition-fast), color var(--ifm-transition-fast);
+}
+
+.fullscreen:hover,
+.fullscreen:focus-visible {
+  color: #fff;
+  background: var(--ifm-color-primary);
+  text-decoration: none;
+}
+
+.fullscreen:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ifm-color-primary) 30%, transparent);
+  outline-offset: 3px;
+}
+
+.demo {
+  width: min(1600px, 100%);
+  height: max(720px, calc(100vh - 245px));
+  min-height: 720px;
+  margin: 0 auto;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 16px;
+  background: var(--ifm-background-surface-color, var(--ifm-background-color));
+  box-shadow: var(--bh-shadow-lg);
+}
+
+.frame {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.loading {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.85rem;
+}
+
+.note {
+  width: min(1600px, 100%);
+  margin: 11px auto 0;
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.75rem;
+}
+
+.documentation {
+  width: min(1220px, 100%);
+  margin: 0 auto;
+  padding: 88px 0 24px;
+}
+
+.sectionIntro {
+  max-width: 760px;
+}
+
+.sectionIntro h2,
+.localProject h2 {
+  margin: 0;
+  font-size: clamp(1.65rem, 3vw, 2.45rem);
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+
+.sectionIntro > p:last-child,
+.localProject > div > p {
+  margin: 14px 0 0;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.featureGrid {
+  margin-top: 32px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.featureCard {
+  min-height: 240px;
+  padding: 26px;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 16px;
+  background: var(--ifm-background-surface-color, var(--ifm-background-color));
+  box-shadow: var(--bh-shadow-sm);
+}
+
+.cardIndex {
+  display: block;
+  margin-bottom: 52px;
+  color: var(--ifm-color-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.featureCard h3,
+.steps h3 {
+  margin: 0;
+  font-size: 1.08rem;
+  line-height: 1.3;
+}
+
+.featureCard p,
+.steps p {
+  margin: 9px 0 0;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.howTo,
+.evidenceGuide {
+  margin-top: 96px;
+}
+
+.steps {
+  margin: 34px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  counter-reset: inspector-step;
+  list-style: none;
+}
+
+.steps li {
+  position: relative;
+  min-width: 0;
+  padding: 58px 25px 0;
+  border-top: 1px solid var(--ifm-color-emphasis-300);
+  counter-increment: inspector-step;
+}
+
+.steps li:first-child {
+  padding-left: 0;
+}
+
+.steps li:last-child {
+  padding-right: 0;
+}
+
+.steps li::before {
+  content: counter(inspector-step);
+  position: absolute;
+  top: -17px;
+  left: 25px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ifm-color-primary);
+  border-radius: 50%;
+  color: var(--ifm-color-primary);
+  background: var(--ifm-background-color);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.steps li:first-child::before {
+  left: 0;
+}
+
+.evidenceGrid {
+  margin: 34px 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 16px;
+  background: var(--ifm-color-emphasis-300);
+}
+
+.evidenceGrid > div {
+  min-width: 0;
+  padding: 24px;
+  background: var(--ifm-background-surface-color, var(--ifm-background-color));
+}
+
+.evidenceGrid dt {
+  margin: 0 0 11px;
+}
+
+.evidenceGrid dt span {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.evidenceGrid dd {
+  margin: 0;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.88rem;
+  line-height: 1.58;
+}
+
+.explicit {
+  color: #235ba0;
+  background: rgba(65, 124, 191, 0.13);
+}
+
+.observed {
+  color: #1f6f63;
+  background: rgba(45, 139, 124, 0.14);
+}
+
+.candidate {
+  color: #92550e;
+  background: rgba(211, 142, 47, 0.16);
+}
+
+.contextual {
+  color: var(--ifm-color-emphasis-700);
+  background: var(--ifm-color-emphasis-200);
+}
+
+.localProject {
+  margin-top: 96px;
+  padding: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+  align-items: center;
+  gap: 48px;
+  border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 38%, var(--ifm-color-emphasis-300));
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ifm-color-primary) 8%, transparent), transparent 55%),
+    var(--ifm-background-surface-color, var(--ifm-background-color));
+}
+
+.installLink {
+  margin-top: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.commandPanel {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 12px;
+  background: var(--ifm-color-emphasis-100);
+}
+
+.commandPanel code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--ifm-color-emphasis-900);
+  background: transparent;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.commandPanel p {
+  margin: 14px 0 0;
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.72rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 860px) {
+  .page {
+    padding: 24px 16px 30px;
+  }
+
+  .intro {
+    display: grid;
+    gap: 16px;
+  }
+
+  .actions {
+    justify-items: start;
+  }
+
+  .boundaries {
+    justify-content: flex-start;
+  }
+
+  .demo {
+    height: 760px;
+    min-height: 760px;
+    padding: 7px;
+    border-radius: 12px;
+  }
+
+  .documentation {
+    padding-top: 64px;
+  }
+
+  .featureGrid,
+  .evidenceGrid,
+  .localProject {
+    grid-template-columns: 1fr;
+  }
+
+  .featureCard {
+    min-height: 0;
+  }
+
+  .cardIndex {
+    margin-bottom: 34px;
+  }
+
+  .steps {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .steps li,
+  .steps li:first-child,
+  .steps li:last-child {
+    padding: 22px 0 22px 50px;
+    border-top: 0;
+    border-left: 1px solid var(--ifm-color-emphasis-300);
+  }
+
+  .steps li::before,
+  .steps li:first-child::before {
+    top: 19px;
+    left: -17px;
+  }
+
+  .localProject {
+    padding: 26px;
+    gap: 28px;
+  }
+}
+
+@media (max-width: 520px) {
+  .quickstart {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .featureCard,
+  .evidenceGrid > div,
+  .localProject {
+    padding: 21px;
+  }
+
+  .howTo,
+  .evidenceGuide,
+  .localProject {
+    margin-top: 72px;
+  }
+}

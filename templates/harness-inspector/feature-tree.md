@@ -1,0 +1,4 @@
+- [ ] Better Harness
+  - [ ] Inspector
+    - [ ] Inspect one delivery stage
+    - [ ] Review complete session provenance

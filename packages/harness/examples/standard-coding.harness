@@ -1,0 +1,36 @@
+// An executable Qoder session. Agent names are logical roles; v0.3 only permits
+// one role in a session workflow because the shipped adapter starts one session.
+language 0.3
+
+skill impact-analysis {
+  description "Before editing, map the blast radius of the change and list affected modules."
+}
+
+skill verification-before-complete {
+  description "Do not declare the task complete until verification evidence (tests or diff review) exists."
+}
+
+workflow coding-session {
+  session coder
+}
+
+harness standard-coding {
+  workflow coding-session
+
+  agent coder {
+    use skill impact-analysis
+    use skill verification-before-complete
+    require tool workspace.read
+    require tool workspace.write
+    require tool process.exec
+  }
+}
+
+runtime qoder {
+  adapter "@harness/adapter-qoder"
+}
+
+deployment standard-coding-qoder {
+  harness standard-coding
+  runtime qoder
+}

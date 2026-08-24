@@ -23,7 +23,9 @@ Commands:
 
   Project Evidence
     session-analysis         Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot,
-                             Pi, Kimi, WorkBuddy, and Grok session evidence
+                             Pi, Kimi, WorkBuddy, Grok, and DeepSeek Harness session evidence
+    commit-session-link      Correlate local git commits with discovered coding-agent sessions
+                             and render a commit-view HTML report
     dependency-governance    Detect dependency governance files, automation, audit signals, and
                              stale dependency evidence
     cloc                     Count code, comments, and blank lines
@@ -44,6 +46,10 @@ Commands:
                              subcommands: change-drift, core-candidates, diff-impact,
                              evidence-pack, git-history-profile, project-profile,
                              qoder-consistency-schema
+
+  Other
+    harness-inspector        Inspect feature, Story, prompt, session, tool-call, and commit
+                             provenance by product tree or date
 
 Examples:
   better-harness report

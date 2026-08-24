@@ -6,6 +6,24 @@ Architecture, directory routing, and template ownership live in
 Adding support for a new Coding Agent host starts with
 [docs/adapters/contributing-new-coding-agent.md](docs/adapters/contributing-new-coding-agent.md).
 
+## UI and Visual Design
+
+- [DESIGN.md](DESIGN.md) is the visual source of truth for Harness Studio and
+  interactive Better Harness reports unless a surface owns a narrower approved
+  contract. Read it before changing UI hierarchy, typography, color, density,
+  components, interaction states, or responsive behavior.
+- Keep `AGENTS.md` as the routing and enforcement layer; put reusable tokens,
+  visual rationale, component rules, and do/don't guidance in `DESIGN.md`.
+- Treat Studio as a VS Code-inspired docked workbench: prefer panes, rows, tabs,
+  toolbars, and editor views over cards, and define pointer and keyboard behavior
+  before adding or changing an interaction.
+- Map Studio styles to shared semantic tokens. Do not introduce one-off colors,
+  font sizes, radii, shadows, an unbundled font family, or broad `!important`
+  overrides when the design contract already defines the role.
+- Visual review must prove the primary decision remains obvious at wide,
+  compact, and narrow layouts. Verify keyboard focus, bounded overflow, browser
+  console/page errors, and screenshots for every changed Studio surface.
+
 ## Plan & Spec
 
 - Write a plan or spec for new agents, hooks, or major features under
@@ -45,6 +63,48 @@ Adding support for a new Coding Agent host starts with
 
 ## Test and Verify
 
+### Cross-platform behavior
+
+- Treat native filesystem paths as host data. Build and inspect them with
+  `node:path` (`join`, `resolve`, `relative`, `basename`, and `dirname`) rather
+  than splitting on `/`, concatenating separators, assuming `/tmp`, or ignoring
+  Windows drive letters and UNC roots.
+- Keep portable format paths separate from filesystem paths. Persisted artifact,
+  archive, URL, protocol, and receipt paths use their specified separator (often
+  `node:path.posix`); when simulating a target OS, select `posix` or `win32` from
+  that explicit target instead of the host running the test.
+- Prefer Node APIs and `execFile` argv arrays over shell-specific commands or
+  quoting. If a shell is part of the contract, cover the intended PowerShell,
+  `cmd.exe`, or POSIX-shell behavior explicitly.
+- Do not make fixtures depend on checkout newline conversion, executable bits,
+  case-sensitive filesystems, or raw absolute-path string equality unless that
+  platform behavior is the contract. Normalize only at the boundary the test is
+  meant to ignore.
+- A local POSIX pass is not Windows evidence. Reproduce platform semantics with
+  focused tests where possible, and use the corresponding GitHub Actions job as
+  the authoritative receipt before declaring a Windows, macOS, or Linux failure
+  fixed.
+
+- Assert on behaviour, not on text that happens to contain it. Prefer calling the
+  function and checking its returned value, shape, or error over matching a
+  pattern against source code, rendered markup, or CLI output.
+- Do not add pattern-matching assertions as a shortcut for coverage. A
+  `assert.match(source, /functionName/)` proves a string exists; it does not prove
+  the behaviour works, it passes while the feature is broken, and it fails when an
+  unrelated rename touches the text. If the only way to observe something is to
+  grep for it, the code needs an exported seam, not a regex.
+- Never add a test that walks the repository and greps every file for a forbidden
+  literal. Such tests fail on unrelated local files, editor state, and tool config
+  that the change did not touch, and they train contributors to obfuscate strings
+  rather than fix anything. Enforce naming and branding in review or in lint, not
+  as a repo-wide scan.
+- Regex is acceptable where it is the actual contract: a frozen CLI help or error
+  channel, a redaction guarantee (`doesNotMatch` for a secret or absolute path),
+  or a schema-shaped string. Keep those narrow and name the contract in the
+  assertion's test title.
+- When a test does need to read a file, assert a property of the parsed result
+  (imports resolved, exports present, JSON shape valid) rather than a property of
+  its raw characters.
 - Design scripts and code for AI-friendly automated use, and validate automation with an AI agent when relevant,
   e.g. Qoder via `qodercli -p` or Codex via `codex -p`.
 - For visual changes, verify with Playwright against the preview URL, inspect console/page errors, and save a screenshot for layout review.
@@ -53,8 +113,8 @@ Adding support for a new Coding Agent host starts with
 ## Doc Link Integrity
 
 - All relative `.md` references across `skills/`, `references/`, `templates/`, `models/`, `docs/`, and `case-studies/`
-  must resolve; `test/doc-link-graph.test.mjs` enforces this in `npm test`.
-- After adding, moving, or renaming markdown docs, run `node --test test/doc-link-graph.test.mjs` before committing,
+  must resolve; `test/skills-docs/doc-link-graph.test.mjs` enforces this in `npm test`.
+- After adding, moving, or renaming markdown docs, run `npx vitest run test/skills-docs/doc-link-graph.test.mjs` before committing,
   and regenerate the routing graph with `node scripts/doc-link-graph/cli.mjs skills/better-harness`
   (it rewrites `docs/better-harness-doc-links.mmd`, which the test checks for staleness).
 - Every reference doc shipped under `skills/better-harness/references/` must stay reachable from `SKILL.md` routing,
@@ -81,6 +141,7 @@ Valid examples (choose EXACTLY ONE):
 Co-authored-by: GitHub Copilot Agent (GPT 5.5) <198982749+copilot@users.noreply.github.com>
 Co-authored-by: Codex (GPT 5.6 Sol) <codex@openai.com>
 Co-authored-by: QoderAI (Qwen 3.8 Max) <qoder_ai@qoder.com>
+Co-authored-by: augment-app-staging[bot] <182802480+augment-app-staging[bot]@users.noreply.github.com>
 
 ## Commit Messages
 

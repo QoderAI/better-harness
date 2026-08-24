@@ -21,6 +21,14 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   supplied copy, but they do not compose or translate it; host UIs render the
   persisted semantic copy instead of rebuilding it from structural metadata.
 - Keep host evidence adapters separate from packaging, and keep all automation cross-platform.
+- Keep Harness as Code dependencies directed `core <- adapters <- devtools`:
+  the package root owns browser-safe grammar, IR, revision, and resolution;
+  source locking, host execution, compare execution, and highlighting are
+  explicit subpath boundaries. UI protocol layers accept injected executors.
+- Bridge persisted Harness runs into Inspector through the `harness-run`
+  session adapter. Harness owns revision and receipt schemas; session-analysis
+  owns `NormalizedToolActivityV1`; the bridge is one-way and never merges the
+  two contracts. See [ADR-0003](adrs/harness-run-evidence-bridge.md).
 - Keep stable host identity, display, home-option, and support-slice metadata in
   `scripts/host-support/`. Executable adapter imports and construction remain in
   capability-local registries; do not introduce a global host service locator.

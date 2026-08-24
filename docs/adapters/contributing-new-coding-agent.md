@@ -210,7 +210,7 @@ moved, regenerate and verify the link graph:
 
 ```bash
 node scripts/doc-link-graph/cli.mjs skills/better-harness
-node --test test/doc-link-graph.test.mjs
+npx vitest run test/skills-docs/doc-link-graph.test.mjs
 npm test
 npm run pack:verify
 git diff --check
@@ -232,7 +232,7 @@ been verified. Use a host-specific adapter page only when the matrix's split
 triggers are met.
 
 Before commit or review, use the
-[Change Traceability Review](../../.agents/skills/change-traceability-review/SKILL.md)
+[Change Traceability Review](https://github.com/QoderAI/better-harness/blob/main/.agents/skills/change-traceability-review/SKILL.md)
 in Review Readiness Check mode. The pull request should state:
 
 - the host/version and primary contract evidence;
@@ -242,7 +242,7 @@ in Review Readiness Check mode. The pull request should state:
 - privacy, compatibility, generated-file, rollback, and residual risks;
 - AI involvement and the human verification performed.
 
-Use the repository [pull request template](../../.github/pull_request_template.md).
+Use the repository [pull request template](https://github.com/QoderAI/better-harness/blob/main/.github/pull_request_template.md).
 Do not infer Story ids, AI involvement, CI status, or native compatibility from
 branch names, prose, passing synthetic tests, or similarity to another host.
 

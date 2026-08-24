@@ -7,6 +7,10 @@
     "message": "文档",
     "description": "Navbar item with label Docs"
   },
+  "item.label.Inspector": {
+    "message": "Inspector",
+    "description": "Navbar item with label Inspector"
+  },
   "item.label.Blog": {
     "message": "博客",
     "description": "Navbar item with label Blog"

@@ -1,0 +1,59 @@
+// Checkpoint experiment variants: each resolves to one Qoder session.
+language 0.3
+
+skill coding-loop-discipline {
+  description "Inspect the repository, make the requested scoped change, run relevant validation, and report concrete evidence."
+}
+
+skill repository-grounding {
+  description "Before writing documentation, derive every claim from package metadata, public source, executable examples, and current tests; treat archived documentation as stale evidence; state the real retry defaults and abort behavior precisely instead of approximating them."
+}
+
+skill readme-only-scope {
+  description "Change only README.md, and give it exactly the sections a consumer needs in this order: Purpose, Installation, Quick Start, API, Behavior, Verification. Installation shows the consumer command `npm install <package name from package.json>`. Do not invent commands, module formats, badges, URLs, defaults, or capabilities that current repository evidence does not support."
+}
+
+skill executable-readme-verification {
+  description "Write Quick Start as an executable ESM JavaScript example that imports the package by name, then run the package tests and that example before completing; repair the documentation until both pass."
+}
+
+workflow baseline-session {
+  session writer
+}
+
+workflow grounded-session {
+  session writer
+}
+
+harness readme-baseline {
+  workflow baseline-session
+
+  agent writer {
+    use skill coding-loop-discipline
+  }
+}
+
+harness readme-grounded {
+  workflow grounded-session
+
+  agent writer {
+    use skill coding-loop-discipline
+    use skill repository-grounding
+    use skill readme-only-scope
+    use skill executable-readme-verification
+  }
+}
+
+runtime qoder {
+  adapter "@harness/adapter-qoder"
+}
+
+deployment readme-baseline-qoder {
+  harness readme-baseline
+  runtime qoder
+}
+
+deployment readme-grounded-qoder {
+  harness readme-grounded
+  runtime qoder
+}

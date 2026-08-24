@@ -2,6 +2,7 @@ import { collectClaudeCustomizeInventory } from "./claude.mjs";
 import { collectCodexCustomizeInventory } from "./codex.mjs";
 import { collectCopilotCustomizeInventory } from "./copilot.mjs";
 import { collectCursorCustomizeInventory } from "./cursor.mjs";
+import { collectDshCustomizeInventory } from "./dsh.mjs";
 import { collectGrokCustomizeInventory } from "./grok.mjs";
 import { collectPiCustomizeInventory } from "./pi.mjs";
 import { collectKimiCustomizeInventory } from "./kimi.mjs";
@@ -21,6 +22,7 @@ export const PROVIDER_COLLECTORS = new Map([
   ["kimi", collectKimiCustomizeInventory],
   ["workbuddy", collectWorkbuddyCustomizeInventory],
   ["grok", collectGrokCustomizeInventory],
+  ["dsh", collectDshCustomizeInventory],
 ]);
 
 export const SUPPORTED_CUSTOMIZE_PROVIDERS = hostIdsFor(HOST_CAPABILITIES.AGENT_CUSTOMIZE);

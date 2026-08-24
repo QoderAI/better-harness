@@ -79,7 +79,8 @@ function posix(value) {
 
 function excluded(relativePath) {
   const normalized = posix(relativePath);
-  return EXCLUDED_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`));
+  return normalized.split("/").includes("node_modules")
+    || EXCLUDED_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`));
 }
 
 async function exists(filePath) {

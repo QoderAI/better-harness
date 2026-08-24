@@ -31,7 +31,7 @@ compatibility boundaries, or more than one canonical owner.
 
 ## Development Setup
 
-Better Harness 0.5.0 supports Node.js `>=22.20.0 <25.0.0` and npm
+Better Harness 0.6.4 supports Node.js `>=22.20.0 <25.0.0` and npm
 `>=10.9.3 <12.0.0`. The supported project targets are Windows, macOS, and Linux.
 
 ```bash
@@ -43,7 +43,7 @@ Useful focused checks:
 
 ```bash
 # Markdown links and the generated Harness routing graph
-node --test test/doc-link-graph.test.mjs
+npx vitest run test/skills-docs/doc-link-graph.test.mjs
 
 # Package and runtime-bundle boundaries
 npm run pack:verify
@@ -95,8 +95,8 @@ unrelated cleanup, dependency changes, or local host state into the same change.
 Run the smallest relevant tests while developing, then the broader gate justified
 by the risk:
 
-- Markdown moves or links: `node --test test/doc-link-graph.test.mjs`.
-- Runtime logic: focused `node --test test/<area>.test.mjs`, then `npm test`.
+- Markdown moves or links: `npx vitest run test/skills-docs/doc-link-graph.test.mjs`.
+- Runtime logic: focused `npx vitest run test/<area>.test.mjs`, then `npm test`.
 - Package/runtime roots: `npm run pack:verify`.
 - Visual output: preview smoke, console inspection, and screenshot review.
 - Cross-platform command changes: verify argv-based execution and avoid

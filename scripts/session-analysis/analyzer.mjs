@@ -56,6 +56,7 @@ Options:
   --kimi-home <dir>         Kimi Code data root (default: ~/.kimi-code)
   --workbuddy-home <dir>    WorkBuddy data root (default: ~/.workbuddy)
   --grok-home <dir>         Grok CLI data root (default: ~/.grok or $GROK_HOME)
+  --dsh-home <dir>          DeepSeek Harness data root (default: ~/.dsh or $DSH_HOME)
   --include-cache           Include optional Qoder cache evidence
   --include-global-capabilities
                             Include optional user-global Qoder evidence
@@ -251,14 +252,19 @@ const PLATFORM_MODULES = Object.freeze({
   kimi: { specifier: "./platforms/kimi.mjs", analyzer: "KimiSessionAnalyzer" },
   workbuddy: { specifier: "./platforms/workbuddy.mjs", analyzer: "WorkbuddySessionAnalyzer" },
   grok: { specifier: "./platforms/grok.mjs", analyzer: "GrokSessionAnalyzer" },
+  dsh: { specifier: "./platforms/dsh.mjs", analyzer: "DshSessionAnalyzer" },
+  "harness-run": { specifier: "./platforms/harness-run.mjs", analyzer: "HarnessRunSessionAnalyzer" },
 });
 
-export const SUPPORTED_SESSION_PLATFORMS = Object.freeze(Object.keys(PLATFORM_MODULES));
+export const SUPPORTED_SESSION_PROVIDERS = Object.freeze(Object.keys(PLATFORM_MODULES));
+export const SUPPORTED_SESSION_PLATFORMS = Object.freeze(
+  SUPPORTED_SESSION_PROVIDERS.filter((platform) => platform !== "harness-run"),
+);
 
 async function loadPlatform(platform = "qoder") {
   const entry = PLATFORM_MODULES[platform];
   if (!entry) {
-    throw new Error(`Unsupported platform: ${platform}. Supported platforms: ${SUPPORTED_SESSION_PLATFORMS.join(", ")}.`);
+    throw new Error(`Unsupported session provider: ${platform}. Supported providers: ${SUPPORTED_SESSION_PROVIDERS.join(", ")}.`);
   }
   const module = await import(entry.specifier);
   return {
@@ -326,7 +332,7 @@ export async function main(argv = process.argv.slice(2), dependencies = {}) {
       ...eventOptions,
       ...claudeOptions,
       "",
-      "Options: --kimi-home <dir> overrides the Kimi Code data root (default: ~/.kimi-code); --workbuddy-home <dir> overrides the WorkBuddy data root (default: ~/.workbuddy); --grok-home <dir> overrides the Grok data root (default: ~/.grok or $GROK_HOME).",
+      "Options: --kimi-home <dir> overrides the Kimi Code data root (default: ~/.kimi-code); --workbuddy-home <dir> overrides the WorkBuddy data root (default: ~/.workbuddy); --grok-home <dir> overrides the Grok data root (default: ~/.grok or $GROK_HOME); --dsh-home <dir> overrides the DeepSeek Harness data root (default: ~/.dsh or $DSH_HOME).",
       "",
       "Use facts --debug only for local diagnosis; it exposes raw session ids and must not be passed to report agents.",
     ].join("\n") + "\n");

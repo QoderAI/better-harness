@@ -35,7 +35,7 @@ const HELP_GROUPS = [
   {
     title: "Project Evidence",
     audience: "advanced",
-    commands: ["session-analysis", "dependency-governance", "cloc"],
+    commands: ["session-analysis", "commit-session-link", "dependency-governance", "cloc"],
   },
   {
     title: "Agent Assets",

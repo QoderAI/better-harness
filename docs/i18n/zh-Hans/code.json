@@ -1,4 +1,130 @@
 {
+  "inspector.meta.description": {
+    "message": "探索 Better Harness 如何以明确的证据边界连接产品意图、Coding Agent 活动、会话、文件与提交。"
+  },
+  "inspector.hero.lead": {
+    "message": "从产品意图追踪到 Agent 活动、会话、文件与提交，同时让证据强度及其限制始终可见。"
+  },
+  "inspector.hero.quickstart": {
+    "message": "在你的仓库中运行"
+  },
+  "inspector.boundaries.label": {
+    "message": "Demo 边界"
+  },
+  "inspector.boundaries.interactive": {
+    "message": "可交互样例"
+  },
+  "inspector.boundaries.readOnly": {
+    "message": "只读"
+  },
+  "inspector.actions.fullscreen": {
+    "message": "全屏打开"
+  },
+  "inspector.demo.title": {
+    "message": "可交互 Harness Inspector 样例"
+  },
+  "inspector.demo.frameTitle": {
+    "message": "可交互 Harness Inspector 样例"
+  },
+  "inspector.demo.loading": {
+    "message": "正在加载可交互样例…"
+  },
+  "inspector.demo.note": {
+    "message": "此确定性样例使用虚构的英文数据，不会读取你的工作区、Git 历史或 Coding Agent 会话。"
+  },
+  "inspector.features.eyebrow": {
+    "message": "它展示什么"
+  },
+  "inspector.features.title": {
+    "message": "沿着交付链路追踪，同时不越过证据边界"
+  },
+  "inspector.features.intro": {
+    "message": "Inspector 把产品结构、Agent 活动与 Git 结果放进同一个只读工作区，并明确区分强关联与有用但有限的上下文。"
+  },
+  "inspector.features.intent.title": {
+    "message": "从意图到交付"
+  },
+  "inspector.features.intent.body": {
+    "message": "沿能力树从能力和 Story 意图，查看与之关联的会话、文件与提交。"
+  },
+  "inspector.features.session.title": {
+    "message": "把会话放回上下文"
+  },
+  "inspector.features.session.body": {
+    "message": "检查保留的提示词、归一化工具活动、文件路径、提交事件，以及只读会话回放。"
+  },
+  "inspector.features.evidence.title": {
+    "message": "可解释的证据"
+  },
+  "inspector.features.evidence.body": {
+    "message": "同步选择与 Evidence Drawer 会说明关联为何存在、可信度如何，以及它不能证明什么。"
+  },
+  "inspector.how.eyebrow": {
+    "message": "如何使用"
+  },
+  "inspector.how.title": {
+    "message": "先看全局，再沿着证据深入"
+  },
+  "inspector.how.scope.title": {
+    "message": "选择范围"
+  },
+  "inspector.how.scope.body": {
+    "message": "按产品意图查看时使用 Capability；按时间查看会话与提交时使用 Date。"
+  },
+  "inspector.how.lanes.title": {
+    "message": "阅读三条信息轨"
+  },
+  "inspector.how.lanes.body": {
+    "message": "在不离开当前 Story 或日期的情况下，对照用户提示、检查点活动以及提交或文件。"
+  },
+  "inspector.how.evidence.title": {
+    "message": "检查关联关系"
+  },
+  "inspector.how.evidence.body": {
+    "message": "选择提示、操作、提交或路径。相关项目会保持高亮，Evidence Drawer 则解释关联及其限制。"
+  },
+  "inspector.how.session.title": {
+    "message": "打开 Session View 或 Replay"
+  },
+  "inspector.how.session.body": {
+    "message": "深入查看保留的轮次和归一化工具调用，或回放已观察到的序列。Replay 不会重新运行工具，也不会恢复 Coding Agent 会话。"
+  },
+  "inspector.evidence.eyebrow": {
+    "message": "理解证据标签"
+  },
+  "inspector.evidence.title": {
+    "message": "关联会明确展示，但不会擅自推断作者身份"
+  },
+  "inspector.evidence.explicit": {
+    "message": "保留的引用直接连接 Story、会话或提交。"
+  },
+  "inspector.evidence.observed": {
+    "message": "会话与提交共享完全相同的仓库路径。这支持相关性判断，但不能证明作者身份。"
+  },
+  "inspector.evidence.candidate": {
+    "message": "结构或时间信息提示了有用的关联，但仍需人工确认。"
+  },
+  "inspector.evidence.contextual": {
+    "message": "附近的历史有助于解释交付过程，但不会声称存在直接关联。"
+  },
+  "inspector.evidence.architecture": {
+    "message": "阅读架构、证据模型与能力边界"
+  },
+  "inspector.local.eyebrow": {
+    "message": "使用你自己的证据"
+  },
+  "inspector.local.title": {
+    "message": "生成私有的自包含 Inspector"
+  },
+  "inspector.local.body": {
+    "message": "在仓库中运行一条命令。Inspector 会打开当前工作区最近 30 个 UTC 日的活动；采集留在本地，报告保持只读。"
+  },
+  "inspector.local.installation": {
+    "message": "查看安装方式"
+  },
+  "inspector.local.output": {
+    "message": "默认输出：.qoder/better-harness-runs/harness-inspector/inspector.html"
+  },
   "homepage.dimensions.taskUnderstanding.title": {
     "message": "任务理解"
   },
@@ -214,6 +340,24 @@
   },
   "homepage.meta.description": {
     "message": "开源 Agent Work Loop 洞察，把编码智能体的项目与会话证据转化为有优先级、可验证的改进。"
+  },
+  "homepage.inspector.title": {
+    "message": "从意图到提交，追踪交付全过程"
+  },
+  "homepage.inspector.intro": {
+    "message": "Harness Inspector 在一个只读工作区中，把产品意图与智能体活动、会话、文件和提交串联起来，同时保持证据强度与局限清晰可见。"
+  },
+  "homepage.inspector.alt": {
+    "message": "Harness Inspector 会话视图：提示词、工具调用与提交的同步时间线，配套证据抽屉解释每条关联"
+  },
+  "homepage.inspector.caption": {
+    "message": "该交互式示例使用虚构的英文数据，不会读取你的工作区、Git 历史或 Coding Agent 会话。"
+  },
+  "homepage.inspector.openSample": {
+    "message": "打开交互式示例"
+  },
+  "homepage.inspector.architecture": {
+    "message": "阅读架构说明"
   },
   "theme.ErrorPageContent.title": {
     "message": "页面已崩溃。",

@@ -93,7 +93,7 @@ entry/exit logs across every function.
 
 ## What Belongs in AGENTS.md
 
-Load [agents-md-review.md](agents-md-review.md) when instructions are in scope.
+Load [agents-md-review.md](../agent-customize/agents-md-review.md) when instructions are in scope.
 Keep only non-inferable facts:
 
 - actual logging facade and architecture link;

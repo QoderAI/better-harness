@@ -1,0 +1,21 @@
+{
+  "name": "image-size",
+  "version": "2.0.3",
+  "description": "Bounded image-size compatibility shim for Better Harness docs builds.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.cjs",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs",
+      "require": "./index.cjs"
+    },
+    "./fromFile": {
+      "types": "./fromFile.d.ts",
+      "import": "./fromFile.mjs",
+      "require": "./fromFile.cjs"
+    }
+  },
+  "types": "./index.d.ts"
+}

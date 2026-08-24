@@ -1,0 +1,9 @@
+{
+  "requiredHeadings": ["Purpose", "Installation", "Quick Start", "API", "Behavior", "Verification"],
+  "publicApi": ["retry", "RetryExhaustedError", "DEFAULT_MAX_ATTEMPTS"],
+  "requiredCodeTokens": ["@fixture/retry-kit", "maxAttempts", "3", "AbortSignal"],
+  "requiredAnyCodeTokens": [["npm test", "node --test"]],
+  "forbiddenClaims": ["supports CommonJS", "CommonJS support", "require(\"@fixture/retry-kit\")", "command-line interface", "retry-kit CLI", "npm install -g", "https://retry-kit.example"],
+  "exampleLanguages": ["js", "javascript", "mjs"],
+  "forbidRemoteLinks": true
+}

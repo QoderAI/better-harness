@@ -3,6 +3,165 @@
 This file records notable public changes to Better Harness. Entries describe
 observable behavior and compatibility, not every internal refactor.
 
+## 0.6.4 - 2026-08-19
+
+### Added
+
+- Session analysis now supports DeepSeek Harness evidence, including bounded
+  project discovery, normalized messages and tool lifecycles, workspace
+  matching, and Inspector/commit-session integration.
+
+- Harness Inspector can list sessions for the selected UTC day and present
+  session and experiment evidence in denser notebook-oriented views.
+
+### Changed
+
+- Inspector's Capability, Date, Trace, and Replay surfaces now share the
+  repository design contract for readable typography, semantic state and
+  categorical colours, keyboard navigation, responsive density, and bounded
+  overflow.
+
+- The public homepage and README make Harness Inspector easier to discover,
+  while the self-contained report uses a flatter workbench hierarchy and a
+  clearer date calendar and session detail flow.
+
+### Fixed
+
+- Tool-call details keep redaction visible in the Inspector instead of making
+  protected content look accidentally empty.
+
+- Cross-platform source and test paths are canonicalized so Windows short-path
+  aliases and line endings do not create false failures.
+
+## 0.6.3 - 2026-08-14
+
+### Added
+
+- `npx @qoder-ai/better-harness inspector` now renders the current workspace,
+  opens the generated report, and uses a bounded 30-day UTC evidence window by
+  default. The public Inspector page and bilingual guide lead with the same
+  short command.
+
+### Changed
+
+- The zero-argument Inspector quickstart scans up to 200 commits and hydrates
+  up to 100 sessions, while explicit `render` invocations preserve their
+  existing bounds and open only when `--open` is provided.
+
+### Fixed
+
+- Qoder assistant messages with structured `thinking`, `text`, and `tool_use`
+  content are normalized before Session Detail renders them, preventing raw
+  transport JSON from appearing as intermediate responses while preserving
+  tool calls in the structured activity trace.
+
+## 0.6.2 - 2026-08-14
+
+### Added
+
+- Harness Inspector now documents its local evidence pipeline, relationship
+  strengths, privacy boundaries, and CLI workflow in a bilingual concept guide
+  with a source-backed architecture diagram.
+
+- The Inspector renderer accepts `--open` so a generated self-contained report
+  can be opened in the default browser after it is written.
+
+### Changed
+
+- Session View uses denser activity and commit presentation, compresses long
+  idle windows, and keeps expanded activity focused while preserving access to
+  the full retained trace.
+
+- Inspector chrome now uses one workspace identity, clearer breadcrumbs, and
+  the visible `Capability` label consistently across navigation and docs.
+
+- Qoder CLI installation guidance now distinguishes the Desktop-bundled path
+  from standalone marketplace and Git installation.
+
+### Fixed
+
+- The Inspector sticky header is isolated from trace content so scrolling and
+  focused expansion do not create overlap.
+
+## 0.6.1 - 2026-08-13
+
+### Added
+
+- Harness Inspector now includes a read-only Session Replay that advances
+  through retained prompts, intermediate responses, normalized tool calls,
+  assistant responses, and observed commit events without rerunning tools or
+  resuming the coding-agent session.
+
+- The GitHub Pages site has a first-class Inspector tab with an interactive,
+  deterministic English sample. The bilingual wrapper explains the Workbench,
+  its three evidence lanes, usage flow, evidence labels, and the command for
+  generating a private self-contained report from a local repository.
+
+### Changed
+
+- Session View places the elapsed-time activity chart beside the retained Turn
+  trace, links chart selections into the corresponding calls, and shows a
+  continuous ribbon that distinguishes observed tool execution from
+  unattributed time.
+
+- Capability navigation opens the declared Delivery Tree by default and keeps
+  scope navigation separate from evidence selection. Short sessions expose
+  their tool calls by default while repeated call runs remain compact.
+
+### Fixed
+
+- Story-to-session candidate matching filters generic stop words before scoring
+  overlap, reducing incorrect associations caused by broad terms such as
+  `project`, `session`, or `harness`.
+
+- Session View filters now keep visible tool-call totals and collapsed run
+  groups aligned with the current selection.
+
+## 0.6.0 - 2026-08-13
+
+### Added
+
+- Harness Inspector is now available from the published CLI through
+  `better-harness harness-inspector` and the `better-harness inspector`
+  shortcut. `inspector render` creates a self-contained, read-only HTML
+  workbench that relates Feature Tree stages, Stories, prompts, sessions,
+  tool calls, files, and commits across the supported session providers. Its
+  synchronized Evidence Drawer explains why evidence is linked, states known
+  limitations, and distinguishes commits created during a session from files
+  merely present in those commits.
+
+- `better-harness commit-session-link` correlates bounded Git history with
+  coding-agent sessions and renders commit-oriented provenance evidence.
+  Long-session reports can now retain privacy-safe tool activity and file
+  evidence for trace inspection instead of reducing execution to aggregate
+  counts.
+
+- A new Harness Component Snapshot contract and direct CLI captures, compares,
+  and resolves non-authorizing rollback references for bounded project-owned
+  Harness component state. Standard report analysis can also surface
+  evidence-bound native Learning Capture candidates without requiring adapters
+  to assign pattern labels.
+
+### Changed
+
+- The repository test suite now runs on Vitest with human-readable failures in
+  the main GitHub Actions log, source annotations, a Job Summary, and JUnit
+  output. Existing Node assertions remain intact, while Windows, macOS, Linux,
+  Node 22.20.0, and Node 24.x remain release gates.
+
+- Test ownership is organized by capability, and contributor commands now use
+  the same Vitest discovery contract locally and in CI.
+
+### Fixed
+
+- Claude session discovery resolves underscore-based transcript directories,
+  component snapshot failures retain bounded diagnostics, and review-trigger
+  stop-hook results use a structured cross-platform output contract.
+
+- CI test module paths remain valid on Windows drive-letter workspaces, and
+  failure output identifies the owning test instead of reporting only a failed
+  capability group.
+
 ## 0.5.0 - 2026-08-04
 
 ### Added

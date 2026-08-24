@@ -1,0 +1,4 @@
+interface:
+  display_name: "Intent Correlation Analysis"
+  short_description: "Propose evidence-backed Intent and change links"
+  default_prompt: "Use $intent-correlation-analysis to analyze the attached evidence packet into reviewable proposed Intent correlations."

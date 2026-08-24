@@ -1,0 +1,413 @@
+/* Studio design tokens. DESIGN.md owns the rationale; this file is its only
+   runtime source. Surface roles are an ordered elevation ramp: canvas sits
+   furthest back, surface sits closest to the reader. Structure comes from that
+   ramp plus alpha hairlines, so a divider reads correctly on every step
+   instead of being tuned against one background. */
+:root {
+  color-scheme: dark;
+
+  /* Interaction. Blue is the only interaction hue: primary actions, selection,
+     links, and focus. */
+  --color-primary: #5a97ff;
+  --color-primary-hover: #7cadff;
+  --color-primary-soft: #12233f;
+  --color-on-primary: #061225;
+  --color-focus: #7fb4ff;
+
+  /* Text. Muted is supporting content and subtle is chrome; both are measured
+     against the busiest surface they land on, not against the canvas. */
+  --color-text: #e8ecf3;
+  --color-text-muted: #9ba6b7;
+  --color-text-subtle: #8c97a9;
+
+  /* Surface ramp, back to front. */
+  --color-canvas: #08090c;
+  --color-sidebar: #0a0c10;
+  --color-titlebar: #0c0e12;
+  --color-workspace: #101319;
+  --color-panel: #14181f;
+  --color-surface: #191e26;
+  --color-surface-subtle: #0e1116;
+  --color-surface-hover: #1f252f;
+  --color-surface-active: #272e3a;
+  --color-surface-selected: #14294a;
+
+  /* Source-document colors are evidence, not Studio theme surfaces. They stay
+     fixed so a white Office slide does not invert with the workbench theme. */
+  --color-document-paper: #ffffff;
+  --color-document-ink: #000000;
+
+  /* Hairlines are alpha so one divider token works on every ramp step. */
+  --color-border: rgba(233, 240, 255, 0.09);
+  --color-border-strong: rgba(233, 240, 255, 0.18);
+
+  /* Evidence state. Always paired with text or an icon. */
+  --color-success: #46d3a3;
+  --color-success-surface: #0c2a21;
+  --color-warning: #f0b667;
+  --color-warning-surface: #33230f;
+  --color-danger: #ff7b87;
+  --color-danger-surface: #3a1620;
+
+  /* The Candidate comparison lane, not a second action color. */
+  --color-candidate: #b99cff;
+  --color-candidate-surface: #241c3c;
+
+  /* Fixed ordered scale for dimensions that carry no judgement. */
+  --color-categorical-1: #6fb3e8;
+  --color-categorical-2: #a98cf5;
+  --color-categorical-3: #94a6bd;
+  --color-categorical-4: #5fd0bc;
+  --color-categorical-5: #e6a85e;
+  --color-categorical-6: #9dc46b;
+  --color-categorical-7: #c0a5b6;
+
+  /* Event kind is categorical identity, not runtime judgement. The visible
+     label and timeline legend remain the authoritative meaning. */
+  --event-prompt: var(--color-categorical-1);
+  --event-plan: var(--color-categorical-2);
+  --event-explore: var(--color-categorical-3);
+  --event-change: var(--color-categorical-4);
+  --event-verify: var(--color-categorical-5);
+  --event-response: var(--color-categorical-6);
+  --event-tool: var(--color-categorical-7);
+
+  --color-overlay: rgba(3, 5, 9, 0.7);
+  --color-selection: rgba(90, 151, 255, 0.28);
+  --color-scrollbar: rgba(233, 240, 255, 0.16);
+  --color-scrollbar-hover: rgba(233, 240, 255, 0.3);
+
+  /* Depth belongs to transient surfaces only. Docked regions stay flat and
+     separate with the ramp and hairlines. */
+  --shadow-overlay: 0 24px 56px -16px rgba(0, 0, 0, 0.72), 0 4px 12px -4px rgba(0, 0, 0, 0.56);
+  --shadow-popover: 0 12px 28px -10px rgba(0, 0, 0, 0.66), 0 2px 6px -2px rgba(0, 0, 0, 0.48);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-primary: #1b5cc8;
+  --color-primary-hover: #164ead;
+  --color-primary-soft: #eaf1fe;
+  --color-on-primary: #ffffff;
+  --color-focus: #1e6fe0;
+
+  --color-text: #1b2430;
+  --color-text-muted: #5a6676;
+  --color-text-subtle: #5c687a;
+
+  --color-canvas: #f2f4f7;
+  --color-sidebar: #f7f9fb;
+  --color-titlebar: #ffffff;
+  --color-workspace: #ffffff;
+  --color-panel: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f6f8fa;
+  --color-surface-hover: #eff2f6;
+  --color-surface-active: #e3e8ef;
+  --color-surface-selected: #e3edfd;
+
+  --color-border: rgba(15, 23, 42, 0.11);
+  --color-border-strong: rgba(15, 23, 42, 0.22);
+
+  --color-success: #0f7048;
+  --color-success-surface: #e6f6ee;
+  --color-warning: #85500e;
+  --color-warning-surface: #fdf0dc;
+  --color-danger: #b23640;
+  --color-danger-surface: #fdeaec;
+
+  --color-candidate: #6941b8;
+  --color-candidate-surface: #f3effb;
+
+  --color-categorical-1: #1c6699;
+  --color-categorical-2: #6b4bb0;
+  --color-categorical-3: #4a5b6e;
+  --color-categorical-4: #136b5e;
+  --color-categorical-5: #8a5710;
+  --color-categorical-6: #4f6e27;
+  --color-categorical-7: #665d6f;
+
+  --color-overlay: rgba(20, 28, 40, 0.4);
+  --color-selection: rgba(27, 92, 200, 0.18);
+  --color-scrollbar: rgba(15, 23, 42, 0.24);
+  --color-scrollbar-hover: rgba(15, 23, 42, 0.4);
+
+  --shadow-overlay: 0 24px 56px -16px rgba(15, 23, 42, 0.24), 0 4px 12px -4px rgba(15, 23, 42, 0.12);
+  --shadow-popover: 0 12px 28px -10px rgba(15, 23, 42, 0.18), 0 2px 6px -2px rgba(15, 23, 42, 0.1);
+}
+
+:root {
+  --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* Headings tighten as they grow so large type reads as one shape rather than
+     spaced letters. `meta` is the floor for meaningful text. */
+  --type-display-size: 30px;
+  --type-display-line: 38px;
+  --type-display-track: -0.022em;
+  --type-page-size: 22px;
+  --type-page-line: 30px;
+  --type-page-track: -0.016em;
+  --type-section-size: 17px;
+  --type-section-line: 24px;
+  --type-section-track: -0.011em;
+  --type-subhead-size: 15px;
+  --type-subhead-line: 22px;
+  --type-body-size: 14px;
+  --type-body-line: 20px;
+  --type-label-size: 13px;
+  --type-label-line: 18px;
+  --type-pane-size: 12px;
+  --type-pane-line: 16px;
+  --type-pane-track: 0.01em;
+  --type-meta-size: 12px;
+  --type-meta-line: 16px;
+  --type-code-size: 13px;
+  --type-code-line: 20px;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Docked regions use `none`. `xs`/`sm` are controls and menus; `md`/`lg` are
+     reserved for surfaces that actually float. */
+  --radius-none: 0;
+  --radius-xs: 5px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+  --space-xxxl: 48px;
+
+  --control-height: 32px;
+  --toolbar-target: 30px;
+  --pane-header-height: 36px;
+  --row-height: 30px;
+  --titlebar-height: 44px;
+  --statusbar-height: 26px;
+  --sidebar-width: 248px;
+  --secondary-pane-width: 312px;
+  --navigation-row-height: 46px;
+  --session-row-height: 64px;
+  --check-size: 16px;
+  --sash-size: 1px;
+  --motion-press: 90ms;
+  --motion-fast: 130ms;
+  --motion-enter: 180ms;
+  --motion-layout: 160ms;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+html,
+body { max-width: 100%; overflow-x: clip; }
+
+body {
+  color: var(--color-text);
+  background: var(--color-canvas);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+  font-weight: var(--weight-regular);
+  line-height: var(--type-body-line);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  scrollbar-color: var(--color-scrollbar) transparent;
+}
+
+::selection { background: var(--color-selection); }
+
+* { scrollbar-width: thin; }
+*::-webkit-scrollbar { width: var(--space-sm); height: var(--space-sm); }
+*::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-full); background: var(--color-scrollbar); background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background-color: var(--color-scrollbar-hover); }
+
+button,
+input,
+select,
+textarea { font: inherit; }
+
+button,
+input,
+select,
+textarea,
+summary,
+[tabindex] { outline: none; }
+
+/* Focus is drawn outside the control so it stays visible on filled buttons and
+   on rows whose own edge is a hairline. */
+:where(button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+  border-radius: var(--radius-xs);
+}
+
+button {
+  min-height: var(--toolbar-target);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  padding: var(--space-xs) var(--space-md);
+  color: var(--color-text);
+  background: var(--color-surface);
+  cursor: pointer;
+  font-size: var(--type-label-size);
+  font-weight: var(--weight-medium);
+  line-height: var(--type-label-line);
+  transition: color var(--motion-fast) ease, border-color var(--motion-fast) ease, background-color var(--motion-fast) ease, opacity var(--motion-press) ease;
+}
+
+button:hover { border-color: var(--color-border-strong); background: var(--color-surface-hover); }
+button:active:not(:disabled) { background: var(--color-surface-active); }
+button:disabled { color: var(--color-text-subtle); cursor: not-allowed; opacity: 0.48; }
+
+button.primary,
+.compare-actions > button:not(.secondary),
+.builder-footer > button,
+.new-run {
+  border-color: transparent;
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+  font-weight: var(--weight-semibold);
+}
+
+button.primary:hover,
+.compare-actions > button:not(.secondary):hover,
+.builder-footer > button:hover,
+.new-run:hover { border-color: transparent; background: var(--color-primary-hover); }
+.primary:active:not(:disabled),
+.compare-actions > button:not(.secondary):active:not(:disabled),
+.builder-footer > button:active:not(:disabled),
+.new-run:active:not(:disabled) { border-color: transparent; color: var(--color-on-primary); background: var(--color-primary-hover); }
+
+h1,
+h2,
+h3,
+h4,
+p { margin-block-start: 0; }
+
+h1 { font-size: var(--type-page-size); line-height: var(--type-page-line); letter-spacing: var(--type-page-track); }
+h2 { font-size: var(--type-section-size); line-height: var(--type-section-line); letter-spacing: var(--type-section-track); }
+h3 { font-size: var(--type-label-size); line-height: var(--type-label-line); }
+
+small,
+time,
+dt,
+dd,
+em {
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-code);
+  font-size: var(--type-code-size);
+  line-height: var(--type-code-line);
+}
+
+code { overflow-wrap: anywhere; }
+
+.muted,
+.inspector-note,
+.trace-empty,
+.activity-empty { color: var(--color-text-muted); }
+.warning,
+.status-warning { color: var(--color-warning); }
+.error,
+.status-danger { color: var(--color-danger); }
+.status-success { color: var(--color-success); }
+
+.status-accept,
+.verdict-accept { color: var(--color-success); }
+.status-reject,
+.status-infrastructure_error,
+.verdict-reject,
+.verdict-infrastructure_error { color: var(--color-danger); }
+.status-descriptive,
+.status-need_more_work,
+.status-insufficient_evidence,
+.verdict-need_more_work { color: var(--color-warning); }
+.verdict-insufficient_evidence { color: var(--color-text-muted); }
+
+.highlighted-code {
+  margin: 0;
+  overflow: auto;
+  color: var(--color-text);
+  background: var(--color-surface);
+  white-space: pre;
+  tab-size: 2;
+}
+
+.highlighted-code code,
+.highlighted-code-line { font: inherit; }
+
+.table-scroll {
+  width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  height: var(--row-height);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-sm) var(--space-md);
+  text-align: left;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--color-text-muted);
+  background: var(--color-surface-subtle);
+  font-size: var(--type-pane-size);
+  font-weight: var(--weight-semibold);
+  line-height: var(--type-pane-line);
+  letter-spacing: var(--type-pane-track);
+}
+
+/* Numbers are marked, not inferred from column position: a text column in the
+   second slot stays left-aligned under its own header. */
+th.numeric,
+td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:hover { background: var(--color-surface-hover); }
+
+@media (max-width: 760px) {
+  :root { --control-height: 44px; --toolbar-target: 44px; --row-height: 44px; --titlebar-height: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto;
+    transition-duration: 0s;
+    animation-duration: 0s;
+    animation-iteration-count: 1;
+  }
+}

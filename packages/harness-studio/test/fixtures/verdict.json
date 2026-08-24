@@ -1,0 +1,154 @@
+{
+  "schemaVersion": "harness-compare-result.v1",
+  "status": "accept",
+  "reason": "Candidate won 2/2 matched pairs (mean score delta 48) within the 1.3x cost-per-completed-trial guardrail.",
+  "treatmentAxis": "harness",
+  "policy": {
+    "minimumMatchedPairs": 2,
+    "maxInfrastructureErrorRatio": 0.2,
+    "maxCostRatio": 1.3,
+    "minimumMeanScoreGain": 5
+  },
+  "manifestHash": "sha256:manifest",
+  "fixtureHash": "sha256:fixture",
+  "harnessHash": "sha256:harness",
+  "sandbox": {
+    "policy": "trusted-fixture",
+    "envPolicy": "allowlist",
+    "envKeys": ["HOME", "PATH"],
+    "networkPolicy": "unverified",
+    "fsScope": "trial-root",
+    "permissionFlags": ["--permission"]
+  },
+  "baseline": {
+    "trials": 2,
+    "completedTrials": 2,
+    "infrastructureErrors": 0,
+    "passedTrials": 0,
+    "passRate": 0,
+    "meanScore": 42,
+    "totalCostUsd": 0.011,
+    "totalCredits": 1.5,
+    "costPerAttemptedTrialUsd": 0.0055,
+    "costPerCompletedTrialUsd": 0.0055,
+    "costPerPassedTrialUsd": 0
+  },
+  "candidate": {
+    "trials": 2,
+    "completedTrials": 2,
+    "infrastructureErrors": 0,
+    "passedTrials": 2,
+    "passRate": 1,
+    "meanScore": 90,
+    "totalCostUsd": 0.014,
+    "totalCredits": 1.8,
+    "costPerAttemptedTrialUsd": 0.007,
+    "costPerCompletedTrialUsd": 0.007,
+    "costPerPassedTrialUsd": 0.007
+  },
+  "matchedPairs": {
+    "pairs": 2,
+    "candidateWins": 2,
+    "baselineWins": 0,
+    "ties": 0,
+    "meanScoreDelta": 48
+  },
+  "trials": [
+    {
+      "variant": "baseline",
+      "harnessId": "readme-baseline",
+      "runtimeProfile": "qoder-default-v1",
+      "trial": 1,
+      "classification": "failed",
+      "changedFiles": ["README.md"],
+      "grade": {
+        "kind": "readme-package-v1",
+        "score": 42,
+        "passed": false,
+        "checks": []
+      },
+      "executorExitCode": 0,
+      "executorError": "",
+      "revisionId": "hr_baseline",
+      "durationMs": 61000,
+      "artifactDirectory": "baseline/trial-1",
+      "sandbox": {
+        "policy": "trusted-fixture", "envPolicy": "allowlist", "envKeys": ["HOME", "PATH"],
+        "networkPolicy": "unverified", "fsScope": "trial-root", "permissionFlags": ["--permission"]
+      },
+      "metrics": { "durationMs": 61000, "turns": 3, "costUsd": 0.0055, "credits": 0.75 }
+    },
+    {
+      "variant": "baseline",
+      "harnessId": "readme-baseline",
+      "runtimeProfile": "qoder-default-v1",
+      "trial": 2,
+      "classification": "failed",
+      "changedFiles": ["README.md"],
+      "grade": {
+        "kind": "readme-package-v1",
+        "score": 42,
+        "passed": false,
+        "checks": []
+      },
+      "executorExitCode": 0,
+      "executorError": "",
+      "revisionId": "hr_baseline",
+      "durationMs": 60250,
+      "artifactDirectory": "baseline/trial-2",
+      "sandbox": {
+        "policy": "trusted-fixture", "envPolicy": "allowlist", "envKeys": ["HOME", "PATH"],
+        "networkPolicy": "unverified", "fsScope": "trial-root", "permissionFlags": ["--permission"]
+      },
+      "metrics": { "durationMs": 60250, "turns": 3, "costUsd": 0.0055, "credits": 0.75 }
+    },
+    {
+      "variant": "candidate",
+      "harnessId": "readme-grounded",
+      "runtimeProfile": "qoder-default-v1",
+      "trial": 1,
+      "classification": "passed",
+      "changedFiles": ["README.md"],
+      "grade": {
+        "kind": "readme-package-v1",
+        "score": 90,
+        "passed": true,
+        "checks": []
+      },
+      "executorExitCode": 0,
+      "executorError": "",
+      "revisionId": "hr_candidate",
+      "durationMs": 74500,
+      "artifactDirectory": "candidate/trial-1",
+      "sandbox": {
+        "policy": "trusted-fixture", "envPolicy": "allowlist", "envKeys": ["HOME", "PATH"],
+        "networkPolicy": "unverified", "fsScope": "trial-root", "permissionFlags": ["--permission"]
+      },
+      "metrics": { "durationMs": 74500, "turns": 4, "costUsd": 0.007, "credits": 0.9 }
+    },
+    {
+      "variant": "candidate",
+      "harnessId": "readme-grounded",
+      "runtimeProfile": "qoder-default-v1",
+      "trial": 2,
+      "classification": "passed",
+      "changedFiles": ["README.md"],
+      "grade": {
+        "kind": "readme-package-v1",
+        "score": 90,
+        "passed": true,
+        "checks": []
+      },
+      "executorExitCode": 0,
+      "executorError": "",
+      "revisionId": "hr_candidate",
+      "durationMs": 71250,
+      "artifactDirectory": "candidate/trial-2",
+      "sandbox": {
+        "policy": "trusted-fixture", "envPolicy": "allowlist", "envKeys": ["HOME", "PATH"],
+        "networkPolicy": "unverified", "fsScope": "trial-root", "permissionFlags": ["--permission"]
+      },
+      "metrics": { "durationMs": 71250, "turns": 4, "costUsd": 0.007, "credits": 0.9 }
+    }
+  ]
+}

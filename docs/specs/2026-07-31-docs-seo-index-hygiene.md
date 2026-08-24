@@ -37,9 +37,14 @@ until they carry unique, correctly-localized content.
 
 ## Non-Goals
 
-- Writing native Chinese blog articles. Once they land under
-  `docs/i18n/zh-Hans/docusaurus-plugin-content-blog/`, remove the zh-Hans
-  blog entries from `ignorePatterns` and the fallback rule in `Root.js`.
+- Writing native Chinese blog articles. As they land under
+  `docs/i18n/zh-Hans/docusaurus-plugin-content-blog/`, the fallback rule in
+  `Root.js` allowlists each translated post's route
+  (`TRANSLATED_ZH_BLOG_ROUTES`) so it becomes indexable while list, taxonomy,
+  and still-English-fallback post routes stay `noindex`. The sitemap keeps the
+  whole `/zh-Hans/blog` tree excluded until the blog is predominantly native
+  Chinese, at which point the tree exclusion and the allowlist can both be
+  dropped in favor of indexing the zh-Hans blog like the English one.
 - A `robots.txt`. GitHub Pages project sites cannot serve one at the
   `qoderai.github.io` host root, so a copy under `/better-harness/` would be
   ignored by crawlers. Sitemap submission happens in Search Console instead.

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/review-trigger/cli.mjs --mode=stop"
+            "command": "node scripts/review-trigger/cli.mjs --mode=stop --json"
           }
         ]
       }

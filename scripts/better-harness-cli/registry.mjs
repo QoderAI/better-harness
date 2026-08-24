@@ -71,6 +71,49 @@ const COMMANDS = [
     summary: "Detect dependency governance files, automation, audit signals, and stale dependency evidence.",
   },
   {
+    name: "commit-session-link",
+    kind: "direct",
+    audience: "advanced",
+    script: "commit-session-link/cli.mjs",
+    summary: "Correlate local git commits with discovered coding-agent sessions and render a commit-view HTML report.",
+    subcommands: [
+      {
+        name: "correlate",
+        audience: "advanced",
+        script: "commit-session-link/cli.mjs",
+        summary: "Emit ranked commit-to-session matches with trailer, time, file, and cwd evidence as JSON.",
+      },
+      {
+        name: "render",
+        audience: "advanced",
+        script: "commit-session-link/cli.mjs",
+        summary: "Write a self-contained commit-view HTML report for one commit and its linked sessions.",
+      },
+      {
+        name: "render-session",
+        audience: "advanced",
+        script: "commit-session-link/cli.mjs",
+        summary: "Write a self-contained Session Viewer with activity, tool-call trace, and linked-commit markers.",
+      },
+    ],
+  },
+  {
+    name: "harness-inspector",
+    kind: "direct",
+    audience: "advanced",
+    script: "harness-inspector/cli.mjs",
+    summary: "Inspect feature, Story, prompt, session, tool-call, and commit provenance by product tree or date.",
+    aliases: [{ name: "inspector", hidden: true }],
+    subcommands: [
+      {
+        name: "render",
+        audience: "advanced",
+        script: "harness-inspector/cli.mjs",
+        summary: "Write a self-contained Harness Inspector with Feature Tree and Date scope pickers.",
+      },
+    ],
+  },
+  {
     name: "session-analysis",
     kind: "direct",
     audience: "advanced",

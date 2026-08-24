@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" alt="Better Harness logo" width="56" height="56">
+</p>
+
 <h1 align="center">Better Harness</h1>
 
 <p align="center">
@@ -70,6 +74,18 @@ acceptance checks.
 <p align="center">
   <sub><a href="https://qoderai.github.io/better-harness/demo/better-harness-report/">Open the complete self-contained English HTML report</a>
   (<a href="assets/demo/better-harness-report.html">source</a>).</sub>
+</p>
+
+For delivery tracing, the interactive [Harness Inspector](https://qoderai.github.io/better-harness/inspector/)
+follows product intent through agent activity, sessions, files, and commits in
+a read-only workspace, keeping evidence strength and limitations visible:
+
+<p align="center">
+  <a href="https://qoderai.github.io/better-harness/inspector/"><img src="docs/assets/harness-inspector/session-view.png" alt="Harness Inspector session view: a synchronized timeline of prompts, tool calls, and commits with the Evidence Drawer explaining each link" width="900"></a>
+</p>
+
+<p align="center">
+  <sub><a href="https://qoderai.github.io/better-harness/inspector/">Open the interactive Harness Inspector sample</a> (fictional English data; it never reads your workspace).</sub>
 </p>
 
 After you have comparable reports over time, the history view shows how the five
@@ -281,20 +297,34 @@ session in the repository you want to analyze and run the report prompt:
 ```
 
 Only when using Qoder CLI without Qoder Desktop, inspect the current manual
-installation disposition before following Qoder's native marketplace flow:
+installation disposition before following:
+
+##### From marketplace
 
 ```bash
-better-harness plugin plan install --host qoder --surface cli --scope user
-```
+# Add the plugin marketplace source
+qodercli plugin marketplace add 'https://github.com/QoderAI/better-harness.git'
 
-The planner does not emit the older install syntax because the current native
-help and this repository's historical documentation disagree. After a manual
-installation, verify only the currently observed inventory command:
+# Install the plugin
+qodercli plugin install better-harness@better-harness
 
-```bash
+# Check installation
 qodercli plugin list
-better-harness plugin verify --host qoder --surface cli
 ```
+
+##### From git
+
+```bash
+# Make sure directory exist
+mkdir -p $HOME/.qoder/plugins/marketplaces/
+
+git clone https://github.com/QoderAI/better-harness.git \
+  $HOME/.qoder/plugins/marketplaces/better-harness --depth 1
+
+qodercli plugin install $HOME/.qoder/plugins/marketplaces/better-harness
+```
+
+Replace `.qoder` to `.qoder-cn` in urls for Qoder CN series.
 
 Then start a new Qoder CLI session before using `/better-harness`.
 

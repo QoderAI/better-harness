@@ -537,6 +537,70 @@ function HowItWorks() {
   );
 }
 
+function InspectorSection() {
+  const inspectorUrl = useBaseUrl("/inspector/");
+  const architectureUrl = useBaseUrl("/docs/concepts/harness-inspector");
+
+  return (
+    <section className={clsx(styles.section, styles.sectionAlt)}>
+      <div className="container">
+        <h2>
+          <Translate id="homepage.inspector.title">
+            Follow delivery from intent to commit
+          </Translate>
+        </h2>
+        <p>
+          <Translate id="homepage.inspector.intro">
+            Harness Inspector traces product intent through agent activity,
+            sessions, files, and commits in one read-only workspace, keeping
+            evidence strength and limitations visible.
+          </Translate>
+        </p>
+        <p className={styles.demoFrame}>
+          <a href={inspectorUrl}>
+            <img
+              src={useBaseUrl("/demo/harness-inspector/session-view.png")}
+              alt={translate({
+                id: "homepage.inspector.alt",
+                message:
+                  "Harness Inspector session view: a synchronized timeline of prompts, tool calls, and commits with the Evidence Drawer explaining each link",
+              })}
+              width="1440"
+              height="900"
+              loading="lazy"
+              decoding="async"
+            />
+          </a>
+        </p>
+        <p className={styles.demoCaption}>
+          <Translate id="homepage.inspector.caption">
+            The interactive sample uses fictional English data. It does not
+            read your workspace, Git history, or coding-agent sessions.
+          </Translate>
+        </p>
+        <p className={styles.demoAction}>
+          <a
+            className="button button--primary button--lg"
+            href={inspectorUrl}
+          >
+            <Translate id="homepage.inspector.openSample">
+              Open the interactive sample
+            </Translate>
+          </a>{" "}
+          <Link
+            className="button button--secondary button--lg"
+            to={architectureUrl}
+          >
+            <Translate id="homepage.inspector.architecture">
+              Read the architecture
+            </Translate>
+          </Link>
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function QuickStart() {
   return (
     <section
@@ -604,6 +668,7 @@ export default function Home() {
       <Hero />
       <main>
         <QuickStart />
+        <InspectorSection />
         <LiveDemo />
         <HowItWorks />
       </main>

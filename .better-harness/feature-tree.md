@@ -1,0 +1,42 @@
+- [ ] Better Harness
+  - [x] Analyze and Improve
+    - [x] Generate a five-minute readiness report
+    - [x] Collect project, session, and agent-customization evidence
+    - [x] Analyze the Agent Work Loop and prioritize findings
+    - [x] Recommend bounded repairs and acceptance checks
+    - [x] Render and validate Markdown, HTML, and Canvas reports
+  - [ ] Inspector
+    - [ ] Browse feature delivery by information architecture or date
+    - [ ] Inspect user prompts and complete tool activity
+    - [ ] Correlate sessions, commits, and changed files
+    - [ ] Review AI contribution history
+  - [x] Session Evidence
+    - [x] Discover sessions across supported Coding Agent hosts
+    - [x] Inspect privacy-safe session facts and normalized events
+    - [x] Derive facets, insights, and repeated-work signals
+    - [x] Review usage, long sessions, and file reads
+  - [x] Project Harness
+    - [x] Resolve repository and workspace topology
+    - [x] Profile core paths, history, drift, and diff impact
+    - [x] Inspect dependency governance and stale evidence
+    - [x] Count code, comments, and blank lines
+    - [x] Snapshot and diff project-owned Harness components
+  - [x] Agent Assets and Guardrails
+    - [x] Inventory Skills, MCPs, hooks, plugins, settings, and memory
+    - [x] Lint agent instructions and Markdown references
+    - [x] Review agent-asset inventory, integrity, and practice evidence
+    - [x] Scan secrets and install cross-host secret guardrails
+    - [x] Emit structured proactive review findings from hooks
+  - [x] Hosts and Plugins
+    - [x] Model host identities, surfaces, and capability boundaries
+    - [x] Expose the Better Harness Skill through host plugin manifests
+    - [x] Inspect plugin installation and enablement state
+    - [x] Plan plugin install, update, and removal
+    - [x] Verify plugin manifests, Skill assets, and local evidence
+    - [x] Diagnose host and plugin runtime health
+  - [x] Developer Platform and Distribution
+    - [x] Provide a unified CLI with human and machine discovery
+    - [x] Build and verify host-specific plugin artifacts
+    - [x] Bundle and verify the public npm package
+    - [x] Maintain the generated documentation link graph
+    - [x] Reuse reporting, Canvas, Inspector, and visual style templates

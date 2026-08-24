@@ -94,7 +94,7 @@ function prepareTaskInput(value) {
     .trim();
   const delegatedInput = text.match(/^<codex_delegation>\s*<source_thread_id>[^<]*<\/source_thread_id>\s*<input>([\s\S]*?)<\/input>\s*<\/codex_delegation>$/iu);
   if (delegatedInput) text = delegatedInput[1].trim();
-  const requestMarker = text.match(/(?:^|\n)#{1,3}\s*My request for Codex:\s*/iu);
+  const requestMarker = text.match(/(?:^|\n)#{1,3}\s*My request(?: for Codex)?:\s*/iu);
   if (requestMarker?.index !== undefined) {
     text = text.slice(requestMarker.index + requestMarker[0].length).trim();
   } else if (INJECTED_CONTEXT_PREFIX_RE.test(text)) {

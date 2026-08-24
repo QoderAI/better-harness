@@ -196,7 +196,7 @@ So we protect knowledge routing along three axes:
   through explicit entry points and references in `SKILL.md`, rather than relying
   on ad-hoc search.
 - **Reachable:** use
-  [automated tests](https://github.com/QoderAI/better-harness/blob/main/test/doc-link-graph.test.mjs)
+  [automated tests](https://github.com/QoderAI/better-harness/blob/main/test/skills-docs/doc-link-graph.test.mjs)
   to check that relative links resolve and that every document a Skill needs is
   genuinely routed from its entry point.
 - **Traceable:** generate a Mermaid graph from the real Markdown references with
@@ -234,7 +234,7 @@ In Better Harness we hold those boundaries with three deterministic layers:
   side-effect boundaries.
 
 A representative example is how Better Harness tests the `--help` path.
-[`better-harness-cli.test.mjs`](https://github.com/QoderAI/better-harness/blob/main/test/better-harness-cli.test.mjs)
+[`better-harness-cli.test.mjs`](https://github.com/QoderAI/better-harness/blob/main/test/cli/better-harness-cli.test.mjs)
 does not merely check that the help text is correct; it further verifies that
 running a help command must not read the workspace, write files, wait on standard
 input, spawn a child process, or access the network. If any one of those side

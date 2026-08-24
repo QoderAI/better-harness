@@ -82,6 +82,7 @@ function summarizeFindings(findings) {
     warnings: 0,
     advisories: 0,
     maxSeverity: findings.length === 0 ? "none" : "advisory",
+    result: findings.length === 0 ? "pass" : "fail",
   };
   for (const finding of findings) {
     if (finding.severity === "error") {
@@ -364,6 +365,7 @@ export async function runReviewTrigger(options = {}) {
       ok: true,
       kind: "better-harness.review-trigger",
       status: "skipped",
+      result: "pass",
       reason: "stop-hook-active",
       exitCode: 0,
       cwd,
@@ -380,6 +382,7 @@ export async function runReviewTrigger(options = {}) {
     ok: true,
     kind: "better-harness.review-trigger",
     status: collected.findings.length > 0 ? "findings" : "ok",
+    result: summary.result,
     exitCode: 0,
     cwd,
     summary,
@@ -470,11 +473,12 @@ function emitFailure(error, options = {}) {
 }
 
 function formatHuman(result) {
+  const headline = `Better Harness review-trigger: ${result.summary.result}`;
   if (result.findings.length === 0) {
-    return "";
+    return `${headline}\n`;
   }
   const lines = [
-    "Better Harness review-trigger found proactive findings.",
+    `${headline} (${result.summary.findings} findings)`,
     `Findings: ${result.summary.findings} (errors=${result.summary.errors}, warnings=${result.summary.warnings}, advisories=${result.summary.advisories})`,
   ];
   for (const finding of result.findings.slice(0, 5)) {

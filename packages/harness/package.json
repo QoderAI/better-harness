@@ -1,0 +1,126 @@
+{
+  "name": "@qoder-ai/harness",
+  "version": "0.2.0",
+  "description": "Harness as Code: a parseable, lockable, explainable assembly language for coding-agent harnesses.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.20.0 <25.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/QoderAI/better-harness.git",
+    "directory": "packages/harness"
+  },
+  "homepage": "https://github.com/QoderAI/better-harness/tree/main/packages/harness#readme",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "harness-compare": "./dist/compare/cli.js",
+    "harness-session-executor": "./dist/session-executor/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./ir": {
+      "types": "./dist/ir/index.d.ts",
+      "import": "./dist/ir/index.js"
+    },
+    "./lock": {
+      "types": "./dist/lock.d.ts",
+      "import": "./dist/lock.js"
+    },
+    "./exec": {
+      "types": "./dist/exec/index.d.ts",
+      "import": "./dist/exec/index.js"
+    },
+    "./session-executor": {
+      "types": "./dist/session-executor/index.d.ts",
+      "import": "./dist/session-executor/index.js"
+    },
+    "./compare": {
+      "types": "./dist/compare/index.d.ts",
+      "import": "./dist/compare/index.js"
+    },
+    "./compare/verdict": {
+      "types": "./dist/compare/verdict.d.ts",
+      "import": "./dist/compare/verdict.js"
+    },
+    "./experiment": {
+      "types": "./dist/experiment/index.d.ts",
+      "import": "./dist/experiment/index.js"
+    },
+    "./experiment/evidence": {
+      "types": "./dist/experiment/evidence.d.ts",
+      "import": "./dist/experiment/evidence.js"
+    },
+    "./highlight": {
+      "types": "./dist/highlight/shiki.d.ts",
+      "import": "./dist/highlight/shiki.js"
+    },
+    "./artifacts": {
+      "types": "./dist/artifacts/index.d.ts",
+      "import": "./dist/artifacts/index.js"
+    },
+    "./customization": {
+      "types": "./dist/customization/index.d.ts",
+      "import": "./dist/customization/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "examples/",
+    "skills/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run clean && npm run langium:generate && tsc",
+    "check:generated": "npm run langium:generate && git diff --exit-code -- src/language/generated",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "langium:generate": "langium generate",
+    "prepack": "npm test",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@agentclientprotocol/sdk": "^1.4.0",
+    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@qoder-ai/qoder-agent-sdk": "^1.0.21"
+  },
+  "peerDependenciesMeta": {
+    "@agentclientprotocol/sdk": {
+      "optional": true
+    },
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@qoder-ai/qoder-agent-sdk": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.52",
+    "langium": "4.3.1",
+    "semver": "7.8.5",
+    "shiki": "4.4.3"
+  },
+  "devDependencies": {
+    "@agentclientprotocol/sdk": "1.4.0",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@qoder-ai/qoder-agent-sdk": "1.0.21",
+    "@types/node": "26.2.0",
+    "@types/semver": "7.8.0",
+    "es-module-lexer": "2.3.1",
+    "langium-cli": "4.3.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

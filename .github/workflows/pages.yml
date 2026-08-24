@@ -6,6 +6,9 @@ on:
     paths:
       - "docs/**"
       - "assets/**"
+      - "scripts/commit-session-link/**"
+      - "scripts/harness-inspector/**"
+      - "scripts/session-analysis/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 

@@ -17,11 +17,21 @@ function isThinRoute(route) {
   );
 }
 
+// Locale-relative routes (e.g. "blog/harness-inspector") of zh-Hans blog posts
+// that have a real native Chinese translation under
+// docs/i18n/zh-Hans/docusaurus-plugin-content-blog/. These stay indexable; add a
+// post's slug here when its Chinese article lands.
+const TRANSLATED_ZH_BLOG_ROUTES = new Set(["blog/harness-inspector"]);
+
 function isUntranslatedBlogRoute(route, currentLocale, defaultLocale) {
-  // The zh-Hans blog falls back to English posts until real Chinese articles
-  // exist; keep it crawlable but out of the index to avoid language-mismatch
-  // and duplicate-content signals.
+  // Non-translated zh-Hans blog routes fall back to English posts; keep them
+  // crawlable but out of the index to avoid language-mismatch and
+  // duplicate-content signals. Routes with a real Chinese translation are
+  // allowlisted above and stay indexable, matching the English blog.
   if (currentLocale === defaultLocale) {
+    return false;
+  }
+  if (TRANSLATED_ZH_BLOG_ROUTES.has(route)) {
     return false;
   }
   return route === "blog" || route.startsWith("blog/");

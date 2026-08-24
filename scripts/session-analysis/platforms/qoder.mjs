@@ -579,31 +579,40 @@ function summarizeHookCommand(command, depth = 0) {
   return target ? `${base} ${target}` : base;
 }
 
-function messageText(raw) {
-  const message = raw?.message ?? raw?.content ?? raw?.data?.message ?? raw?.data?.content ?? null;
-  if (typeof message === "string") {
-    return message;
+function structuredMessageItemText(item) {
+  if (typeof item === "string") return item;
+  if (!item || typeof item !== "object") return "";
+  if (item.type === "thinking" && typeof item.thinking === "string") return item.thinking;
+  if (["text", "output_text"].includes(item.type)) {
+    return typeof item.text === "string" ? item.text
+      : typeof item.content === "string" ? item.content
+        : "";
   }
-  if (Array.isArray(message)) {
-    return message
-      .map((item) => {
-        if (typeof item === "string") {
-          return item;
-        }
-        return item?.text ?? item?.content ?? "";
-      })
-      .join("\n");
-  }
-  if (message && typeof message === "object") {
-    if (typeof message.content === "string") {
-      return message.content;
-    }
-    if (typeof message.text === "string") {
-      return message.text;
-    }
-    return JSON.stringify(message);
+  if (!item.type) {
+    return typeof item.text === "string" ? item.text
+      : typeof item.content === "string" ? item.content
+        : "";
   }
   return "";
+}
+
+function structuredMessageText(message) {
+  if (typeof message === "string") return message;
+  if (Array.isArray(message)) {
+    return message.map(structuredMessageItemText).filter(Boolean).join("\n");
+  }
+  if (!message || typeof message !== "object") return "";
+  if (typeof message.content === "string") return message.content;
+  if (Array.isArray(message.content)) {
+    return message.content.map(structuredMessageItemText).filter(Boolean).join("\n");
+  }
+  if (typeof message.text === "string") return message.text;
+  return "";
+}
+
+function messageText(raw) {
+  const message = raw?.message ?? raw?.content ?? raw?.data?.message ?? raw?.data?.content ?? null;
+  return structuredMessageText(message);
 }
 
 function toolOutputText(raw) {

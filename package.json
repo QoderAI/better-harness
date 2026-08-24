@@ -1,6 +1,6 @@
 {
   "name": "@qoder-ai/better-harness",
-  "version": "0.5.0",
+  "version": "0.6.4",
   "description": "Build an AI-ready engineering system for safe coding-agent delivery and continuous software improvement.",
   "license": "MIT",
   "author": {
@@ -26,6 +26,11 @@
     "pi-package"
   ],
   "type": "module",
+  "workspaces": [
+    "packages/harness",
+    "packages/harness-ui",
+    "packages/harness-studio"
+  ],
   "pi": {
     "extensions": ["./extensions/pi/better-harness.ts"],
     "skills": ["./skills"],
@@ -53,6 +58,8 @@
     "!docs/scripts/",
     "!docs/build/",
     "!docs/.docusaurus/",
+    "!docs/node_modules/",
+    "!docs/vendor/",
     "!docs/docusaurus.config.js",
     "!docs/sidebars.js",
     "!docs/package.json",
@@ -78,13 +85,29 @@
     "bundle:zip": "node scripts/npm-package/create-bundle.mjs",
     "workbuddy:verify": "node scripts/packaging/workbuddy-plugin.mjs --verify --json",
     "workbuddy:pack": "node scripts/packaging/workbuddy-plugin.mjs --out dist/workbuddy/better-harness.zip --json",
-    "check": "npm test && npm run pack:verify",
+    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
+    "changelog:unreleased": "conventional-changelog -p angular -u",
+    "check": "npm test && npm run harness:generated && npm run harness:test && npm run harness-ui:test && npm run harness-studio:test && npm run pack:verify",
+    "harness:build": "npm run build -w @qoder-ai/harness",
+    "harness:generated": "npm run check:generated -w @qoder-ai/harness",
+    "harness:test": "npm test -w @qoder-ai/harness",
+    "harness-ui:build": "npm run build -w @qoder-ai/harness-ui",
+    "harness-ui:test": "npm test -w @qoder-ai/harness-ui",
+    "harness-studio:build": "npm run build -w @qoder-ai/harness-studio",
+    "harness-studio:test": "npm test -w @qoder-ai/harness-studio",
+    "harness-studio:test:browser": "npm run test:browser -w @qoder-ai/harness-studio",
+    "inspector": "node scripts/harness-inspector/cli.mjs render",
+    "inspector:open": "node scripts/harness-inspector/cli.mjs render --open",
+    "inspector:visual-check": "node scripts/harness-inspector/visual-contract-check.mjs",
     "pack:verify": "node scripts/npm-package/verify-pack.mjs",
     "publish:dry-run": "npm publish --dry-run --access public --registry https://registry.npmjs.org",
     "prepublishOnly": "npm run check",
     "preview": "node scripts/harness-analysis/canvas-preview-server.mjs",
     "preview:canvas": "node scripts/harness-analysis/canvas-preview-server.mjs",
-    "test": "node --test"
+    "test": "vitest run",
+    "test:ci": "vitest run --config vitest.ci.config.mjs",
+    "test:dsh-configured-assets-native": "node scripts/dsh-configured-assets/native-smoke.mjs",
+    "test:dsh-native": "node scripts/dsh-skill-discovery/native-smoke.mjs"
   },
   "packageManager": "npm@10.9.3",
   "publishConfig": {
@@ -98,7 +121,12 @@
   },
   "dependencies": {
     "@vscode/tree-sitter-wasm": "0.3.1",
-    "esbuild-wasm": "0.28.1"
+    "esbuild-wasm": "0.28.2",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "conventional-changelog-cli": "^4.1.0",
+    "vitest": "4.1.10"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"

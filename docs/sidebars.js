@@ -21,6 +21,7 @@ const sidebars = {
       items: [
         "concepts/agent-work-loop",
         "concepts/findings-and-evidence",
+        "concepts/harness-inspector",
         "concepts/glossary",
       ],
     },

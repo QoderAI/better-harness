@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Harness Studio</title>
+    <script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("harness-studio-theme") === "light" ? "light" : "dark";
+      } catch {
+        document.documentElement.dataset.theme = "dark";
+      }
+    </script>
+    <link rel="stylesheet" href="./assets/tokens.css" />
+    <link rel="stylesheet" href="./assets/shell.css" />
+    <link rel="stylesheet" href="./assets/workbench.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./assets/app.js"></script>
+  </body>
+</html>

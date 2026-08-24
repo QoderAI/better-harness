@@ -1,0 +1,12 @@
+{
+  "name": "@fixture/retry-kit",
+  "version": "1.0.0",
+  "description": "Small ESM retry helper with abort support.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "exports": "./src/index.mjs",
+  "scripts": {
+    "test": "node --test",
+    "example": "node examples/basic.mjs"
+  }
+}

@@ -1,0 +1,11 @@
+[scanner]
+ignore_paths = [
+  "assets/logo.svg",
+  "docs/build/*",
+  "docs/specs/2026-07-20-scripts-directory-cleanup.md",
+  "docs/specs/2026-07-27-pre-public-package-consistency.md",
+  "scripts/harness-analysis/report-quality.mjs",
+  "scripts/harness-analysis/task-loop-source.mjs",
+  "scripts/harness-analysis/workflow-demand-diagnostics.mjs",
+  "test/*",
+]

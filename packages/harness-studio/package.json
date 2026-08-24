@@ -1,0 +1,70 @@
+{
+  "name": "@qoder-ai/harness-studio",
+  "version": "0.1.1",
+  "description": "React studio for @qoder-ai/harness: live AG-UI run view plus harness-compare evidence explorer.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.20.0 <25.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/QoderAI/better-harness.git",
+    "directory": "packages/harness-studio"
+  },
+  "homepage": "https://github.com/QoderAI/better-harness/tree/main/packages/harness-studio#readme",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "harness-studio": "dist/server/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run clean && tsc && node scripts/build-app.mjs",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "prepack": "npm test",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@pierre/diffs": "^1.3.5",
+    "@qoder-ai/harness": "0.2.0",
+    "@qoder-ai/harness-ui": "0.1.1",
+    "@shikijs/core": "^4.4.3",
+    "@shikijs/engine-javascript": "^4.4.3",
+    "@shikijs/langs": "^4.4.3",
+    "@tanstack/react-virtual": "^3.14.9",
+    "beautiful-mermaid": "^1.1.3",
+    "esbuild-wasm": "0.28.1",
+    "fast-xml-parser": "^5.11.0",
+    "fflate": "^0.8.3",
+    "pdfjs-dist": "^6.2.108",
+    "react": "19.2.8",
+    "react-arborist": "^3.16.0",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

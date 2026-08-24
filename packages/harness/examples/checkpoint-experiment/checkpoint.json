@@ -1,0 +1,4 @@
+{
+  "note": "Illustrative placeholder. Slice 2 replaces this with a real session-execution-plan-v1 document produced by `harness-session-executor plan`; the experiment manifest only references it by path and digest and never reinterprets its fields.",
+  "schemaVersion": "session-execution-plan-v1"
+}

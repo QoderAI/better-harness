@@ -675,7 +675,7 @@ async function readScannableFile(file, opts, stats) {
   let canonical;
   let handle;
   try {
-    beforeOpen = await fs.lstat(file);
+    beforeOpen = await fs.lstat(file, { bigint: true });
     if (beforeOpen.isSymbolicLink() || !beforeOpen.isFile()) {
       recordCoverageGap(stats, file, "scan target changed type before it could be read safely");
       return null;
@@ -686,7 +686,7 @@ async function readScannableFile(file, opts, stats) {
       return null;
     }
     handle = await openReadOnlyNoFollow(file);
-    const opened = await handle.stat();
+    const opened = await handle.stat({ bigint: true });
     if (!opened.isFile() || !sameFileIdentity(beforeOpen, opened)) {
       recordCoverageGap(stats, file, "scan target changed while it was being opened");
       return null;
@@ -723,17 +723,17 @@ function isWithinRoot(root, target) {
 }
 
 function sameFileIdentity(beforeOpen, opened) {
-  const beforeIno = Number(beforeOpen?.ino ?? 0);
-  const openedIno = Number(opened?.ino ?? 0);
-  const beforeDev = Number(beforeOpen?.dev ?? 0);
-  const openedDev = Number(opened?.dev ?? 0);
-  if (beforeDev !== 0 && openedDev !== 0 && beforeDev !== openedDev) return false;
-  if (beforeIno !== 0 || openedIno !== 0) {
+  const beforeIno = beforeOpen?.ino ?? 0n;
+  const openedIno = opened?.ino ?? 0n;
+  const beforeDev = beforeOpen?.dev ?? 0n;
+  const openedDev = opened?.dev ?? 0n;
+  if (beforeDev !== 0n && openedDev !== 0n && beforeDev !== openedDev) return false;
+  if (beforeIno !== 0n || openedIno !== 0n) {
     return beforeIno === openedIno;
   }
   return beforeOpen?.size === opened?.size
-    && beforeOpen?.mtimeMs === opened?.mtimeMs
-    && beforeOpen?.birthtimeMs === opened?.birthtimeMs;
+    && beforeOpen?.mtimeNs === opened?.mtimeNs
+    && beforeOpen?.birthtimeNs === opened?.birthtimeNs;
 }
 
 function makeFinding({ rule, file, secret, line, column, lineText, entropy, cwd }) {

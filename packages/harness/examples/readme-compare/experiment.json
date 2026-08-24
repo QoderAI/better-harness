@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "harness-compare.v1",
+  "harness": "./readme-compare.harness",
+  "variants": {
+    "baseline": "readme-baseline",
+    "candidate": "readme-grounded"
+  },
+  "task": {
+    "fixture": "./fixture",
+    "prompt": "./prompt.md",
+    "expectedFiles": ["README.md"],
+    "grader": {
+      "kind": "readme-package-v1",
+      "contract": "./grader-contract.json"
+    }
+  },
+  "runtime": {
+    "host": "qoder",
+    "model": "performance",
+    "tools": ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
+    "allowedTools": [],
+    "disallowedTools": ["WebFetch", "WebSearch", "Task"],
+    "permissionMode": "default",
+    "maxTurns": 24,
+    "timeoutMs": 600000,
+    "network": "deny",
+    "enableFileCheckpointing": true
+  },
+  "trials": {
+    "count": 5,
+    "seed": 20260815,
+    "order": "randomized"
+  }
+}

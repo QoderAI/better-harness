@@ -1,0 +1,104 @@
+// Compiler conformance fixture: every v0.3 authored syntax branch appears here.
+language 0.3
+
+skill repository-grounding {
+  source "./skills/repository-grounding"
+  description "Read repository evidence before changing files."
+}
+
+skill inline-guidance {
+  description "Prefer small, verifiable steps."
+}
+
+tool workspace.read {
+  contract "builtin:workspace.read@1"
+  description "Read files inside the workspace."
+}
+
+tool review.approve {
+  contract "urn:better-harness:review.approve:v1"
+  description "Record a review decision."
+}
+
+mcp package-registry {
+  transport http
+  url env.PACKAGE_REGISTRY_MCP
+}
+
+mcp docs-search {
+  transport sse
+  url "https://docs.example.test/mcp"
+}
+
+mcp local-indexer {
+  transport stdio
+  command "indexer --stdio"
+}
+
+workflow coding-loop {
+  state-machine
+  entry author
+  on author.ready -> verifier
+  on verifier.failed -> author
+  stop when verifier.passed
+}
+
+workflow scripted-loop {
+  program deno "./flows/coding-loop.ts"
+}
+
+harness full-surface {
+  workflow coding-loop
+
+  agent author {
+    outcomes { ready }
+    use skill repository-grounding
+    use skill inline-guidance
+    require tool workspace.read
+    require tool workspace.write
+    connect mcp package-registry
+    connect mcp local-indexer
+  }
+
+  agent verifier {
+    outcomes { failed passed }
+    require tool process.exec
+    require tool review.approve
+    connect mcp docs-search
+  }
+}
+
+harness scripted-surface {
+  workflow scripted-loop
+
+  agent driver {
+    require tool process.exec
+  }
+}
+
+runtime qoder {
+  adapter "@harness/adapter-qoder"
+}
+
+runtime pi {
+  adapter "@harness/adapter-pi"
+}
+
+runtime prime {
+  adapter "@harness/adapter-prime"
+}
+
+deployment full-qoder {
+  harness full-surface
+  runtime qoder
+}
+
+deployment full-pi {
+  harness full-surface
+  runtime pi
+}
+
+deployment scripted-prime {
+  harness scripted-surface
+  runtime prime
+}

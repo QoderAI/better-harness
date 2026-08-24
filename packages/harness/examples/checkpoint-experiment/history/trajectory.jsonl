@@ -1,0 +1,9 @@
+{"type":"tool-call-started","toolCallId":"history-read","toolName":"Read","input":{"path":"README.md"}}
+{"type":"tool-call-finished","toolCallId":"history-read"}
+{"type":"tool-call-result","toolCallId":"history-read","content":"# fixture"}
+{"type":"tool-call-started","toolCallId":"history-edit","toolName":"Edit","input":{"path":"README.md","old_string":"# fixture","new_string":"# package"}}
+{"type":"tool-call-finished","toolCallId":"history-edit"}
+{"type":"tool-call-result","toolCallId":"history-edit","content":"updated README.md"}
+{"type":"tool-call-started","toolCallId":"history-test","toolName":"Bash","input":{"command":"npm test"}}
+{"type":"tool-call-finished","toolCallId":"history-test"}
+{"type":"tool-call-result","toolCallId":"history-test","content":"tests passed"}

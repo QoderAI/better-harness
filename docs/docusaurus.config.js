@@ -14,6 +14,15 @@ const config = {
   tagline:
     "Open-source insights for the Agent Work Loop.",
   favicon: "img/favicon.svg",
+  headTags: [
+    {
+      tagName: "meta",
+      attributes: {
+        name: "google-site-verification",
+        content: "0hOARr2OBFHmWVFf1Bank71Vem1i36aGZnnwKLevZbM",
+      },
+    },
+  ],
 
   url: "https://qoderai.github.io",
   baseUrl: "/better-harness/",
@@ -55,9 +64,13 @@ const config = {
         },
         sitemap: {
           // Keep low-value routes out of the sitemap: on-site search, thin
-          // blog taxonomy pages, and the zh-Hans blog until it carries real
-          // Chinese articles. src/theme/Root.js marks the same routes
-          // noindex,follow so the sitemap and robots signals stay aligned.
+          // blog taxonomy pages, and the whole zh-Hans blog tree (its list and
+          // taxonomy pages still serve English-fallback excerpts). Individual
+          // zh-Hans posts with a real Chinese translation are made indexable by
+          // the TRANSLATED_ZH_BLOG_ROUTES allowlist in src/theme/Root.js and are
+          // discoverable via their hreflang alternate on the English post; they
+          // are intentionally left out of this sitemap until the zh-Hans blog is
+          // predominantly native Chinese and the tree exclusion can be dropped.
           ignorePatterns: [
             "/better-harness/search",
             "/better-harness/blog/tags",
@@ -108,6 +121,13 @@ const config = {
             sidebarId: "docs",
             position: "left",
             label: "Docs",
+          },
+          {
+            to: "/inspector/",
+            label: "Inspector",
+            position: "left",
+            className: "navbar__link--inspector-new",
+            "aria-label": "Inspector",
           },
           {
             to: "/blog",

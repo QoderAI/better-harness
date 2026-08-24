@@ -71,7 +71,7 @@ never edit the canonical Plugin Eval result to make the tools agree.
 For the repository's own `skills/better-harness` target, also run:
 
 ```text
-node --test test/better-harness-skill.test.mjs test/doc-link-graph.test.mjs
+npx vitest run test/skills-docs/better-harness-skill.test.mjs test/skills-docs/doc-link-graph.test.mjs
 node scripts/doc-link-graph/cli.mjs skills/better-harness
 npm run pack:verify
 ```

@@ -67,6 +67,18 @@ Qoder 与 Cursor 生成宿主原生 Canvas 报告；Claude Code、Codex、Qwen C
   （<a href="assets/demo/better-harness-report.html">源文件</a>）。</sub>
 </p>
 
+若要追踪交付链路，交互式 [Harness Inspector](https://qoderai.github.io/better-harness/inspector/)
+会在一个只读工作区中，把产品意图与智能体活动、会话、文件和提交串联起来，
+同时保持证据强度与局限清晰可见：
+
+<p align="center">
+  <a href="https://qoderai.github.io/better-harness/inspector/"><img src="docs/assets/harness-inspector/session-view.png" alt="Harness Inspector 会话视图：提示词、工具调用与提交的同步时间线，配套证据抽屉解释每条关联" width="900"></a>
+</p>
+
+<p align="center">
+  <sub><a href="https://qoderai.github.io/better-harness/inspector/">打开交互式 Harness Inspector 示例</a>（使用虚构的英文数据，不会读取你的工作区）。</sub>
+</p>
+
 当你积累了多份可比较的历史报告后，历史视图会展示智能体工作闭环五个维度的变化：
 
 <p align="center">
@@ -287,20 +299,36 @@ Better Harness 已内置于 [Qoder](https://qoder.com/) 桌面应用，因此无
 /better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
 ```
 
-只有在未安装 Qoder Desktop、单独使用 Qoder CLI 时，才需要在遵循 Qoder 原生
-Marketplace 流程前检查当前手工安装状态：
+只有在未安装 Qoder Desktop、单独使用 Qoder CLI 时，才需要按照以下步骤手动安装：
+
+##### 从 Marketplace 安装
 
 ```bash
-better-harness plugin plan install --host qoder --surface cli --scope user
-```
+# 添加插件 Marketplace 源
+qodercli plugin marketplace add 'https://github.com/QoderAI/better-harness.git'
 
-由于当前原生 help 与本仓库历史文档不一致，计划器不会输出旧版安装语法。
-手工安装后，只使用已经观察到的 inventory 命令验证：
+# 安装插件
+qodercli plugin install better-harness@better-harness
 
-```bash
+# 检查安装
 qodercli plugin list
-better-harness plugin verify --host qoder --surface cli
 ```
+
+##### 从 Git 安装
+
+```bash
+# 确保目录存在
+mkdir -p $HOME/.qoder/plugins/marketplaces/
+
+# 克隆仓库
+git clone https://github.com/QoderAI/better-harness.git \
+  $HOME/.qoder/plugins/marketplaces/better-harness --depth 1
+
+# 安装插件
+qodercli plugin install $HOME/.qoder/plugins/marketplaces/better-harness
+```
+
+在 Qoder CN 系列中，把 urls 中的 `.qoder` 替换为 `.qoder-cn`。
 
 然后启动新的 Qoder CLI 会话，再使用 `/better-harness`。
 

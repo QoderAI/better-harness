@@ -2,6 +2,17 @@ name: Publish npm
 
 on:
   workflow_dispatch:
+    inputs:
+      package:
+        description: Package to publish
+        required: true
+        default: better-harness
+        type: choice
+        options:
+          - better-harness
+          - harness
+          - harness-ui
+          - harness-studio
 
 permissions:
   contents: read
@@ -20,8 +31,14 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm ci
-      - run: npm test
-      - run: npm run pack:verify
-      - run: npm publish --access public
+      - run: npm run check
+      - name: Publish Better Harness
+        if: ${{ inputs.package == 'better-harness' }}
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish selected Harness workspace
+        if: ${{ inputs.package != 'better-harness' }}
+        run: npm publish --workspace "@qoder-ai/${{ inputs.package }}" --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

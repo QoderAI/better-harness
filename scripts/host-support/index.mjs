@@ -107,6 +107,16 @@ export const HOST_DESCRIPTORS = Object.freeze([
     capabilities: COMMON_CAPABILITIES,
     sessionScopeTokens: [".grok", "grok"],
   }),
+  descriptor({
+    id: "dsh",
+    displayName: "DeepSeek Harness",
+    aliases: ["DeepSeek Harness"],
+    capabilities: [
+      HOST_CAPABILITIES.SESSION_ANALYSIS,
+      HOST_CAPABILITIES.AGENT_CUSTOMIZE,
+    ],
+    sessionScopeTokens: [".dsh", "dsh", "deepseek-harness"],
+  }),
 ]);
 
 const HOST_BY_ID = new Map(HOST_DESCRIPTORS.map((host) => [host.id, host]));

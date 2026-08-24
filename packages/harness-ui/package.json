@@ -1,0 +1,57 @@
+{
+  "name": "@qoder-ai/harness-ui",
+  "version": "0.1.1",
+  "description": "AG-UI protocol adapter for @qoder-ai/harness: stream harness runs to any AG-UI-compatible frontend over SSE.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.20.0 <25.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/QoderAI/better-harness.git",
+    "directory": "packages/harness-ui"
+  },
+  "homepage": "https://github.com/QoderAI/better-harness/tree/main/packages/harness-ui#readme",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "harness-ui": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run clean && tsc",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "prepack": "npm test",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@qoder-ai/harness": "0.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "es-module-lexer": "2.3.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

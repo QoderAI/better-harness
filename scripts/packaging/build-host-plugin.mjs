@@ -137,7 +137,7 @@ export function artifactPackage(sourcePackage) {
   return metadata;
 }
 
-async function assertReplaceable(outputRoot) {
+export async function assertReplaceable(outputRoot) {
   if (!(await pathExists(outputRoot))) return false;
   const markerPath = path.join(outputRoot, ARTIFACT_MARKER);
   const marker = await readFile(markerPath, "utf8")
@@ -149,7 +149,7 @@ async function assertReplaceable(outputRoot) {
   return true;
 }
 
-async function publishStagedArtifact(stageRoot, outputRoot, replaceExisting) {
+export async function publishStagedArtifact(stageRoot, outputRoot, replaceExisting) {
   if (!replaceExisting) {
     await rename(stageRoot, outputRoot);
     return;
