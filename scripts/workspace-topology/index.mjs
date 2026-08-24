@@ -1,5 +1,6 @@
-import { realpath } from "node:fs/promises";
 import path from "node:path";
+
+import { canonicalPath } from "./configured-cwd.mjs";
 
 import {
   WORKSPACE_TOPOLOGY_KIND,
@@ -96,7 +97,7 @@ export async function resolveWorkspaceTopology(options = {}, dependencies = {}) 
   }
   const requestedPath = path.resolve(String(input.workspace));
   await (dependencies.assertWorkspaceDirectory ?? assertWorkspaceDirectory)(requestedPath);
-  const requestedWorkspace = await realpath(requestedPath);
+  const requestedWorkspace = (dependencies.canonicalizePath ?? canonicalPath)(requestedPath);
   const gitProbe = (dependencies.resolveGitRoot ?? resolveGitRoot)(requestedWorkspace);
   const gitRoot = gitProbe.gitRoot;
   const topologyRoot = gitRoot ?? requestedWorkspace;
@@ -180,4 +181,4 @@ export {
   findingTargetFromTopology,
   validateFindingTarget,
 } from "./finding-target.mjs";
-export { pathIsContained, resolveConfiguredCwd } from "./configured-cwd.mjs";
+export { canonicalPath, pathIsContained, resolveConfiguredCwd } from "./configured-cwd.mjs";

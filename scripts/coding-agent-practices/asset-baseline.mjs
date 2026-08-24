@@ -2,7 +2,6 @@
 
 import path from "node:path";
 import os from "node:os";
-import { realpathSync } from "node:fs";
 import { stat as statPath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -15,7 +14,7 @@ import {
 } from "../host-support/index.mjs";
 import { runAgentLint } from "../agent-lint/index.mjs";
 import { normalizeWorkspace, parseArgs, parseBooleanFlag } from "../session-analysis/index.mjs";
-import { pathIsContained, resolveConfiguredCwd } from "../workspace-topology/index.mjs";
+import { canonicalPath, pathIsContained, resolveConfiguredCwd } from "../workspace-topology/index.mjs";
 import { reviewAssetIntegrity } from "./asset-integrity.mjs";
 import { collectProviderInventory, collectQoderInventory } from "./inventory.mjs";
 
@@ -159,7 +158,7 @@ function portable(relativePath) {
 
 function canonicalIfPresent(filePath) {
   try {
-    return realpathSync(filePath);
+    return canonicalPath(filePath);
   } catch {
     return filePath;
   }

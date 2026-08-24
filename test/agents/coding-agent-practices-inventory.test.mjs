@@ -633,6 +633,88 @@ test("shared provider inventory emits deterministic Skills and Rules practice co
   }
 });
 
+test("shared provider inventory classifies canonical workspace assets through one path authority", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-practice-path-authority-"));
+  const canonicalWorkspace = path.join(root, "canonical-workspace");
+  const workspaceAlias = path.join(root, "workspace-alias");
+  try {
+    await Promise.all([
+      mkdir(canonicalWorkspace, { recursive: true }),
+      mkdir(workspaceAlias, { recursive: true }),
+    ]);
+    const result = await collectProviderInventory({
+      platform: "dsh",
+      workspace: workspaceAlias,
+      inventory: {
+        provider: "dsh",
+        plugins: [],
+        manage: {
+          plugins: [],
+          mcps: [],
+          skills: [],
+          subagents: [],
+          rules: [{
+            id: "rule-project-agents",
+            name: "AGENTS.md",
+            displayName: "AGENTS.md",
+            scope: "project",
+            evidence: { path: path.join(canonicalWorkspace, "AGENTS.md"), relativePath: "AGENTS.md" },
+          }],
+          commands: [],
+          hooks: [],
+        },
+        diagnostics: {},
+      },
+    }, {
+      canonicalizePath: (value) => path.resolve(value) === path.resolve(workspaceAlias)
+        ? canonicalWorkspace
+        : path.resolve(value),
+    });
+
+    assert.deepEqual(result.summary.practiceCoverageRows, [
+      { surface: "Rules", scopes: ["Project"], count: 1, paths: ["AGENTS.md"] },
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Qoder project Memory identity follows the shared canonical workspace authority", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-memory-path-authority-"));
+  const canonicalWorkspace = path.join(root, "canonical-workspace");
+  const workspaceAlias = path.join(root, "workspace-alias");
+  const qoderHome = path.join(root, ".qoder");
+  const workspaceSlug = path.resolve(canonicalWorkspace)
+    .replace(/^[A-Za-z]:/u, "")
+    .replace(/[\\/]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+  try {
+    await Promise.all([
+      mkdir(canonicalWorkspace, { recursive: true }),
+      mkdir(workspaceAlias, { recursive: true }),
+    ]);
+    await writeText(
+      path.join(qoderHome, "memories", "account-1", "projects", workspaceSlug, "project_introduction", "memory.md"),
+      "private project memory should not appear\n",
+    );
+
+    const result = await collectQoderInventory({
+      workspace: workspaceAlias,
+      qoderHome,
+      includeMemories: true,
+    }, {
+      canonicalizePath: (value) => path.resolve(value) === path.resolve(workspaceAlias)
+        ? canonicalWorkspace
+        : path.resolve(value),
+    });
+
+    assert.deepEqual(result.memories.categories.map((item) => item.category), ["project_introduction"]);
+    assert.deepEqual(result.memories.categories.map((item) => item.scope), ["Project"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("shared provider inventory emits no phantom practice row for empty configured collections", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-empty-practice-coverage-"));
   const workspace = path.join(root, "workspace");

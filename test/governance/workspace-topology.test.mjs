@@ -53,6 +53,46 @@ test("configured cwd uses segment-aware canonical containment", async () => {
   }
 });
 
+test("configured cwd delegates equivalent aliases to one canonical path authority", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-configured-cwd-authority-"));
+  const canonicalWorkspace = path.join(root, "canonical-workspace");
+  const canonicalCwd = path.join(canonicalWorkspace, "packages", "api");
+  const firstWorkspaceAlias = path.join(root, "workspace-alias-a");
+  const firstCwdAlias = path.join(firstWorkspaceAlias, "packages", "api");
+  const secondWorkspaceAlias = path.join(root, "workspace-alias-b");
+  const secondCwdAlias = path.join(secondWorkspaceAlias, "packages", "api");
+  try {
+    await Promise.all([
+      mkdir(canonicalCwd, { recursive: true }),
+      mkdir(firstCwdAlias, { recursive: true }),
+      mkdir(secondCwdAlias, { recursive: true }),
+    ]);
+    const identities = new Map([
+      [path.resolve(firstWorkspaceAlias), canonicalWorkspace],
+      [path.resolve(firstCwdAlias), canonicalCwd],
+      [path.resolve(secondWorkspaceAlias), canonicalWorkspace],
+      [path.resolve(secondCwdAlias), canonicalCwd],
+    ]);
+    const dependencies = {
+      canonicalizePath: (value) => identities.get(path.resolve(value)) ?? path.resolve(value),
+    };
+
+    const first = resolveConfiguredCwd({
+      workspace: firstWorkspaceAlias,
+      cwd: firstCwdAlias,
+    }, dependencies);
+    const second = resolveConfiguredCwd({
+      workspace: secondWorkspaceAlias,
+      cwd: secondCwdAlias,
+    }, dependencies);
+
+    assert.deepEqual(first, { workspace: canonicalWorkspace, cwd: canonicalCwd });
+    assert.deepEqual(second, first);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 function git(cwd, args) {
   const result = spawnSync("git", args, {
     cwd,

@@ -426,7 +426,7 @@ test("asset baseline compacts finding, coverage, owner, and free-text paths to s
       !path.isAbsolute(route.route ?? "<path>")),
     true,
   );
-  assert.doesNotMatch(JSON.stringify(result.envelopes), new RegExp(root.replaceAll("/", "\\/"), "u"));
+  assert.equal(JSON.stringify(result.envelopes).includes(root), false);
 });
 
 test("asset baseline preserves partial stage failures without hiding healthy envelopes", async () => {

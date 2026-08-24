@@ -1,8 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
-import { realpathSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { canonicalPath } from "./configured-cwd.mjs";
 import { normalizeRoute } from "./contract.mjs";
 
 const GIT_MAX_BUFFER_BYTES = 128 * 1024 * 1024;
@@ -132,7 +132,7 @@ export function resolveGitRoot(workspace) {
   }
   const candidate = String(result.stdout ?? "").trim();
   try {
-    return { gitRoot: realpathSync(candidate), gitAvailable: true, warning: null };
+    return { gitRoot: canonicalPath(candidate), gitAvailable: true, warning: null };
   } catch {
     return {
       gitRoot: path.resolve(candidate),

@@ -425,11 +425,11 @@ function summarize(surfaces) {
   };
 }
 
-function publicScope(options = {}) {
+function publicScope(options = {}, dependencies = {}) {
   const configuredScope = resolveConfiguredCwd({
     workspace: normalizeWorkspace(options.workspace),
     cwd: options.cwd === undefined ? undefined : normalizeWorkspace(options.cwd),
-  });
+  }, dependencies);
   const { workspace, cwd } = configuredScope;
   const environmentHome = process.env.QODER_HOME;
   const environmentBase = path.basename(String(environmentHome ?? "")).toLowerCase();
@@ -454,11 +454,11 @@ function publicScope(options = {}) {
   };
 }
 
-function providerScope(options = {}, platform = options.platform ?? "qoder") {
+function providerScope(options = {}, platform = options.platform ?? "qoder", dependencies = {}) {
   const configuredScope = resolveConfiguredCwd({
     workspace: normalizeWorkspace(options.workspace),
     cwd: options.cwd === undefined ? undefined : normalizeWorkspace(options.cwd),
-  });
+  }, dependencies);
   const { workspace, cwd } = configuredScope;
   const host = getHostDescriptor(platform);
   const home = hostHomeValue(options, platform);
@@ -679,9 +679,9 @@ async function buildConfiguredAssetSurfaces(inventory, scope) {
   return surfaces;
 }
 
-export async function collectProviderInventory(options = {}) {
+export async function collectProviderInventory(options = {}, dependencies = {}) {
   const platform = options.platform ?? "qoder";
-  const scope = providerScope(options, platform);
+  const scope = providerScope(options, platform, dependencies);
   const inventory = options.inventory ?? await collectAgentCustomizeInventory({
     provider: platform,
     workspace: scope.workspace,
@@ -826,8 +826,8 @@ function practiceCoverageRows(surfaces, scope) {
   return rows;
 }
 
-export async function collectQoderInventory(options = {}) {
-  const scope = publicScope(options);
+export async function collectQoderInventory(options = {}, dependencies = {}) {
+  const scope = publicScope(options, dependencies);
   const providerInventory = await collectProviderInventory({
     ...options,
     platform: "qoder",
@@ -837,7 +837,7 @@ export async function collectQoderInventory(options = {}) {
       ? path.dirname(scope.sharedCache)
       : scope.sharedCache,
     includeUserHome: scope.includeUserHome,
-  });
+  }, dependencies);
   const surfaces = [...providerInventory.surfaces];
   const memories = scope.includeMemories
     ? await collectMemories(scope)
