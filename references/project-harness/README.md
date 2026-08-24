@@ -20,11 +20,17 @@ acceptance, change safeguards, and recovery boundaries.
 
 ## Owns
 
+- `agent-verify-loop.md`: cross-stack verification-harness framework for
+  self-verifying agent loops (service chains, UI, mini-programs, pipelines,
+  model output).
 - `core-change-watch.md`: project profile, history, core-path, diff, and
   recommended-read evidence.
 - `observability.md`: diagnostic routes and correlated runtime evidence.
 - `project-overlays.md`: project-type additions to the common evidence model.
 - `design-md-contract.md`: design source-of-truth boundaries.
+- `ui-and-system-drivers.md`: choosing where the agent injects control into
+  the system under verification (D0..D4 drive planes), and the separate
+  selection of drive and observation adapters.
 - `friendly-cli.md`: agent-friendly command contracts.
 - `git-hooks.md`: Git hook lifecycle placement and evidence.
 - `recovery-evidence.md`: rollback and recovery presence, wiring, safe exercise,
@@ -33,6 +39,8 @@ acceptance, change safeguards, and recovery boundaries.
 - `sensitive-code.md`: sensitive-code review and reporting boundaries.
 - `sensitive-write-boundary.md`: pre-write confirmation gate for
   project-control surfaces.
+- `verification-environment.md`: claim-driven construction and calibration of
+  mock, emulated, ephemeral, and sandbox verification environments.
 
 ## Does Not Own
 
@@ -45,6 +53,11 @@ acceptance, change safeguards, and recovery boundaries.
 
 ## Read Next
 
+- Use `agent-verify-loop.md` for designing a self-verifying regression harness
+  around an agent loop.
+- Use `ui-and-system-drivers.md` when more than one driver class could
+  exercise a UI, desktop, mobile, or terminal case and the injection point
+  must be chosen by claim.
 - Use `review-trigger.md` for recommendation and review-trigger policy.
 - Use `core-change-watch.md` for static project evidence and changed-core
   routing.
@@ -56,4 +69,6 @@ acceptance, change safeguards, and recovery boundaries.
 - Use `sensitive-code.md` for sensitive-code review boundaries.
 - Use `sensitive-write-boundary.md` for pre-write confirmation on
   project-control surfaces.
+- Use `verification-environment.md` when the real verification environment is
+  unavailable or impractical and the agent must choose a credible substitute.
 - Use `git-hooks.md` for Git hook lifecycle placement and evidence.

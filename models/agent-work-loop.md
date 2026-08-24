@@ -383,7 +383,13 @@ for example `<cli> core-change-watch evidence-pack --cwd <target> --json`, then
 apply the six gates in
 [Observability for AI Debugging](../references/project-harness/observability.md):
 discoverable, runnable, readable, correlatable, verifiable, and safe/reversible.
-Resolve `<cli>` through the Harness routing reference.
+Resolve `<cli>` through the Harness routing reference. When Relevant
+Verification still depends on human enumeration, manual multi-target
+comparison, or by-eye acceptance — a long-chain system with many entrypoints
+and asynchronous stages, a UI or mini-program surface compared by hand, a
+pipeline or model output spot-checked ad hoc — route the repair to
+[Agent Verify Loop](../references/project-harness/agent-verify-loop.md) for
+the verification-harness design.
 
 #### Core and high-impact observability judgment
 
@@ -795,6 +801,7 @@ own how evidence is collected or operated:
 | Agent customization routing | [Agent Customize](../references/agent-customize/routing.md) |
 | Core-path expansion and evidence pack | [Core Change Watch](../references/project-harness/core-change-watch.md) |
 | Logging and diagnostic inspection | [Observability for AI Debugging](../references/project-harness/observability.md) |
+| Cross-stack verification harness and regression skeleton | [Agent Verify Loop](../references/project-harness/agent-verify-loop.md) |
 | Project-type evidence additions | [Project Overlays](../references/project-harness/project-overlays.md) |
 | Rollback and recovery inspection | [Rollback and Recovery Evidence](../references/project-harness/recovery-evidence.md) |
 | Lifecycle capability coverage and Skill ladder | [Skill Discovery](../references/agent-customize/skill-discovery.md) |

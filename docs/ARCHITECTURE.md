@@ -21,6 +21,9 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   supplied copy, but they do not compose or translate it; host UIs render the
   persisted semantic copy instead of rebuilding it from structural metadata.
 - Keep host evidence adapters separate from packaging, and keep all automation cross-platform.
+- Keep stable host identity, display, home-option, and support-slice metadata in
+  `scripts/host-support/`. Executable adapter imports and construction remain in
+  capability-local registries; do not introduce a global host service locator.
 - Keep source-local host artifact assembly under `scripts/packaging/`; generated
   host artifacts are validation/install outputs, not canonical product owners or
   public package or Qoder runtime inputs.
@@ -32,6 +35,67 @@ the target journey, contract, evidence, governance, and DX-measurement system.
 - New analyzers, scoring signals, and hook helpers should own modules when they represent distinct concerns.
 - Executable behavior belongs in business-named `scripts/<capability>/`; do not create `scripts/core/`.
 - Existing `scripts/core-change-watch/` and `scripts/session-analysis/` remain live owners until a tested migration lands.
+- `scripts/plugin-lifecycle/` owns read-only Better Harness lifecycle status,
+  deterministic plans, and verification. It composes only the public
+  `agent-customize` inventory and never executes a planned host mutation. Its
+  `read-only-command.mjs` is the shared strict parser/envelope/timeout runtime
+  for lifecycle and doctor commands; it is capability-scoped, not the
+  repository-wide authoritative command-contract owner. Identity/digest,
+  bounded runtime/path discovery, target resolution, status/verification, and
+  planning live in separate private modules; `target-resolution.mjs` is the
+  single owner for host, surface, and scope selection used by status and plan.
+  `model.mjs` owns the shared lifecycle schema version, Better Harness plugin
+  identity/version, base target, diagnostic, and assertion primitives used by
+  both status and plan validation; domain modules retain only their own state
+  vocabularies and invariants.
+  `status-row.mjs` is the single `PluginLifecycleStatusV1` row factory and
+  validator for both observed inventory and inventory-failure paths; status
+  core owns only collection, ordering, aggregation, and command summaries.
+  `plan-model.mjs` is the corresponding single `PluginLifecyclePlanV1`
+  transition, step-materialization, digest, and validation owner; plan core
+  only resolves the target, collects status, and delegates construction.
+  Planned mutations are typed as external `host-plugin-state` steps, while
+  post-apply verification is typed as read-only `host-observation` so consumers
+  never mistake a verification command for a mutation performed by the CLI.
+  `command-manifest.mjs` is the pure, read-only leaf metadata owner projected
+  into the root CLI registry; `command-definitions.mjs` binds that manifest to
+  lifecycle executors and `human-output.mjs` renderers. The plugin CLI performs
+  generic descriptor dispatch and must not branch on leaf names.
+  `index.mjs` is the only cross-capability behavioral import surface and
+  contains exports rather than implementation; the root registry's direct,
+  metadata-only manifest projection is the sole allowed exception so root help
+  does not load lifecycle runtime owners.
+- `scripts/host-support/` currently provides the validated shadow profiles used
+  by plugin lifecycle. While ADR-0002 remains proposed, the adapter matrix,
+  capability providers, manifests, and installation documentation remain
+  authoritative for their existing slices; the new profiles may detect drift
+  but do not silently replace those owners. Each host owns one module under
+  `scripts/host-support/profiles/`; `profile-model.mjs` is the single local
+  `HostSurfaceProfileV1` vocabulary and validation owner. Profile modules fail
+  during their own construction and are deeply immutable before registry
+  composition; the registry facade delegates local validation and owns only
+  cross-profile host-id and alias conflicts. `profile-builders.mjs` owns typed
+  construction helpers for evidence, operations, surfaces, and steps rather
+  than duplicating their invariants, and `profiles.mjs` only composes the
+  registry. Every provider-specific filesystem root read outside the selected
+  workspace must have an explicit `inventoryHomeRoutes` entry, including state
+  files, shared caches, and compatibility roots such as a user-level
+  `.agents/` directory. Each primary and secondary route declares its provider
+  option, an isolated path relative to `--host-home`, and a redacted safe
+  fallback label; providers return the effective resolved roots so doctor can
+  report them without exposing absolute user paths. Per-surface inventory,
+  bundled, session-only, or desktop-cache observation semantics are profile
+  data. Each surface also declares whether host discovery comes from its
+  executable, a provider diagnostic, or remains unobserved; bundled and
+  session-only surfaces do not read unrelated persistent inventory. Scope-
+  artifact ownership and native home binding are profile data as well. A shared
+  `scopeArtifactPolicy` or `nativeHomeBinding` requires versioned, traceable
+  native evidence. Without an evidenced binding that can represent every
+  emitted native step, an isolated-home mutation plan fails closed and omits
+  unbound native verification steps. Lifecycle status must not branch on
+  canonical host ids.
+- `scripts/harness-doctor/` owns the bounded host/plugin diagnostic view and
+  reuses plugin-lifecycle status rather than reimplementing host discovery.
 - `scripts/harness-analysis/canvas-preview/` owns reusable local Canvas serving,
   runtime discovery, transforms, the Harness preview fixture, and cross-platform
   browser helpers. Keeping it below `harness-analysis/` preserves the tested
@@ -41,6 +105,11 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   its bounded human-review integrity chain: packet binding, episode/delivery
   normalization, and review application. Non-facade consumers import its public
   `index.mjs`; historical flat paths remain compatibility entrypoints.
+- `scripts/harness-component-snapshot/` owns the versioned, read-only Qoder
+  project component snapshot, validation, bounded diff, and non-authorizing
+  rollback-reference contracts. It composes only allowlisted public
+  `agent-customize` project collections, keeps its direct CLI capability-local,
+  and does not claim runtime activation or mutation authority.
 - `schemas/` is a target owner, not yet created, for versioned public runtime contracts consumed by multiple repo surfaces or packaged hosts; see the directory-structure ADR for adoption criteria. Capability-private schemas stay under `scripts/<capability>/`.
 
 ## AI Directory Routing
@@ -71,9 +140,9 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   in the capability-owned agent-customize and session-analysis providers. The Codex shell
   owns local install/discovery metadata only; Codex evidence collection remains
   in the capability-owned provider and session-analysis modules. The public npm
-  package ships all eight native plugin metadata roots (including the Pi
-  manifest and WorkBuddy Team shell), while the Qoder runtime bundle includes
-  only `.qoder-plugin/`.
+  package ships all eight current native metadata roots (including the Kimi
+  plugin, Pi manifest, and WorkBuddy Team shell), while the Qoder runtime
+  bundle includes only `.qoder-plugin/`.
 
 ## Developer Experience Routing
 

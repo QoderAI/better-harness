@@ -16,6 +16,7 @@ import { calculateExactModelCost } from "../scripts/session-analysis/model-prici
 import { detectPlanningSignals } from "../scripts/session-analysis/planning-signals.mjs";
 import { privacySafeUserInputSummary } from "../scripts/session-analysis/privacy-safe-text.mjs";
 import { isSessionAnalysisRef, sessionAnalysisRef } from "../scripts/session-analysis/session-ref.mjs";
+import { buildToolCallTrace } from "../scripts/session-analysis/tool-call-trace.mjs";
 
 async function writeJson(filePath, value) {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -41,6 +42,146 @@ test("session analysis refs are versioned, scoped, and non-reversible", () => {
   assert.equal(isSessionAnalysisRef(first), true);
   assert.equal(first.includes("private-session-id"), false);
   assert.equal(isSessionAnalysisRef("private-session-id"), false);
+});
+
+test("tool-call traces deduplicate lifecycles and keep only bounded privacy-safe chart facts", () => {
+  const trace = buildToolCallTrace([
+    { sessionId: "private-session", type: "PreToolUse", lifecyclePhase: "pre", toolInvocationId: "call-1", toolName: "Read", timestamp: "2026-08-10T10:00:00.000Z", filePath: "/Users/private/repo/secret.ts" },
+    { sessionId: "private-session", type: "PostToolUse", lifecyclePhase: "post", toolInvocationId: "call-1", toolName: "Read", timestamp: "2026-08-10T10:00:01.000Z", success: true },
+    { sessionId: "private-session", type: "PostToolUseFailure", lifecyclePhase: "post", toolInvocationId: "call-2", toolName: "Bash", timestamp: "2026-08-10T10:00:02.000Z", success: false, commandText: "token=private" },
+    { sessionId: "private-session", type: "PostToolUse", lifecyclePhase: "post", toolInvocationId: "call-3", toolName: "mcp__github_issue", timestamp: "2026-08-10T10:00:03.000Z", success: true },
+    { sessionId: "private-session", type: "PostToolUse", lifecyclePhase: "post", toolInvocationId: "call-4", toolName: "secret/path", timestamp: "2026-08-10T10:00:04.000Z", success: true },
+    { sessionId: "private-session", type: "PostToolUse", lifecyclePhase: "post", toolInvocationId: "call-5", toolName: "Grep", timestamp: "2026-08-10T10:00:05.000Z", success: true },
+  ], { limit: 4, laneLimit: 3 });
+
+  assert.equal(trace.schemaVersion, 2);
+  assert.equal(trace.totalCalls, 5);
+  assert.equal(trace.shownCalls, 4);
+  assert.equal(trace.truncated, true);
+  assert.deepEqual(trace.calls.map((call) => call.step), [1, 2, 4, 5]);
+  assert.equal(trace.calls.find((call) => call.step === 2)?.status, "failed");
+  assert.deepEqual(trace.calls.find((call) => call.step === 1), {
+    id: "T1",
+    step: 1,
+    toolName: "Read",
+    status: "observed",
+    durationStatus: "observed",
+    durationMs: 1000,
+    timingSource: "lifecycle-pair",
+  });
+  assert.equal(trace.calls.find((call) => call.step === 2)?.durationStatus, "unobserved");
+  assert.ok(trace.calls.every((call) => ["Read", "Bash", "Other tools"].includes(call.toolName)));
+  assert.doesNotMatch(JSON.stringify(trace), /private-session|Users|secret|token/u);
+
+  const singleLane = buildToolCallTrace([
+    { toolName: "Read", timestamp: "2026-08-10T10:00:00.000Z" },
+    { toolName: "Bash", timestamp: "2026-08-10T10:00:01.000Z" },
+  ], { laneLimit: 1, limit: 200 });
+  assert.deepEqual([...new Set(singleLane.calls.map((call) => call.toolName))], ["Other tools"]);
+  assert.equal(singleLane.shownCalls, 2);
+});
+
+test("tool-call traces retain every call by default for horizontally scrollable charts", () => {
+  const trace = buildToolCallTrace(Array.from({ length: 125 }, (_, index) => ({
+    toolName: index % 2 === 0 ? "Read" : "Bash",
+    timestamp: `2026-08-10T10:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`,
+  })));
+
+  assert.equal(trace.totalCalls, 125);
+  assert.equal(trace.shownCalls, 125);
+  assert.equal(trace.truncated, false);
+  assert.equal(trace.calls.at(-1)?.step, 125);
+});
+
+test("Qoder transcript tool_use and tool_result items retain paired observed latency", () => {
+  const analyzer = new QoderSessionAnalyzer();
+  const sourceRef = {
+    kind: "execution-transcript",
+    path: "/private/session.jsonl",
+    line: 1,
+    planningScope: "workspace",
+    sessionId: "private-session",
+  };
+  const requests = analyzer.normalizeEvents({
+    type: "assistant",
+    timestamp: "2026-08-10T10:00:00.000Z",
+    cwd: "/workspace/project",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "tool_use", id: "call-1", name: "Bash", input: { command: "private command" } },
+        { type: "tool_use", id: "call-2", name: "Write", input: { file_path: "/workspace/project/private.ts" } },
+      ],
+    },
+  }, sourceRef, { includeCommandText: true });
+  const results = analyzer.normalizeEvents({
+    type: "user",
+    timestamp: "2026-08-10T10:00:04.250Z",
+    cwd: "/workspace/project",
+    message: {
+      role: "user",
+      content: [
+        { type: "tool_result", tool_use_id: "call-1", is_error: false, content: "private output" },
+        { type: "tool_result", tool_use_id: "call-2", is_error: true, content: "private error" },
+      ],
+    },
+  }, { ...sourceRef, line: 2 });
+
+  assert.deepEqual(requests.filter((event) => event.lifecyclePhase === "request").map((event) => event.toolInvocationId), ["call-1", "call-2"]);
+  assert.deepEqual(results.filter((event) => event.lifecyclePhase === "result").map((event) => event.toolInvocationId), ["call-1", "call-2"]);
+  assert.equal(requests[0].toolName, undefined);
+  assert.equal(results[0].toolInvocationId, undefined);
+
+  const trace = buildToolCallTrace([...requests, ...results]);
+  assert.deepEqual(trace.calls, [
+    { id: "T1", step: 1, toolName: "Bash", status: "observed", durationStatus: "observed", durationMs: 4250, timingSource: "transcript-pair" },
+    { id: "T2", step: 2, toolName: "Write", status: "failed", durationStatus: "observed", durationMs: 4250, timingSource: "transcript-pair" },
+  ]);
+  assert.doesNotMatch(JSON.stringify(trace), /private|workspace/u);
+});
+
+test("Codex function_call and function_call_output retain paired observed latency", async () => {
+  const { CodexSessionAnalyzer } = await import("../scripts/session-analysis/platforms/codex.mjs");
+  const analyzer = new CodexSessionAnalyzer();
+  const sourceRef = {
+    kind: "codex-session-jsonl",
+    path: "/private/session.jsonl",
+    line: 1,
+    planningScope: "workspace",
+    sessionId: "private-codex-session",
+  };
+  const request = analyzer.normalizeEvent({
+    type: "response_item",
+    timestamp: "2026-08-11T00:00:00.000Z",
+    payload: {
+      type: "function_call",
+      call_id: "call-private-1",
+      name: "exec_command",
+      arguments: JSON.stringify({ cmd: "private command" }),
+    },
+  }, sourceRef, { includeCommandText: true });
+  const result = analyzer.normalizeEvent({
+    type: "response_item",
+    timestamp: "2026-08-11T00:00:02.500Z",
+    payload: {
+      type: "function_call_output",
+      call_id: "call-private-1",
+      output: "Script completed\nWall time 2.5 seconds\nOutput:\nprivate output",
+    },
+  }, { ...sourceRef, line: 2 });
+
+  const trace = buildToolCallTrace([request, result]);
+
+  assert.deepEqual(trace.calls, [{
+    id: "T1",
+    step: 1,
+    toolName: "exec_command",
+    status: "observed",
+    durationStatus: "observed",
+    durationMs: 2500,
+    timingSource: "transcript-pair",
+  }]);
+  assert.doesNotMatch(JSON.stringify(trace), /private command|private output|private-codex-session/u);
 });
 
 test("planning signals detect user-issued spec commands without counting prose", () => {

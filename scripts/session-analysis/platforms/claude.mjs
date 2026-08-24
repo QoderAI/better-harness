@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { SessionAnalyzer } from "../analyzer.mjs";
 import { parseArgs, parseBooleanFlag } from "../cli.mjs";
-import { forEachJsonLine, pathExists, walkFiles } from "../fs.mjs";
+import { forEachJsonLine, isDirectory, pathExists, walkFiles } from "../fs.mjs";
 import { expandHome, normalizeWorkspace } from "../paths.mjs";
 import {
   bindSessionWorkspaceCwds,
@@ -31,13 +32,65 @@ function isScopedWorkspaceMatch(candidate, scope) {
   return classifyWorkspaceCwd(candidate, scope._workspaceMatchScope) !== WORKSPACE_CWD_MATCH.UNMATCHED;
 }
 
+// Claude Code folds "." and "_" into "-" per character (".claude" -> "--claude",
+// "my_project" -> "my-project"), so the widest fold comes first; the narrower
+// classes stay as fallbacks for directories named by older host versions.
+const CLAUDE_SLUG_FOLD_CLASSES = [/[\\/._]/g, /[\\/.]/g, /[\\/]+/g];
+
+// Directory listings and transcript reads stay bounded so the cwd recovery below
+// cannot turn a slug miss into an unbounded scan of every recorded session.
+const PROJECT_DIR_SCAN_LIMIT = 500;
+const PROJECT_DIR_PROBE_FILES = 25;
+const PROJECT_DIR_PROBE_LINES = 200;
+
 export function workspaceToClaudeSlugVariants(workspace) {
   const expanded = expandHome(workspace ?? process.cwd());
   const normalized = path.win32.isAbsolute(expanded) ? path.win32.normalize(expanded) : normalizeWorkspace(expanded);
-  return [...new Set([
-    normalized.replace(/:/g, "-").replace(/[\\/]+/g, "-"),
-    normalized.replace(/:/g, "").replace(/[\\/]+/g, "-"),
-  ])];
+  return [...new Set(CLAUDE_SLUG_FOLD_CLASSES.flatMap((fold) => [
+    normalized.replace(/:/g, "-").replace(fold, "-"),
+    normalized.replace(/:/g, "").replace(fold, "-"),
+  ]))];
+}
+
+async function transcriptRecordsScopedCwd(filePath, scope) {
+  let matched = false;
+  await forEachJsonLine(filePath, (raw) => {
+    if (typeof raw?.cwd !== "string" || raw.cwd.length === 0) return true;
+    if (!isScopedWorkspaceMatch(raw.cwd, scope)) return true;
+    matched = true;
+    return false;
+  }, { maxLines: PROJECT_DIR_PROBE_LINES });
+  return matched;
+}
+
+// The slug only selects which project directory to open, and discovery re-checks
+// the recorded cwd one step later. When every guessed slug is missing, recover the
+// directory from that same cwd so an unmodelled character fold reports the real
+// sessions instead of a silent zero.
+async function discoverProjectRootsByRecordedCwd(scope) {
+  const projectsRoot = path.join(scope.home, "projects");
+  let entries;
+  try {
+    entries = await readdir(projectsRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const recovered = [];
+  for (const entry of entries.slice(0, PROJECT_DIR_SCAN_LIMIT)) {
+    const dirPath = path.join(projectsRoot, entry.name);
+    if (!entry.isDirectory() && !await isDirectory(dirPath)) continue;
+    const files = await walkFiles(dirPath, {
+      maxDepth: 2,
+      limit: PROJECT_DIR_PROBE_FILES,
+      match: (file) => file.endsWith(".jsonl"),
+    });
+    for (const filePath of files) {
+      if (!await transcriptRecordsScopedCwd(filePath, scope)) continue;
+      recovered.push(dirPath);
+      break;
+    }
+  }
+  return recovered;
 }
 
 function inferSessionId(raw, fallback = null) {
@@ -385,7 +438,11 @@ export class ClaudeSessionAnalyzer extends SessionAnalyzer {
   }
 
   async discoverSourceRoots(scope) {
-    const projectPaths = scope._workspaceSlugVariants.map((slug) => path.join(scope.home, "projects", slug));
+    const slugPaths = scope._workspaceSlugVariants.map((slug) => path.join(scope.home, "projects", slug));
+    const slugExists = (await Promise.all(slugPaths.map(pathExists))).some(Boolean);
+    const projectPaths = slugExists
+      ? slugPaths
+      : [...await discoverProjectRootsByRecordedCwd(scope), ...slugPaths];
     const roots = [
       {
         id: "claude-projects",

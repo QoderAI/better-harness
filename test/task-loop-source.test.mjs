@@ -1320,6 +1320,16 @@ test("session source bridge keeps raw session ids only for the private review ha
           role: "user-thread-candidate",
           failureCount: 2,
           userInputSummary: "Review the report generation path",
+          toolTrace: {
+            schemaVersion: 2,
+            totalCalls: 3,
+            shownCalls: 2,
+            truncated: true,
+            calls: [
+              { id: "ignored", step: 1, toolName: "Read", status: "observed", durationStatus: "observed", durationMs: 1250.4, timingSource: "transcript-pair", commandText: "private" },
+              { id: "ignored", step: 3, toolName: "Bash", status: "failed", durationStatus: "unobserved", filePath: "/Users/example/private.ts" },
+            ],
+          },
           candidateReasons: ["active-long"],
           evidenceRefs: [{ kind: "project-jsonl", path: "/Users/example/private-session.jsonl" }],
         }],
@@ -1377,6 +1387,16 @@ test("session source bridge keeps raw session ids only for the private review ha
   assert.equal(sample.activeMinutes, 95);
   assert.equal(sample.failureCount, 2);
   assert.equal(sample.userInputSummary, "Review the report generation path");
+  assert.deepEqual(sample.toolTrace, {
+    schemaVersion: 2,
+    totalCalls: 3,
+    shownCalls: 2,
+    truncated: true,
+    calls: [
+      { id: "T1", step: 1, toolName: "Read", status: "observed", durationStatus: "observed", durationMs: 1250, timingSource: "transcript-pair" },
+      { id: "T3", step: 3, toolName: "Bash", status: "failed", durationStatus: "unobserved" },
+    ],
+  });
   assert.equal(source.sessionEvents.usageEfficiency.accounting.mode, "effort-proxy");
   assert.equal(source.sessionEvents.usageEfficiency.accounting.modelAttributedResponseCount, 12);
   assert.equal(source.sessionEvents.usageEfficiency.accounting.unattributedResponseCount, 0);
@@ -1436,6 +1456,16 @@ test("usage census replaces only sampled usage and adds scoped review references
       activeMs: (60 - index) * 60_000,
       role: "user-thread-candidate",
       failureCount: index,
+      toolTrace: {
+        schemaVersion: 1,
+        totalCalls: 2,
+        shownCalls: 2,
+        truncated: false,
+        calls: [
+          { id: "T1", step: 1, toolName: index === 0 ? "Read/private" : "Read", status: "observed" },
+          { id: "T2", step: 2, toolName: "Bash", status: index === 0 ? "failed" : "observed" },
+        ],
+      },
       userInputSummary: index === 0
         ? "Fix /Users/example/private/file api_key=secretvalue"
         : `User task ${index + 1}`,
@@ -1447,7 +1477,40 @@ test("usage census replaces only sampled usage and adds scoped review references
   assert.deepEqual(bounded.longSessions.samples.slice(1).map((row) => row.userInputSummary), ["User task 2", "User task 3", "User task 4"]);
   assert.deepEqual(bounded.longSessions.samples.map((row) => row.rawSessionId), ["private-id-1", "private-id-2", "private-id-3", "private-id-4"]);
   assert.ok(bounded.longSessions.samples.every((row) => /^qsr1-[a-f0-9]{24}$/u.test(row.sessionRef)));
+  assert.equal(bounded.longSessions.samples[0].toolTrace.calls[0].toolName, "Unknown tool");
+  assert.ok(bounded.longSessions.samples.every((row) => row.toolTrace.shownCalls === 2));
+  assert.ok(bounded.longSessions.samples.every((row) => row.toolTrace.schemaVersion === 2));
+  assert.ok(bounded.longSessions.samples.every((row) => row.toolTrace.calls.every((call) => call.durationStatus === "unobserved")));
   assert.doesNotMatch(JSON.stringify(bounded.longSessions.samples), /\/Users\/example|secretvalue/);
+
+  const completeTrace = projectSessionUsageSummary({
+    ...censusUsage,
+    longSessions: { ...censusUsage.longSessions, longActiveCount: 1 },
+    candidates: [{
+      id: "private-id-complete-trace",
+      activeMs: 60 * 60_000,
+      role: "user-thread-candidate",
+      failureCount: 0,
+      userInputSummary: "Inspect every tool call",
+      candidateReasons: ["active-long"],
+      toolTrace: {
+        schemaVersion: 2,
+        totalCalls: 125,
+        shownCalls: 125,
+        truncated: false,
+        calls: Array.from({ length: 125 }, (_, index) => ({
+          id: `T${index + 1}`,
+          step: index + 1,
+          toolName: index % 2 === 0 ? "Read" : "Bash",
+          status: "observed",
+          durationStatus: "unobserved",
+        })),
+      },
+    }],
+  }, 9);
+  assert.equal(completeTrace.longSessions.samples[0].toolTrace.shownCalls, 125);
+  assert.equal(completeTrace.longSessions.samples[0].toolTrace.truncated, false);
+  assert.equal(completeTrace.longSessions.samples[0].toolTrace.calls.at(-1)?.step, 125);
 
   const afterFirstReview = projectSessionUsageSummary({
     ...censusUsage,

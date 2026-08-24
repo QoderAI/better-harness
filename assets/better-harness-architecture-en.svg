@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1360" viewBox="0 0 1800 1360" role="img" aria-labelledby="title desc">
   <title id="title">Better Harness architecture</title>
-  <desc id="desc">A six-stage architecture showing eight capability-level host adapters, including six verified Quickstart hosts plus Pi and WorkBuddy adapter support, followed by the Better Harness workflow, three independent evidence agents, unified analysis, host-neutral outputs, and repair.</desc>
+  <desc id="desc">A six-stage architecture showing ten capability-level host adapters, including six verified Quickstart hosts plus Pi, Kimi Code, WorkBuddy, and Grok adapter support, followed by the Better Harness workflow, three independent evidence agents, unified analysis, host-neutral outputs, and repair.</desc>
 
   <defs>
     <style>
@@ -33,13 +33,13 @@
   <rect width="1800" height="1360" fill="#101415"/>
 
   <!-- 1 · Host Integration -->
-  <text x="80" y="58" class="section">1 · HOST INTEGRATION · 8 CAPABILITY ADAPTERS</text>
+  <text x="80" y="58" class="section">1 · HOST INTEGRATION · 10 CAPABILITY ADAPTERS</text>
 
   <rect x="150" y="82" width="700" height="78" rx="14" class="host"/>
   <text x="500" y="115" class="label-sm" text-anchor="middle">6 verified Quickstart hosts</text>
   <text x="500" y="143" class="hint-sm" text-anchor="middle">Claude · Codex · Qoder · Cursor · Qwen · Copilot</text>
   <rect x="950" y="82" width="700" height="78" rx="14" class="host"/>
-  <text x="1300" y="115" class="label-sm" text-anchor="middle">Pi + WorkBuddy adapters</text>
+  <text x="1300" y="115" class="label-sm" text-anchor="middle">Pi + Kimi + WorkBuddy + Grok adapters</text>
   <text x="1300" y="143" class="hint-sm" text-anchor="middle">support boundaries documented</text>
 
   <path d="M500 160V180H900" class="gray"/>

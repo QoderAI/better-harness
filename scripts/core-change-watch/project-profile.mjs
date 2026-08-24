@@ -29,6 +29,7 @@ import {
   toPosix,
   writeJsonResult,
 } from "./common.mjs";
+import { printCoreChangeWatchHelp } from "./help.mjs";
 
 const MANIFESTS = new Set([
   "package.json",
@@ -765,6 +766,7 @@ export async function analyzeProjectProfile(options = {}) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (printCoreChangeWatchHelp("project-profile", argv)) return;
   const args = parseArgs(argv);
   const result = await analyzeProjectProfile({
     cwd: option(args, "cwd"),

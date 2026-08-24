@@ -20,6 +20,7 @@ import {
   Table,
   Tag,
   Text,
+  useCanvasAction,
 } from "qoder/canvas";
 import hostReportData from "./findings.json";
 import canvasData from "./canvas.json";
@@ -502,6 +503,193 @@ function formatActivityMinutes(value) {
   return `${formatted} ${taskLoopCopy("min", "分钟")}`;
 }
 
+function taskLoopToolCallDurationMs(call) {
+  const durationMs = Number(call?.durationMs);
+  return call?.durationStatus === "observed" && Number.isFinite(durationMs) && durationMs >= 0
+    ? durationMs
+    : null;
+}
+
+function formatToolCallLatency(value) {
+  const durationMs = Math.max(0, Number(value ?? 0));
+  if (durationMs < 1_000) return `${Math.round(durationMs)} ms`;
+  if (durationMs < 60_000) return `${Number((durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0))} s`;
+  const totalSeconds = Math.round(durationMs / 1_000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds > 0 ? `${minutes} min ${seconds} s` : `${minutes} min`;
+}
+
+function taskLoopUniqueSwimlanes(lanes) {
+  const seen = new Set();
+  return list(lanes).filter((lane) => {
+    const id = String(lane?.id ?? "");
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function taskLoopSwimlaneTicks(min, max, interval) {
+  if (min === max) return [min];
+  const ticks = [];
+  const first = Math.ceil(min / interval) * interval;
+  const epsilon = Math.abs(interval) / 1_000;
+  for (let value = first, index = 0; value <= max + epsilon && index < 1_000; value += interval, index += 1) {
+    ticks.push(Number(value.toFixed(10)));
+  }
+  return ticks.length ? ticks : [min, max];
+}
+
+function taskLoopSwimlaneDatumSummary(datum, xAxisLabel, valueLabel, xValueFormatter, valueFormatter) {
+  const xValue = xValueFormatter ? xValueFormatter(datum.x) : String(datum.x);
+  const parts = [datum.label ?? datum.laneId, xAxisLabel ? `${xAxisLabel}: ${xValue}` : xValue];
+  if (Number.isFinite(datum.value)) {
+    const bubbleValue = valueFormatter ? valueFormatter(datum.value) : String(datum.value);
+    parts.push(valueLabel ? `${valueLabel}: ${bubbleValue}` : bubbleValue);
+  }
+  if (datum.detail) parts.push(datum.detail);
+  return parts.join(" · ");
+}
+
+// Local compatibility component for hosts whose Canvas SDK has no swimlane chart.
+// It deliberately uses only React SVG and the Canvas primitives already shipped
+// by older hosts, so reports do not depend on a newer qoder/canvas export.
+function TaskLoopSwimlaneBubbleChart({
+  lanes,
+  data,
+  laneHeight = 34,
+  xMin,
+  xMax,
+  xTickEvery,
+  xAxisLabel,
+  minBubbleRadius = 4,
+  maxBubbleRadius = 13,
+  xValueFormatter,
+  valueLabel,
+  valueFormatter,
+  ariaLabel = "Swimlane bubble chart",
+  emptyLabel = "No swimlane data",
+  style,
+}) {
+  const safeLanes = taskLoopUniqueSwimlanes(lanes);
+  const laneIds = new Set(safeLanes.map((lane) => String(lane.id)));
+  const safeData = list(data).filter((datum) => datum?.id
+    && laneIds.has(String(datum.laneId))
+    && Number.isFinite(Number(datum.x)));
+  if (!safeLanes.length || !safeData.length) {
+    return (
+      <Stack align="center" justify="center" style={{ minHeight: 120, width: "100%", ...style }}>
+        <Text size="sm" tone="tertiary">{emptyLabel}</Text>
+      </Stack>
+    );
+  }
+
+  const rowHeight = Number.isFinite(Number(laneHeight)) ? Math.max(22, Number(laneHeight)) : 34;
+  const values = safeData.map((datum) => Math.max(0, Number(datum.value ?? 0)));
+  const valueMin = Math.min(...values);
+  const valueMax = Math.max(...values);
+  const requestedMin = Number.isFinite(Number(xMin)) ? Number(xMin) : Math.min(...safeData.map((datum) => Number(datum.x)));
+  const requestedMax = Number.isFinite(Number(xMax)) ? Number(xMax) : Math.max(...safeData.map((datum) => Number(datum.x)));
+  const domainMin = Math.min(requestedMin, requestedMax);
+  const domainMax = Math.max(requestedMin, requestedMax);
+  const domainSpan = domainMax - domainMin;
+  const viewWidth = Math.max(720, domainMax * 12 + 220);
+  const labelWidth = Math.max(96, Math.min(180, safeLanes.reduce((maximum, lane) =>
+    Math.max(maximum, String(lane.label ?? lane.id).slice(0, 22).length * 6.4 + 24), 84)));
+  const plotLeft = labelWidth + 18;
+  const plotRight = viewWidth - 18;
+  const plotWidth = Math.max(40, plotRight - plotLeft);
+  const topPadding = 10;
+  const laneRows = safeLanes.map((lane, index) => ({
+    lane,
+    top: topPadding + index * rowHeight,
+    centerY: topPadding + index * rowHeight + rowHeight / 2,
+  }));
+  const laneCenters = new Map(laneRows.map((row) => [String(row.lane.id), row.centerY]));
+  const laneAreaHeight = topPadding + safeLanes.length * rowHeight + 6;
+  const chartHeight = laneAreaHeight + 34;
+  const minimumRadius = Number.isFinite(Number(minBubbleRadius)) ? Math.max(2, Number(minBubbleRadius)) : 4;
+  const maximumRadius = Math.max(
+    minimumRadius + 1,
+    Math.min(Number.isFinite(Number(maxBubbleRadius)) ? Number(maxBubbleRadius) : 13, rowHeight * 0.42),
+  );
+  const xForValue = (value) => domainSpan === 0
+    ? plotLeft + plotWidth / 2
+    : plotLeft + ((Math.max(domainMin, Math.min(domainMax, Number(value))) - domainMin) / domainSpan) * plotWidth;
+  const radiusFor = (value) => {
+    const low = Math.sqrt(valueMin);
+    const high = Math.sqrt(valueMax);
+    if (high - low < 0.001) return (minimumRadius + maximumRadius) / 2;
+    const progress = (Math.sqrt(Math.max(0, Number(value ?? 0))) - low) / (high - low);
+    return minimumRadius + progress * (maximumRadius - minimumRadius);
+  };
+  const tickInterval = Number.isFinite(Number(xTickEvery)) && Number(xTickEvery) > 0
+    ? Number(xTickEvery)
+    : Math.max(1, Math.ceil(Math.max(1, domainSpan) / 8));
+  const ticks = taskLoopSwimlaneTicks(domainMin, domainMax, tickInterval);
+
+  return (
+    <svg
+      width="100%"
+      height={chartHeight}
+      viewBox={`0 0 ${viewWidth} ${chartHeight}`}
+      preserveAspectRatio="xMinYMin meet"
+      role="img"
+      aria-label={ariaLabel}
+      style={{ display: "block", color: "inherit", ...style }}
+    >
+      <title>{ariaLabel}</title>
+      <desc>{taskLoopCopy("Bubble area represents observed latency; equal small bubbles have no observed duration.", "气泡面积表示观测延迟；相同的小气泡表示未观察到时长。")}</desc>
+      {laneRows.map((row, index) => (
+        <g key={row.lane.id}>
+          {index % 2 === 1 ? (
+            <rect x={labelWidth} y={row.top} width={viewWidth - labelWidth} height={rowHeight} fill="currentColor" opacity={0.035} />
+          ) : null}
+          <line x1={plotLeft - 9} x2={plotRight + 9} y1={row.centerY} y2={row.centerY} stroke="currentColor" strokeDasharray="3 5" opacity={0.22} />
+          <text x={labelWidth - 12} y={row.centerY + 4} textAnchor="end" fill="currentColor" opacity={0.72} fontSize={11}>
+            {String(row.lane.label ?? row.lane.id).length > 22
+              ? `${String(row.lane.label ?? row.lane.id).slice(0, 21)}…`
+              : String(row.lane.label ?? row.lane.id)}
+          </text>
+        </g>
+      ))}
+      {ticks.map((tick) => (
+        <line key={`grid-${tick}`} x1={xForValue(tick)} x2={xForValue(tick)} y1={topPadding} y2={laneAreaHeight} stroke="currentColor" opacity={0.12} />
+      ))}
+      {safeData.map((datum) => {
+        const summary = taskLoopSwimlaneDatumSummary(datum, xAxisLabel, valueLabel, xValueFormatter, valueFormatter);
+        return (
+          <circle
+            key={datum.id}
+            cx={xForValue(datum.x)}
+            cy={laneCenters.get(String(datum.laneId))}
+            r={radiusFor(datum.value)}
+            fill={datum.tone === "warning" ? "#d97706" : "#64748b"}
+            stroke="currentColor"
+            strokeWidth={1}
+            tabIndex={0}
+            aria-label={summary}
+          >
+            <title>{summary}</title>
+          </circle>
+        );
+      })}
+      <line x1={labelWidth} x2={plotRight + 9} y1={laneAreaHeight} y2={laneAreaHeight} stroke="currentColor" opacity={0.25} />
+      {xAxisLabel ? (
+        <text x={labelWidth - 12} y={laneAreaHeight + 20} textAnchor="end" fill="currentColor" opacity={0.62} fontSize={11} fontWeight={600}>
+          {xAxisLabel}
+        </text>
+      ) : null}
+      {ticks.map((tick) => (
+        <text key={`tick-${tick}`} x={xForValue(tick)} y={laneAreaHeight + 20} textAnchor="middle" fill="currentColor" opacity={0.62} fontSize={11}>
+          {xValueFormatter ? xValueFormatter(tick) : String(tick)}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
 function taskLoopCoverage() {
   return taskLoopSummary().coverage ?? {};
 }
@@ -861,6 +1049,7 @@ function TaskLoopModelUsageTable({ rows }) {
 }
 
 function TaskLoopLongSessionReview({ usage }) {
+  const dispatchCanvasAction = useCanvasAction();
   const lead = usage?.reviewLead;
   const samples = list(usage?.longSessions?.samples);
   if (!lead || !samples.length) return null;
@@ -888,35 +1077,117 @@ function TaskLoopLongSessionReview({ usage }) {
           {taskLoopCopy(`Review ${pendingCount} sessions`, `复核 ${pendingCount} 个会话`)}
         </SendToChatButton>
       </Row>
-      <Stack gap={0}>
-        {samples.map((sample, index) => {
+      <Stack gap={14}>
+        {samples.map((sample, sampleIndex) => {
           const failureCount = Number(sample.failureCount ?? 0);
-          const roleLabel = sample.role === "user-thread-candidate"
-            ? taskLoopCopy("Main-thread candidate", "主线程候选")
-            : sample.role === "child-agent-candidate"
-              ? taskLoopCopy("Child-Agent candidate", "子 Agent 候选")
-              : sample.role;
+          const trace = sample.toolTrace ?? {};
+          const calls = list(trace.calls);
+          const totalCalls = Math.max(Number(trace.totalCalls ?? 0), ...calls.map((call) => Number(call.step ?? 0)));
+          const shownCalls = Number(trace.shownCalls ?? calls.length);
+          const observedDurationCount = calls.filter((call) => taskLoopToolCallDurationMs(call) !== null).length;
+          const chartTickEvery = taskLoopToolCallTickEvery(totalCalls);
+          const chartMax = Math.max(1, totalCalls);
+          const chartMinWidth = Math.max(760, chartMax * 12 + 220);
+          const chartLanes = calls
+            .map((call) => String(call.toolName ?? taskLoopCopy("Unknown tool", "未知工具")))
+            .filter((toolName, index, all) => all.indexOf(toolName) === index)
+            .map((toolName) => ({ id: toolName, label: toolName }));
+          const chartData = calls.map((call) => {
+            const durationMs = taskLoopToolCallDurationMs(call);
+            return {
+              id: `${sample.alias}-${call.id}`,
+              laneId: String(call.toolName ?? taskLoopCopy("Unknown tool", "未知工具")),
+              x: Number(call.step ?? 0),
+              ...(durationMs === null ? {} : { value: durationMs }),
+              label: String(call.toolName ?? taskLoopCopy("Unknown tool", "未知工具")),
+              detail: call.status === "failed"
+                ? taskLoopCopy(`Tool call ${formatUsageNumber(call.step)} failed`, `工具调用 ${formatUsageNumber(call.step)} 失败`)
+                : durationMs === null
+                  ? taskLoopCopy("Observed latency unavailable", "未观察到调用延迟")
+                  : taskLoopCopy("Observed from tool use to result", "从工具调用到结果的观测延迟"),
+              tone: call.status === "failed" ? "warning" : "neutral",
+            };
+          });
           return (
-            <Stack key={sample.alias} gap={0}>
-              <Row justify="space-between" align="center" wrap gap={14} style={{ padding: "13px 0" }}>
-                <Row gap={12} align="start" style={{ flex: "1 1 540px", minWidth: 0 }}>
-                  <Tag size="sm" tone="neutral">{sample.alias}</Tag>
-                  <Stack gap={4} style={{ minWidth: 0 }}>
-                    <Text weight="semibold" style={{ lineHeight: 1.45 }}>
-                      {taskLoopCopy("Anonymized review candidate", "匿名复核候选")}
-                    </Text>
-                    <Text size="sm" tone="secondary">{taskLoopCopy("Role", "角色")}: {roleLabel}</Text>
-                  </Stack>
+            <Stack key={sample.alias} gap={6}>
+              {sampleIndex > 0 ? <Divider style={{ margin: "2px 0" }} /> : null}
+              <Stack gap={5} style={{ minWidth: 0, padding: "6px 12px 0" }}>
+                <Row justify="space-between" align="center" wrap gap={10}>
+                  <Row gap={8} align="center" wrap style={{ minWidth: 0 }}>
+                    <Text weight="semibold">{sample.alias}</Text>
+                    <Tag size="sm" tone="neutral">{taskLoopLongSessionRoleLabel(sample.role)}</Tag>
+                    <Text size="sm" tone="secondary">{formatActivityMinutes(sample.activeMinutes)}</Text>
+                    <Tag size="sm" tone={failureCount > 0 ? "warning" : "neutral"}>
+                      {formatUsageNumber(failureCount)} {taskLoopCopy("failures", "失败事件")}
+                    </Tag>
+                  </Row>
+                  <Text size="sm" tone="tertiary" style={{ flexShrink: 0, marginLeft: "auto", whiteSpace: "nowrap" }}>
+                    {taskLoopCopy(
+                      `Showing ${formatUsageNumber(shownCalls)} of ${formatUsageNumber(totalCalls)} tool calls`,
+                      `显示 ${formatUsageNumber(shownCalls)} / ${formatUsageNumber(totalCalls)} 个工具调用`,
+                    )}
+                  </Text>
                 </Row>
-                <Stack gap={3} style={{ flex: "0 1 190px" }}>
-                  <Text size="sm" tone="tertiary">{taskLoopCopy("Estimated active time", "估算活跃时长")}</Text>
-                  <Text size="sm" weight="semibold">{formatActivityMinutes(sample.activeMinutes)}</Text>
+                <Text size="sm" tone="secondary" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                  {taskLoopCopy("Request", "用户请求")}: {textValue(sample.userRequest) || taskLoopCopy("Unavailable after privacy filtering", "经隐私过滤后不可用")}
+                </Text>
+                {textValue(sample.sessionId) ? (
+                  <Button
+                    size="sm"
+                    variant="text"
+                    style={{ alignSelf: "flex-start", justifyContent: "flex-start", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}
+                    onClick={() => dispatchCanvasAction({
+                      type: "aicoding.canvas.openQuestSession",
+                      taskId: textValue(sample.sessionId),
+                      sessionId: textValue(sample.sessionId),
+                    })}
+                  >
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {taskLoopCopy("Session", "会话")}: {textValue(sample.sessionId)}
+                    </span>
+                  </Button>
+                ) : null}
+              </Stack>
+              <CollapsibleSection
+                size="sm"
+                defaultOpen={false}
+                title={<Text size="sm" weight="semibold">{taskLoopCopy("Tool-call chart", "工具调用图表")}</Text>}
+                headerStyle={{ minHeight: 44 }}
+                bodyStyle={{ padding: "8px 0 2px" }}
+              >
+                <Stack gap={6}>
+                  <Stack gap={0} style={{ display: "block", maxWidth: "100%", overflowX: "auto", paddingBottom: 8 }}>
+                    <Stack gap={0} style={{ display: "block", minWidth: chartMinWidth }}>
+                      <TaskLoopSwimlaneBubbleChart
+                        lanes={chartLanes}
+                        data={chartData}
+                        xMin={1}
+                        xMax={chartMax}
+                        xTickEvery={chartTickEvery}
+                        xAxisLabel={taskLoopCopy("Tool-call step", "工具调用序号")}
+                        xValueFormatter={(value) => formatUsageNumber(value)}
+                        valueLabel={taskLoopCopy("Observed latency", "观测延迟")}
+                        valueFormatter={formatToolCallLatency}
+                        laneHeight={30}
+                        minBubbleRadius={4}
+                        maxBubbleRadius={10}
+                        emptyLabel={taskLoopCopy("No tool calls observed for this session", "该会话未观察到工具调用")}
+                        ariaLabel={taskLoopCopy(
+                          `${sample.alias} tool calls by tool, sequence, and observed latency`,
+                          `${sample.alias} 按工具、调用序号和观测延迟展示的工具调用`,
+                        )}
+                        style={{ overflow: "visible" }}
+                      />
+                    </Stack>
+                  </Stack>
+                  <Text size="sm" tone="tertiary">
+                    {taskLoopCopy(
+                      `Observed latency for ${formatUsageNumber(observedDurationCount)} of ${formatUsageNumber(shownCalls)} shown calls; bubble area scales with observed latency.`,
+                      `已观察到 ${formatUsageNumber(observedDurationCount)} / ${formatUsageNumber(shownCalls)} 个调用的延迟；气泡面积随观测延迟变化。`,
+                    )}
+                  </Text>
                 </Stack>
-                <Tag size="sm" tone="warning">
-                  {formatUsageNumber(failureCount)} {taskLoopCopy("failures", "失败事件")}
-                </Tag>
-              </Row>
-              {index < samples.length - 1 ? <Divider style={{ margin: "1px 0" }} /> : null}
+              </CollapsibleSection>
             </Stack>
           );
         })}
@@ -931,6 +1202,18 @@ function TaskLoopLongSessionReview({ usage }) {
       ) : null}
     </Stack>
   );
+}
+
+function taskLoopLongSessionRoleLabel(role) {
+  if (role === "user-thread-candidate") return taskLoopCopy("Main-thread candidate", "主线程候选");
+  if (role === "child-agent-candidate") return taskLoopCopy("Child-Agent candidate", "子 Agent 候选");
+  return taskLoopCopy("Unknown candidate", "未知候选");
+}
+
+function taskLoopToolCallTickEvery(totalCalls) {
+  const target = Math.max(1, Number(totalCalls ?? 0) / 8);
+  return [1, 2, 5, 10, 20, 25, 50, 100].find((step) => step >= target)
+    ?? Math.ceil(target / 100) * 100;
 }
 
 function TaskLoopProjectUsage({ activity, usage }) {

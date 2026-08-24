@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { isAgentWorkLoopReport } from "../fluency-dimensions.mjs";
 import { renderHtmlInteractionScript } from "./html-interactions.mjs";
 import { renderMarkdown } from "./markdown.mjs";
@@ -65,6 +67,48 @@ function serializeForScript(value) {
     .replace(/&/gu, "\\u0026")
     .replace(/\u2028/gu, "\\u2028")
     .replace(/\u2029/gu, "\\u2029");
+}
+
+function hasAiFixPrompt(finding) {
+  return typeof finding?.aiFixPrompt === "string" && finding.aiFixPrompt.trim().length > 0;
+}
+
+export function buildHtmlInteractionData(reportData) {
+  return {
+    findings: list(reportData?.findings)
+      .flatMap((finding, index) => (hasAiFixPrompt(finding)
+        ? [{ id: String(finding?.id ?? index), aiFixPrompt: finding.aiFixPrompt }]
+        : [])),
+  };
+}
+
+function finalReportRoute(workspacePath, findingsPath) {
+  if (!path.isAbsolute(workspacePath) || !path.isAbsolute(findingsPath)) return null;
+  const reportPath = path.join(path.dirname(findingsPath), "report.html");
+  const relative = path.relative(workspacePath, reportPath);
+  if (!relative || path.isAbsolute(relative)) return null;
+  const segments = relative.split(/[\\/]/u);
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) return null;
+  return segments.join("/");
+}
+
+export function buildHtmlReportActions(reportData, { findingsPath } = {}) {
+  const workspacePath = String(reportData?.target?.path ?? "");
+  const resolvedFindingsPath = String(findingsPath ?? "");
+  const reportRoute = finalReportRoute(workspacePath, resolvedFindingsPath);
+  if (!reportRoute) return { reportRoute: null, findings: [] };
+  return {
+    reportRoute,
+    findings: list(reportData?.findings)
+      .flatMap((finding, index) => (hasAiFixPrompt(finding)
+        ? [{
+            id: String(finding?.id ?? index),
+            expectedRevision: Number.isInteger(finding?.actualOutputRevision)
+              ? finding.actualOutputRevision
+              : 0,
+          }]
+        : [])),
+  };
 }
 
 function findingPromptParts(prompt, language) {
@@ -174,6 +218,18 @@ function heatLevel(value, max) {
   return Math.max(1, Math.min(4, Math.ceil((value / max) * 4)));
 }
 
+function activityTickIndexes(dayCount) {
+  if (dayCount <= 4) return Array.from({ length: dayCount }, (_, index) => index);
+
+  const lastIndex = dayCount - 1;
+  const indexes = [0];
+  for (let index = 7; index < lastIndex; index += 7) {
+    if (lastIndex - index > 3) indexes.push(index);
+  }
+  indexes.push(lastIndex);
+  return indexes;
+}
+
 function renderActivity(summary, language) {
   const activity = summary?.usageActivity;
   const usage = summary?.usageEfficiency;
@@ -188,8 +244,15 @@ function renderActivity(summary, language) {
     const label = activeMinutes.length > 0
       ? copy(language, `${date}: ${formatNumber(active, language)} active minutes`, `${date}：${formatNumber(active, language)} 活跃分钟`)
       : copy(language, `${date}: ${formatNumber(sessions, language)} sessions`, `${date}：${formatNumber(sessions, language)} 个会话`);
-    return `<span class="heat-cell l${heatLevel(values[index], max)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"></span>`;
+    return `<span class="heat-cell l${heatLevel(values[index], max)}" data-date="${escapeHtml(date)}" style="grid-column:${index + 1}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"></span>`;
   }).join("");
+  const ticks = activityTickIndexes(dates.length).map((index) => {
+    const position = dates.length > 4
+      ? index === 0 ? " first" : index === dates.length - 1 ? " last" : ""
+      : "";
+    return `<span class="heat-tick${position}" data-date="${escapeHtml(dates[index])}" style="grid-column:${index + 1}">${escapeHtml(dates[index])}</span>`;
+  }).join("");
+  const heatWidth = Math.max(13, (dates.length * 17) - 4);
   const coverage = summary?.atAGlance?.coverage ?? {};
   const selection = usage?.selection ?? coverage?.selection ?? {};
   const analyzed = selection.analyzedSessionCount ?? selection.analyzedCount ?? 0;
@@ -199,13 +262,174 @@ function renderActivity(summary, language) {
 
   return `<div class="activity-layout">
     <div class="activity-panel">
-      <div class="heatmap" role="img" aria-label="${copy(language, "Session activity heatmap", "会话活跃度热力图")}">${cells || `<span class="empty">${renderVisibleText(copy(language, "No dated activity was retained.", "没有保留按日期聚合的活动数据。"), language)}</span>`}</div>
-      ${dates.length > 0 ? `<div class="heat-legend"><span>${escapeHtml(dates[0])}</span><span>${escapeHtml(dates.at(-1))}</span></div>` : ""}
+      ${dates.length > 0 ? `<div class="heat-scroll" style="--heat-days:${dates.length};--heat-min-width:${heatWidth}px">
+        <div class="heatmap" role="img" aria-label="${copy(language, "Session activity heatmap", "会话活跃度热力图")}">${cells}</div>
+        <div class="heat-axis" aria-hidden="true">${ticks}</div>
+      </div>` : `<div class="heatmap-empty" role="img" aria-label="${copy(language, "Session activity heatmap", "会话活跃度热力图")}"><span class="empty">${renderVisibleText(copy(language, "No dated activity was retained.", "没有保留按日期聚合的活动数据。"), language)}</span></div>`}
     </div>
     <div class="stacked-metrics">
       ${metric(copy(language, "Sessions reviewed", "已分析会话"), `${formatNumber(analyzed, language)} / ${formatNumber(eligible, language)}`, copy(language, "all-eligible usage census", "全量合格用量普查"), language)}
       ${metric(copy(language, "Long-session leads", "长会话线索"), formatNumber(longCount, language), copy(language, `longest ${formatNumber(longest, language)} min`, `最长 ${formatNumber(longest, language)} 分钟`), language)}
     </div>
+  </div>`;
+}
+
+function toolTraceTickEvery(totalCalls) {
+  const target = Math.max(1, number(totalCalls) / 8);
+  return [1, 2, 5, 10, 20, 25, 50, 100].find((step) => step >= target)
+    ?? Math.ceil(target / 100) * 100;
+}
+
+function toolTraceTicks(min, max, interval) {
+  if (min === max) return [min];
+  const ticks = [];
+  const first = Math.ceil(min / interval) * interval;
+  for (let value = first, index = 0; value <= max && index < 1_000; value += interval, index += 1) {
+    ticks.push(value);
+  }
+  return ticks.length > 0 ? ticks : [min, max];
+}
+
+function observedToolDuration(call) {
+  const duration = number(call?.durationMs, NaN);
+  return call?.durationStatus === "observed" && Number.isFinite(duration) && duration >= 0
+    ? duration
+    : null;
+}
+
+function formatToolDuration(value, language) {
+  const duration = Math.max(0, number(value));
+  if (duration < 1_000) return `${Math.round(duration)} ms`;
+  if (duration < 60_000) return `${formatNumber(duration / 1_000, language)} s`;
+  return `${formatNumber(duration / 60_000, language)} min`;
+}
+
+function longSessionRoleLabel(role, language) {
+  if (role === "user-thread-candidate") return copy(language, "Main-thread candidate", "主线程候选");
+  if (role === "child-agent-candidate") return copy(language, "Child-Agent candidate", "子 Agent 候选");
+  return copy(language, "Unknown candidate", "未知候选");
+}
+
+function renderToolTraceSvg(sample, language) {
+  const trace = sample?.toolTrace ?? {};
+  const calls = list(trace.calls)
+    .filter((call) => Number.isFinite(number(call?.step, NaN)) && number(call?.step) > 0 && String(call?.toolName ?? "").trim())
+    .slice()
+    .sort((left, right) => number(left.step) - number(right.step));
+  if (calls.length === 0) {
+    return `<p class="empty tool-trace-empty">${renderVisibleText(copy(language, "No tool calls were retained for this session.", "该会话没有保留工具调用。"), language)}</p>`;
+  }
+
+  const laneLabels = [...new Set(calls.map((call) => String(call.toolName)))];
+  const laneIndex = new Map(laneLabels.map((label, index) => [label, index]));
+  const totalCalls = Math.max(number(trace.totalCalls), ...calls.map((call) => number(call.step)), 1);
+  const rowHeight = 30;
+  const topPadding = 10;
+  const labelWidth = Math.max(96, Math.min(180, laneLabels.reduce((maximum, label) =>
+    Math.max(maximum, [...label].slice(0, 22).length * 6.4 + 24), 84)));
+  const viewWidth = Math.max(720, totalCalls * 12 + 220);
+  const plotLeft = labelWidth + 18;
+  const plotRight = viewWidth - 18;
+  const plotWidth = Math.max(40, plotRight - plotLeft);
+  const laneAreaHeight = topPadding + laneLabels.length * rowHeight + 6;
+  const chartHeight = laneAreaHeight + 34;
+  const observed = calls.map(observedToolDuration).filter((value) => value !== null);
+  const observedMin = observed.length > 0 ? Math.min(...observed) : 0;
+  const observedMax = observed.length > 0 ? Math.max(...observed) : 0;
+  const xForStep = (step) => plotLeft + ((Math.max(1, Math.min(totalCalls, number(step))) - 1) / Math.max(1, totalCalls - 1)) * plotWidth;
+  const radiusFor = (duration) => {
+    if (duration === null) return 4;
+    if (observedMax - observedMin < 0.001) return 7;
+    const progress = (Math.sqrt(duration) - Math.sqrt(observedMin))
+      / (Math.sqrt(observedMax) - Math.sqrt(observedMin));
+    return 4 + progress * 6;
+  };
+  const tickEvery = toolTraceTickEvery(totalCalls);
+  const ticks = toolTraceTicks(1, totalCalls, tickEvery);
+  const alias = String(sample?.alias ?? "Session");
+  const ariaLabel = copy(
+    language,
+    `${alias} tool calls by tool, sequence, and observed latency`,
+    `${alias} 按工具、调用序号和观测延迟展示的工具调用`,
+  );
+
+  const laneMarkup = laneLabels.map((label, index) => {
+    const top = topPadding + index * rowHeight;
+    const center = top + rowHeight / 2;
+    const visibleLabel = [...label].length > 22 ? `${[...label].slice(0, 21).join("")}…` : label;
+    return `<g data-tool-lane="${escapeHtml(label)}">
+      ${index % 2 === 1 ? `<rect class="tool-trace-row-alt" x="${labelWidth}" y="${top}" width="${viewWidth - labelWidth}" height="${rowHeight}"></rect>` : ""}
+      <line class="tool-trace-lane-line" x1="${plotLeft - 9}" x2="${plotRight + 9}" y1="${center}" y2="${center}"></line>
+      <text class="tool-trace-lane-label" x="${labelWidth - 12}" y="${center + 4}" text-anchor="end">${renderVisibleText(visibleLabel, language)}</text>
+    </g>`;
+  }).join("");
+  const gridMarkup = ticks.map((tick) => `<line class="tool-trace-grid-line" x1="${xForStep(tick)}" x2="${xForStep(tick)}" y1="${topPadding}" y2="${laneAreaHeight}"></line>`).join("");
+  const pointMarkup = calls.map((call) => {
+    const duration = observedToolDuration(call);
+    const lane = laneIndex.get(String(call.toolName)) ?? 0;
+    const center = topPadding + lane * rowHeight + rowHeight / 2;
+    const status = call.status === "failed"
+      ? copy(language, "failed", "失败")
+      : copy(language, "observed", "已观察");
+    const timing = duration === null
+      ? copy(language, "observed latency unavailable", "未观察到调用延迟")
+      : copy(language, `observed latency ${formatToolDuration(duration, language)}`, `观测延迟 ${formatToolDuration(duration, language)}`);
+    const pointLabel = `${call.toolName} · ${copy(language, "tool-call step", "工具调用序号")} ${formatNumber(call.step, language)} · ${status} · ${timing}`;
+    return `<circle class="tool-trace-point${call.status === "failed" ? " failed" : ""}" data-trace-call-id="${escapeHtml(call.id)}" cx="${xForStep(call.step)}" cy="${center}" r="${radiusFor(duration)}" tabindex="0" aria-label="${escapeHtml(pointLabel)}"><title>${renderVisibleText(pointLabel, language)}</title></circle>`;
+  }).join("");
+  const tickMarkup = ticks.map((tick) => `<text class="tool-trace-tick" x="${xForStep(tick)}" y="${laneAreaHeight + 20}" text-anchor="middle">${formatNumber(tick, language)}</text>`).join("");
+
+  return `<svg class="tool-trace-svg" data-tool-trace-chart="${escapeHtml(alias)}" width="${viewWidth}" height="${chartHeight}" viewBox="0 0 ${viewWidth} ${chartHeight}" role="img" aria-label="${escapeHtml(ariaLabel)}">
+    <title>${renderVisibleText(ariaLabel, language)}</title>
+    <desc>${renderVisibleText(copy(language, "Bubble area represents observed latency; equal small bubbles have no observed duration.", "气泡面积表示观测延迟；相同的小气泡表示未观察到时长。"), language)}</desc>
+    ${laneMarkup}${gridMarkup}${pointMarkup}
+    <line class="tool-trace-axis-line" x1="${labelWidth}" x2="${plotRight + 9}" y1="${laneAreaHeight}" y2="${laneAreaHeight}"></line>
+    <text class="tool-trace-axis-label" x="${labelWidth - 12}" y="${laneAreaHeight + 20}" text-anchor="end">${renderVisibleText(copy(language, "Tool-call step", "工具调用序号"), language)}</text>
+    ${tickMarkup}
+  </svg>`;
+}
+
+function renderLongSessionTraces(summary, language) {
+  const usage = summary?.usageEfficiency ?? {};
+  const longSessions = usage?.longSessions ?? {};
+  const samples = list(longSessions.samples);
+  if (samples.length === 0) return "";
+  const estimate = longSessions.estimate ?? {};
+  const analyzed = usage?.selection?.analyzedSessionCount ?? 0;
+  const threshold = estimate.activeThresholdMinutes ?? 45;
+
+  return `<div class="long-session-review" data-long-session-review>
+    <div class="long-session-heading">
+      <div><span class="label">${renderVisibleText(copy(language, "Long-session review", "长会话复核"), language)}</span><h3>${renderVisibleText(copy(language, `${samples.length} long sessions need review`, `${samples.length} 个长会话待复核`), language)}</h3></div>
+      <p>${renderVisibleText(copy(language, `${samples.length} of ${formatNumber(analyzed, language)} analyzed sessions crossed the ${formatNumber(threshold, language)}-minute estimate threshold.`, `${formatNumber(analyzed, language)} 个已分析会话中有 ${samples.length} 个超过 ${formatNumber(threshold, language)} 分钟估算阈值。`), language)}</p>
+    </div>
+    <div class="long-session-list">${samples.map((sample, index) => {
+      const alias = String(sample?.alias ?? `S${index + 1}`);
+      const calls = list(sample?.toolTrace?.calls);
+      const totalCalls = Math.max(number(sample?.toolTrace?.totalCalls), ...calls.map((call) => number(call?.step)), 0);
+      const observedCount = calls.filter((call) => observedToolDuration(call) !== null).length;
+      const failures = Math.max(0, number(sample?.failureCount));
+      const sessionId = String(sample?.sessionId ?? "").trim();
+      const safeSessionId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(sessionId) ? sessionId : "";
+      const request = String(sample?.userRequest ?? "").trim()
+        || copy(language, "Unavailable after privacy filtering", "经隐私过滤后不可用");
+      return `<article class="long-session-card" data-long-session-alias="${escapeHtml(alias)}">
+        <div class="long-session-meta">
+          <div class="long-session-tags"><strong>${renderVisibleText(alias, language)}</strong><span class="pill neutral">${renderVisibleText(longSessionRoleLabel(sample?.role, language), language)}</span><span>${renderVisibleText(copy(language, `${formatNumber(sample?.activeMinutes, language)} active min`, `${formatNumber(sample?.activeMinutes, language)} 活跃分钟`), language)}</span><span class="pill ${failures > 0 ? "warning" : "neutral"}">${renderVisibleText(copy(language, `${formatNumber(failures, language)} failures`, `${formatNumber(failures, language)} 个失败事件`), language)}</span></div>
+          <span>${renderVisibleText(copy(language, `Showing ${formatNumber(calls.length, language)} of ${formatNumber(totalCalls, language)} tool calls`, `显示 ${formatNumber(calls.length, language)} / ${formatNumber(totalCalls, language)} 个工具调用`), language)}</span>
+        </div>
+        <p class="long-session-request"><span>${renderVisibleText(copy(language, "Request", "用户请求"), language)}</span>${renderVisibleText(request, language)}</p>
+        ${safeSessionId ? `<p class="long-session-locator"><span>${renderVisibleText(copy(language, "Session", "会话"), language)}</span><code data-session-locator="${escapeHtml(safeSessionId)}">${escapeHtml(safeSessionId)}</code></p>` : ""}
+        <details class="tool-trace-details">
+          <summary><span>${renderVisibleText(copy(language, "Tool-call chart", "工具调用图表"), language)}</span><small>${renderVisibleText(copy(language, `${formatNumber(observedCount, language)} of ${formatNumber(calls.length, language)} calls have observed latency`, `${formatNumber(observedCount, language)} / ${formatNumber(calls.length, language)} 个调用有观测延迟`), language)}</small></summary>
+          <div class="tool-trace-body">
+            <div class="tool-trace-scroll" tabindex="0" aria-label="${escapeHtml(copy(language, `${alias} horizontally scrollable tool-call chart`, `${alias} 可横向滚动的工具调用图表`))}">${renderToolTraceSvg(sample, language)}</div>
+            <p>${renderVisibleText(copy(language, `Observed latency for ${formatNumber(observedCount, language)} of ${formatNumber(calls.length, language)} shown calls; bubble area scales with observed latency.`, `已观察到 ${formatNumber(observedCount, language)} / ${formatNumber(calls.length, language)} 个调用的延迟；气泡面积随观测延迟变化。`), language)}</p>
+          </div>
+        </details>
+      </article>`;
+    }).join("")}</div>
+    ${Number.isFinite(number(estimate.gapCapMinutes, NaN)) && Number.isFinite(number(estimate.idleGapMinutes, NaN)) ? `<p class="long-session-boundary">${renderVisibleText(copy(language, `Estimate boundary: event gaps are capped at ${formatNumber(estimate.gapCapMinutes, language)} minutes and gaps over ${formatNumber(estimate.idleGapMinutes, language)} minutes are treated as idle.`, `估算边界：事件间隔最多计 ${formatNumber(estimate.gapCapMinutes, language)} 分钟，超过 ${formatNumber(estimate.idleGapMinutes, language)} 分钟按空闲处理。`), language)}</p>` : ""}
   </div>`;
 }
 
@@ -234,6 +458,7 @@ function renderFindings(reportData, language) {
   const findings = list(reportData.findings);
   if (findings.length === 0) return `<p class="empty">${renderVisibleText(copy(language, "No reviewed findings were retained.", "没有保留已复核 finding。"), language)}</p>`;
   return `<div class="finding-list">${findings.map((row, index) => {
+    const actionable = hasAiFixPrompt(row);
     const prompt = findingPromptParts(row.aiFixPrompt, language);
     const expected = textLines(row.expectedOutput ?? row.expectedOutcome);
     const refs = list(row.dimensionRefs).map((ref) => dimensions.get(ref) ?? ref);
@@ -254,7 +479,7 @@ function renderFindings(reportData, language) {
         <p class="finding-preview">${renderVisibleText(row.reason ?? "", language)}</p>
       </div>
       <div class="finding-actions">
-        <button type="button" class="action-button secondary" data-copy-finding="${escapeHtml(findingId)}" aria-label="${escapeHtml(`${copyLabel}: ${title}`)}">${renderVisibleText(copyLabel, language)}</button>
+        ${actionable ? `<button type="button" class="action-button secondary" data-copy-finding="${escapeHtml(findingId)}" aria-label="${escapeHtml(`${copyLabel}: ${title}`)}">${renderVisibleText(copyLabel, language)}</button>` : ""}
         <button type="button" class="action-button ghost" data-view-finding-dialog="${dialogId}" aria-label="${escapeHtml(`${detailsLabel}: ${title}`)}">${renderVisibleText(detailsLabel, language)}</button>
       </div>
       <dialog class="finding-dialog" id="${dialogId}" data-finding-dialog-id="${escapeHtml(findingId)}" aria-labelledby="${dialogTitleId}">
@@ -266,7 +491,7 @@ function renderFindings(reportData, language) {
         ${expected.length ? `<div class="dialog-section"><span class="label">${renderVisibleText(copy(language, "Expected Output", "预期结果"), language)}</span><ol>${expected.map((item) => `<li>${renderVisibleText(item, language)}</li>`).join("")}</ol></div>` : ""}
         ${prompt.checks.length ? `<div class="dialog-section"><span class="label">${renderVisibleText(copy(language, "Acceptance Checks", "验收检查"), language)}</span><ul>${prompt.checks.map((item) => `<li>${renderVisibleText(item, language)}</li>`).join("")}</ul></div>` : ""}
         <div class="dialog-actions">
-          <button type="button" class="action-button secondary" data-copy-finding="${escapeHtml(findingId)}" aria-label="${escapeHtml(`${copyLabel}: ${title}`)}">${renderVisibleText(copyLabel, language)}</button>
+          ${actionable ? `<button type="button" class="action-button secondary" data-copy-finding="${escapeHtml(findingId)}" aria-label="${escapeHtml(`${copyLabel}: ${title}`)}">${renderVisibleText(copyLabel, language)}</button>` : ""}
           <button type="button" class="action-button ghost" data-close-finding-dialog="${dialogId}">${renderVisibleText(closeLabel, language)}</button>
         </div>
       </dialog>
@@ -371,15 +596,17 @@ function renderHtmlBody(reportData) {
     ${metric(copy(language, "Findings", "待处理 Finding"), findings.length, `${high} High · ${medium} Medium`, language)}
   </div>
   ${section("fluency", copy(language, "01 · Readiness", "01 · 就绪度"), copy(language, "Five-dimension fluency", "五维流畅度"), renderDimensionGrid(summary, language), copy(language, "Scores and states come from the reviewed source.", "分数与状态来自已复核 source。"), language)}
-  ${hasUsage ? section("activity", copy(language, "02 · Signals", "02 · 信号"), copy(language, "Project usage", "项目用量"), `${renderActivity(summary, language)}${renderUsageLists(summary, language)}`, copy(language, "Volume is context, not an outcome claim.", "用量是背景，不是结果结论。"), language) : ""}
+  ${hasUsage ? section("activity", copy(language, "02 · Signals", "02 · 信号"), copy(language, "Project usage", "项目用量"), `${renderActivity(summary, language)}${renderLongSessionTraces(summary, language)}${renderUsageLists(summary, language)}`, copy(language, "Volume is context, not an outcome claim.", "用量是背景，不是结果结论。"), language) : ""}
   ${section("findings", copy(language, "03 · Action", "03 · 行动"), copy(language, "Findings and recommendations", "Finding 与建议"), `${renderFindings(reportData, language)}${suggestions.length ? renderSuggestions(summary, language) : ""}`, taskLoopReport ? copy(language, `${findings.length} findings · ${suggestions.length} suggestions`, `${findings.length} 条 finding · ${suggestions.length} 条建议`) : copy(language, `${findings.length} reviewed items`, `${findings.length} 条已复核项`), language)}
   ${section("customize", copy(language, "04 · Capability", "04 · 能力"), copy(language, "Agent Customize", "Agent 自定义"), renderCustomize(summary, language), copy(language, "Inspected project and authorized host surfaces.", "已检查的项目与授权宿主能力面。"), language)}
   ${section("methodology", copy(language, "05 · Boundary", "05 · 边界"), copy(language, "Evidence and methodology", "证据与方法"), renderEvidence(summary, language), copy(language, "Reader-safe evidence only.", "仅使用读者安全证据。"), language)}`;
 }
 
-export function renderHtml(reportData) {
+export function renderHtml(reportData, actionContext) {
   const language = reportData.language === "zh-CN" ? "zh-CN" : "en";
   const title = copy(reportData.language, "Harness Insights", "Harness 洞察");
+  const reportActions = buildHtmlReportActions(reportData, actionContext);
+  const interactionData = buildHtmlInteractionData(reportData);
   return `<!doctype html>
 <html lang="${language}" class="no-js">
 <head>
@@ -412,7 +639,8 @@ export function renderHtml(reportData) {
     .metric > span,.metric > small { display:block; color:var(--muted); }.metric > strong { display:block; margin:5px 0 2px; font-size:34px; line-height:1.1; }.metric > small { font-size:12px; }
     .section { margin-top:64px; scroll-margin-top:24px; }.section-heading { display:flex; justify-content:space-between; gap:30px; align-items:end; margin-bottom:20px; }.section-heading h2 { margin:5px 0 0; font-size:30px; letter-spacing:-.025em; }.section-heading > p { max-width:420px; margin:0; color:var(--muted); text-align:right; font-size:14px; }
     .dimension-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; }.dimension-card { min-height:230px; padding:19px; border:1px solid var(--line); border-radius:19px; background:linear-gradient(180deg,var(--panel-2),var(--panel)); }.dimension-top { display:flex; min-height:52px; justify-content:space-between; gap:8px; align-items:flex-start; font-weight:700; }.score-line { display:flex; align-items:baseline; gap:4px; margin-top:14px; }.score-line strong { font-size:34px; }.score-line span { color:var(--muted); font-size:12px; }.track { height:8px; margin:8px 0 16px; overflow:hidden; border-radius:999px; background:#30353a; }.track i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--blue-2),var(--blue)); }.dimension-card p { margin:0; color:var(--muted); font-size:13px; }
-    .activity-layout { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(230px,.7fr); gap:14px; }.activity-panel,.subpanel,.finding,.custom-grid article,.evidence-grid,.evidence-note { border:1px solid var(--line); border-radius:19px; background:var(--panel); }.activity-panel { padding:22px; overflow:hidden; }.heatmap { display:grid; grid-template-rows:repeat(7,13px); grid-auto-flow:column; grid-auto-columns:13px; gap:4px; min-height:115px; overflow-x:auto; padding-bottom:8px; }.heat-cell { border-radius:3px; background:#2b3035; }.heat-cell.l1{background:#174d70}.heat-cell.l2{background:#206f9e}.heat-cell.l3{background:#319bd1}.heat-cell.l4{background:#70c9ff}.heat-legend { display:flex; justify-content:space-between; color:var(--muted); font-size:11px; }.stacked-metrics { display:grid; gap:14px; }.stacked-metrics .metric { min-height:0; }
+    .activity-layout { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(230px,.7fr); gap:14px; }.activity-panel,.subpanel,.finding,.custom-grid article,.evidence-grid,.evidence-note { border:1px solid var(--line); border-radius:19px; background:var(--panel); }.activity-panel { display:flex; min-width:0; flex-direction:column; justify-content:center; padding:22px; overflow:hidden; }.heat-scroll { width:100%; min-width:0; overflow-x:auto; padding-bottom:8px; }.heatmap,.heat-axis { display:grid; grid-template-columns:repeat(var(--heat-days),minmax(13px,1fr)); column-gap:4px; min-width:var(--heat-min-width); }.heatmap { align-items:center; }.heat-cell { width:13px; height:13px; justify-self:center; border-radius:3px; background:#2b3035; }.heat-cell.l1{background:#174d70}.heat-cell.l2{background:#206f9e}.heat-cell.l3{background:#319bd1}.heat-cell.l4{background:#70c9ff}.heat-axis { margin-top:10px; color:var(--muted); font-size:10px; }.heat-tick { justify-self:center; white-space:nowrap; }.heat-tick.first { justify-self:start; }.heat-tick.last { justify-self:end; }.heatmap-empty { color:var(--muted); }.stacked-metrics { display:grid; gap:14px; }.stacked-metrics .metric { min-height:0; }
+    .long-session-review { margin-top:14px; padding:22px; border:1px solid var(--line); border-radius:19px; background:linear-gradient(180deg,#201f1d,var(--panel)); }.long-session-heading { display:flex; justify-content:space-between; gap:24px; align-items:end; }.long-session-heading h3 { margin:4px 0 0; font-size:20px; }.long-session-heading > p { max-width:520px; margin:0; color:var(--muted); text-align:right; font-size:12px; }.long-session-list { display:grid; gap:12px; margin-top:18px; }.long-session-card { min-width:0; padding:17px; overflow:hidden; border:1px solid var(--line); border-radius:16px; background:#181b1e; }.long-session-meta { display:flex; justify-content:space-between; gap:16px; align-items:center; color:var(--muted); font-size:12px; }.long-session-tags { min-width:0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }.long-session-tags strong { color:var(--text); font-size:15px; }.long-session-request,.long-session-locator { display:grid; grid-template-columns:72px minmax(0,1fr); gap:10px; margin:12px 0 0; color:#d2d8df; overflow-wrap:anywhere; font-size:13px; }.long-session-request > span,.long-session-locator > span { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }.long-session-locator code { min-width:0; overflow:hidden; color:#bfe3ff; text-overflow:ellipsis; white-space:nowrap; }.tool-trace-details { margin-top:14px; border-top:1px solid var(--line); }.tool-trace-details summary { display:flex; justify-content:space-between; gap:16px; align-items:center; padding:13px 2px 0; color:#dce5ed; cursor:pointer; font-size:13px; font-weight:700; }.tool-trace-details summary small { color:var(--muted); font-weight:400; text-align:right; }.tool-trace-details summary:focus-visible,.tool-trace-scroll:focus-visible { outline:2px solid var(--blue); outline-offset:3px; }.tool-trace-body { padding-top:12px; }.tool-trace-scroll { width:100%; max-width:100%; overflow-x:auto; padding-bottom:8px; overscroll-behavior-inline:contain; }.tool-trace-svg { display:block; max-width:none; color:#d6dde5; overflow:visible; }.tool-trace-row-alt { fill:currentColor; opacity:.035; }.tool-trace-lane-line { stroke:currentColor; stroke-dasharray:3 5; opacity:.22; }.tool-trace-grid-line { stroke:currentColor; opacity:.12; }.tool-trace-axis-line { stroke:currentColor; opacity:.25; }.tool-trace-lane-label,.tool-trace-tick,.tool-trace-axis-label { fill:currentColor; font-size:11px; opacity:.68; }.tool-trace-axis-label { font-weight:700; }.tool-trace-point { fill:#64748b; stroke:currentColor; stroke-width:1; }.tool-trace-point.failed { fill:var(--orange); }.tool-trace-point:focus { outline:none; stroke:var(--blue); stroke-width:3; }.tool-trace-body > p,.long-session-boundary { margin:4px 0 0; color:var(--muted); font-size:12px; }.tool-trace-empty { min-width:680px; margin:0; padding:24px; border:1px dashed var(--line); border-radius:12px; }.long-session-boundary { margin-top:14px; }
     .two-column { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }.subpanel { padding:22px; }.subpanel h3 { font-size:15px; }.usage-list { display:grid; gap:12px; }.usage-row { display:grid; grid-template-columns:minmax(100px,.75fr) 1fr 52px; gap:12px; align-items:center; font-size:12px; }.usage-row > span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.usage-row i { height:7px; overflow:hidden; border-radius:999px; background:#30353a; }.usage-row b { display:block; height:100%; background:linear-gradient(90deg,var(--blue-2),var(--blue)); }.usage-row strong { text-align:right; }
     .finding-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.finding-card { min-width:0; min-height:220px; display:flex; flex-direction:column; padding:18px; border:1px solid var(--line); border-radius:19px; background:linear-gradient(180deg,#1c2329,var(--panel)); }.finding-card-main { display:grid; gap:10px; }.finding-meta { display:flex; flex-wrap:wrap; gap:7px; }.finding-card h3 { min-height:2.8em; margin:0; display:-webkit-box; overflow:hidden; font-size:17px; line-height:1.4; -webkit-box-orient:vertical; -webkit-line-clamp:2; }.finding-preview { margin:0; color:#c7ced6; display:-webkit-box; overflow:hidden; font-size:13px; line-height:1.55; -webkit-box-orient:vertical; -webkit-line-clamp:2; }.finding-actions,.dialog-actions { display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; margin-top:auto; padding-top:16px; }.action-button { min-height:38px; padding:8px 13px; border:1px solid transparent; border-radius:10px; color:var(--text); background:#30363d; font:inherit; font-size:13px; font-weight:700; cursor:pointer; }.action-button:hover { filter:brightness(1.12); }.action-button:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }.action-button.secondary { color:#cceaff; border-color:#286d9b; background:#164e75; }.action-button.ghost { color:#d4dae0; border-color:var(--line); background:transparent; }.finding-dialog,.manual-copy-dialog { width:min(880px,calc(100vw - 32px)); max-height:calc(100vh - 32px); overflow:auto; padding:24px; border:1px solid var(--line); border-radius:20px; color:var(--text); background:var(--panel); box-shadow:0 30px 90px rgba(0,0,0,.55); }.finding-dialog::backdrop,.manual-copy-dialog::backdrop { background:rgba(4,8,12,.72); }.dialog-heading { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }.dialog-heading h3 { margin:6px 0 0; font-size:24px; }.dialog-section { margin-top:18px; }.dialog-section p { margin:7px 0 0; color:#d1d7de; }.dialog-section ol,.dialog-section ul { margin:8px 0 0; padding-left:22px; color:#d1d7de; }.manual-copy-dialog textarea { width:100%; min-height:260px; margin-top:14px; padding:14px; resize:vertical; border:1px solid var(--line); border-radius:12px; color:var(--text); background:#11161b; font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; }.no-js .finding-actions,.no-js .manual-copy-dialog { display:none!important; }.no-js .finding-dialog:not([open]) { display:block; position:static; width:auto; max-height:none; margin-top:16px; box-shadow:none; }
     .suggestion-block { margin-top:28px; padding-top:24px; border-top:1px solid var(--line); }.suggestion-heading { display:flex; justify-content:space-between; gap:20px; align-items:end; margin-bottom:14px; }.suggestion-heading h3 { margin:4px 0 0; font-size:20px; }.suggestion-heading p { margin:0; color:var(--muted); font-size:12px; }.suggestion-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }.suggestion { padding:18px; border:1px solid var(--line); border-radius:17px; background:linear-gradient(180deg,#1b252d,var(--panel)); }.suggestion-top { display:flex; justify-content:space-between; gap:8px; }.suggestion h3 { margin:13px 0 7px; font-size:16px; }.suggestion > p { color:#c7ced6; font-size:13px; }.suggestion dl { display:grid; gap:9px; margin:14px 0 0; }.suggestion dl div { display:grid; gap:2px; }.suggestion dt { color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }.suggestion dd { margin:0; color:#d7dde4; font-size:12px; }
@@ -422,8 +650,8 @@ export function renderHtml(reportData) {
     @media (max-width:1000px) { .finding-list{grid-template-columns:repeat(2,minmax(0,1fr))} }
     @media (max-width:900px) { .metrics,.dimension-grid{grid-template-columns:repeat(2,1fr)}.activity-layout,.two-column{grid-template-columns:1fr}.evidence-grid{grid-template-columns:repeat(2,1fr)} }
     @media (max-width:680px) { .finding-list{grid-template-columns:1fr}.finding-card{min-height:0} }
-    @media (max-width:620px) { main{width:min(100% - 24px,1180px);padding-top:18px}.hero{grid-template-columns:1fr;min-height:0;padding:25px;border-radius:22px}.hero h1{font-size:44px}.hero p{font-size:15px}.score-orbit{width:126px}.score-orbit strong{font-size:34px}.metrics{grid-template-columns:1fr;margin-bottom:42px}.metric{min-height:0}.section{margin-top:46px}.section-heading,.suggestion-heading{display:block}.section-heading > p,.suggestion-heading > p{text-align:left;margin-top:8px}.dimension-grid{grid-template-columns:1fr}.dimension-card{min-height:0}.evidence-grid{grid-template-columns:1fr}.usage-row{grid-template-columns:minmax(92px,.7fr) 1fr 44px}.finding-dialog{padding:18px}.dialog-heading{display:grid} }
-    @media print { :root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-2:#f6f8fa;--line:#d8dee4;--text:#111;--muted:#59636e}body{background:#fff}body::before{display:none}.hero{box-shadow:none}.section{break-inside:avoid}.finding-list{display:block}.finding-card{margin-bottom:16px;break-inside:avoid}.finding-actions,.dialog-actions,.manual-copy-dialog{display:none!important}.finding-dialog:not([open]){display:block!important;position:static;width:auto;max-height:none;margin-top:16px;box-shadow:none} }
+    @media (max-width:620px) { main{width:min(100% - 24px,1180px);padding-top:18px}.hero{grid-template-columns:1fr;min-height:0;padding:25px;border-radius:22px}.hero h1{font-size:44px}.hero p{font-size:15px}.score-orbit{width:126px}.score-orbit strong{font-size:34px}.metrics{grid-template-columns:1fr;margin-bottom:42px}.metric{min-height:0}.section{margin-top:46px}.section-heading,.suggestion-heading,.long-session-heading{display:block}.section-heading > p,.suggestion-heading > p,.long-session-heading > p{text-align:left;margin-top:8px}.dimension-grid{grid-template-columns:1fr}.dimension-card{min-height:0}.evidence-grid{grid-template-columns:1fr}.usage-row{grid-template-columns:minmax(92px,.7fr) 1fr 44px}.long-session-review{padding:15px}.long-session-meta,.tool-trace-details summary{align-items:flex-start;flex-direction:column}.long-session-request,.long-session-locator{grid-template-columns:1fr;gap:3px}.finding-dialog{padding:18px}.dialog-heading{display:grid} }
+    @media print { :root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-2:#f6f8fa;--line:#d8dee4;--text:#111;--muted:#59636e}body{background:#fff}body::before{display:none}.hero{box-shadow:none}.section{break-inside:avoid}.finding-list{display:block}.finding-card,.long-session-card{margin-bottom:16px;break-inside:avoid}.finding-actions,.dialog-actions,.manual-copy-dialog{display:none!important}.finding-dialog:not([open]),details.tool-trace-details:not([open]) > :not(summary){display:block!important;position:static;width:auto;max-height:none;margin-top:16px;box-shadow:none}.tool-trace-scroll{overflow:visible}.tool-trace-svg{width:100%;height:auto} }
   </style>
 </head>
 <body>
@@ -445,22 +673,25 @@ ${renderHtmlBody(reportData)}
     <button type="button" class="action-button ghost" data-close-finding-dialog="manual-copy-dialog">${renderVisibleText(copy(reportData.language, "Close", "关闭"), language)}</button>
   </div>
 </dialog>
-<script id="harness-report-data" type="application/json">${serializeForScript(reportData)}</script>
+<script id="harness-report-data" type="application/json">${serializeForScript(interactionData)}</script>
+<script id="harness-report-actions" type="application/json">${serializeForScript(reportActions)}</script>
 ${renderHtmlInteractionScript(reportData.language)}
 </body>
 </html>
 `;
 }
 
-export function evaluateHtmlReport(htmlText, reportData) {
+export function evaluateHtmlReport(htmlText, reportData, actionContext) {
   const text = String(htmlText ?? "");
   const errors = [];
   const warnings = [];
+  const longSessionSamples = list(reportData?.summary?.usageEfficiency?.longSessions?.samples);
   const required = [
     ["doctype", /<!doctype html>/iu],
     ["viewport", /<meta\s+name="viewport"/iu],
     ["report landmark", /<main\s+id="harness-report"/iu],
     ["embedded report data", /<script\s+id="harness-report-data"\s+type="application\/json">/iu],
+    ["embedded report actions", /<script\s+id="harness-report-actions"\s+type="application\/json">/iu],
     ["interaction controller", /<script\s+id="harness-report-interactions">/iu],
     ["copy status", /id="copy-status"[^>]+role="status"[^>]+aria-live="polite"/iu],
     ["manual copy fallback", /<dialog\s+id="manual-copy-dialog"/iu],
@@ -474,6 +705,14 @@ export function evaluateHtmlReport(htmlText, reportData) {
   if (reportData?.summary?.usageActivity !== undefined || reportData?.summary?.usageEfficiency !== undefined) {
     required.push(["activity", /data-section="activity"/u]);
   }
+  if (longSessionSamples.length > 0) {
+    required.push(
+      ["long-session review", /data-long-session-review/u],
+      ["long-session disclosure", /<details class="tool-trace-details">/u],
+      ["long-session request", /class="long-session-request"/u],
+      ["scrollable tool trace", /class="tool-trace-scroll" tabindex="0"/u],
+    );
+  }
   for (const [label, pattern] of required) {
     if (!pattern.test(text)) errors.push(`report.html is missing ${label}`);
   }
@@ -483,9 +722,75 @@ export function evaluateHtmlReport(htmlText, reportData) {
     ["remote asset URL", /(?:src|href)="https?:\/\//iu],
     ["network fetch", /\bfetch\s*\(/u],
     ["Canvas package import", /(?:from\s+["']qoder\/canvas["']|import\s*\(["']qoder\/canvas["']\))/u],
+    ["host deep link", /(?:codex|chatgpt):\/\//iu],
   ];
   for (const [label, pattern] of forbidden) {
     if (pattern.test(text)) errors.push(`report.html contains forbidden ${label}`);
+  }
+  if (longSessionSamples.length > 0) {
+    const expectedCallCount = longSessionSamples.reduce((total, sample) => total + list(sample?.toolTrace?.calls).length, 0);
+    const expectedChartCount = longSessionSamples.filter((sample) => list(sample?.toolTrace?.calls).length > 0).length;
+    const expectedFailedCount = longSessionSamples.reduce((total, sample) =>
+      total + list(sample?.toolTrace?.calls).filter((call) => call?.status === "failed").length, 0);
+    const expectedLocatorCount = longSessionSamples.filter((sample) =>
+      /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(String(sample?.sessionId ?? "").trim())).length;
+    const actualCardCount = (text.match(/data-long-session-alias=/gu) ?? []).length;
+    const actualDisclosureCount = (text.match(/<details class="tool-trace-details">/gu) ?? []).length;
+    const actualScrollCount = (text.match(/class="tool-trace-scroll" tabindex="0"/gu) ?? []).length;
+    const actualChartCount = (text.match(/data-tool-trace-chart=/gu) ?? []).length;
+    const actualCallCount = (text.match(/data-trace-call-id=/gu) ?? []).length;
+    const actualFailedCount = (text.match(/class="tool-trace-point failed"/gu) ?? []).length;
+    const actualLocatorCount = (text.match(/data-session-locator=/gu) ?? []).length;
+    const exactCounts = [
+      ["long-session card", actualCardCount, longSessionSamples.length],
+      ["long-session disclosure", actualDisclosureCount, longSessionSamples.length],
+      ["long-session scroll surface", actualScrollCount, longSessionSamples.length],
+      ["tool-trace chart", actualChartCount, expectedChartCount],
+      ["tool-trace point", actualCallCount, expectedCallCount],
+      ["failed tool-trace point", actualFailedCount, expectedFailedCount],
+      ["session locator", actualLocatorCount, expectedLocatorCount],
+    ];
+    for (const [label, actual, expected] of exactCounts) {
+      if (actual !== expected) errors.push(`report.html ${label} count ${actual} does not match reviewed long-session evidence ${expected}`);
+    }
+    for (const [index, sample] of longSessionSamples.entries()) {
+      const alias = escapeHtml(String(sample?.alias ?? `S${index + 1}`));
+      if (text.split(`data-long-session-alias="${alias}"`).length - 1 !== 1) {
+        errors.push(`report.html long-session alias ${alias} must bind exactly one review card`);
+      }
+      if (list(sample?.toolTrace?.calls).length > 0
+        && text.split(`data-tool-trace-chart="${alias}"`).length - 1 !== 1) {
+        errors.push(`report.html long-session alias ${alias} must bind exactly one accessible SVG chart`);
+      }
+    }
+  }
+  const actionPayloadText = text.match(
+    /<script\s+id="harness-report-actions"\s+type="application\/json">([\s\S]*?)<\/script>/iu,
+  )?.[1];
+  if (actionPayloadText !== undefined) {
+    try {
+      const actualActions = JSON.parse(actionPayloadText);
+      const expectedActions = buildHtmlReportActions(reportData, actionContext);
+      if (JSON.stringify(actualActions) !== JSON.stringify(expectedActions)) {
+        errors.push("report.html finding action payload does not match the exact relative binding metadata");
+      }
+    } catch (error) {
+      errors.push(`report.html finding action payload is invalid: ${error.message}`);
+    }
+  }
+  const interactionPayloadText = text.match(
+    /<script\s+id="harness-report-data"\s+type="application\/json">([\s\S]*?)<\/script>/iu,
+  )?.[1];
+  if (interactionPayloadText !== undefined) {
+    try {
+      const actualData = JSON.parse(interactionPayloadText);
+      const expectedData = buildHtmlInteractionData(reportData);
+      if (JSON.stringify(actualData) !== JSON.stringify(expectedData)) {
+        errors.push("report.html interaction data does not match the minimal reviewed prompt projection");
+      }
+    } catch (error) {
+      errors.push(`report.html interaction data is invalid: ${error.message}`);
+    }
   }
   const interactionController = text.match(
     /<script\s+id="harness-report-interactions">([\s\S]*?)<\/script>/iu,
@@ -510,8 +815,9 @@ export function evaluateHtmlReport(htmlText, reportData) {
     errors.push(`report.html finding dialog count ${findingDialogs} does not match reviewed findings ${list(reportData?.findings).length}`);
   }
   const copyActions = (text.match(/data-copy-finding=/gu) ?? []).length;
-  if (copyActions !== list(reportData?.findings).length * 2) {
-    errors.push(`report.html copy action count ${copyActions} does not match expected ${list(reportData?.findings).length * 2}`);
+  const actionableFindings = list(reportData?.findings).filter(hasAiFixPrompt);
+  if (copyActions !== actionableFindings.length * 2) {
+    errors.push(`report.html copy action count ${copyActions} does not match expected ${actionableFindings.length * 2}`);
   }
   const detailActions = (text.match(/data-view-finding-dialog=/gu) ?? []).length;
   if (detailActions !== list(reportData?.findings).length) {
@@ -523,7 +829,7 @@ export function evaluateHtmlReport(htmlText, reportData) {
     const bindings = [
       ["card", `data-finding-id="${findingId}"`, 1],
       ["dialog", `data-finding-dialog-id="${findingId}"`, 1],
-      ["copy action", `data-copy-finding="${findingId}"`, 2],
+      ["copy action", `data-copy-finding="${findingId}"`, hasAiFixPrompt(finding) ? 2 : 0],
       ["detail action", `data-view-finding-dialog="${dialogId}"`, 1],
       ["close action", `data-close-finding-dialog="${dialogId}"`, 1],
     ];

@@ -4,6 +4,13 @@ import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  formatHostList,
+  HOST_CAPABILITIES,
+  hostHomeOptionKeys,
+  hostHomeValue,
+  hostIdsFor,
+} from "../host-support/index.mjs";
 import { parseArgs } from "../session-analysis/index.mjs";
 import { formatHarnessEvidence } from "./evidence-brief.mjs";
 import { validateHarnessReportSource } from "./report-source/index.mjs";
@@ -12,6 +19,8 @@ import { createTaskLoopSourceFromSessions } from "./task-loop-source.mjs";
 
 export const HARNESS_ANALYSIS_EVIDENCE_SCHEMA_VERSION = 1;
 
+const REPORT_PLATFORMS = hostIdsFor(HOST_CAPABILITIES.HARNESS_REPORT);
+
 export const ANALYZE_HELP = `Usage: better-harness harness analyze --workspace <target> [options]
 
 Return neutral, budgeted Harness evidence. This command writes no files unless
@@ -19,12 +28,12 @@ an explicit Qoder Canvas output is requested.
 
 Options:
   --workspace <path>       Target workspace (required)
-  --platform <name>        qoder, codex, claude, cursor, qwen, copilot, pi, or workbuddy (default: qoder)
+  --platform <name>        ${formatHostList(REPORT_PLATFORMS)} (default: qoder)
   --language <locale>      en or zh-CN (default: en)
   --since <ISO timestamp>  Include sessions at or after the frozen window start
   --until <ISO timestamp>  Include sessions at or before the frozen window end
   --format <text|json>     Plain-text evidence or evidence plus exact summary facts (default: text)
-  --canvas-out <file>      With Qoder JSON output, initialize canvas.json from exact summary facts
+  --canvas-out <file>      With Qoder or Cursor JSON output, initialize canvas.json from exact summary facts
   --replace-canvas         Replace that exact canvas.json when overwrite was explicitly authorized
   --include-global-capabilities
                            Include authorized user/global capability metadata
@@ -33,8 +42,6 @@ Options:
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
-
-const REPORT_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"];
 
 function reportPlatform(value = "qoder") {
   const platform = String(value || "qoder").toLowerCase();
@@ -58,7 +65,7 @@ function flagEnabled(value) {
 function assertCliOptions(options) {
   const allowed = new Set([
     "workspace", "platform", "language", "since", "until", "format", "canvas-out", "replace-canvas", "include-global-capabilities",
-    "qoder-home", "codex-home", "claude-home", "cursor-home", "qwen-home", "copilot-home", "pi-home", "workbuddy-home",
+    ...hostHomeOptionKeys(REPORT_PLATFORMS),
   ]);
   const positional = Array.isArray(options._) ? options._ : [];
   const unknown = Object.keys(options).filter((key) => key !== "_" && !allowed.has(key));
@@ -137,9 +144,9 @@ export async function analyzeHarnessEvidence(options = {}) {
       code: "CANVAS_OUTPUT_REQUIRES_JSON",
     });
   }
-  if (requestedCanvasOut && platform !== "qoder") {
-    throw Object.assign(new Error("--canvas-out is supported only for the Better Harness bundle"), {
-      code: "CANVAS_OUTPUT_REQUIRES_QODER",
+  if (requestedCanvasOut && !new Set(["qoder", "cursor"]).has(platform)) {
+    throw Object.assign(new Error("--canvas-out is supported for Qoder and Cursor Canvas bundles"), {
+      code: "CANVAS_OUTPUT_REQUIRES_CANVAS_HOST",
     });
   }
   if (requestedCanvasOut && path.basename(String(requestedCanvasOut)) !== "canvas.json") {
@@ -163,15 +170,8 @@ export async function analyzeHarnessEvidence(options = {}) {
         selection: options.selection ?? "stratified",
         includeUsage: true,
         includeGlobalCapabilities: flagEnabled(options["include-global-capabilities"]),
-        qoderHome: options["qoder-home"],
-        codexHome: options["codex-home"],
-        claudeHome: options["claude-home"],
-        cursorHome: options["cursor-home"],
-        qwenHome: options["qwen-home"],
-        copilotHome: options["copilot-home"],
-        piHome: options["pi-home"],
+        home: hostHomeValue(options, platform),
         sessionPopulation: options.sessionPopulation,
-        workbuddyHome: options["workbuddy-home"],
         topology: options.topology,
         analysisScope: options.analysisScope,
       });

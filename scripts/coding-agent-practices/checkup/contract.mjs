@@ -2,6 +2,14 @@ import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 
+import {
+  getHostDescriptor,
+  HOST_CAPABILITIES,
+  hostHomeValue,
+  hostIdSetFor,
+  hostIdsFor,
+  normalizedHostHomeOptions,
+} from "../../host-support/index.mjs";
 import { expandHome } from "../../session-analysis/index.mjs";
 
 export const CHECKUP_KIND = "harness-customization-checkup";
@@ -12,6 +20,8 @@ export const DEFAULT_SESSION_LIMIT = 40;
 export const DEFAULT_MINIMUM_SESSIONS = 5;
 export const DEFAULT_NEW_INSTALL_GRACE_DAYS = 7;
 export const DEFAULT_SELECTION = "stratified";
+const CHECKUP_HOSTS = hostIdsFor(HOST_CAPABILITIES.CHECKUP);
+const CHECKUP_HOST_SET = hostIdSetFor(HOST_CAPABILITIES.CHECKUP);
 
 const FINDING_STATUSES = new Set([
   "observed",
@@ -78,8 +88,12 @@ export function normalizeCheckupOptions(options = {}) {
   }
 
   const workspace = path.resolve(options.workspace ?? process.cwd());
+  const provider = String(options.provider ?? "qoder").toLowerCase();
+  if (!CHECKUP_HOST_SET.has(provider)) {
+    throw new Error(`Unsupported checkup provider: ${provider}. Supported providers: ${CHECKUP_HOSTS.join(", ")}.`);
+  }
   return {
-    provider: String(options.provider ?? "qoder").toLowerCase(),
+    provider,
     locale: String(options.locale ?? "en").toLowerCase().startsWith("zh") ? "zh-CN" : "en",
     workspace,
     workspaceLabel: String(options.workspaceLabel ?? options["workspace-label"] ?? path.basename(workspace)),
@@ -98,15 +112,12 @@ export function normalizeCheckupOptions(options = {}) {
     includeGlobalCapabilities: booleanOption(
       options.includeGlobalCapabilities ?? options["include-global-capabilities"],
     ),
-    qoderHome: options.qoderHome ?? options["qoder-home"],
+    ...normalizedHostHomeOptions(options, provider),
     qoderSharedClientCacheRoot:
       options.qoderSharedClientCacheRoot ??
       options["qoder-shared-client-cache-root"] ??
       options["shared-client-cache-root"],
-    codexHome: options.codexHome ?? options["codex-home"],
-    claudeHome: options.claudeHome ?? options["claude-home"],
     claudeStatePath: options.claudeStatePath ?? options["claude-state"],
-    cursorHome: options.cursorHome ?? options["cursor-home"],
     frictionSignals: String(options.frictionSignals ?? options.friction ?? "")
       .split(",")
       .map((value) => value.trim())
@@ -148,20 +159,10 @@ export function safeLabel(value, fallback = "unknown") {
   return text.slice(0, 160);
 }
 
-/** Inventory/options field names for each checkup host's configuration root. */
-export const PROVIDER_HOME_FIELDS = Object.freeze({
-  qoder: "qoderHome",
-  codex: "codexHome",
-  cursor: "cursorHome",
-  claude: "claudeHome",
-  qwen: "qwenHome",
-  copilot: "copilotHome",
-  pi: "piHome",
-  workbuddy: "workbuddyHome",
-});
-
 export function providerHomeField(provider) {
-  return PROVIDER_HOME_FIELDS[String(provider ?? "").toLowerCase()] ?? null;
+  const normalized = String(provider ?? "").toLowerCase();
+  if (!CHECKUP_HOST_SET.has(normalized)) return null;
+  return getHostDescriptor(normalized)?.homeProperty ?? null;
 }
 
 /**
@@ -175,8 +176,7 @@ export function resolveProviderHome(provider, source = {}) {
   if (!field) {
     throw new Error(`unsupported provider for provider-home binding: ${provider ?? "missing"}`);
   }
-  const kebab = field.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
-  const explicit = source[field] ?? source[kebab];
+  const explicit = hostHomeValue(source, normalized);
   if (explicit) {
     return path.resolve(expandHome(String(explicit)));
   }
@@ -203,8 +203,9 @@ export function resolveProviderHome(provider, source = {}) {
  */
 export function inventoryProviderHome(provider, inventory = {}) {
   const field = providerHomeField(provider);
-  if (!field || !inventory?.[field]) return null;
-  return path.resolve(String(inventory[field]));
+  const home = field ? hostHomeValue(inventory, provider) : null;
+  if (!home) return null;
+  return path.resolve(String(home));
 }
 
 export function countBy(items, key) {

@@ -29,7 +29,7 @@ import {
   titleCase,
   workspaceSourceLabel,
 } from "../core/items.mjs";
-import { readInstalledPluginState } from "../storage.mjs";
+import { readInstalledPluginState, resolveCursorStateDbPath } from "../storage.mjs";
 
 async function collectRuntimePluginMcpItems(cursorHome) {
   const projectsRoot = path.join(cursorHome, "projects");
@@ -330,11 +330,14 @@ function emptyPrimitives() {
 
 export async function collectCursorCustomizeInventory(options = {}) {
   const cursorHome = path.resolve(expandHome(options.cursorHome ?? path.join(os.homedir(), ".cursor")));
+  const stateDbPath = resolveCursorStateDbPath(options);
   const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   const includeUserHome = options.includeUserHome !== false;
   const [allPlugins, installState, user, project] = await Promise.all([
     includeUserHome ? collectPlugins(cursorHome) : [],
-    includeUserHome ? readInstalledPluginState({ ...options, workspace }) : { records: [], source: "not-authorized" },
+    includeUserHome
+      ? readInstalledPluginState({ ...options, stateDbPath, workspace })
+      : { records: [], stateDbPath, source: "not-authorized" },
     includeUserHome ? collectUserPrimitives(cursorHome) : emptyPrimitives(),
     collectWorkspacePrimitives(workspace),
   ]);
@@ -344,6 +347,7 @@ export async function collectCursorCustomizeInventory(options = {}) {
     generatedAt: new Date().toISOString(),
     provider: "cursor",
     cursorHome,
+    stateDbPath,
     workspace,
     tabs: MANAGE_TABS,
     plugins,

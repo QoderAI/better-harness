@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@qoder-ai/better-harness"><img src="https://img.shields.io/npm/v/@qoder-ai/better-harness.svg" alt="npm 版本"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT 许可证"></a>
 </p>
 
@@ -28,10 +29,15 @@
 
 ## 快速开始
 
-使用以下 Coding Agent 分析并改进你的工作流：[Claude Code](#claude-code)、[Codex Desktop](#codex-desktop)、[Codex CLI](#codex-cli)、[Qoder Desktop/CLI](#qoder)、[Cursor](#cursor)、[Qwen Code](#qwen-code)、[GitHub Copilot CLI](#github-copilot)。
+使用以下 Coding Agent 分析并改进你的工作流：[Claude Code](#claude-code)、[Codex Desktop](#codex-desktop)、[Codex CLI](#codex-cli)、[Qoder Desktop/CLI](#qoder)、[Cursor](#cursor)、[GitHub Copilot CLI](#github-copilot)。
 
 选择你正在使用的宿主，查看对应的安装、验证、调用和报告输出说明。
 不同宿主的入口并不完全相同，请直接使用对应章节给出的命令。
+
+本 README 仅内联展示最常用宿主的安装步骤。其余受支持的宿主（Qwen Code、Pi、
+Kimi Code、WorkBuddy 与 Grok）的步骤与边界保留在
+[安装指南](docs/docs/installation.mdx)和[公开宿主适配矩阵](docs/docs/hosts/adapter-matrix.md)中；
+参见[更多适配器](#更多适配器)。README 中的排布只是展示选择，并不代表支持等级。
 
 Pi 和 WorkBuddy 也提供原生本地插件入口，详见下方安装说明。在两个宿主均完成
 完整的交互式三路报告 smoke 之前，它们仍不进入“已验证快速开始”列表。
@@ -41,7 +47,7 @@ Pi 和 WorkBuddy 也提供原生本地插件入口，详见下方安装说明。
 [公开宿主适配矩阵](docs/docs/hosts/adapter-matrix.md)。
 
 Better Harness 会将行为断言限定在相关的任务过程片段（Task Episode）及其周边项目机制内。
-Qoder 生成 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub Copilot 生成自包含的 HTML 报告及配套 Markdown。
+Qoder 与 Cursor 生成宿主原生 Canvas 报告；Claude Code、Codex、Qwen Code、GitHub Copilot 和 Kimi Code 生成自包含的 HTML 报告及配套 Markdown。
 缺失或不完整的证据会被明确标注。有关当前覆盖范围和输出差异，请参阅
 [宿主适配器矩阵](docs/adapters/README.md)。
 
@@ -152,6 +158,29 @@ Better Harness 开放了三个相互关联的层次，而不只是一个斜杠�
 需要为每个宿主单独安装 Better Harness。安装或更新插件后，请启动新的会话或任务，
 让宿主重新加载插件清单。
 
+### 检查并规划插件生命周期变更
+
+独立 CLI 可以检查所有宿主的本地 Better Harness 安装证据，不访问远程注册表，
+也不修改宿主配置：
+
+```bash
+better-harness plugin status --host all
+better-harness doctor --platform all
+```
+
+在使用宿主原生 UI 或 CLI 前，可以先生成指定宿主的安装、更新或移除计划。
+计划会把原生步骤保留为带类型的 argv 数据，供用户审阅后在外部有意执行；
+人类可读视图不会把它们拼成 shell 命令字符串，Better Harness 也不会执行这些步骤：
+
+```bash
+better-harness plugin plan install --host qwen --surface cli --scope user
+better-harness plugin verify --host qwen --surface cli
+```
+
+宿主差异会保持显式：Qoder Desktop 为内置分发；Cursor 在原生命令合同完成核对前
+只保留会话级状态；Pi 缺少当前原生证据的生命周期操作会标记为手工或不可用；
+WorkBuddy 没有可管理的 Better Harness 插件生命周期入口。
+
 ### Claude Code
 
 将本仓库注册为 Claude Code Marketplace：
@@ -258,34 +287,37 @@ Better Harness 已内置于 [Qoder](https://qoder.com/) 桌面应用，因此无
 /better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
 ```
 
-只有在未安装 Qoder Desktop、单独使用 Qoder CLI 时，才需要手动添加本仓库作为
-Marketplace 并安装 Better Harness：
+只有在未安装 Qoder Desktop、单独使用 Qoder CLI 时，才需要在遵循 Qoder 原生
+Marketplace 流程前检查当前手工安装状态：
 
 ```bash
-qodercli plugin marketplace add \
-  'https://github.com/QoderAI/better-harness.git'
-qodercli plugin install better-harness@better-harness
+better-harness plugin plan install --host qoder --surface cli --scope user
 ```
 
-验证手动安装：
+由于当前原生 help 与本仓库历史文档不一致，计划器不会输出旧版安装语法。
+手工安装后，只使用已经观察到的 inventory 命令验证：
 
 ```bash
 qodercli plugin list
+better-harness plugin verify --host qoder --surface cli
 ```
 
 然后启动新的 Qoder CLI 会话，再使用 `/better-harness`。
 
 ### Cursor
 
-Cursor 插件尚未发布到 Marketplace。可以在单次 Cursor Agent 会话中从源码加载本地插件：
+Cursor 插件尚未发布到 Marketplace。仓库包含源码本地 manifest，但当前本机
+Cursor help 没有验证历史 `--plugin-dir` 合同，因此 Better Harness 会把安装计划
+标记为不可用，而不会输出该命令：
 
 ```bash
 git clone https://github.com/QoderAI/better-harness.git
-cursor-agent --plugin-dir /path/to/better-harness
+better-harness plugin plan install --host cursor --surface agent --scope session
 ```
 
 Cursor 会话证据来自与工作区匹配的会话记录、元数据和审计日志。
-覆盖范围不完整或不可用时会被明确标注。
+通过其他已验证原生路径加载的会话可以运行 `better-harness plugin verify --host
+cursor --surface agent`；覆盖范围不完整或不可用时会被明确标注。
 
 ### GitHub Copilot
 
@@ -308,13 +340,19 @@ Copilot 会话证据来自 `~/.copilot/session-state/` 下与工作区匹配的 
 Copilot 不记录逐次响应的 token 用量，VS Code Copilot Chat 也没有受支持的持久化会话记录；
 两者均作为明确的证据边界保留。
 
-### Qwen Code
+### 更多适配器
 
-将 Better Harness 安装为 Qwen Code 扩展：
+除上述宿主外，Better Harness 还支持 Qwen Code、Pi、Kimi Code、WorkBuddy 与
+Grok。它们确切的安装、调用与证据边界都放在文档里，以保持本 README 精简：
 
-```bash
-qwen extensions install QoderAI/better-harness
-```
+- **Qwen Code** —— [安装指南](docs/docs/installation.mdx#qwen-code)
+  （`qwen extensions install QoderAI/better-harness`）。
+- **Pi** —— [宿主适配器矩阵](docs/docs/hosts/adapter-matrix.md#pi)
+  （`pi install <source>` 或 `pi -e <source>`）。
+- **Kimi Code** —— [宿主适配器矩阵](docs/adapters/README.md)
+  （`.kimi-plugin/plugin.json` 插件安装）。
+- **WorkBuddy** —— [宿主适配器矩阵](docs/docs/hosts/adapter-matrix.md#workbuddy)。
+- **Grok** —— [宿主适配器矩阵](docs/docs/hosts/adapter-matrix.md#grok)。
 
 在要分析的仓库中启动新的 Qwen Code 会话，然后运行报告提示词：
 
@@ -351,6 +389,9 @@ Pi 默认在仓库的 `.pi/better-harness` 报告根目录下生成自包含的 
 及配套的 `report.md` 和 `findings.json`。Pi 会话证据读自
 `~/.pi/agent/sessions/` 下与工作区匹配的 JSONL 会话记录；缺失的证据会被明确标注而不会被推断。
 
+它们都产出自包含的 `report.html` 及配套的 `report.md` 与 `findings.json`；
+缺失或不完整的会话证据会被明确标注。
+
 ### WorkBuddy
 
 从源码检出目录以 WorkBuddy Team 专家插件启动：
@@ -378,7 +419,7 @@ npm run workbuddy:verify
 
 ## 从源码开发和打包
 
-开发环境需要 Node.js `>=22.20.0 <26.0.0` 和 npm
+开发环境需要 Node.js `>=22.20.0 <25.0.0` 和 npm
 `>=10.9.3 <12.0.0`，支持 Windows、macOS 和 Linux。
 
 ```bash

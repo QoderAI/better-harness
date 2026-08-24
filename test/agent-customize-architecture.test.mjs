@@ -24,6 +24,7 @@ test("agent-customize inventory keeps host collectors behind provider modules", 
     "scripts/agent-customize/providers/claude.mjs",
     "scripts/agent-customize/providers/qwen.mjs",
     "scripts/agent-customize/providers/copilot.mjs",
+    "scripts/agent-customize/providers/kimi.mjs",
     "scripts/agent-customize/providers/index.mjs",
   ]) {
     await assert.doesNotReject(() => readRepoFile(relativePath), `${relativePath} should exist`);
@@ -40,6 +41,7 @@ test("agent-customize inventory keeps host collectors behind provider modules", 
   assert.match(providerIndex, /claude/u);
   assert.match(providerIndex, /qwen/u);
   assert.match(providerIndex, /copilot/u);
+  assert.match(providerIndex, /kimi/u);
 });
 
 test("host architecture docs keep matrix, providers, and thin shells separate", async () => {
@@ -54,9 +56,9 @@ test("host architecture docs keep matrix, providers, and thin shells separate", 
   assert.match(adapterReadme, /# Host Adapter Matrix/u);
   assert.match(adapterReadme, /`docs\/adapters\/qoder\.md`/u);
   assert.match(adapterReadme, /Codex \| Analysis-capable source-local host \| `\.codex-plugin\/`/u);
-  assert.match(adapterReadme, /npm package includes native metadata for Qoder,\s+Claude Code, Codex, Cursor, Qwen, Copilot, Pi, and WorkBuddy/u);
+  assert.match(adapterReadme, /npm package ships all eight current\/native\s+metadata roots[\s\S]*WorkBuddy/u);
   assert.match(adapterReadme, /generated\s+Qoder runtime bundle\s+includes only the Qoder shell/u);
-  assert.match(adapterReadme, /Cursor \| Analysis-capable source-local host[^\n]+platforms\/cursor\.mjs/u);
+  assert.match(adapterReadme, /Cursor \| Canvas-capable source-local host[^\n]+platforms\/cursor\.mjs/u);
   assert.doesNotMatch(adapterReadme, /Cursor has no session-evidence adapter/u);
   assert.match(adapterReadme, /Split a host into `docs\/adapters\/<host>\.md` only when/u);
   assert.match(adapterReadme, /Canonical product\s+judgment stays in `skills\/`/u);
@@ -64,6 +66,7 @@ test("host architecture docs keep matrix, providers, and thin shells separate", 
   assert.match(directoryAdr, /\.cursor-plugin\/\s+# \[active\] thin Cursor shell/u);
   assert.match(directoryAdr, /\.codex-plugin\/\s+# \[active\] thin Codex shell/u);
   assert.match(directoryAdr, /qoder-canvas\.md\s+# \[active\] Qoder Canvas output contract/u);
+  assert.match(directoryAdr, /cursor-canvas\.md\s+# \[active\] Cursor Canvas output contract/u);
   assert.match(directoryAdr, /npm-package\/\s+# \[active\] current bundle/u);
   assert.match(directoryAdr, /Host matrix entry\s+\| `docs\/adapters\/README\.md`/u);
   assert.match(directoryAdr, /build-host-plugin\.mjs\s+# assemble an existing thin host shell/u);
@@ -71,7 +74,7 @@ test("host architecture docs keep matrix, providers, and thin shells separate", 
   assert.match(directoryAdr, /scripts\/packaging\/` owns source-local[\s\S]*excluded from public package\/runtime/u);
 
   assert.match(architecture, /The Codex shell\s+owns local install\/discovery metadata only/u);
-  assert.match(architecture, /public npm\s+package ships all eight native plugin metadata roots[\s\S]*Qoder runtime bundle\s+includes\s+only `\.qoder-plugin\/`/u);
+  assert.match(architecture, /public npm\s+package ships all eight current native metadata roots[\s\S]*Qoder runtime\s+bundle\s+includes\s+only `\.qoder-plugin\/`/u);
   assert.match(architecture, /do not create a generic detector or signal umbrella/u);
   assert.match(community, /`docs\/adapters\/README\.md` matrix row/u);
   assert.match(community, /Public npm package includes all eight current native metadata roots[\s\S]*Qoder runtime bundle includes only `.qoder-plugin\//u);

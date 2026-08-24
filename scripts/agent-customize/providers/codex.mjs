@@ -37,7 +37,7 @@ const ALWAYS_INSTALLED_MARKETPLACES = new Set([
 ]);
 
 function defaultCodexHome() {
-  return path.join(os.homedir(), ".codex");
+  return process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
 }
 
 function defaultCodexAppPath() {
@@ -299,7 +299,10 @@ function emptyPrimitives() {
 
 export async function collectCodexCustomizeInventory(options = {}) {
   const codexHome = path.resolve(expandHome(options.codexHome ?? options["codex-home"] ?? defaultCodexHome()));
-  const codexAppPath = options.codexAppPath ?? options["codex-app-path"] ?? defaultCodexAppPath();
+  const configuredCodexAppPath = options.codexAppPath ?? options["codex-app-path"] ?? defaultCodexAppPath();
+  const codexAppPath = typeof configuredCodexAppPath === "string" && configuredCodexAppPath.length > 0
+    ? path.resolve(expandHome(configuredCodexAppPath))
+    : configuredCodexAppPath;
   const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   const includeUserHome = options.includeUserHome !== false;
   const installState = includeUserHome

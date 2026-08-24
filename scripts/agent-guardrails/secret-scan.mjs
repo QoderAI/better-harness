@@ -727,8 +727,9 @@ function sameFileIdentity(beforeOpen, opened) {
   const openedIno = Number(opened?.ino ?? 0);
   const beforeDev = Number(beforeOpen?.dev ?? 0);
   const openedDev = Number(opened?.dev ?? 0);
-  if (beforeIno !== 0 || openedIno !== 0 || beforeDev !== 0 || openedDev !== 0) {
-    return beforeIno === openedIno && beforeDev === openedDev;
+  if (beforeDev !== 0 && openedDev !== 0 && beforeDev !== openedDev) return false;
+  if (beforeIno !== 0 || openedIno !== 0) {
+    return beforeIno === openedIno;
   }
   return beforeOpen?.size === opened?.size
     && beforeOpen?.mtimeMs === opened?.mtimeMs

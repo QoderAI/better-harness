@@ -115,7 +115,11 @@ or mark the exact missing evidence:
 
 - trigger adapter and recursive-trigger guard;
 - tools, filesystem, network, credentials, sandbox, and access boundary;
-- durable artifact and independent verifier;
+- durable artifact and independent verifier; when the verifier must cover a
+  long-chain system or a hard-to-judge surface (many entrypoints,
+  asynchronous stages, UI or mini-program rendering, pipeline or model
+  output), design it with
+  [Agent Verify Loop](../project-harness/agent-verify-loop.md);
 - state and replay addendum from [Loop State Ledger](loop-state-ledger.md),
   including its versioning, checkpoint, pending-side-effect completion,
   resume/replay, approval-expiry, and migration contract;

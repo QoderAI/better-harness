@@ -9,6 +9,7 @@ import {
   parseArgs,
   writeJsonResult,
 } from "./common.mjs";
+import { printCoreChangeWatchHelp } from "./help.mjs";
 
 const ALLOWED_VERDICTS = new Set(["consistent", "mostly_consistent", "mixed", "inconsistent", "blocked"]);
 const ALLOWED_CONFIDENCE = new Set(["high", "medium", "low"]);
@@ -130,6 +131,7 @@ export function parseAndNormalizeQoderOutput(text) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (printCoreChangeWatchHelp("qoder-consistency-schema", argv)) return;
   const args = parseArgs(argv);
   const inputPath = option(args, "input");
   const text = inputPath && inputPath !== true

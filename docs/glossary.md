@@ -60,7 +60,7 @@ for extension surfaces, read [community.md](community.md).
 | `core-change-watch` | Project, history, core-path, and current-diff evidence collection. | [scripts/core-change-watch](../scripts/core-change-watch) |
 | Blast radius | The symbol-graph reach of a change, computed with tree-sitter (JS/TS, Go, Python) as a git hook. | [hooks/git-scripts/blast-radius](../hooks/git-scripts/blast-radius) |
 | `dependency-governance` | Update-automation, audit, and stale-dependency signals. | [scripts/dependency-governance](../scripts/dependency-governance) |
-| `session-analysis` | Normalizes Qoder, Codex, Claude, Cursor, Qwen, Copilot, Pi, or WorkBuddy agent session behavior into evidence. | [scripts/session-analysis](../scripts/session-analysis) |
+| `session-analysis` | Normalizes Qoder, Codex, Claude, Cursor, Qwen, Copilot, Pi, Kimi Code, or WorkBuddy agent session behavior into evidence. | [scripts/session-analysis](../scripts/session-analysis) |
 | Guardrails | Change-time enforcement: secret scanning and lifecycle hook checks. | [hooks](../hooks), [scripts/agent-guardrails](../scripts/agent-guardrails) |
 
 ## The Action Loop (Report → Change)
@@ -79,7 +79,7 @@ for extension surfaces, read [community.md](community.md).
 |---|---|---|
 | Skill | A repeatable agent workflow defined by `SKILL.md` frontmatter plus a concise workflow. | [community.md](community.md); report use: [report contract](../skills/better-harness/SKILL.md#report-output) |
 | Host adapter | Per-host discovery and evidence-shape glue (e.g. Qoder, Codex); keeps the engine host-neutral. | [adapters/README.md](adapters/README.md) |
-| Host shell | Thin host metadata (`.claude-plugin/`, `.qoder-plugin/`, `.cursor-plugin/`, `.codex-plugin/`, `.github/plugin/`, `qwen-extension.json`, the `pi` manifest in `package.json`, `.codebuddy-plugin/` + `settings.json` + `agents/`, or a future lifecycle shell) that exposes canonical behavior without owning product logic; the public npm package ships all eight current native metadata roots, while the Qoder runtime bundle includes only `.qoder-plugin/`. | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Host shell | Thin host metadata (`.claude-plugin/`, `.qoder-plugin/`, `.cursor-plugin/`, `.codex-plugin/`, `.github/plugin/`, `qwen-extension.json`, `.kimi-plugin/`, the `pi` manifest in `package.json`, `.codebuddy-plugin/` + `settings.json` + `agents/`, or a future lifecycle shell) that exposes canonical behavior without owning product logic; the public npm package ships all eight current native metadata roots, while the Qoder runtime bundle includes only `.qoder-plugin/`. | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Canonical owner | The single directory that owns a behavior's product judgment; host shells and mirrors point back to it. | [ARCHITECTURE.md](ARCHITECTURE.md) |
 
 ## "I Want To… → Use"

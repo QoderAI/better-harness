@@ -17,8 +17,8 @@ sidebar_position: 3
   再让 Copilot 使用该 Skill 完成分析。本站不会声称未经验证的斜杠命令别名。
 
 Better Harness 会把行为论断限定在相关的 Task Episode 和周边的项目机制内。
-Qoder 产出 Canvas 报告；Claude Code、Codex、Cursor、Qwen Code 和 GitHub Copilot
-产出自包含 HTML 并配套 Markdown。缺失或不完整的证据保持显式标注。
+Qoder 与 Cursor 产出宿主原生 Canvas 报告；Claude Code、Codex、Qwen Code 和
+GitHub Copilot 产出自包含 HTML 并配套 Markdown。缺失或不完整的证据保持显式标注。
 
 想了解 HTML 输出的样子，可以查看
 [示例报告](pathname:///demo/better-harness-report/)。

@@ -1,6 +1,6 @@
 {
-  "name": "@qoderai/better-harness",
-  "version": "0.4.0",
+  "name": "@qoder-ai/better-harness",
+  "version": "0.5.0",
   "description": "Build an AI-ready engineering system for safe coding-agent delivery and continuous software improvement.",
   "license": "MIT",
   "author": {
@@ -38,6 +38,7 @@
     ".github/plugin/",
     ".qoder-plugin/",
     ".codebuddy-plugin/",
+    ".kimi-plugin/",
     "qwen-extension.json",
     "AGENTS.md",
     "CHANGELOG.md",
@@ -92,7 +93,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "engines": {
-    "node": ">=22.20.0 <26.0.0",
+    "node": ">=22.20.0 <25.0.0",
     "npm": ">=10.9.3 <12.0.0"
   },
   "dependencies": {

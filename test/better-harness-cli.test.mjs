@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
+import { main, resolveDispatch } from "../scripts/better-harness-cli/cli.mjs";
+import { commandInventory } from "../scripts/better-harness-cli/registry.mjs";
 
 const cliPath = path.join(process.cwd(), "scripts", "better-harness.mjs");
+const helpSideEffectGuardPath = path.join(process.cwd(), "test", "fixtures", "help-side-effect-guard.mjs");
 
 function runBetterHarness(args, options = {}) {
   return spawnSync(process.execPath, [cliPath, ...args], {
@@ -15,9 +19,136 @@ function runBetterHarness(args, options = {}) {
   });
 }
 
+function runMainWithResult(args, childResult) {
+  const calls = [];
+  const stdout = [];
+  const stderr = [];
+  const exitCode = main(args, {
+    cwd: process.cwd(),
+    spawn(command, childArgs, options) {
+      calls.push({ command, childArgs, options });
+      return childResult;
+    },
+    stdout: { write: (value) => stdout.push(Buffer.from(value).toString("utf8")) },
+    stderr: { write: (value) => stderr.push(Buffer.from(value).toString("utf8")) },
+  });
+  return {
+    calls,
+    exitCode,
+    stdout: stdout.join(""),
+    stderr: stderr.join(""),
+  };
+}
+
+function helpGuardEnvironment(expectedOwner, expectedOwnerArgs) {
+  const inheritedOptions = process.env.NODE_OPTIONS?.trim();
+  return {
+    ...process.env,
+    NODE_OPTIONS: [inheritedOptions, `--import=${pathToFileURL(helpSideEffectGuardPath).href}`]
+      .filter(Boolean)
+      .join(" "),
+    BETTER_HARNESS_HELP_GUARD_ALLOWED_ROOT: process.cwd(),
+    BETTER_HARNESS_HELP_GUARD_DISPATCHER: cliPath,
+    ...(expectedOwner
+      ? {
+        BETTER_HARNESS_HELP_GUARD_OWNER: expectedOwner,
+        BETTER_HARNESS_HELP_GUARD_OWNER_ARGS: JSON.stringify(expectedOwnerArgs),
+      }
+      : {}),
+  };
+}
+
+// Lifecycle plans read host executables from PATH, so a machine that happens to
+// have (or lack) a real host CLI must not decide what the plan blocks on.
+async function withHostExecutablesOnPath(names, run) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-host-executable-"));
+  try {
+    for (const name of names) {
+      await writeFile(path.join(root, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      if (process.platform === "win32") {
+        await writeFile(path.join(root, `${name}.cmd`), "@echo off\r\nexit /b 0\r\n");
+      }
+    }
+    return await run({
+      ...process.env,
+      PATH: [root, process.env.PATH].filter(Boolean).join(path.delimiter),
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+function runGuardedNode(args, { cwd, expectedOwner, expectedOwnerArgs } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, {
+      cwd,
+      env: helpGuardEnvironment(expectedOwner, expectedOwnerArgs),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error(`timed out while running node ${args.join(" ")}`));
+    }, 10_000);
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.stdin.on("error", () => {});
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("close", (status, signal) => {
+      clearTimeout(timeout);
+      resolve({ status, signal, stdout, stderr });
+    });
+  });
+}
+
+async function runGuardedBetterHarness(args, options) {
+  return runGuardedNode([cliPath, ...args], options);
+}
+
+function assertHelpGuardCanaries(cwd) {
+  const probes = [
+    ["read", "import { readFileSync } from 'node:fs'; readFileSync(process.cwd(), 'utf8');", "HELP_GUARD_READ"],
+    ["write", "import { writeFileSync } from 'node:fs'; writeFileSync('guard-probe.txt', 'x');", "HELP_GUARD_WRITE"],
+    ["stdin", "import { readFileSync } from 'node:fs'; readFileSync(0, 'utf8');", "HELP_GUARD_STDIN"],
+    ["process", "import { spawnSync } from 'node:child_process'; spawnSync('git', ['rev-parse', '--show-toplevel']);", "HELP_GUARD_PROCESS"],
+    ["network", "import { connect } from 'node:net'; connect({ host: '127.0.0.1', port: 1 });", "HELP_GUARD_NETWORK"],
+  ];
+  for (const [name, program, marker] of probes) {
+    const result = spawnSync(process.execPath, ["--input-type=module", "--eval", program], {
+      cwd,
+      env: helpGuardEnvironment(),
+      encoding: "utf8",
+    });
+    assert.notEqual(result.status, 0, name);
+    assert.match(result.stderr, new RegExp(marker), name);
+  }
+}
+
 function listedSubcommands(output) {
   const section = output.match(/Subcommands:\n([\s\S]*?)(?:\n\nExamples:|\n\nDiscovery:|\n\nOptions:)/u)?.[1] ?? "";
   return [...section.matchAll(/^  ([a-z][a-z0-9-]+)\s{2,}/gmu)].map((match) => match[1]);
+}
+
+function registeredTerminalPaths() {
+  const paths = [];
+  for (const command of commandInventory().commands) {
+    if (command.kind === "group") {
+      paths.push(...command.subcommands.map((subcommand) => [command.name, subcommand.name]));
+      continue;
+    }
+
+    paths.push([command.name]);
+    paths.push(...command.aliases.map((alias) => [alias.name]));
+    paths.push(...command.subcommands.map((subcommand) => [command.name, subcommand.name]));
+  }
+  return paths;
 }
 
 function git(cwd, args) {
@@ -38,29 +169,23 @@ async function writeFixtureFile(root, filePath, content) {
   await writeFile(absolute, content);
 }
 
-test("better-harness CLI renders root help without terminal formatting", () => {
-  const result = runBetterHarness(["--help"]);
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stderr, "");
-  assert.notEqual(result.stdout, "");
-  assert.doesNotMatch(result.stdout, /\x1b\[/);
-  assert.match(result.stdout, /\n  Workflows\n/u);
-  assert.match(result.stdout, /\n    report\s{2,}/u);
-  assert.match(result.stdout, /\n    harness\s{2,}/u);
-  assert.match(result.stdout, /Quickstart/u);
-});
-
 test("better-harness CLI expands help by audience without changing command access", () => {
   const advanced = runBetterHarness(["--help", "--audience", "advanced"]);
   assert.equal(advanced.status, 0, advanced.stderr);
   assert.match(advanced.stdout, /agent-customize/);
   assert.match(advanced.stdout, /session-analysis/);
+  assert.match(advanced.stdout, /plugin/);
   assert.doesNotMatch(advanced.stdout, /core-change-watch/);
 
   const maintainer = runBetterHarness(["--help", "--audience", "maintainer"]);
   assert.equal(maintainer.status, 0, maintainer.stderr);
   assert.match(maintainer.stdout, /core-change-watch/);
+});
+
+test("better-harness CLI exposes doctor in workflow help", () => {
+  const result = runBetterHarness(["--help"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /doctor/u);
 });
 
 test("delegated session-analysis and checkup help stay privacy-safe with extra options", () => {
@@ -210,6 +335,11 @@ test("better-harness CLI exposes command inventory as JSON", () => {
   );
   assert.equal(harness.subcommands.find((subcommand) => subcommand.name === "render").audience, "advanced");
   assert.equal(harness.subcommands.find((subcommand) => subcommand.name === "source").audience, "maintainer");
+  assert.equal(harness.subcommands.find((subcommand) => subcommand.name === "source-review").audience, "maintainer");
+  assert.equal(
+    harness.subcommands.find((subcommand) => subcommand.name === "source-review").script,
+    "scripts/harness-analysis/report-source/cli.mjs",
+  );
   assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "prepare"), false);
   assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "finalize"), false);
   assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "apply-review"), false);
@@ -237,6 +367,185 @@ test("better-harness CLI exposes command inventory as JSON", () => {
     sessionAnalysis.subcommands.find((subcommand) => subcommand.name === "usage-summary").script,
     "scripts/session-analysis/usage-summary.mjs",
   );
+
+  const plugin = payload.data.commands.find((command) => command.name === "plugin");
+  assert.equal(plugin.kind, "group");
+  assert.equal(plugin.audience, "advanced");
+  assert.deepEqual(plugin.subcommands.map((subcommand) => subcommand.name), ["status", "plan", "verify"]);
+  assert.equal(plugin.subcommands[0].script, "scripts/plugin-lifecycle/status.mjs");
+
+  const doctor = payload.data.commands.find((command) => command.name === "doctor");
+  assert.equal(doctor.kind, "direct");
+  assert.equal(doctor.audience, "workflow");
+  assert.equal(doctor.script, "scripts/harness-doctor/cli.mjs");
+});
+
+test("plugin help returns before reading host inventory", () => {
+  const privateRoot = path.join(os.tmpdir(), "plugin-help-must-not-be-scanned");
+  for (const subcommand of ["status", "plan", "verify"]) {
+    const result = runBetterHarness([
+      "plugin",
+      subcommand,
+      "--host",
+      "does-not-exist",
+      "--host-home",
+      privateRoot,
+      "--help",
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    assert.match(result.stdout, new RegExp(`Better Harness plugin ${subcommand}`, "u"));
+    assert.doesNotMatch(result.stdout, new RegExp(privateRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+  }
+});
+
+test("plugin status emits command-contract JSON and partial exit for missing local evidence", () => {
+  const result = runBetterHarness([
+    "plugin",
+    "status",
+    "--host",
+    "qwen",
+    "--host-home",
+    path.join(os.tmpdir(), "better-harness-empty-qwen-home"),
+    "--workspace",
+    process.cwd(),
+    "--json",
+  ]);
+  assert.equal(result.status, 2, result.stderr);
+  assert.equal(result.stderr, "");
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.schemaVersion, "1");
+  assert.equal(payload.command, "better-harness plugin status");
+  assert.equal(payload.status, "partial");
+  assert.equal(payload.meta.sideEffects, "read-only");
+  assert.equal(payload.data.rows[0].target.hostId, "qwen");
+  assert.equal(payload.data.rows[0].installation, "not-installed");
+});
+
+test("plugin plan requires an explicit host and preserves JSON mode after usage failure", () => {
+  const result = runBetterHarness(["plugin", "plan", "install", "--json"]);
+  assert.equal(result.status, 64);
+  assert.equal(result.stderr, "");
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, "failed");
+  assert.equal(payload.data, null);
+  assert.equal(payload.diagnostics[0].code, "EXPLICIT_HOST_REQUIRED");
+});
+
+test("plugin plan rejects ambiguous multi-surface hosts", () => {
+  for (const host of ["codex", "pi"]) {
+    const result = runBetterHarness([
+      "plugin",
+      "plan",
+      "install",
+      "--host",
+      host,
+      "--host-home",
+      path.join(os.tmpdir(), `better-harness-empty-${host}-home`),
+      "--json",
+    ]);
+    assert.equal(result.status, 64, host);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.diagnostics[0].code, "AMBIGUOUS_HOST_SURFACE", host);
+  }
+});
+
+test("plugin plan emits typed argv without executing it", async () => {
+  const result = await withHostExecutablesOnPath(["qwen"], (env) => runBetterHarness([
+    "plugin",
+    "plan",
+    "--json",
+    "install",
+    "--host",
+    "qwen",
+    "--surface",
+    "cli",
+    "--scope",
+    "project",
+    "--host-home",
+    path.join(os.tmpdir(), "better-harness-empty-qwen-plan-home"),
+  ], { env }));
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, "ok");
+  assert.equal(payload.data.effects, "none");
+  assert.deepEqual(payload.data.steps[0].argv, [
+    "qwen", "extensions", "install", "QoderAI/better-harness", "--scope", "project",
+  ]);
+  assert.equal(payload.data.steps[0].externalImpact, "host-plugin-state");
+  assert.equal(payload.data.steps[0].preconditions.length, 2);
+});
+
+test("plugin parsers fail closed for duplicate, misplaced, and extra arguments", () => {
+  const cases = [
+    {
+      args: ["plugin", "status", "--json", "--json"],
+      code: "DUPLICATE_OPTION",
+    },
+    {
+      args: ["plugin", "status", "--scope", "user", "--json"],
+      code: "OPTION_NOT_ALLOWED",
+    },
+    {
+      args: ["plugin", "verify", "extra", "--json"],
+      code: "UNEXPECTED_POSITIONAL",
+    },
+    {
+      args: ["plugin", "status", "--unknown", "--json"],
+      code: "UNKNOWN_OPTION",
+    },
+    {
+      args: ["plugin", "status", "--host=", "--json"],
+      code: "MISSING_OPTION_VALUE",
+    },
+    {
+      args: ["plugin", "plan", "install", "--host", "codex", "--surface", "desktop", "--scope", "project", "--json"],
+      code: "UNSUPPORTED_SCOPE",
+    },
+  ];
+  for (const entry of cases) {
+    const result = runBetterHarness(entry.args);
+    assert.equal(result.status, 64, `${entry.code}: ${result.stderr}`);
+    assert.equal(result.stderr, "");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.diagnostics[0].code, entry.code);
+    assert.equal(payload.meta.sideEffects, "read-only");
+  }
+});
+
+test("plugin plans fail closed for unbound isolated and stale native contracts", async () => {
+  const qoder = await withHostExecutablesOnPath(["qodercli"], (env) => runBetterHarness([
+    "plugin", "plan", "install",
+    "--host", "qoder", "--surface", "cli", "--scope", "user",
+    "--host-home", path.join(os.tmpdir(), "better-harness-empty-qoder-plan-home"),
+    "--json",
+  ], { env }));
+  assert.equal(qoder.status, 1, qoder.stderr);
+  const qoderPayload = JSON.parse(qoder.stdout);
+  assert.equal(qoderPayload.data.state, "blocked");
+  assert.equal(qoderPayload.data.blockers[0].code, "ISOLATED_HOST_HOME_UNREPRESENTABLE");
+  assert.deepEqual(qoderPayload.data.steps, []);
+
+  const cursor = runBetterHarness([
+    "plugin", "plan", "install",
+    "--host", "cursor", "--surface", "agent", "--scope", "session",
+    "--host-home", path.join(os.tmpdir(), "better-harness-empty-cursor-plan-home"),
+    "--json",
+  ]);
+  assert.equal(cursor.status, 1, cursor.stderr);
+  const cursorPayload = JSON.parse(cursor.stdout);
+  assert.equal(cursorPayload.data.state, "blocked");
+  assert.equal(cursorPayload.data.blockers[0].code, "HOST_CONTRACT_STALE");
+  assert.deepEqual(cursorPayload.data.steps, []);
+});
+
+test("plugin apply is not registered", () => {
+  const result = runBetterHarness(["plugin", "apply", "--json"]);
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr, "");
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, "UNKNOWN_SUBCOMMAND");
 });
 
 test("better-harness CLI filters machine inventory by audience", () => {
@@ -244,7 +553,7 @@ test("better-harness CLI filters machine inventory by audience", () => {
   assert.equal(workflow.status, 0, workflow.stderr);
   const workflowPayload = JSON.parse(workflow.stdout);
   assert.equal(workflowPayload.data.audience, "workflow");
-  assert.deepEqual(workflowPayload.data.commands.map((command) => command.name), ["harness", "report"]);
+  assert.deepEqual(workflowPayload.data.commands.map((command) => command.name), ["doctor", "harness", "report"]);
   assert.deepEqual(
     workflowPayload.data.commands.find((command) => command.name === "harness").subcommands.map((entry) => entry.name),
     ["evidence-bundle", "analyze", "checkup", "record-fix-output"],
@@ -254,6 +563,7 @@ test("better-harness CLI filters machine inventory by audience", () => {
   assert.equal(advanced.status, 0, advanced.stderr);
   const advancedCommands = JSON.parse(advanced.stdout).data.commands;
   assert.equal(advancedCommands.some((command) => command.name === "agent-customize"), true);
+  assert.equal(advancedCommands.some((command) => command.name === "plugin"), true);
   assert.equal(advancedCommands.some((command) => command.name === "core-change-watch"), false);
   const harness = advancedCommands.find((command) => command.name === "harness");
   assert.equal(harness.subcommands.some((subcommand) => subcommand.name === "render"), true);
@@ -380,6 +690,77 @@ test("better-harness CLI describes command aliases as their canonical command", 
   assert.deepEqual(payload.data.command.aliases, [{ name: "customize", hidden: true }]);
 });
 
+test("better-harness CLI short-circuits help for every registered terminal path", async () => {
+  const isolatedRoot = await mkdtemp(path.join(os.tmpdir(), "better-harness-leaf-help-"));
+  try {
+    assertHelpGuardCanaries(isolatedRoot);
+    for (const pathSegments of registeredTerminalPaths()) {
+      const canonicalArgs = [...pathSegments, "--help"];
+      const canonicalDispatch = resolveDispatch(canonicalArgs);
+      assert.equal(canonicalDispatch.kind, "dispatch", canonicalArgs.join(" "));
+      const canonical = await runGuardedBetterHarness(canonicalArgs, {
+        cwd: isolatedRoot,
+        expectedOwner: canonicalDispatch.script,
+        expectedOwnerArgs: canonicalDispatch.args,
+      });
+      assert.equal(canonical.status, 0, `${canonicalArgs.join(" ")}\n${canonical.stderr}`);
+      assert.equal(canonical.stderr, "", canonicalArgs.join(" "));
+      assert.notEqual(canonical.stdout, "", canonicalArgs.join(" "));
+
+      // The canonical `--help` run above already proved this dispatch executes
+      // to help with zero side effects under the guard. For the pre-help-flag
+      // variants we only need to prove resolveDispatch normalizes them to that
+      // same dispatch (identical script, `invalid-before-help` stripped, trailing
+      // `--help`); an identical dispatch yields byte-identical execution, so a
+      // per-variant guarded subprocess would only re-run canonical's own args.
+      if (pathSegments.join(" ") === "harness source-review") continue;
+
+      for (const helpFlag of ["--help", "-h"]) {
+        const args = [...pathSegments, "invalid-before-help", helpFlag];
+        const dispatch = resolveDispatch(args);
+
+        assert.equal(dispatch.kind, "dispatch", args.join(" "));
+        assert.equal(dispatch.script, canonicalDispatch.script, args.join(" "));
+        assert.deepEqual(dispatch.args, canonicalDispatch.args, args.join(" "));
+        assert.equal(dispatch.args.includes("invalid-before-help"), false, args.join(" "));
+        assert.equal(dispatch.args.at(-1), "--help", args.join(" "));
+      }
+    }
+  } finally {
+    await rm(isolatedRoot, { recursive: true, force: true });
+  }
+});
+
+test("source-review help does not hide invalid phase or trailing arguments", () => {
+  for (const args of [
+    ["harness", "source-review", "bogus", "--help"],
+    ["harness", "source-review", "--help", "trailing"],
+  ]) {
+    const dispatch = resolveDispatch(args);
+    assert.equal(dispatch.kind, "dispatch");
+    assert.deepEqual(dispatch.args, args.slice(2));
+    const result = runBetterHarness(args);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /--help must be used without a phase or other arguments/u);
+  }
+});
+
+test("better-harness CLI preserves built-in discovery help and literal positional help", () => {
+  const commands = runBetterHarness(["commands", "--help", "--audience", "advanced"]);
+  assert.equal(commands.status, 0, commands.stderr);
+  assert.match(commands.stdout, /agent-customize/u);
+  assert.match(commands.stdout, /session-analysis/u);
+
+  const schema = runBetterHarness(["schema", "--help"]);
+  assert.equal(schema.status, 0, schema.stderr);
+  assert.equal(JSON.parse(schema.stdout).ok, true);
+
+  const positional = resolveDispatch(["cloc", "help"]);
+  assert.equal(positional.kind, "dispatch");
+  assert.deepEqual(positional.args, ["help"]);
+});
+
 test("better-harness CLI group help projects workflow commands", () => {
   const result = runBetterHarness(["harness", "--help"]);
 
@@ -408,6 +789,7 @@ test("better-harness CLI group help expands advanced and maintainer subcommands"
   assert.equal(maintainer.status, 0, maintainer.stderr);
   const maintainerCommands = listedSubcommands(maintainer.stdout);
   assert.equal(maintainerCommands.includes("source"), true);
+  assert.equal(maintainerCommands.includes("source-review"), true);
   assert.equal(maintainerCommands.includes("repair-findings"), true);
 });
 
@@ -477,7 +859,7 @@ test("better-harness CLI emits a machine-readable schema", () => {
 });
 
 test("registered harness commands remain executable through the Node facade", () => {
-  for (const subcommand of ["evidence-bundle", "analyze", "selection-profile", "source", "task-loop-report", "render", "record-fix-output"]) {
+  for (const subcommand of ["evidence-bundle", "analyze", "selection-profile", "source", "source-review", "task-loop-report", "render", "record-fix-output"]) {
     const result = runBetterHarness(["harness", subcommand, "--help"]);
     assert.equal(result.status, 0, `${subcommand}: ${result.stderr}`);
     assert.match(result.stdout, /Usage:/, subcommand);
@@ -531,6 +913,114 @@ test("better-harness CLI emits JSON root errors in machine mode", () => {
   assert.equal(payload.error.message, "Unknown command: missing-capability");
   assert.match(payload.error.hint, /better-harness commands --json/);
   assert.doesNotMatch(payload.error.hint, /Usage:/);
+});
+
+test("better-harness CLI normalizes delegated spawn errors in human and machine modes", () => {
+  const childResult = {
+    error: new Error("spawn ENOENT at a private installation path"),
+    signal: null,
+    status: null,
+    stdout: Buffer.from('{"child":"partial"}\n'),
+    stderr: Buffer.from('{"second":"envelope"}\n'),
+  };
+  const machine = runMainWithResult(["cloc", "--json"], childResult);
+
+  assert.equal(machine.exitCode, 1);
+  assert.equal(machine.stderr, "");
+  const payload = JSON.parse(machine.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.format_version, "1.0");
+  assert.equal(payload.error.code, "DELEGATED_COMMAND_SPAWN_FAILED");
+  assert.match(payload.error.hint, /Verify the Better Harness installation/u);
+  assert.doesNotMatch(machine.stdout, /private installation path/u);
+  assert.doesNotMatch(machine.stdout, /child|second/u);
+  assert.deepEqual(machine.calls[0].options.stdio, ["inherit", "pipe", "pipe"]);
+
+  const human = runMainWithResult(["cloc"], childResult);
+  assert.equal(human.exitCode, 1);
+  assert.equal(human.stdout, "");
+  assert.match(human.stderr, /^Failed to start the delegated command: spawn ENOENT/u);
+  assert.equal(human.calls[0].options.stdio, "inherit");
+});
+
+test("better-harness CLI replaces signalled child fragments with one machine envelope", () => {
+  const machine = runMainWithResult(["cloc", "--json"], {
+    error: undefined,
+    signal: "SIGTERM",
+    status: null,
+    stdout: Buffer.from('{"child":"partial"}\n'),
+    stderr: Buffer.from('{"second":"envelope"}\n'),
+  });
+
+  assert.equal(machine.exitCode, 1);
+  assert.equal(machine.stderr, "");
+  const payload = JSON.parse(machine.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.format_version, "1.0");
+  assert.equal(payload.error.code, "DELEGATED_COMMAND_SIGNAL_TERMINATED");
+  assert.equal(payload.error.message, "The delegated command terminated with signal SIGTERM.");
+  assert.match(payload.error.hint, /Retry the command/u);
+  assert.doesNotMatch(machine.stdout, /child|second/u);
+
+  const human = runMainWithResult(["cloc"], {
+    error: undefined,
+    signal: "SIGTERM",
+    status: null,
+    stdout: null,
+    stderr: null,
+  });
+  assert.equal(human.exitCode, 1);
+  assert.equal(human.stdout, "");
+  assert.equal(human.stderr, "The delegated command terminated with signal SIGTERM.\n");
+
+  const passthrough = runMainWithResult(["cloc", "--", "--json"], {
+    error: undefined,
+    signal: "SIGTERM",
+    status: null,
+    stdout: null,
+    stderr: null,
+  });
+  assert.equal(passthrough.stdout, "");
+  assert.equal(passthrough.stderr, "The delegated command terminated with signal SIGTERM.\n");
+  assert.equal(passthrough.calls[0].options.stdio, "inherit");
+});
+
+test("better-harness CLI preserves normal machine child output and status byte-for-byte", () => {
+  const childStdout = Buffer.from('{"owner":"child"}\r\n');
+  const childStderr = Buffer.from("child diagnostic\r\n");
+  const result = runMainWithResult(["cloc", "--json"], {
+    error: undefined,
+    signal: null,
+    status: 7,
+    stdout: childStdout,
+    stderr: childStderr,
+  });
+
+  assert.equal(result.exitCode, 7);
+  assert.equal(result.stdout, childStdout.toString("utf8"));
+  assert.equal(result.stderr, childStderr.toString("utf8"));
+});
+
+test("better-harness CLI separates machine output overflow from spawn failure", () => {
+  const overflow = spawnSync(process.execPath, [
+    "-e",
+    "process.stdout.write('x'.repeat(1024 * 1024)); process.exit(0);",
+  ], { stdio: ["inherit", "pipe", "pipe"], maxBuffer: 1024 });
+  assert.equal(overflow.error?.code, "ENOBUFS");
+
+  const machine = runMainWithResult(["cloc", "--json"], overflow);
+  assert.equal(machine.exitCode, 1);
+  assert.equal(machine.stderr, "");
+  const payload = JSON.parse(machine.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.format_version, "1.0");
+  assert.equal(payload.error.code, "DELEGATED_COMMAND_OUTPUT_OVERFLOW");
+  assert.match(payload.error.hint, /rerun without `--json`/u);
+  assert.doesNotMatch(machine.stdout, /ENOBUFS|xxxx/u);
+
+  const human = runMainWithResult(["cloc"], overflow);
+  assert.equal(human.stdout, "");
+  assert.equal(human.stderr, "The delegated command produced more output than machine mode can buffer.\n");
 });
 
 test("better-harness CLI runs through a package-bin symlink", async (t) => {

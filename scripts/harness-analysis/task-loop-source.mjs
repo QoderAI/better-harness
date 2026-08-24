@@ -16,6 +16,15 @@ import {
   collectProviderInventory,
   collectQoderInventory,
 } from "../coding-agent-practices/inventory.mjs";
+import {
+  formatHostList,
+  getHostDescriptor,
+  HOST_CAPABILITIES,
+  hostIdSetFor,
+  hostIdsFor,
+  hostPipeList,
+  normalizedHostHomeOptions,
+} from "../host-support/index.mjs";
 import { reviewAssetIntegrity } from "../coding-agent-practices/asset-integrity.mjs";
 import { projectCheckupReportEvidence } from "../coding-agent-practices/checkup/contract.mjs";
 import {
@@ -47,7 +56,7 @@ import {
 import { projectAgentLintPracticeEvidence } from "./practice-findings.mjs";
 import { loadPriorLearningCaptureState } from "./learning-capture-state.mjs";
 import { scanTaskLoopRepositoryEvidence } from "./task-loop-repository-evidence.mjs";
-import { buildLearningLoopReview } from "./learning-loop-candidates.mjs";
+import { buildLearningLoopReview, buildNativeLearningReviewPacket } from "./learning-loop-candidates.mjs";
 import { buildWorkflowDemandDiagnostics } from "./workflow-demand-diagnostics.mjs";
 import { findingTargetFromTopology } from "../workspace-topology/index.mjs";
 
@@ -73,17 +82,22 @@ const REQUIRED_SOFTWARE_FLUENCY_CAPABILITIES = Object.freeze([
   "quality-gates",
   "safe-change",
 ]);
+const ASSET_PRACTICE_HOST_SET = hostIdSetFor(HOST_CAPABILITIES.ASSET_PRACTICES);
+const SESSION_HOSTS = hostIdsFor(HOST_CAPABILITIES.SESSION_ANALYSIS);
+const TASK_LOOP_INVENTORY_COLLECTORS = new Map([
+  ["qoder", collectQoderInventory],
+]);
 
 const HELP = `Usage: node scripts/harness-analysis/task-loop-source.mjs --workspace <target> --source <report.source.json> [options]
 
 Create a conservative Agent Work Loop report-source candidate from normalized
-Qoder, Codex, Claude, Cursor, Qwen, Copilot, Pi, or WorkBuddy sessions. It retains privacy-safe episode, change, validation,
+${formatHostList(SESSION_HOSTS, { displayNames: true })} sessions. It retains privacy-safe episode, change, validation,
 repair-candidate, and explicit host-decision identities. Task understanding,
 validation relevance, repair, delivery, recovery, and Learning Capture remain
 unobserved until the prepared source-bound review resolves them.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy>
+  --platform <${hostPipeList(SESSION_HOSTS)}>
                                   Session platform (default: qoder)
   --workspace <path>            Target workspace (required)
   --source <path>               Candidate report.source.json path (required)
@@ -301,12 +315,20 @@ function learningCaptureDiagnosticsCandidate(insights, repositoryEvidence, inter
     interventions,
     assetCoverage: repositoryEvidence?.aiAgentPractice?.coverageRows,
   });
+  const nativePacket = buildNativeLearningReviewPacket({ episodes: taskEpisodes });
   return {
     signals,
     learningCaptureSchemaVersion: learningLoop.schemaVersion,
     episodeRecords: learningLoop.episodeRecords,
     recurringIssueCandidates: learningLoop.candidates,
     coverage: learningLoop.coverage,
+    ...(nativePacket.groups.length > 0 ? {
+      nativeLearningReview: {
+        schemaVersion: 1,
+        status: "review-required",
+        packet: nativePacket,
+      },
+    } : {}),
   };
 }
 
@@ -343,6 +365,67 @@ function safeUsageSummary(value) {
     ?? "unavailable-after-privacy-filtering";
 }
 
+function safeToolName(value) {
+  const label = safeReaderLabel(value, "Unknown tool").slice(0, 64);
+  return /^[\p{L}\p{N}_.: -]+$/u.test(label) ? label : "Unknown tool";
+}
+
+function safeToolDuration(call) {
+  const durationMs = Number(call?.durationMs);
+  const timingSource = call?.timingSource === "transcript-pair" ? "transcript-pair"
+    : call?.timingSource === "lifecycle-pair" ? "lifecycle-pair"
+      : null;
+  if (call?.durationStatus !== "observed"
+    || !Number.isFinite(durationMs)
+    || durationMs < 0
+    || durationMs > 24 * 60 * 60 * 1000
+    || !timingSource) {
+    return { durationStatus: "unobserved" };
+  }
+  return {
+    durationStatus: "observed",
+    durationMs: Math.round(durationMs),
+    timingSource,
+  };
+}
+
+function safeToolCallTrace(value) {
+  const totalCalls = nonNegativeInteger(value?.totalCalls);
+  const sanitizedCalls = rows(value?.calls)
+    .map((call) => ({
+      id: `T${Math.max(1, nonNegativeInteger(call?.step))}`,
+      step: Math.max(1, nonNegativeInteger(call?.step)),
+      toolName: safeToolName(call?.toolName),
+      status: call?.status === "failed" ? "failed" : "observed",
+      ...safeToolDuration(call),
+    }))
+    .filter((call, index, all) => all.findIndex((candidate) => candidate.step === call.step) === index)
+    .sort((left, right) => left.step - right.step);
+  const toolCounts = new Map();
+  const firstSteps = new Map();
+  for (const call of sanitizedCalls) {
+    toolCounts.set(call.toolName, (toolCounts.get(call.toolName) ?? 0) + 1);
+    if (!firstSteps.has(call.toolName)) firstSteps.set(call.toolName, call.step);
+  }
+  const rankedTools = [...toolCounts.keys()].sort((left, right) =>
+    toolCounts.get(right) - toolCounts.get(left)
+      || firstSteps.get(left) - firstSteps.get(right)
+      || left.localeCompare(right));
+  const visibleTools = new Set(rankedTools.slice(0, rankedTools.length > 8 ? 7 : 8));
+  const calls = sanitizedCalls.map((call) => ({
+    ...call,
+    toolName: visibleTools.has(call.toolName) ? call.toolName : "Other tools",
+  }));
+  const observedTotal = Math.max(totalCalls, calls.at(-1)?.step ?? 0);
+  return {
+    schemaVersion: 2,
+    totalCalls: observedTotal,
+    shownCalls: calls.length,
+    truncated: calls.length < observedTotal,
+    calls,
+  };
+}
+
 function projectLongSessionSamples(candidates, scope = {}) {
   return candidates
     .slice()
@@ -362,6 +445,7 @@ function projectLongSessionSamples(candidates, scope = {}) {
       activeMinutes: Number((Number(row?.activeMs ?? 0) / 60_000).toFixed(1)),
       failureCount: nonNegativeInteger(row?.failureCount),
       userInputSummary: safeUsageSummary(row?.userInputSummary),
+      toolTrace: safeToolCallTrace(row?.toolTrace),
     }));
 }
 
@@ -720,6 +804,7 @@ export function buildTaskLoopSourceCandidate({
   memoryInventory,
   providerCoverage = null,
   unsupportedCapabilities = [],
+  contextUsage = null,
 } = {}) {
   const readerLocale = normalizeReaderLocale(locale);
   const episodeAnalysis = buildTaskEpisodes(
@@ -795,6 +880,7 @@ export function buildTaskLoopSourceCandidate({
         ? { usageActivity: insights.keySignals.usageEfficiency.activity }
         : {}),
       ...(usageSummary ? { usageEfficiency: usageSummary } : {}),
+      ...(contextUsage ? { contextUsage: JSON.parse(JSON.stringify(contextUsage)) } : {}),
     },
     taskEpisodes,
     deliveryEvidence: focusedCheckEvidence(taskEpisodes),
@@ -849,18 +935,11 @@ export function buildTaskLoopSourceCandidate({
 
 export async function collectAgentLintPracticeEvidence(options = {}) {
   const provider = options.platform ?? "qoder";
-  const assetReviewSupported = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"].includes(provider);
+  const assetReviewSupported = ASSET_PRACTICE_HOST_SET.has(provider);
   const common = {
     workspace: options.workspace,
     provider,
-    qoderHome: options.qoderHome ?? options["qoder-home"],
-    codexHome: options.codexHome ?? options["codex-home"],
-    claudeHome: options.claudeHome ?? options["claude-home"],
-    cursorHome: options.cursorHome ?? options["cursor-home"],
-    qwenHome: options.qwenHome ?? options["qwen-home"],
-    copilotHome: options.copilotHome ?? options["copilot-home"],
-    piHome: options.piHome ?? options["pi-home"],
-    workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
+    ...normalizedHostHomeOptions(options, provider),
     topology: options.topology,
     analysisScope: options.analysisScope,
   };
@@ -904,84 +983,26 @@ export async function collectAgentLintPracticeEvidence(options = {}) {
 
 export function collectTaskLoopPracticeInventory(options = {}, platform = options.platform ?? "qoder") {
   if (options.practiceInventory) return Promise.resolve(options.practiceInventory);
+  if (!ASSET_PRACTICE_HOST_SET.has(platform)) return Promise.resolve(null);
   const includeGlobalCapabilities = options.includeGlobalCapabilities === true
     || options["include-global-capabilities"] === true;
-  if (platform === "qoder") {
-    return collectQoderInventory({
-      workspace: options.workspace,
-      includeUserHome: includeGlobalCapabilities,
-      includeGlobalHooks: true,
-      // Project-scoped Memory is part of the normal repository packet. The
-      // explicit global-capability route only widens this inventory to global
-      // Memory/config metadata; it must not disable current-project Memory.
-      includeMemories: true,
-      qoderHome: options.qoderHome ?? options["qoder-home"],
-      sharedCache: options.sharedCache ?? options["shared-cache"],
-    });
-  }
-  if (platform === "codex") {
-    return collectProviderInventory({
-      platform,
-      workspace: options.workspace,
-      includeUserHome: includeGlobalCapabilities,
-      includeGlobalHooks: true,
-      includeMemories: includeGlobalCapabilities,
-      codexHome: options.codexHome ?? options["codex-home"],
-      codexAppPath: options.codexAppPath ?? options["codex-app-path"],
-    });
-  }
-  if (platform === "cursor") {
-    return collectProviderInventory({
-      platform,
-      workspace: options.workspace,
-      includeUserHome: includeGlobalCapabilities,
-      includeGlobalHooks: true,
-      includeMemories: false,
-      cursorHome: options.cursorHome ?? options["cursor-home"],
-    });
-  }
-  if (platform === "claude") {
-    return collectProviderInventory({
-      platform,
-      workspace: options.workspace,
-      includeUserHome: includeGlobalCapabilities,
-      includeGlobalHooks: true,
-      includeMemories: false,
-      claudeHome: options.claudeHome ?? options["claude-home"],
-      claudeStatePath: options.claudeStatePath ?? options["claude-state"],
-    });
-  }
-  if (platform === "qwen") {
-    return collectProviderInventory({
-      platform,
-      workspace: options.workspace,
-      includeUserHome: includeGlobalCapabilities,
-      includeGlobalHooks: true,
-      includeMemories: false,
-      qwenHome: options.qwenHome ?? options["qwen-home"],
-    });
-  }
-  if (platform === "pi") {
-    return collectProviderInventory({
-      platform,
-      workspace: options.workspace,
-      includeUserHome: includeGlobalCapabilities,
-      includeGlobalHooks: true,
-      includeMemories: false,
-      piHome: options.piHome ?? options["pi-home"],
-    });
-  }
-  if (platform === "workbuddy") {
-    return collectProviderInventory({
-      platform,
-      workspace: options.workspace,
-      includeUserHome: includeGlobalCapabilities,
-      includeGlobalHooks: true,
-      includeMemories: false,
-      workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
-    });
-  }
-  return Promise.resolve(null);
+  const host = getHostDescriptor(platform);
+  const includeMemories = host?.practiceMemory === "project"
+    || (host?.practiceMemory === "global" && includeGlobalCapabilities);
+  const collectInventory = TASK_LOOP_INVENTORY_COLLECTORS.get(platform) ?? collectProviderInventory;
+  return collectInventory({
+    platform,
+    workspace: options.workspace,
+    includeUserHome: includeGlobalCapabilities,
+    includeGlobalHooks: true,
+    includeMemories,
+    ...normalizedHostHomeOptions(options, platform),
+    // Exceptional capability-owned options stay explicit and are ignored by
+    // providers that do not own them.
+    sharedCache: options.sharedCache ?? options["shared-cache"],
+    codexAppPath: options.codexAppPath ?? options["codex-app-path"],
+    claudeStatePath: options.claudeStatePath ?? options["claude-state"],
+  });
 }
 
 function parseArgs(argv) {
@@ -1084,19 +1105,12 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     ?? options.snapshotUntil
     ?? new Date().toISOString();
   const analyzerOptions = {
+    ...options,
     platform,
     workspace: options.workspace,
-    home: options.home,
     since: selectionProfile?.scope?.since ?? options.since,
     until: snapshotUntil,
-    qoderHome: options.qoderHome ?? options["qoder-home"],
-    codexHome: options.codexHome ?? options["codex-home"],
-    claudeHome: options.claudeHome ?? options["claude-home"],
-    cursorHome: options.cursorHome ?? options["cursor-home"],
-    qwenHome: options.qwenHome ?? options["qwen-home"],
-    copilotHome: options.copilotHome ?? options["copilot-home"],
-    piHome: options.piHome ?? options["pi-home"],
-    workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
+    ...normalizedHostHomeOptions(options, platform),
     includeGlobalCapabilities: options.includeGlobalCapabilities
       ?? options["include-global-capabilities"]
       ?? false,
@@ -1251,6 +1265,7 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     memoryInventory: practiceInventory?.memories ?? { included: false, categories: [] },
     providerCoverage: discovery.providerCoverage ?? insightResult.providerCoverage ?? null,
     unsupportedCapabilities: practiceInventory?.unsupported ?? [],
+    contextUsage: insightResult.contextUsage ?? null,
   });
   assertStandardUsageComplete(source, selected, includeUsage);
   if (!population) return { source, selection: selected };

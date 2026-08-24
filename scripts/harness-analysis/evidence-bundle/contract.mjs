@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 
+import { HOST_CAPABILITIES, hostIdSetFor } from "../../host-support/index.mjs";
 import {
   analysisScopeFromTopology,
   validateWorkspaceTopology,
@@ -14,7 +15,7 @@ export const EVIDENCE_LANE_NAMES = Object.freeze([
   "agentCustomize",
 ]);
 
-const PROVIDERS = new Set(["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"]);
+const PROVIDERS = hostIdSetFor(HOST_CAPABILITIES.EVIDENCE_BUNDLE);
 const DEPTHS = new Set(["quick", "normal"]);
 
 function enabled(value) {

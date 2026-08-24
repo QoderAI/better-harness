@@ -4,6 +4,12 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  HOST_CAPABILITIES,
+  hostIdSetFor,
+  hostIdsFor,
+  hostPipeList,
+} from "../host-support/index.mjs";
 import { parseArgs } from "../session-analysis/index.mjs";
 import { HOOK_RECOMMENDED_LIMIT, hookOverLimitSummary } from "./asset-eval/index.mjs";
 import { collectProviderInventory, collectQoderInventory } from "./inventory.mjs";
@@ -13,6 +19,8 @@ export const MEMORY_TITLE_SIMILARITY_THRESHOLD = 0.8;
 export const PLUGIN_NAME_FAMILY_SIMILARITY_THRESHOLD = 0.68;
 export const MAX_MEMORY_TITLES_REVIEWED = 2_000;
 const MAX_EMITTED_CANDIDATES = 12;
+const ASSET_PRACTICE_HOSTS = hostIdsFor(HOST_CAPABILITIES.ASSET_PRACTICES);
+const ASSET_PRACTICE_HOST_SET = hostIdSetFor(HOST_CAPABILITIES.ASSET_PRACTICES);
 
 function rows(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
@@ -340,7 +348,7 @@ export function formatAssetIntegrityMarkdown(result) {
   return `${lines.join("\n")}\n`;
 }
 
-const USAGE = `Usage: better-harness coding-agent-practices asset-integrity [qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy] [options]
+const USAGE = `Usage: better-harness coding-agent-practices asset-integrity [${hostPipeList(ASSET_PRACTICE_HOSTS)}] [options]
 
 Run a read-only metadata integrity review for Memory titles, enabled Plugins,
 and Hooks. Memory bodies are never read.
@@ -352,6 +360,7 @@ Options:
   --claude-home <dir>        Claude config root override
   --claude-state <file>      Claude state-file override
   --cursor-home <dir>        Cursor home override
+  --kimi-home <dir>          Kimi Code data root override
   --shared-cache <dir>       Qoder shared-cache override
   --include-memories         Include generated Memory title metadata
   --include-user-home        Include user/global asset metadata
@@ -368,8 +377,8 @@ async function runCli(argv) {
   }
   const { command, options } = parseArgs(argv);
   const provider = options.provider ?? options.platform ?? command ?? "qoder";
-  if (!["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"].includes(provider)) {
-    throw new Error(`Unsupported provider: ${provider}. Supported providers: qoder, codex, claude, cursor, qwen, copilot, pi, workbuddy.`);
+  if (!ASSET_PRACTICE_HOST_SET.has(provider)) {
+    throw new Error(`Unsupported provider: ${provider}. Supported providers: ${ASSET_PRACTICE_HOSTS.join(", ")}.`);
   }
   const includeUserHome = options.includeUserHome ?? options["include-user-home"] ?? false;
   const includeMemories = options.includeMemories ?? options["include-memories"] ?? false;

@@ -25,6 +25,10 @@ export function defaultCursorStateDbPath() {
   return path.join(xdgConfig, "Cursor", "User", "globalStorage", "state.vscdb");
 }
 
+export function resolveCursorStateDbPath(options = {}) {
+  return path.resolve(expandHome(options.stateDbPath ?? defaultCursorStateDbPath()));
+}
+
 function normalizeInstalledRecord(record) {
   const id = String(record?.id ?? record?.pluginId ?? "").trim();
   if (!id) {
@@ -126,7 +130,7 @@ export async function readInstalledPluginState(options = {}) {
     };
   }
 
-  const stateDbPath = path.resolve(expandHome(options.stateDbPath ?? defaultCursorStateDbPath()));
+  const stateDbPath = resolveCursorStateDbPath(options);
   if (!(await pathExists(stateDbPath))) {
     return {
       records: undefined,

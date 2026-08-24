@@ -1,6 +1,14 @@
 import { analyzeClaudeStyleSessions } from "./claude-facets.mjs";
 import { parseArgs } from "./cli.mjs";
 import { createCodexCliJsonModelClient } from "./codex-json-model.mjs";
+import {
+  formatHostList,
+  HOST_CAPABILITIES,
+  hostIdsFor,
+  hostPipeList,
+} from "../host-support/index.mjs";
+
+const DECLARED_SESSION_HOSTS = hostIdsFor(HOST_CAPABILITIES.SESSION_ANALYSIS);
 
 // Minimal AI-facing usage:
 //   const analyzer = await createAnalyzer("qoder");
@@ -19,7 +27,7 @@ import { createCodexCliJsonModelClient } from "./codex-json-model.mjs";
 
 export const SESSION_ANALYSIS_HELP = `Usage: better-harness session-analysis [command] [options]
 
-Inspect local Qoder, Codex, Claude, Cursor, Qwen, Copilot, Pi, or WorkBuddy session evidence. The
+Inspect local ${formatHostList(DECLARED_SESSION_HOSTS, { displayNames: true })} session evidence. The
 default command is sessions and the default platform is qoder. Help exits before
 reading HOME or workspace.
 
@@ -35,7 +43,7 @@ Commands:
   events        Show normalized events selected with --session-id
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy>
+  --platform <${hostPipeList(DECLARED_SESSION_HOSTS)}>
                             Session host (default: qoder)
   --workspace <dir>         Workspace scope (default: current directory)
   --qoder-home <dir>        Qoder data root (default: ~/.qoder)
@@ -45,7 +53,9 @@ Options:
   --qwen-home <dir>         Qwen Code data root (default: ~/.qwen)
   --copilot-home <dir>      Copilot CLI data root (default: ~/.copilot)
   --pi-home <dir>           Pi agent data root (default: ~/.pi/agent)
+  --kimi-home <dir>         Kimi Code data root (default: ~/.kimi-code)
   --workbuddy-home <dir>    WorkBuddy data root (default: ~/.workbuddy)
+  --grok-home <dir>         Grok CLI data root (default: ~/.grok or $GROK_HOME)
   --include-cache           Include optional Qoder cache evidence
   --include-global-capabilities
                             Include optional user-global Qoder evidence
@@ -238,7 +248,9 @@ const PLATFORM_MODULES = Object.freeze({
   qwen: { specifier: "./platforms/qwen.mjs", analyzer: "QwenSessionAnalyzer" },
   copilot: { specifier: "./platforms/copilot.mjs", analyzer: "CopilotSessionAnalyzer" },
   pi: { specifier: "./platforms/pi.mjs", analyzer: "PiSessionAnalyzer" },
+  kimi: { specifier: "./platforms/kimi.mjs", analyzer: "KimiSessionAnalyzer" },
   workbuddy: { specifier: "./platforms/workbuddy.mjs", analyzer: "WorkbuddySessionAnalyzer" },
+  grok: { specifier: "./platforms/grok.mjs", analyzer: "GrokSessionAnalyzer" },
 });
 
 export const SUPPORTED_SESSION_PLATFORMS = Object.freeze(Object.keys(PLATFORM_MODULES));
@@ -307,14 +319,14 @@ export async function main(argv = process.argv.slice(2), dependencies = {}) {
         ]
       : [];
     stdout.write([
-      `Usage: session-analysis${command ? ` ${command}` : " <command>"} --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace <path> [options]`,
+      `Usage: session-analysis${command ? ` ${command}` : " <command>"} --platform <${hostPipeList(SUPPORTED_SESSION_PLATFORMS)}> --workspace <path> [options]`,
       "",
       "Commands: sources, sessions, facets, insights, facts, file-reads, show, events, claude-facets",
       ...factsOptions,
       ...eventOptions,
       ...claudeOptions,
       "",
-      "Options: --workbuddy-home <dir> overrides the WorkBuddy data root (default: ~/.workbuddy).",
+      "Options: --kimi-home <dir> overrides the Kimi Code data root (default: ~/.kimi-code); --workbuddy-home <dir> overrides the WorkBuddy data root (default: ~/.workbuddy); --grok-home <dir> overrides the Grok data root (default: ~/.grok or $GROK_HOME).",
       "",
       "Use facts --debug only for local diagnosis; it exposes raw session ids and must not be passed to report agents.",
     ].join("\n") + "\n");

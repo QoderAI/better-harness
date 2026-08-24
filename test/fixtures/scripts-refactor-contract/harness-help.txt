@@ -17,6 +17,7 @@ Subcommands:
   checkup                  Scan agent customizations and produce a read-only cleanup plan
   selection-profile        Build a privacy-safe session selection profile
   source                   Build the deterministic Agent Work Loop source envelope
+  source-review            Create, compile, and apply a bounded report-source review
   task-loop-report         Project deterministic task-loop findings from report.source.json
   render                   Render reviewed findings data into report artifacts
   preview-canvas           Preview a Qoder Canvas report on this machine
@@ -31,6 +32,7 @@ Examples:
   better-harness harness checkup --phase scan --provider qoder --workspace . --json
   better-harness harness workspace-topology --workspace . --json
   better-harness harness source --workspace . --source <scratch>/report.source.json --language en
+  better-harness harness source-review create --source <scratch>/report.source.json --packet <scratch>/review.packet.json --decision <scratch>/lead.decision.json --json
   better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json
   better-harness harness host-doctor --platform pi --workspace . --json
   better-harness harness preview-canvas <run>/report.canvas.tsx --open

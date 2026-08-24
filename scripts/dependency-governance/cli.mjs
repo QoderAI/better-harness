@@ -10,6 +10,19 @@ const DEFAULT_STALE_DAYS = 180;
 const DEFAULT_VERSION = "v5";
 const DEFAULT_BENCHMARK_ITERATIONS = 80;
 const CLASSIFIER_VERSIONS = ["v1", "v2", "v3", "v4", "v5"];
+const DEPENDENCY_GOVERNANCE_HELP = `Usage: better-harness dependency-governance [options]
+
+Detect dependency governance files, automation, audit signals, and stale evidence.
+
+Options:
+  --cwd <path>              Analyze this directory
+  --version <version>       Select a classifier version
+  --stale-days <days>       Set the stale-evidence threshold
+  --now <timestamp>         Set the analysis time
+  --benchmark               Benchmark classifier versions
+  --json                    Emit JSON output
+  -h, --help                Print help
+`;
 
 const MANIFEST_BASENAMES = new Set([
   "package.json",
@@ -791,6 +804,10 @@ function printBenchmark(benchmark) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (argv.some((arg) => arg === "--help" || arg === "-h")) {
+    process.stdout.write(DEPENDENCY_GOVERNANCE_HELP);
+    return;
+  }
   const args = parseArgs(argv);
   const version = args.version ?? DEFAULT_VERSION;
   if (!CLASSIFIER_VERSIONS.includes(version)) {

@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HOST_CAPABILITIES, hostIdsFor } from "../host-support/index.mjs";
 import { evaluateHarnessReportQuality } from "./report-quality.mjs";
 import { canvasArtifactsFromReportData, readJsonFile, findingsJsonFromReportData, normalizeReportData } from "./report-data-schema.mjs";
 import { repairFindingsJsonData } from "./repair-findings-json.mjs";
 import { allocateRunDir } from "./run-dir.mjs";
 import { evaluateFindingsJson, validateHarnessCanvasArtifacts } from "./validate-canvas.mjs";
+import { validateCursorCanvasArtifacts } from "./validate-cursor-canvas.mjs";
 import { resolveWorkspaceTopology } from "../workspace-topology/index.mjs";
 import { evaluateHtmlReport, renderHtml } from "./renderers/html.mjs";
 import { renderMarkdown } from "./renderers/markdown.mjs";
@@ -28,13 +30,33 @@ import {
   QODER_CANVAS_FILE,
   renderQoderCanvas,
 } from "./renderers/qoder-canvas.mjs";
+import {
+  CURSOR_CANVAS_FINDINGS_FILE,
+  CURSOR_CANVAS_DATA_FILE,
+  CURSOR_CANVAS_FILE,
+  renderCursorCanvas,
+} from "./renderers/cursor-canvas.mjs";
 
 function filesystemPathIdentity(value) {
   const normalized = path.normalize(value);
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
-const HELP = `Usage: better-harness harness render (--source <report.source.json> | --findings <findings.json>) --mode <qoder-canvas|markdown|html> --out <dir> --target <path> [options]
+// Host ids accepted for report routing. Kept local so `--help` stays cheap;
+// test/harness-report-render-cli.test.mjs guards it against the session
+// platform registry in scripts/session-analysis/analyzer.mjs.
+export const RENDER_REPORT_PLATFORMS = Object.freeze([
+  ...hostIdsFor(HOST_CAPABILITIES.REPORT_RENDERING),
+]);
+
+// Each Canvas mode owns its own analyzer companion filename so the two routes
+// stay independent even though they currently agree on `canvas.json`.
+const ANALYZER_CANVAS_DATA_FILE_BY_MODE = Object.freeze({
+  "qoder-canvas": QODER_CANVAS_DATA_FILE,
+  "cursor-canvas": CURSOR_CANVAS_DATA_FILE,
+});
+
+const HELP = `Usage: better-harness harness render (--source <report.source.json> | --findings <findings.json>) --mode <qoder-canvas|cursor-canvas|markdown|html> --out <dir> --target <path> [options]
 
 Render reviewed findings data into deterministic report artifacts.
 
@@ -42,8 +64,9 @@ Options:
   --findings <file>    Reviewed findings JSON with top-level summary and findings
   --canvas <file>      Explicit legacy canvas.json companion for a split Agent Work Loop bundle
   --source <file>      Reviewed Agent Work Loop report source; projection is performed in memory
-  --mode <mode>        qoder-canvas, markdown, or html (default: qoder-canvas)
-  --out <dir>          Output root (default: .qoder/better-harness)
+  --mode <mode>        qoder-canvas, cursor-canvas, markdown, or html (default: qoder-canvas)
+  --out <dir>          Output root (default: .qoder/better-harness, .cursor/better-harness for cursor-canvas, or .<platform>/better-harness for html)
+  --platform <name>    Host id used for default html out root (alias: --provider)
   --run-dir <dir>      Run directory: relative values resolve below --out; absolute values remain exact
   --target <path>      Target project path used for run-directory slug
   --language <lang>    en or zh-CN (default: input summary.locale, then en)
@@ -55,7 +78,7 @@ Options:
 `;
 
 function parseArgs(argv) {
-  const options = { mode: "qoder-canvas", out: ".qoder/better-harness", validate: false, json: false };
+  const options = { mode: "qoder-canvas", validate: false, json: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "-h" || arg === "--help") {
@@ -64,15 +87,29 @@ function parseArgs(argv) {
       options.validate = true;
     } else if (arg === "--json") {
       options.json = true;
-    } else if (["--findings", "--canvas", "--source", "--mode", "--out", "--run-dir", "--target", "--language", "--sdk-root", "--sdk-declarations"].includes(arg)) {
+    } else if (["--findings", "--canvas", "--source", "--mode", "--out", "--run-dir", "--target", "--language", "--sdk-root", "--sdk-declarations", "--platform", "--provider"].includes(arg)) {
       options[arg.slice(2)] = argv[++index];
-    } else if (arg.startsWith("--findings=") || arg.startsWith("--canvas=") || arg.startsWith("--source=") || arg.startsWith("--mode=") || arg.startsWith("--out=") || arg.startsWith("--run-dir=") || arg.startsWith("--target=") || arg.startsWith("--language=") || arg.startsWith("--sdk-root=") || arg.startsWith("--sdk-declarations=")) {
+    } else if (arg.startsWith("--findings=") || arg.startsWith("--canvas=") || arg.startsWith("--source=") || arg.startsWith("--mode=") || arg.startsWith("--out=") || arg.startsWith("--run-dir=") || arg.startsWith("--target=") || arg.startsWith("--language=") || arg.startsWith("--sdk-root=") || arg.startsWith("--sdk-declarations=") || arg.startsWith("--platform=") || arg.startsWith("--provider=")) {
       const [name, value] = arg.slice(2).split(/=(.*)/s);
       options[name] = value;
     } else {
       throw Object.assign(new Error(`Unknown argument: ${arg}`), { code: "UNKNOWN_ARGUMENT" });
     }
   }
+  const hostId = String(options.platform ?? options.provider ?? "").toLowerCase();
+  const supportedHtmlHosts = new Set(RENDER_REPORT_PLATFORMS);
+  // Allow --help even when a bad platform is present; validate only for real runs.
+  if (!options.help && hostId && !supportedHtmlHosts.has(hostId)) {
+    throw Object.assign(
+      new Error(`unsupported render platform: ${hostId}. Supported platforms: ${[...supportedHtmlHosts].join(", ")}.`),
+      { code: "UNSUPPORTED_RENDER_PLATFORM" },
+    );
+  }
+  options.out ??= options.mode === "cursor-canvas"
+    ? ".cursor/better-harness"
+    : options.mode === "html" && hostId && supportedHtmlHosts.has(hostId) && hostId !== "qoder"
+      ? `.${hostId}/better-harness`
+      : ".qoder/better-harness";
   return options;
 }
 
@@ -97,10 +134,11 @@ function artifact(name, runDir) {
 }
 
 function implicitAnalyzerCanvasPath(options, findingsPath) {
-  if (options.canvas || options.mode !== "qoder-canvas") {
+  const canvasDataFile = ANALYZER_CANVAS_DATA_FILE_BY_MODE[options.mode];
+  if (options.canvas || !canvasDataFile) {
     return null;
   }
-  const candidatePath = path.join(path.dirname(findingsPath), QODER_CANVAS_DATA_FILE);
+  const candidatePath = path.join(path.dirname(findingsPath), canvasDataFile);
   if (!existsSync(candidatePath)) return null;
   const candidate = readJsonFile(candidatePath);
   return Object.hasOwn(candidate ?? {}, "summaryFactsSchemaVersion") ? candidatePath : null;
@@ -167,6 +205,17 @@ async function writeArtifacts({ reportData, artifactDir, runDir }) {
       await writeFile(path.join(artifactDir, name), content);
       artifacts.push(artifact(name, runDir));
     }
+  } else if (reportData.mode === "cursor-canvas") {
+    const output = canvasArtifactsFromReportData(reportData);
+    await writeJson(path.join(artifactDir, CURSOR_CANVAS_FINDINGS_FILE), output.findings);
+    artifacts.push(artifact(CURSOR_CANVAS_FINDINGS_FILE, runDir));
+    await writeJson(path.join(artifactDir, CURSOR_CANVAS_DATA_FILE), output.canvas);
+    artifacts.push(artifact(CURSOR_CANVAS_DATA_FILE, runDir));
+    const rendered = renderCursorCanvas(reportData);
+    for (const [name, content] of Object.entries(rendered)) {
+      await writeFile(path.join(artifactDir, name), content);
+      artifacts.push(artifact(name, runDir));
+    }
   } else if (reportData.mode === "markdown") {
     const findingsJson = findingsJsonFromReportData(reportData);
     await writeJson(path.join(artifactDir, "findings.json"), findingsJson);
@@ -178,7 +227,10 @@ async function writeArtifacts({ reportData, artifactDir, runDir }) {
     await writeJson(path.join(artifactDir, "findings.json"), findingsJson);
     artifacts.push(artifact("findings.json", runDir));
     await writeFile(path.join(artifactDir, "report.md"), renderMarkdown(reportData));
-    await writeFile(path.join(artifactDir, "report.html"), renderHtml(reportData));
+    await writeFile(
+      path.join(artifactDir, "report.html"),
+      renderHtml(reportData, { findingsPath: path.join(runDir, "findings.json") }),
+    );
     artifacts.push(artifact("report.md", runDir), artifact("report.html", runDir));
   }
 
@@ -227,11 +279,22 @@ async function validateArtifacts({ reportData, artifactDir, runDir, artifacts, o
       preview: false,
     });
     checks.push(...result.checks);
+  } else if (reportData.mode === "cursor-canvas") {
+    const result = await validateCursorCanvasArtifacts({
+      canvasPath: path.join(artifactDir, CURSOR_CANVAS_FILE),
+      findingsPath: path.join(artifactDir, CURSOR_CANVAS_FINDINGS_FILE),
+      canvasDataPath: path.join(artifactDir, CURSOR_CANVAS_DATA_FILE),
+    });
+    checks.push(...result.checks);
   } else {
     const findingsPath = path.join(artifactDir, "findings.json");
-    const findingsText = readFileSync(findingsPath, "utf8");
     const reportPath = path.join(artifactDir, "report.md");
-    const reportText = readFileSync(reportPath, "utf8");
+    const htmlPath = reportData.mode === "html" ? path.join(artifactDir, "report.html") : null;
+    const [findingsText, reportText, htmlText] = await Promise.all([
+      readFile(findingsPath, "utf8"),
+      readFile(reportPath, "utf8"),
+      htmlPath ? readFile(htmlPath, "utf8") : Promise.resolve(null),
+    ]);
     if (!isAgentWorkLoopReport(reportData)) {
       const reportQuality = evaluateHarnessReportQuality(reportText);
       checks.push(checkResult("report-quality", reportQuality.status, reportQuality.errors, reportQuality.warnings, reportQuality.summary));
@@ -240,7 +303,11 @@ async function validateArtifacts({ reportData, artifactDir, runDir, artifacts, o
       allowStandaloneTaskLoop: true,
     }));
     if (reportData.mode === "html") {
-      checks.push(evaluateHtmlReport(readFileSync(path.join(artifactDir, "report.html"), "utf8"), reportData));
+      checks.push(evaluateHtmlReport(
+        htmlText,
+        reportData,
+        { findingsPath: path.join(runDir, "findings.json") },
+      ));
     }
   }
 
@@ -257,6 +324,9 @@ async function validateArtifacts({ reportData, artifactDir, runDir, artifacts, o
 function artifactNamesForMode(mode) {
   if (mode === "qoder-canvas") {
     return [QODER_CANVAS_FINDINGS_FILE, QODER_CANVAS_DATA_FILE, QODER_CANVAS_FILE];
+  }
+  if (mode === "cursor-canvas") {
+    return [CURSOR_CANVAS_FINDINGS_FILE, CURSOR_CANVAS_DATA_FILE, CURSOR_CANVAS_FILE];
   }
   if (mode === "markdown") return ["findings.json", "report.md"];
   if (mode === "html") return ["findings.json", "report.md", "report.html"];

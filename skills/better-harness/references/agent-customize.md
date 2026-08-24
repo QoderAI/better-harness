@@ -63,7 +63,7 @@ For the few task-relevant assets, keep these axes separate:
 - **Outcome:** effective only after a comparable later outcome without a
   guardrail regression.
 
-Load only the matching one-hop practice: [Rules/AGENTS.md](../../../references/agent-customize/agents-md-review.md), [Skill quality](../../../references/agent-customize/skill-review.md),
+Load only the matching one-hop practice: [Rules/AGENTS.md](../../../references/agent-customize/agents-md-review.md), [Skill evaluation](../../../references/agent-customize/skill-eval.md), [Skill quality](../../../references/agent-customize/skill-review.md),
 [Skill discovery](../../../references/agent-customize/skill-discovery.md), [MCP](../../../references/agent-customize/mcp-review.md), [Memory](../../../references/agent-customize/memory-review.md),
 [Custom Agents](../../../references/agent-customize/custom-agents-review.md),
 or [Hooks](../../../references/agent-customize/hooks-review.md). Use

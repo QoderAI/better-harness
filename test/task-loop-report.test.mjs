@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -10,6 +10,7 @@ import { buildCheckupScan } from "../scripts/coding-agent-practices/checkup/scan
 import { createHarnessReportSource, validateHarnessReportSource } from "../scripts/harness-analysis/report-source.mjs";
 import { normalizeReportData } from "../scripts/harness-analysis/report-data-schema.mjs";
 import { evaluateBetterHarnessArtifacts, renderBetterHarnessReportCanvas } from "../scripts/harness-analysis/renderers/better-harness.mjs";
+import { evaluateHtmlReport, renderHtml } from "../scripts/harness-analysis/renderers/html.mjs";
 import { renderMarkdown } from "../scripts/harness-analysis/renderers/markdown.mjs";
 import {
   mergeTaskLoopCanvasData,
@@ -19,6 +20,7 @@ import {
   taskLoopCanvasFromSummaryFacts,
   reconcileTaskLoopFindingLinks,
   splitTaskLoopFindings,
+  validateCompactTaskLoopFindings,
   validateTaskLoopCanvasSplit,
   validateTaskLoopFindings,
 } from "../scripts/harness-analysis/task-loop-report.mjs";
@@ -1640,9 +1642,9 @@ test("task-loop projection preserves the all-eligible usage evidence boundary", 
         idleGapMinutes: 30,
       },
       samples: [
-        { alias: "S1", rawSessionId: "raw-session-1", sessionRef: "qsr1-111111111111111111111111", role: "user-thread-candidate", activeMinutes: 60, failureCount: 2, userInputSummary: "Diagnose the report generation path" },
-        { alias: "S2", rawSessionId: "raw-session-2", sessionRef: "qsr1-222222222222222222222222", role: "user-thread-candidate", activeMinutes: 55, failureCount: 0, userInputSummary: "Implement the bounded session review" },
-        { alias: "S3", rawSessionId: "raw-session-3", sessionRef: "qsr1-333333333333333333333333", role: "child-agent-candidate", activeMinutes: 48, failureCount: 1, userInputSummary: "Review the validation evidence" },
+        { alias: "S1", rawSessionId: "raw-session-1", sessionRef: "qsr1-111111111111111111111111", role: "user-thread-candidate", activeMinutes: 60, failureCount: 2, userInputSummary: "Diagnose the report generation path", toolTrace: { schemaVersion: 2, totalCalls: 4, shownCalls: 4, truncated: false, calls: [{ id: "T1", step: 1, toolName: "Read", status: "observed", durationStatus: "observed", durationMs: 1250, timingSource: "transcript-pair" }, { id: "T2", step: 2, toolName: "Bash", status: "failed", durationStatus: "observed", durationMs: 8000, timingSource: "lifecycle-pair" }, { id: "T3", step: 3, toolName: "Read", status: "observed", durationStatus: "unobserved" }, { id: "T4", step: 4, toolName: "Grep", status: "observed", durationStatus: "observed", durationMs: 500, timingSource: "transcript-pair" }] } },
+        { alias: "S2", rawSessionId: "raw-session-2", sessionRef: "qsr1-222222222222222222222222", role: "user-thread-candidate", activeMinutes: 55, failureCount: 0, userInputSummary: "Implement the bounded session review", toolTrace: { schemaVersion: 1, totalCalls: 3, shownCalls: 3, truncated: false, calls: [{ id: "T1", step: 1, toolName: "Read", status: "observed" }, { id: "T2", step: 2, toolName: "SearchReplace", status: "observed" }, { id: "T3", step: 3, toolName: "Bash", status: "observed" }] } },
+        { alias: "S3", rawSessionId: "raw-session-3", sessionRef: "qsr1-333333333333333333333333", role: "child-agent-candidate", activeMinutes: 48, failureCount: 1, userInputSummary: "Review the validation evidence", toolTrace: { schemaVersion: 1, totalCalls: 2, shownCalls: 2, truncated: false, calls: [{ id: "T1", step: 1, toolName: "Read", status: "observed" }, { id: "T2", step: 2, toolName: "Bash", status: "failed" }] } },
       ],
     },
     accounting: {
@@ -1684,7 +1686,25 @@ test("task-loop projection preserves the all-eligible usage evidence boundary", 
   assert.equal(Object.hasOwn(findings.summary.usageEfficiency.longSessions.samples[0], "rawSessionId"), false);
   assert.equal(Object.hasOwn(findings.summary.usageEfficiency.longSessions.samples[0], "sessionRef"), false);
   assert.equal(Object.hasOwn(findings.summary.usageEfficiency.longSessions.samples[0], "userInputSummary"), false);
+  assert.equal(findings.summary.usageEfficiency.longSessions.samples[0].sessionId, "raw-session-1");
+  assert.equal(findings.summary.usageEfficiency.longSessions.samples[0].userRequest, "Diagnose the report generation path");
+  assert.equal(findings.summary.usageEfficiency.longSessions.samples[0].toolTrace.calls.length, 4);
+  assert.equal(findings.summary.usageEfficiency.longSessions.samples[0].toolTrace.calls[1].status, "failed");
+  assert.equal(findings.summary.usageEfficiency.longSessions.samples[0].toolTrace.schemaVersion, 2);
+  assert.deepEqual(findings.summary.usageEfficiency.longSessions.samples[0].toolTrace.calls[0], {
+    id: "T1",
+    step: 1,
+    toolName: "Read",
+    status: "observed",
+    durationStatus: "observed",
+    durationMs: 1250,
+    timingSource: "transcript-pair",
+  });
   assert.deepEqual(validateTaskLoopFindings(findings), []);
+
+  const legacyWithoutTraces = structuredClone(findings);
+  for (const sample of legacyWithoutTraces.summary.usageEfficiency.longSessions.samples) delete sample.toolTrace;
+  assert.deepEqual(validateTaskLoopFindings(legacyWithoutTraces), []);
 
   const promotedLead = structuredClone(findings);
   const templateFinding = promotedLead.findings[0];
@@ -1697,13 +1717,19 @@ test("task-loop projection preserves the all-eligible usage evidence boundary", 
   });
   assert.ok(validateTaskLoopFindings(promotedLead).some((error) =>
     /must keep unreviewed long-session candidates in summary\.usageEfficiency\.reviewLead/u.test(error)));
-  assert.doesNotMatch(JSON.stringify(findings.summary.usageEfficiency.longSessions.samples), /raw-session|rawSessionId|candidateReasons|evidenceRefs/);
+  assert.doesNotMatch(JSON.stringify(findings.summary.usageEfficiency.longSessions.samples), /rawSessionId|sessionRef|candidateReasons|evidenceRefs/);
 
   const codexSource = reportSource({ sessionEvents: { usageEfficiency: structuredClone(usageEfficiency) } });
   codexSource.manifest.scope.platform = "codex";
   const codexReviewLead = projectTaskLoopFindings(codexSource).summary.usageEfficiency.reviewLead;
   assert.match(codexReviewLead.aiFixPrompt, /--platform codex/);
   assert.doesNotMatch(codexReviewLead.aiFixPrompt, /--platform qoder/);
+
+  const grokSource = reportSource({ sessionEvents: { usageEfficiency: structuredClone(usageEfficiency) } });
+  grokSource.manifest.scope.platform = "grok";
+  const grokReviewLead = projectTaskLoopFindings(grokSource).summary.usageEfficiency.reviewLead;
+  assert.match(grokReviewLead.aiFixPrompt, /--platform grok/);
+  assert.doesNotMatch(grokReviewLead.aiFixPrompt, /--platform qoder/);
 
   findings.summary.usageEfficiency.accounting.unattributedResponseCount = 1;
   assert.ok(validateTaskLoopFindings(findings).some((error) => /response coverage/.test(error)));
@@ -1717,6 +1743,31 @@ test("task-loop projection preserves the all-eligible usage evidence boundary", 
   assert.ok(validateTaskLoopFindings(findings).some((error) => /unsupported field: userInputSummary/.test(error)));
   delete findings.summary.usageEfficiency.longSessions.samples[0].userInputSummary;
 
+  const unsafeSessionLocator = structuredClone(findings);
+  unsafeSessionLocator.summary.usageEfficiency.longSessions.samples[0].sessionId = "/Users/private/session";
+  assert.ok(validateTaskLoopFindings(unsafeSessionLocator).some((error) => /bounded Canvas session locator/.test(error)));
+
+  const unsafeUserRequest = structuredClone(findings);
+  unsafeUserRequest.summary.usageEfficiency.longSessions.samples[0].userRequest = "/Users/private/repo task";
+  assert.ok(validateTaskLoopFindings(unsafeUserRequest).some((error) => /privacy-safe user request/.test(error)));
+
+  const unsafeTrace = structuredClone(findings);
+  unsafeTrace.summary.usageEfficiency.longSessions.samples[0].toolTrace.calls[0].toolName = "/Users/private/tool";
+  assert.ok(validateTaskLoopFindings(unsafeTrace).some((error) => /privacy-safe label/.test(error)));
+
+  const negativeDuration = structuredClone(findings);
+  negativeDuration.summary.usageEfficiency.longSessions.samples[0].toolTrace.calls[0].durationMs = -1;
+  assert.ok(validateTaskLoopFindings(negativeDuration).some((error) => /bounded non-negative integer/.test(error)));
+
+  const unobservedWithTiming = structuredClone(findings);
+  const unobservedCall = unobservedWithTiming.summary.usageEfficiency.longSessions.samples[0].toolTrace.calls[2];
+  unobservedCall.durationMs = 0;
+  assert.ok(validateTaskLoopFindings(unobservedWithTiming).some((error) => /omit timing values when duration is unobserved/.test(error)));
+
+  const unsupportedTimingSource = structuredClone(findings);
+  unsupportedTimingSource.summary.usageEfficiency.longSessions.samples[0].toolTrace.calls[0].timingSource = "wall-clock";
+  assert.ok(validateTaskLoopFindings(unsupportedTimingSource).some((error) => /supported observed lifecycle pair/.test(error)));
+
   const boundedUsage = structuredClone(usageEfficiency);
   boundedUsage.longSessions.activeCount = 6;
   boundedUsage.longSessions.activeRatio = 0.6667;
@@ -1728,6 +1779,7 @@ test("task-loop projection preserves the all-eligible usage evidence boundary", 
     activeMinutes: 46,
     failureCount: 0,
     userInputSummary: "Compare the model outcome evidence",
+    toolTrace: { schemaVersion: 1, totalCalls: 1, shownCalls: 1, truncated: false, calls: [{ id: "T1", step: 1, toolName: "Read", status: "observed" }] },
   });
   const bounded = projectTaskLoopFindings(reportSource({ sessionEvents: { usageEfficiency: boundedUsage } }));
   const boundedPrompt = bounded.summary.usageEfficiency.reviewLead?.aiFixPrompt ?? "";
@@ -2859,6 +2911,216 @@ test("practice findings preserve root and package owners through final projectio
   const invalid = projectTaskLoopFindings(source);
   assert.equal(invalid.findings[0].target, null);
   assert.match(validateTaskLoopFindings(invalid).join("; "), /target must be an object/u);
+});
+
+async function htmlFixFixture(root) {
+  const workspace = path.join(root, "workspace");
+  const runDir = path.join(workspace, ".codex", "better-harness", "run");
+  const findingsPath = path.join(runDir, "findings.json");
+  const markdownPath = path.join(runDir, "report.md");
+  const htmlPath = path.join(runDir, "report.html");
+  const resultPath = path.join(root, "result.json");
+  const targetPath = "fix-output/owner.md";
+  const split = splitTaskLoopFindings(projectTaskLoopFindings(reportSource()));
+  const finding = split.findings.findings[0];
+  const reportData = normalizeReportData(split.findings, {
+    mode: "html",
+    language: split.findings.summary.locale,
+    target: workspace,
+    dataPath: findingsPath,
+  });
+  const resultPayload = {
+    actualOutput: [{
+      action: "updated",
+      artifact: finding.expectedArtifact,
+      name: `${finding.expectedArtifact} owner`,
+      scope: "Project",
+      path: targetPath,
+      summary: "Updated the finding owner and retained its focused validation result.",
+    }],
+    assignmentSummary: assignmentSummary({
+      title: "The portable report now shows the verified fix",
+      body: "The finding owner passed focused validation, and the portable report now presents the exact recorded result.",
+    }),
+    postFixRepairReview: {
+      modelId: split.findings.summary.modelId,
+      findingId: finding.id,
+      status: "verified",
+      summary: "The focused repair passed its target-owned validation.",
+      reason: "An independent review confirmed the actual output while reserving outcome scores for a later task window.",
+      confidence: "medium",
+      evidenceRefs: [
+        { kind: "fix-validation", id: "portable-html-owner-check" },
+        { kind: "asset-integrity", id: "portable-html-integrity-check" },
+      ],
+    },
+  };
+  await mkdir(path.join(workspace, path.dirname(targetPath)), { recursive: true });
+  await mkdir(runDir, { recursive: true });
+  await writeFile(path.join(workspace, targetPath), "# Owner\n");
+  await writeFile(findingsPath, `${JSON.stringify(split.findings, null, 2)}\n`);
+  await writeFile(markdownPath, renderMarkdown(reportData));
+  await writeFile(htmlPath, renderHtml(reportData, { findingsPath }));
+  await writeFile(resultPath, JSON.stringify(resultPayload));
+  return {
+    workspace,
+    runDir,
+    findingsPath,
+    markdownPath,
+    htmlPath,
+    resultPath,
+    resultPayload,
+    finding,
+  };
+}
+
+async function htmlArtifactSnapshot(fixture) {
+  return Object.fromEntries(await Promise.all([
+    ["findings.json", fixture.findingsPath],
+    ["report.md", fixture.markdownPath],
+    ["report.html", fixture.htmlPath],
+  ].map(async ([name, filePath]) => [name, await readFile(filePath, "utf8")])));
+}
+
+test("record-fix-output records portable HTML fixes and refreshes all three artifacts", async () => {
+  await withTempDir(async (root) => {
+    const fixture = await htmlFixFixture(root);
+    const before = await htmlArtifactSnapshot(fixture);
+
+    const recorded = await recordFixOutput({
+      workspace: fixture.workspace,
+      findings: fixture.findingsPath,
+      findingId: fixture.finding.id,
+      expectedRevision: 0,
+      result: fixture.resultPath,
+      consumeResult: true,
+    });
+
+    assert.equal(recorded.status, "pass");
+    assert.equal(recorded.reportFamily, "html");
+    assert.equal(recorded.revision, 1);
+    assert.equal(recorded.repairProgress.verifiedFindingCount, 1);
+    assert.equal(recorded.resultConsumed, true);
+    await assert.rejects(readFile(fixture.resultPath, "utf8"), { code: "ENOENT" });
+    assert.deepEqual((await readdir(fixture.runDir)).sort(), ["findings.json", "report.html", "report.md"]);
+
+    const after = await htmlArtifactSnapshot(fixture);
+    assert.notEqual(after["findings.json"], before["findings.json"]);
+    assert.notEqual(after["report.md"], before["report.md"]);
+    assert.notEqual(after["report.html"], before["report.html"]);
+    const updated = JSON.parse(after["findings.json"]);
+    assert.deepEqual(validateCompactTaskLoopFindings(updated), []);
+    assert.equal(updated.findings[0].actualOutputRevision, 1);
+    assert.equal(updated.findings[0].postFixRepairReview.status, "verified");
+    assert.match(after["report.md"], /Asset Health \/ Repair Progress: 100\/100 \(1 verified, 0 partial, 0 pending\)/u);
+    assert.match(after["report.html"], new RegExp(`${recorded.repairProgress.score}\\s*\\/\\s*100`, "u"));
+
+    const actionPayload = JSON.parse(after["report.html"].match(
+      /<script\s+id="harness-report-actions"\s+type="application\/json">([\s\S]*?)<\/script>/iu,
+    )[1]);
+    assert.equal(actionPayload.findings.find((row) => row.id === fixture.finding.id).expectedRevision, 1);
+    const reportData = normalizeReportData(updated, {
+      mode: "html",
+      language: updated.summary.locale,
+      target: fixture.workspace,
+      dataPath: fixture.findingsPath,
+    });
+    assert.equal(evaluateHtmlReport(after["report.html"], reportData, {
+      findingsPath: fixture.findingsPath,
+    }).status, "pass");
+  });
+});
+
+test("record-fix-output leaves portable HTML artifacts unchanged on pre-publish failures", async () => {
+  await withTempDir(async (root) => {
+    const fixture = await htmlFixFixture(root);
+    const before = await htmlArtifactSnapshot(fixture);
+
+    await assert.rejects(recordFixOutput({
+      workspace: fixture.workspace,
+      findings: fixture.findingsPath,
+      findingId: fixture.finding.id,
+      expectedRevision: 1,
+      result: fixture.resultPath,
+      consumeResult: true,
+    }), (error) => error?.code === "STALE_FIX_OUTPUT_REVISION");
+    assert.deepEqual(await htmlArtifactSnapshot(fixture), before);
+    assert.ok((await readFile(fixture.resultPath, "utf8")).length > 0);
+
+    await assert.rejects(recordFixOutput({
+      workspace: fixture.workspace,
+      findings: fixture.findingsPath,
+      findingId: fixture.finding.id,
+      expectedRevision: 0,
+      result: fixture.resultPath,
+      consumeResult: true,
+      prepareHtmlReport() {
+        throw Object.assign(new Error("simulated HTML validation failure"), {
+          code: "INVALID_UPDATED_HTML_REPORT",
+        });
+      },
+    }), (error) => error?.code === "INVALID_UPDATED_HTML_REPORT");
+    assert.deepEqual(await htmlArtifactSnapshot(fixture), before);
+    assert.ok((await readFile(fixture.resultPath, "utf8")).length > 0);
+
+    await writeFile(path.join(fixture.runDir, "canvas.json"), "{}\n");
+    await assert.rejects(recordFixOutput({
+      workspace: fixture.workspace,
+      findings: fixture.findingsPath,
+      findingId: fixture.finding.id,
+      expectedRevision: 0,
+      result: fixture.resultPath,
+    }), (error) => error?.code === "INVALID_REPORT_CONTEXT");
+    assert.deepEqual(await htmlArtifactSnapshot(fixture), before);
+  });
+});
+
+test("record-fix-output keeps compact Qoder reports bound to canvas.json", async () => {
+  await withTempDir(async (root) => {
+    const workspace = path.join(root, "workspace");
+    const runDir = path.join(workspace, ".qoder", "better-harness", "run");
+    const findingsPath = path.join(runDir, "findings.json");
+    const resultPath = path.join(root, "result.json");
+    const targetPath = "fix-output/owner.md";
+    const split = splitTaskLoopFindings(projectTaskLoopFindings(reportSource()));
+    const finding = split.findings.findings[0];
+    await mkdir(path.join(workspace, path.dirname(targetPath)), { recursive: true });
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(workspace, targetPath), "# Owner\n");
+    await writeFile(findingsPath, `${JSON.stringify(split.findings, null, 2)}\n`);
+    await writeFile(path.join(runDir, "report.canvas.tsx"), "export default function Report() { return null; }\n");
+    await writeFile(resultPath, JSON.stringify({
+      actualOutput: [{
+        action: "updated",
+        artifact: finding.expectedArtifact,
+        name: `${finding.expectedArtifact} owner`,
+        scope: "Project",
+        path: targetPath,
+        summary: "Updated the verified Qoder report owner.",
+      }],
+      assignmentSummary: assignmentSummary(),
+    }));
+    const before = await readFile(findingsPath, "utf8");
+
+    await assert.rejects(recordFixOutput({
+      workspace,
+      findings: findingsPath,
+      findingId: finding.id,
+      expectedRevision: 0,
+      result: resultPath,
+    }), (error) => error?.code === "INVALID_REPORT_CONTEXT" && /requires canvas\.json/u.test(error.message));
+    assert.equal(await readFile(findingsPath, "utf8"), before);
+
+    await writeFile(path.join(runDir, "canvas.json"), "{}\n");
+    await assert.rejects(recordFixOutput({
+      workspace,
+      findings: findingsPath,
+      findingId: finding.id,
+      expectedRevision: 0,
+      result: resultPath,
+    }), (error) => error?.code === "INVALID_TASK_LOOP_FINDINGS");
+    assert.equal(await readFile(findingsPath, "utf8"), before);
+  });
 });
 
 test("record-fix-output rejects a finding bound to a sibling package", async () => {

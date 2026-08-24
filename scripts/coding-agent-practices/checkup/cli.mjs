@@ -1,14 +1,29 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { normalizedHostHomeOptions } from "../../host-support/index.mjs";
 import { parseArgs, parseBooleanFlag } from "../../session-analysis/index.mjs";
 import { applyCheckupPlan } from "./apply.mjs";
 import { buildCheckupPlan } from "./plan.mjs";
 import { runCheckupScan } from "./scan.mjs";
 
+const CHECKUP_HELP = `Usage: better-harness harness checkup [scan|plan|apply] [options]
+
+Scan agent customizations and produce a read-only cleanup plan.
+
+Options:
+  --phase <scan|plan|apply> Select the checkup phase
+  --workspace <path>        Analyze this workspace
+  --provider <name>         Select an agent provider
+  --plan <path>             Read a plan for the apply phase
+  --json                    Emit JSON output
+  -h, --help                Print help
+`;
+
 function optionsFromArgs(options) {
+  const provider = options.provider ?? "qoder";
   return {
-    provider: options.provider,
+    provider,
     locale: options.locale,
     workspace: options.workspace,
     workspaceLabel: options["workspace-label"],
@@ -21,12 +36,9 @@ function optionsFromArgs(options) {
     minimumSessions: options["minimum-sessions"],
     newInstallGraceDays: options["new-install-grace-days"],
     includeGlobalCapabilities: parseBooleanFlag(options["include-global-capabilities"] ?? false),
-    qoderHome: options["qoder-home"],
+    ...normalizedHostHomeOptions(options, provider),
     qoderSharedClientCacheRoot: options["qoder-shared-client-cache-root"] ?? options["shared-client-cache-root"],
-    codexHome: options["codex-home"],
-    claudeHome: options["claude-home"],
     claudeStatePath: options["claude-state"],
-    cursorHome: options["cursor-home"],
     friction: options.friction,
     frictionStrength: options["friction-strength"],
     frictionObservationCount: options["friction-observations"],
@@ -134,6 +146,10 @@ async function readPlan(filePath) {
 }
 
 export async function main(argv = process.argv.slice(2), dependencies = {}) {
+  if (argv.some((arg) => arg === "--help" || arg === "-h")) {
+    process.stdout.write(CHECKUP_HELP);
+    return;
+  }
   const { command, options } = parseArgs(argv);
   const phase = options.phase ?? command ?? "scan";
   if (!new Set(["scan", "plan", "apply"]).has(phase)) {

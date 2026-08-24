@@ -31,6 +31,20 @@ import { findingTargetErrors } from "../workspace-topology/index.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = path.resolve(__dirname, "../..");
+const VALIDATE_CANVAS_HELP = `Usage: better-harness harness validate-canvas --canvas <path> [options]
+
+Validate Qoder Canvas artifacts and their linked report inputs.
+
+Options:
+  --canvas <path>             Canvas artifact to validate
+  --report <path>             Linked Markdown report
+  --findings <path>           Linked findings JSON
+  --repo-root <path>          Repository root for path validation
+  --preview                   Start a local preview during validation
+  --browser                   Open the preview in a browser
+  --json                      Emit JSON output
+  -h, --help                  Print help
+`;
 
 const SECTION_LABELS = {
   riskFindings: ["Risk Findings", "风险发现"],
@@ -119,17 +133,49 @@ function evaluateTaskLoopCanvasQuality(text) {
   const longSessionReviewBody = longSessionReviewStart >= 0 && longSessionReviewEnd > longSessionReviewStart
     ? text.slice(longSessionReviewStart, longSessionReviewEnd)
     : "";
-  const sessionRefUses = longSessionReviewBody.match(/sample\.sessionRef/g) ?? [];
   if (!longSessionReviewBody
     || !/reviewLead/.test(longSessionReviewBody)
-    || sessionRefUses.length !== 0
     || !/samples\.map/.test(longSessionReviewBody)
-    || !/<Stack gap=\{0\}>/.test(longSessionReviewBody)
+    || !/sample\.userRequest/.test(longSessionReviewBody)
+    || !/sample\.sessionId/.test(longSessionReviewBody)
+    || !/useCanvasAction\(\)/.test(longSessionReviewBody)
+    || !/aicoding\.canvas\.openQuestSession/.test(longSessionReviewBody)
+    || !/justifyContent: "flex-start"/.test(longSessionReviewBody)
+    || !/textOverflow: "ellipsis"/.test(longSessionReviewBody)
+    || /alignItems: "flex-end"/.test(longSessionReviewBody)
+    || !/sample\.toolTrace/.test(longSessionReviewBody)
+    || !/trace\.calls/.test(longSessionReviewBody)
+    || !/function TaskLoopSwimlaneBubbleChart/.test(text)
+    || !/<svg/.test(text)
+    || !/<circle/.test(text)
+    || !/Math\.sqrt/.test(text)
+    || !/aria-label=\{ariaLabel\}/.test(text)
+    || !/<CollapsibleSection/.test(longSessionReviewBody)
+    || !/defaultOpen=\{false\}/.test(longSessionReviewBody)
+    || !/title=\{<Text size="sm" weight="semibold">\{taskLoopCopy\("Tool-call chart", "工具调用图表"\)\}<\/Text>\}/.test(longSessionReviewBody)
+    || !/<TaskLoopSwimlaneBubbleChart/.test(longSessionReviewBody)
+    || !/lanes=\{chartLanes\}/.test(longSessionReviewBody)
+    || !/data=\{chartData\}/.test(longSessionReviewBody)
+    || !/taskLoopToolCallDurationMs\(call\)/.test(longSessionReviewBody)
+    || !/value: durationMs/.test(longSessionReviewBody)
+    || !/xMin=\{1\}/.test(longSessionReviewBody)
+    || !/xAxisLabel=\{taskLoopCopy\("Tool-call step", "工具调用序号"\)\}/.test(longSessionReviewBody)
+    || !/valueLabel=\{taskLoopCopy\("Observed latency", "观测延迟"\)\}/.test(longSessionReviewBody)
+    || !/valueFormatter=\{formatToolCallLatency\}/.test(longSessionReviewBody)
+    || !/call\.status === "failed" \? "warning" : "neutral"/.test(longSessionReviewBody)
+    || !/Observed latency for \$\{formatUsageNumber\(observedDurationCount\)\} of \$\{formatUsageNumber\(shownCalls\)\} shown calls/.test(longSessionReviewBody)
+    || !/style=\{\{ overflow: "visible" \}\}/.test(longSessionReviewBody)
+    || !/overflowX: "auto"/.test(longSessionReviewBody)
+    || !/minWidth: chartMinWidth/.test(longSessionReviewBody)
+    || !/chartMax \* 12 \+ 220/.test(longSessionReviewBody)
     || !/Review \$\{pendingCount\} sessions/.test(longSessionReviewBody)
-    || !/Estimated active time/.test(longSessionReviewBody)
-    || /sample\.(?:userInputSummary|rawSessionId)/.test(longSessionReviewBody)
+    || !/formatActivityMinutes\(sample\.activeMinutes\)/.test(longSessionReviewBody)
+    || !/taskLoopLongSessionRoleLabel\(sample\.role\)/.test(longSessionReviewBody)
+    || !/formatUsageNumber\(failureCount\)/.test(longSessionReviewBody)
+    || !/Showing \$\{formatUsageNumber\(shownCalls\)\} of \$\{formatUsageNumber\(totalCalls\)\} tool calls/.test(longSessionReviewBody)
+    || /sample\.(?:sessionRef|userInputSummary|rawSessionId)/.test(longSessionReviewBody)
     || /<Grid\b|<Callout\b/.test(longSessionReviewBody)) {
-    errors.push("task-loop Canvas must render long-session review leads as one alias-only summary-first vertical queue with estimate boundaries and one review handoff");
+    errors.push("task-loop Canvas must render one default-collapsed complete horizontally scrollable duration-aware tool-call chart per long-session candidate with a repository-owned SVG swimlane component, privacy-safe request, clickable Canvas session locator, timing coverage, estimate boundaries, and one review handoff");
   }
   const fluencyCalls = text.match(/<TaskLoopFluency\b/g) ?? [];
   if (!/TaskLoopFluency/.test(text) || !/dimensionFluencyTooltip/.test(text) || fluencyCalls.length !== 1) {
@@ -150,7 +196,7 @@ function evaluateTaskLoopCanvasQuality(text) {
   const reportHeaderBody = reportHeaderStart >= 0 && reportHeaderEnd > reportHeaderStart
     ? text.slice(reportHeaderStart, reportHeaderEnd)
     : "";
-  if (/useCanvasAction|aicoding\.canvas\.openHarnessInsights|Handoff to Better Harness|到 Better Harness 处理/.test(text)
+  if (/aicoding\.canvas\.openHarnessInsights|Handoff to Better Harness|到 Better Harness 处理/.test(text)
     || !/<H1>\{projectName\(\)\}<\/H1>/.test(reportHeaderBody)) {
     errors.push("task-loop Canvas header must keep project context and omit the IDE-only Better Harness handoff");
   }
@@ -2001,6 +2047,10 @@ function parseArgs(argv) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (argv.some((arg) => arg === "--help" || arg === "-h")) {
+    process.stdout.write(VALIDATE_CANVAS_HELP);
+    return;
+  }
   const args = parseArgs(argv);
   const result = await validateHarnessCanvasArtifacts(args);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

@@ -36,9 +36,14 @@ import {
   workspaceToWorkbuddySlugVariants,
 } from "../scripts/session-analysis/platforms/workbuddy.mjs";
 import {
+  GrokSessionAnalyzer,
+  workspaceToGrokSessionDirName,
+} from "../scripts/session-analysis/platforms/grok.mjs";
+import {
   CopilotSessionAnalyzer,
   parseWorkspaceDescriptor,
 } from "../scripts/session-analysis/platforms/copilot.mjs";
+import { KimiSessionAnalyzer } from "../scripts/session-analysis/platforms/kimi.mjs";
 import { measureLongSessionRows } from "../scripts/session-analysis/long-sessions.mjs";
 
 async function fixtureRoot(prefix) {
@@ -60,12 +65,14 @@ test("root dispatcher creates Claude and Cursor provider analyzers", async () =>
   assert.ok(await createAnalyzer("copilot") instanceof CopilotSessionAnalyzer);
   assert.ok(await createAnalyzer("pi") instanceof PiSessionAnalyzer);
   assert.ok(await createAnalyzer("workbuddy") instanceof WorkbuddySessionAnalyzer);
+  assert.ok(await createAnalyzer("grok") instanceof GrokSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("claude") instanceof ClaudeSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("cursor") instanceof CursorSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("qwen") instanceof QwenSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("copilot") instanceof CopilotSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("pi") instanceof PiSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("workbuddy") instanceof WorkbuddySessionAnalyzer);
+  assert.ok(await createCapabilityAnalyzer("grok") instanceof GrokSessionAnalyzer);
 });
 
 test("public session-analysis main preserves the bare help alias", async () => {
@@ -88,11 +95,129 @@ test("Claude, Cursor, and Qwen workspace slugs cover Unix and Windows layouts", 
   assert.ok(workspaceToQwenSlugVariants("/workspace/project").includes("-workspace-project"));
   assert.equal(workspaceToPiSessionDirVariants("/workspace/project").exact, "--workspace-project--");
   assert.equal(workspaceToWorkbuddySlugVariants("/workspace/project").exact, "workspace-project");
+  // Grok encodes path.resolve()'d absolute paths; keep the assertion host-portable.
+  assert.equal(
+    workspaceToGrokSessionDirName("/workspace/project"),
+    encodeURIComponent(path.resolve("/workspace/project")),
+  );
   assert.ok(workspaceToClaudeSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToCursorSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToQwenSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToPiSessionDirVariants("C:\\workspace\\project").exact.includes("C--workspace-project"));
   assert.ok(workspaceToWorkbuddySlugVariants("C:\\workspace\\project").exact.includes("C--workspace-project"));
+  assert.equal(
+    workspaceToGrokSessionDirName("C:\\workspace\\project"),
+    encodeURIComponent(path.resolve("C:\\workspace\\project")),
+  );
+});
+
+test("Claude workspace slug folds dots the way Claude Code names project directories", () => {
+  assert.equal(workspaceToClaudeSlugVariants("/Users/twurm/.claude")[0], "-Users-twurm--claude");
+  assert.deepEqual(workspaceToClaudeSlugVariants("/work/my.project"), [
+    "-work-my-project",
+    "-work-my.project",
+  ]);
+  assert.deepEqual(workspaceToClaudeSlugVariants("/workspace/project"), ["-workspace-project"]);
+});
+
+test("Claude workspace slug folds underscores the way Claude Code names project directories", () => {
+  const windowsVariants = workspaceToClaudeSlugVariants("c:\\work\\my_project");
+  assert.equal(windowsVariants[0], "c--work-my-project");
+  assert.ok(windowsVariants.includes("c--work-my_project"));
+  assert.deepEqual(workspaceToClaudeSlugVariants("/home/me/my_project"), [
+    "-home-me-my-project",
+    "-home-me-my_project",
+  ]);
+});
+
+test("Claude provider discovers transcripts for underscore workspace paths", async () => {
+  const root = await fixtureRoot("session-claude-underscore-");
+  const home = path.join(root, ".claude");
+  const workspace = path.join(root, "work", "my_project");
+  const sessionId = "44444444-4444-4444-8444-444444444444";
+  const foldedSlug = workspaceToClaudeSlugVariants(workspace)[0];
+  assert.ok(foldedSlug.endsWith("-work-my-project"));
+  await writeJsonl(path.join(home, "projects", foldedSlug, `${sessionId}.jsonl`), [{
+    type: "user",
+    sessionId,
+    cwd: workspace,
+    timestamp: "2026-08-07T01:00:00.000Z",
+    message: { role: "user", content: [{ type: "text", text: "hello from an underscore workspace" }] },
+  }]);
+  const result = await new ClaudeSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 1);
+  assert.equal(result.sessions[0].sessionId, sessionId);
+  assert.equal(result.sources.find((source) => source.kind === "claude-project-jsonl")?.exists, true);
+});
+
+test("Claude provider recovers transcripts from the recorded cwd when no slug variant matches", async () => {
+  const root = await fixtureRoot("session-claude-cwd-recovery-");
+  const home = path.join(root, ".claude");
+  const workspace = path.join(root, "work", "my project");
+  const sessionId = "55555555-5555-4555-8555-555555555555";
+  const otherSessionId = "66666666-6666-4666-8666-666666666666";
+  const unmodelledSlug = "claude-owned-project-dir-name";
+  assert.ok(!workspaceToClaudeSlugVariants(workspace).includes(unmodelledSlug));
+  await writeJsonl(path.join(home, "projects", unmodelledSlug, `${sessionId}.jsonl`), [{
+    type: "user",
+    sessionId,
+    cwd: workspace,
+    timestamp: "2026-08-07T02:00:00.000Z",
+    message: { role: "user", content: [{ type: "text", text: "hello from an unmodelled slug" }] },
+  }]);
+  await writeJsonl(path.join(home, "projects", "-unrelated-project", `${otherSessionId}.jsonl`), [{
+    type: "user",
+    sessionId: otherSessionId,
+    cwd: path.join(root, "work", "unrelated"),
+    timestamp: "2026-08-07T03:00:00.000Z",
+    message: { role: "user", content: [{ type: "text", text: "another workspace" }] },
+  }]);
+
+  const result = await new ClaudeSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  const transcriptSource = result.sources.find((source) => source.kind === "claude-project-jsonl");
+  assert.equal(transcriptSource?.exists, true);
+  assert.equal(transcriptSource.path, path.join(home, "projects", unmodelledSlug));
+  assert.deepEqual(result.sessions.map((session) => session.sessionId), [sessionId]);
+});
+
+test("Claude provider still reports a missing transcript root when no cwd matches", async () => {
+  const root = await fixtureRoot("session-claude-no-evidence-");
+  const home = path.join(root, ".claude");
+  const workspace = path.join(root, "work", "empty_project");
+  await writeJsonl(path.join(home, "projects", "-unrelated-project", "77777777-7777-4777-8777-777777777777.jsonl"), [{
+    type: "user",
+    sessionId: "77777777-7777-4777-8777-777777777777",
+    cwd: path.join(root, "work", "unrelated"),
+    timestamp: "2026-08-07T04:00:00.000Z",
+    message: { role: "user", content: [{ type: "text", text: "another workspace" }] },
+  }]);
+
+  const result = await new ClaudeSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  const transcriptSource = result.sources.find((source) => source.kind === "claude-project-jsonl");
+  assert.equal(transcriptSource?.exists, false);
+  assert.equal(transcriptSource.path, path.join(home, "projects", workspaceToClaudeSlugVariants(workspace)[0]));
+  assert.equal(result.sessions.length, 0);
+  assert.ok(result.warnings.some((warning) => warning.code === "missing-required-root"));
+});
+
+test("Claude provider discovers transcripts for dotted workspace paths", async () => {
+  const root = await fixtureRoot("session-claude-dotted-");
+  const home = path.join(root, ".claude");
+  const workspace = path.join(root, "work", "my.project");
+  const sessionId = "33333333-3333-4333-8333-333333333333";
+  const dottedSlug = workspaceToClaudeSlugVariants(workspace)[0];
+  assert.ok(dottedSlug.endsWith("-work-my-project"));
+  await writeJsonl(path.join(home, "projects", dottedSlug, `${sessionId}.jsonl`), [{
+    type: "user",
+    sessionId,
+    cwd: workspace,
+    timestamp: "2026-07-20T01:00:00.000Z",
+    message: { role: "user", content: [{ type: "text", text: "hello from a dotted workspace" }] },
+  }]);
+  const result = await new ClaudeSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 1);
+  assert.equal(result.sessions[0].sessionId, sessionId);
+  assert.equal(result.sources.find((source) => source.kind === "claude-project-jsonl")?.exists, true);
 });
 
 test("Claude provider expands nested tool requests and results without using generated facets", async () => {
@@ -828,6 +953,218 @@ test("Pi provider expands tool calls, tool results, and usage from v3 transcript
   assert.doesNotMatch(JSON.stringify(facts), new RegExp(home.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
 });
 
+test("Kimi provider resolves wd_* dirs through workspaces.json and normalizes wire events", async () => {
+  const root = await fixtureRoot("session-kimi-provider-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const foreign = path.join(root, "workspace", "other");
+  const sessionId = "session_77777777-7777-4777-8777-777777777777";
+  const sessionDir = path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId);
+  const foreignDir = path.join(home, "sessions", "wd_other_ab12cd34ef56", "session_88888888-8888-4888-8888-888888888888");
+  await mkdir(workspace, { recursive: true });
+  await mkdir(home, { recursive: true });
+  await writeFile(path.join(home, "workspaces.json"), JSON.stringify({
+    version: 1,
+    workspaces: {
+      wd_project_ab12cd34ef56: { root: workspace, name: "project" },
+      wd_other_ab12cd34ef56: { root: foreign, name: "other" },
+    },
+  }));
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "state.json"), JSON.stringify({
+    title: "Fixture session",
+    createdAt: "2026-07-20T01:00:00.000Z",
+    updatedAt: "2026-07-20T01:05:00.000Z",
+  }));
+  await writeJsonl(path.join(sessionDir, "agents", "main", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    {
+      type: "turn.prompt",
+      input: [{ type: "text", text: "Implement the kimi adapter" }],
+      origin: { kind: "user" },
+      time: Date.parse("2026-07-20T01:00:01.000Z"),
+    },
+    {
+      type: "context.append_loop_event",
+      event: { type: "step.begin", uuid: "step-1", turnId: "0", step: 1 },
+      time: Date.parse("2026-07-20T01:00:02.000Z"),
+    },
+    {
+      type: "context.append_loop_event",
+      event: {
+        type: "tool.call",
+        uuid: "tool-1",
+        turnId: "0",
+        step: 1,
+        toolCallId: "tool-1",
+        name: "Bash",
+        args: { command: "npm test" },
+      },
+      time: Date.parse("2026-07-20T01:01:00.000Z"),
+    },
+    {
+      type: "context.append_loop_event",
+      event: {
+        type: "tool.result",
+        parentUuid: "tool-1",
+        toolCallId: "tool-1",
+        result: { output: "3 tests passed", isError: false },
+      },
+      time: Date.parse("2026-07-20T01:02:00.000Z"),
+    },
+    {
+      type: "usage.record",
+      model: "kimi-code/kimi-fixture",
+      usage: { inputOther: 10, output: 4, inputCacheRead: 6, inputCacheCreation: 0 },
+      usageScope: "turn",
+      time: Date.parse("2026-07-20T01:03:00.000Z"),
+    },
+  ]);
+  await writeJsonl(path.join(foreignDir, "agents", "main", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+  ]);
+  await writeFile(path.join(foreignDir, "state.json"), JSON.stringify({
+    title: "Foreign session",
+    createdAt: "2026-07-20T01:00:00.000Z",
+    updatedAt: "2026-07-20T01:05:00.000Z",
+  }));
+
+  const analyzer = new KimiSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  assert.equal(discovery.sessions[0].sessionId, sessionId);
+  assert.equal(discovery.sessions[0].title, "Fixture session");
+  assert.deepEqual(
+    discovery.sources.map((source) => source.kind),
+    ["kimi-wire-jsonl", "kimi-session-index-jsonl", "kimi-workspaces-json"],
+  );
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {
+    includeCommandText: true,
+    includeUserText: true,
+  });
+  assert.equal(events.filter((event) => event.type === "tool.call").length, 1);
+  assert.equal(events.filter((event) => event.type === "tool.result").length, 1);
+  assert.equal(events.find((event) => event.type === "tool.result")?.success, true);
+  const usage = events.find((event) => event.model === "kimi-code/kimi-fixture");
+  assert.equal(usage?.modelUsage.inputTokens, 16);
+  assert.equal(usage?.modelUsage.outputTokens, 4);
+  const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
+  assert.equal(facts.kind, "session-core-facts");
+  assert.equal(facts.scope.platform, "kimi");
+  assert.doesNotMatch(JSON.stringify(facts), new RegExp(sessionId, "u"));
+});
+
+test("Kimi keeps partial and malformed usage explicit instead of zero-filling", async () => {
+  const root = await fixtureRoot("session-kimi-usage-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "session_66666666-6666-4666-8666-666666666666";
+  const sessionDir = path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId);
+  await mkdir(workspace, { recursive: true });
+  await mkdir(home, { recursive: true });
+  await writeFile(path.join(home, "workspaces.json"), JSON.stringify({
+    version: 1,
+    workspaces: { wd_project_ab12cd34ef56: { root: workspace, name: "project" } },
+  }));
+  await writeJsonl(path.join(sessionDir, "agents", "main", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    {
+      type: "usage.record",
+      model: "kimi-partial",
+      usage: { output: 4 },
+      time: Date.parse("2026-07-20T01:01:00.000Z"),
+    },
+    {
+      type: "usage.record",
+      model: "kimi-malformed",
+      usage: { inputOther: "10", inputCacheRead: null },
+      time: Date.parse("2026-07-20T01:02:00.000Z"),
+    },
+    {
+      type: "usage.record",
+      model: "kimi-missing",
+      time: Date.parse("2026-07-20T01:03:00.000Z"),
+    },
+  ]);
+
+  const analyzer = new KimiSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {});
+  const usageEvents = events.filter((event) => event.type === "model.response.completed");
+  // Partial usage carries only the observed fields; malformed or missing
+  // usage never becomes zero-filled, and without one finite field there is no
+  // usage event at all.
+  assert.equal(usageEvents.length, 1);
+  assert.equal(usageEvents[0].model, "kimi-partial");
+  assert.deepEqual(usageEvents[0].modelUsage, { outputTokens: 4 });
+  assert.equal(Object.hasOwn(usageEvents[0].modelUsage, "inputTokens"), false);
+  assert.equal(Object.hasOwn(usageEvents[0].modelUsage, "cacheReadInputTokens"), false);
+});
+
+test("Kimi currentSessionId reads KIMI_SESSION_ID and falls back to null", () => {
+  const analyzer = new KimiSessionAnalyzer();
+  const previous = process.env.KIMI_SESSION_ID;
+  try {
+    delete process.env.KIMI_SESSION_ID;
+    assert.equal(analyzer.currentSessionId(), null);
+    process.env.KIMI_SESSION_ID = "session_fixture-current";
+    assert.equal(analyzer.currentSessionId(), "session_fixture-current");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.KIMI_SESSION_ID;
+    } else {
+      process.env.KIMI_SESSION_ID = previous;
+    }
+  }
+});
+
+test("Kimi dedupe keeps a shared tool call id per agent but drops repeats within one agent", async () => {
+  const root = await fixtureRoot("session-kimi-dedupe-agents-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "session_77777777-7777-4777-8777-777777777777";
+  const sessionDir = path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId);
+  await mkdir(workspace, { recursive: true });
+  await mkdir(home, { recursive: true });
+  await writeFile(path.join(home, "workspaces.json"), JSON.stringify({
+    version: 1,
+    workspaces: { wd_project_ab12cd34ef56: { root: workspace, name: "project" } },
+  }));
+  const toolCall = (uuid, time) => ({
+    type: "context.append_loop_event",
+    event: {
+      type: "tool.call",
+      uuid,
+      toolCallId: "tool-1",
+      name: "Bash",
+      args: { command: "npm test" },
+    },
+    time,
+  });
+  await writeJsonl(path.join(sessionDir, "agents", "main", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    toolCall("main-1", Date.parse("2026-07-20T01:01:00.000Z")),
+    // A repeated record of the same tool call within one agent wire is a
+    // duplicate and must still be deduped.
+    toolCall("main-2", Date.parse("2026-07-20T01:01:01.000Z")),
+  ]);
+  // A subagent wire reusing the same toolCallId is a distinct event.
+  await writeJsonl(path.join(sessionDir, "agents", "helper-1", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    toolCall("helper-1", Date.parse("2026-07-20T01:02:00.000Z")),
+  ]);
+
+  const analyzer = new KimiSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {});
+  const calls = events.filter((event) => event.type === "tool.call");
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((event) => event.agentId).sort(), ["helper-1", "main"]);
+});
+
 test("Pi provider rejects a transcript whose header cwd belongs to another workspace", async () => {
   const root = await fixtureRoot("session-pi-isolation-");
   const home = path.join(root, ".pi", "agent");
@@ -1070,6 +1407,194 @@ test("Pi malformed first records and unknown header versions remain partial evid
   assert.equal(result.providerCoverage.schemaDiagnostics.status, "partial");
 });
 
+test("Kimi provider falls back to session_index.jsonl when workspaces.json has no entry", async () => {
+  const root = await fixtureRoot("session-kimi-index-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "ses_99999999-9999-4999-8999-999999999999";
+  const sessionDir = path.join(home, "sessions", "wd_project_ff00ff00ff00", sessionId);
+  await mkdir(workspace, { recursive: true });
+  await writeJsonl(path.join(home, "session_index.jsonl"), [
+    { sessionId, sessionDir, workDir: workspace },
+  ]);
+  await writeJsonl(path.join(sessionDir, "agents", "main", "wire.jsonl"), [
+    {
+      type: "context.append_message",
+      message: { role: "user", content: [{ type: "text", text: "legacy protocol" }], toolCalls: [] },
+      time: Date.parse("2026-07-20T01:00:00.000Z"),
+    },
+  ]);
+  const discovery = await new KimiSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  assert.equal(discovery.sessions[0].sessionId, sessionId);
+});
+
+test("Kimi provider falls back to wd_<name>_* prefixes when both workspace indexes are absent", async () => {
+  const root = await fixtureRoot("session-kimi-prefix-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "ses_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const wire = [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+  ];
+  await mkdir(workspace, { recursive: true });
+  await writeJsonl(
+    path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId, "agents", "main", "wire.jsonl"),
+    wire,
+  );
+  await writeFile(
+    path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId, "state.json"),
+    JSON.stringify({
+      title: "Fallback session",
+      createdAt: "2026-07-20T01:00:00.000Z",
+      updatedAt: "2026-07-20T01:05:00.000Z",
+    }),
+  );
+  // wd_projectextra_* does not start with the wd_project_ prefix and must be excluded.
+  await writeJsonl(
+    path.join(home, "sessions", "wd_projectextra_ab12cd34ef56", "ses_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "agents", "main", "wire.jsonl"),
+    wire,
+  );
+  // A different project name must be excluded too.
+  await writeJsonl(
+    path.join(home, "sessions", "wd_other_ab12cd34ef56", "ses_cccccccc-cccc-4ccc-8ccc-cccccccccccc", "agents", "main", "wire.jsonl"),
+    wire,
+  );
+
+  const analyzer = new KimiSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.deepEqual(discovery.sessions.map((session) => session.sessionId), [sessionId]);
+  assert.ok(discovery.warnings.some((warning) => warning.code === "kimi-workspace-index-absent"));
+
+  const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
+  assert.ok(facts.warningCodes.includes("kimi-workspace-index-absent"));
+});
+
+test("Kimi prefix fallback lowercases the workspace basename and keeps raw directory characters", async () => {
+  const root = await fixtureRoot("session-kimi-prefix-case-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "My Project");
+  const sessionId = "ses_dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  await mkdir(workspace, { recursive: true });
+  // Actual behavior: the fallback lowercases both sides but applies no other
+  // sanitization, so an uppercase dir with a space and uppercase hex suffix still
+  // matches the wd_my project_ prefix.
+  await writeJsonl(
+    path.join(home, "sessions", "wd_MY PROJECT_AB12CD34EF56", sessionId, "agents", "main", "wire.jsonl"),
+    [{ type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") }],
+  );
+
+  const discovery = await new KimiSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.deepEqual(discovery.sessions.map((session) => session.sessionId), [sessionId]);
+  assert.ok(discovery.warnings.some((warning) => warning.code === "kimi-workspace-index-absent"));
+});
+
+test("Kimi provider emits kimi-workspace-index-absent only when both indexes are missing", async () => {
+  const root = await fixtureRoot("session-kimi-index-warning-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "ses_eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  await mkdir(workspace, { recursive: true });
+  await writeJsonl(
+    path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId, "agents", "main", "wire.jsonl"),
+    [{ type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") }],
+  );
+
+  const analyzer = new KimiSessionAnalyzer();
+  const missing = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(missing.sessions.length, 1);
+  assert.ok(missing.warnings.some((warning) => warning.code === "kimi-workspace-index-absent"));
+
+  // An existing (even empty) workspaces.json marks the index as present, so the
+  // warning disappears. The prefix fallback itself keys off the empty index maps,
+  // not file existence, so the session is still attributed.
+  await writeFile(
+    path.join(home, "workspaces.json"),
+    JSON.stringify({ version: 1, workspaces: {} }),
+  );
+  const indexed = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(indexed.sessions.length, 1);
+  assert.equal(
+    indexed.warnings.some((warning) => warning.code === "kimi-workspace-index-absent"),
+    false,
+  );
+});
+
+test("Kimi provider merges main and subagent wire files and dedupes repeated tool events", async () => {
+  const root = await fixtureRoot("session-kimi-subagent-");
+  const home = path.join(root, ".kimi-code");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "ses_ffffffff-ffff-4fff-8fff-ffffffffffff";
+  const sessionDir = path.join(home, "sessions", "wd_project_ab12cd34ef56", sessionId);
+  await mkdir(workspace, { recursive: true });
+  await mkdir(home, { recursive: true });
+  await writeFile(path.join(home, "workspaces.json"), JSON.stringify({
+    version: 1,
+    workspaces: { wd_project_ab12cd34ef56: { root: workspace, name: "project" } },
+  }));
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "state.json"), JSON.stringify({
+    title: "Subagent session",
+    createdAt: "2026-07-20T01:00:00.000Z",
+    updatedAt: "2026-07-20T01:10:00.000Z",
+  }));
+  await writeJsonl(path.join(sessionDir, "agents", "main", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    {
+      type: "context.append_loop_event",
+      event: { type: "tool.call", uuid: "tool-1", toolCallId: "tool-1", name: "Bash", args: { command: "npm test" } },
+      time: Date.parse("2026-07-20T01:01:00.000Z"),
+    },
+    {
+      type: "context.append_loop_event",
+      event: { type: "tool.result", toolCallId: "tool-1", result: { output: "ok", isError: false } },
+      time: Date.parse("2026-07-20T01:02:00.000Z"),
+    },
+  ]);
+  await writeJsonl(path.join(sessionDir, "agents", "researcher", "wire.jsonl"), [
+    { type: "metadata", protocol_version: "1.4", created_at: Date.parse("2026-07-20T01:00:00.000Z") },
+    // Same toolInvocationId + lifecyclePhase as the main wire record, but from
+    // another agent's file: tool call ids are only unique per agent, so
+    // dedupeEvents must keep this distinct subagent event.
+    {
+      type: "context.append_loop_event",
+      event: { type: "tool.call", uuid: "tool-1", toolCallId: "tool-1", name: "Bash", args: { command: "npm test" } },
+      time: Date.parse("2026-07-20T01:03:00.000Z"),
+    },
+    {
+      type: "context.append_loop_event",
+      event: {
+        type: "tool.call",
+        uuid: "tool-2",
+        toolCallId: "tool-2",
+        name: "Read",
+        args: { file_path: path.join(workspace, "notes.md") },
+      },
+      time: Date.parse("2026-07-20T01:04:00.000Z"),
+    },
+  ]);
+
+  const analyzer = new KimiSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  assert.deepEqual(
+    discovery.sessions[0].sourceRefs.map((ref) => `${ref.agentId}:${ref.role}`),
+    ["main:session-transcript", "researcher:subagent-transcript"],
+  );
+
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, { includeCommandText: true });
+  const toolCalls = events.filter((event) => event.type === "tool.call");
+  // The subagent copy of tool-1 survives: dedupe keys include the agent id.
+  assert.deepEqual(toolCalls.map((event) => event.toolInvocationId), ["tool-1", "tool-1", "tool-2"]);
+  assert.deepEqual(toolCalls.map((event) => event.agentId), ["main", "researcher", "researcher"]);
+  assert.equal(toolCalls[0].isSubagent, false);
+  assert.equal(toolCalls[1].isSubagent, true);
+  assert.equal(toolCalls[2].isSubagent, true);
+  assert.equal(events.filter((event) => event.type === "tool.result").length, 1);
+  assert.equal(events.filter((event) => event.type === "metadata.wire").length, 2);
+});
+
 test("WorkBuddy provider expands tool calls, tool results, and usage from JSONL transcripts", async () => {
   const root = await fixtureRoot("session-workbuddy-provider-");
   const home = path.join(root, ".workbuddy");
@@ -1277,4 +1802,319 @@ test("WorkBuddy source roots stay absent without workspace-matching project dire
   const result = await new WorkbuddySessionAnalyzer().analyze({ command: "sources", workspace, home });
   assert.equal(result.sources[0].exists, false);
   assert.equal(result.sessions.length, 0);
+});
+
+test("Grok provider expands user/assistant/tool events and turn_completed usage", async () => {
+  const root = await fixtureRoot("session-grok-provider-");
+  const home = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const group = workspaceToGrokSessionDirName(workspace);
+  const sessionDir = path.join(home, "sessions", group, sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "summary.json"), JSON.stringify({
+    info: { id: sessionId, cwd: workspace },
+    created_at: "2026-08-01T10:00:00.000Z",
+    updated_at: "2026-08-01T10:05:00.000Z",
+    current_model_id: "grok-4",
+  }, null, 2));
+  await writeJsonl(path.join(sessionDir, "updates.jsonl"), [
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { text: "Implement the Grok provider" },
+          _meta: { isoTimestamp: "2026-08-01T10:00:01.000Z" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call",
+          toolName: "run_terminal_command",
+          toolCallId: "call_1",
+          status: "pending",
+          _meta: { isoTimestamp: "2026-08-01T10:00:02.000Z" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolName: "run_terminal_command",
+          toolCallId: "call_1",
+          status: null,
+          _meta: { isoTimestamp: "2026-08-01T10:00:02.500Z" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolName: "run_terminal_command",
+          toolCallId: "call_1",
+          status: "in_progress",
+          _meta: { isoTimestamp: "2026-08-01T10:00:02.750Z" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolName: "run_terminal_command",
+          toolCallId: "call_1",
+          status: "completed",
+          content: "ok",
+          _meta: { isoTimestamp: "2026-08-01T10:00:03.000Z" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { text: "Done." },
+          _meta: { isoTimestamp: "2026-08-01T10:00:04.000Z", modelId: "grok-4" },
+        },
+      },
+    },
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "thought_chunk",
+          content: { text: "thinking" },
+          _meta: { isoTimestamp: "2026-08-01T10:00:05.000Z" },
+        },
+      },
+    },
+    {
+      method: "_x.ai/session/update",
+      params: {
+        update: {
+          sessionUpdate: "turn_completed",
+          stop_reason: "end_turn",
+          usage: {
+            inputTokens: 120,
+            outputTokens: 40,
+            totalTokens: 160,
+            cachedReadTokens: 10,
+          },
+        },
+      },
+    },
+    {
+      method: "_x.ai/session/update",
+      params: {
+        update: {
+          sessionUpdate: "turn_completed",
+          stop_reason: "end_turn",
+          // Nested-only shape must still produce model usage (Grok 0.2.x).
+          usage: {
+            modelUsage: {
+              "grok-4": {
+                inputTokens: 1000,
+                outputTokens: 200,
+                totalTokens: 1200,
+                cachedReadTokens: 50,
+              },
+            },
+          },
+        },
+      },
+    },
+  ]);
+  // contextTokensUsed must not be treated as total token spend
+  await writeFile(path.join(sessionDir, "signals.json"), JSON.stringify({
+    contextTokensUsed: 44532,
+    contextWindowTokens: 500000,
+  }, null, 2));
+  // chat_history must not double-count when updates.jsonl exists
+  await writeJsonl(path.join(sessionDir, "chat_history.jsonl"), [
+    { role: "user", content: "duplicate user", timestamp: "2026-08-01T10:00:01.000Z" },
+    { role: "assistant", content: "duplicate assistant", timestamp: "2026-08-01T10:00:04.000Z" },
+  ]);
+
+  const analyzer = new GrokSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  assert.equal(discovery.sessions[0].sessionId, sessionId);
+  assert.deepEqual(discovery.sources.map((source) => source.kind), ["grok-session-dir"]);
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {
+    includeUserText: true,
+    includeContent: true,
+  });
+  assert.equal(events.filter((event) => event.type === "user").length, 1);
+  assert.equal(events.find((event) => event.type === "user")?.userText, "Implement the Grok provider");
+  assert.equal(events.filter((event) => event.type === "tool.call").length, 1);
+  assert.equal(events.filter((event) => event.type === "tool.result").length, 1);
+  assert.equal(events.filter((event) => event.type === "metadata.tool_call_update").length, 2);
+  assert.equal(events.filter((event) => event.type === "assistant").length, 1);
+  assert.ok(events.some((event) => event.type === "metadata.thought_chunk"));
+  const usageEvents = events.filter((event) => event.type === "model.response.completed");
+  assert.equal(usageEvents.length, 2);
+  assert.equal(usageEvents[0]?.modelUsage?.inputTokens, 120);
+  assert.equal(usageEvents[0]?.modelUsage?.outputTokens, 40);
+  assert.equal(usageEvents[0]?.modelUsage?.totalTokens, 160);
+  assert.equal(usageEvents[1]?.modelUsage?.inputTokens, 1000);
+  assert.equal(usageEvents[1]?.modelUsage?.outputTokens, 200);
+  assert.equal(usageEvents[1]?.modelUsage?.totalTokens, 1200);
+  assert.equal(usageEvents[1]?.model, "grok-4");
+  assert.ok(!events.some((event) => event.modelUsage?.totalTokens === 44532));
+  assert.ok(events.some((event) => event.type === "metadata.context_window"));
+  const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
+  assert.equal(facts.kind, "session-core-facts");
+  assert.equal(facts.scope.platform, "grok");
+  assert.doesNotMatch(JSON.stringify(facts), new RegExp(sessionId, "u"));
+});
+
+test("Grok provider discovers long-path session groups via .cwd marker", async () => {
+  const root = await fixtureRoot("session-grok-long-path-");
+  const home = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace", "deeply", "nested", "project");
+  const sessionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  // Simulate Grok long-path form: slug+hash group with .cwd (not encodeURIComponent name).
+  const group = "workspace-deeply-nested-project-a1b2c3d4";
+  const groupPath = path.join(home, "sessions", group);
+  const sessionDir = path.join(groupPath, sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(groupPath, ".cwd"), `${workspace}\n`);
+  await writeFile(path.join(sessionDir, "summary.json"), JSON.stringify({
+    info: { id: sessionId, cwd: workspace },
+    created_at: "2026-08-01T10:00:00.000Z",
+    updated_at: "2026-08-01T10:05:00.000Z",
+  }, null, 2));
+  await writeJsonl(path.join(sessionDir, "updates.jsonl"), [
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { text: "long path" },
+          _meta: { isoTimestamp: "2026-08-01T10:00:01.000Z" },
+        },
+      },
+    },
+  ]);
+  const result = await new GrokSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 1);
+  assert.equal(result.sessions[0].sessionId, sessionId);
+  assert.equal(result.sources[0].exists, true);
+});
+
+test("Grok turn usage completes partial flat records from nested modelUsage", async () => {
+  const root = await fixtureRoot("session-grok-partial-usage-");
+  const home = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const sessionDir = path.join(home, "sessions", encodeURIComponent(workspace), sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await mkdir(workspace, { recursive: true });
+  await writeFile(path.join(sessionDir, "summary.json"), JSON.stringify({
+    info: { id: sessionId, cwd: workspace },
+    created_at: "2026-08-01T10:00:00.000Z",
+    updated_at: "2026-08-01T10:05:00.000Z",
+  }, null, 2));
+  await writeJsonl(path.join(sessionDir, "updates.jsonl"), [
+    {
+      method: "_x.ai/session/update",
+      params: {
+        update: {
+          sessionUpdate: "turn_completed",
+          // Flat record reports input only; output/total live in nested modelUsage.
+          usage: {
+            inputTokens: 300,
+            modelUsage: {
+              "grok-4": { outputTokens: 80, totalTokens: 380 },
+            },
+          },
+        },
+      },
+    },
+  ]);
+
+  const analyzer = new GrokSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  assert.equal(discovery.sessions.length, 1);
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {});
+  const usage = events.find((event) => event.type === "model.response.completed")?.modelUsage;
+  assert.equal(usage?.inputTokens, 300);
+  assert.equal(usage?.outputTokens, 80);
+  assert.equal(usage?.totalTokens, 380);
+});
+
+test("Grok provider excludes foreign workspace session groups", async () => {
+  const root = await fixtureRoot("session-grok-isolation-");
+  const home = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace", "target");
+  const foreign = path.join(root, "workspace", "other");
+  const sessionId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const foreignGroup = workspaceToGrokSessionDirName(foreign);
+  const sessionDir = path.join(home, "sessions", foreignGroup, sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "summary.json"), JSON.stringify({
+    info: { id: sessionId, cwd: foreign },
+    created_at: "2026-08-01T10:00:00.000Z",
+    updated_at: "2026-08-01T10:05:00.000Z",
+  }, null, 2));
+  await writeJsonl(path.join(sessionDir, "updates.jsonl"), [
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { text: "foreign" },
+          _meta: { isoTimestamp: "2026-08-01T10:00:01.000Z" },
+        },
+      },
+    },
+  ]);
+  const result = await new GrokSessionAnalyzer().analyze({ command: "sources", workspace, home });
+  assert.equal(result.sessions.length, 0);
+  assert.equal(result.sources[0].exists, false);
+});
+
+test("Grok provider leaves usage unobserved when signals.json is missing", async () => {
+  const root = await fixtureRoot("session-grok-no-signals-");
+  const home = path.join(root, ".grok");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const group = workspaceToGrokSessionDirName(workspace);
+  const sessionDir = path.join(home, "sessions", group, sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "summary.json"), JSON.stringify({
+    info: { id: sessionId, cwd: workspace },
+    created_at: "2026-08-01T10:00:00.000Z",
+    updated_at: "2026-08-01T10:05:00.000Z",
+  }, null, 2));
+  await writeJsonl(path.join(sessionDir, "updates.jsonl"), [
+    {
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { text: "no signals" },
+          _meta: { isoTimestamp: "2026-08-01T10:00:01.000Z" },
+        },
+      },
+    },
+  ]);
+  const analyzer = new GrokSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {});
+  assert.equal(events.filter((event) => event.type === "model.response.completed").length, 0);
+  assert.ok(!events.some((event) => event.modelUsage && Object.values(event.modelUsage).every((value) => value === 0)));
 });

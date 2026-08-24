@@ -12,22 +12,22 @@ fails validation:
 
 ```bash
 # Discover evidence roots for a workspace
-<node> scripts/session-analysis.mjs sources --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo
+<node> scripts/session-analysis.mjs sources --platform <qoder|codex|claude|cursor|qwen|copilot|pi|kimi|workbuddy|grok> --workspace /path/to/repo
 
 # Session list with event counts and time range
-<node> scripts/session-analysis.mjs facets --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --limit 20
+<node> scripts/session-analysis.mjs facets --platform <qoder|codex|claude|cursor|qwen|copilot|pi|kimi|workbuddy|grok> --workspace /path/to/repo --limit 20
 
 # Compact insight cards and action candidates
-<node> scripts/session-analysis.mjs insights --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --limit 20
+<node> scripts/session-analysis.mjs insights --platform <qoder|codex|claude|cursor|qwen|copilot|pi|kimi|workbuddy|grok> --workspace /path/to/repo --limit 20
 
 # Read single session events
-<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --session-id <id> --include-events
+<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi|kimi|workbuddy|grok> --workspace /path/to/repo --session-id <id> --include-events
 
 # Diagnose the facts admission funnel and resolve candidate refs to local sessions
-<node> scripts/session-analysis.mjs facts --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --selection all-eligible --limit 5 --debug --output /tmp/session-facts-debug.json
+<node> scripts/session-analysis.mjs facts --platform <qoder|codex|claude|cursor|qwen|copilot|pi|kimi|workbuddy|grok> --workspace /path/to/repo --selection all-eligible --limit 5 --debug --output /tmp/session-facts-debug.json
 
 # Expand one debug locator with normalized commands and user text
-<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy> --workspace /path/to/repo --session-id <id> --include-events --include-command-text --include-user-text
+<node> scripts/session-analysis.mjs show --platform <qoder|codex|claude|cursor|qwen|copilot|pi|kimi|workbuddy|grok> --workspace /path/to/repo --session-id <id> --include-events --include-command-text --include-user-text
 ```
 
 `facts --debug` is an operator-only diagnostic route. It exposes raw session
@@ -38,7 +38,7 @@ opening only the candidate sessions needed to explain a surprising aggregate.
 Command and user text flags are also local-only and must not be used for broad
 transcript dumps.
 
-Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, `copilot`, `pi`, and `workbuddy`. Do not invent
+Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, `copilot`, `pi`, `kimi`, `workbuddy`, and `grok`. Do not invent
 unsupported platform names.
 Always pass the absolute target workspace and load the matching Platform Notes
 before interpreting source roots or workspace bindings.
@@ -308,6 +308,32 @@ tool results as provider-labelled coverage. Entries such as `model_change`,
 project/user assets through `../agent-customize/global-assets.md`; configured
 presence does not prove use.
 
+### Kimi Code
+
+For Kimi Code, the analyzer reads workspace-matching wire transcripts under
+`~/.kimi-code/sessions/<wd_*>/ses{sion}_*/agents/<agent>/wire.jsonl`, with
+`state.json` next to each transcript supplying title and created/updated
+timestamps. The workspace-to-`wd_*` mapping resolves through
+`~/.kimi-code/workspaces.json` (exact `root` match) and
+`~/.kimi-code/session_index.jsonl` (per-session `workDir`); only when both
+indexes are absent does the adapter fall back to `wd_<name>_*` directory
+prefixes and record a `kimi-workspace-index-absent` warning. Wire records are
+normalized from `context.append_loop_event` (`tool.call`/`tool.result`/
+`content.part`), `turn.prompt`/`turn.steer`, `context.append_message`
+(protocol 1.0), and `usage.record` token usage; unknown record types degrade
+to bounded `metadata.*` events for forward compatibility.
+
+Treat wire-record timestamps, `usage.record` token usage, tool calls, and
+tool results as provider-labelled coverage. User text, command text, and
+message content stay gated behind the shared `includeUserText`,
+`includeCommandText`, and `includeContent` privacy flags, and
+`~/.kimi-code/credentials` and `server.token` are never read. Route
+configured Kimi Code rules (`AGENTS.md`, `CLAUDE.md`), Skills
+(`~/.kimi-code/skills`, project `.kimi-code/skills` and `.kimi/skills`), MCP
+(`~/.kimi-code/mcp.json`), and installed plugins
+(`~/.kimi-code/plugins/installed.json`) through
+`../agent-customize/global-assets.md`; configured presence does not prove
+use.
 ### WorkBuddy
 
 For WorkBuddy, the analyzer reads workspace-matching JSONL transcripts under
@@ -330,3 +356,18 @@ Route configured WorkBuddy rules (`AGENTS.md`, identity files), Skills,
 marketplace plugins, MCP config, and other project/user assets through
 `../agent-customize/global-assets.md`; configured presence does not prove
 use.
+
+### Grok
+
+For Grok, the analyzer reads workspace-matching session directories under
+`~/.grok/sessions/<url-encoded-cwd>/<session-id>/`. The group directory name is
+`encodeURIComponent(absoluteCwd)`, so `/Users/work` maps to
+`~/.grok/sessions/%2FUsers%2Fwork/`. Prefer `summary.json` `info.cwd` for
+qualification; fall back to decoding the group directory name. Primary
+transcript is `updates.jsonl` (ACP-style `session/update` records). Optional
+`chat_history.jsonl` is secondary, and `signals.json` may contribute sparse
+usage when present. Missing signals leave usage unobserved rather than
+zero-filled. The `GROK_HOME` environment variable relocates the data root.
+Route configured Grok skills, hooks, MCP servers in `config.toml`, installed
+plugins, and project `.grok` assets through `../agent-customize/global-assets.md`;
+configured presence does not prove use.

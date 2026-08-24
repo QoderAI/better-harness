@@ -11,6 +11,18 @@ plugin directories, reports, or user configuration as a first response. Keep
 credentials, raw transcripts, private prompts, and complete reports out of
 diagnostic output and public issues.
 
+Start with the read-only lifecycle view when the standalone CLI is available:
+
+```bash
+better-harness plugin status --host all
+better-harness doctor --platform all
+```
+
+Both commands avoid registries, configuration writes, installation commands,
+and raw session transcripts. A `partial`, `unobserved`, `manual`, or
+`unavailable` result is a preserved evidence boundary, not permission to infer
+that a host loaded the plugin.
+
 ## The plugin or Skill is not visible
 
 After installing or updating Better Harness, start a new host session or task.
@@ -21,31 +33,36 @@ startup. Then use the check supported by that host:
 | --- | --- |
 | [Claude Code](./installation?host=claude-code#claude-code) | Run `claude plugin details better-harness@better-harness`; the details should include `Skills (1) better-harness`. |
 | [Codex](./installation?host=codex#codex) | In Desktop, check **Settings > Plugins**. In the CLI, run `codex plugin list --marketplace better-harness`. |
-| [Qoder](./installation?host=qoder#qoder) | The Desktop version is built in. For a manual CLI install, run `qodercli plugin list`. |
-| [Cursor](./installation?host=cursor#cursor) | Start the agent with `cursor-agent --plugin-dir /path/to/better-harness`, keep that process open, and run the report prompt in the same session. |
-| [Qwen Code](./installation?host=qwen-code#qwen-code) | Start a new session and run the report prompt. This guide does not assume an unverified extension-list command. |
+| [Qoder](./installation?host=qoder#qoder) | The Desktop version is built in. For a manual CLI install, run `qodercli plugin list`; lifecycle planning does not emit the stale install syntax. |
+| [Cursor](./installation?host=cursor#cursor) | Inspect `better-harness plugin status --host cursor --surface agent`; installation remains unavailable until the local Cursor help contract is reconciled. |
+| [Qwen Code](./installation?host=qwen-code#qwen-code) | Run `qwen extensions list` and confirm it includes Better Harness, then start a new session and run the report prompt. |
 | [GitHub Copilot](./installation?host=github-copilot#github-copilot) | Run `copilot plugin list` and `copilot skill list`; both should include `better-harness`. |
 | [Pi](./hosts/adapter-matrix#pi) | Run `pi --version`, then start a new Pi session with the package and run `/better-harness`. |
 | [WorkBuddy](./hosts/adapter-matrix#workbuddy) | Run `codebuddy --plugin-dir .` for local Team discovery and `npm run workbuddy:verify` for the offline manifest check. |
 
 If a marketplace command fails, return to the linked host tab and compare the
-repository source and command spelling exactly. In particular, current Codex
-uses a repository URL with `marketplace add`, then `plugin add`; Qoder CLI uses
-`plugin install`.
+repository source and command spelling exactly. Current Codex uses a repository
+URL with `marketplace add`, then `plugin add`. Do not copy the older Qoder or
+Cursor install examples when their local native help does not expose the same
+contract; the lifecycle planner intentionally returns a manual or unavailable
+result instead.
 
-## Cursor cannot load the source-local plugin
+## Cursor source-local loading is unavailable
 
-The value passed to `--plugin-dir` must be the root of this repository, not its
-`.cursor-plugin` or `skills` subdirectory. That root contains both
-`.cursor-plugin/plugin.json` and `skills/better-harness/SKILL.md`.
+The checked native `cursor-agent` help does not advertise a supported
+source-local plugin flag. Do not reuse historical launch commands or infer that
+the presence of `.cursor-plugin/plugin.json` makes the source checkout loadable
+by the current runtime.
 
-The plugin applies only to the Cursor Agent process started with that argument.
-If the process was closed, start a new one with the same repository path. Do not
-copy the checkout into a global plugin directory as a troubleshooting step.
+Use `better-harness plugin status --host cursor --surface agent` to inspect the
+bounded session evidence that is available. Until Cursor publishes a matching
+native contract, Better Harness has no supported installation command to
+troubleshoot; keep the lifecycle result `unavailable` instead of copying the
+checkout into a global plugin directory.
 
 ## The standalone or source CLI reports an unsupported runtime
 
-The standalone and source CLIs support Node.js `>=22.20.0 <26.0.0` and npm
+The standalone and source CLIs support Node.js `>=22.20.0 <25.0.0` and npm
 `>=10.9.3 <12.0.0` on Windows, macOS, and Linux. Check the active executables:
 
 ```bash

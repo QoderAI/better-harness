@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { collectAgentCustomizeInventory } from "../../agent-customize/index.mjs";
 import { runAgentLint } from "../../agent-lint/index.mjs";
+import { normalizedHostHomeOptions } from "../../host-support/index.mjs";
 import { createAnalyzer } from "../../session-analysis.mjs";
 import {
   HOOK_RECOMMENDED_LIMIT,
@@ -855,6 +856,7 @@ export function buildCheckupScan({
 
 export async function runCheckupScan(options = {}, dependencies = {}) {
   const normalized = normalizeCheckupOptions(options);
+  const homeOptions = normalizedHostHomeOptions(normalized, normalized.provider);
   const collectInventory = dependencies.collectInventory ?? collectAgentCustomizeInventory;
   const lint = dependencies.runLint ?? runAgentLint;
   const analyzer = dependencies.analyzer ?? (await createAnalyzer(normalized.provider));
@@ -862,21 +864,16 @@ export async function runCheckupScan(options = {}, dependencies = {}) {
     dependencies.inventory ?? collectInventory({
       provider: normalized.provider,
       workspace: normalized.workspace,
-      qoderHome: normalized.qoderHome,
+      ...homeOptions,
       qoderSharedClientCacheRoot: normalized.qoderSharedClientCacheRoot,
-      codexHome: normalized.codexHome,
-      claudeHome: normalized.claudeHome,
       claudeStatePath: normalized.claudeStatePath,
-      cursorHome: normalized.cursorHome,
     }),
     dependencies.lintResult ?? lint({
       workspace: normalized.workspace,
       profile: "agents-md-review",
       provider: normalized.provider,
       includeUserHome: true,
-      qoderHome: normalized.qoderHome,
-      codexHome: normalized.codexHome,
-      claudeHome: normalized.claudeHome,
+      ...homeOptions,
       claudeStatePath: normalized.claudeStatePath,
     }),
     dependencies.assetLintResult ?? (dependencies.lintResult
@@ -886,16 +883,13 @@ export async function runCheckupScan(options = {}, dependencies = {}) {
           profile: "agent-assets-review",
           provider: normalized.provider,
           includeUserHome: true,
-          qoderHome: normalized.qoderHome,
-          codexHome: normalized.codexHome,
-          claudeHome: normalized.claudeHome,
+          ...homeOptions,
           claudeStatePath: normalized.claudeStatePath,
         })),
     dependencies.sessionResult ?? analyzer.analyze({
       command: "facets",
       workspace: normalized.workspace,
-      "qoder-home": normalized.qoderHome,
-      "claude-home": normalized.claudeHome,
+      ...homeOptions,
       since: normalized.since,
       until: normalized.until,
       limit: normalized.sessionLimit,

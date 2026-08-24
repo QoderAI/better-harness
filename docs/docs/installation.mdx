@@ -26,7 +26,7 @@ Node.js and npm are required only when you use the standalone CLI, run Better
 Harness from a source checkout, or contribute to this repository. Those paths
 support Windows, macOS, and Linux and require:
 
-- Node.js `>=22.20.0 <26.0.0`
+- Node.js `>=22.20.0 <25.0.0`
 - npm `>=10.9.3 <12.0.0`
 
 Check the active runtime before using the standalone or source CLI:
@@ -36,12 +36,32 @@ node --version
 npm --version
 ```
 
-Cursor's source-local path also requires Git so you can clone this repository.
+## Inspect and plan lifecycle changes {#lifecycle-cli}
+
+The standalone CLI exposes a read-only view of Better Harness installation
+evidence. It does not contact a registry, modify host configuration, or execute
+the steps in a lifecycle plan:
+
+```bash
+better-harness plugin status --host all
+better-harness doctor --platform all
+better-harness plugin plan install --host qwen --surface cli --scope user
+better-harness plugin verify --host qwen --surface cli
+```
+
+Plans preserve host differences instead of inventing a common mutation path.
+Qoder Desktop is bundled, Codex Desktop returns manual UI steps, Cursor remains
+session-only while its native command contract is reconciled, Pi operations
+without current native evidence are manual or unavailable, and WorkBuddy has no
+managed plugin lifecycle surface. There is no `plugin apply` command.
+
+Git can clone the Cursor manifest for inspection, but manifest presence alone
+does not establish a supported installation route.
 
 :::tip Don't see your Coding Agent?
 
 The six tabs below are the verified Quickstart paths, while the project tracks
-eight host adapters in total. [Compare all adapter support boundaries](./hosts/adapter-matrix),
+nine host adapters in total. [Compare all adapter support boundaries](./hosts/adapter-matrix),
 then [follow the new-host contribution workflow and worked pull requests](./hosts/contributing-new-coding-agent)
 if you want to add or complete an integration. You can also
 [browse current repository pull requests](https://github.com/QoderAI/better-harness/pulls)
@@ -170,13 +190,15 @@ entry point:
 If Qoder Desktop is installed, Better Harness is already available in Qoder
 CLI. No marketplace or plugin installation is required.
 
-Only when using Qoder CLI without Qoder Desktop, add this repository as a
-marketplace and install Better Harness manually:
+Only when using Qoder CLI without Qoder Desktop, inspect the current manual
+installation disposition before following Qoder's native marketplace flow:
 
 ```bash
-qodercli plugin marketplace add "https://github.com/QoderAI/better-harness.git"
-qodercli plugin install better-harness@better-harness
+better-harness plugin plan install --host qoder --surface cli --scope user
 ```
+
+The planner does not emit the older install syntax because the current native
+help and this repository's historical documentation disagree.
 
 ### Verify installation
 
@@ -188,6 +210,7 @@ For a manual Qoder CLI installation, verify discovery with:
 
 ```bash
 qodercli plugin list
+better-harness plugin verify --host qoder --surface cli
 ```
 
 Then start a new Qoder CLI session before using `/better-harness`.
@@ -197,25 +220,34 @@ Then start a new Qoder CLI session before using `/better-harness`.
 
 ## Cursor {#cursor}
 
-The Cursor plugin is not published to the marketplace yet. Load the
-source-local plugin for one Cursor Agent session:
+The Cursor plugin is not published to the marketplace. The repository carries
+the source-local manifest, but the current local Cursor help does not verify the
+historical `--plugin-dir` contract. Better Harness therefore reports the
+installation plan as unavailable instead of emitting that command:
 
 ```bash
 git clone https://github.com/QoderAI/better-harness.git
-cursor-agent --plugin-dir /path/to/better-harness
+better-harness plugin plan install --host cursor --surface agent --scope session
 ```
 
 ### Verify installation
 
-Keep that Cursor Agent session open and run:
+Do not claim that a Cursor Agent session loaded Better Harness while the native
+installation contract remains unavailable. Inspect the bounded local evidence:
+
+```bash
+better-harness plugin verify --host cursor --surface agent
+```
+
+Only if a future or independently verified native route loads the plugin, keep
+that same Cursor Agent session open and run:
 
 ```text
 /better-harness analyze this project's AI coding workflow and generate an evidence-backed report
 ```
 
-Starting the analysis confirms that the source-local Skill loaded for that
-session. Cursor does not install this checkout globally; start future sessions
-with the same `--plugin-dir` argument.
+The verification result remains partial when runtime activation cannot be
+observed.
 
 Cursor session evidence is supported through workspace-matched transcripts,
 metadata, and audit logs. Partial or unavailable coverage remains explicit.
@@ -233,7 +265,8 @@ qwen extensions install QoderAI/better-harness
 
 ### Verify installation
 
-Start a new Qwen Code session in the repository you want to analyze and run the
+Run `qwen extensions list` and confirm that it includes Better Harness. Then
+start a new Qwen Code session in the repository you want to analyze and run the
 report prompt:
 
 ```text

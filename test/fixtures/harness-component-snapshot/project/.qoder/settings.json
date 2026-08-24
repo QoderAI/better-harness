@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/check.mjs"
+          }
+        ]
+      }
+    ]
+  }
+}

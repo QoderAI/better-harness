@@ -6,6 +6,21 @@ import { fileURLToPath } from "node:url";
 
 import { analyzeCloc } from "./analyze.mjs";
 
+const CLOC_HELP = `Usage: better-harness cloc [paths...] [options]
+
+Count code, comments, and blank lines.
+
+Options:
+  --cwd <path>              Analyze this directory
+  --workers <count>         Set the worker count
+  --no-git                  Do not use Git for file discovery
+  --tracked-only            Count tracked files only
+  --markdown-code           Include Markdown code blocks
+  --files                   Include counted file paths
+  --json                    Emit JSON output
+  -h, --help                Print help
+`;
+
 function parseArgs(argv = process.argv.slice(2)) {
   const args = { _: [] };
   for (let index = 0; index < argv.length; index += 1) {
@@ -50,6 +65,10 @@ function printTextReport(report) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (argv.some((arg) => arg === "--help" || arg === "-h")) {
+    process.stdout.write(CLOC_HELP);
+    return;
+  }
   const args = parseArgs(argv);
   const report = await analyzeCloc({
     cwd: args.cwd,

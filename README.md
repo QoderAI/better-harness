@@ -15,6 +15,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@qoder-ai/better-harness"><img src="https://img.shields.io/npm/v/@qoder-ai/better-harness.svg" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
@@ -27,11 +28,18 @@
 
 ## Quick start
 
-Analyze and improve your coding workflow with: [Claude Code](#claude-code), [Codex Desktop](#codex-desktop), [Codex CLI](#codex-cli), [Qoder Desktop/CLI](#qoder), [Cursor](#cursor), [Qwen Code](#qwen-code), or [GitHub Copilot CLI](#github-copilot).
+Analyze and improve your coding workflow with: [Claude Code](#claude-code), [Codex Desktop](#codex-desktop), [Codex CLI](#codex-cli), [Qoder Desktop/CLI](#qoder), [Cursor](#cursor), or [GitHub Copilot CLI](#github-copilot).
 
 Choose the host you already use to get its exact installation, verification,
 invocation, and report-output steps. Better Harness does not use one universal
 entrypoint across every host.
+
+This README shows inline setup for the most common hosts. Additional supported
+hosts (Qwen Code, Pi, Kimi Code, WorkBuddy, and Grok) keep their steps and
+boundaries in the [installation guide](docs/docs/installation.mdx) and the
+[public Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md); see
+[More adapters](#more-adapters). README placement is a display choice, not a
+support-level claim.
 
 Pi and WorkBuddy also have native local plugin entrypoints documented below.
 They remain outside the verified Quickstart list until a complete interactive
@@ -43,11 +51,11 @@ Quickstart; see the [public Host Adapter Matrix](docs/docs/hosts/adapter-matrix.
 for their explicit boundaries.
 
 Better Harness scopes behavior claims to relevant Task Episodes and the
-surrounding project mechanisms. Qoder produces a Canvas report; Claude Code,
-Codex, Cursor, Qwen Code, and GitHub Copilot produce self-contained HTML with
-paired Markdown. Missing or partial evidence remains explicit. See the
-[Host Adapter Matrix](docs/adapters/README.md) for current coverage and output
-differences.
+surrounding project mechanisms. Qoder and Cursor produce host-native Canvas
+reports; Claude Code, Codex, Qwen Code, GitHub Copilot, and Kimi Code produce
+self-contained HTML with paired Markdown. Missing or partial evidence remains
+explicit. See the [Host Adapter Matrix](docs/adapters/README.md) for current
+coverage and output differences.
 
 ## See it in action
 
@@ -272,35 +280,40 @@ session in the repository you want to analyze and run the report prompt:
 /better-harness analyze this project's AI coding workflow and generate an evidence-backed report
 ```
 
-Only when using Qoder CLI without Qoder Desktop, add this repository as a
-marketplace and install Better Harness manually:
+Only when using Qoder CLI without Qoder Desktop, inspect the current manual
+installation disposition before following Qoder's native marketplace flow:
 
 ```bash
-qodercli plugin marketplace add \
-  'https://github.com/QoderAI/better-harness.git'
-qodercli plugin install better-harness@better-harness
+better-harness plugin plan install --host qoder --surface cli --scope user
 ```
 
-Verify the manual installation:
+The planner does not emit the older install syntax because the current native
+help and this repository's historical documentation disagree. After a manual
+installation, verify only the currently observed inventory command:
 
 ```bash
 qodercli plugin list
+better-harness plugin verify --host qoder --surface cli
 ```
 
 Then start a new Qoder CLI session before using `/better-harness`.
 
 ### Cursor
 
-The Cursor plugin is not published to the marketplace yet. Load the
-source-local plugin for one Cursor Agent session:
+The Cursor plugin is not published to the marketplace. The repository carries
+the source-local manifest, but the current local Cursor help does not verify the
+historical `--plugin-dir` contract. Better Harness therefore reports the
+installation plan as unavailable instead of emitting that command:
 
 ```bash
 git clone https://github.com/QoderAI/better-harness.git
-cursor-agent --plugin-dir /path/to/better-harness
+better-harness plugin plan install --host cursor --surface agent --scope session
 ```
 
 Cursor session evidence is supported through workspace-matched transcripts,
-metadata, and audit logs. Partial or unavailable coverage remains explicit.
+metadata, and audit logs. A session that was loaded through a separately
+verified native route can be checked with `better-harness plugin verify --host
+cursor --surface agent`; partial or unavailable coverage remains explicit.
 
 ### GitHub Copilot
 
@@ -326,38 +339,47 @@ transcripts under `~/.copilot/session-state/`. Copilot records no per-response
 token usage, and VS Code Copilot Chat has no supported durable transcript; both
 remain explicit evidence boundaries.
 
-### Qwen Code
+### Inspect and plan plugin lifecycle changes (Beta)
 
-Install Better Harness as a Qwen Code extension:
-
-```bash
-qwen extensions install QoderAI/better-harness
-```
-
-Start a new Qwen Code session in the repository you want to analyze and run the
-report prompt:
-
-```text
-/better-harness analyze this project's AI coding workflow and generate an evidence-backed report
-```
-
-Qwen Code produces a self-contained `report.html` with paired `report.md` and
-`findings.json`. Session evidence coverage depends on Qwen Code's available
-transcript paths; missing or partial evidence remains explicit.
-
-### Pi
-
-Install the repository as a [pi package](https://pi.dev/docs/latest/packages):
+The standalone CLI can inspect local Better Harness installation evidence for
+every host without contacting a registry or changing host configuration:
 
 ```bash
-pi install https://github.com/QoderAI/better-harness
+better-harness plugin status --host all
+better-harness doctor --platform all
 ```
 
-Or try it for a single run without changing settings:
+Build a host-specific install, update, or removal plan before using that host's
+native UI or CLI. Plans preserve native steps as typed argv data for deliberate
+external execution; the human view does not turn them into shell command
+strings, and Better Harness does not execute them:
 
 ```bash
-pi -e git:github.com/QoderAI/better-harness
+better-harness plugin plan install --host qwen --surface cli --scope user
+better-harness plugin verify --host qwen --surface cli
 ```
+
+Host differences remain explicit. Qoder Desktop is bundled, Cursor is
+session-only while its native command contract is being reconciled, Pi uses a
+native extension command, and WorkBuddy uses a native Team expert plugin.
+
+### More adapters
+
+Beyond the hosts above, Better Harness also supports Qwen Code, Pi, Kimi Code,
+WorkBuddy, and Grok. Their exact install, invocation, and evidence boundaries
+live in the docs so this README stays focused:
+
+- **Qwen Code** — [installation guide](docs/docs/installation.mdx#qwen-code)
+  (`qwen extensions install QoderAI/better-harness`).
+- **Pi** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#pi)
+  (`pi install <source>` or `pi -e <source>`).
+- **Kimi Code** — [Host Adapter Matrix](docs/adapters/README.md)
+  (`.kimi-plugin/plugin.json` plugin install).
+- **WorkBuddy** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#workbuddy).
+- **Grok** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#grok).
+
+Each produces a self-contained `report.html` with paired `report.md` and
+`findings.json`; missing or partial session evidence stays explicit.
 
 Pi discovers the canonical `better-harness` Skill and native extension through
 the `pi` manifest in `package.json`. The extension registers exactly one
@@ -401,7 +423,7 @@ gate; absence of the local CLI or model keeps that status explicit.
 
 ## Develop and package from source
 
-Development requires Node.js `>=22.20.0 <26.0.0` and npm
+Development requires Node.js `>=22.20.0 <25.0.0` and npm
 `>=10.9.3 <12.0.0` on Windows, macOS, or Linux.
 
 ```bash

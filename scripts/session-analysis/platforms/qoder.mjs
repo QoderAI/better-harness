@@ -202,6 +202,87 @@ function messageContentItems(raw) {
   return Array.isArray(content) ? content : [];
 }
 
+function embeddedToolLifecycleItems(raw) {
+  return messageContentItems(raw).flatMap((item, index) => {
+    if (item?.type === "tool_use" && item?.id) {
+      return [{
+        index,
+        phase: "request",
+        invocationId: String(item.id),
+        toolName: item?.name ? String(item.name) : null,
+        input: item?.input && typeof item.input === "object" ? item.input : null,
+        result: null,
+      }];
+    }
+    const resultId = item?.type === "tool_result"
+      ? item?.tool_use_id ?? item?.toolUseId ?? item?.id ?? null
+      : null;
+    if (!resultId) return [];
+    return [{
+      index,
+      phase: "result",
+      invocationId: String(resultId),
+      toolName: null,
+      input: null,
+      result: item,
+    }];
+  });
+}
+
+function embeddedToolFilePath(input) {
+  return input?.file_path ?? input?.filePath ?? input?.path ?? null;
+}
+
+function embeddedToolCommandText(input) {
+  return input?.command ?? input?.cmd ?? null;
+}
+
+function withoutEmbeddedToolFacts(event) {
+  const output = { ...event };
+  for (const field of ["toolName", "toolInvocationId", "lifecyclePhase", "filePath", "commandText"]) {
+    delete output[field];
+  }
+  return output;
+}
+
+function embeddedToolLifecycleEvent(event, item, options = {}) {
+  const output = {
+    sessionId: event.sessionId,
+    type: item.phase === "request" ? "tool.requested" : "tool.execution.finished",
+    category: "tool",
+    timestamp: event.timestamp,
+    sourceKind: event.sourceKind,
+    planningScope: event.planningScope,
+    evidenceRef: event.evidenceRef,
+    summary: item.phase === "request" ? "Tool request observed" : "Tool result observed",
+    lifecyclePhase: item.phase,
+    toolInvocationId: item.invocationId,
+    embeddedItemIndex: item.index,
+  };
+  if (event.cwd) output.cwd = event.cwd;
+  if (item.toolName) output.toolName = item.toolName;
+  const filePath = embeddedToolFilePath(item.input);
+  if (filePath) output.filePath = filePath;
+  if (options.includeCommandText) {
+    const commandText = embeddedToolCommandText(item.input);
+    if (commandText) output.commandText = commandText;
+  }
+  if (item.phase === "result") {
+    if (item.result?.is_error === true || item.result?.isError === true) {
+      output.success = false;
+      output.hasError = true;
+    } else if (item.result?.is_error === false || item.result?.isError === false) {
+      output.success = true;
+    } else if (typeof event.success === "boolean") {
+      output.success = event.success;
+    }
+    if (event.hasError === true) output.hasError = true;
+    if (event.resultFacts) output.resultFacts = event.resultFacts;
+    if (event.level) output.level = event.level;
+  }
+  return output;
+}
+
 function inferSkillInvocations(raw, type) {
   const invocations = [];
   const directToolName = inferToolName(raw);
@@ -1511,6 +1592,17 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
     return event;
   }
 
+  normalizeEvents(raw, sourceRef, options = {}) {
+    const event = this.normalizeEvent(raw, sourceRef, options);
+    if (!event) return [];
+    const lifecycleItems = embeddedToolLifecycleItems(raw);
+    if (lifecycleItems.length === 0) return [event];
+    return [
+      withoutEmbeddedToolFacts(event),
+      ...lifecycleItems.map((item) => embeddedToolLifecycleEvent(event, item, options)),
+    ];
+  }
+
   async readSession(session, scope, options = {}) {
     const events = [];
     const includeContent = parseBooleanFlag(options["include-content"] ?? options.includeContent ?? false);
@@ -1602,7 +1694,7 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
           }
         }
       }
-      events.push(this.normalizeEvent(raw, sourceRef, options));
+      events.push(...this.normalizeEvents(raw, sourceRef, options));
     }, options.maxLines === null ? {} : { maxLines: options.maxLines });
   }
 
@@ -1613,7 +1705,7 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
         return;
       }
       const sourceRef = { ...ref, line, sessionId };
-      events.push(this.normalizeEvent(raw, sourceRef, options));
+      events.push(...this.normalizeEvents(raw, sourceRef, options));
     }, options.maxLines === null ? {} : { maxLines: options.maxLines });
   }
 
@@ -1628,7 +1720,7 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
       eventType: "session.state",
       timestamp: normalizeTimestamp(raw.updatedAt ?? raw.createdAt),
     };
-    events.push(this.normalizeEvent({ ...raw, type: "session.state" }, sourceRef, options));
+    events.push(...this.normalizeEvents({ ...raw, type: "session.state" }, sourceRef, options));
     return true;
   }
 

@@ -15,7 +15,7 @@ export function sortByName(left, right) {
 }
 
 function ruleSourceRank(item) {
-  if (item.sourceKind === "design-md-contract") {
+  if (item.sourceKind === "design-md-contract" || item.precedence === "after-agents-md") {
     return 30;
   }
   if (item.sourceKind === "agents-md-compat" || item.precedence === "after-qoder-rules") {
@@ -140,6 +140,32 @@ export async function pluginMetadataEvidencePath(pluginRoot, relativeCandidates)
   return pluginRoot;
 }
 
+export function pluginPathValues(value) {
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  if (Array.isArray(value)) return value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
+  return [];
+}
+
+export async function pathInsideRoot(root, relativePath) {
+  if (!root || typeof relativePath !== "string" || !relativePath.trim()) return undefined;
+  const base = path.resolve(root);
+  const candidate = path.resolve(base, relativePath);
+  const lexicalRelative = path.relative(base, candidate);
+  if (lexicalRelative === ".." || lexicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(lexicalRelative)) {
+    return undefined;
+  }
+  if (!(await pathExists(candidate))) return undefined;
+  const [realBase, realCandidate] = await Promise.all([
+    realpath(base).catch(() => base),
+    realpath(candidate).catch(() => candidate),
+  ]);
+  const resolvedRelative = path.relative(realBase, realCandidate);
+  if (resolvedRelative === ".." || resolvedRelative.startsWith(`..${path.sep}`) || path.isAbsolute(resolvedRelative)) {
+    return undefined;
+  }
+  return candidate;
+}
+
 export async function collectSkillFiles(root, scope, sourceLabel, rootForEvidence = root) {
   if (!(await pathExists(root))) {
     return [];
@@ -148,6 +174,10 @@ export async function collectSkillFiles(root, scope, sourceLabel, rootForEvidenc
     maxDepth: 5,
     limit: 5000,
     match: (filePath) => path.basename(filePath) === "SKILL.md",
+    // Support skills installed via symlinks (such as the better-harness
+    // recommendation to junction/symlink the skills directory into the
+    // user-level skills directory).
+    followSymlinks: true,
   });
   const items = [];
   for (const filePath of files) {
@@ -165,7 +195,13 @@ export async function collectSkillFiles(root, scope, sourceLabel, rootForEvidenc
       evidence: evidence(filePath, rootForEvidence),
     });
   }
-  return items.sort(sortByName);
+  // Plugin bundles are third-party content and collection follows symlinks,
+  // so a symlink inside a plugin component root could otherwise pull files
+  // from outside it into the inventory; contain plugin collections to the
+  // component root. User and project scopes intentionally keep
+  // symlink-installed skills (see the README skill-install recommendation).
+  const contained = scope === "plugin" ? await filterItemsInsideRoot(items, root) : items;
+  return contained.sort(sortByName);
 }
 
 export async function collectMarkdownItems(root, kind, scope, sourceLabel, rootForEvidence = root) {
@@ -204,6 +240,28 @@ export async function uniqueAssetsByRealPath(items) {
       : item.id;
     if (seen.has(key)) continue;
     seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+function containmentPath(value) {
+  let resolved = path.resolve(value).replace(/\\/gu, "/");
+  if (process.platform === "win32") resolved = resolved.toLowerCase();
+  return resolved.replace(/\/+$/u, "");
+}
+
+// Drop collected items whose realpath escapes the given root. Collection may
+// follow symlinks (collectSkillFiles does), so a symlink inside the root can
+// otherwise pull files from outside it into the inventory.
+export async function filterItemsInsideRoot(items, root) {
+  const realBase = containmentPath(await realpath(path.resolve(root)).catch(() => path.resolve(root)));
+  const result = [];
+  for (const item of items) {
+    const filePath = item.filePath ?? item.evidence?.path;
+    if (!filePath) continue;
+    const realItem = containmentPath(await realpath(filePath).catch(() => path.resolve(filePath)));
+    if (realItem !== realBase && !realItem.startsWith(`${realBase}/`)) continue;
     result.push(item);
   }
   return result;
@@ -578,6 +636,62 @@ export async function collectMcpItems(root, scope, sourceLabel, rootForEvidence 
   return items.sort(sortByName);
 }
 
+function sanitizeMcpUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  try {
+    const parsed = new URL(value);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeMcpCommand(value) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const executable = value.trim().split(/\s+/u)[0];
+  return executable.split(/[\\/]/u).filter(Boolean).at(-1);
+}
+
+function sanitizeMcpArgs(args, command) {
+  const values = Array.isArray(args) ? args : [];
+  const runner = sanitizeMcpCommand(command)?.toLowerCase();
+  let packageRetained = false;
+  return values.map((value, index) => {
+    const text = String(value);
+    const previous = String(values[index - 1] ?? "");
+    if (/(?:token|secret|password|credential|api[_-]?key|authorization)/iu.test(previous)) return "<redacted>";
+    if (/(?:token|secret|password|credential|api[_-]?key|authorization|bearer)/iu.test(text)) return "<redacted>";
+    if (/^--?[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(text)) return text;
+    if (/^(?:\$\{?[A-Z0-9_]+\}?|%[A-Z0-9_]+%)$/u.test(text)) return text;
+    if (/\.(?:c?m?js|ts|py|sh|rb|ps1|cmd|bat)$/iu.test(text)) return path.basename(text);
+    if (["npx", "bunx", "uvx"].includes(runner) && !packageRetained && /^(?:@[A-Za-z0-9_.-]+\/)?[A-Za-z0-9_.-]+(?:@[A-Za-z0-9_.^~*-]+)?$/u.test(text)) {
+      packageRetained = true;
+      return text;
+    }
+    return "<redacted>";
+  });
+}
+
+function sanitizeMcpItem(item) {
+  const command = sanitizeMcpCommand(item.command);
+  const args = sanitizeMcpArgs(item.args, command);
+  return {
+    ...item,
+    command,
+    args,
+    argCount: args.length,
+    url: sanitizeMcpUrl(item.url),
+  };
+}
+
+export function sanitizeMcpItems(items) {
+  return items.map(sanitizeMcpItem);
+}
+
 export async function countJsonFiles(root) {
   if (!(await pathExists(root))) {
     return 0;
@@ -687,6 +801,7 @@ export function flattenPlugins(plugins, key) {
       pluginId: plugin.id,
       pluginName: plugin.name,
       pluginEnabled: plugin.enabled,
+      workspaceScoped: item.workspaceScoped ?? plugin.workspaceScoped,
       sourceLabel: plugin.displayName,
     })),
   );

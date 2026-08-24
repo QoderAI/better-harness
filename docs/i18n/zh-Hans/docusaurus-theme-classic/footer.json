@@ -45,7 +45,7 @@
   },
   "link.item.label.npm": {
     "message": "npm",
-    "description": "The label of footer link with label=npm linking to https://www.npmjs.com/package/@qoderai/better-harness"
+    "description": "The label of footer link with label=npm linking to https://www.npmjs.com/package/@qoder-ai/better-harness"
   },
   "copyright": {
     "message": "Copyright © 2026 Qoder. MIT licensed.",

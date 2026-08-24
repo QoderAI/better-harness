@@ -7,7 +7,8 @@ import path from "node:path";
 import test from "node:test";
 
 import { evaluateHtmlReport, renderHtml } from "../scripts/harness-analysis/renderers/html.mjs";
-import { renderReport } from "../scripts/harness-analysis/render-report.mjs";
+import { RENDER_REPORT_PLATFORMS, renderReport } from "../scripts/harness-analysis/render-report.mjs";
+import { SUPPORTED_SESSION_PLATFORMS } from "../scripts/session-analysis/analyzer.mjs";
 import { renderCanvasTsx } from "../scripts/harness-analysis/renderers/qoder-canvas.mjs";
 import { buildTaskLoopSourceCandidate } from "../scripts/harness-analysis/task-loop-source.mjs";
 import { applyEpisodeReviews } from "../scripts/harness-analysis/episode-evidence-review.mjs";
@@ -115,6 +116,15 @@ function sampleFindings() {
       dimensionRefs: ["environment-readiness", "safe-change"],
     }],
   };
+}
+
+function embeddedJson(html, id) {
+  const payload = html.match(new RegExp(
+    `<script id="${id}" type="application/json">([\\s\\S]*?)<\\/script>`,
+    "u",
+  ))?.[1];
+  assert.ok(payload, `missing embedded JSON payload: ${id}`);
+  return JSON.parse(payload);
 }
 
 function reviewedTaskLoopSource() {
@@ -326,6 +336,81 @@ function taskLoopFindingsAtVersion(version) {
   findings.summary.reportContractVersion = version;
   for (const finding of findings.findings) delete finding.target;
   return findings;
+}
+
+function htmlReportDataWithActivity(dates, { language = "en", activeMinutes } = {}) {
+  const source = reviewedTaskLoopSource();
+  source.sessionEvents.usageActivity.dates = dates;
+  source.sessionEvents.usageActivity.sessions.starts = dates.map((_, index) => index + 1);
+  source.sessionEvents.usageActivity.sessions.activeMinutes = activeMinutes ?? dates.map((_, index) => (index + 1) * 5);
+  const data = projectTaskLoopFindings(source, {
+    projectName: "render-source-project",
+    direct: true,
+  });
+  return {
+    ...data,
+    language,
+    target: { name: "render-source-project", path: "/tmp/render-source-project" },
+  };
+}
+
+function htmlReportDataWithLongSessions({ callCount = 12, language = "en" } = {}) {
+  const data = htmlReportDataWithActivity(["2026-08-11"], { language, activeMinutes: [90] });
+  const calls = Array.from({ length: callCount }, (_, index) => {
+    const observed = index % 2 === 0;
+    return {
+      id: `T${index + 1}`,
+      step: index + 1,
+      toolName: ["exec_command", "apply_patch", "view_image"][index % 3],
+      status: (index + 1) % 5 === 0 ? "failed" : "observed",
+      durationStatus: observed ? "observed" : "unobserved",
+      ...(observed ? {
+        durationMs: (index + 1) * 250,
+        timingSource: "transcript-pair",
+      } : {}),
+    };
+  });
+  data.summary.usageEfficiency = {
+    ...data.summary.usageEfficiency,
+    selection: {
+      ...data.summary.usageEfficiency.selection,
+      eligibleSessionCount: 6,
+      analyzedSessionCount: 6,
+    },
+    longSessions: {
+      activeCount: 2,
+      wallOnlyCount: 0,
+      longestActiveMinutes: 90,
+      estimate: { activeThresholdMinutes: 45, gapCapMinutes: 5, idleGapMinutes: 30 },
+      samples: [{
+        alias: "S1",
+        role: "user-thread-candidate",
+        activeMinutes: 90,
+        failureCount: calls.filter((call) => call.status === "failed").length,
+        sessionId: "019f-codex-session-1",
+        userRequest: "Inspect <script>unsafe</script> & explain the long session",
+        toolTrace: {
+          schemaVersion: 2,
+          totalCalls: callCount,
+          shownCalls: callCount,
+          truncated: false,
+          calls,
+        },
+      }, {
+        alias: "S2",
+        role: "child-agent-candidate",
+        activeMinutes: 55,
+        failureCount: 0,
+        sessionId: "codex-session-2",
+        userRequest: "Review the validation evidence",
+      }],
+    },
+  };
+  return data;
+}
+
+function attribute(tag, name) {
+  return tag.match(new RegExp(`\\b${name}="([^"]*)"`, "u"))?.[1] ?? null;
 }
 
 function parseRun(stdout) {
@@ -755,6 +840,7 @@ test("render command writes disk-openable HTML artifacts", async () => {
     const html = readFileSync(path.join(payload.runDir, "report.html"), "utf8");
     assert.match(html, /<main id="harness-report" data-report-mode="codex-html">/u);
     assert.match(html, /<script id="harness-report-data" type="application\/json">/u);
+    assert.match(html, /<script id="harness-report-actions" type="application\/json">/u);
     assert.match(html, /data-section="fluency"/u);
     assert.match(html, /data-section="findings"/u);
     assert.match(html, /data-section="customize"/u);
@@ -773,7 +859,137 @@ test("render command writes disk-openable HTML artifacts", async () => {
     assert.match(html, /View details/u);
     assert.doesNotMatch(html, /<details class="finding"/u);
     assert.doesNotMatch(html, /<details class="finding" open/u);
+
+    const reviewed = JSON.parse(readFileSync(path.join(payload.runDir, "findings.json"), "utf8"));
+    assert.doesNotMatch(
+      readFileSync(path.join(payload.runDir, "findings.json"), "utf8"),
+      /better-harness-fix-output/u,
+    );
+    assert.doesNotMatch(
+      readFileSync(path.join(payload.runDir, "report.md"), "utf8"),
+      /better-harness-fix-output/u,
+    );
+    const actions = embeddedJson(html, "harness-report-actions");
+    const interactionData = embeddedJson(html, "harness-report-data");
+    assert.deepEqual(actions.findings.map((row) => row.id), reviewed.findings.map((row) => row.id));
+    assert.deepEqual(interactionData.findings, reviewed.findings.map((finding) => ({
+      id: finding.id,
+      aiFixPrompt: finding.aiFixPrompt,
+    })));
+    assert.deepEqual(actions.findings, reviewed.findings.map((finding) => ({
+      id: finding.id,
+      expectedRevision: 0,
+    })));
+    assert.deepEqual(Object.keys(actions).sort(), ["findings", "reportRoute"]);
+    assert.deepEqual(Object.keys(interactionData), ["findings"]);
+    for (const finding of interactionData.findings) {
+      assert.deepEqual(Object.keys(finding).sort(), ["aiFixPrompt", "id"]);
+    }
+    assert.equal(
+      actions.reportRoute,
+      path.relative(root, path.join(payload.runDir, "report.html")).replace(/\\/gu, "/"),
+    );
+    assert.equal(path.isAbsolute(actions.reportRoute), false);
+    assert.doesNotMatch(actions.reportRoute, /\.staging-/u);
+    assert.equal(Object.hasOwn(interactionData, "target"), false);
+    assert.equal(Object.hasOwn(interactionData, "dataPath"), false);
   });
+});
+
+test("render routes html output by host id and fails closed on unknown platforms", async () => {
+  await withTempDir("better-harness-render-platform-", async (root) => {
+    const findingsPath = path.join(root, "input.findings.json");
+    await writeJson(findingsPath, sampleFindings());
+
+    const routed = runNode(
+      [renderPath, "--findings", findingsPath, "--mode", "html", "--platform", "grok", "--target", root, "--json"],
+      { cwd: root },
+    );
+    assert.equal(routed.status, 0, routed.stderr || routed.stdout);
+    const payload = parseRun(routed.stdout);
+    assert.equal(payload.outputLocation.requestedOut, ".grok/better-harness");
+    assert.equal(payload.runDir.includes(path.join(".grok", "better-harness")), true);
+
+    const rejected = runNode(
+      [renderPath, "--findings", findingsPath, "--mode", "html", "--platform", "grock", "--target", root, "--json"],
+      { cwd: root },
+    );
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, /unsupported render platform: grock/u);
+
+    // Help must stay usable even with an invalid platform so agents can self-correct.
+    const help = runNode([renderPath, "--help", "--platform", "grock"], { cwd: root });
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /Usage: better-harness harness render/u);
+  });
+});
+
+test("render platform allowlist matches the session platform registry", () => {
+  assert.deepEqual([...RENDER_REPORT_PLATFORMS].sort(), [...SUPPORTED_SESSION_PLATFORMS].sort());
+});
+
+test("HTML relative action metadata carries the finding's current repair revision", () => {
+  const reportData = {
+    ...sampleFindings(),
+    language: "en",
+    target: { name: "render-fixture", path: "/tmp/render-fixture" },
+  };
+  reportData.findings = reportData.findings.map((finding, index) => ({
+    ...finding,
+    ...(index === 0 ? { actualOutputRevision: 3 } : {}),
+  }));
+  const html = renderHtml(reportData, {
+    findingsPath: "/tmp/render-fixture/run/findings.json",
+  });
+  const action = embeddedJson(html, "harness-report-actions").findings[0];
+
+  assert.deepEqual(action, {
+    id: reportData.findings[0].id,
+    expectedRevision: 3,
+  });
+});
+
+test("HTML context-free rendering keeps raw prompt compatibility without local paths", () => {
+  const reportData = {
+    ...sampleFindings(),
+    language: "en",
+    target: { name: "render-fixture", path: "/tmp/render-fixture" },
+  };
+
+  const html = renderHtml(reportData);
+
+  assert.deepEqual(embeddedJson(html, "harness-report-actions"), {
+    reportRoute: null,
+    findings: [],
+  });
+  assert.deepEqual(
+    embeddedJson(html, "harness-report-data").findings.map((finding) => finding.id),
+    reportData.findings.map((finding) => finding.id),
+  );
+  assert.equal(evaluateHtmlReport(html, reportData).status, "pass");
+});
+
+test("HTML omits Copy controls and action metadata for empty AI fix prompts", () => {
+  const fixture = sampleFindings();
+  const reportData = {
+    ...fixture,
+    language: "en",
+    target: { name: "render-fixture", path: "/tmp/render-fixture" },
+    findings: fixture.findings.map((finding, index) => (
+      index === 0 ? { ...finding, aiFixPrompt: "  \n" } : finding
+    )),
+  };
+  const actionContext = { findingsPath: "/tmp/render-fixture/run/findings.json" };
+
+  const html = renderHtml(reportData, actionContext);
+  const actions = embeddedJson(html, "harness-report-actions");
+  const interactionData = embeddedJson(html, "harness-report-data");
+
+  assert.equal((html.match(/data-copy-finding=/gu) ?? []).length, 2);
+  assert.equal((html.match(/data-view-finding-dialog=/gu) ?? []).length, 2);
+  assert.deepEqual(actions.findings.map((finding) => finding.id), [reportData.findings[1].id]);
+  assert.deepEqual(interactionData.findings.map((finding) => finding.id), [reportData.findings[1].id]);
+  assert.equal(evaluateHtmlReport(html, reportData, actionContext).status, "pass");
 });
 
 test("HTML mode validates canonical compact Agent Work Loop findings without a Canvas sidecar", async () => {
@@ -828,6 +1044,117 @@ test("HTML mode mirrors the reviewed Agent Work Loop reader sections without Can
     assert.equal(existsSync(path.join(runDir, "canvas.json")), false);
     assert.equal(existsSync(path.join(runDir, "report.canvas.tsx")), false);
   });
+});
+
+test("HTML activity chart binds every short-range UTC date to its horizontal grid column", () => {
+  const dates = ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14"];
+  const reportData = htmlReportDataWithActivity(dates);
+
+  const html = renderHtml(reportData);
+  const cells = html.match(/<span class="heat-cell [^"]+"[^>]*>/gu) ?? [];
+  const ticks = html.match(/<span class="heat-tick[^"]*"[^>]*>/gu) ?? [];
+
+  assert.equal(cells.length, 4);
+  assert.deepEqual(cells.map((tag) => attribute(tag, "data-date")), dates);
+  assert.deepEqual(cells.map((tag) => attribute(tag, "style")), [
+    "grid-column:1",
+    "grid-column:2",
+    "grid-column:3",
+    "grid-column:4",
+  ]);
+  assert.deepEqual(ticks.map((tag) => attribute(tag, "data-date")), dates);
+  assert.deepEqual(ticks.map((tag) => attribute(tag, "style")), cells.map((tag) => attribute(tag, "style")));
+  assert.ok(ticks.every((tag) => attribute(tag, "class") === "heat-tick"));
+  assert.match(html, /class="heat-scroll" style="--heat-days:4;--heat-min-width:64px"/u);
+  assert.doesNotMatch(html, /grid-template-rows:repeat\(7,13px\)|heat-legend/u);
+  for (const [index, cell] of cells.entries()) {
+    assert.equal(attribute(cell, "title"), `${dates[index]}: ${(index + 1) * 5} active minutes`);
+    assert.equal(attribute(cell, "aria-label"), attribute(cell, "title"));
+  }
+  assert.equal(evaluateHtmlReport(html, reportData).status, "pass");
+});
+
+test("HTML activity chart keeps sparse long-range ticks bound to their source columns", () => {
+  const dates = Array.from({ length: 30 }, (_, index) => `2026-07-${String(index + 1).padStart(2, "0")}`);
+  const reportData = htmlReportDataWithActivity(dates);
+
+  const html = renderHtml(reportData);
+  const cells = html.match(/<span class="heat-cell [^"]+"[^>]*>/gu) ?? [];
+  const ticks = html.match(/<span class="heat-tick[^"]*"[^>]*>/gu) ?? [];
+
+  assert.equal(cells.length, 30);
+  assert.deepEqual(ticks.map((tag) => [attribute(tag, "data-date"), attribute(tag, "style")]), [
+    [dates[0], "grid-column:1"],
+    [dates[7], "grid-column:8"],
+    [dates[14], "grid-column:15"],
+    [dates[21], "grid-column:22"],
+    [dates[29], "grid-column:30"],
+  ]);
+  assert.match(html, /class="heat-scroll" style="--heat-days:30;--heat-min-width:506px"/u);
+  assert.match(html, /\.heat-scroll \{[^}]*overflow-x:auto/u);
+  assert.equal(evaluateHtmlReport(html, reportData).status, "pass");
+});
+
+test("HTML activity chart preserves empty, localized, accessible, and self-contained output", () => {
+  const emptyData = htmlReportDataWithActivity([], { activeMinutes: [] });
+  const emptyHtml = renderHtml(emptyData);
+  assert.match(emptyHtml, /class="heatmap-empty" role="img"/u);
+  assert.doesNotMatch(emptyHtml, /class="heat-cell|class="heat-axis/u);
+  assert.equal(evaluateHtmlReport(emptyHtml, emptyData).status, "pass");
+
+  const chineseData = htmlReportDataWithActivity(["2026-07-11"], { language: "zh", activeMinutes: [15] });
+  const chineseHtml = renderHtml(chineseData);
+  const chineseCell = chineseHtml.match(/<span class="heat-cell [^"]+"[^>]*>/u)?.[0] ?? "";
+  assert.equal(attribute(chineseCell, "data-date"), "2026-07-11");
+  assert.match(attribute(chineseCell, "title") ?? "", /^2026-07-11:/u);
+  assert.match(attribute(chineseCell, "title") ?? "", /15/u);
+  assert.equal(attribute(chineseCell, "aria-label"), attribute(chineseCell, "title"));
+  assert.doesNotMatch(chineseHtml, /<link\b|<script[^>]+\bsrc=|fetch\s*\(/iu);
+  assert.equal(evaluateHtmlReport(chineseHtml, chineseData).status, "pass");
+});
+
+test("Codex HTML renders accessible collapsed long-session swimlane traces without host runtime dependencies", () => {
+  const reportData = htmlReportDataWithLongSessions();
+  const html = renderHtml(reportData);
+  const details = html.match(/<details class="tool-trace-details"[^>]*>/gu) ?? [];
+  const points = html.match(/<circle class="tool-trace-point[^>]*>[\s\S]*?<\/circle>/gu) ?? [];
+
+  assert.equal((html.match(/data-long-session-alias=/gu) ?? []).length, 2);
+  assert.equal(details.length, 2);
+  assert.ok(details.every((tag) => !/\bopen\b/u.test(tag)));
+  assert.equal((html.match(/data-tool-trace-chart=/gu) ?? []).length, 1);
+  assert.equal(points.length, 12);
+  assert.equal((html.match(/class="tool-trace-point failed"/gu) ?? []).length, 2);
+  assert.ok(points.every((tag) => /tabindex="0"/u.test(tag) && /aria-label="[^"]+"/u.test(tag) && /<title>/u.test(tag)));
+  assert.match(html, /<svg class="tool-trace-svg"[^>]+role="img"[^>]+aria-label="S1 tool calls by tool, sequence, and observed latency"/u);
+  assert.match(html, /<desc>Bubble area represents observed latency/u);
+  assert.match(html, /data-session-locator="019f-codex-session-1"/u);
+  assert.match(html, /Inspect &lt;script&gt;unsafe&lt;\/script&gt; &amp; explain the long session/u);
+  assert.doesNotMatch(html, /<script>unsafe<\/script>|(?:codex|chatgpt):\/\/|qoder\/canvas/iu);
+  assert.match(html, /Observed latency for 6 of 12 shown calls/u);
+  assert.match(html, /\.tool-trace-scroll \{[^}]*overflow-x:auto/u);
+  assert.match(html, /details\.tool-trace-details:not\(\[open\]\) > :not\(summary\)\{display:block!important/u);
+  assert.equal(evaluateHtmlReport(html, reportData).status, "pass");
+});
+
+test("Codex HTML keeps complete wide traces contained and validates exact reviewed points", () => {
+  const reportData = htmlReportDataWithLongSessions({ callCount: 125 });
+  const html = renderHtml(reportData);
+
+  assert.equal((html.match(/data-trace-call-id=/gu) ?? []).length, 125);
+  assert.match(html, /<svg class="tool-trace-svg"[^>]+width="1720"/u);
+  assert.match(html, /Showing 125 of 125 tool calls/u);
+  assert.equal(evaluateHtmlReport(html, reportData).status, "pass");
+
+  const missingPoint = html.replace(/<circle class="tool-trace-point[^>]*>[\s\S]*?<\/circle>/u, "");
+  const missingPointResult = evaluateHtmlReport(missingPoint, reportData);
+  assert.equal(missingPointResult.status, "fail");
+  assert.ok(missingPointResult.errors.some((error) => /tool-trace point count 124/u.test(error)));
+
+  const hostLinked = html.replace("</footer>", "<a href=\"codex://session/private\">open</a></footer>");
+  const hostLinkedResult = evaluateHtmlReport(hostLinked, reportData);
+  assert.equal(hostLinkedResult.status, "fail");
+  assert.ok(hostLinkedResult.errors.some((error) => /forbidden host deep link/u.test(error)));
 });
 
 test("HTML dimension progressbar semantics stay complete and score-bound", () => {
@@ -1013,11 +1340,34 @@ test("HTML validator rejects incomplete finding action contracts", () => {
     language: "en",
     target: { name: "render-fixture", path: "/tmp/render-fixture" },
   };
-  const html = renderHtml(reportData);
-  assert.equal(evaluateHtmlReport(html, reportData).status, "pass");
+  const actionContext = { findingsPath: "/tmp/render-fixture/run/findings.json" };
+  const html = renderHtml(reportData, actionContext);
+  assert.equal(evaluateHtmlReport(html, reportData, actionContext).status, "pass");
 
   const mutations = [
     ["interaction controller", html.replace(/<script id="harness-report-interactions">[\s\S]*?<\/script>/u, "")],
+    ["finding action payload", html.replace(/<script id="harness-report-actions"[\s\S]*?<\/script>/u, "")],
+    ["interaction data payload", html.replace(/<script id="harness-report-data"[\s\S]*?<\/script>/u, "")],
+    ["cross-bound finding action payload", html.replace(
+      '"id":"ff-runtime-validation","expectedRevision"',
+      '"id":"aia-workflow-evidence","expectedRevision"',
+    )],
+    ["stale finding action revision", html.replace(
+      '"expectedRevision":0',
+      '"expectedRevision":7',
+    )],
+    ["absolute report route", html.replace(
+      /"reportRoute":"[^"]+"/u,
+      '"reportRoute":"C:/private/report.html"',
+    )],
+    ["escaping report route", html.replace(
+      /"reportRoute":"[^"]+"/u,
+      '"reportRoute":"../report.html"',
+    )],
+    ["cross-bound interaction data", html.replace(
+      '"id":"ff-runtime-validation","aiFixPrompt"',
+      '"id":"aia-workflow-evidence","aiFixPrompt"',
+    )],
     ["copy status", html.replace(/<div id="copy-status"[\s\S]*?<\/div>/u, "")],
     ["manual copy fallback", html.replace(/<dialog id="manual-copy-dialog"[\s\S]*?<\/dialog>/u, "")],
     ["finding copy action", html.replace(/<button[^>]+data-copy-finding=[\s\S]*?<\/button>/u, "")],
@@ -1045,7 +1395,7 @@ test("HTML validator rejects incomplete finding action contracts", () => {
   ];
 
   for (const [label, mutatedHtml] of mutations) {
-    const result = evaluateHtmlReport(mutatedHtml, reportData);
+    const result = evaluateHtmlReport(mutatedHtml, reportData, actionContext);
     assert.equal(result.status, "fail", `${label} mutation must fail validation`);
   }
 });

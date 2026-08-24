@@ -16,24 +16,21 @@ HTML titles, notes, and labels.
 
 For Agent Work Loop, mirror the canonical reader order without importing or
 emulating another host runtime: project introduction, five-dimension fluency,
-project activity and bounded model/Skill usage, compact finding cards with
-local AI-fix copy actions and scoped details, Agent Customize, then evidence
-and methodology. This is semantic parity over one reviewed source, not a
-second analysis or a byte-for-byte host visual clone.
+project activity and bounded model/Skill usage, compact finding cards with local
+AI-fix copy actions and scoped details, Agent Customize, then evidence and
+methodology. This is semantic parity, not a byte-for-byte host visual clone.
 
 Use the selected style's primary visual family as the first meaningful visual
-surface. Then mirror the compact Markdown report sections and the semantic
-source parts from `report-output.md`: style-selected dimensions or fluency
-framing, shared finding/action rows with local AI fix handoff and fallback
-text, recommendations, and notes. Do
-not copy one generic dashboard skeleton across all styles.
+surface. Then mirror the compact Markdown report sections and semantic source
+parts from `report-output.md`: style-selected dimensions or fluency framing,
+shared finding/action rows with local AI fix handoff and fallback text,
+recommendations, and notes. Do not copy one dashboard across all styles.
 
-Treat fixed source parts as reading order, not prose layout. When numeric or
-grouped data exists, prefer an inline SVG/CSS chart or matrix for the
+Treat fixed source parts as reading order, not prose layout. When numeric or grouped data exists,
+prefer an inline SVG/CSS chart or matrix for the
 style-selected framing part. Keep issue evidence in shared finding/action rows,
 risk heatmaps, or style-owned visuals instead of a standalone aggregate section.
-Tables and cards remain acceptable fallback surfaces when the source has no
-chartable score, count, severity, timing, or domain data.
+Tables and cards remain acceptable fallback surfaces when the source has no chartable score, count, severity, timing, or domain data.
 
 ## Runtime Boundaries
 
@@ -48,9 +45,8 @@ chartable score, count, severity, timing, or domain data.
 - Follow output-mode exclusions from `templates/reporting/routing.md`.
 - Prefer semantic HTML plus CSS and inline SVG. Use inline JavaScript only for
   small local interactions such as filtering, tabs, or disclosure state.
-- Keep the first viewport useful: project, verdict, confidence, score label or
-  caveat, and the selected style's primary visual should be visible without
-  requiring the Markdown report.
+- Keep the first viewport useful: project, verdict, confidence, score caveat,
+  and the primary visual should be visible without the Markdown report.
 
 ## Required Report Parity
 
@@ -59,15 +55,31 @@ Mirror the Markdown report and the parity rules in
 conclusions.
 
 Keep first-screen labels short. Put long paths, command output, screenshots, and
-raw evidence anchors in an evidence table or appendix.
+raw evidence anchors in an evidence table or appendix. Render retained UTC activity dates left-to-right; use shared cell/tick grid columns and gaps, and keep long-range scrolling inside the chart.
 
 HTML cannot assume a host chat API, native prompt injection, or host-specific
 deep links. For each shared finding/action row, render compact `Copy AI Fix`
-and `View details` controls when an AI fix exists. Copy the exact reviewed
-prompt locally, report copy success truthfully, and fall back to selected
-manual-copy text when browser clipboard paths fail. Keep the full cause,
-expected output, and acceptance checks available in the scoped details dialog
-and as readable no-JavaScript and print content.
+and `View details` controls only when a non-empty reviewed AI fix exists; keep
+`View details` when it does not. Keep `aiFixPrompt` unchanged in
+`findings.json`. Embed only the actionable id/prompt projection plus a separate
+machine binding containing the final `report.html` workspace-relative POSIX
+route, finding id, and current output revision. Do not embed renderer-added
+absolute workspace or artifact paths.
+
+When opened from its original matching `file:` location, derive the workspace
+and sibling final `findings.json` paths at copy time and append one
+renderer-owned `<better-harness-fix-output>` callback. For HTTP previews, moved
+files, or intentionally context-free renders, copy the unchanged reviewed
+prompt without a callback. Keep malformed declared bindings fail-closed. Report
+copy success truthfully and use the same computed text for clipboard, legacy,
+and selected manual-copy fallbacks. Keep the full cause, expected output, and
+acceptance checks in the scoped details dialog and readable no-JavaScript and
+print content.
+
+For reviewed long-session tool traces, render compact cards with the privacy-safe
+request and session locator. Use a native disclosure and inline SVG/CSS; keep
+complete traces scrollable, distinguish failures, scale bubble area from
+observed latency, expose accessible timing labels, and omit host deep links.
 
 ## Markdown Report Addendum
 
@@ -89,5 +101,4 @@ existing notes:
   each finding/action row when present.
 ```
 
-Use literal Markdown list lines. Other output modes must omit the `HTML visual`
-metadata line and the `HTML Companion` block.
+Use literal Markdown list lines. Other modes omit `HTML visual` and `HTML Companion`.

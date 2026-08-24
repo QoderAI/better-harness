@@ -5,6 +5,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HOST_CAPABILITIES, hostIdSetFor } from "../host-support/index.mjs";
+import { projectSemanticFacets, validateSemanticFacets } from "../session-analysis/index.mjs";
+import { findingTargetErrors } from "../workspace-topology/index.mjs";
 import {
   AGENT_WORK_LOOP_DIMENSIONS,
   AGENT_WORK_LOOP_DIMENSION_IDS,
@@ -29,10 +32,10 @@ import {
   readerOverviewTextErrors,
   validateHarnessReportSource,
 } from "./report-source.mjs";
-import { projectSemanticFacets, validateSemanticFacets } from "../session-analysis/index.mjs";
 import { sanitizeProviderCoverage } from "../session-analysis/index.mjs";
 import { restoreProjectedInterventionLedger, summarizeLearningCapture } from "./intervention-ledger.mjs";
-import { findingTargetErrors } from "../workspace-topology/index.mjs";
+
+const SESSION_ANALYSIS_HOST_SET = hostIdSetFor(HOST_CAPABILITIES.SESSION_ANALYSIS);
 
 const DIMENSIONS = AGENT_WORK_LOOP_DIMENSIONS;
 
@@ -75,11 +78,11 @@ const TASK_LOOP_HOST_FINDING_FIELDS = Object.freeze([
 const LEGACY_TASK_LOOP_HOST_FINDING_FIELDS = Object.freeze(["kind", "subdimensionRefs", "evidenceBridge"]);
 const TASK_LOOP_CANVAS_SUMMARY_FIELDS = Object.freeze([
   "evidenceMode", "atAGlance", "evidenceBoundary", "semanticFacets",
-  "usageActivity", "usageEfficiency", "learningCapture",
+  "usageActivity", "usageEfficiency", "contextUsage", "learningCapture",
 ]);
 const TASK_LOOP_MACHINE_SUMMARY_FACT_FIELDS = Object.freeze([
   "evidenceMode", "evidenceBoundary", "semanticFacets", "learningCapture",
-  "usageActivity", "usageEfficiency",
+  "usageActivity", "usageEfficiency", "contextUsage",
 ]);
 const TASK_LOOP_CANVAS_DIMENSION_FIELDS = Object.freeze([
   "id", "level", "state", "subdimensions", "evidenceBridge", "blocker", "scoreReason", "scoreConfidence", "scoreEvidenceRefs",
@@ -1511,7 +1514,7 @@ function checkupReportFindings(source) {
 function usageOutcomeReviewLead(source, locale) {
   const usage = source?.sessionEvents?.usageEfficiency;
   if (!isObject(usage) || !isObject(usage.selection) || !isObject(usage.longSessions) || !isObject(usage.outcomeReview)) return null;
-  const platform = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"].includes(source?.manifest?.scope?.platform)
+  const platform = SESSION_ANALYSIS_HOST_SET.has(source?.manifest?.scope?.platform)
     ? source.manifest.scope.platform
     : "qoder";
   const activeCount = Number(usage?.longSessions?.activeCount ?? 0);
@@ -1593,6 +1596,10 @@ function projectedUsageEfficiency(source, locale) {
   if (!sourceUsage) return null;
   const usage = JSON.parse(JSON.stringify(sourceUsage));
   for (const sample of rows(usage?.longSessions?.samples)) {
+    const sessionId = String(sample.rawSessionId ?? "").trim();
+    const userRequest = String(sample.userInputSummary ?? "").trim();
+    if (/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(sessionId)) sample.sessionId = sessionId;
+    if (userRequest) sample.userRequest = userRequest;
     delete sample.rawSessionId;
     delete sample.sessionRef;
     delete sample.userInputSummary;
@@ -1627,6 +1634,9 @@ export function projectTaskLoopReportFacts(source) {
       ? { usageActivity: JSON.parse(JSON.stringify(source.sessionEvents.usageActivity)) }
       : {}),
     ...(usageEfficiency ? { usageEfficiency } : {}),
+    ...(source?.sessionEvents?.contextUsage
+      ? { contextUsage: JSON.parse(JSON.stringify(source.sessionEvents.contextUsage)) }
+      : {}),
   };
   const usageErrors = validateTaskLoopUsagePair(summaryFacts);
   if (usageErrors.length > 0) {
@@ -1649,6 +1659,9 @@ function taskLoopSummaryFactsErrors(summaryFacts) {
     }
     if (summaryFacts.aiAgentPractice !== undefined) {
       errors.push(...aiAgentPracticeErrors(summaryFacts.aiAgentPractice));
+    }
+    if (summaryFacts.contextUsage !== undefined) {
+      errors.push(...contextUsageErrors(summaryFacts.contextUsage));
     }
     errors.push(...requiredTaskLoopUsageErrors(summaryFacts));
     errors.push(...validateTaskLoopUsagePair(summaryFacts));
@@ -2439,6 +2452,9 @@ export function projectTaskLoopFindings(source, { projectName = "", direct = fal
       ...(usageEfficiency
         ? { usageEfficiency }
         : {}),
+      ...(source?.sessionEvents?.contextUsage
+        ? { contextUsage: JSON.parse(JSON.stringify(source.sessionEvents.contextUsage)) }
+        : {}),
     },
     findings,
   };
@@ -2758,6 +2774,7 @@ export function validateCompactTaskLoopFindings(data) {
     errors.push("findings.json summary.strengths must be an array of non-empty strings when supplied");
   }
   if (summary.aiAgentPractice !== undefined) errors.push(...aiAgentPracticeErrors(summary.aiAgentPractice));
+  if (summary.contextUsage !== undefined) errors.push(...contextUsageErrors(summary.contextUsage));
   if (summary.assignmentSummaries !== undefined && !Array.isArray(summary.assignmentSummaries)) {
     errors.push("findings.json summary.assignmentSummaries must be an array when supplied");
   }
@@ -2922,6 +2939,7 @@ export function validateTaskLoopCanvasSplit(findings, canvas) {
     errors.push("canvas.json summary must be an object");
   } else {
     errors.push(...unsupportedFields(canvas.summary, TASK_LOOP_CANVAS_SUMMARY_FIELDS, "canvas.json summary"));
+    if (canvas.summary.contextUsage !== undefined) errors.push(...contextUsageErrors(canvas.summary.contextUsage));
     if (Object.hasOwn(canvas.summary, "strengths")) {
       errors.push("canvas.json summary must not duplicate host-owned strengths");
     }
@@ -3036,6 +3054,85 @@ function safePracticePathForSurface(surface, value) {
   if (candidate.startsWith("~/")) return false;
   if (String(surface ?? "") !== "Memories") return true;
   return /(?:^|\/)MEMORY\.md$/u.test(candidate);
+}
+
+function contextUsageErrors(usage) {
+  if (!isObject(usage)) return ["summary.contextUsage must be an object when supplied"];
+  const errors = [];
+  const prefix = "summary.contextUsage";
+  errors.push(...unsupportedFields(usage, [
+    "schemaVersion", "status", "evidence", "capturedAt", "totalTokensUsed",
+    "contextWindowSize", "percentFull", "categories", "items", "coverage", "actions",
+  ], prefix));
+  if (!Number.isInteger(usage.schemaVersion) || usage.schemaVersion < 1) {
+    errors.push(`${prefix}.schemaVersion must be a positive integer`);
+  }
+  if (!new Set(["observed", "unobserved"]).has(usage.status)) {
+    errors.push(`${prefix}.status must be observed or unobserved`);
+  }
+  if (usage.evidence !== "cursor-native-context-usage-canvas") {
+    errors.push(`${prefix}.evidence must identify the Cursor native Canvas snapshot`);
+  }
+  if (!Array.isArray(usage.categories)) errors.push(`${prefix}.categories must be an array`);
+  else for (const [index, category] of usage.categories.entries()) {
+    const categoryPrefix = `${prefix}.categories[${index}]`;
+    if (!isObject(category)) {
+      errors.push(`${categoryPrefix} must be an object`);
+      continue;
+    }
+    errors.push(...unsupportedFields(category, ["id", "label", "estimatedTokens"], categoryPrefix));
+    if (typeof category.id !== "string" || !category.id.trim() || category.id.length > 80) errors.push(`${categoryPrefix}.id must be bounded text`);
+    if (typeof category.label !== "string" || !category.label.trim() || category.label.length > 120) errors.push(`${categoryPrefix}.label must be bounded text`);
+    if (!Number.isInteger(category.estimatedTokens) || category.estimatedTokens < 0) errors.push(`${categoryPrefix}.estimatedTokens must be non-negative`);
+  }
+  if (!Array.isArray(usage.items)) errors.push(`${prefix}.items must be an array`);
+  else {
+    if (usage.items.length > 200) errors.push(`${prefix}.items must contain at most 200 rows`);
+    for (const [index, item] of usage.items.entries()) {
+      const itemPrefix = `${prefix}.items[${index}]`;
+      if (!isObject(item)) {
+        errors.push(`${itemPrefix} must be an object`);
+        continue;
+      }
+      errors.push(...unsupportedFields(item, ["id", "categoryId", "label", "estimatedTokens", "characterCount", "source"], itemPrefix));
+      for (const field of ["id", "categoryId", "label"]) {
+        if (typeof item[field] !== "string" || !item[field].trim()) errors.push(`${itemPrefix}.${field} must be non-empty text`);
+      }
+      for (const field of ["estimatedTokens", "characterCount"]) {
+        if (!Number.isInteger(item[field]) || item[field] < 0) errors.push(`${itemPrefix}.${field} must be non-negative`);
+      }
+      if (item.source !== undefined) {
+        if (!isObject(item.source)) errors.push(`${itemPrefix}.source must be an object`);
+        else {
+          errors.push(...unsupportedFields(item.source, ["kind", "path", "label"], `${itemPrefix}.source`));
+          if (item.source.kind !== "file" || !path.isAbsolute(String(item.source.path ?? ""))) {
+            errors.push(`${itemPrefix}.source must identify an absolute local file`);
+          }
+        }
+      }
+    }
+  }
+  if (!isObject(usage.coverage)) errors.push(`${prefix}.coverage must be an object`);
+  else {
+    errors.push(...unsupportedFields(usage.coverage, ["snapshotCount", "itemCount", "sourceItemCount", "truncated", "rawTextOmitted"], `${prefix}.coverage`));
+    if (usage.coverage.rawTextOmitted !== true) errors.push(`${prefix}.coverage.rawTextOmitted must be true`);
+  }
+  if (!isObject(usage.actions)) errors.push(`${prefix}.actions must be an object`);
+  else {
+    errors.push(...unsupportedFields(usage.actions, ["openAgentId"], `${prefix}.actions`));
+    if (usage.actions.openAgentId !== null
+      && (typeof usage.actions.openAgentId !== "string" || !usage.actions.openAgentId.trim() || usage.actions.openAgentId.length > 120)) {
+      errors.push(`${prefix}.actions.openAgentId must be null or bounded transport text`);
+    }
+  }
+  if (usage.status === "observed") {
+    if (!Number.isInteger(usage.totalTokensUsed) || usage.totalTokensUsed <= 0) errors.push(`${prefix}.totalTokensUsed must be positive when observed`);
+    if (!Number.isInteger(usage.contextWindowSize) || usage.contextWindowSize <= 0) errors.push(`${prefix}.contextWindowSize must be positive when observed`);
+    if (!Number.isInteger(usage.percentFull) || usage.percentFull < 0 || usage.percentFull > 100) errors.push(`${prefix}.percentFull must be 0-100 when observed`);
+  } else if (usage.categories.length > 0 || usage.items.length > 0) {
+    errors.push(`${prefix} unobserved snapshots must not contain category or item claims`);
+  }
+  return errors;
 }
 
 function aiAgentPracticeErrors(practice) {
@@ -3362,7 +3459,7 @@ export function validateTaskLoopFindings(data) {
   const summary = data.summary;
   if (!isObject(summary)) return [...errors, "findings.json summary must be an object"];
   const summaryFields = ["projectName", "locale", "modelId", "reportContractVersion", "strengths", "atAGlance", "evidenceBoundary", "dimensions", "aiAgentPractice", "semanticFacets", "learningCapture"];
-  errors.push(...unsupportedFields(summary, [...summaryFields, "overview", "evidenceMode", "usageActivity", "usageEfficiency", "suggestions", "assignmentSummaries"], "findings.json summary"));
+  errors.push(...unsupportedFields(summary, [...summaryFields, "overview", "evidenceMode", "usageActivity", "usageEfficiency", "contextUsage", "suggestions", "assignmentSummaries"], "findings.json summary"));
   for (const field of summaryFields) {
     if (summary[field] === undefined || summary[field] === null || summary[field] === "") errors.push(`findings.json summary missing ${field}`);
   }
@@ -3504,13 +3601,87 @@ export function validateTaskLoopFindings(data) {
               errors.push(`${prefix} must be an object`);
               continue;
             }
-            errors.push(...unsupportedFields(sample, ["alias", "role", "activeMinutes", "failureCount"], prefix));
+            errors.push(...unsupportedFields(sample, ["alias", "role", "activeMinutes", "failureCount", "sessionId", "userRequest", "toolTrace"], prefix));
             if (sample.alias !== `S${index + 1}`) errors.push(`${prefix}.alias must be the deterministic S${index + 1} alias`);
             if (!new Set(["user-thread-candidate", "child-agent-candidate", "unknown-candidate"]).has(sample.role)) {
               errors.push(`${prefix}.role must be a bounded candidate role`);
             }
             if (!Number.isFinite(sample.activeMinutes) || sample.activeMinutes < 0) errors.push(`${prefix}.activeMinutes must be non-negative`);
             if (!Number.isInteger(sample.failureCount) || sample.failureCount < 0) errors.push(`${prefix}.failureCount must be a non-negative integer`);
+            if (sample.sessionId !== undefined
+              && (typeof sample.sessionId !== "string"
+                || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(sample.sessionId))) {
+              errors.push(`${prefix}.sessionId must be a bounded Canvas session locator`);
+            }
+            if (sample.userRequest !== undefined
+              && (typeof sample.userRequest !== "string"
+                || !sample.userRequest.trim()
+                || [...sample.userRequest].length > 161
+                || PRIVATE_USAGE_SUMMARY_RE.test(sample.userRequest))) {
+              errors.push(`${prefix}.userRequest must be a bounded privacy-safe user request`);
+            }
+            const trace = sample.toolTrace;
+            const traceVersion = trace?.schemaVersion;
+            if (trace !== undefined && (!isObject(trace)
+              || !new Set([1, 2]).has(traceVersion)
+              || !Number.isInteger(trace.totalCalls)
+              || !Number.isInteger(trace.shownCalls)
+              || trace.totalCalls < 0
+              || trace.shownCalls < 0
+              || trace.shownCalls > trace.totalCalls
+              || typeof trace.truncated !== "boolean"
+              || trace.truncated !== (trace.shownCalls < trace.totalCalls)
+              || !Array.isArray(trace.calls)
+              || trace.calls.length !== trace.shownCalls)) {
+              errors.push(`${prefix}.toolTrace must contain a complete or explicitly limited v1 or v2 tool-call trace`);
+            } else if (isObject(trace)) {
+              errors.push(...unsupportedFields(trace, ["schemaVersion", "totalCalls", "shownCalls", "truncated", "calls"], `${prefix}.toolTrace`));
+              let previousStep = 0;
+              const toolNames = new Set();
+              for (const [callIndex, call] of trace.calls.entries()) {
+                const callPrefix = `${prefix}.toolTrace.calls[${callIndex}]`;
+                if (!isObject(call)) {
+                  errors.push(`${callPrefix} must be an object`);
+                  continue;
+                }
+                const callFields = traceVersion === 2
+                  ? ["id", "step", "toolName", "status", "durationStatus", "durationMs", "timingSource"]
+                  : ["id", "step", "toolName", "status"];
+                errors.push(...unsupportedFields(call, callFields, callPrefix));
+                if (!Number.isInteger(call.step) || call.step <= previousStep || call.step > trace.totalCalls) {
+                  errors.push(`${callPrefix}.step must be strictly increasing within the observed call count`);
+                }
+                previousStep = Number.isInteger(call.step) ? call.step : previousStep;
+                if (call.id !== `T${call.step}`) errors.push(`${callPrefix}.id must match its deterministic tool-call step`);
+                if (typeof call.toolName !== "string"
+                  || !call.toolName.trim()
+                  || call.toolName.length > 64
+                  || !/^[\p{L}\p{N}_.: -]+$/u.test(call.toolName)) {
+                  errors.push(`${callPrefix}.toolName must be a bounded privacy-safe label`);
+                }
+                toolNames.add(call.toolName);
+                if (!new Set(["observed", "failed"]).has(call.status)) {
+                  errors.push(`${callPrefix}.status must be observed or failed`);
+                }
+                if (traceVersion === 2) {
+                  if (!new Set(["observed", "unobserved"]).has(call.durationStatus)) {
+                    errors.push(`${callPrefix}.durationStatus must be observed or unobserved`);
+                  } else if (call.durationStatus === "observed") {
+                    if (!Number.isInteger(call.durationMs)
+                      || call.durationMs < 0
+                      || call.durationMs > 24 * 60 * 60 * 1000) {
+                      errors.push(`${callPrefix}.durationMs must be a bounded non-negative integer when observed`);
+                    }
+                    if (!new Set(["transcript-pair", "lifecycle-pair"]).has(call.timingSource)) {
+                      errors.push(`${callPrefix}.timingSource must identify a supported observed lifecycle pair`);
+                    }
+                  } else if (Object.hasOwn(call, "durationMs") || Object.hasOwn(call, "timingSource")) {
+                    errors.push(`${callPrefix} must omit timing values when duration is unobserved`);
+                  }
+                }
+              }
+              if (toolNames.size > 8) errors.push(`${prefix}.toolTrace must stay within eight tool lanes`);
+            }
           }
         }
       }
@@ -3599,6 +3770,9 @@ export function validateTaskLoopFindings(data) {
         errors.push("summary.usageEfficiency.actualCost is allowed only for exact accounting");
       }
     }
+  }
+  if (summary.contextUsage !== undefined) {
+    errors.push(...contextUsageErrors(summary.contextUsage));
   }
   if (!Array.isArray(summary.dimensions) || summary.dimensions.length !== validationDimensionIds.length) {
     errors.push(`findings.json summary.dimensions must contain exactly ${validationDimensionIds.length} task-loop dimensions`);

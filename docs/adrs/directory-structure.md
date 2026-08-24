@@ -77,7 +77,7 @@ SUPPORT.md                             # [target] supported versions and support
 scripts/
   dx-contracts/                       # [target] judgment-free declaration catalog,
                                       # activation ledger, validation, and projection diff
-  host-support/                       # [target] host identities, support slices,
+  host-support/                       # [active] host identities, support slices,
                                       # profile predicates, and freshness policies
   evidence-contract/                  # [target] shared receipt envelope, evidence
                                       # taxonomy, compatibility, and redaction invariants
@@ -93,7 +93,7 @@ scripts/
   core-change-watch/               # [active] static structure/core-path/history evidence
   session-analysis.mjs                 # [active] thin shim; new exports -> scripts/session-analysis/
   session-analysis/                    # [active] session evidence collection/normalization
-    platforms/<host>.mjs               # Qoder/Codex/Claude/Cursor/Qwen/Copilot/Pi/WorkBuddy host adapters
+    platforms/<host>.mjs               # Qoder/Codex/Claude/Cursor/Qwen/Copilot/Pi/Kimi/WorkBuddy host adapters
     ides/<ide>/                        # target editor-local evidence not covered by host adapters
   <business-capability>/               # [target] new capability owner
     cli.mjs                            # use cli.mjs for new capabilities
@@ -146,6 +146,7 @@ templates/                             # [active] runtime-selected contracts
     routing.md                         # [active] report/style/output route selection
     report-structure.md                # [active] Markdown report skeleton
     qoder-canvas.md                    # [active] Qoder Canvas output contract
+    cursor-canvas.md                   # [active] Cursor Canvas output contract
     html-visual.md                     # [active] HTML visual contract
   style/                               # visual grammar and style routing
   components/                          # [target] reusable component profiles, 2+ consumers
@@ -246,8 +247,9 @@ Use the tree first. These rules resolve common collisions:
   `.cursor-plugin/`, `.codex-plugin/`, and `.github/plugin/` are
   install/discovery shells for one host. Existing active shells may be
   hand-maintained narrowly, but the Qoder
-  public npm package ships all eight native plugin metadata roots, while the
-  Qoder runtime bundle ships only `.qoder-plugin/`. New host shells start from the
+  public npm package ships all eight current native metadata roots, including
+  Kimi Code and the WorkBuddy Team shell, while the Qoder runtime bundle ships
+  only `.qoder-plugin/`. New host shells start from the
   `docs/adapters/README.md` matrix; split to `docs/adapters/<host>.md` and add a
   source-local `scripts/packaging/` builder only for an accepted host-artifact
   contract. New host identities still require the matrix split triggers.

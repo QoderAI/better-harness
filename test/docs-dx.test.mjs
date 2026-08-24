@@ -50,7 +50,7 @@ test("installation prerequisites and verification paths stay aligned across loca
   assert.match(installation, /## Prerequisites \{#prerequisites\}/u);
   assert.match(installationZh, /## 前置条件 \{#prerequisites\}/u);
   for (const content of [installation, installationZh]) {
-    assert.match(content, /Node\.js `>=22\.20\.0 <26\.0\.0`/u);
+    assert.match(content, /Node\.js `>=22\.20\.0 <25\.0\.0`/u);
     assert.match(content, /npm `>=10\.9\.3 <12\.0\.0`/u);
     assert.match(content, /Windows/u);
     assert.match(content, /macOS/u);
@@ -67,10 +67,22 @@ test("installation prerequisites and verification paths stay aligned across loca
     assert.match(content, /claude plugin details better-harness@better-harness/u);
     assert.match(content, /codex plugin list --marketplace better-harness/u);
     assert.match(content, /qodercli plugin list/u);
+    assert.match(content, /qwen extensions list/u);
     assert.match(content, /copilot plugin list/u);
     assert.match(content, /copilot skill list/u);
-    assert.doesNotMatch(content, /qwen extensions list/u);
   }
+});
+
+test("Pi single-run guidance keeps temporary loading separate from a persisted install", () => {
+  const matrix = readUtf8("docs", "docs", "hosts", "adapter-matrix.md");
+  const matrixZh = readUtf8(...ZH_DOCS_ROOT, "hosts", "adapter-matrix.md");
+
+  for (const content of [matrix, matrixZh]) {
+    assert.match(content, /pi -e <source>/u);
+    assert.match(content, /cli-session/u);
+  }
+  assert.match(matrix, /one-run `pi -e` activation as the\n?separate `cli-session` session-only surface/u);
+  assert.match(matrixZh, /单次\n?`pi -e` 激活作为独立的 `cli-session` session-only surface/u);
 });
 
 test("troubleshooting is bilingual, safe, linked, and routed through Getting Started", () => {
@@ -86,13 +98,25 @@ test("troubleshooting is bilingual, safe, linked, and routed through Getting Sta
 
   for (const content of [troubleshooting, troubleshootingZh]) {
     assert.equal(countMatches(content, /\.\/installation\?host=/gu), 6);
+    assert.match(content, /\.\/hosts\/adapter-matrix#pi/u);
+    assert.match(content, /\.\/hosts\/adapter-matrix#workbuddy/u);
     assert.match(content, /issues\/new\/choose/u);
     assert.match(content, /--no-sessions/u);
     assert.match(content, /INVALID_CWD/u);
     assert.match(content, /--qoder-home/u);
     assert.match(content, /\.copilot\/better-harness/u);
+    assert.match(content, /qwen extensions list/u);
+    assert.doesNotMatch(content, /cursor-agent[^\n]*--plugin-dir/u);
     assert.doesNotMatch(content, /rm\s+-rf|Remove-Item|del\s+\/s/iu);
   }
+});
+
+test("Cursor adapter guidance does not advertise an unavailable install flag", () => {
+  const adapters = readUtf8("docs", "adapters", "README.md");
+
+  assert.match(adapters, /native `cursor-agent --help` contract check/u);
+  assert.match(adapters, /unavailable install plan/u);
+  assert.doesNotMatch(adapters, /cursor-agent[^\n]*--plugin-dir/u);
 });
 
 test("first-report guidance no longer claims one invocation works for every host", () => {
@@ -112,7 +136,7 @@ test("first-report guidance no longer claims one invocation works for every host
   assert.match(firstReportZh, /\[示例报告\]\(pathname:\/\/\/demo\/better-harness-report\/\)/u);
 });
 
-test("bug report intake does not hard-code a release and covers current host paths", () => {
+test("bug report intake stays lightweight and covers current host paths", () => {
   const issueForm = readUtf8(".github", "ISSUE_TEMPLATE", "bug_report.yml");
 
   assert.doesNotMatch(issueForm, /current repository baseline|placeholder:\s*0\.3\.0/u);
@@ -127,7 +151,21 @@ test("bug report intake does not hard-code a release and covers current host pat
   ]) {
     assert.match(issueForm, new RegExp(`- ${host.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`));
   }
-  assert.match(issueForm, /Host marketplace or plugin manager/u);
-  assert.match(issueForm, /Cursor source-local --plugin-dir/u);
-  assert.match(issueForm, /npm package or standalone CLI/u);
+  assert.match(issueForm, /id: environment/u);
+  assert.doesNotMatch(issueForm, /id: operating-system|id: installation|id: command/u);
+  assert.doesNotMatch(issueForm, /Host marketplace or plugin manager|Cursor source-local --plugin-dir|npm package or standalone CLI/u);
+  assert.equal(countMatches(issueForm, /required: true/gu), 6);
+});
+
+test("feature request intake stays outcome-focused", () => {
+  const issueForm = readUtf8(".github", "ISSUE_TEMPLATE", "feature_request.yml");
+
+  assert.match(issueForm, /What problem are you trying to solve\?/u);
+  assert.match(issueForm, /What would success look like\?/u);
+  assert.match(issueForm, /id: scope/u);
+  assert.doesNotMatch(
+    issueForm,
+    /Likely extension surface|Proposed approach|Validation plan|Compatibility and delivery impact|canonical owner|activation path/u,
+  );
+  assert.equal(countMatches(issueForm, /required: true/gu), 4);
 });

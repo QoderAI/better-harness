@@ -170,6 +170,12 @@ function diagnosticsLines(repository = {}) {
   const friction = rows(signals.frictionSignals);
   if (Object.keys(learning).length > 0) {
     output.push(`- Learning observation coverage: ${rows(learning.episodeRecords).length} episode record(s), ${rows(learning.recurringIssueCandidates).length} recurring candidate(s), ${observedSkills.length} scoped Skill observation(s), and ${unscopedSkills.length} unscoped Skill observation(s).`);
+    const native = learning.nativeLearningReview ?? {};
+    if (native.status === "review-required") {
+      output.push(`  - Native recurring-correction review: ${rows(native.packet?.groups).length} bounded group(s) await a packet-bound decision.`);
+    } else if (native.status === "reviewed") {
+      output.push(`  - Native recurring-correction review: validated ${rows(native.result?.matches).length} match(es) and ${rows(native.result?.abstentions).length} abstention(s).`);
+    }
     const frictionList = list(friction.map((row) => `${row?.name}: ${count(row?.count)}`), 6);
     if (frictionList.text) output.push(`  - Aggregated friction signals: ${withOmitted(frictionList.text, frictionList.omitted)}.`);
     const coverage = list(Object.entries(learning.coverage ?? {}).map(([key, value]) => `${humanLabel(key)}=${cleanText(value, 100)}`), 9);

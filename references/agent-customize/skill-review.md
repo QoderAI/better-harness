@@ -55,38 +55,10 @@ score/evidence is below the declared target. Any failed Gate means `REJECTED`.
    Step`, with findings separated into structural, budget, code, behavioral,
    and safety categories.
 
-When the `plugin-eval` CLI is available, use its chat-first route and analyzer
-for the initial structural, budget, and helper-code pass:
-
-```bash
-plugin-eval start <skill-path> \
-  --request "Evaluate this skill." \
-  --format markdown
-plugin-eval analyze <skill-path> --format markdown
-plugin-eval explain-budget <skill-path> --format markdown
-```
-
-For an analysis request, initialize and review the benchmark instead of
-stopping at the static report:
-
-```bash
-plugin-eval init-benchmark <skill-path>
-plugin-eval benchmark <skill-path> --dry-run
-```
-
-Refine `.plugin-eval/benchmark.json` before execution; generated starter
-scenarios are proposals, not evidence. After real usage is captured in a
-sanitized JSONL file, ask what should be measured or instrumented next:
-
-```bash
-plugin-eval measurement-plan <skill-path> \
-  --observed-usage <usage.jsonl> \
-  --format markdown
-```
-
-If `plugin-eval` is unavailable, perform the same checks directly and state
-that the CLI path was unavailable. Tool availability changes the collection
-method, not the evidence standard.
+Use [Skill Evaluation Execution](skill-eval.md) for the project-local command
+order, Plugin Eval JSON boundary, benchmark preparation, and observed-usage
+reconciliation. Generated benchmark scenarios are proposals, not evidence.
+Tool availability changes the collection method, not the evidence standard.
 
 ## Engineering Shape
 
@@ -328,6 +300,7 @@ change that removes the most consequential supported risk.
 ## Related References
 
 - [Agent Customize Routing](routing.md)
+- [Skill Evaluation Execution](skill-eval.md)
 - [Skill Discovery](skill-discovery.md)
 - [Agent Skills specification](https://agentskills.io/specification)
 - [Evaluating Skill output quality](https://agentskills.io/skill-creation/evaluating-skills)

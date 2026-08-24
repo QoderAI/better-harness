@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { LEARNING_LOOP_CHECK_IDS } from "../learning-loop-contract.mjs";
+import { validateNativeLearningCandidateReview } from "../learning-loop-candidates.mjs";
 
-export const HARNESS_REVIEW_PACKET_SCHEMA_VERSION = 2;
+export const HARNESS_REVIEW_PACKET_SCHEMA_VERSION = 3;
+export const HARNESS_LEAD_DECISION_TEMPLATE_SCHEMA_VERSION = 1;
 const LEARNING_CAPTURE_CHECK_IDS = new Set(LEARNING_LOOP_CHECK_IDS);
 
 const EVIDENCE_ARRAY_FIELDS = new Set([
@@ -53,6 +55,7 @@ function evidenceKey(reference) {
 function publicEvidenceReference(reference) {
   const key = evidenceKey(reference);
   if (!key) return null;
+  if (String(reference.kind).trim() === "native-learning-evidence") return null;
   const value = {
     kind: String(reference.kind).trim(),
     id: String(reference.id).trim(),
@@ -111,6 +114,7 @@ export function harnessReviewPacketDigest(packet) {
 }
 
 export function buildHarnessReviewPacket(source) {
+  const native = source?.repositoryEvidence?.learningCaptureDiagnostics?.nativeLearningReview;
   const packet = {
     schemaVersion: HARNESS_REVIEW_PACKET_SCHEMA_VERSION,
     kind: "harness-report-review-packet",
@@ -122,9 +126,138 @@ export function buildHarnessReviewPacket(source) {
       taskUnderstandingState: ["Exercised", "Unobserved", "Not applicable"],
     },
     allowedEvidenceRefs: collectSourceEvidenceIndex(source),
+    ...(native?.status === "review-required" ? { nativeLearningReview: { packet: clone(native.packet) } } : {}),
   };
   packet.packetDigest = harnessReviewPacketDigest(packet);
   return packet;
+}
+
+function decisionTemplateRow(id, extra = {}) {
+  return { id, summary: null, evidenceRefs: [], ...extra };
+}
+
+function decisionTemplateNativeGroups(packet) {
+  return rows(packet?.nativeLearningReview?.packet?.groups).map((group) => ({
+    groupRef: group.groupRef,
+    episodeRefs: clone(group.episodeRefs),
+    evidenceRefs: clone(group.evidenceRefs),
+    allowedPatternIds: clone(group.allowedPatternIds),
+    supportedReasonCodes: clone(group.reasonCodes),
+  }));
+}
+
+export function buildHarnessLeadDecisionTemplate(source, packet) {
+  const nativeGroups = decisionTemplateNativeGroups(packet);
+  return {
+    schemaVersion: HARNESS_LEAD_DECISION_TEMPLATE_SCHEMA_VERSION,
+    kind: "harness-lead-decision-template",
+    sourceDigest: packet.sourceDigest,
+    packetDigest: packet.packetDigest,
+    instructions: [
+      "Edit only the decision object; replace nulls and add exact packet evidence references.",
+      "Retain every required id and every native groupRef exactly once.",
+      "For a native match, copy the exact group episodeRefs and selected evidenceRefs; for abstain, omit patternId and keep both arrays empty.",
+      "Add an optional shape only when the review changes Episode or delivery evidence.",
+      "The CLI validates and compiles this caller-authored judgment; it never selects values or calls a model.",
+    ],
+    required: clone(packet.required),
+    allowedEnums: clone(packet.allowedEnums),
+    nativeGroups,
+    optionalShapes: {
+      episodeReviews: {
+        item: {
+          episodeRef: null,
+          taskUnderstanding: ["goal-understanding", "relevant-context", "scope-boundary"]
+            .map((id) => decisionTemplateRow(id, { state: null })),
+          validationAssociations: [],
+          repairReview: { state: null },
+        },
+      },
+      deliveryReviews: {
+        item: {
+          episodeRef: null,
+          provider: null,
+          kind: null,
+          level: null,
+          status: null,
+          summary: null,
+          evidenceRefs: [],
+        },
+      },
+    },
+    decision: {
+      sourceCandidate: { evidenceRefs: [] },
+      readerOverview: { text: null, evidenceRefs: [] },
+      repositoryReview: {
+        reviewedFrameworks: rows(packet.required?.frameworks)
+          .map((id) => decisionTemplateRow(id)),
+        reviewedChecks: rows(packet.required?.checks).map((id) => decisionTemplateRow(id, {
+          ...(LEARNING_CAPTURE_CHECK_IDS.has(id) ? { state: null, findingRefs: [] } : {}),
+          ...(id === "loop-engineering" ? { mechanisms: [] } : {}),
+        })),
+        reviewedSoftwareFluencyCapabilities: rows(packet.required?.capabilities)
+          .map((id) => decisionTemplateRow(id)),
+      },
+      repositoryEvidence: { diagnosticCoverageReviews: [] },
+      scoreReview: {
+        dimensions: rows(packet.required?.dimensions).map((id) => ({
+          id,
+          score: null,
+          confidence: null,
+          reason: null,
+          readerSummary: null,
+          evidenceRefs: [],
+        })),
+      },
+      ...(nativeGroups.length > 0 ? {
+        nativeLearningDecisions: nativeGroups.map((group) => ({
+          groupRef: group.groupRef,
+          decision: null,
+          patternId: null,
+          episodeRefs: [],
+          evidenceRefs: [],
+          reasonCodes: [],
+        })),
+      } : {}),
+    },
+  };
+}
+
+export function validateHarnessLeadDecisionTemplate(source, packet, template) {
+  if (!template || typeof template !== "object" || Array.isArray(template)) {
+    return ["lead decision template must be one JSON object"];
+  }
+  const errors = [];
+  const allowedFields = new Set([
+    "schemaVersion", "kind", "sourceDigest", "packetDigest", "instructions",
+    "required", "allowedEnums", "nativeGroups", "optionalShapes", "decision",
+  ]);
+  for (const field of Object.keys(template)) {
+    if (!allowedFields.has(field)) errors.push(`lead decision template has unsupported field: ${field}`);
+  }
+  if (template.schemaVersion !== HARNESS_LEAD_DECISION_TEMPLATE_SCHEMA_VERSION) {
+    errors.push(`lead decision template schemaVersion must be ${HARNESS_LEAD_DECISION_TEMPLATE_SCHEMA_VERSION}`);
+  }
+  if (template.kind !== "harness-lead-decision-template") errors.push("lead decision template kind is invalid");
+  if (!template.decision || typeof template.decision !== "object" || Array.isArray(template.decision)) {
+    errors.push("lead decision template decision must be one JSON object");
+  }
+  const expected = buildHarnessLeadDecisionTemplate(source, packet);
+  const metadata = ({ decision: _decision, ...value }) => value;
+  if (digestJson(metadata(template)) !== digestJson(metadata(expected))) {
+    errors.push("lead decision template contract does not match the selected review packet");
+  }
+  return [...new Set(errors)].sort();
+}
+
+export function harnessLeadDecisionFromDocument(source, packet, document) {
+  if (document?.kind !== "harness-lead-decision-template") {
+    return { decision: document, errors: [] };
+  }
+  return {
+    decision: clone(document.decision),
+    errors: validateHarnessLeadDecisionTemplate(source, packet, document),
+  };
 }
 
 export function validateHarnessReviewPacket(source, packet) {
@@ -140,6 +273,9 @@ export function validateHarnessReviewPacket(source, packet) {
   if (digestJson(packet?.allowedEnums) !== digestJson(expected.allowedEnums)) errors.push("review packet enum domains do not match the current contract");
   if (digestJson(packet?.allowedEvidenceRefs) !== digestJson(expected.allowedEvidenceRefs)) {
     errors.push("review packet evidence index does not match the current source");
+  }
+  if (digestJson(packet?.nativeLearningReview ?? null) !== digestJson(expected.nativeLearningReview ?? null)) {
+    errors.push("review packet native Learning Capture subpacket does not match the current source");
   }
   return errors;
 }
@@ -261,6 +397,26 @@ export function compileHarnessLeadDecision(source, packet, decisionInput) {
     ...(decision.deliveryReviews !== undefined ? { deliveryReviews: clone(decision.deliveryReviews) } : {}),
     ...(decision.interventionLedger !== undefined ? { interventionLedger: clone(decision.interventionLedger) } : {}),
   };
+  const nativePacket = packet?.nativeLearningReview?.packet;
+  if (nativePacket && decision.nativeLearningDecisions === undefined) {
+    errors.push("nativeLearningDecisions is required for the native Learning Capture subpacket");
+  } else if (decision.nativeLearningDecisions !== undefined) {
+    if (!nativePacket) {
+      errors.push("nativeLearningDecisions requires a native Learning Capture subpacket");
+    } else {
+      review.nativeLearningReview = {
+        schemaVersion: nativePacket.schemaVersion,
+        sourceDigest: nativePacket.sourceDigest,
+        packetDigest: nativePacket.packetDigest,
+        decisions: clone(decision.nativeLearningDecisions),
+      };
+      errors.push(...validateNativeLearningCandidateReview({
+        episodes: source?.taskEpisodes,
+        packet: nativePacket,
+        review: review.nativeLearningReview,
+      }));
+    }
+  }
   errors.push(...validateHarnessReviewBinding(source, review, packet));
   return { review, errors: [...new Set(errors)].sort() };
 }
@@ -274,7 +430,10 @@ function collectReviewEvidenceRefs(review) {
       return;
     }
     if (!value || typeof value !== "object") return;
-    for (const [field, child] of Object.entries(value)) visit(child, field);
+    for (const [field, child] of Object.entries(value)) {
+      if (field === "nativeLearningReview") continue;
+      visit(child, field);
+    }
   }
   visit(review);
   return references;

@@ -16,9 +16,12 @@ import {
   collectSkillFiles,
   evidence,
   normalizePluginDisplayName,
+  pathInsideRoot,
   pluginMetadataEvidencePath,
+  pluginPathValues,
   readJson,
   readText,
+  sanitizeMcpItems,
   sortByName,
   titleCase,
   uniqueAssetsByRealPath,
@@ -67,33 +70,33 @@ function pluginKey(value) {
 
 function normalizeInstallScope(value) {
   const scope = String(value ?? "user").trim().toLowerCase();
-  return scope === "project" || scope === "local" || scope === "workspace" ? "project" : "user";
+  if (scope === "workspace") return "project";
+  return scope || "unknown";
 }
 
-function pluginPathValues(value) {
-  if (typeof value === "string" && value.trim()) return [value.trim()];
-  if (Array.isArray(value)) return value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
-  return [];
-}
-
-async function pathInsideRoot(root, relativePath) {
-  if (!root || typeof relativePath !== "string" || !relativePath.trim()) return undefined;
-  const base = path.resolve(root);
-  const candidate = path.resolve(base, relativePath);
-  const lexicalRelative = path.relative(base, candidate);
-  if (lexicalRelative === ".." || lexicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(lexicalRelative)) {
-    return undefined;
-  }
-  if (!(await pathExists(candidate))) return undefined;
-  const [realBase, realCandidate] = await Promise.all([
-    realpath(base).catch(() => base),
-    realpath(candidate).catch(() => candidate),
+async function pathsReferToSameRoot(left, right) {
+  const [resolvedLeft, resolvedRight] = await Promise.all([
+    realpath(path.resolve(left)).catch(() => path.resolve(left)),
+    realpath(path.resolve(right)).catch(() => path.resolve(right)),
   ]);
-  const resolvedRelative = path.relative(realBase, realCandidate);
-  if (resolvedRelative === ".." || resolvedRelative.startsWith(`..${path.sep}`) || path.isAbsolute(resolvedRelative)) {
-    return undefined;
+  return path.relative(resolvedLeft, resolvedRight) === "";
+}
+
+async function canonicalPathInsideRoot(root, candidate) {
+  if (!root || !candidate || !(await pathExists(candidate))) return false;
+  let realRoot;
+  let realCandidate;
+  try {
+    [realRoot, realCandidate] = await Promise.all([
+      realpath(path.resolve(root)),
+      realpath(path.resolve(candidate)),
+    ]);
+  } catch {
+    return false;
   }
-  return candidate;
+  const relative = path.relative(realRoot, realCandidate);
+  return relative === ""
+    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 async function componentRoots(pluginRoot, manifest, key, fallback, options = {}) {
@@ -121,62 +124,6 @@ async function collectMarkdownFromRoots(roots, kind, scope, sourceLabel, rootFor
   return uniqueAssetsByRealPath((await Promise.all(
     roots.map((root) => collectMarkdownItems(root, kind, scope, sourceLabel, rootForEvidence)),
   )).flat());
-}
-
-function sanitizeMcpUrl(value) {
-  if (typeof value !== "string" || !value.trim()) return undefined;
-  try {
-    const parsed = new URL(value);
-    parsed.username = "";
-    parsed.password = "";
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return undefined;
-  }
-}
-
-function sanitizeMcpCommand(value) {
-  if (typeof value !== "string" || !value.trim()) return undefined;
-  const executable = value.trim().split(/\s+/u)[0];
-  return executable.split(/[\\/]/u).filter(Boolean).at(-1);
-}
-
-function sanitizeMcpArgs(args, command) {
-  const values = Array.isArray(args) ? args : [];
-  const runner = sanitizeMcpCommand(command)?.toLowerCase();
-  let packageRetained = false;
-  return values.map((value, index) => {
-    const text = String(value);
-    const previous = String(values[index - 1] ?? "");
-    if (/(?:token|secret|password|credential|api[_-]?key|authorization)/iu.test(previous)) return "<redacted>";
-    if (/(?:token|secret|password|credential|api[_-]?key|authorization|bearer)/iu.test(text)) return "<redacted>";
-    if (/^--?[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(text)) return text;
-    if (/^(?:\$\{?[A-Z0-9_]+\}?|%[A-Z0-9_]+%)$/u.test(text)) return text;
-    if (/\.(?:c?m?js|ts|py|sh|rb|ps1|cmd|bat)$/iu.test(text)) return path.basename(text);
-    if (["npx", "bunx", "uvx"].includes(runner) && !packageRetained && /^(?:@[A-Za-z0-9_.-]+\/)?[A-Za-z0-9_.-]+(?:@[A-Za-z0-9_.^~*-]+)?$/u.test(text)) {
-      packageRetained = true;
-      return text;
-    }
-    return "<redacted>";
-  });
-}
-
-function sanitizeMcpItem(item) {
-  const command = sanitizeMcpCommand(item.command);
-  const args = sanitizeMcpArgs(item.args, command);
-  return {
-    ...item,
-    command,
-    args,
-    argCount: args.length,
-    url: sanitizeMcpUrl(item.url),
-  };
-}
-
-function sanitizeMcpItems(items) {
-  return items.map(sanitizeMcpItem);
 }
 
 async function collectClaudeHooks(files, scope, sourceLabel, rootForEvidence, options = {}) {
@@ -210,14 +157,22 @@ async function collectUserRules(claudeHome) {
   ];
 }
 
-async function collectProjectRules(workspace, sourceLabel) {
+async function collectProjectRules(workspace, sourceLabel, claudeRoot = path.join(workspace, ".claude")) {
   const fileDefinitions = [
     [path.join(workspace, "CLAUDE.md"), "CLAUDE.md", "claude-project", "claude-project"],
-    [path.join(workspace, ".claude", "CLAUDE.md"), ".claude/CLAUDE.md", "claude-project", "claude-project"],
+    [
+      path.join(claudeRoot, "CLAUDE.md"),
+      path.relative(workspace, path.join(claudeRoot, "CLAUDE.md")).split(path.sep).join("/") || "CLAUDE.md",
+      "claude-project",
+      "claude-project",
+    ],
     [path.join(workspace, "CLAUDE.local.md"), "CLAUDE.local.md", "claude-local", "claude-local"],
   ];
   const files = [];
+  const visited = new Set();
   for (const [filePath, name, sourceKind, precedence] of fileDefinitions) {
+    if (visited.has(filePath)) continue;
+    visited.add(filePath);
     files.push(...await collectMarkdownFileRuleItem(filePath, "project", sourceLabel, workspace, {
       name,
       sourceKind,
@@ -227,7 +182,7 @@ async function collectProjectRules(workspace, sourceLabel) {
   return [
     ...files,
     ...await collectMarkdownRuleItems(
-      path.join(workspace, ".claude", "rules"),
+      path.join(claudeRoot, "rules"),
       "project",
       sourceLabel,
       workspace,
@@ -268,9 +223,14 @@ async function collectClaudeUserPrimitives(claudeHome, statePath, state, workspa
   };
 }
 
-async function collectClaudeWorkspacePrimitives(workspace, statePath, state, includeState) {
+async function collectClaudeWorkspacePrimitives(
+  workspace,
+  statePath,
+  state,
+  includeState,
+  claudeRoot = path.join(workspace, ".claude"),
+) {
   const sourceLabel = await workspaceSourceLabel(workspace);
-  const claudeRoot = path.join(workspace, ".claude");
   const stateMcps = includeState
     ? await collectStateMcp(
         state,
@@ -285,7 +245,7 @@ async function collectClaudeWorkspacePrimitives(workspace, statePath, state, inc
   return {
     skills: await collectSkillFiles(path.join(claudeRoot, "skills"), "project", sourceLabel, workspace),
     subagents: await collectMarkdownItems(path.join(claudeRoot, "agents"), "subagent", "project", sourceLabel, workspace),
-    rules: await collectProjectRules(workspace, sourceLabel),
+    rules: await collectProjectRules(workspace, sourceLabel, claudeRoot),
     commands: await collectMarkdownItems(path.join(claudeRoot, "commands"), "command", "project", sourceLabel, workspace),
     hooks: await collectClaudeHooks(
       [path.join(claudeRoot, "settings.json"), path.join(claudeRoot, "settings.local.json")],
@@ -305,11 +265,12 @@ function enabledPluginMap(settings) {
     : new Map();
 }
 
-async function readClaudeSettings(claudeHome, workspace, includeUserHome) {
+async function readClaudeSettings(claudeHome, workspace, includeUserHome, workspaceIsClaudeHome) {
+  const projectRoot = workspaceIsClaudeHome ? workspace : path.join(workspace, ".claude");
   const [user, project, local] = await Promise.all([
-    includeUserHome ? readJson(path.join(claudeHome, "settings.json")) : undefined,
-    readJson(path.join(workspace, ".claude", "settings.json")),
-    readJson(path.join(workspace, ".claude", "settings.local.json")),
+    includeUserHome && !workspaceIsClaudeHome ? readJson(path.join(claudeHome, "settings.json")) : undefined,
+    readJson(path.join(projectRoot, "settings.json")),
+    readJson(path.join(projectRoot, "settings.local.json")),
   ]);
   return {
     user: enabledPluginMap(user),
@@ -326,9 +287,11 @@ function pluginSetting(id, settings) {
 }
 
 function pluginApplicable(record, workspace, settings, id) {
-  if (normalizeInstallScope(record.scope) === "user") return true;
+  const scope = normalizeInstallScope(record.scope);
+  if (scope === "user") return true;
+  if (!settings[scope]) return true;
   if (record.projectPath) return normalizeWorkspace(record.projectPath) === workspace;
-  return settings.local.get(id) === true || settings.project.get(id) === true;
+  return settings[scope].get(id) === true;
 }
 
 function normalizeProvidedRecord(id, record, index) {
@@ -454,6 +417,7 @@ async function collectClaudePlugin(record, settings, workspace) {
     projectPath: record.projectPath,
     applicable,
     enabled,
+    workspaceScoped: record.workspaceScoped === true,
     enabledSettingScope: configured?.scope,
     evidence: evidence(metadataPath, claudeHomeForPluginIndex(pluginRoot)),
   };
@@ -483,22 +447,55 @@ async function collectClaudePlugins(records, settings, workspace) {
   return plugins.sort(sortByName);
 }
 
+async function annotateWorkspacePluginRecords(records, workspace) {
+  const annotated = [];
+  for (const record of records) {
+    const workspaceScoped = await canonicalPathInsideRoot(workspace, record.installPath);
+    annotated.push({ ...record, workspaceScoped });
+  }
+  return annotated;
+}
+
 export async function collectClaudeCustomizeInventory(options = {}) {
   const claudeHome = resolveClaudeHome(options);
   const claudeStatePath = resolveClaudeStatePath(options, claudeHome);
   const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   const includeUserHome = options.includeUserHome !== false;
+  const workspaceIsClaudeHome = await pathsReferToSameRoot(workspace, claudeHome);
+  const claudeProjectRoot = workspaceIsClaudeHome ? workspace : path.join(workspace, ".claude");
   const state = includeUserHome ? await readJson(claudeStatePath) : undefined;
-  const [settings, installState] = await Promise.all([
-    readClaudeSettings(claudeHome, workspace, includeUserHome),
-    includeUserHome
+  const [settings, rawInstallState] = await Promise.all([
+    readClaudeSettings(claudeHome, workspace, includeUserHome, workspaceIsClaudeHome),
+    includeUserHome || workspaceIsClaudeHome
       ? readClaudeInstalledPluginState(claudeHome, options)
       : Promise.resolve({ source: "not-authorized", records: [], indexPath: undefined, indexVersion: undefined }),
   ]);
+  const annotatedRecords = workspaceIsClaudeHome
+    ? await annotateWorkspacePluginRecords(rawInstallState.records, workspace)
+    : rawInstallState.records;
+  const installState = {
+    ...rawInstallState,
+    records: includeUserHome ? annotatedRecords : annotatedRecords.filter((record) => record.workspaceScoped === true),
+  };
+  const userPrimitives = includeUserHome && !workspaceIsClaudeHome
+    ? await collectClaudeUserPrimitives(claudeHome, claudeStatePath, state, workspace)
+    : includeUserHome
+      ? {
+          ...emptyPrimitives(),
+          mcps: await collectStateMcp(
+            state,
+            (value) => value?.mcpServers,
+            claudeStatePath,
+            "user",
+            "User",
+            claudeHome,
+          ),
+        }
+      : emptyPrimitives();
   const [plugins, user, project] = await Promise.all([
-    includeUserHome ? collectClaudePlugins(installState.records, settings, workspace) : [],
-    includeUserHome ? collectClaudeUserPrimitives(claudeHome, claudeStatePath, state, workspace) : emptyPrimitives(),
-    collectClaudeWorkspacePrimitives(workspace, claudeStatePath, state, includeUserHome),
+    includeUserHome || workspaceIsClaudeHome ? collectClaudePlugins(installState.records, settings, workspace) : [],
+    Promise.resolve(userPrimitives),
+    collectClaudeWorkspacePrimitives(workspace, claudeStatePath, state, includeUserHome, claudeProjectRoot),
   ]);
   return {
     generatedAt: new Date().toISOString(),
@@ -518,6 +515,7 @@ export async function collectClaudeCustomizeInventory(options = {}) {
       unresolvedProjectPluginCount: plugins.filter((plugin) => plugin.installSource === "project" && !plugin.applicable).length,
       marketplaceCatalogsAreNotInstallEvidence: true,
       runtimeMcpProbeExecuted: false,
+      designatedClaudeHomeWorkspace: workspaceIsClaudeHome,
     },
     unsupported: [
       "enterprise managed settings",

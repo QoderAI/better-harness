@@ -12,17 +12,18 @@ Commands:
   Quickstart
     report                   Gather static evidence and hand off to the Better Harness skill for
                              a five-minute readiness report
+    doctor                   Run bounded read-only Better Harness runtime and host diagnostics
 
   Workflows
     harness                  Check Better Harness readiness reports and Canvas outputs
                              subcommands: evidence-bundle, host-doctor, prepare-run, verify-run,
                              workspace-topology, analyze, checkup, selection-profile, source,
-                             task-loop-report, render, preview-canvas, report-quality,
-                             repair-findings, record-fix-output, validate-canvas
+                             source-review, task-loop-report, render, preview-canvas,
+                             report-quality, repair-findings, record-fix-output, validate-canvas
 
   Project Evidence
     session-analysis         Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot,
-                             Pi, and WorkBuddy session evidence
+                             Pi, Kimi, WorkBuddy, and Grok session evidence
     dependency-governance    Detect dependency governance files, automation, audit signals, and
                              stale dependency evidence
     cloc                     Count code, comments, and blank lines
@@ -30,6 +31,9 @@ Commands:
   Agent Assets
     agent-customize          Inspect agent-facing Skills, MCPs, hooks, plugins, settings, and
                              memory surfaces
+    plugin                   Inspect, plan, and verify the Better Harness plugin lifecycle
+                             without applying changes
+                             subcommands: status, plan, verify
     agent-lint               Parse AGENTS.md and local Markdown references for agent-instruction
                              linting
     coding-agent-practices   Inspect coding-agent assets and practice evidence
@@ -43,6 +47,7 @@ Commands:
 
 Examples:
   better-harness report
+  better-harness doctor --platform all --json
   better-harness harness analyze --workspace . --language en --format json
   better-harness harness checkup --phase scan --provider qoder --workspace . --json
   better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json

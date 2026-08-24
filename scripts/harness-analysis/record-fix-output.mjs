@@ -10,9 +10,13 @@ import {
   assignmentSummariesFromFindings,
   isFullTaskLoopFindings,
   repairProgressFromFindings,
+  validateCompactTaskLoopFindings,
   validateTaskLoopCanvasSplit,
   validateTaskLoopFindings,
 } from "./task-loop-report.mjs";
+import { normalizeReportData } from "./report-data-schema.mjs";
+import { evaluateHtmlReport, renderHtml } from "./renderers/html.mjs";
+import { renderMarkdown } from "./renderers/markdown.mjs";
 import {
   findingTargetErrors,
   resolveWorkspaceTopology,
@@ -90,14 +94,14 @@ async function atomicReplace(filePath, content) {
   }
 }
 
-function reportErrors(findings, canvas) {
-  return isFullTaskLoopFindings(findings)
-    ? validateTaskLoopFindings(findings)
-    : validateTaskLoopCanvasSplit(findings, canvas);
+function reportErrors(context) {
+  if (context.findingsShape === "full") return validateTaskLoopFindings(context.findings);
+  if (context.family === "html") return validateCompactTaskLoopFindings(context.findings);
+  return validateTaskLoopCanvasSplit(context.findings, context.canvas);
 }
 
-function assertValidReport(findings, canvas, phase) {
-  const errors = reportErrors(findings, canvas);
+function assertValidReport(context, phase) {
+  const errors = reportErrors(context);
   if (errors.length === 0) return;
   throw Object.assign(new Error(`${phase}: ${errors.join("; ")}`), {
     code: "INVALID_TASK_LOOP_FINDINGS",
@@ -155,10 +159,79 @@ async function assertOutputTargets(actualOutput, workspacePath, {
 
 async function readReportContext(findingsPath) {
   const findings = JSON.parse(await readFile(findingsPath, "utf8"));
-  if (isFullTaskLoopFindings(findings)) return { findings, canvas: undefined };
-  const canvasPath = path.join(path.dirname(findingsPath), "canvas.json");
-  const canvas = JSON.parse(await readFile(canvasPath, "utf8"));
-  return { findings, canvas };
+  const findingsShape = isFullTaskLoopFindings(findings) ? "full" : "compact";
+  const reportDir = path.dirname(findingsPath);
+  const artifactExists = async (name) => {
+    try {
+      return (await stat(path.join(reportDir, name))).isFile();
+    } catch (error) {
+      if (error?.code === "ENOENT") return false;
+      throw error;
+    }
+  };
+  const [hasMarkdown, hasHtml, hasCanvasData, hasCanvasModule] = await Promise.all([
+    artifactExists("report.md"),
+    artifactExists("report.html"),
+    artifactExists("canvas.json"),
+    artifactExists("report.canvas.tsx"),
+  ]);
+  const hasHtmlArtifact = hasMarkdown || hasHtml;
+  const hasCanvasArtifact = hasCanvasData || hasCanvasModule;
+  const invalidContext = (message) => {
+    throw Object.assign(new Error(message), { code: "INVALID_REPORT_CONTEXT" });
+  };
+
+  if (hasHtmlArtifact && hasCanvasArtifact) {
+    invalidContext("compact report context mixes portable HTML and Qoder Canvas artifacts");
+  }
+  if (hasHtmlArtifact) {
+    if (!hasMarkdown || !hasHtml) {
+      invalidContext("portable HTML report context requires both report.md and report.html");
+    }
+    return {
+      family: "html",
+      findingsShape,
+      findings,
+      markdownPath: path.join(reportDir, "report.md"),
+      htmlPath: path.join(reportDir, "report.html"),
+    };
+  }
+  if (hasCanvasArtifact) {
+    if (findingsShape === "full") {
+      invalidContext("full findings cannot be combined with Qoder Canvas split artifacts");
+    }
+    if (!hasCanvasData) {
+      invalidContext("Qoder Canvas report context requires canvas.json");
+    }
+    return {
+      family: "qoder-canvas",
+      findingsShape,
+      findings,
+      canvas: JSON.parse(await readFile(path.join(reportDir, "canvas.json"), "utf8")),
+    };
+  }
+  if (findingsShape === "full") return { family: "full", findingsShape, findings };
+  invalidContext("compact report context is missing portable HTML or Qoder Canvas artifacts");
+}
+
+function prepareHtmlArtifacts(context, { findingsPath, workspacePath }) {
+  const reportData = normalizeReportData(context.findings, {
+    mode: "html",
+    language: context.findings.summary?.locale,
+    target: workspacePath,
+    dataPath: findingsPath,
+  });
+  const actionContext = { findingsPath };
+  const markdown = renderMarkdown(reportData);
+  const html = renderHtml(reportData, actionContext);
+  const htmlCheck = evaluateHtmlReport(html, reportData, actionContext);
+  if (htmlCheck.status === "fail") {
+    throw Object.assign(new Error(`Updated HTML report validation failed: ${htmlCheck.errors.join("; ")}`), {
+      code: "INVALID_UPDATED_HTML_REPORT",
+      errors: htmlCheck.errors,
+    });
+  }
+  return { markdown, html };
 }
 
 export async function recordFixOutput({
@@ -170,6 +243,7 @@ export async function recordFixOutput({
   consumeResult = false,
   topology,
   resolveTopology = resolveWorkspaceTopology,
+  prepareHtmlReport = prepareHtmlArtifacts,
 } = {}) {
   const workspacePath = path.resolve(String(workspace ?? ""));
   const findingsPath = path.resolve(String(findingsOption ?? ""));
@@ -189,7 +263,7 @@ export async function recordFixOutput({
   let payload;
   try {
     const context = await readReportContext(findingsPath);
-    assertValidReport(context.findings, context.canvas, "Current findings validation failed");
+    assertValidReport(context, "Current findings validation failed");
     const matches = context.findings.findings.filter((finding) => finding?.id === findingId);
     if (matches.length !== 1) throw new Error(`finding id must match exactly one row: ${findingId}`);
     const finding = matches[0];
@@ -227,11 +301,18 @@ export async function recordFixOutput({
     else finding.postFixRepairReview = JSON.parse(JSON.stringify(resultPayload.postFixRepairReview));
     delete finding.postFixScoreReview;
     context.findings.summary.assignmentSummaries = assignmentSummariesFromFindings(context.findings.findings);
-    assertValidReport(context.findings, context.canvas, "Updated findings validation failed");
+    assertValidReport(context, "Updated findings validation failed");
     await assertOutputTargets(finding.actualOutput, workspacePath, {
       findingTarget: finding.target,
       topology: repairTopology,
     });
+    const htmlArtifacts = context.family === "html"
+      ? prepareHtmlReport(context, { findingsPath: findingsRealPath, workspacePath: workspaceRealPath })
+      : null;
+    if (htmlArtifacts) {
+      await atomicReplace(context.markdownPath, htmlArtifacts.markdown);
+      await atomicReplace(context.htmlPath, htmlArtifacts.html);
+    }
     await atomicReplace(findingsPath, `${JSON.stringify(context.findings, null, 2)}\n`);
     payload = {
       kind: "harness-fix-output-record",
@@ -248,6 +329,7 @@ export async function recordFixOutput({
         reason: resultPayload.postFixScoreReview === undefined ? "deferred-outcome-window" : "legacy-review-deferred",
         dimensions: [],
       },
+      reportFamily: context.family,
       resultConsumed: false,
     };
   } finally {

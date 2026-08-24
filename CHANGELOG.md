@@ -3,9 +3,52 @@
 This file records notable public changes to Better Harness. Entries describe
 observable behavior and compatibility, not every internal refactor.
 
-## Unreleased
+## 0.5.0 - 2026-08-04
+
+### Added
+
+- `better-harness plugin status`, `plugin plan`, `plugin verify`, and
+  `better-harness doctor` expose a read-only lifecycle control plane over eight
+  host profiles and eleven host surfaces. Status reports installation,
+  enablement, observed-version relation, and verification per surface from the
+  public configured-asset inventory; `plugin plan` emits typed native argv or
+  manual steps for install, update, and remove without executing them; `doctor`
+  reports bounded runtime and host diagnostics with redacted authorized roots.
+  Unknown, mixed, foreign, or unbound host state fails closed, `plugin apply`
+  stays unregistered, and Kimi Code and Grok are rejected with `UNKNOWN_HOST`
+  until their native lifecycle contracts are validated.
+
+- Kimi Code is now a supported analysis-capable source-local host. The
+  repository installs as a Kimi Code plugin (`/plugins install <repo>`)
+  through a `.kimi-plugin/plugin.json` manifest, gains a Kimi configured-asset
+  provider (user `~/.kimi-code/skills` and `mcp.json`, project
+  `.kimi-code/skills` and `.kimi/skills`, and managed plugins from
+  `plugins/installed.json` with `enabled` filtering and plugin-root path
+  confinement) plus a Kimi session-evidence adapter that reads
+  workspace-matching wire transcripts under
+  `~/.kimi-code/sessions/<wd_*>/ses{sion}_*/agents/*/wire.jsonl`, resolving
+  the workspace mapping through `workspaces.json` and `session_index.jsonl`
+  with a `wd_<name>_*` prefix fallback that records a
+  `kimi-workspace-index-absent` warning. The public npm package now ships
+  seven host metadata roots; the Qoder runtime bundle remains Qoder-specific.
+
+- A read-only native Learning Capture review contract can now screen ordinary
+  Task Episodes for repeated exact repair routes, emit a bounded privacy-safe
+  packet, validate evidence-bound `match` or `abstain` decisions, and project
+  accepted `recurring-correction` opportunities through the existing Learning
+  Loop candidate model without requiring adapter-supplied pattern labels.
 
 ### Fixed
+
+- Portable HTML finding-bound fixes now record against the HTML report contract
+  without requiring Qoder's `canvas.json`, and refresh `findings.json`,
+  `report.md`, and `report.html` to the same repair revision. Qoder split reports
+  retain their Canvas-sidecar validation boundary.
+
+- Root CLI delegation failures now keep machine mode parseable: spawn errors,
+  signal termination, and output-buffer exhaustion each emit one stable JSON
+  error document, while normal child stdout, stderr, and numeric exit status
+  remain capability-owned.
 
 - Checkup plan/apply is provider-aware: only `provider=qoder` can emit or execute
   `qodercli` disable mutations. Other hosts keep candidates as `manual-review`
@@ -21,6 +64,19 @@ observable behavior and compatibility, not every internal refactor.
   HTML + Markdown output the 0.4.0 host adapter already ships. A derived
   support-declaration check now requires every adapter-matrix host claiming
   portable HTML output to appear in that routing row.
+
+## 0.4.1 - 2026-08-04
+
+### Fixed
+
+- The published npm package identity is `@qoder-ai/better-harness`. The
+  previously documented `@qoderai/better-harness` scope was never a valid
+  registry name, so package metadata, the lockfile, the adapter matrices, and
+  the documentation site now all reference the hyphenated scope.
+
+- The repository `test` script runs the automated suite again, so the release
+  workflow verifies tests before publishing instead of reporting success
+  without running them.
 
 ## 0.4.0 - 2026-07-30
 

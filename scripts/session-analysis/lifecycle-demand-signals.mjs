@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 
+import { HOST_CAPABILITIES, hostIdSetFor } from "../host-support/index.mjs";
+
 export const LIFECYCLE_DEMAND_SCHEMA_VERSION = 1;
 
+const SESSION_HOST_SET = hostIdSetFor(HOST_CAPABILITIES.SESSION_ANALYSIS);
 const USER_EVENT_TYPES = new Set(["user", "last-prompt", "UserPromptSubmit"]);
 const CONFIDENCE_RANK = new Map([
   ["Low", 0],
@@ -540,7 +543,7 @@ function fingerprint(value) {
 
 function safeHost(value) {
   const host = String(value ?? "").toLowerCase();
-  return ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"].includes(host) ? host : "unknown";
+  return SESSION_HOST_SET.has(host) ? host : "unknown";
 }
 
 function safeEvidenceToken(value, fallback) {

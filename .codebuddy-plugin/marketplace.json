@@ -7,14 +7,14 @@
     "email": "dev@qoder.com"
   },
   "metadata": {
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "plugins": [
     {
       "name": "better-harness",
       "description": "A four-role evidence review team for AI coding-agent delivery readiness.",
       "source": "./",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "categoryId": "10-ProjectQuality",
       "expertType": "team",
       "agents": [

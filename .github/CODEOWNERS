@@ -1,0 +1,11 @@
+# Code owners for Better Harness.
+#
+# Only the listed owners may approve changes to the matched paths. This file
+# alone does not block merges: enable branch protection with
+# "Require review from Code Owners" on the default branch to enforce it.
+
+# Root project contracts: maintainer review required.
+/README.md          @QoderAI/maintainers
+/README.zh-CN.md    @QoderAI/maintainers
+/AGENTS.md          @QoderAI/maintainers
+/CHANGELOG.md       @QoderAI/maintainers

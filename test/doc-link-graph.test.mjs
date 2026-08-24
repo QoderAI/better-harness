@@ -24,6 +24,21 @@ const DOC_DIRS = [
 ];
 const ROOT_DOCS = ["AGENTS.md", "README.md"];
 const MD_TOKEN = /(?:\.\.?\/)*(?:[\w.-]+\/)*[\w.-]+\.md\b/g;
+// Bilingual reader surfaces: the Docusaurus site tree (including its zh-Hans
+// locale mirror and specs that quote Chinese reader copy) and the root README
+// pair. Skill docs cite them for human readers, but an agent does not load them
+// as routing, so they are outside the English-first chain rather than
+// suppressed violations of it.
+const READER_SURFACE_PREFIXES = ["docs/", "README.md", "README.zh-CN.md"];
+// Guards against an over-broad prefix silently emptying the scan; the chain
+// held 107 agent-loadable docs when this floor was set.
+const MIN_ENGLISH_FIRST_DOCS = 50;
+
+function isReaderSurface(relativePath) {
+  return READER_SURFACE_PREFIXES.some(
+    (prefix) => relativePath === prefix || relativePath.startsWith(prefix),
+  );
+}
 
 test("doc-link graph uses the canonical CLI and POSIX repository paths", () => {
   assert.equal(existsSync(path.join(repoRoot, "scripts", "doc-link-graph.mjs")), false);
@@ -77,15 +92,22 @@ test("Better Harness skill's English-first Markdown chain stays Han-script-free"
   const skill = path.join(repoRoot, "skills/better-harness/SKILL.md");
   const graph = buildGraph([skill], { follow: true });
   const offenders = [];
+  let scanned = 0;
 
   for (const [relativePath, meta] of graph.nodes) {
     if (meta.kind !== "resolved" || !relativePath.endsWith(".md")) continue;
+    if (isReaderSurface(relativePath)) continue;
+    scanned += 1;
     const lines = readFileSync(path.join(repoRoot, relativePath), "utf8").split(/\r?\n/u);
     for (const [index, line] of lines.entries()) {
       if (/\p{Script=Han}/u.test(line)) offenders.push(`${relativePath}:${index + 1}`);
     }
   }
 
+  assert.ok(
+    scanned >= MIN_ENGLISH_FIRST_DOCS,
+    `only ${scanned} agent-loadable docs were scanned; the reader-surface exclusion is too broad`,
+  );
   assert.deepEqual(
     offenders,
     [],

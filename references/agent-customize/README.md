@@ -16,7 +16,7 @@ authority, routing, overlap, observed use, and maintenance boundaries.
 - Inventory and authority: `global-assets.md`.
 - Provider-specific notes: `platforms/claude.md`, `platforms/codex.md`,
   `platforms/qoder.md`, `platforms/qwen.md`, `platforms/copilot.md`,
-  `platforms/pi.md`, and `platforms/workbuddy.md`.
+  `platforms/pi.md`, `platforms/kimi.md`, and `platforms/workbuddy.md`.
 
 ## Does Not Own
 

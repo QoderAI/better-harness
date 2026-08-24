@@ -3,6 +3,7 @@ import { calculateExactModelCost } from "./model-pricing.mjs";
 import { buildDailyUsageActivity } from "./daily-usage.mjs";
 import { privacySafeUserInputSummary } from "./privacy-safe-text.mjs";
 import { sessionAnalysisRef } from "./session-ref.mjs";
+import { buildToolCallTrace } from "./tool-call-trace.mjs";
 
 export const SESSION_EFFICIENCY_SCHEMA_VERSION = 1;
 
@@ -34,7 +35,11 @@ export function buildSessionEfficiencySignal(sessions = [], events = [], options
   const longActiveRows = rows.filter((row) => row.longActive);
   const longWallRows = rows.filter((row) => row.longWall);
   const longActiveIds = new Set(longActiveRows.map((row) => row.id));
-  const candidates = selectCandidates(rows, Number(options.candidateLimit ?? DEFAULT_CANDIDATE_LIMIT));
+  const candidates = selectCandidates(rows, Number(options.candidateLimit ?? DEFAULT_CANDIDATE_LIMIT))
+    .map((row) => ({
+      ...row,
+      toolTrace: buildToolCallTrace(eventsBySession.get(row.id) ?? [], options.toolCallTrace),
+    }));
 
   return {
     schemaVersion: SESSION_EFFICIENCY_SCHEMA_VERSION,

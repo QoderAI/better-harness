@@ -15,6 +15,23 @@ import {
   walkFiles,
 } from "../session-analysis/index.mjs";
 import { collectAgentCustomizeInventory } from "../agent-customize/index.mjs";
+import {
+  getHostDescriptor,
+  HOST_CAPABILITIES,
+  hostHomeValue,
+  hostIdSetFor,
+  hostIdsFor,
+  hostPipeList,
+  normalizedHostHomeOptions,
+} from "../host-support/index.mjs";
+
+const SESSION_HOST_SET = hostIdSetFor(HOST_CAPABILITIES.SESSION_ANALYSIS);
+const ASSET_PRACTICE_HOSTS = hostIdsFor(HOST_CAPABILITIES.ASSET_PRACTICES);
+const ASSET_PRACTICE_HOST_SET = hostIdSetFor(HOST_CAPABILITIES.ASSET_PRACTICES);
+const INVENTORY_GATE_HOSTS = Object.freeze([
+  "cursor",
+  ...ASSET_PRACTICE_HOSTS.filter((hostId) => hostId !== "cursor"),
+]);
 
 const MEMORY_CONFIG_KEYS = new Set([
   "memory.fetch.enable",
@@ -394,7 +411,7 @@ async function collectCodexMemories(scope) {
 }
 
 function makeSessionSourceHints(scope) {
-  if (!["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"].includes(scope.platform)) {
+  if (!SESSION_HOST_SET.has(scope.platform)) {
     return [];
   }
   return [
@@ -443,7 +460,8 @@ function publicScope(options = {}) {
 
 function providerScope(options = {}, platform = options.platform ?? "qoder") {
   const workspace = normalizeWorkspace(options.workspace);
-  const qoderHome = options.qoderHome ?? options["qoder-home"];
+  const host = getHostDescriptor(platform);
+  const home = hostHomeValue(options, platform);
   const sharedCache = options.sharedCache ?? options["shared-cache"];
   const sharedClientCacheRoot = options.qoderSharedClientCacheRoot ??
     options["qoder-shared-client-cache-root"] ??
@@ -454,18 +472,12 @@ function providerScope(options = {}, platform = options.platform ?? "qoder") {
     includeUserHome: normalizeBoolean(options.includeUserHome ?? options["include-user-home"] ?? false),
     includeGlobalHooks: normalizeBoolean(options.includeGlobalHooks ?? options["include-global-hooks"] ?? false),
     includeMemories: normalizeBoolean(options.includeMemories ?? options["include-memories"] ?? false),
-    cursorHome: options.cursorHome ?? options["cursor-home"],
-    qoderHome,
+    home,
+    ...(host ? { [host.homeProperty]: home } : {}),
     sharedCache,
     qoderSharedClientCacheRoot: sharedClientCacheRoot,
-    codexHome: options.codexHome ?? options["codex-home"],
     codexAppPath: options.codexAppPath ?? options["codex-app-path"],
-    claudeHome: options.claudeHome ?? options["claude-home"],
     claudeStatePath: options.claudeStatePath ?? options["claude-state"] ?? options["claude-state-path"],
-    qwenHome: options.qwenHome ?? options["qwen-home"],
-    copilotHome: options.copilotHome ?? options["copilot-home"],
-    piHome: options.piHome ?? options["pi-home"],
-    workbuddyHome: options.workbuddyHome ?? options["workbuddy-home"],
   };
 }
 
@@ -506,6 +518,7 @@ function customizeItem(item) {
     originScope: item.originScope,
     originRoute: item.originRoute,
     effectiveTarget: item.effectiveTarget,
+    workspaceScoped: item.workspaceScoped,
     pluginId: item.pluginId,
     pluginName: item.pluginName,
     pluginEnabled: item.pluginEnabled,
@@ -535,9 +548,11 @@ function scopeItems(inventory, collection, scope) {
     .map(customizeItem);
 }
 
-function pluginScopedItems(inventory, collection) {
+function pluginScopedItems(inventory, collection, includeUserHome) {
   return (inventory.manage?.[collection] ?? [])
-    .filter((item) => item.scope === "plugin" && item.pluginEnabled !== false)
+    .filter((item) => item.scope === "plugin"
+      && item.pluginEnabled !== false
+      && (includeUserHome || item.workspaceScoped === true))
     .map(customizeItem);
 }
 
@@ -557,7 +572,7 @@ function customizeSurface({ provider, group, scope, type, label, basePath, items
 async function buildConfiguredAssetSurfaces(inventory, scope) {
   const provider = scope.platform;
   const projectBase = scope.workspace;
-  const userBase = inventory.cursorHome ?? inventory.qoderHome ?? inventory.codexHome ?? inventory.claudeHome ?? inventory.qwenHome ?? inventory.copilotHome ?? inventory.piHome ?? inventory.workbuddyHome;
+  const userBase = hostHomeValue(inventory, provider) ?? scope.home;
   const surfaceTypes = [
     ["skills", "skills", "Skills"],
     ["subagents", "agents", "Agents"],
@@ -629,8 +644,10 @@ async function buildConfiguredAssetSurfaces(inventory, scope) {
     }
   }
 
-  if (scope.includeUserHome) {
-    const effectivePlugins = inventory.plugins.filter((plugin) => plugin.enabled !== false);
+  const workspaceScopedPlugins = inventory.plugins.filter((plugin) => plugin.workspaceScoped === true);
+  if (scope.includeUserHome || workspaceScopedPlugins.length > 0) {
+    const effectivePlugins = inventory.plugins.filter((plugin) =>
+      plugin.enabled !== false && (scope.includeUserHome || plugin.workspaceScoped === true));
     if (effectivePlugins.length > 0) {
       surfaces.push(customizeSurface({
         provider,
@@ -643,7 +660,7 @@ async function buildConfiguredAssetSurfaces(inventory, scope) {
       }));
     }
     for (const [collection, type, label] of surfaceTypes) {
-      const items = pluginScopedItems(inventory, collection);
+      const items = pluginScopedItems(inventory, collection, scope.includeUserHome);
       if (items.length > 0) {
         surfaces.push(customizeSurface({
           provider,
@@ -667,17 +684,10 @@ export async function collectProviderInventory(options = {}) {
   const inventory = options.inventory ?? await collectAgentCustomizeInventory({
     provider: platform,
     workspace: scope.workspace,
-    cursorHome: scope.cursorHome,
-    qoderHome: scope.qoderHome,
+    ...normalizedHostHomeOptions(scope, platform),
     qoderSharedClientCacheRoot: scope.qoderSharedClientCacheRoot,
-    codexHome: scope.codexHome,
     codexAppPath: scope.codexAppPath,
-    claudeHome: scope.claudeHome,
     claudeStatePath: scope.claudeStatePath,
-    qwenHome: scope.qwenHome,
-    copilotHome: scope.copilotHome,
-    piHome: scope.piHome,
-    workbuddyHome: scope.workbuddyHome,
     includeUserHome: scope.includeUserHome,
     includeGlobalHooks: scope.includeGlobalHooks,
   });
@@ -933,12 +943,12 @@ export function formatInventoryMarkdown(result) {
   return `${lines.join("\n")}\n`;
 }
 
-const USAGE = `Usage: better-harness coding-agent-practices inventory [qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy] [options]
+const USAGE = `Usage: better-harness coding-agent-practices inventory [${hostPipeList(ASSET_PRACTICE_HOSTS)}] [options]
 
 Inspect configured coding-agent assets and practice evidence for one platform.
 
 Options:
-  --platform <qoder|codex|claude|cursor|qwen|copilot|pi|workbuddy>  Select the platform (default: qoder; may also be the first positional)
+  --platform <${hostPipeList(ASSET_PRACTICE_HOSTS)}>  Select the platform (default: qoder; may also be the first positional)
   --workspace <dir>                Workspace root to inspect (default: current directory)
   --json                           Emit JSON (default)
   --format <json|markdown>         Output format
@@ -946,6 +956,7 @@ Options:
   --include-memories               Include Qoder or Codex memory metadata
   --claude-home <dir>              Claude config root override
   --claude-state <file>            Claude state-file override
+  --kimi-home <dir>                Kimi Code data root override
   -h, --help                       Print this help
 `;
 
@@ -960,9 +971,9 @@ async function runCli(argv) {
   }
   const { command, options } = parseArgs(argv);
   const platform = options.platform ?? command ?? "qoder";
-  if (!["cursor", "qoder", "codex", "claude", "qwen", "copilot", "pi", "workbuddy"].includes(platform)) {
+  if (!ASSET_PRACTICE_HOST_SET.has(platform)) {
     throw new Error(
-      `Unsupported platform: ${platform}. Supported platforms: cursor, qoder, codex, claude, qwen, copilot, pi, workbuddy.\n\n${USAGE}`,
+      `Unsupported platform: ${platform}. Supported platforms: ${INVENTORY_GATE_HOSTS.join(", ")}.\n\n${USAGE}`,
     );
   }
   const result = platform === "qoder"

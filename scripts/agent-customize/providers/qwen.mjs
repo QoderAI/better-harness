@@ -30,6 +30,7 @@ import {
 const QWEN_EXTENSION_MANIFEST = ["qwen-extension.json"];
 const QWEN_EXTENSION_INSTALL_FILE = ".qwen-extension-install.json";
 const QWEN_EXTENSION_ENABLEMENT_FILE = "extension-enablement.json";
+const QWEN_EXTENSION_STATE_FILE = "state.json";
 
 function defaultQwenHome() {
   return process.env.QWEN_HOME ?? path.join(os.homedir(), ".qwen");
@@ -55,9 +56,9 @@ function overrideMatchesPath(rule, checkPath) {
   return new RegExp(`^${regexString}$`).test(checkPath);
 }
 
-function isExtensionEnabled(enablementConfig, extensionName, workspace) {
+function isExtensionEnabled(enablementConfig, extensionName, workspace, initialEnabled = true) {
   const extensionConfig = enablementConfig?.[extensionName];
-  let enabled = true;
+  let enabled = initialEnabled;
   const allOverrides = extensionConfig?.overrides ?? [];
   const lexicalPath = ensureLeadingAndTrailingSlash(workspace);
   let canonicalPath = lexicalPath;
@@ -68,6 +69,87 @@ function isExtensionEnabled(enablementConfig, extensionName, workspace) {
     }
   }
   return enabled;
+}
+
+function canonicalizeWorkspacePath(workspace) {
+  const resolved = path.resolve(workspace);
+  try {
+    return realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function validQwenExtensionStoreState(state) {
+  if (
+    !state
+    || typeof state !== "object"
+    || state.version !== 2
+    || !Number.isSafeInteger(state.generation)
+    || state.generation < 0
+    || !/^[a-f0-9]{64}$/u.test(state.legacyProjectionHash ?? "")
+    || !state.extensions
+    || typeof state.extensions !== "object"
+    || Array.isArray(state.extensions)
+  ) {
+    return false;
+  }
+  return Object.entries(state.extensions).every(([id, policy]) => (
+    /^[a-f0-9]{64}$/u.test(id)
+    && policy
+    && typeof policy === "object"
+    && typeof policy.name === "string"
+    && /^[a-zA-Z0-9-_.]+$/u.test(policy.name)
+    && (policy.artifactGeneration == null
+      || (Number.isSafeInteger(policy.artifactGeneration) && policy.artifactGeneration >= 0))
+    && ["enabled", "disabled"].includes(policy.defaultActivation)
+    && policy.workspaceOverrides
+    && typeof policy.workspaceOverrides === "object"
+    && !Array.isArray(policy.workspaceOverrides)
+    && Object.entries(policy.workspaceOverrides).every(([workspacePath, activation]) => (
+      (path.isAbsolute(workspacePath) || path.win32.isAbsolute(workspacePath))
+      && ["enabled", "disabled", "inherit"].includes(activation)
+    ))
+    && (policy.legacyPathRules == null
+      || (Array.isArray(policy.legacyPathRules)
+        && policy.legacyPathRules.every((rule) => typeof rule === "string")))
+  ));
+}
+
+function resolveQwenExtensionScope(state, extensionName, workspace) {
+  if (!validQwenExtensionStoreState(state)) {
+    return { scope: "unknown", enabled: undefined };
+  }
+  const policies = Object.values(state.extensions).filter((policy) => policy.name === extensionName);
+  if (policies.length !== 1) {
+    return { scope: "unknown", enabled: undefined };
+  }
+  const policy = policies[0];
+  const canonicalWorkspace = canonicalizeWorkspacePath(workspace);
+  const exact = policy.workspaceOverrides[canonicalWorkspace];
+  let enabled = exact === "enabled"
+    ? true
+    : exact === "disabled"
+      ? false
+      : policy.defaultActivation === "enabled";
+  if (exact == null || exact === "inherit") {
+    enabled = isExtensionEnabled(
+      { [extensionName]: { overrides: policy.legacyPathRules ?? [] } },
+      extensionName,
+      workspace,
+      enabled,
+    );
+  }
+  if (policy.defaultActivation === "enabled") {
+    return { scope: "user", enabled };
+  }
+  if (exact === "enabled") {
+    return { scope: "project", enabled };
+  }
+  if (Object.values(policy.workspaceOverrides).includes("enabled")) {
+    return { scope: "foreign", enabled };
+  }
+  return { scope: "unknown", enabled };
 }
 
 function flattenSettingsHooks(settingsHooks) {
@@ -127,6 +209,7 @@ function normalizeProvidedQwenRecord(record) {
     version: record.version,
     sources: Array.isArray(record.sources) ? record.sources : [record.source ?? "user"],
     source: record.source ?? "user",
+    originSource: record.originSource,
     installMatch: record.installMatch ?? "provided",
     type: record.type ?? "link",
     enablementConfig: record.enablementConfig ?? null,
@@ -138,13 +221,20 @@ async function readQwenInstalledPluginState(options = {}) {
     const records = (options.qwenInstalledPluginRecords ?? options.installedPluginRecords)
       .map(normalizeProvidedQwenRecord)
       .filter(Boolean);
-    return { records, source: "provided", installRecordFiles: [] };
+    return { records, source: "provided", installRecordFiles: [], scopeState: "provided" };
   }
 
   const qwenHome = path.resolve(expandHome(options.qwenHome ?? options["qwen-home"] ?? defaultQwenHome()));
+  const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   const extensionsRoot = path.join(qwenHome, "extensions");
   const enablementPath = path.join(extensionsRoot, QWEN_EXTENSION_ENABLEMENT_FILE);
+  const statePath = path.join(qwenHome, "extension-store", QWEN_EXTENSION_STATE_FILE);
   const enablement = (await readJson(enablementPath)) ?? {};
+  const stateExists = await pathExists(statePath);
+  const extensionStoreState = stateExists ? await readJson(statePath) : undefined;
+  const scopeState = validQwenExtensionStoreState(extensionStoreState)
+    ? "extension-store-v2"
+    : (stateExists ? "invalid" : "missing");
   const records = [];
   const installRecordFiles = [];
   for (const extensionDir of await listDirectories(extensionsRoot)) {
@@ -155,24 +245,31 @@ async function readQwenInstalledPluginState(options = {}) {
     }
     installRecordFiles.push(installMarkerPath);
     const installMarker = (await readJson(installMarkerPath)) ?? {};
+    const scopeResolution = resolveQwenExtensionScope(extensionStoreState, name, workspace);
+    const installType = installMarker.type ?? "unknown";
+    const linkedSource = installType === "link" && installMarker.source;
     records.push({
       id: `qwen/${name}`,
       name,
       marketplaceName: "qwen",
-      installPath: installMarker.source ?? extensionDir,
+      installPath: linkedSource ? installMarker.source : extensionDir,
       installMarkerPath,
       version: installMarker.version,
-      sources: ["user"],
-      source: installMarker.originSource ?? "user",
+      sources: [scopeResolution.scope],
+      source: scopeResolution.scope,
+      enabled: scopeResolution.enabled,
+      originSource: installMarker.originSource,
       installMatch: "qwen-extension-install",
-      type: installMarker.type ?? "link",
+      type: installType,
       enablementConfig: enablement,
     });
   }
   return {
     records,
     source: records.length > 0 ? "qwen-extensions" : "missing",
-    installRecordFiles,
+    installRecordFiles: stateExists ? [...installRecordFiles, statePath] : installRecordFiles,
+    scopeState,
+    scopeStateFile: statePath,
   };
 }
 
@@ -214,7 +311,9 @@ async function collectQwenPlugin(record, workspace) {
     heading ||
     titleCase(manifest.name || packageJson.name || record.name);
   const displayName = normalizePluginDisplayName(rawDisplayName, record.name);
-  const enabled = isExtensionEnabled(record.enablementConfig, record.name, workspace);
+  const enabled = typeof record.enabled === "boolean"
+    ? record.enabled
+    : isExtensionEnabled(record.enablementConfig, record.name, workspace);
   const plugin = {
     id: record.id,
     qwenExtensionId: record.name,
@@ -229,6 +328,7 @@ async function collectQwenPlugin(record, workspace) {
     version: record.version || manifest.version || packageJson.version,
     installSources: record.sources,
     installSource: record.source,
+    originSource: record.originSource,
     installMatch: record.installMatch,
     installType: record.type,
     installRecordPath: record.installMarkerPath,
@@ -347,8 +447,8 @@ export async function collectQwenCustomizeInventory(options = {}) {
   const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   const includeUserHome = options.includeUserHome !== false;
   const installState = includeUserHome
-    ? await readQwenInstalledPluginState({ ...options, qwenHome })
-    : { records: [], source: "not-authorized", installRecordFiles: [] };
+    ? await readQwenInstalledPluginState({ ...options, qwenHome, workspace })
+    : { records: [], source: "not-authorized", installRecordFiles: [], scopeState: "not-authorized" };
   const [plugins, user, project] = await Promise.all([
     includeUserHome ? collectQwenPlugins(installState.records ?? [], workspace) : [],
     includeUserHome ? collectQwenUserPrimitives(qwenHome) : emptyPrimitives(),
@@ -366,6 +466,8 @@ export async function collectQwenCustomizeInventory(options = {}) {
       installedPluginState: installState.source,
       installedPluginRecordCount: plugins.length,
       installedPluginRecordFiles: installState.installRecordFiles ?? [],
+      installedPluginScopeState: installState.scopeState,
+      installedPluginScopeStateFile: installState.scopeStateFile,
       remotePluginInstallMarkersRequired: true,
     },
     unsupported: [

@@ -1,3 +1,6 @@
+import { formatHostList, HOST_CAPABILITIES, hostIdsFor } from "../host-support/index.mjs";
+import { PLUGIN_COMMAND_MANIFEST } from "../plugin-lifecycle/command-manifest.mjs";
+
 export const FORMAT_VERSION = "1.0";
 export const CLI_NAME = "better-harness";
 export const COMMAND_AUDIENCES = Object.freeze(["workflow", "advanced", "maintainer"]);
@@ -27,6 +30,26 @@ const COMMANDS = [
     aliases: [{ name: "customize", hidden: true }],
   },
   {
+    name: "plugin",
+    kind: "group",
+    audience: "advanced",
+    summary: "Inspect, plan, and verify the Better Harness plugin lifecycle without applying changes.",
+    description: "Normalize Better Harness installation evidence across Coding Agent hosts, emit read-only native lifecycle plans, and verify local plugin assets without executing host commands.",
+    subcommands: PLUGIN_COMMAND_MANIFEST.map(({ name, audience, entryScript: script, summary }) => ({
+      name,
+      audience,
+      script,
+      summary,
+    })),
+  },
+  {
+    name: "doctor",
+    kind: "direct",
+    audience: "workflow",
+    script: "harness-doctor/cli.mjs",
+    summary: "Run bounded read-only Better Harness runtime and host diagnostics.",
+  },
+  {
     name: "agent-lint",
     kind: "direct",
     audience: "advanced",
@@ -52,7 +75,7 @@ const COMMANDS = [
     kind: "direct",
     audience: "advanced",
     script: "session-analysis.mjs",
-    summary: "Collect and normalize Qoder, Codex, Claude, Cursor, Qwen, Copilot, Pi, and WorkBuddy session evidence.",
+    summary: `Collect and normalize ${formatHostList(hostIdsFor(HOST_CAPABILITIES.SESSION_ANALYSIS), { displayNames: true, conjunction: "and" })} session evidence.`,
     subcommands: [
       {
         name: "sources",
@@ -202,7 +225,7 @@ const COMMANDS = [
         audience: "workflow",
         script: "harness-analysis/report-run.mjs",
         summary: "Return a neutral, budgeted Harness evidence brief.",
-        description: "Scan evidence read-only and return bounded natural text for AI interpretation, plus exact report summary facts in JSON mode; explicit Qoder canvas-out initializes them and replace-canvas refreshes only that authorized path.",
+        description: "Scan evidence read-only and return bounded natural text for AI interpretation, plus exact report summary facts in JSON mode; explicit Qoder or Cursor canvas-out initializes them and replace-canvas refreshes only that authorized path.",
       },
       {
         name: "checkup",
@@ -226,6 +249,13 @@ const COMMANDS = [
         description: "Collect repository, practice, and session candidates into report.source.json while preserving evidence boundaries.",
       },
       {
+        name: "source-review",
+        audience: "maintainer",
+        script: "harness-analysis/report-source/cli.mjs",
+        summary: "Create, compile, and apply a bounded report-source review.",
+        description: "Expose an explicit local create, caller-authored decision, and confirmed apply lifecycle without calling a model or merging native evidence aliases into the outer evidence namespace.",
+      },
+      {
         name: "task-loop-report",
         audience: "maintainer",
         script: "harness-analysis/task-loop-report.mjs",
@@ -237,7 +267,7 @@ const COMMANDS = [
         audience: "advanced",
         script: "harness-analysis/render-report.mjs",
         summary: "Render reviewed findings data into report artifacts.",
-        description: "Render reviewed findings.json data into qoder-canvas, markdown, or html, and optionally run the selected validators.",
+        description: "Render reviewed findings.json data into qoder-canvas, cursor-canvas, markdown, or html, and optionally run the selected validators.",
       },
       {
         name: "preview-canvas",

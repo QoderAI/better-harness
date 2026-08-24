@@ -27,7 +27,8 @@ claimed slice a stable acceptance id and an evidence route. Use
 | Shell and discovery | Native manifest, source-local shell, generated shell, or none | Thin host metadata root; generated artifacts under `scripts/packaging/` | Native install/link/discovery smoke or unavailable note |
 | Configured assets | Available, partial, or unavailable scopes | `scripts/agent-customize/providers/<host>.mjs` | Sanitized fixtures plus bounded real-host inventory smoke |
 | Session evidence | Available, partial, or unavailable fields/events | `scripts/session-analysis/platforms/<host>.mjs` | Deterministic fixtures plus workspace-qualified source/facts smoke |
-| Shared registration | Which public commands accept the host | Capability-owned registries and CLIs | Help, unknown-host, delegation, and bundle tests |
+| Shared registration | Which public commands accept the host | `scripts/host-support/` support slices plus capability-owned registries and CLIs | Catalog mapping, help, unknown-host, delegation, and bundle tests |
+| Plugin lifecycle | Better Harness install/status/verify dispositions by native surface | `scripts/host-support/profiles/<host>.mjs` plus `scripts/plugin-lifecycle/` | Profile validation, redacted native-help evidence, deterministic plan, and read-only fixture tests |
 | Output | Existing Canvas, HTML, Markdown, or a justified new mode | `templates/reporting/` and report routing | Validated render for the claimed mode |
 | Packaging | npm metadata root, runtime bundle, source-only, or none | `package.json` and `scripts/npm-package/` | `npm run pack:verify` when shipped files change |
 | Documentation | Positioning, paths, coverage, smoke, limitations | [host adapter matrix](README.md) and capability references | Link checks and commands matching observed behavior |
@@ -61,6 +62,10 @@ that affect the proposed support:
   and version rules;
 - configuration, runtime, cache, and session roots, including environment and
   CLI override precedence;
+- every primary and secondary configured-asset root the provider reads, such as
+  a state database, shared client cache, or user-level compatibility directory,
+  plus a redacted fallback label and its relocation below an isolated
+  `--host-home`;
 - workspace identity and path normalization for spaces, Unicode, punctuation,
   Windows drive letters, case differences, symlinks, and case-insensitive file
   systems;
@@ -129,28 +134,58 @@ support can still land independently.
 
 ## 6. Propagate the Host Identity Deliberately
 
-Host ids currently appear in more than one capability because configured assets,
-sessions, reports, and packaging have different owners. Search for the existing
-host set before editing:
+Add stable identity, display, home-option, and independently evidenced support
+slices to `scripts/host-support/index.mjs`. Do not claim every capability by
+default: Kimi and Grok, for example, can remain absent from Checkup while their
+configured-asset and session adapters are available.
+
+Executable imports remain explicit in each capability. Register only the
+provider, analyzer, report, or packaging slices backed by the spec and tests,
+then search for host-specific native behavior that cannot be projected from the
+catalog:
 
 ```bash
-rg -n "qoder|codex|claude|cursor|qwen|copilot|pi" scripts test references templates docs package.json
+rg -n "<host-id>|<Host Display Name>" scripts test references templates docs package.json
 ```
 
-Use the results as an inventory, not a replacement template. Typical registration
-surfaces include:
+Use the results as an inventory, not a replacement template. Typical capability
+composition surfaces include:
 
+- `scripts/host-support/profiles/<host>.mjs` for the lifecycle shadow profile;
+  use `profile-builders.mjs` constructors, let `profile-model.mjs` validate and
+  deeply freeze the declaration locally, and keep `profiles.mjs` as an
+  import-only composition root. Do not defer a malformed profile to aggregate
+  registry validation. Declare every provider primary and secondary
+  `inventoryHomeRoutes` entry there with its option, isolated relative path, and
+  redacted safe fallback; do not let a state file, shared cache, or compatibility
+  root fall back to the real user home when `--host-home` is supplied. Declare
+  the surface observation kind and discovery source (`executable`, `diagnostic`,
+  or `unobserved`) there as well; do not let one surface inherit another
+  surface's executable or provider-state evidence. Use `scopeArtifactPolicy: shared`
+  only when versioned native evidence proves that scopes mutate one artifact,
+  and declare `nativeHomeBinding` only when the cited native contract proves the
+  environment or config override applies to the emitted steps. Otherwise an
+  isolated mutation plan must fail closed and must not emit an unbound native
+  verification step. Do not add a host-id branch to lifecycle status or a second
+  target resolver to status/plan. Host work must not copy plugin leaf metadata
+  into either the root registry or lifecycle CLI, or construct status rows
+  outside the shared status-row factory. Do not construct lifecycle plans,
+  duplicate transition policy, or label verification as a mutation outside the
+  shared plan-model factory;
 - `scripts/agent-customize/providers/index.mjs` and its public inventory CLI;
 - `scripts/session-analysis/analyzer.mjs` and the platform loader/help contract;
 - `scripts/harness-analysis/evidence-bundle/` provider validation and routing;
-- report, quality, lint, baseline, integrity, and root CLI help contracts that
-  explicitly enumerate supported hosts;
+- report and output-mode composition roots whose support differs by host;
+- host-native defaults, environment variables, state files, cache roots, and
+  privacy predicates that do not belong in the stable identity catalog;
 - package whitelists and manifest-version checks, when a shell ships;
 - deterministic help snapshots and tests that intentionally lock the public
   host list.
 
-Do not add the host to a registry unless the corresponding capability and its
-tests are present. Prefer a visible unsupported error over a host id that falls
+Do not add a capability claim unless its executable composition and tests are
+present. Catalog-derived gates must fail closed, and capability-mapping tests
+must detect both a claimed slice without an implementation and an implementation
+without a claim. Prefer a visible unsupported error over a host id that falls
 through to another provider.
 
 ## 7. Build an Evidence Ladder
@@ -238,6 +273,14 @@ their latest diff and status before citing them.
   data boundaries explicit.
 - [ ] Registration matches implemented capabilities; no unrelated host fallback
   is possible.
+- [ ] The host has one independently importable lifecycle profile whose
+  supported steps use argv arrays and current contract evidence; unavailable
+  operations remain explicit. Every primary and secondary inventory home route
+  has an isolated relative path and redacted safe fallback, and every surface
+  observation kind and discovery source are declared and pass profile
+  validation. Shared artifact
+  policy and native home bindings cite versioned native evidence; without that
+  evidence, isolated mutation and verification steps fail closed.
 - [ ] Deterministic fixtures cover applicable path, precedence, status, dedupe,
   foreign-workspace, unknown-event, and secret-boundary risks.
 - [ ] Focused, full-suite, cross-platform, native-smoke, documentation, and

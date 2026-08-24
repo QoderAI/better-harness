@@ -55,7 +55,7 @@ test("WB-AC-02 builds a replaceable directory artifact with no symlinks", async 
     const first = await buildWorkBuddyPluginArtifact({ outputRoot: output });
     assert.equal(first.pluginRoot, output);
     const verified = await verifyWorkBuddyPluginRoot(output);
-    assert.equal(verified.version, "0.4.0");
+    assert.equal(verified.version, "0.5.0");
     const second = await buildWorkBuddyPluginArtifact({ outputRoot: output });
     assert.equal(second.pluginRoot, output);
   } finally {

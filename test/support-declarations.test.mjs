@@ -5,11 +5,13 @@ import path from "node:path";
 import test from "node:test";
 
 import { PROVIDER_COLLECTORS } from "../scripts/agent-customize/providers/index.mjs";
+import {
+  HOST_CAPABILITIES,
+  HOST_IDS,
+  hostIdsFor,
+  listHostProfiles,
+} from "../scripts/host-support/index.mjs";
 import { createAnalyzer, SESSION_ANALYSIS_HELP } from "../scripts/session-analysis/index.mjs";
-
-// Canonical support declaration (roadmap A-06): CLI help, provider registry,
-// session platforms, report platforms, and docs must all agree on this set.
-const SUPPORTED_PLATFORMS = ["qoder", "codex", "claude", "cursor", "qwen", "copilot", "pi", "workbuddy"];
 
 const cliPath = path.join(process.cwd(), "scripts", "better-harness.mjs");
 const adapterMatrixPath = path.join(process.cwd(), "docs", "adapters", "README.md");
@@ -26,8 +28,12 @@ function sortedSet(values) {
   return [...new Set(values)].sort();
 }
 
-function assertSameSet(actual, label) {
-  assert.deepEqual(sortedSet(actual), sortedSet(SUPPORTED_PLATFORMS), `${label} disagrees with the supported platform set`);
+function assertCapabilitySet(actual, capability, label) {
+  assert.deepEqual(
+    sortedSet(actual),
+    sortedSet(hostIdsFor(capability)),
+    `${label} disagrees with the ${capability} host slice`,
+  );
 }
 
 function portableHtmlMatrixHosts(matrix) {
@@ -53,17 +59,45 @@ function missingPortableHtmlRouteHosts(matrix, routing) {
   return htmlHosts.filter((host) => !routeHosts.has(host));
 }
 
-test("agent-customize provider registry declares exactly the supported platforms", () => {
-  assertSameSet([...PROVIDER_COLLECTORS.keys()], "PROVIDER_COLLECTORS");
+test("agent-customize provider registry matches its declared capability slice", () => {
+  assertCapabilitySet([...PROVIDER_COLLECTORS.keys()], HOST_CAPABILITIES.AGENT_CUSTOMIZE, "PROVIDER_COLLECTORS");
 
-  for (const platform of SUPPORTED_PLATFORMS) {
+  for (const platform of hostIdsFor(HOST_CAPABILITIES.AGENT_CUSTOMIZE)) {
     const providerModule = path.join(process.cwd(), "scripts", "agent-customize", "providers", `${platform}.mjs`);
     assert.ok(existsSync(providerModule), `missing configured-asset provider module: ${providerModule}`);
   }
 });
 
-test("session-analysis platform loader declares exactly the supported platforms", async () => {
-  for (const platform of SUPPORTED_PLATFORMS) {
+// Hosts whose native plugin lifecycle has no validated contract yet. They stay
+// listed here so `plugin` commands fail closed for them instead of inheriting a
+// fabricated install route from another host.
+const HOSTS_WITHOUT_LIFECYCLE_PROFILE = ["kimi", "grok"];
+
+test("shadow host-support profiles retain parity with canonical providers", () => {
+  const profiles = listHostProfiles();
+  const catalogHosts = new Set(hostIdsFor(HOST_CAPABILITIES.AGENT_CUSTOMIZE));
+
+  assert.deepEqual(
+    sortedSet(profiles.map((profile) => profile.provider)),
+    sortedSet(profiles.map((profile) => profile.hostId)),
+    "host-support provider references disagree with their host ids",
+  );
+  for (const profile of profiles) {
+    assert.ok(catalogHosts.has(profile.hostId), `host-support profile is not a catalog host: ${profile.hostId}`);
+    assert.ok(PROVIDER_COLLECTORS.has(profile.provider), `missing public inventory provider for ${profile.hostId}`);
+    assert.ok(profile.surfaces.length > 0, `host-support profile has no surfaces: ${profile.hostId}`);
+  }
+
+  const profiledHosts = new Set(profiles.map((profile) => profile.hostId));
+  assert.deepEqual(
+    [...catalogHosts].filter((hostId) => !profiledHosts.has(hostId)),
+    HOSTS_WITHOUT_LIFECYCLE_PROFILE,
+    "hosts without a lifecycle profile must stay explicit",
+  );
+});
+
+test("session-analysis platform loader matches its declared capability slice", async () => {
+  for (const platform of hostIdsFor(HOST_CAPABILITIES.SESSION_ANALYSIS)) {
     const platformModule = path.join(process.cwd(), "scripts", "session-analysis", "platforms", `${platform}.mjs`);
     assert.ok(existsSync(platformModule), `missing session platform module: ${platformModule}`);
   }
@@ -76,11 +110,11 @@ test("session-analysis platform loader declares exactly the supported platforms"
   }
   const declared = message.match(/Supported platforms: ([a-z, ]+)\./u)?.[1];
   assert.ok(declared, `platform loader did not fail closed with a supported list: ${message}`);
-  assertSameSet(declared.split(", "), "session-analysis loadPlatform error");
+  assertCapabilitySet(declared.split(", "), HOST_CAPABILITIES.SESSION_ANALYSIS, "session-analysis loadPlatform error");
 
   const declaredHelp = SESSION_ANALYSIS_HELP.match(/--platform <([a-z|]+)>/u)?.[1];
   assert.ok(declaredHelp, `exported session-analysis help does not declare a platform list:\n${SESSION_ANALYSIS_HELP}`);
-  assertSameSet(declaredHelp.split("|"), "SESSION_ANALYSIS_HELP platform list");
+  assertCapabilitySet(declaredHelp.split("|"), HOST_CAPABILITIES.SESSION_ANALYSIS, "SESSION_ANALYSIS_HELP platform list");
 });
 
 test("session-analysis CLI help and platform gate agree with the supported platforms", () => {
@@ -89,13 +123,13 @@ test("session-analysis CLI help and platform gate agree with the supported platf
 
   const declared = result.stdout.match(/--platform <([a-z|]+)>/u)?.[1];
   assert.ok(declared, `session-analysis help does not declare a platform list:\n${result.stdout}`);
-  assertSameSet(declared.split("|"), "session-analysis --help platform list");
+  assertCapabilitySet(declared.split("|"), HOST_CAPABILITIES.SESSION_ANALYSIS, "session-analysis --help platform list");
 
   const gated = runBetterHarness(["session-analysis", "sources", "--platform", "__unsupported__", "--workspace", "."]);
   assert.notEqual(gated.status, 0, "session-analysis CLI accepted an unsupported platform");
   const gateDeclared = `${gated.stderr}${gated.stdout}`.match(/Supported platforms: ([a-z, ]+)\./u)?.[1];
   assert.ok(gateDeclared, `session-analysis CLI did not fail closed with a supported list:\n${gated.stderr}`);
-  assertSameSet(gateDeclared.split(", "), "session-analysis CLI platform gate");
+  assertCapabilitySet(gateDeclared.split(", "), HOST_CAPABILITIES.SESSION_ANALYSIS, "session-analysis CLI platform gate");
 });
 
 test("harness analyze help and platform gate agree with the supported platforms", () => {
@@ -104,7 +138,11 @@ test("harness analyze help and platform gate agree with the supported platforms"
 
   const declared = help.stdout.match(/--platform <name>\s+([a-z, ]+or [a-z]+)/u)?.[1];
   assert.ok(declared, `harness analyze help does not declare a platform list:\n${help.stdout}`);
-  assertSameSet(declared.match(/[a-z]+/gu).filter((word) => word !== "or"), "harness analyze --help platform list");
+  assertCapabilitySet(
+    declared.match(/[a-z]+/gu).filter((word) => word !== "or"),
+    HOST_CAPABILITIES.HARNESS_REPORT,
+    "harness analyze --help platform list",
+  );
 
   const gated = runBetterHarness(["harness", "analyze", "--platform", "__unsupported__", "--workspace", ".", "--format", "json"]);
   assert.notEqual(gated.status, 0, "harness analyze accepted an unsupported platform");
@@ -112,7 +150,7 @@ test("harness analyze help and platform gate agree with the supported platforms"
   assert.match(gatedOutput, /unsupported Harness report platform/u);
   const gateDeclared = gatedOutput.match(/Supported platforms: ([a-z, ]+)\./u)?.[1];
   assert.ok(gateDeclared, `harness analyze did not name the supported set on rejection:\n${gatedOutput}`);
-  assertSameSet(gateDeclared.split(", "), "harness analyze platform gate");
+  assertCapabilitySet(gateDeclared.split(", "), HOST_CAPABILITIES.HARNESS_REPORT, "harness analyze platform gate");
 });
 
 test("asset-baseline provider gate lists exactly the supported platforms", () => {
@@ -121,13 +159,13 @@ test("asset-baseline provider gate lists exactly the supported platforms", () =>
 
   const declared = `${result.stderr}${result.stdout}`.match(/Supported providers: ([a-z, ]+)\./u)?.[1];
   assert.ok(declared, `asset-baseline did not fail closed with a supported list:\n${result.stderr}`);
-  assertSameSet(declared.split(", "), "asset-baseline provider gate");
+  assertCapabilitySet(declared.split(", "), HOST_CAPABILITIES.ASSET_PRACTICES, "asset-baseline provider gate");
 });
 
-test("host adapter matrix documents exactly the supported platforms", () => {
+test("host adapter matrix documents every catalog host and its explicit capability modules", () => {
   const matrix = readFileSync(adapterMatrixPath, "utf8");
 
-  for (const platform of SUPPORTED_PLATFORMS) {
+  for (const platform of HOST_IDS) {
     assert.ok(
       matrix.includes(`scripts/agent-customize/providers/${platform}.mjs`),
       `adapter matrix is missing the configured-asset provider for ${platform}`,
@@ -140,8 +178,8 @@ test("host adapter matrix documents exactly the supported platforms", () => {
 
   const documentedProviders = [...matrix.matchAll(/agent-customize\/providers\/([a-z-]+)\.mjs/gu)].map((match) => match[1]);
   const documentedPlatforms = [...matrix.matchAll(/session-analysis\/platforms\/([a-z-]+)\.mjs/gu)].map((match) => match[1]);
-  assertSameSet(documentedProviders, "adapter matrix configured-asset providers");
-  assertSameSet(documentedPlatforms, "adapter matrix session platforms");
+  assertCapabilitySet(documentedProviders, HOST_CAPABILITIES.AGENT_CUSTOMIZE, "adapter matrix configured-asset providers");
+  assertCapabilitySet(documentedPlatforms, HOST_CAPABILITIES.SESSION_ANALYSIS, "adapter matrix session platforms");
 });
 
 test("adapter-matrix portable HTML hosts appear in the portable HTML report route", () => {
@@ -156,8 +194,8 @@ test("adapter-matrix portable HTML hosts appear in the portable HTML report rout
   }
 
   const prefixCollisionRouting = routing.replace(
-    ", or WorkBuddy, or a portable visual is explicitly requested",
-    ", or WorkBuddy Enterprise, or a portable visual is explicitly requested",
+    ", WorkBuddy, or Grok, or a portable visual is explicitly requested",
+    ", WorkBuddy Enterprise, or Grok, or a portable visual is explicitly requested",
   );
   assert.notEqual(prefixCollisionRouting, routing, "prefix-collision fixture did not replace the WorkBuddy route entry");
   assert.deepEqual(missingPortableHtmlRouteHosts(matrix, prefixCollisionRouting), ["WorkBuddy"]);

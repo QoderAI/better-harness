@@ -7,99 +7,51 @@ body:
   - type: markdown
     attributes:
       value: |
-        Describe the user or maintainer outcome before the implementation. Read `docs/community.md` when proposing a Skill, model, detector, hook, adapter, report mode, or style.
+        Tell us the user or maintainer outcome you want. A rough idea is enough; maintainers can help shape scope and validation.
 
   - type: checkboxes
     id: preflight
     attributes:
       label: Preflight
       options:
-        - label: I searched existing issues and current extension surfaces.
+        - label: I searched existing issues for a similar request.
           required: true
 
   - type: textarea
     id: problem
     attributes:
-      label: Problem
-      description: What recurring task, failure, or missing capability creates the need?
+      label: What problem are you trying to solve?
+      description: Describe the recurring task, failure, or missing capability.
+      placeholder: I often need to ... but Better Harness currently ...
     validations:
       required: true
 
   - type: textarea
     id: outcome
     attributes:
-      label: Desired outcome
-      description: State observable acceptance conditions without prescribing unnecessary implementation detail.
-    validations:
-      required: true
-
-  - type: dropdown
-    id: surface
-    attributes:
-      label: Likely extension surface
-      options:
-        - Existing Skill guidance or references
-        - New or extended Skill workflow
-        - Model, detector, or analysis capability
-        - Hook or lifecycle enforcement
-        - Host adapter or packaging
-        - Report mode, template, or visual style
-        - Documentation or community process
-        - Unsure
-    validations:
-      required: true
-
-  - type: dropdown
-    id: host
-    attributes:
-      label: Host scope
-      options:
-        - Host-neutral
-        - Claude Code
-        - Codex
-        - Qoder
-        - Cursor
-        - Multiple hosts
-        - Other or unsure
+      label: What would success look like?
+      description: Describe the visible result without needing to design the implementation.
+      placeholder: I would be able to ...
     validations:
       required: true
 
   - type: textarea
-    id: evidence
+    id: scope
     attributes:
-      label: Evidence and frequency
-      description: Provide bounded examples, issue links, or a synthetic fixture showing why this should become a durable project capability.
-
-  - type: textarea
-    id: proposal
-    attributes:
-      label: Proposed approach
-      description: Name the canonical owner, activation path, validation evidence, and compatibility boundary if known.
-
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives considered
-      description: Explain why existing guidance, a one-off command, or another extension surface is insufficient.
-
-  - type: textarea
-    id: risk
-    attributes:
-      label: Compatibility and delivery impact
-      description: Note host coupling, generated-artifact changes, migration needs, or breaking behavior. Write "None known" only after considering each boundary.
+      label: Where would this be used?
+      description: Name any affected host, command, Skill, report, docs page, or workflow if you know it.
+      placeholder: Qoder, Cursor, standalone CLI, reports, docs, unsure...
     validations:
       required: true
 
   - type: textarea
-    id: validation
+    id: examples
     attributes:
-      label: Validation plan
-      description: What fixture, test, preview, package check, or cross-platform evidence would prove the outcome?
+      label: Examples or evidence
+      description: Add links, screenshots, repeated cases, or a short scenario if available.
 
-  - type: checkboxes
-    id: contribution
+  - type: textarea
+    id: notes
     attributes:
-      label: Contribution
-      options:
-        - label: I am willing to help refine a spec or acceptance scenarios.
-        - label: I am willing to submit a focused implementation after maintainers confirm the owner and scope.
+      label: Anything else?
+      description: Add constraints, compatibility concerns, alternatives, or willingness to contribute if helpful.

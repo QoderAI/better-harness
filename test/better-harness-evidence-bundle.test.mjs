@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -8,7 +10,11 @@ import {
   freezeEvidenceBundleContext,
 } from "../scripts/harness-analysis/evidence-bundle/index.mjs";
 import { availableLane } from "../scripts/harness-analysis/evidence-bundle/contract.mjs";
-import { collectSessionEvidence } from "../scripts/harness-analysis/evidence-bundle/session-evidence.mjs";
+import {
+  collectSessionEvidence,
+  collectSessionPopulation,
+} from "../scripts/harness-analysis/evidence-bundle/session-evidence.mjs";
+import { workspaceToClaudeSlugVariants } from "../scripts/session-analysis/platforms/claude.mjs";
 import { collectAgentCustomize } from "../scripts/harness-analysis/evidence-bundle/agent-customize.mjs";
 import { EVIDENCE_BUNDLE_HELP } from "../scripts/harness-analysis/evidence-bundle/cli.mjs";
 
@@ -110,8 +116,9 @@ function leadEvidence(overrides = {}) {
 }
 
 test("evidence-bundle help advertises WorkBuddy and its isolated home override", () => {
-  assert.match(EVIDENCE_BUNDLE_HELP, /pi, or workbuddy/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /pi, kimi, workbuddy, or grok/u);
   assert.match(EVIDENCE_BUNDLE_HELP, /--workbuddy-home <dir>/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /--grok-home <dir>/u);
 });
 
 function topologyResolution(workspace = ".", status = "complete") {
@@ -440,6 +447,40 @@ test("Claude agentCustomize lane routes the provider and isolated config paths",
   assert.equal(received["include-user-home"], true);
 });
 
+test("normal agentCustomize evidence accepts a disclosed latest-route sample", async () => {
+  const context = freezeEvidenceBundleContext({
+    workspace: ".",
+    platform: "codex",
+    depth: "normal",
+    "include-user-home": true,
+  }, NOW);
+  const baseline = {
+    kind: "agent-asset-baseline",
+    status: "complete",
+    envelopes: {
+      inventory: {
+        status: "available",
+        data: {
+          ownerRoutes: {
+            items: Array.from({ length: 16 }, (_, index) => ({ name: `asset-${index}` })),
+            total: 55,
+            omitted: 39,
+            truncated: true,
+            selection: { strategy: "latest-modified", limit: 16 },
+          },
+        },
+      },
+    },
+    diagnostics: { truncatedStages: [], sampledStages: ["inventory-owner-routes"] },
+  };
+  const lane = await collectAgentCustomize(context, {}, {
+    collectAssetBaseline: async () => baseline,
+  });
+
+  assert.equal(lane.status, "available");
+  assert.equal(lane.data, baseline);
+});
+
 test("Qwen agentCustomize lane routes the provider and isolated config paths", async () => {
   const context = freezeEvidenceBundleContext({
     workspace: ".",
@@ -485,6 +526,30 @@ test("Pi agentCustomize lane routes the provider and isolated config paths", asy
   assert.equal(received["pi-home"], "/tmp/fixture-pi-home");
   assert.equal(received["include-user-home"], true);
 });
+
+test("Kimi agentCustomize lane routes the provider and isolated config paths", async () => {
+  const context = freezeEvidenceBundleContext({
+    workspace: ".",
+    platform: "kimi",
+    depth: "quick",
+    "include-user-home": true,
+  }, NOW);
+  let received;
+  const lane = await collectAgentCustomize(context, {
+    "kimi-home": "/tmp/fixture-kimi-home",
+  }, {
+    collectAssetBaseline: async (options) => {
+      received = options;
+      return { kind: "agent-asset-baseline", status: "complete" };
+    },
+  });
+
+  assert.equal(lane.status, "available");
+  assert.equal(received.provider, "kimi");
+  assert.equal(received["kimi-home"], "/tmp/fixture-kimi-home");
+  assert.equal(received["include-user-home"], true);
+});
+
 
 test("shared Session population excludes the active session before both lanes hydrate", async () => {
   const population = Object.freeze({
@@ -573,6 +638,55 @@ test("Session facts reject counts that contradict the shared all-eligible popula
   );
 });
 
+test("Claude population freeze and Session facts agree under one frozen topology", async () => {
+  const fixture = await realpath(await mkdtemp(path.join(os.tmpdir(), "evidence-bundle-claude-binding-")));
+  try {
+    const workspace = path.join(fixture, "workspace");
+    const elsewhere = path.join(fixture, "elsewhere");
+    const home = path.join(fixture, ".claude");
+    await mkdir(workspace, { recursive: true });
+    const projectRoot = path.join(home, "projects", workspaceToClaudeSlugVariants(workspace)[0]);
+    await mkdir(projectRoot, { recursive: true });
+    const row = (sessionId, cwd, second) => JSON.stringify({
+      type: "user",
+      sessionId,
+      cwd,
+      timestamp: `2026-07-20T10:00:0${second}.000Z`,
+      message: { role: "user", content: [{ type: "text", text: "Inspect the selected workspace" }] },
+    });
+    await writeFile(
+      path.join(projectRoot, "clean-private.jsonl"),
+      `${row("clean-private", workspace, 0)}\n${row("clean-private", workspace, 1)}\n`,
+    );
+    await writeFile(
+      path.join(projectRoot, "conflict-private.jsonl"),
+      `${row("conflict-private", workspace, 0)}\n${row("conflict-private", elsewhere, 1)}\n`,
+    );
+    const resolution = topologyResolution(workspace);
+    const context = freezeEvidenceBundleContext({
+      workspace,
+      platform: "claude",
+      depth: "normal",
+      since: "2026-07-01T00:00:00.000Z",
+      until: "2026-07-24T08:00:00.000Z",
+      topology: resolution.topology,
+      analysisScope: resolution.analysisScope,
+    }, NOW);
+    const options = { "claude-home": home };
+
+    const population = await collectSessionPopulation(context, options);
+    assert.equal(population.binding.eligible.count, 1);
+
+    const lane = await collectSessionEvidence(context, options, { sessionPopulation: population });
+    assert.equal(lane.status, "available");
+    assert.equal(lane.data.scope.eligibleSessions, population.binding.eligible.count);
+    assert.equal(lane.data.scope.selectedSessions, population.binding.eligible.count);
+    assert.doesNotMatch(JSON.stringify(lane.data), /clean-private|conflict-private/u);
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
 test("zero-signal Episode admission remains valid inside one bound population", async () => {
   const result = await collectEvidenceBundle({ workspace: ".", platform: "codex" }, dependencies());
 
@@ -586,6 +700,7 @@ test("zero-signal Episode admission remains valid inside one bound population", 
     leadZeroSignalDiscardedEpisodes: 1,
   });
 });
+
 
 test("WorkBuddy agentCustomize lane routes the provider and isolated config paths", async () => {
   const context = freezeEvidenceBundleContext({

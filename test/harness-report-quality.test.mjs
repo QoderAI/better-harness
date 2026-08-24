@@ -1116,6 +1116,67 @@ Current state is L3 candidate because Codex assets appear configured.
   assert.equal(quality.status, "fail");
   assert.ok(quality.errors.some((error) => /session-analysis\.mjs sources/i.test(error)));
   assert.ok(quality.errors.some((error) => /session-analysis\.mjs facets/i.test(error)));
+
+});
+
+test("harness report quality flags kimi-only session scope without session-analysis evidence", () => {
+  const report = `# Better Harness Readiness Report
+
+## Executive Verdict
+
+Current state is L3 candidate because Kimi assets appear configured.
+
+## Evidence Boundary
+
+- AI Agent practice scope: inspected ~/.kimi-code/sessions, Skills, and Session Insights.
+
+## Risk Findings
+
+| Severity | Finding | Affected subsystem | Blast radius | Evidence strength | Root-cause chain | Risk if unfixed | Pass check |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Medium | Session evidence missing | Kimi practice analysis | Runtime behavior may be inferred from static files | Confirmed report gap | .kimi-code inventory -> no workspace session probe -> runtime unknown | Reports may claim workflow habits without current-project session evidence | Run workspace-scoped session-analysis sources and facets |
+
+## Readiness Scorecard
+
+| Dimension | Level | Confidence | Strongest evidence | Main gap |
+| --- | --- | --- | --- | --- |
+| Adaptive Engineering Loop | L3 | Medium | Kimi session files exist | session-analysis not cited |
+
+## Signals And Diagnosis
+
+### AI Agent Practices
+
+| Surface | Evidence | Diagnosis | Confidence |
+| --- | --- | --- | --- |
+| Skills | Project skill files exist | candidate positive practice evidence | Medium |
+| Session Insights | session habits are asserted | unsupported without analyzer output | Low |
+
+## Action Pathways
+
+| Pathway | Trigger evidence | Next action | Pass check | Owner | Timing | Evidence artifact | Impact |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Session analysis | .kimi-code is in scope | run sources and facets for this workspace | commands are cited | maintainer | Now | session-analysis output | Medium |
+
+## Unverified Items
+
+- Workspace session coverage.
+`;
+
+  const quality = evaluateHarnessReportQuality(report);
+
+  assert.equal(quality.status, "fail");
+  assert.ok(quality.errors.some((error) => /session-analysis\.mjs sources/i.test(error)));
+  assert.ok(quality.errors.some((error) => /session-analysis\.mjs facets/i.test(error)));
+
+  const grokQuality = evaluateHarnessReportQuality(
+    report
+      .replaceAll("Kimi", "Grok")
+      .replaceAll("kimi", "grok")
+      .replaceAll(".grok-code", ".grok"),
+  );
+  assert.equal(grokQuality.status, "fail");
+  assert.ok(grokQuality.errors.some((error) => /session-analysis\.mjs sources/i.test(error)));
+  assert.ok(grokQuality.errors.some((error) => /session-analysis\.mjs facets/i.test(error)));
 });
 
 test("harness report quality requires practice surfaces inside the practice diagnosis", () => {

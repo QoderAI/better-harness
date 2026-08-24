@@ -14,7 +14,7 @@ import {
 } from "./task-loop-report.mjs";
 import { findingTargetErrors } from "../workspace-topology/index.mjs";
 
-const ALLOWED_MODES = new Set(["qoder-canvas", "markdown", "html"]);
+const ALLOWED_MODES = new Set(["qoder-canvas", "cursor-canvas", "markdown", "html"]);
 const ALLOWED_LANGUAGES = new Set(["en", "zh-CN"]);
 const FINDING_OUTPUT_FIELDS = [
   "id",

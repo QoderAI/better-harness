@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for reporting a bug. Please keep the reproduction focused on the observable problem.
+        Thanks for reporting a bug. Share the shortest path to the observable problem; maintainers can ask for deeper diagnostics later.
 
   - type: checkboxes
     id: preflight
@@ -17,19 +17,20 @@ body:
         - label: I searched existing issues for this problem.
           required: true
 
-  - type: input
-    id: version
+  - type: textarea
+    id: summary
     attributes:
-      label: Better Harness version
-      description: Copy the version from installed package or plugin metadata. If unavailable, enter a commit SHA or unknown.
-      placeholder: x.y.z, commit SHA, or unknown
+      label: What happened?
+      description: Describe the failure in one or two sentences.
+      placeholder: The report command fails when ...
     validations:
       required: true
 
   - type: dropdown
     id: host
     attributes:
-      label: Host
+      label: Where did it happen?
+      description: Pick the closest host or runtime.
       options:
         - Claude Code
         - Codex
@@ -43,86 +44,46 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: operating-system
-    attributes:
-      label: Operating system
-      options:
-        - Windows
-        - macOS
-        - Linux
-        - Other
-    validations:
-      required: true
-
-  - type: dropdown
-    id: installation
-    attributes:
-      label: Installation method
-      options:
-        - Bundled with Qoder Desktop
-        - Host marketplace or plugin manager
-        - Qwen Code extension
-        - Cursor source-local --plugin-dir
-        - Pi package (pi install or pi -e)
-        - npm package or standalone CLI
-        - Source checkout
-        - Other
-    validations:
-      required: true
-
   - type: input
-    id: command
+    id: environment
     attributes:
-      label: Command or feature
-      placeholder: better-harness report --no-sessions
+      label: Version and environment
+      description: Include the Better Harness version if known, plus OS or install source when relevant.
+      placeholder: x.y.z on macOS via npm, or unknown
     validations:
       required: true
 
   - type: textarea
     id: reproduction
     attributes:
-      label: Minimal reproduction
-      description: Use the smallest repository or fixture that reproduces the problem.
+      label: Steps to reproduce
+      description: Include the command, file, or project state needed to see the issue.
       placeholder: |
-        1. Start from ...
-        2. Run ...
-        3. Observe ...
+        1. Run ...
+        2. Open ...
+        3. See ...
     validations:
       required: true
 
   - type: textarea
-    id: expected
+    id: result
     attributes:
-      label: Expected result
-      placeholder: Describe the observable success condition.
+      label: Expected vs actual result
+      description: Tell us what you expected and what happened instead.
+      placeholder: |
+        Expected: ...
+        Actual: ...
     validations:
       required: true
 
   - type: textarea
-    id: actual
+    id: logs
     attributes:
-      label: Actual result
-      description: Include the smallest useful error or artifact excerpt.
-    validations:
-      required: true
-
-  - type: textarea
-    id: diagnostics
-    attributes:
-      label: Diagnostics
-      description: Include relevant Node.js, npm, host versions, or focused test output.
-      render: shell
+      label: Logs or screenshots
+      description: Paste the smallest useful error, test output, report excerpt, or screenshot link.
 
   - type: textarea
     id: additional-context
     attributes:
-      label: Additional context
-      description: Note regressions, workarounds, frequency, and whether the issue reproduces with `--no-sessions` when applicable.
-
-  - type: checkboxes
-    id: contribution
-    attributes:
-      label: Contribution
-      options:
-        - label: I can submit a focused fix or fixture after the issue is triaged.
+      label: Anything else?
+      description: Add regressions, workarounds, frequency, or other context if it helps triage.

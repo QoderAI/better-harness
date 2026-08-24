@@ -966,6 +966,9 @@ function assetScopeIncluded(item, options = {}) {
   if (item.scope === "project") {
     return true;
   }
+  if (item.scope === "plugin" && item.workspaceScoped === true) {
+    return true;
+  }
   if ((options.includeUserHome ?? options["include-user-home"]) && item.scope === "user") {
     return true;
   }

@@ -22,7 +22,7 @@ import TabItem from '@theme/TabItem';
 只有使用独立 CLI、从源码检出运行 Better Harness 或参与本仓库开发时，才需要
 Node.js 和 npm。这些路径支持 Windows、macOS 和 Linux，并要求：
 
-- Node.js `>=22.20.0 <26.0.0`
+- Node.js `>=22.20.0 <25.0.0`
 - npm `>=10.9.3 <12.0.0`
 
 使用独立或源码 CLI 前，请检查当前运行时：
@@ -32,11 +32,29 @@ node --version
 npm --version
 ```
 
-Cursor 使用源码本地插件，还需要 Git 来克隆本仓库。
+## 检查并规划生命周期变更 {#lifecycle-cli}
+
+独立 CLI 提供 Better Harness 安装证据的只读视图。它不会访问远程注册表、
+修改宿主配置，也不会执行生命周期计划中的步骤：
+
+```bash
+better-harness plugin status --host all
+better-harness doctor --platform all
+better-harness plugin plan install --host qwen --surface cli --scope user
+better-harness plugin verify --host qwen --surface cli
+```
+
+计划会保留宿主差异，不会伪造统一的变更路径。Qoder Desktop 为内置分发，
+Codex Desktop 返回手工 UI 步骤；Cursor 在原生命令合同完成核对前只保留会话级
+状态；Pi 缺少当前原生证据的操作为手工或不可用；WorkBuddy 没有可管理的插件
+生命周期入口。CLI 不提供 `plugin apply` 命令。
+
+可以使用 Git 克隆并检查 Cursor manifest，但仅存在 manifest 并不能证明当前
+存在受支持的安装路径。
 
 :::tip 没有找到你的 Coding Agent？
 
-下方六个标签页是已验证的快速开始路径，项目当前共跟踪八个宿主适配器。
+下方六个标签页是已验证的快速开始路径，项目当前共跟踪九个宿主适配器。
 请先[比较全部适配器的支持边界](./hosts/adapter-matrix)；如果希望新增或补全
 一个集成，再[按照新增宿主贡献流程与 PR 示例操作](./hosts/contributing-new-coding-agent)。
 开始重复工作前，也可以先[查看仓库当前的 Pull Requests](https://github.com/QoderAI/better-harness/pulls)。
@@ -161,13 +179,14 @@ Marketplace 或本地插件安装。两个入口任选其一：
 如果已安装 Qoder Desktop，Better Harness 在 Qoder CLI 中开箱即用，无需
 marketplace 或插件安装。
 
-只有在不安装 Qoder Desktop 而单独使用 Qoder CLI 时，才需要手动把本仓库
-添加为 marketplace 并安装：
+只有在不安装 Qoder Desktop 而单独使用 Qoder CLI 时，才需要在遵循 Qoder 原生
+marketplace 流程前检查当前手工安装状态：
 
 ```bash
-qodercli plugin marketplace add "https://github.com/QoderAI/better-harness.git"
-qodercli plugin install better-harness@better-harness
+better-harness plugin plan install --host qoder --surface cli --scope user
 ```
+
+由于当前原生 help 与本仓库历史文档不一致，计划器不会输出旧版安装语法。
 
 ### 验证安装
 
@@ -179,6 +198,7 @@ qodercli plugin install better-harness@better-harness
 
 ```bash
 qodercli plugin list
+better-harness plugin verify --host qoder --surface cli
 ```
 
 然后开启新的 Qoder CLI 会话再使用 `/better-harness`。
@@ -188,24 +208,32 @@ qodercli plugin list
 
 ## Cursor {#cursor}
 
-Cursor 插件尚未发布到 marketplace。可在单次 Cursor Agent 会话中加载源码
-本地插件：
+Cursor 插件尚未发布到 marketplace。仓库包含源码本地 manifest，但当前本机
+Cursor help 没有验证历史 `--plugin-dir` 合同，因此 Better Harness 会把安装计划
+标记为不可用，而不会输出该命令：
 
 ```bash
 git clone https://github.com/QoderAI/better-harness.git
-cursor-agent --plugin-dir /path/to/better-harness
+better-harness plugin plan install --host cursor --surface agent --scope session
 ```
 
 ### 验证安装
 
-保持这个 Cursor Agent 会话处于打开状态，并运行：
+原生安装合同仍不可用时，不要声称 Cursor Agent 会话已经加载 Better Harness。
+先检查有界的本地证据：
+
+```bash
+better-harness plugin verify --host cursor --surface agent
+```
+
+只有未来或其他独立验证的原生路径确实加载插件后，才保持同一个 Cursor Agent
+会话处于打开状态并运行：
 
 ```text
 /better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
 ```
 
-开始分析即表示源码本地 Skill 已在本次会话加载。Cursor 不会把这个检出目录安装
-到全局；后续会话仍需使用相同的 `--plugin-dir` 参数启动。
+无法观察运行时激活状态时，验证结果会保留为 partial。
 
 Cursor 会话证据通过与工作区匹配的转录、元数据和审计日志提供支持。部分或
 不可用的覆盖范围会保持显式标注。
@@ -223,7 +251,8 @@ qwen extensions install QoderAI/better-harness
 
 ### 验证安装
 
-在要分析的仓库中启动新的 Qwen Code 会话，然后运行报告提示词：
+运行 `qwen extensions list` 并确认其中包含 Better Harness。然后在要分析的
+仓库中启动新的 Qwen Code 会话，并运行报告提示词：
 
 ```text
 /better-harness 分析此项目的 AI 编码工作流并生成基于证据的报告
