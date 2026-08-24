@@ -121,7 +121,7 @@
     "yaml": "2.9.0"
   },
   "devDependencies": {
-    "conventional-changelog-cli": "^4.1.0",
+    "conventional-changelog-cli": "^5.0.0",
     "vitest": "4.1.10"
   }
 }
