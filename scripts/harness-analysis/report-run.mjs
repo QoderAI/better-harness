@@ -12,6 +12,7 @@ import {
   hostIdsFor,
 } from "../host-support/index.mjs";
 import { parseArgs } from "../session-analysis/index.mjs";
+import { resolveConfiguredCwd } from "../workspace-topology/index.mjs";
 import { formatHarnessEvidence } from "./evidence-brief.mjs";
 import { validateHarnessReportSource } from "./report-source/index.mjs";
 import { projectTaskLoopReportFacts, taskLoopCanvasFromSummaryFacts } from "./task-loop-report.mjs";
@@ -28,6 +29,7 @@ an explicit Qoder Canvas output is requested.
 
 Options:
   --workspace <path>       Target workspace (required)
+  --cwd <path>             Configured-practice cwd (default: workspace)
   --platform <name>        ${formatHostList(REPORT_PLATFORMS)} (default: qoder)
   --language <locale>      en or zh-CN (default: en)
   --since <ISO timestamp>  Include sessions at or after the frozen window start
@@ -64,7 +66,7 @@ function flagEnabled(value) {
 
 function assertCliOptions(options) {
   const allowed = new Set([
-    "workspace", "platform", "language", "since", "until", "format", "canvas-out", "replace-canvas", "include-global-capabilities",
+    "workspace", "cwd", "platform", "language", "since", "until", "format", "canvas-out", "replace-canvas", "include-global-capabilities",
     ...hostHomeOptionKeys(REPORT_PLATFORMS),
   ]);
   const positional = Array.isArray(options._) ? options._ : [];
@@ -162,7 +164,7 @@ export async function analyzeHarnessEvidence(options = {}) {
   const sourceResult = options.sourceInput
     ? { source: clone(options.sourceInput), sessionBinding: options.sessionBinding ?? null }
     : await createTaskLoopSourceFromSessions({
-        workspace,
+        ...resolveConfiguredCwd({ workspace, cwd: options.cwd ?? workspace }),
         platform,
         language,
         since: options.since,

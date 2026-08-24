@@ -153,10 +153,12 @@ comparison with `npm run test:dsh-configured-assets-native`. The complete
 configured-assets boundary is documented in the
 [adapter matrix](./hosts/adapter-matrix#deepseek-harness-dsh).
 
-This maturity level does not provide complete runtime configured-asset
-resolution, evidence-bundle or report registration, output routing, rendering,
-lifecycle management, MCP/profile product support, Web `minimal`, or a full
-report workflow. The
+Shared read-only analysis is available through `harness evidence-bundle` and
+`harness analyze`; pass `--workspace <path> --cwd <effective-cwd> --platform dsh`.
+The configured cwd must resolve inside the workspace. DSH still does not provide
+complete runtime configured-asset resolution, output routing, rendering,
+Checkup, lifecycle management, MCP/profile product support, Web `minimal`, a
+public Quickstart, or a full durable report workflow. The
 [adapter matrix](./hosts/adapter-matrix#deepseek-harness-dsh) tracks the exact
 boundary.
 

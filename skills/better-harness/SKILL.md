@@ -19,11 +19,11 @@ Resolve the Skill path, `<better-harness-root>` as `../..`, a supported `<node>`
 and `<cli>` as `<node> <better-harness-root>/scripts/better-harness.mjs`. Stop if
 any owner is missing; never select another cache or runtime by search order.
 
-Resolve the absolute target, decision, acceptance boundary, risks, locale (the
-user's request language unless explicitly changed), output mode, provider
-scope, and evidence depth. Quick uses three assets or Episodes and the previous 7 days; normal uses five and the previous 30 days.
-Default Qoder/Cursor to durable Canvas; default others to durable HTML.
-Only an explicit inline or no-files request writes nothing.
+Resolve absolute target, decision, acceptance boundary, risks, locale (request
+language by default), output mode, provider, and depth. Quick uses three items
+and 7 days; normal uses five and 30 days. Default Qoder/Cursor to durable Canvas
+and other rendering hosts to HTML. DSH without REPORT_RENDERING proceeds only
+inline or no-files and must not create HTML, Markdown, or Canvas output.
 Keep providers separate. Use the current one unless project-wide review
 explicitly authorizes multiple supported providers.
 Qoder project Memory title metadata is part of
@@ -35,7 +35,7 @@ Before delegation, collect one versioned evidence bundle per authorized
 provider:
 
 ```text
-<cli> harness evidence-bundle --platform <provider> --workspace <target> --language <locale> --depth <quick|normal> --since <window-start> --until <window-end> --format json [--include-memories] [--include-user-home] [--canvas-out <run-dir>/canvas.json]
+<cli> harness evidence-bundle --platform <provider> --workspace <target> --cwd <effective-cwd> --language <locale> --depth <quick|normal> --since <window-start> --until <window-end> --format json [--include-memories] [--include-user-home] [--canvas-out <run-dir>/canvas.json]
 ```
 
 Use `--canvas-out` only for Qoder/Cursor durable reports. For Qoder, keep the

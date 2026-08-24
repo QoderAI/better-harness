@@ -35,6 +35,7 @@ async function collectLead(context, options, analyze, sessionPopulation) {
   try {
     const data = await analyze({
       workspace: context.workspace,
+      cwd: context.cwd,
       platform: context.provider,
       language: context.language,
       since: context.window.since,

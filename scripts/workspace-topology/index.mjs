@@ -180,3 +180,4 @@ export {
   findingTargetFromTopology,
   validateFindingTarget,
 } from "./finding-target.mjs";
+export { pathIsContained, resolveConfiguredCwd } from "./configured-cwd.mjs";

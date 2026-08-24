@@ -3,7 +3,8 @@
 This is the single entry point for Claude Code, Codex, Qoder, Cursor, Qwen,
 GitHub Copilot, Pi, Kimi Code, WorkBuddy, and Grok host boundaries, plus the
 DeepSeek Harness (DSH) verified install/discovery, developer-preview
-configured-assets, and developer-preview session slices. Do not
+configured-assets, session, Asset Practices, neutral Harness analysis, and
+Evidence Bundle slices. Do not
 create `docs/adapters/claude-code.md`, `docs/adapters/codex.md`,
 `docs/adapters/qoder.md`, `docs/adapters/cursor.md`, `docs/adapters/qwen.md`,
 `docs/adapters/copilot.md`, `docs/adapters/pi.md`,
@@ -45,7 +46,7 @@ project `.kimi-code/skills/`), then runs `/skill:better-harness`.
 | Kimi Code | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | `scripts/agent-customize/providers/kimi.mjs` | `scripts/session-analysis/platforms/kimi.mjs` | self-contained HTML + Markdown | `AGENTS.md` + `~/.kimi-code/skills` + project `.kimi-code/skills`/`.kimi/skills` + `~/.kimi-code/mcp.json` | `harness evidence-bundle --platform kimi` -> validated `html` render |
 | WorkBuddy | Analysis-capable source-local host | none (skills install into `~/.workbuddy/skills`) | `scripts/agent-customize/providers/workbuddy.mjs` | `scripts/session-analysis/platforms/workbuddy.mjs` | self-contained HTML + Markdown | `~/.workbuddy` `AGENTS.md` + identity files + `.agents` + `AGENTS.md` | `session-analysis --platform workbuddy sources` -> validated `html` render |
 | Grok | Analysis-capable source-local host | none (skills install into `~/.grok/skills`) | `scripts/agent-customize/providers/grok.mjs` | `scripts/session-analysis/platforms/grok.mjs` | self-contained HTML + Markdown | `~/.grok` + `.grok` + `.agents` + `AGENTS.md` | `session-analysis --platform grok sources` -> skill symlink -> validated `html` render |
-| DeepSeek Harness (DSH) | Verified install/discovery for headless/base and Web `standard`/`code`/`cordis`; partial configured assets and session evidence (developer preview) | local DSH Cordis policy at `scripts/dsh-skill-discovery/index.mjs`; no lifecycle shell | `scripts/agent-customize/providers/dsh.mjs`; filesystem Skills and cwd-sensitive Instructions, configured-not-observed | `scripts/session-analysis/platforms/dsh.mjs`; `dsh-v1` for the audited format-0 session-evidence slice from DSH `dsh-v0.1.0-rc.7` and `dsh-v0.1.0-rc.8`, raw `.jsonl` and feature-detected `.jsonl.zstd` | unavailable; no report route | canonical Skill from the complete root; model Skill calls rejected | `npm run test:dsh-native`; `npm run test:dsh-configured-assets-native`; read-only session `sources`/`facts` commands remain separate |
+| DeepSeek Harness (DSH) | Verified install/discovery for headless/base and Web `standard`/`code`/`cordis`; shared read-only analysis over developer-preview configured and Session evidence | local DSH Cordis policy at `scripts/dsh-skill-discovery/index.mjs`; no lifecycle shell | `scripts/agent-customize/providers/dsh.mjs`; filesystem Skills and cwd-sensitive Instructions, configured-not-observed | `scripts/session-analysis/platforms/dsh.mjs`; `dsh-v1` for the audited format-0 session-evidence slice from DSH `dsh-v0.1.0-rc.7` and `dsh-v0.1.0-rc.8`, raw `.jsonl` and feature-detected `.jsonl.zstd` | unavailable; neutral `harness analyze` and Evidence Bundle only | canonical Skill from the complete root; model Skill calls rejected | `npm run test:dsh-native`; `npm run test:dsh-configured-assets-native`; shared analysis remains inline/no-files |
 
 ## Read-only Plugin Lifecycle
 
@@ -220,8 +221,9 @@ edit host settings, or register an `apply` path.
   `--include-user-home` is supplied. The evidence is
   `configured-not-observed`: runtime/in-process Skills and active Cordis,
   Profile, and Preset composition remain unresolved. DSH advertises exactly
-  `sessionAnalysis` and `agentCustomize`; it does not gain asset-practices,
-  checkup, evidence-bundle, report, rendering, or output support. See
+  `sessionAnalysis`, `agentCustomize`, `assetPractices`, `harnessReport`, and
+  `evidenceBundle`. Shared analysis accepts a canonical contained `--cwd` and
+  remains inline/no-files because checkup, rendering, and output are unsupported. See
   [DeepSeek Harness Configured Assets](../../references/agent-customize/platforms/dsh.md)
   and run the credential-free owner smoke with
   `npm run test:dsh-configured-assets-native`.
@@ -250,7 +252,7 @@ edit host settings, or register an `apply` path.
   remains readable. There is no fallback dependency or shell.
   The combined DSH boundary does not provide live PTY or process state,
   complete runtime configured-asset resolution, plugin lifecycle, a managed
-  shell, manifest or package integration, report/output routing, README
+  shell, manifest or package integration, rendered report/output routing, README
   Quickstart, SQLite or custom
   persistence, automatic optimization, plugin fault or causality attribution,
   or artifact repair or writes. See
@@ -269,9 +271,9 @@ Canonical templates live under `templates/reporting/`.
   `findings.json`, `report.md`, and `report.html`.
 - Markdown-only output has no visual companion.
 
-DSH is intentionally absent from these output-mode host lists. Its
-`sessionAnalysis` capability does not grant report routing, HTML, Canvas, or
-Markdown output support.
+DSH is intentionally absent from these output-mode host lists. Its neutral
+`harnessReport` capability does not grant rendering, HTML, Canvas, or Markdown
+output support.
 
 ## Split Triggers
 

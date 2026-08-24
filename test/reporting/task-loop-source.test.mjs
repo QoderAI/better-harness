@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "vitest";
@@ -74,6 +74,68 @@ test("Codex task-loop inventory scans only authorized Memory metadata", async ()
     });
     assert.equal(authorized.memories.contentPolicy, "raw-memory-content-not-read");
     assert.doesNotMatch(JSON.stringify(authorized), /private Codex memory body/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("DSH task-loop recollects current configured practice with frozen cwd and closed authority", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-dsh-task-loop-"));
+  const repository = path.join(root, "repository");
+  const workspace = path.join(repository, "packages", "api");
+  const cwd = path.join(workspace, "src");
+  const dshHome = path.join(root, "isolated-dsh-home");
+  try {
+    await mkdir(path.join(repository, ".git"), { recursive: true });
+    await mkdir(cwd, { recursive: true });
+    await mkdir(path.join(repository, ".dsh", "skills", "current-review"), { recursive: true });
+    await mkdir(path.join(dshHome, "skills", "private-user"), { recursive: true });
+    await writeFile(path.join(workspace, "AGENTS.md"), "PRIVATE_INSTRUCTION_SECRET_Y\n");
+    await writeFile(path.join(cwd, "AGENTS.local.md"), "nested local instruction\n");
+    await writeFile(
+      path.join(repository, ".dsh", "skills", "current-review", "SKILL.md"),
+      "---\nname: current-review\ndescription: Current review\n---\nPRIVATE_SKILL_SECRET_X\n",
+    );
+    await writeFile(
+      path.join(dshHome, "skills", "private-user", "SKILL.md"),
+      "---\nname: private-user\ndescription: Private user skill\n---\nUSER_HOME_CANARY\n",
+    );
+
+    const options = {
+      workspace,
+      cwd,
+      dshHome,
+      includeGlobalCapabilities: false,
+    };
+    const first = await collectTaskLoopPracticeInventory(options, "dsh");
+    const second = await collectTaskLoopPracticeInventory(options, "dsh");
+    const canonicalWorkspace = await realpath(workspace);
+    const canonicalCwd = await realpath(cwd);
+
+    assert.ok(first);
+    assert.notEqual(first, second);
+    assert.equal(first.scope.platform, "dsh");
+    assert.equal(first.scope.workspace, canonicalWorkspace);
+    assert.equal(first.scope.cwd, canonicalCwd);
+    assert.equal(first.scope.includeUserHome, false);
+    assert.deepEqual(
+      first.summary.practiceCoverageRows.map((row) => row.surface),
+      ["Rules", "Skills"],
+    );
+    assert.ok(first.surfaces.some((surface) =>
+      surface.type === "rules"
+      && surface.items.some((item) => item.path === path.join(canonicalCwd, "AGENTS.local.md"))));
+    const serialized = JSON.stringify(first);
+    assert.doesNotMatch(serialized, /PRIVATE_SKILL_SECRET_X|PRIVATE_INSTRUCTION_SECRET_Y|USER_HOME_CANARY/u);
+    for (const forbiddenClaim of [
+      "existedAtSessionTime",
+      "usedInSession",
+      "influencedSession",
+      "historicalAbsence",
+      "sameHistoricalAsset",
+    ]) {
+      assert.equal(serialized.includes(forbiddenClaim), false);
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

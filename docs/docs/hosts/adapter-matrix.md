@@ -20,7 +20,8 @@ Quickstart paths. Pi, Kimi Code, WorkBuddy, and Grok are visible as adapter
 support because their installation and end-to-end evidence boundaries differ
 from that six-host set. DSH has Verified install/discovery for a qualified
 runtime/preset boundary plus developer-preview configured-assets and
-session-evidence contracts; it is not a runnable report adapter. The
+session-evidence contracts. It supports shared read-only Asset Practices,
+neutral Harness analysis, and Evidence Bundles, but is not an output adapter. The
 [canonical adapter matrix](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)
 remains the complete capability-level source of truth.
 
@@ -38,7 +39,7 @@ remains the complete capability-level source of truth.
 | Kimi Code | Adapter support | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | Workspace-matching Kimi wire transcripts | Self-contained HTML + Markdown |
 | WorkBuddy | Adapter support | Analysis-capable source-local host | None; skills use WorkBuddy-owned paths | Workspace-matching WorkBuddy JSONL transcripts | Self-contained HTML + Markdown |
 | Grok | Adapter support | Analysis-capable source-local host | None; skills use Grok-owned paths | Workspace-matching Grok session dirs (`updates.jsonl`) | Self-contained HTML + Markdown |
-| DeepSeek Harness (DSH) | Verified install/discovery | Qualified headless/base and Web `standard`/`code`/`cordis`; partial configured-assets and session evidence | Local DSH Cordis policy; no lifecycle shell | DSH JSONL backend session format `0`: raw `.jsonl` and feature-detected `.jsonl.zstd` | Unavailable |
+| DeepSeek Harness (DSH) | Verified install/discovery | Qualified headless/base and Web `standard`/`code`/`cordis`; shared read-only analysis over partial configured-assets and session evidence | Local DSH Cordis policy; no lifecycle shell | DSH JSONL backend session format `0`: raw `.jsonl` and feature-detected `.jsonl.zstd` | Unavailable; inline/no-files analysis only |
 
 The `@qoder-ai/better-harness` npm package includes all seven plugin metadata
 roots. Pi reuses install metadata in the existing `package.json`, so it does
@@ -82,8 +83,8 @@ lifecycle target.
   (see the [sample report](pathname:///demo/better-harness-report/)).
 - **Markdown-only** — no visual companion.
 
-DSH is not an output-mode host. Session-analysis evidence does not grant HTML,
-Canvas, Markdown, or any report route.
+DSH is not an output-mode host. Neutral Harness analysis and Evidence Bundle
+support do not grant HTML, Canvas, Markdown, or durable report routing.
 
 ## Adapter support boundaries
 
@@ -157,8 +158,11 @@ better-harness agent-customize inventory --provider dsh --workspace <path> [--cw
 
 User-home Skills and Instructions are not read by default. Runtime/in-process
 Skills and active Cordis, Profile, and Preset composition remain unresolved.
-The host advertises exactly `sessionAnalysis` and `agentCustomize`; this does
-not add asset-practices, evidence-bundle, report, rendering, or output support.
+The host advertises exactly `sessionAnalysis`, `agentCustomize`,
+`assetPractices`, `harnessReport`, and `evidenceBundle`. Shared analysis freezes
+canonical `--cwd` for current configured practice while leaving historical
+Session scope unchanged. Rendering, output routing, Checkup, and Quickstart
+remain unsupported.
 Repository contributors can run the pinned credential-free comparison with
 `npm run test:dsh-configured-assets-native`. See
 [DeepSeek Harness Configured Assets](https://github.com/QoderAI/better-harness/blob/main/references/agent-customize/platforms/dsh.md).
@@ -192,9 +196,9 @@ The implemented source-checkout smoke boundary is read-only:
 node scripts/session-analysis.mjs sources --platform dsh --workspace <path> [--dsh-home <dir>]
 ```
 
-Verified discovery does not imply a complete report loop. DSH has no live
+Shared analysis does not imply a complete report loop. DSH has no live
 PTY/process integration, complete runtime configured-asset resolution, plugin
-lifecycle, managed shell, manifest, package integration, report/output route,
+lifecycle, managed shell, manifest, package integration, rendered report/output route,
 public Quickstart, SQLite or custom persistence support, automatic
 optimization, plugin-fault attribution, or artifact mutation/recovery. See the
 [canonical source matrix](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)

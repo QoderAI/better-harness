@@ -12,9 +12,46 @@ import {
   findingTargetErrors,
   findingTargetFromTopology,
   ownerRouteForPath,
+  resolveConfiguredCwd,
   resolveWorkspaceTopology,
   validateWorkspaceTopology,
 } from "../../scripts/workspace-topology/index.mjs";
+
+test("configured cwd uses segment-aware canonical containment", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-configured-cwd-"));
+  const workspace = path.join(root, "work");
+  const dottedChild = path.join(workspace, "..valid-child");
+  const nestedDottedChild = path.join(dottedChild, "nested");
+  const sibling = path.join(root, "work-other");
+  const outside = path.join(root, "outside");
+  const escape = path.join(workspace, "escape");
+  try {
+    await Promise.all([
+      mkdir(nestedDottedChild, { recursive: true }),
+      mkdir(sibling, { recursive: true }),
+      mkdir(outside, { recursive: true }),
+    ]);
+    await symlink(outside, escape, "dir");
+
+    const canonicalWorkspace = await realpath(workspace);
+    assert.deepEqual(resolveConfiguredCwd({ workspace }), {
+      workspace: canonicalWorkspace,
+      cwd: canonicalWorkspace,
+    });
+    assert.equal(resolveConfiguredCwd({ workspace, cwd: dottedChild }).cwd, await realpath(dottedChild));
+    assert.equal(resolveConfiguredCwd({ workspace, cwd: nestedDottedChild }).cwd, await realpath(nestedDottedChild));
+
+    for (const cwd of [path.join(workspace, "..", "outside"), sibling, escape]) {
+      assert.throws(
+        () => resolveConfiguredCwd({ workspace, cwd }),
+        (error) => error?.code === "CONFIGURED_CWD_OUTSIDE_WORKSPACE",
+        cwd,
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 function git(cwd, args) {
   const result = spawnSync("git", args, {

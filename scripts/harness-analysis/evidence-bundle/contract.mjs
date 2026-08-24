@@ -1,14 +1,12 @@
-import { existsSync, realpathSync } from "node:fs";
-import path from "node:path";
-
 import { HOST_CAPABILITIES, hostIdSetFor } from "../../host-support/index.mjs";
 import {
   analysisScopeFromTopology,
+  resolveConfiguredCwd,
   validateWorkspaceTopology,
 } from "../../workspace-topology/index.mjs";
 
 export const EVIDENCE_BUNDLE_KIND = "better-harness.evidence-bundle";
-export const EVIDENCE_BUNDLE_SCHEMA_VERSION = 2;
+export const EVIDENCE_BUNDLE_SCHEMA_VERSION = 3;
 export const EVIDENCE_LANE_NAMES = Object.freeze([
   "sessionEvidence",
   "projectHarness",
@@ -69,10 +67,11 @@ export function freezeEvidenceBundleContext(options = {}, now = new Date()) {
   }
   const topology = options.topology;
   const analysisScope = options.analysisScope;
-  const requestedWorkspace = path.resolve(String(options.workspace));
-  const canonicalWorkspace = existsSync(requestedWorkspace)
-    ? realpathSync(requestedWorkspace)
-    : requestedWorkspace;
+  const configuredScope = resolveConfiguredCwd({
+    workspace: options.workspace,
+    cwd: options.cwd,
+  });
+  const canonicalWorkspace = configuredScope.workspace;
   if (topology !== undefined) {
     validateWorkspaceTopology(topology);
     if (canonicalWorkspace !== topology.requestedWorkspace) {
@@ -102,6 +101,7 @@ export function freezeEvidenceBundleContext(options = {}, now = new Date()) {
   }
   return Object.freeze({
     workspace: topology?.requestedWorkspace ?? canonicalWorkspace,
+    cwd: configuredScope.cwd,
     provider,
     language: String(options.language ?? "en"),
     depth,

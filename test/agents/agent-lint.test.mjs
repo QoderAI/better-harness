@@ -962,3 +962,82 @@ description: Use when reviewing configured assets.
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("agent-assets-review CLI admits DSH and forwards nested cwd selection", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-dsh-agent-lint-"));
+  const repository = path.join(root, "repository");
+  const workspace = path.join(repository, "packages", "api");
+  const cwd = path.join(workspace, "..valid-child", "src");
+  const dshHome = path.join(root, "isolated-dsh-home");
+  const cliPath = path.join(process.cwd(), "scripts", "better-harness.mjs");
+
+  try {
+    await mkdir(path.join(repository, ".git"), { recursive: true });
+    await mkdir(cwd, { recursive: true });
+    await mkdir(dshHome, { recursive: true });
+    await writeText(path.join(workspace, "AGENTS.md"), "# Workspace instruction\n");
+    await writeText(path.join(cwd, "AGENTS.local.md"), "# Nested local instruction\n");
+
+    const { stdout, stderr } = await execFileAsync(process.execPath, [
+      cliPath,
+      "agent-lint",
+      "--workspace",
+      workspace,
+      "--cwd",
+      cwd,
+      "--profile",
+      "agent-assets-review",
+      "--provider",
+      "dsh",
+      "--dsh-home",
+      dshHome,
+      "--json",
+    ], {
+      env: { ...process.env, HOME: root, USERPROFILE: root, DSH_HOME: dshHome },
+    });
+
+    assert.equal(stderr, "");
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.assetInventory.provider, "dsh");
+    assert.equal(payload.assetInventory.summary.rules, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("agent-assets-review rejects a configured cwd that resolves outside workspace before asset reads", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-dsh-agent-lint-escape-"));
+  const workspace = path.join(root, "workspace");
+  const outside = path.join(root, "outside");
+  const escape = path.join(workspace, "escape");
+  const dshHome = path.join(root, "isolated-dsh-home");
+  const cliPath = path.join(process.cwd(), "scripts", "better-harness.mjs");
+  try {
+    await Promise.all([
+      mkdir(workspace, { recursive: true }),
+      mkdir(outside, { recursive: true }),
+      mkdir(dshHome, { recursive: true }),
+    ]);
+    await symlink(outside, escape, "dir");
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        cliPath,
+        "agent-lint",
+        "--workspace",
+        workspace,
+        "--cwd",
+        escape,
+        "--profile",
+        "agent-assets-review",
+        "--provider",
+        "dsh",
+        "--dsh-home",
+        dshHome,
+        "--json",
+      ], { env: { ...process.env, HOME: root, USERPROFILE: root, DSH_HOME: dshHome } }),
+      (error) => error?.code === 1 && /cwd must resolve inside workspace/u.test(error.stderr),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

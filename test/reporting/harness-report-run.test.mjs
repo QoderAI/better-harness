@@ -65,8 +65,8 @@ function candidateSource(workspace, platform = "qoder") {
   return source;
 }
 
-function candidateSourceWithUsage(workspace) {
-  const source = candidateSource(workspace);
+function candidateSourceWithUsage(workspace, platform = "qoder") {
+  const source = candidateSource(workspace, platform);
   source.manifest.selection = {
     ...source.manifest.selection,
     eligibleCount: 2,
@@ -352,6 +352,46 @@ test("analyze labels non-Qoder provider evidence without creating host directori
   }
 });
 
+test("analyze admits DSH to the neutral JSON Harness evidence contract", async () => {
+  await withTempDir("harness-analyze-dsh-", async (workspace) => {
+    const cwd = path.join(workspace, "src");
+    const sourceInput = candidateSourceWithUsage(workspace, "dsh");
+
+    const result = await analyzeHarnessEvidence({
+      workspace,
+      cwd,
+      platform: "dsh",
+      sourceInput,
+      format: "json",
+    });
+
+    assert.equal(result.kind, "better-harness.harness-analysis-evidence");
+    assert.equal(result.schemaVersion, 1);
+    assert.match(result.evidence, /Platform: dsh/u);
+    assert.equal(result.summaryFacts.evidenceBoundary.manifest.platform, "dsh");
+    assert.equal(result.summaryFacts.usageActivity.sessions.total, 2);
+    assert.equal(result.summaryFacts.usageEfficiency.selection.analyzedSessionCount, 2);
+    assert.equal(Object.hasOwn(result, "findings"), false);
+    assert.doesNotMatch(result.evidence, /report\.html|report\.md|findings\.json/u);
+    assert.deepEqual(await readdir(workspace), []);
+  });
+});
+
+test("DSH Harness admission still rejects Canvas rendering", async () => {
+  const workspace = path.join("workspace", "example");
+  const sourceInput = candidateSource(workspace, "dsh");
+  await assert.rejects(
+    analyzeHarnessEvidence({
+      workspace,
+      platform: "dsh",
+      sourceInput,
+      format: "json",
+      "canvas-out": path.join(os.tmpdir(), "canvas.json"),
+    }),
+    (error) => error?.code === "CANVAS_OUTPUT_REQUIRES_CANVAS_HOST",
+  );
+});
+
 test("root CLI exposes read-only formats and explicit Qoder Canvas output", () => {
   const result = spawnSync(process.execPath, [cliPath, "harness", "analyze", "--help"], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -360,6 +400,7 @@ test("root CLI exposes read-only formats and explicit Qoder Canvas output", () =
   assert.match(result.stdout, /--format <text\|json>/u);
   assert.match(result.stdout, /--since <ISO timestamp>/u);
   assert.match(result.stdout, /--until <ISO timestamp>/u);
+  assert.match(result.stdout, /--cwd <path>/u);
   assert.match(result.stdout, /--canvas-out <file>/u);
   assert.match(result.stdout, /--replace-canvas/u);
   assert.doesNotMatch(result.stdout, /--out|--run-dir|--json|prepare|finalize|decision|staging/iu);

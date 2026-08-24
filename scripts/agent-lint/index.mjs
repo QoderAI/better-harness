@@ -5,7 +5,12 @@ import { collectAgentCustomizeInventory } from "../agent-customize/index.mjs";
 import { parseFrontmatter } from "../agent-customize/core/items.mjs";
 import { enrichFindingWithRecommendation } from "../findings-recommend.mjs";
 import { isDirectory, normalizeWorkspace, pathExists } from "../session-analysis/index.mjs";
-import { ownerRouteForPath, routeContains } from "../workspace-topology/index.mjs";
+import {
+  ownerRouteForPath,
+  pathIsContained,
+  resolveConfiguredCwd,
+  routeContains,
+} from "../workspace-topology/index.mjs";
 import { reviewHostInstructions } from "./host-instructions.mjs";
 import { reviewHookAssets } from "./hook-review.mjs";
 
@@ -328,8 +333,7 @@ function safeDecodeURIComponent(value) {
 }
 
 function isInsideWorkspace(workspace, filePath) {
-  const relative = path.relative(workspace, filePath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return pathIsContained(workspace, filePath);
 }
 
 async function resolveReference({ workspace, ownerPath, ownerHeadings, link }) {
@@ -999,7 +1003,7 @@ function relativeAssetPath(workspace, filePath) {
     return undefined;
   }
   const relative = normalizeSlash(path.relative(workspace, filePath));
-  return relative.startsWith("..") ? filePath : relative;
+  return pathIsContained(workspace, filePath) ? relative : filePath;
 }
 
 async function parseAssetMarkdown(filePath, workspace, options = {}) {
@@ -1659,17 +1663,26 @@ export async function applyAgentAssetsReviewProfile(graph, options = {}) {
 }
 
 async function singleWorkspacePayload(options = {}) {
-  const graph = await collectAgentInstructionGraph(options);
-  const profileResult = options.profile === PROFILE_AGENTS_MD_REVIEW
-    ? await applyAgentsMdReviewProfile(graph, options)
-    : options.profile === PROFILE_AGENT_ASSETS_REVIEW
-      ? await applyAgentAssetsReviewProfile(graph, options)
+  const scopedOptions = options.profile === PROFILE_AGENT_ASSETS_REVIEW
+    ? {
+        ...options,
+        ...resolveConfiguredCwd({
+          workspace: options.workspace ?? ".",
+          cwd: options.cwd,
+        }),
+      }
+    : options;
+  const graph = await collectAgentInstructionGraph(scopedOptions);
+  const profileResult = scopedOptions.profile === PROFILE_AGENTS_MD_REVIEW
+    ? await applyAgentsMdReviewProfile(graph, scopedOptions)
+    : scopedOptions.profile === PROFILE_AGENT_ASSETS_REVIEW
+      ? await applyAgentAssetsReviewProfile(graph, scopedOptions)
       : { findings: [], manifestEvidence: [], assetInventory: undefined };
   const findings = profileResult.findings.map((item) => {
-    if (!options.topology || typeof item?.file !== "string") return item;
+    if (!scopedOptions.topology || typeof item?.file !== "string") return item;
     const route = normalizeSlash(item.file);
     if (!route || path.isAbsolute(route) || route === ".." || route.startsWith("../")) return item;
-    const packageRoute = ownerRouteForPath(options.topology, route);
+    const packageRoute = ownerRouteForPath(scopedOptions.topology, route);
     return {
       ...item,
       packageRoute,
@@ -1678,7 +1691,7 @@ async function singleWorkspacePayload(options = {}) {
   });
   return {
     kind: "agent-lint",
-    profile: options.profile,
+    profile: scopedOptions.profile,
     summary: {
       ...summarizeGraph(graph),
       ...summarizeFindings(findings),

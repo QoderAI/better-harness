@@ -114,6 +114,9 @@ export const HOST_DESCRIPTORS = Object.freeze([
     capabilities: [
       HOST_CAPABILITIES.SESSION_ANALYSIS,
       HOST_CAPABILITIES.AGENT_CUSTOMIZE,
+      HOST_CAPABILITIES.ASSET_PRACTICES,
+      HOST_CAPABILITIES.HARNESS_REPORT,
+      HOST_CAPABILITIES.EVIDENCE_BUNDLE,
     ],
     sessionScopeTokens: [".dsh", "dsh", "deepseek-harness"],
   }),

@@ -53,6 +53,15 @@ function parseArgs(argv) {
       options.workspace = arg.slice("--workspace=".length);
       continue;
     }
+    if (arg === "--cwd") {
+      options.cwd = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--cwd=")) {
+      options.cwd = arg.slice("--cwd=".length);
+      continue;
+    }
     if (arg === "--workspace-root") {
       options.workspaceRoot = argv[index + 1];
       index += 1;
@@ -146,11 +155,12 @@ function parseArgs(argv) {
 
 function usage() {
   return [
-    "Usage: better-harness agent-lint [--workspace <path>] [--profile agents-md-review|agent-assets-review] [--json|--format markdown]",
+    "Usage: better-harness agent-lint [--workspace <path>] [--cwd <path>] [--profile agents-md-review|agent-assets-review] [--json|--format markdown]",
     "       better-harness agent-lint --workspace-root <dir> --scan-children --profile agents-md-review",
     `       better-harness agent-lint --profile agent-assets-review --provider <${hostPipeList(ASSET_HOSTS)}> [--skill <path>]`,
     "",
     "Parse agent instruction entrypoints and bounded local Markdown references into review evidence.",
+    "Configured-practice options: --cwd <path>, --dsh-home <dir>.",
     "",
   ].join("\n");
 }

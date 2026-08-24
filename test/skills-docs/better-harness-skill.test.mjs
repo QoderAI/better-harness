@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "vitest";
 
+import { RENDER_REPORT_PLATFORMS } from "../../scripts/harness-analysis/render-report.mjs";
+import { HOST_CAPABILITIES, hostIdsFor } from "../../scripts/host-support/index.mjs";
+
 const ROOT = process.cwd();
 const SKILL_PATH = "skills/better-harness/SKILL.md";
 
@@ -70,6 +73,7 @@ test("Better Harness Skill exposes one evidence command and one render command",
   for (const option of [
     "--platform <provider>",
     "--workspace <target>",
+    "--cwd <effective-cwd>",
     "--depth <quick|normal>",
     "--since <window-start>",
     "--until <window-end>",
@@ -86,4 +90,17 @@ test("Better Harness Skill exposes one evidence command and one render command",
     "--validate",
     "--json",
   ]) assert.equal(renderCommands[0].includes(option), true, `render command must include ${option}`);
+});
+
+test("Better Harness Skill routes DSH through one cwd-aware bundle command and no durable renderer", () => {
+  const commandLines = textFenceLines(read(SKILL_PATH));
+  const evidenceCommands = commandLines.filter((line) => line.startsWith("<cli> harness evidence-bundle "));
+
+  assert.equal(evidenceCommands.length, 1);
+  assert.equal(evidenceCommands[0].includes("--platform <provider>"), true);
+  assert.equal(evidenceCommands[0].includes("--workspace <target>"), true);
+  assert.equal(evidenceCommands[0].includes("--cwd <effective-cwd>"), true);
+  assert.equal(hostIdsFor(HOST_CAPABILITIES.EVIDENCE_BUNDLE).includes("dsh"), true);
+  assert.equal(hostIdsFor(HOST_CAPABILITIES.REPORT_RENDERING).includes("dsh"), false);
+  assert.equal(RENDER_REPORT_PLATFORMS.includes("dsh"), false);
 });

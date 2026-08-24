@@ -286,11 +286,11 @@ function pluginSetting(id, settings) {
   return undefined;
 }
 
-function pluginApplicable(record, workspace, settings, id) {
+async function pluginApplicable(record, workspace, settings, id) {
   const scope = normalizeInstallScope(record.scope);
   if (scope === "user") return true;
   if (!settings[scope]) return true;
-  if (record.projectPath) return normalizeWorkspace(record.projectPath) === workspace;
+  if (record.projectPath) return pathsReferToSameRoot(record.projectPath, workspace);
   return settings[scope].get(id) === true;
 }
 
@@ -394,7 +394,7 @@ async function collectClaudePlugin(record, settings, workspace) {
     manifest.displayName || packageJson.displayName || heading || titleCase(manifest.name || packageJson.name || record.name),
     record.name,
   );
-  const applicable = pluginApplicable(record, workspace, settings, record.id);
+  const applicable = await pluginApplicable(record, workspace, settings, record.id);
   const configured = pluginSetting(record.id, settings);
   const enabled = applicable && (configured ? configured.enabled : manifest.defaultEnabled !== false);
   const metadataPath = await pluginMetadataEvidencePath(pluginRoot, [CLAUDE_PLUGIN_MANIFEST, ["package.json"]]);

@@ -932,6 +932,7 @@ export async function collectAgentLintPracticeEvidence(options = {}) {
   const assetReviewSupported = ASSET_PRACTICE_HOST_SET.has(provider);
   const common = {
     workspace: options.workspace,
+    cwd: options.cwd ?? options.workspace,
     provider,
     ...normalizedHostHomeOptions(options, provider),
     topology: options.topology,
@@ -987,6 +988,7 @@ export function collectTaskLoopPracticeInventory(options = {}, platform = option
   return collectInventory({
     platform,
     workspace: options.workspace,
+    cwd: options.cwd ?? options.workspace,
     includeUserHome: includeGlobalCapabilities,
     includeGlobalHooks: true,
     includeMemories,
@@ -1098,8 +1100,9 @@ export async function createTaskLoopSourceFromSessions(options = {}) {
     ?? options.until
     ?? options.snapshotUntil
     ?? new Date().toISOString();
+  const { cwd: _configuredPracticeCwd, ...sessionOptions } = options;
   const analyzerOptions = {
-    ...options,
+    ...sessionOptions,
     platform,
     workspace: options.workspace,
     since: selectionProfile?.scope?.since ?? options.since,

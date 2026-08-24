@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -132,7 +132,8 @@ test("public asset-integrity CLI stays read-only and omits Memory body text and 
   const workspace = path.join(root, "workspace");
   const qoderHome = path.join(root, ".qoder");
   try {
-    const slug = path.resolve(workspace).replace(/^[A-Za-z]:/u, "").replace(/[\\/]+/gu, "-").replace(/^-+|-+$/gu, "");
+    await mkdir(workspace, { recursive: true });
+    const slug = (await realpath(workspace)).replace(/^[A-Za-z]:/u, "").replace(/[\\/]+/gu, "-").replace(/^-+|-+$/gu, "");
     const memoryDir = path.join(qoderHome, "memories", "account", "projects", slug, "project_introduction");
     await mkdir(memoryDir, { recursive: true });
     await writeFile(path.join(memoryDir, "Project Overview.md"), "private body must stay private\n");
@@ -232,6 +233,79 @@ test("public asset-integrity CLI reviews Codex Memory metadata without reading b
     assert.equal(result.summary.memories.titleCount, 2);
     assert.equal(result.summary.memories.exactCollisionGroups, 1);
     assert.doesNotMatch(stdout, /private codex body|another private codex body|better-harness-codex-integrity-/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("public asset-integrity CLI admits empty DSH metadata surfaces with frozen cwd", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-dsh-integrity-"));
+  const workspace = path.join(root, "workspace");
+  const cwd = path.join(workspace, "..valid-child", "src");
+  const dshHome = path.join(root, "isolated-dsh-home");
+  try {
+    await mkdir(path.join(workspace, ".git"), { recursive: true });
+    await mkdir(cwd, { recursive: true });
+    await mkdir(dshHome, { recursive: true });
+    const script = path.join(process.cwd(), "scripts", "better-harness.mjs");
+    const { stdout, stderr } = await execFileAsync(process.execPath, [
+      script,
+      "coding-agent-practices",
+      "asset-integrity",
+      "dsh",
+      "--workspace",
+      workspace,
+      "--cwd",
+      cwd,
+      "--dsh-home",
+      dshHome,
+      "--json",
+    ], {
+      env: { ...process.env, HOME: root, USERPROFILE: root, DSH_HOME: dshHome },
+    });
+
+    assert.equal(stderr, "");
+    const result = JSON.parse(stdout);
+    assert.equal(result.status, "reviewed");
+    assert.equal(result.summary.findingCount, 0);
+    assert.equal(result.summary.memories.titleCount, 0);
+    assert.equal(result.summary.plugins.enabledPluginCount, 0);
+    assert.equal(result.summary.hooks.enabledHookCount, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("public asset-integrity CLI rejects a configured cwd that resolves outside workspace", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-dsh-integrity-escape-"));
+  const workspace = path.join(root, "workspace");
+  const outside = path.join(root, "outside");
+  const escape = path.join(workspace, "escape");
+  const dshHome = path.join(root, "isolated-dsh-home");
+  try {
+    await Promise.all([
+      mkdir(workspace, { recursive: true }),
+      mkdir(outside, { recursive: true }),
+      mkdir(dshHome, { recursive: true }),
+    ]);
+    await symlink(outside, escape, "dir");
+    const script = path.join(process.cwd(), "scripts", "better-harness.mjs");
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        script,
+        "coding-agent-practices",
+        "asset-integrity",
+        "dsh",
+        "--workspace",
+        workspace,
+        "--cwd",
+        escape,
+        "--dsh-home",
+        dshHome,
+        "--json",
+      ], { env: { ...process.env, HOME: root, USERPROFILE: root, DSH_HOME: dshHome } }),
+      (error) => error?.code === 1 && /cwd must resolve inside workspace/u.test(error.stderr),
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

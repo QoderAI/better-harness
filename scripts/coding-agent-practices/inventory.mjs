@@ -24,6 +24,7 @@ import {
   hostPipeList,
   normalizedHostHomeOptions,
 } from "../host-support/index.mjs";
+import { pathIsContained, resolveConfiguredCwd } from "../workspace-topology/index.mjs";
 
 const SESSION_HOST_SET = hostIdSetFor(HOST_CAPABILITIES.SESSION_ANALYSIS);
 const ASSET_PRACTICE_HOSTS = hostIdsFor(HOST_CAPABILITIES.ASSET_PRACTICES);
@@ -425,7 +426,11 @@ function summarize(surfaces) {
 }
 
 function publicScope(options = {}) {
-  const workspace = normalizeWorkspace(options.workspace);
+  const configuredScope = resolveConfiguredCwd({
+    workspace: normalizeWorkspace(options.workspace),
+    cwd: options.cwd === undefined ? undefined : normalizeWorkspace(options.cwd),
+  });
+  const { workspace, cwd } = configuredScope;
   const environmentHome = process.env.QODER_HOME;
   const environmentBase = path.basename(String(environmentHome ?? "")).toLowerCase();
   const environmentIsAssetHome = environmentBase === ".qoder" || environmentBase === "qoder";
@@ -441,6 +446,7 @@ function publicScope(options = {}) {
   return {
     platform: "qoder",
     workspace,
+    cwd,
     qoderHome,
     includeUserHome: normalizeBoolean(options.includeUserHome ?? options["include-user-home"] ?? false),
     includeMemories: normalizeBoolean(options.includeMemories ?? options["include-memories"] ?? false),
@@ -449,7 +455,11 @@ function publicScope(options = {}) {
 }
 
 function providerScope(options = {}, platform = options.platform ?? "qoder") {
-  const workspace = normalizeWorkspace(options.workspace);
+  const configuredScope = resolveConfiguredCwd({
+    workspace: normalizeWorkspace(options.workspace),
+    cwd: options.cwd === undefined ? undefined : normalizeWorkspace(options.cwd),
+  });
+  const { workspace, cwd } = configuredScope;
   const host = getHostDescriptor(platform);
   const home = hostHomeValue(options, platform);
   const sharedCache = options.sharedCache ?? options["shared-cache"];
@@ -459,6 +469,7 @@ function providerScope(options = {}, platform = options.platform ?? "qoder") {
   return {
     platform,
     workspace,
+    cwd,
     includeUserHome: normalizeBoolean(options.includeUserHome ?? options["include-user-home"] ?? false),
     includeGlobalHooks: normalizeBoolean(options.includeGlobalHooks ?? options["include-global-hooks"] ?? false),
     includeMemories: normalizeBoolean(options.includeMemories ?? options["include-memories"] ?? false),
@@ -674,6 +685,7 @@ export async function collectProviderInventory(options = {}) {
   const inventory = options.inventory ?? await collectAgentCustomizeInventory({
     provider: platform,
     workspace: scope.workspace,
+    cwd: scope.cwd,
     ...normalizedHostHomeOptions(scope, platform),
     qoderSharedClientCacheRoot: scope.qoderSharedClientCacheRoot,
     codexAppPath: scope.codexAppPath,
@@ -734,7 +746,10 @@ export async function collectProviderInventory(options = {}) {
   }
   return {
     scope,
-    summary: summarize(surfaces),
+    summary: {
+      ...summarize(surfaces),
+      practiceCoverageRows: practiceCoverageRows(surfaces, scope),
+    },
     surfaces,
     sessionSourceHints,
     memories,
@@ -749,12 +764,12 @@ function boundedReportPath(filePath, workspace) {
   if (typeof filePath !== "string" || !filePath.trim()) return undefined;
   const absolute = path.resolve(filePath);
   const workspaceRelative = path.relative(workspace, absolute);
-  if (workspaceRelative && !workspaceRelative.startsWith("..") && !path.isAbsolute(workspaceRelative)) {
+  if (workspaceRelative && pathIsContained(workspace, absolute)) {
     return workspaceRelative.split(path.sep).join("/");
   }
   if (!workspaceRelative) return ".";
   const homeRelative = path.relative(os.homedir(), absolute);
-  if (homeRelative && !homeRelative.startsWith("..") && !path.isAbsolute(homeRelative)) {
+  if (homeRelative && pathIsContained(os.homedir(), absolute)) {
     return `~/${homeRelative.split(path.sep).join("/")}`;
   }
   return undefined;
@@ -938,6 +953,7 @@ Inspect configured coding-agent assets and practice evidence for one platform.
 Options:
   --platform <${hostPipeList(ASSET_PRACTICE_HOSTS)}>  Select the platform (default: qoder; may also be the first positional)
   --workspace <dir>                Workspace root to inspect (default: current directory)
+  --cwd <dir>                      Configured-practice cwd (default: workspace)
   --json                           Emit JSON (default)
   --format <json|markdown>         Output format
   --include-user-home              Include user/global assets
@@ -945,6 +961,7 @@ Options:
   --claude-home <dir>              Claude config root override
   --claude-state <file>            Claude state-file override
   --kimi-home <dir>                Kimi Code data root override
+  --dsh-home <dir>                 DeepSeek Harness config root override
   -h, --help                       Print this help
 `;
 

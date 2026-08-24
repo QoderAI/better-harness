@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { test } from "vitest";
 
-import { collectQoderInventory } from "../../scripts/coding-agent-practices/inventory.mjs";
+import {
+  collectProviderInventory,
+  collectQoderInventory,
+} from "../../scripts/coding-agent-practices/inventory.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -147,7 +150,7 @@ test("Qoder global inventory separates project, user, plugin, session, and memor
     assert.ok(result.surfaces.some((surface) => surface.id === "project-qoder-hooks"));
     assert.equal(
       result.surfaces.find((surface) => surface.id === "project-qoder-hooks")?.items[0]?.scriptPath,
-      path.join(fixture.workspace, "check.js"),
+      path.join(await realpath(fixture.workspace), "check.js"),
     );
     assert.ok(
       result.surfaces.some(
@@ -235,7 +238,7 @@ test("Qoder inventory includes current-project memories without global capabilit
   const fixture = await makeFixture();
 
   try {
-    const workspaceSlug = path.resolve(fixture.workspace)
+    const workspaceSlug = (await realpath(fixture.workspace))
       .replace(/^[A-Za-z]:/u, "")
       .replace(/[\\/]+/gu, "-")
       .replace(/^-+|-+$/gu, "");
@@ -364,7 +367,7 @@ test("Qoder inventory CLI keeps project Memory semantic scope while emitting a h
   const fixture = await makeFixture();
 
   try {
-    const workspaceSlug = path.resolve(fixture.workspace)
+    const workspaceSlug = (await realpath(fixture.workspace))
       .replace(/^[A-Za-z]:/u, "")
       .replace(/[\\/]+/gu, "-")
       .replace(/^-+|-+$/gu, "");
@@ -512,6 +515,15 @@ test("inventory CLI keeps Codex memory metadata separate from configured assets 
     assert.equal(json.summary.userAssets, 2);
     assert.equal(json.summary.pluginAssets, 2);
     assert.equal(json.summary.memories, 2);
+    assert.ok(Array.isArray(json.summary.practiceCoverageRows));
+    const skillsCoverage = json.summary.practiceCoverageRows.find((row) => row.surface === "Skills");
+    const hooksCoverage = json.summary.practiceCoverageRows.find((row) => row.surface === "Hooks");
+    const memoryCoverage = json.summary.practiceCoverageRows.find((row) => row.surface === "Memories");
+    assert.equal(skillsCoverage.count, 2);
+    assert.deepEqual(skillsCoverage.scopes, ["Project", "Global"]);
+    assert.equal(hooksCoverage.count, 2);
+    assert.deepEqual(hooksCoverage.scopes, ["Project", "Global"]);
+    assert.equal(memoryCoverage.count, 2);
     assert.ok(json.surfaces.some((surface) => surface.id === "project-codex-skills"));
     assert.ok(json.surfaces.some((surface) => surface.id === "user-codex-skills"));
     assert.ok(json.surfaces.some((surface) => surface.id === "plugin-codex-plugins"));
@@ -563,5 +575,128 @@ test("Codex inventory keeps user, Plugin, and Memory metadata closed without sco
     assert.equal(json.surfaces.some((surface) => surface.scope === "user" || surface.scope === "plugin"), false);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("shared provider inventory emits deterministic Skills and Rules practice coverage", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-practice-coverage-"));
+  const workspace = path.join(root, "workspace");
+  try {
+    await mkdir(workspace);
+    const canonicalWorkspace = await realpath(workspace);
+    const result = await collectProviderInventory({
+      platform: "dsh",
+      workspace,
+      inventory: {
+      provider: "dsh",
+      workspace: canonicalWorkspace,
+      cwd: canonicalWorkspace,
+      plugins: [],
+      manage: {
+        plugins: [],
+        mcps: [],
+        skills: [
+          {
+            id: "skill-project-review",
+            name: "review",
+            displayName: "review",
+            scope: "project",
+            evidence: {
+              path: path.join(canonicalWorkspace, ".dsh", "skills", "review", "SKILL.md"),
+              relativePath: path.join("review", "SKILL.md"),
+            },
+          },
+        ],
+        subagents: [],
+        rules: [
+          {
+            id: "rule-project-agents",
+            name: "AGENTS.md",
+            displayName: "AGENTS.md",
+            scope: "project",
+            evidence: { path: path.join(canonicalWorkspace, "AGENTS.md"), relativePath: "AGENTS.md" },
+          },
+        ],
+        commands: [],
+        hooks: [],
+      },
+      diagnostics: {},
+      },
+    });
+
+    assert.deepEqual(result.summary.practiceCoverageRows, [
+      { surface: "Rules", scopes: ["Project"], count: 1, paths: ["AGENTS.md"] },
+      { surface: "Skills", scopes: ["Project"], count: 1, paths: [".dsh/skills/review/SKILL.md"] },
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("shared provider inventory emits no phantom practice row for empty configured collections", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-empty-practice-coverage-"));
+  const workspace = path.join(root, "workspace");
+  try {
+    await mkdir(workspace);
+    const result = await collectProviderInventory({
+      platform: "dsh",
+      workspace,
+      inventory: {
+      provider: "dsh",
+      workspace,
+      cwd: workspace,
+      plugins: [],
+      manage: {
+        plugins: [],
+        mcps: [],
+        skills: [],
+        subagents: [],
+        rules: [],
+        commands: [],
+        hooks: [],
+      },
+      diagnostics: {},
+      },
+    });
+
+    assert.deepEqual(result.summary.practiceCoverageRows, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("direct provider inventory canonicalizes configured cwd before using injected evidence", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-provider-cwd-"));
+  const workspace = path.join(root, "workspace");
+  const dotted = path.join(workspace, "..valid-child");
+  const outside = path.join(root, "outside");
+  const escape = path.join(workspace, "escape");
+  const inventory = {
+    provider: "dsh",
+    plugins: [],
+    manage: { plugins: [], mcps: [], skills: [], subagents: [], rules: [], commands: [], hooks: [] },
+    diagnostics: {},
+  };
+  try {
+    await Promise.all([mkdir(dotted, { recursive: true }), mkdir(outside)]);
+    await symlink(outside, escape, "dir");
+
+    const omitted = await collectProviderInventory({ platform: "dsh", workspace, inventory });
+    assert.equal(omitted.scope.workspace, await realpath(workspace));
+    assert.equal(omitted.scope.cwd, omitted.scope.workspace);
+
+    const nested = await collectProviderInventory({ platform: "dsh", workspace, cwd: dotted, inventory });
+    assert.equal(nested.scope.cwd, await realpath(dotted));
+
+    for (const cwd of [outside, escape, path.join(workspace, "missing")]) {
+      await assert.rejects(
+        collectProviderInventory({ platform: "dsh", workspace, cwd, inventory }),
+        (error) => error?.code === (cwd.endsWith("missing")
+          ? "INVALID_CONFIGURED_CWD"
+          : "CONFIGURED_CWD_OUTSIDE_WORKSPACE"),
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

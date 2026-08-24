@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "vitest";
@@ -16,6 +16,7 @@ import {
 } from "../../scripts/harness-analysis/evidence-bundle/session-evidence.mjs";
 import { workspaceToClaudeSlugVariants } from "../../scripts/session-analysis/platforms/claude.mjs";
 import { collectAgentCustomize } from "../../scripts/harness-analysis/evidence-bundle/agent-customize.mjs";
+import { collectProjectHarness } from "../../scripts/harness-analysis/evidence-bundle/project-harness.mjs";
 import { EVIDENCE_BUNDLE_HELP } from "../../scripts/harness-analysis/evidence-bundle/cli.mjs";
 
 const NOW = new Date("2026-07-24T08:00:00.000Z");
@@ -115,10 +116,56 @@ function leadEvidence(overrides = {}) {
   };
 }
 
-test("evidence-bundle help advertises WorkBuddy and its isolated home override", () => {
-  assert.match(EVIDENCE_BUNDLE_HELP, /pi, kimi, workbuddy, or grok/u);
+function validAssetBaseline(context, overrides = {}) {
+  return {
+    kind: "agent-asset-baseline",
+    schemaVersion: 2,
+    status: "complete",
+    scope: {
+      provider: context.provider,
+      workspace: context.workspace,
+      cwd: context.cwd,
+      includeUserHome: context.authority.includeUserHome,
+      includeMemories: context.authority.includeMemories,
+    },
+    ...(context.provider === "dsh" ? {
+      configuredSnapshot: {
+        collectedAt: "2026-07-24T07:00:00.000Z",
+        evidenceKind: "configured-not-observed",
+        configurationSource: "qualified-defaults",
+        userHomeCollection: "not-authorized",
+        instructionCollection: "enabled",
+        qualification: {
+          provider: "dsh",
+          version: "0.1.1-rc.2",
+          sourceSha: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+        },
+        runtimeResolution: {
+          cordis: false,
+          profile: false,
+          preset: false,
+          runtimeSkills: false,
+        },
+      },
+    } : {}),
+    envelopes: {
+      lint: { status: "available", data: {} },
+      inventory: { status: "available", data: {} },
+      integrity: { status: "available", data: {} },
+    },
+    diagnostics: {},
+    ...overrides,
+  };
+}
+
+test("evidence-bundle help advertises qualified hosts, cwd, and isolated home overrides", () => {
+  assert.match(EVIDENCE_BUNDLE_HELP, /workbuddy/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /grok/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /dsh/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /--cwd <path>/u);
   assert.match(EVIDENCE_BUNDLE_HELP, /--workbuddy-home <dir>/u);
   assert.match(EVIDENCE_BUNDLE_HELP, /--grok-home <dir>/u);
+  assert.match(EVIDENCE_BUNDLE_HELP, /--dsh-home <dir>/u);
 });
 
 function topologyResolution(workspace = ".", status = "complete") {
@@ -185,10 +232,11 @@ test("evidence bundle freezes the three canonical lane names and normal scope", 
   }, dependencies());
 
   assert.equal(result.kind, EVIDENCE_BUNDLE_KIND);
-  assert.equal(result.schemaVersion, 2);
+  assert.equal(result.schemaVersion, 3);
   assert.equal(result.status, "complete");
   assert.deepEqual(Object.keys(result.lanes), ["sessionEvidence", "projectHarness", "agentCustomize"]);
   assert.equal(result.context.provider, "codex");
+  assert.equal(result.context.cwd, await realpath("."));
   assert.equal(result.context.depth, "normal");
   assert.equal(result.context.evidenceLimit, 5);
   assert.deepEqual(result.context.window, {
@@ -200,6 +248,55 @@ test("evidence bundle freezes the three canonical lane names and normal scope", 
   assert.equal(result.context.topology.target.kind, "repo-root");
   assert.deepEqual(result.context.analysisScope, { kind: "repo", route: ".", pathspecs: [] });
   assert.equal(result.diagnostics.collectionMode, "frozen-context-multi-owner");
+});
+
+test("evidence bundle v3 freezes canonical default, nested, and aliased cwd identity", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-bundle-cwd-"));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const workspace = path.join(root, "workspace");
+  const nested = path.join(workspace, "packages", "api", "src with space", "\u5b50\u76ee\u5f55");
+  const alias = path.join(workspace, "cwd-alias");
+  await mkdir(nested, { recursive: true });
+  await symlink(nested, alias, "dir");
+
+  const omitted = freezeEvidenceBundleContext({ workspace }, NOW);
+  const explicitWorkspace = freezeEvidenceBundleContext({ workspace, cwd: workspace }, NOW);
+  const explicitNested = freezeEvidenceBundleContext({ workspace, cwd: nested }, NOW);
+  const aliasedNested = freezeEvidenceBundleContext({ workspace, cwd: alias }, NOW);
+
+  assert.equal(omitted.cwd, await realpath(workspace));
+  assert.equal(explicitWorkspace.cwd, omitted.cwd);
+  assert.equal(explicitNested.cwd, await realpath(nested));
+  assert.equal(aliasedNested.cwd, explicitNested.cwd);
+  assert.notEqual(explicitNested.cwd, omitted.cwd);
+});
+
+test("evidence bundle cwd validation fails closed before configured collection", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-bundle-cwd-invalid-"));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const workspace = path.join(root, "workspace");
+  const outside = path.join(root, "outside");
+  const file = path.join(workspace, "not-a-directory.txt");
+  const escape = path.join(workspace, "escape");
+  await mkdir(workspace, { recursive: true });
+  await mkdir(outside, { recursive: true });
+  await writeFile(file, "not a directory\n");
+  await symlink(outside, escape, "dir");
+
+  for (const cwd of ["", `${workspace}\u0000invalid`, path.join(workspace, "missing"), file]) {
+    assert.throws(
+      () => freezeEvidenceBundleContext({ workspace, cwd }, NOW),
+      (error) => error?.code === "INVALID_CONFIGURED_CWD",
+      cwd || "blank cwd",
+    );
+  }
+  for (const cwd of [outside, escape]) {
+    assert.throws(
+      () => freezeEvidenceBundleContext({ workspace, cwd }, NOW),
+      (error) => error?.code === "CONFIGURED_CWD_OUTSIDE_WORKSPACE",
+      cwd,
+    );
+  }
 });
 
 test("evidence bundle resolves topology once and shares the frozen binding with every consumer", async () => {
@@ -351,6 +448,247 @@ test("session lane uses all eligible facts with the frozen limit and window", as
   assert.equal(received.limit, 3);
   assert.equal(received.since, "2026-07-20T00:00:00.000Z");
   assert.equal(received.until, "2026-07-24T00:00:00.000Z");
+  assert.equal(Object.hasOwn(received, "cwd"), false);
+});
+
+test("agentCustomize forwards frozen cwd to Asset Baseline", async () => {
+  const canonicalCwd = await realpath(".");
+  const context = {
+    ...freezeEvidenceBundleContext({ workspace: ".", platform: "codex" }, NOW),
+    cwd: canonicalCwd,
+  };
+  let received;
+  const lane = await collectAgentCustomize(context, {}, {
+    collectAssetBaseline: async (options) => {
+      received = options;
+      return validAssetBaseline(context);
+    },
+  });
+
+  assert.equal(lane.status, "available");
+  assert.equal(received.cwd, canonicalCwd);
+});
+
+test("agentCustomize rejects malformed Asset Baseline v2 contracts", async () => {
+  const context = freezeEvidenceBundleContext({ workspace: ".", platform: "dsh" }, NOW);
+  const cases = [
+    ["schemaVersion 1", (value) => { value.schemaVersion = 1; }],
+    ["unknown schemaVersion", (value) => { value.schemaVersion = 99; }],
+    ["invalid status", (value) => { value.status = "mystery"; }],
+    ["missing scope", (value) => { delete value.scope; }],
+    ["wrong provider", (value) => { value.scope.provider = "codex"; }],
+    ["missing cwd", (value) => { delete value.scope.cwd; }],
+    ["malformed lint envelope", (value) => { value.envelopes.lint = { status: "available" }; }],
+    ["missing configuredSnapshot", (value) => { delete value.configuredSnapshot; }],
+    ["malformed configuredSnapshot", (value) => { value.configuredSnapshot.qualification.provider = "codex"; }],
+  ];
+
+  for (const [name, mutate] of cases) {
+    const candidate = structuredClone(validAssetBaseline(context));
+    mutate(candidate);
+    const lane = await collectAgentCustomize(context, {}, {
+      collectAssetBaseline: async () => candidate,
+    });
+    assert.equal(lane.status, "unavailable", name);
+    assert.equal(lane.error.code, "INVALID_AGENT_CUSTOMIZE_EVIDENCE", name);
+  }
+});
+
+test("agentCustomize preserves valid partial and failed Baseline v2 semantics", async () => {
+  const context = freezeEvidenceBundleContext({ workspace: ".", platform: "dsh" }, NOW);
+  const partial = validAssetBaseline(context, {
+    status: "partial",
+    envelopes: {
+      lint: { status: "available", data: {} },
+      inventory: { status: "unavailable", error: { code: "INVENTORY_UNAVAILABLE", message: "bounded" } },
+      integrity: { status: "unavailable", error: { code: "INTEGRITY_UNAVAILABLE", message: "bounded" } },
+    },
+  });
+  const failed = validAssetBaseline(context, {
+    status: "failed",
+    configuredSnapshot: undefined,
+    envelopes: {
+      lint: { status: "unavailable", error: { code: "LINT_UNAVAILABLE", message: "bounded" } },
+      inventory: { status: "unavailable", error: { code: "INVENTORY_UNAVAILABLE", message: "bounded" } },
+      integrity: { status: "unavailable", error: { code: "INTEGRITY_UNAVAILABLE", message: "bounded" } },
+    },
+  });
+
+  const partialLane = await collectAgentCustomize(context, {}, {
+    collectAssetBaseline: async () => partial,
+  });
+  const failedLane = await collectAgentCustomize(context, {}, {
+    collectAssetBaseline: async () => failed,
+  });
+  assert.equal(partialLane.status, "partial");
+  assert.equal(failedLane.status, "unavailable");
+  assert.equal(failedLane.error.code, "AGENT_CUSTOMIZE_BASELINE_FAILED");
+});
+
+test("lead receives configured cwd while Project Harness remains on its generic Git scope", async () => {
+  const canonicalCwd = await realpath(".");
+  let leadOptions;
+  const bundle = await collectEvidenceBundle({
+    workspace: ".",
+    cwd: ".",
+    platform: "codex",
+  }, dependencies({
+    analyzeHarnessEvidence: async (options) => {
+      leadOptions = options;
+      return leadEvidence();
+    },
+  }));
+
+  assert.equal(bundle.context.cwd, canonicalCwd);
+  assert.equal(leadOptions.cwd, canonicalCwd);
+
+  const context = {
+    ...bundle.context,
+    cwd: path.join(canonicalCwd, "configured-nested-cwd"),
+  };
+  let projectOptions;
+  const projectLane = await collectProjectHarness(context, {}, {
+    buildEvidencePack: async (options) => {
+      projectOptions = options;
+      return { kind: "core-change-watch-evidence-pack", status: "ok" };
+    },
+  });
+  assert.equal(projectLane.status, "available");
+  assert.equal(projectOptions.cwd, context.topology.gitRoot);
+  assert.notEqual(projectOptions.cwd, context.cwd);
+  assert.equal(Object.hasOwn(projectOptions, "configuredCwd"), false);
+});
+
+test("DSH bundle composes all lanes without merging current configuration into historical observation", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-dsh-bundle-"));
+  try {
+    const workspace = path.join(root, "workspace");
+    const cwd = path.join(workspace, "src");
+    await mkdir(cwd, { recursive: true });
+    const safeRequestSummary = "PRIVATE_ORDINARY_PROSE_X api_key=<redacted> <path>";
+    const currentConfiguredAt = "2026-07-24T07:00:00.000Z";
+    let leadOptions;
+    const result = await collectEvidenceBundle({
+      workspace,
+      cwd,
+      platform: "dsh",
+      depth: "normal",
+    }, dependencies({
+      collectSessionEvidence: async () => availableLane(sessionFacts({
+        candidates: [{
+          timestamp: "2026-07-01T07:00:00.000Z",
+          request: { summary: safeRequestSummary },
+          configuredSkills: [],
+          observedSkills: [],
+        }],
+      })),
+      collectAgentCustomize: async () => availableLane({
+        kind: "agent-asset-baseline",
+        schemaVersion: 2,
+        status: "complete",
+        scope: {
+          provider: "dsh",
+          workspace,
+          cwd,
+          includeUserHome: false,
+          includeMemories: false,
+        },
+        configuredSnapshot: {
+          collectedAt: currentConfiguredAt,
+          evidenceKind: "configured-not-observed",
+        },
+        envelopes: {
+          lint: { status: "available", data: {} },
+          inventory: { status: "available", data: { coverageRows: [] } },
+          integrity: { status: "available", data: {} },
+        },
+      }),
+      analyzeHarnessEvidence: async (options) => {
+        leadOptions = options;
+        return leadEvidence();
+      },
+    }));
+
+    assert.equal(result.schemaVersion, 3);
+    assert.equal(result.status, "complete");
+    assert.equal(result.context.provider, "dsh");
+    assert.equal(result.context.cwd, await realpath(cwd));
+    assert.deepEqual(
+      Object.fromEntries(Object.entries(result.lanes).map(([name, lane]) => [name, lane.status])),
+      { sessionEvidence: "available", projectHarness: "available", agentCustomize: "available" },
+    );
+    assert.equal(result.lead.status, "available");
+    assert.equal(leadOptions.cwd, result.context.cwd);
+    assert.equal(result.diagnostics.collectionMode, "frozen-context-multi-owner");
+    assert.equal(result.lanes.agentCustomize.data.configuredSnapshot.collectedAt, currentConfiguredAt);
+    assert.equal(result.lanes.sessionEvidence.data.candidates[0].configuredSkills.length, 0);
+    assert.equal(result.lanes.sessionEvidence.data.candidates[0].observedSkills.length, 0);
+    const serialized = JSON.stringify(result);
+    assert.match(serialized, /PRIVATE_ORDINARY_PROSE_X/u);
+    assert.doesNotMatch(serialized, /sk-test-secret-credential|\/Users\/synthetic-private-home/u);
+    assert.doesNotMatch(
+      serialized,
+      /existedAtSessionTime|usedInSession|influencedSession|sameHistoricalAsset|historicalAbsence/u,
+    );
+    assert.doesNotMatch(
+      serialized,
+      /PRIVATE_SKILL_SECRET_X|PRIVATE_INSTRUCTION_SECRET_Y|configuredDigest|symlinkTargetRealpath/u,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("DSH preserves the existing normal and quick Bundle completeness matrix", async () => {
+  const cases = [
+    { name: "normal complete", depth: "normal", overrides: {}, expected: "complete" },
+    {
+      name: "normal specialist partial",
+      depth: "normal",
+      overrides: { collectAgentCustomize: async () => ({ status: "partial", data: { kind: "agent-asset-baseline" } }) },
+      expected: "failed",
+    },
+    {
+      name: "normal topology partial",
+      depth: "normal",
+      overrides: { resolveWorkspaceTopology: async ({ workspace }) => topologyResolution(workspace, "partial") },
+      expected: "failed",
+    },
+    {
+      name: "normal lead unavailable",
+      depth: "normal",
+      overrides: { analyzeHarnessEvidence: async () => { throw Object.assign(new Error("lead failed"), { code: "LEAD_FAILED" }); } },
+      expected: "failed",
+    },
+    { name: "quick complete", depth: "quick", overrides: {}, expected: "complete" },
+    {
+      name: "quick specialist partial",
+      depth: "quick",
+      overrides: { collectAgentCustomize: async () => ({ status: "partial", data: { kind: "agent-asset-baseline" } }) },
+      expected: "partial",
+    },
+    {
+      name: "quick topology partial",
+      depth: "quick",
+      overrides: { resolveWorkspaceTopology: async ({ workspace }) => topologyResolution(workspace, "partial") },
+      expected: "partial",
+    },
+    {
+      name: "quick lead unavailable",
+      depth: "quick",
+      overrides: { analyzeHarnessEvidence: async () => { throw Object.assign(new Error("lead failed"), { code: "LEAD_FAILED" }); } },
+      expected: "failed",
+    },
+  ];
+
+  for (const current of cases) {
+    const result = await collectEvidenceBundle({
+      workspace: ".",
+      platform: "dsh",
+      depth: current.depth,
+    }, dependencies(current.overrides));
+    assert.equal(result.status, current.expected, current.name);
+  }
 });
 
 test("session lane preserves empty coverage but lowers incomplete Cursor coverage", async () => {
@@ -407,7 +745,7 @@ test("Claude agentCustomize lane routes the provider and isolated config paths",
   }, {
     collectAssetBaseline: async (options) => {
       received = options;
-      return { kind: "agent-asset-baseline", status: "complete" };
+      return validAssetBaseline(context);
     },
   });
 
@@ -425,10 +763,9 @@ test("normal agentCustomize evidence accepts a disclosed latest-route sample", a
     depth: "normal",
     "include-user-home": true,
   }, NOW);
-  const baseline = {
-    kind: "agent-asset-baseline",
-    status: "complete",
+  const baseline = validAssetBaseline(context, {
     envelopes: {
+      lint: { status: "available", data: {} },
       inventory: {
         status: "available",
         data: {
@@ -441,9 +778,10 @@ test("normal agentCustomize evidence accepts a disclosed latest-route sample", a
           },
         },
       },
+      integrity: { status: "available", data: {} },
     },
     diagnostics: { truncatedStages: [], sampledStages: ["inventory-owner-routes"] },
-  };
+  });
   const lane = await collectAgentCustomize(context, {}, {
     collectAssetBaseline: async () => baseline,
   });
@@ -465,7 +803,7 @@ test("Qwen agentCustomize lane routes the provider and isolated config paths", a
   }, {
     collectAssetBaseline: async (options) => {
       received = options;
-      return { kind: "agent-asset-baseline", status: "complete" };
+      return validAssetBaseline(context);
     },
   });
 
@@ -488,7 +826,7 @@ test("Pi agentCustomize lane routes the provider and isolated config paths", asy
   }, {
     collectAssetBaseline: async (options) => {
       received = options;
-      return { kind: "agent-asset-baseline", status: "complete" };
+      return validAssetBaseline(context);
     },
   });
 
@@ -511,7 +849,7 @@ test("Kimi agentCustomize lane routes the provider and isolated config paths", a
   }, {
     collectAssetBaseline: async (options) => {
       received = options;
-      return { kind: "agent-asset-baseline", status: "complete" };
+      return validAssetBaseline(context);
     },
   });
 
@@ -686,7 +1024,7 @@ test("WorkBuddy agentCustomize lane routes the provider and isolated config path
   }, {
     collectAssetBaseline: async (options) => {
       received = options;
-      return { kind: "agent-asset-baseline", status: "complete" };
+      return validAssetBaseline(context);
     },
   });
 

@@ -355,6 +355,8 @@ and Hooks. Memory bodies are never read.
 
 Options:
   --workspace <dir>          Workspace root (default: current directory)
+  --cwd <dir>                Configured-practice cwd (default: workspace)
+  --dsh-home <dir>           DeepSeek Harness config root override
   --qoder-home <dir>         Qoder home override
   --codex-home <dir>         Codex home override
   --claude-home <dir>        Claude config root override

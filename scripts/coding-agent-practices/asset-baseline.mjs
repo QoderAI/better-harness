@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import path from "node:path";
+import os from "node:os";
+import { realpathSync } from "node:fs";
 import { stat as statPath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -13,11 +15,12 @@ import {
 } from "../host-support/index.mjs";
 import { runAgentLint } from "../agent-lint/index.mjs";
 import { normalizeWorkspace, parseArgs, parseBooleanFlag } from "../session-analysis/index.mjs";
+import { pathIsContained, resolveConfiguredCwd } from "../workspace-topology/index.mjs";
 import { reviewAssetIntegrity } from "./asset-integrity.mjs";
 import { collectProviderInventory, collectQoderInventory } from "./inventory.mjs";
 
 export const ASSET_BASELINE_KIND = "agent-asset-baseline";
-export const ASSET_BASELINE_SCHEMA_VERSION = 1;
+export const ASSET_BASELINE_SCHEMA_VERSION = 2;
 export const MAX_BASELINE_FINDINGS = 16;
 export const MAX_BASELINE_OWNER_ROUTES = 16;
 const MAX_OWNER_ROUTE_STAT_CONCURRENCY = 32;
@@ -37,6 +40,107 @@ const OWNER_KIND_RANK = Object.freeze({
   workflows: 8,
 });
 const OWNER_SCOPE_RANK = Object.freeze({ workspace: 0, project: 0, inherited: 1, user: 2, plugin: 3 });
+const BASELINE_STATUSES = new Set(["complete", "partial", "failed"]);
+const BASELINE_ENVELOPE_NAMES = Object.freeze(["lint", "inventory", "integrity"]);
+
+function invalidBaseline(message) {
+  throw Object.assign(new Error(`invalid Agent Asset Baseline v2: ${message}`), {
+    code: "INVALID_AGENT_ASSET_BASELINE",
+  });
+}
+
+function record(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function nonemptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function validateConfiguredSnapshot(snapshot) {
+  if (!record(snapshot)) invalidBaseline("configuredSnapshot must be an object");
+  if (!nonemptyString(snapshot.collectedAt) || Number.isNaN(Date.parse(snapshot.collectedAt))) {
+    invalidBaseline("configuredSnapshot.collectedAt must be an ISO timestamp");
+  }
+  if (snapshot.evidenceKind !== "configured-not-observed") {
+    invalidBaseline("configuredSnapshot.evidenceKind is unsupported");
+  }
+  if (!["qualified-defaults", "caller-overrides"].includes(snapshot.configurationSource)) {
+    invalidBaseline("configuredSnapshot.configurationSource is unsupported");
+  }
+  if (!["included", "not-authorized"].includes(snapshot.userHomeCollection)) {
+    invalidBaseline("configuredSnapshot.userHomeCollection is unsupported");
+  }
+  if (!["enabled", "disabled-by-byte-limit"].includes(snapshot.instructionCollection)) {
+    invalidBaseline("configuredSnapshot.instructionCollection is unsupported");
+  }
+  if (!record(snapshot.qualification)
+    || snapshot.qualification.provider !== "dsh"
+    || !nonemptyString(snapshot.qualification.version)
+    || !/^[a-f0-9]{40}$/u.test(snapshot.qualification.sourceSha ?? "")) {
+    invalidBaseline("configuredSnapshot.qualification is malformed");
+  }
+  if (!record(snapshot.runtimeResolution)
+    || ["cordis", "profile", "preset", "runtimeSkills"]
+      .some((name) => snapshot.runtimeResolution[name] !== false)) {
+    invalidBaseline("configuredSnapshot.runtimeResolution is malformed");
+  }
+}
+
+export function validateAssetBaselineV2(baseline, expected = {}) {
+  if (!record(baseline) || baseline.kind !== ASSET_BASELINE_KIND) {
+    invalidBaseline("kind is unsupported");
+  }
+  if (baseline.schemaVersion !== ASSET_BASELINE_SCHEMA_VERSION) {
+    invalidBaseline("schemaVersion is unsupported");
+  }
+  if (!BASELINE_STATUSES.has(baseline.status)) invalidBaseline("status is unsupported");
+  if (!record(baseline.scope)
+    || !nonemptyString(baseline.scope.provider)
+    || !nonemptyString(baseline.scope.workspace)
+    || !nonemptyString(baseline.scope.cwd)
+    || typeof baseline.scope.includeUserHome !== "boolean"
+    || typeof baseline.scope.includeMemories !== "boolean") {
+    invalidBaseline("scope is malformed");
+  }
+  for (const name of ["provider", "workspace", "cwd", "includeUserHome", "includeMemories"]) {
+    if (expected[name] !== undefined && baseline.scope[name] !== expected[name]) {
+      invalidBaseline(`scope.${name} does not match the frozen context`);
+    }
+  }
+  if (!record(baseline.envelopes)) invalidBaseline("envelopes must be an object");
+  for (const name of BASELINE_ENVELOPE_NAMES) {
+    const envelope = baseline.envelopes[name];
+    if (!record(envelope) || !["available", "unavailable"].includes(envelope.status)) {
+      invalidBaseline(`${name} envelope is malformed`);
+    }
+    if (envelope.status === "available" && !record(envelope.data)) {
+      invalidBaseline(`${name} envelope is missing data`);
+    }
+    if (envelope.status === "unavailable"
+      && (!record(envelope.error)
+        || !nonemptyString(envelope.error.code)
+        || !nonemptyString(envelope.error.message))) {
+      invalidBaseline(`${name} envelope is missing an error`);
+    }
+  }
+  if (!record(baseline.diagnostics)) invalidBaseline("diagnostics must be an object");
+  if (baseline.status === "complete"
+    && BASELINE_ENVELOPE_NAMES.some((name) => baseline.envelopes[name].status !== "available")) {
+    invalidBaseline("complete status requires all envelopes");
+  }
+  if (baseline.status === "failed"
+    && BASELINE_ENVELOPE_NAMES.some((name) => baseline.envelopes[name].status !== "unavailable")) {
+    invalidBaseline("failed status requires unavailable envelopes");
+  }
+  if (baseline.scope.provider === "dsh") {
+    if (baseline.status !== "failed") validateConfiguredSnapshot(baseline.configuredSnapshot);
+    else if (baseline.configuredSnapshot !== undefined) validateConfiguredSnapshot(baseline.configuredSnapshot);
+  } else if (baseline.configuredSnapshot !== undefined) {
+    invalidBaseline("configuredSnapshot is only supported for DSH");
+  }
+  return baseline;
+}
 
 function text(value, limit = 320) {
   return String(value ?? "").replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, limit);
@@ -49,30 +153,99 @@ function compactError(error, stage) {
   };
 }
 
-function compactFinding(finding = {}) {
+function portable(relativePath) {
+  return relativePath.split(path.sep).join("/");
+}
+
+function canonicalIfPresent(filePath) {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return filePath;
+  }
+}
+
+function pathLocator(filePath, context) {
+  if (typeof filePath !== "string" || !filePath.trim()) return undefined;
+  if (filePath === "<path>" || filePath.startsWith("<workspace>") || filePath.startsWith("<git-root>") || filePath.startsWith("~/")) {
+    return filePath.split(/[\\/]/u).includes("..") ? "<path>" : filePath;
+  }
+  const absolute = path.resolve(context.workspace, filePath);
+  const resolved = canonicalIfPresent(absolute);
+  const workspace = canonicalIfPresent(context.workspace);
+  const lexicalWorkspace = context.workspaceInput ?? context.workspace;
+  const lexicalGitRoot = context.gitRootInput ?? context.gitRoot;
+  const gitRoot = lexicalGitRoot ? canonicalIfPresent(lexicalGitRoot) : undefined;
+  const lexicalHome = context.includeUserHome ? context.home : undefined;
+  const home = lexicalHome ? canonicalIfPresent(lexicalHome) : undefined;
+  if (pathIsContained(lexicalWorkspace, absolute)
+    && (resolved === absolute || pathIsContained(workspace, resolved))) {
+    const relative = path.relative(lexicalWorkspace, absolute);
+    return relative ? `<workspace>/${portable(relative)}` : "<workspace>";
+  }
+  if (lexicalGitRoot && pathIsContained(lexicalGitRoot, absolute)
+    && (resolved === absolute || pathIsContained(gitRoot, resolved))) {
+    const relative = path.relative(lexicalGitRoot, absolute);
+    return relative ? `<git-root>/${portable(relative)}` : "<git-root>";
+  }
+  if (lexicalHome && pathIsContained(lexicalHome, absolute)
+    && (resolved === absolute || pathIsContained(home, resolved))) {
+    const relative = path.relative(lexicalHome, absolute);
+    return relative ? `~/${portable(relative)}` : "~";
+  }
+  if (pathIsContained(workspace, resolved)) {
+    const relative = path.relative(workspace, resolved);
+    return relative ? `<workspace>/${portable(relative)}` : "<workspace>";
+  }
+  if (gitRoot && pathIsContained(gitRoot, resolved)) {
+    const relative = path.relative(gitRoot, resolved);
+    return relative ? `<git-root>/${portable(relative)}` : "<git-root>";
+  }
+  if (home && pathIsContained(home, resolved)) {
+    const relative = path.relative(home, resolved);
+    return relative ? `~/${portable(relative)}` : "~";
+  }
+  return "<path>";
+}
+
+function boundedText(value, context, knownPath) {
+  let result = text(value);
+  if (!result) return result;
+  const marker = "BETTER_HARNESS_PATH_LOCATOR";
+  const locator = knownPath ? pathLocator(knownPath, context) ?? "<path>" : undefined;
+  if (knownPath) result = result.replaceAll(String(knownPath), marker);
+  return result
+    .replace(/\\\\[^\s,;)'"\]]+\\[^\s,;)'"\]]+/gu, (candidate) => pathLocator(candidate, context) ?? "<path>")
+    .replace(/[A-Za-z]:[\\/][^\s,;)'"\]]+/gu, (candidate) => pathLocator(candidate, context) ?? "<path>")
+    .replace(/\/(?:[^\s,;)'"\]]+\/?)+/gu, (candidate) => pathLocator(candidate, context) ?? "<path>")
+    .replaceAll(marker, locator ?? "<path>");
+}
+
+function compactFinding(finding = {}, context) {
+  const file = pathLocator(finding.file, context);
   return Object.fromEntries(Object.entries({
     id: text(finding.id, 96),
     severity: text(finding.severity, 24),
     assetKind: text(finding.assetKind ?? finding.kind, 48),
     assetName: text(finding.assetName, 96),
     scope: text(finding.scope, 32),
-    file: text(finding.file, 180),
+    file,
     line: Number.isInteger(finding.line) ? finding.line : undefined,
-    evidence: text(finding.evidence),
-    why: text(finding.why),
-    whyThisMatters: text(finding.whyThisMatters),
+    evidence: boundedText(finding.evidence, context, finding.file),
+    why: boundedText(finding.why, context, finding.file),
+    whyThisMatters: boundedText(finding.whyThisMatters, context, finding.file),
     sourceLabel: text(finding.sourceLabel, 96),
     rubricRef: text(finding.rubricRef, 120),
   }).filter(([, value]) => value !== undefined && value !== ""));
 }
 
-function compactFindings(findings = []) {
+function compactFindings(findings = [], context) {
   const ordered = [...findings].sort((left, right) =>
     (SEVERITY_RANK[left?.severity] ?? 9) - (SEVERITY_RANK[right?.severity] ?? 9)
       || String(left?.id ?? "").localeCompare(String(right?.id ?? "")),
   );
   return {
-    items: ordered.slice(0, MAX_BASELINE_FINDINGS).map(compactFinding),
+    items: ordered.slice(0, MAX_BASELINE_FINDINGS).map((finding) => compactFinding(finding, context)),
     total: ordered.length,
     omitted: Math.max(0, ordered.length - MAX_BASELINE_FINDINGS),
     truncated: ordered.length > MAX_BASELINE_FINDINGS,
@@ -83,7 +256,7 @@ function workspaceRoute(filePath, workspace) {
   if (!filePath) return undefined;
   const absolute = path.resolve(filePath);
   const relative = path.relative(workspace, absolute);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+  if (!relative || !pathIsContained(workspace, absolute)) return undefined;
   return relative.split(path.sep).join("/");
 }
 
@@ -101,15 +274,21 @@ async function ownerRoutes(inventory, workspace, options = {}) {
       const name = text(item?.displayName ?? item?.name ?? item?.label, 96);
       if (!name) continue;
       const sourcePath = item?.path ?? item?.filePath ?? item?.rootPath;
+      const rawRoute = text(item?.originRoute, 180)
+        || workspaceRoute(item?.path ?? item?.filePath, workspace);
+      const locatedSource = sourcePath ? pathLocator(sourcePath, options.pathContext) : undefined;
       const route = Object.fromEntries(Object.entries({
         kind: text(surface.type, 32),
         scope: text(item?.scope ?? surface.scope, 24),
         name,
         version: text(item?.version, 32),
         owner: text(item?.pluginName ?? item?.ownerName ?? item?.sourceLabel, 96),
-        route: text(item?.originRoute, 180)
-          || workspaceRoute(item?.path ?? item?.filePath, workspace),
-        effectiveTarget: text(item?.effectiveTarget, 180),
+        route: locatedSource === "<path>" ? "<path>" : rawRoute,
+        effectiveTarget: item?.effectiveTarget
+          ? (path.isAbsolute(item.effectiveTarget)
+            ? pathLocator(item.effectiveTarget, options.pathContext)
+            : text(item.effectiveTarget, 180))
+          : undefined,
       }).filter(([, value]) => value !== undefined && value !== ""));
       const key = [route.kind, route.scope, route.name, route.version, route.owner, route.route].join(":");
       if (!routes.has(key)) routes.set(key, { route, sourcePath });
@@ -176,8 +355,8 @@ async function compactInventory(inventory, workspace, options = {}) {
     ...row,
     ...(row?.surface === "Memories"
       ? { paths: undefined }
-      : Array.isArray(row?.paths) && row.paths.length > 5
-        ? { paths: row.paths.slice(0, 5) }
+      : Array.isArray(row?.paths)
+        ? { paths: row.paths.slice(0, 12).map((filePath) => pathLocator(filePath, options.pathContext)) }
         : {}),
   })).map((row) => Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined)));
   const inventorySummary = Object.fromEntries(Object.entries(inventory?.summary ?? {})
@@ -201,24 +380,24 @@ async function compactInventory(inventory, workspace, options = {}) {
   };
 }
 
-function compactLint(lint) {
+function compactLint(lint, context) {
   return {
     kind: lint.kind,
     profile: lint.profile,
     summary: lint.summary,
     assetInventory: lint.assetInventory,
-    findings: compactFindings(lint.findings),
+    findings: compactFindings(lint.findings, context),
   };
 }
 
-function compactIntegrity(integrity) {
+function compactIntegrity(integrity, context) {
   return {
     kind: integrity.kind,
     profile: integrity.profile,
     status: integrity.status,
     contentPolicy: integrity.contentPolicy,
     summary: integrity.summary,
-    findings: compactFindings(integrity.findings),
+    findings: compactFindings(integrity.findings, context),
   };
 }
 
@@ -236,7 +415,7 @@ function inheritedWorkspaceRoots(topology, workspace) {
     return [];
   }
   const relative = path.relative(topology.gitRoot, workspace);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return [];
+  if (!relative || !pathIsContained(topology.gitRoot, workspace)) return [];
   const parts = relative.split(path.sep).filter(Boolean);
   const roots = [topology.gitRoot];
   for (let index = 1; index < parts.length; index += 1) {
@@ -253,8 +432,7 @@ function inheritedItem(item, topology) {
   const filePath = rawItemPath(item);
   const relative = filePath ? path.relative(topology.gitRoot, path.resolve(filePath)) : "";
   const originRoute = relative
-    && !relative.startsWith("..")
-    && !path.isAbsolute(relative)
+    && pathIsContained(topology.gitRoot, path.resolve(filePath))
     ? relative.split(path.sep).join("/")
     : undefined;
   return {
@@ -305,25 +483,67 @@ function mergeInheritedInventories(projectInventory, inheritedInventories, topol
   };
 }
 
+function baselineConfiguredScope(options) {
+  const workspace = normalizeWorkspace(options.workspace ?? ".");
+  const cwd = normalizeWorkspace(options.cwd ?? workspace);
+  return resolveConfiguredCwd({ workspace, cwd });
+}
+
+function configuredSnapshot(rawInventory, provider) {
+  if (provider !== "dsh") return undefined;
+  const diagnostics = rawInventory?.diagnostics;
+  if (!diagnostics || !rawInventory?.generatedAt) return undefined;
+  return {
+    collectedAt: rawInventory.generatedAt,
+    evidenceKind: diagnostics.evidenceKind,
+    configurationSource: diagnostics.configurationSource,
+    userHomeCollection: diagnostics.userHomeCollection,
+    instructionCollection: diagnostics.instructionCollection,
+    qualification: {
+      provider: "dsh",
+      version: diagnostics.qualifiedDshVersion,
+      sourceSha: diagnostics.qualifiedDshSourceSha,
+    },
+    runtimeResolution: {
+      cordis: false,
+      profile: false,
+      preset: false,
+      runtimeSkills: false,
+    },
+  };
+}
+
 export async function collectAssetBaseline(options = {}, dependencies = {}) {
   const provider = options.provider ?? options.platform ?? "qoder";
   if (!PROVIDERS.has(provider)) {
     throw new Error(`Unsupported provider: ${provider}. Supported providers: ${ASSET_PRACTICE_HOSTS.join(", ")}.`);
   }
-  const workspace = normalizeWorkspace(options.workspace ?? ".");
+  const configuredScope = baselineConfiguredScope(options);
+  const { workspace, cwd } = configuredScope;
+  const topology = options.topology?.gitRoot
+    ? { ...options.topology, gitRoot: canonicalIfPresent(options.topology.gitRoot) }
+    : options.topology;
   const includeUserHome = parseBooleanFlag(options.includeUserHome ?? options["include-user-home"] ?? false);
   const memoryOption = options.includeMemories ?? options["include-memories"];
+  const requestedMemories = memoryOption === undefined ? undefined : parseBooleanFlag(memoryOption);
+  if (provider === "dsh" && requestedMemories === true) {
+    throw Object.assign(new Error("DSH does not support Memory collection"), {
+      code: "UNSUPPORTED_DSH_MEMORY_COLLECTION",
+    });
+  }
   // Qoder can isolate title metadata to the selected project. Keep that
   // metadata in the normal project baseline while user/global Memory remains
   // behind includeUserHome. Other providers expose Memory as user-level data.
-  const includeMemories = memoryOption === undefined
+  const includeMemories = requestedMemories === undefined
     ? provider === "qoder"
-    : parseBooleanFlag(memoryOption);
+    : requestedMemories;
   const common = {
     ...options,
     provider,
     platform: provider,
     workspace,
+    cwd,
+    topology: options.topology,
     includeUserHome,
     includeGlobalHooks: includeUserHome,
     includeMemories,
@@ -332,7 +552,7 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
   let rawInventory;
   try {
     rawInventory = await collectRawInventory(common);
-    const inheritedRoots = inheritedWorkspaceRoots(options.topology, workspace);
+    const inheritedRoots = inheritedWorkspaceRoots(topology, workspace);
     if (inheritedRoots.length > 0) {
       const inheritedInventories = [];
       for (const inheritedWorkspace of inheritedRoots) {
@@ -344,7 +564,7 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
           includeMemories: false,
         }));
       }
-      rawInventory = mergeInheritedInventories(rawInventory, inheritedInventories, options.topology);
+      rawInventory = mergeInheritedInventories(rawInventory, inheritedInventories, topology);
     }
   } catch (error) {
     const failed = unavailable(error, "inventory");
@@ -352,7 +572,7 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
       kind: ASSET_BASELINE_KIND,
       schemaVersion: ASSET_BASELINE_SCHEMA_VERSION,
       status: "failed",
-      scope: { provider, workspace, includeUserHome, includeMemories },
+      scope: { provider, workspace, cwd, includeUserHome, includeMemories },
       envelopes: { lint: failed, inventory: failed, integrity: failed },
       diagnostics: { sharedInventorySnapshot: false, compact: true },
     };
@@ -361,24 +581,36 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
   const lintRunner = dependencies.runLint ?? runAgentLint;
   const inventoryRunner = dependencies.collectPublicInventory
     ?? (provider === "qoder" ? collectQoderInventory : collectProviderInventory);
+  const pathContext = {
+    workspace,
+    workspaceInput: normalizeWorkspace(options.workspace ?? "."),
+    gitRoot: topology?.gitRoot,
+    gitRootInput: options.topology?.gitRoot,
+    home: dependencies.homeDirectory?.() ?? os.homedir(),
+    includeUserHome,
+  };
   const [lintResult, inventoryResult] = await Promise.allSettled([
     lintRunner({ ...common, profile: "agent-assets-review", inventory: rawInventory }),
     inventoryRunner({ ...common, inventory: rawInventory }),
   ]);
   const lintEnvelope = lintResult.status === "fulfilled"
-    ? available(compactLint(lintResult.value))
+    ? available(compactLint(lintResult.value, pathContext))
     : unavailable(lintResult.reason, "lint");
   const inventoryEnvelope = inventoryResult.status === "fulfilled"
     ? available(await compactInventory(inventoryResult.value, workspace, {
       stat: dependencies.stat,
       now: dependencies.now,
+      pathContext,
     }))
     : unavailable(inventoryResult.reason, "inventory");
   let integrityEnvelope;
   if (inventoryResult.status === "fulfilled") {
     try {
       const review = dependencies.reviewIntegrity ?? reviewAssetIntegrity;
-      integrityEnvelope = available(compactIntegrity(review(inventoryResult.value, { locale: options.language })));
+      integrityEnvelope = available(compactIntegrity(
+        review(inventoryResult.value, { locale: options.language }),
+        pathContext,
+      ));
     } catch (error) {
       integrityEnvelope = unavailable(error, "integrity");
     }
@@ -394,6 +626,7 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
   const sampledStages = [
     inventoryEnvelope.data?.ownerRoutes?.truncated ? "inventory-owner-routes" : null,
   ].filter(Boolean);
+  const snapshot = configuredSnapshot(rawInventory, provider);
   return {
     kind: ASSET_BASELINE_KIND,
     schemaVersion: ASSET_BASELINE_SCHEMA_VERSION,
@@ -402,7 +635,8 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
       : availableCount === 0
         ? "failed"
         : "partial",
-    scope: { provider, workspace, includeUserHome, includeMemories },
+    scope: { provider, workspace, cwd, includeUserHome, includeMemories },
+    ...(snapshot ? { configuredSnapshot: snapshot } : {}),
     envelopes,
     diagnostics: {
       sharedInventorySnapshot: true,
@@ -445,11 +679,13 @@ Collect one compact, read-only AI evidence envelope from a shared asset snapshot
 
 Options:
   --workspace <dir>          Workspace root (default: current directory)
+  --cwd <dir>                Configured-practice cwd (default: workspace)
   --include-user-home        Include authorized user/global asset metadata
   --include-memories         Include authorized Memory title metadata (default: selected Qoder project)
   --claude-home <dir>        Claude config root override
   --claude-state <file>      Claude state-file override
   --kimi-home <dir>          Kimi Code data root override
+  --dsh-home <dir>           DeepSeek Harness config root override
   --language <en|zh-CN>      Integrity finding language (default: en)
   --format <json|markdown>   Output format (default: json)
   --json                     Emit JSON

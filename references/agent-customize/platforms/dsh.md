@@ -57,9 +57,12 @@ digests, rendered framing, or symlink targets.
 Every result is `configured-not-observed`. Filesystem configuration and
 applicability do not prove runtime use. Runtime/in-process or scoped Skill
 providers and active Cordis, Profile, and Preset composition remain unresolved.
-DSH advertises only `sessionAnalysis` and `agentCustomize`; this provider does
-not add asset-practices, checkup, evidence-bundle, report, rendering, output,
-lifecycle, managed-shell, or public Quickstart support.
+DSH advertises `sessionAnalysis`, `agentCustomize`, `assetPractices`,
+`harnessReport`, and `evidenceBundle`. The shared Asset Baseline and Evidence
+Bundle freeze a canonical cwd, retain compact configured provenance, and keep
+current configuration distinct from historical Session observation. This does
+not add checkup, rendering, output, lifecycle, managed-shell, or public
+Quickstart support; `/better-harness` is inline/no-files only for DSH.
 
 Repository contributors can compare the Better Harness collector with pinned
 native DSH behavior without credentials or a model request:
@@ -68,5 +71,8 @@ native DSH behavior without credentials or a model request:
 npm run test:dsh-configured-assets-native
 ```
 
-The canonical acceptance contract is the
-[dated configured-assets specification](../../../docs/specs/2026-08-23-101-deepseek-harness-configured-assets.md).
+The [#101 configured-assets specification](../../../docs/specs/2026-08-23-101-deepseek-harness-configured-assets.md)
+remains canonical for native DSH configured-assets semantics and Skills / Instructions collection qualification.
+The [#104 shared-analysis specification](../../../docs/specs/2026-08-24-104-deepseek-harness-shared-analysis-evidence-bundle.md)
+is canonical for shared Harness analysis admission, Asset Practices qualification, Asset Baseline v2,
+Evidence Bundle v3 with frozen cwd, Harness Report admission, and DSH inline/no-files analysis behavior.

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { test } from "vitest";
+import { onTestFinished, test } from "vitest";
 
 import {
   ASSET_BASELINE_KIND,
@@ -14,6 +14,42 @@ import {
 } from "../../scripts/coding-agent-practices/asset-baseline.mjs";
 
 const cliPath = path.resolve("scripts/better-harness.mjs");
+
+async function temporaryWorkspace(prefix) {
+  const root = await mkdtemp(path.join(os.tmpdir(), prefix));
+  const workspace = path.join(root, "workspace");
+  await mkdir(workspace, { recursive: true });
+  onTestFinished(() => rm(root, { recursive: true, force: true }));
+  return { root, workspace };
+}
+
+function emptyBaselineDependencies(onRawInventory = () => {}) {
+  return {
+    collectRawInventory: async (options) => {
+      onRawInventory(options);
+      return {};
+    },
+    runLint: async () => ({ kind: "agent-lint", profile: "agent-assets-review", summary: {}, findings: [] }),
+    collectPublicInventory: async (options) => ({
+      scope: {
+        platform: options.provider,
+        includeUserHome: options.includeUserHome,
+        includeMemories: options.includeMemories,
+      },
+      summary: { practiceCoverageRows: [] },
+      surfaces: [],
+      memories: { included: options.includeMemories, categories: [] },
+      warnings: [],
+    }),
+    reviewIntegrity: () => ({
+      kind: "asset-integrity-review",
+      profile: "asset-integrity-review",
+      status: "reviewed",
+      summary: { findingCount: 0 },
+      findings: [],
+    }),
+  };
+}
 
 function findings(count) {
   return Array.from({ length: count }, (_, index) => ({
@@ -29,20 +65,26 @@ function findings(count) {
 test("asset baseline shares one inventory snapshot and emits compact AI envelopes", async () => {
   const rawInventory = { marker: "shared-raw-inventory" };
   let rawCalls = 0;
+  let rawOptions;
+  let lintOptions;
+  let inventoryOptions;
   let lintInventory;
   let publicInventory;
-  const workspace = path.resolve("/tmp/better-harness-baseline-project");
+  const { workspace } = await temporaryWorkspace("better-harness-baseline-project-");
   const result = await collectAssetBaseline({
     provider: "codex",
     workspace,
+    cwd: workspace,
     includeMemories: true,
     language: "en",
   }, {
-    collectRawInventory: async () => {
+    collectRawInventory: async (options) => {
       rawCalls += 1;
+      rawOptions = options;
       return rawInventory;
     },
     runLint: async (options) => {
+      lintOptions = options;
       lintInventory = options.inventory;
       return {
         kind: "agent-lint",
@@ -54,6 +96,7 @@ test("asset baseline shares one inventory snapshot and emits compact AI envelope
       };
     },
     collectPublicInventory: async (options) => {
+      inventoryOptions = options;
       publicInventory = options.inventory;
       return {
         scope: { platform: "codex", includeUserHome: false },
@@ -65,7 +108,7 @@ test("asset baseline shares one inventory snapshot and emits compact AI envelope
           {
             type: "skills",
             scope: "workspace",
-            items: [{ name: "review", scope: "workspace", path: path.join(workspace, "skills/review/SKILL.md") }],
+            items: [{ name: "review", scope: "workspace", path: path.join(options.workspace, "skills/review/SKILL.md") }],
           },
           {
             type: "plugins",
@@ -99,7 +142,13 @@ test("asset baseline shares one inventory snapshot and emits compact AI envelope
     }),
   });
 
+  const canonicalWorkspace = await realpath(workspace);
+  assert.equal(result.schemaVersion, 2);
+  assert.equal(result.scope.cwd, canonicalWorkspace);
   assert.equal(rawCalls, 1);
+  assert.equal(rawOptions.cwd, canonicalWorkspace);
+  assert.equal(lintOptions.cwd, canonicalWorkspace);
+  assert.equal(inventoryOptions.cwd, canonicalWorkspace);
   assert.equal(lintInventory, rawInventory);
   assert.equal(publicInventory, rawInventory);
   assert.equal(result.kind, ASSET_BASELINE_KIND);
@@ -134,6 +183,252 @@ test("asset baseline shares one inventory snapshot and emits compact AI envelope
   assert.doesNotMatch(serialized, /private title only/u);
 });
 
+test("DeepSeek Harness baseline freezes cwd and exposes only compact configured provenance", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-dsh-baseline-"));
+  onTestFinished(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const repository = path.join(root, "repository");
+  const workspace = path.join(repository, "packages", "api");
+  const cwd = path.join(workspace, "src");
+  const dshHome = path.join(root, "isolated-dsh-home");
+  const skillDirectory = path.join(repository, ".dsh", "skills", "project-review");
+  await mkdir(path.join(repository, ".git"), { recursive: true });
+  await mkdir(cwd, { recursive: true });
+  await mkdir(dshHome, { recursive: true });
+  await mkdir(skillDirectory, { recursive: true });
+  await writeFile(path.join(repository, "AGENTS.md"), "repository instruction canary\n", "utf8");
+  await writeFile(path.join(workspace, "AGENTS.md"), "workspace instruction canary\n", "utf8");
+  await writeFile(path.join(cwd, "AGENTS.local.md"), "nested instruction canary\n", "utf8");
+  await writeFile(
+    path.join(skillDirectory, "SKILL.md"),
+    "---\nname: project-review\ndescription: Project review skill\n---\nsecret skill body canary\n",
+    "utf8",
+  );
+
+  const result = await collectAssetBaseline({
+    provider: "dsh",
+    workspace,
+    cwd,
+    dshHome,
+    includeUserHome: false,
+  });
+
+  assert.equal(result.schemaVersion, 2);
+  assert.deepEqual(result.scope, {
+    provider: "dsh",
+    workspace: await realpath(workspace),
+    cwd: await realpath(cwd),
+    includeUserHome: false,
+    includeMemories: false,
+  });
+  const { collectedAt, ...configuredSnapshot } = result.configuredSnapshot;
+  assert.equal(typeof collectedAt, "string");
+  assert.deepEqual(configuredSnapshot, {
+    evidenceKind: "configured-not-observed",
+    configurationSource: "caller-overrides",
+    userHomeCollection: "not-authorized",
+    instructionCollection: "enabled",
+    qualification: {
+      provider: "dsh",
+      version: "0.1.1-rc.2",
+      sourceSha: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+    },
+    runtimeResolution: {
+      cordis: false,
+      profile: false,
+      preset: false,
+      runtimeSkills: false,
+    },
+  });
+  assert.equal(result.status, "complete");
+  assert.ok(result.envelopes.inventory.data.coverageRows.length >= 2);
+  assert.match(JSON.stringify(result), /AGENTS\.local\.md/u);
+  assert.doesNotMatch(
+    JSON.stringify(result),
+    /instruction canary|secret skill body canary|configurationDigest|contentDigest|shadowedSkills|skippedSkills|instructionDecisions|symlinkTarget/u,
+  );
+});
+
+test("asset baseline canonicalizes direct configured scope before inventory collection", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-baseline-cwd-"));
+  const workspace = path.join(root, "workspace");
+  const dotted = path.join(workspace, "..valid-child", "nested");
+  const outside = path.join(root, "outside");
+  const escape = path.join(workspace, "escape");
+  try {
+    await Promise.all([mkdir(dotted, { recursive: true }), mkdir(outside)]);
+    await symlink(outside, escape, "dir");
+
+    let received;
+    const omitted = await collectAssetBaseline(
+      { provider: "codex", workspace },
+      emptyBaselineDependencies((options) => { received = options; }),
+    );
+    assert.equal(omitted.scope.workspace, await realpath(workspace));
+    assert.equal(omitted.scope.cwd, omitted.scope.workspace);
+    assert.equal(received.cwd, omitted.scope.cwd);
+
+    const nested = await collectAssetBaseline(
+      { provider: "codex", workspace, cwd: dotted },
+      emptyBaselineDependencies((options) => { received = options; }),
+    );
+    assert.equal(nested.scope.cwd, await realpath(dotted));
+    assert.equal(received.cwd, nested.scope.cwd);
+
+    for (const cwd of [outside, escape, path.join(workspace, "missing")]) {
+      await assert.rejects(
+        collectAssetBaseline({ provider: "codex", workspace, cwd }, emptyBaselineDependencies()),
+        (error) => error?.code === (cwd.endsWith("missing")
+          ? "INVALID_CONFIGURED_CWD"
+          : "CONFIGURED_CWD_OUTSIDE_WORKSPACE"),
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("DSH baseline never advertises unsupported Memory collection", async () => {
+  const { workspace } = await temporaryWorkspace("better-harness-dsh-memory-scope-");
+  const defaults = await collectAssetBaseline(
+    { provider: "dsh", workspace },
+    emptyBaselineDependencies(),
+  );
+  const explicitFalse = await collectAssetBaseline(
+    { provider: "dsh", workspace, includeMemories: false },
+    emptyBaselineDependencies(),
+  );
+  assert.equal(defaults.scope.includeMemories, false);
+  assert.equal(explicitFalse.scope.includeMemories, false);
+  await assert.rejects(
+    collectAssetBaseline(
+      { provider: "dsh", workspace, includeMemories: true },
+      emptyBaselineDependencies(),
+    ),
+    (error) => error?.code === "UNSUPPORTED_DSH_MEMORY_COLLECTION",
+  );
+
+  const codex = await collectAssetBaseline(
+    { provider: "codex", workspace, includeMemories: true },
+    emptyBaselineDependencies(),
+  );
+  assert.equal(codex.scope.includeMemories, true);
+});
+
+test("asset baseline compacts finding, coverage, owner, and free-text paths to stable locators", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-baseline-locators-"));
+  onTestFinished(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const gitRoot = path.join(root, "repository");
+  const workspace = path.join(gitRoot, "packages", "api");
+  const userHome = path.join(root, "synthetic-home");
+  const outside = path.join(root, "outside", "private.txt");
+  const escape = path.join(workspace, "escape-to-outside");
+  await mkdir(workspace, { recursive: true });
+  await mkdir(userHome, { recursive: true });
+  await mkdir(path.dirname(outside), { recursive: true });
+  await writeFile(outside, "synthetic off-tree content\n", "utf8");
+  await symlink(outside, escape, "file");
+
+  const rawInventory = (selectedWorkspace) => ({
+    provider: "codex",
+    workspace: selectedWorkspace,
+    plugins: [],
+    manage: {
+      plugins: [], mcps: [], skills: [], subagents: [], rules: [], commands: [], hooks: [],
+    },
+    diagnostics: {},
+  });
+  const pathSamples = [
+    workspace,
+    path.join(workspace, "skill.md"),
+    path.join(gitRoot, "AGENTS.md"),
+    path.join(userHome, "skills", "global", "SKILL.md"),
+    outside,
+    escape,
+  ];
+  const result = await collectAssetBaseline({
+    provider: "codex",
+    workspace,
+    cwd: workspace,
+    codexHome: path.join(userHome, ".codex"),
+    includeUserHome: true,
+    topology: {
+      requestedWorkspace: workspace,
+      workspace,
+      gitRoot,
+      target: { kind: "workspace-member", workspace },
+    },
+  }, {
+    homeDirectory: () => userHome,
+    collectRawInventory: async (options) => rawInventory(options.workspace),
+    runLint: async () => ({
+      kind: "agent-lint",
+      profile: "agent-assets-review",
+      summary: { findings: pathSamples.length },
+      findings: pathSamples.map((file, index) => ({
+        id: `path-${index}`,
+        severity: "warning",
+        file,
+        evidence: `bounded source ${file}`,
+      })),
+    }),
+    collectPublicInventory: async () => ({
+      scope: { platform: "codex", includeUserHome: true },
+      summary: {
+        practiceCoverageRows: [{ surface: "Rules", scopes: ["Project"], count: 5, paths: pathSamples }],
+      },
+      surfaces: [{
+        type: "rules",
+        scope: "workspace",
+        items: pathSamples.map((file, index) => ({ name: `rule-${index}`, scope: "workspace", path: file })),
+      }],
+      memories: { included: false, categories: [] },
+      warnings: [],
+    }),
+    reviewIntegrity: () => ({
+      kind: "asset-integrity-review",
+      profile: "asset-integrity-review",
+      status: "reviewed",
+      summary: { findingCount: pathSamples.length },
+      findings: pathSamples.map((file, index) => ({
+        id: `integrity-path-${index}`,
+        severity: "warning",
+        file,
+        why: `bounded integrity source ${file}`,
+      })),
+    }),
+  });
+
+  const expectedLocators = [
+    "<workspace>",
+    "<workspace>/skill.md",
+    "<git-root>/AGENTS.md",
+    "~/skills/global/SKILL.md",
+    "<path>",
+    "<path>",
+  ];
+  assert.deepEqual(
+    result.envelopes.lint.data.findings.items.map((finding) => finding.file),
+    expectedLocators,
+  );
+  assert.deepEqual(
+    result.envelopes.integrity.data.findings.items.map((finding) => finding.file),
+    expectedLocators,
+  );
+  assert.deepEqual(result.envelopes.inventory.data.coverageRows[0].paths, expectedLocators);
+  assert.equal(
+    result.envelopes.inventory.data.ownerRoutes.items.every((route) =>
+      !path.isAbsolute(route.route ?? "<path>")),
+    true,
+  );
+  assert.doesNotMatch(JSON.stringify(result.envelopes), new RegExp(root.replaceAll("/", "\\/"), "u"));
+});
+
 test("asset baseline preserves partial stage failures without hiding healthy envelopes", async () => {
   const result = await collectAssetBaseline({ provider: "cursor", workspace: "." }, {
     collectRawInventory: async () => ({}),
@@ -153,8 +448,20 @@ test("asset baseline preserves partial stage failures without hiding healthy env
   assert.match(markdown, /inventory: unavailable/);
 });
 
+test("failed raw inventory never fabricates configuredSnapshot", async () => {
+  const result = await collectAssetBaseline({ provider: "codex", workspace: "." }, {
+    collectRawInventory: async () => {
+      throw Object.assign(new Error("synthetic inventory failure"), { code: "SYNTHETIC_FAILURE" });
+    },
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(Object.hasOwn(result, "configuredSnapshot"), false);
+  assert.equal(result.diagnostics.sharedInventorySnapshot, false);
+});
+
 test("asset baseline samples the latest 16 owner routes with explicit freshness coverage", async () => {
-  const workspace = path.resolve("/tmp/better-harness-latest-owner-routes");
+  const { workspace } = await temporaryWorkspace("better-harness-latest-owner-routes-");
   const observedAt = new Date("2026-08-03T08:00:00.000Z");
   const modifiedBase = Date.parse("2026-08-01T00:00:00.000Z");
   let activeStats = 0;
@@ -215,7 +522,8 @@ test("asset baseline samples the latest 16 owner routes with explicit freshness 
 
 test("Qoder asset baseline includes selected-project Memory titles by default", async () => {
   let publicOptions;
-  const result = await collectAssetBaseline({ provider: "qoder", workspace: "/tmp/qoder-project" }, {
+  const { workspace } = await temporaryWorkspace("better-harness-qoder-project-");
+  const result = await collectAssetBaseline({ provider: "qoder", workspace }, {
     collectRawInventory: async () => ({}),
     runLint: async () => ({ kind: "agent-lint", profile: "agent-assets-review", summary: {}, findings: [] }),
     collectPublicInventory: async (options) => {

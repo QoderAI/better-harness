@@ -21,6 +21,7 @@ Harness, and Agent Customize specialists plus the lead analyzer.
 
 Options:
   --workspace <path>       Target workspace (required)
+  --cwd <path>             Configured-practice cwd (default: workspace)
   --platform <name>        ${formatHostList(EVIDENCE_HOSTS)} (default: qoder)
   --language <locale>      Evidence language (default: en)
   --depth <quick|normal>   7-day/3-item or 30-day/5-item review (default: normal)
@@ -34,6 +35,7 @@ Options:
   --kimi-home <dir>        Kimi Code data root override
   --workbuddy-home <dir>   WorkBuddy data root override
   --grok-home <dir>        Grok CLI data root override
+  --dsh-home <dir>         DeepSeek Harness config root override
   --canvas-out <file>      With Qoder or Cursor, initialize canvas.json from lead facts
   --replace-canvas         Replace that canvas.json when explicitly authorized
   --format json            JSON only
@@ -41,7 +43,7 @@ Options:
 `;
 
 const ALLOWED = new Set([
-  "workspace", "platform", "provider", "language", "depth", "since", "until",
+  "workspace", "cwd", "platform", "provider", "language", "depth", "since", "until",
   "evidence-limit", "include-user-home", "include-memories", "canvas-out",
   "replace-canvas", "format", "json", ...hostHomeOptionKeys(EVIDENCE_HOSTS),
   "claude-state", "help", "h",
