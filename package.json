@@ -122,6 +122,6 @@
   },
   "devDependencies": {
     "conventional-changelog-cli": "^4.1.0",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }

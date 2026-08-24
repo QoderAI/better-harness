@@ -118,7 +118,7 @@
     "es-module-lexer": "2.3.1",
     "langium-cli": "4.3.0",
     "typescript": "7.0.2",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   },
   "publishConfig": {
     "access": "public"
