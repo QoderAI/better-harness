@@ -18,6 +18,7 @@ import { workspaceToClaudeSlugVariants } from "../../scripts/session-analysis/pl
 import { collectAgentCustomize } from "../../scripts/harness-analysis/evidence-bundle/agent-customize.mjs";
 import { collectProjectHarness } from "../../scripts/harness-analysis/evidence-bundle/project-harness.mjs";
 import { EVIDENCE_BUNDLE_HELP } from "../../scripts/harness-analysis/evidence-bundle/cli.mjs";
+import { collectAssetBaseline } from "../../scripts/coding-agent-practices/asset-baseline.mjs";
 
 const NOW = new Date("2026-07-24T08:00:00.000Z");
 
@@ -524,6 +525,120 @@ test("agentCustomize preserves valid partial and failed Baseline v2 semantics", 
   assert.equal(failedLane.status, "unavailable");
   assert.equal(failedLane.error.code, "AGENT_CUSTOMIZE_BASELINE_FAILED");
 });
+
+function dshRawInventory() {
+  return {
+    provider: "dsh",
+    generatedAt: "2026-07-24T07:00:00.000Z",
+    diagnostics: {
+      evidenceKind: "configured-not-observed",
+      configurationSource: "qualified-defaults",
+      userHomeCollection: "not-authorized",
+      instructionCollection: "enabled",
+      qualifiedDshVersion: "0.1.1-rc.2",
+      qualifiedDshSourceSha: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+    },
+  };
+}
+
+function healthyBaselineStages() {
+  return {
+    collectRawInventory: async () => dshRawInventory(),
+    runLint: async () => ({
+      kind: "agent-lint",
+      profile: "agent-assets-review",
+      summary: {},
+      findings: [],
+    }),
+    collectPublicInventory: async () => ({
+      scope: { platform: "dsh" },
+      summary: {},
+      surfaces: [],
+      memories: { included: false, categories: [] },
+      warnings: [],
+    }),
+    reviewIntegrity: () => ({
+      kind: "agent-asset-integrity",
+      profile: "agent-assets-review",
+      status: "reviewed",
+      contentPolicy: "metadata-only",
+      summary: {},
+      findings: [],
+    }),
+  };
+}
+
+const NESTED_BASELINE_ERROR_CASES = [
+  {
+    name: "failed raw inventory with a spaced POSIX path",
+    privatePath: "/Users/example/private project/raw inventory.json",
+    stages: ["lint", "inventory", "integrity"],
+    configure: (message) => ({
+      ...healthyBaselineStages(),
+      collectRawInventory: async () => { throw new Error(message); },
+    }),
+  },
+  {
+    name: "partial lint with a Windows drive path",
+    privatePath: "C:\\Users\\example\\private folder\\lint.json",
+    stages: ["lint"],
+    configure: (message) => ({
+      ...healthyBaselineStages(),
+      runLint: async () => { throw new Error(message); },
+    }),
+  },
+  {
+    name: "partial inventory with a spaced POSIX path",
+    privatePath: "/Users/example/private project/inventory.json",
+    stages: ["inventory"],
+    configure: (message) => ({
+      ...healthyBaselineStages(),
+      collectPublicInventory: async () => { throw new Error(message); },
+    }),
+  },
+  {
+    name: "partial integrity with a UNC path",
+    privatePath: "\\\\server\\private share\\integrity.json",
+    stages: ["integrity"],
+    configure: (message) => ({
+      ...healthyBaselineStages(),
+      reviewIntegrity: () => { throw new Error(message); },
+    }),
+  },
+];
+
+for (const current of NESTED_BASELINE_ERROR_CASES) {
+  test(`serialized Bundle sanitizes ${current.name}`, async () => {
+    const safeContext = "stage context remains available";
+    const message = `collector could not inspect '${current.privatePath}' while ${safeContext}`;
+    const result = await collectEvidenceBundle({
+      workspace: ".",
+      cwd: ".",
+      platform: "dsh",
+      depth: "quick",
+    }, dependencies({
+      collectAgentCustomize: undefined,
+      collectAssetBaseline: (options) => collectAssetBaseline(options, current.configure(message)),
+    }));
+    const serialized = JSON.stringify(result);
+
+    assert.equal(serialized.includes(current.privatePath), false);
+    assert.match(serialized, /<path>/u);
+    assert.match(serialized, /stage context remains available/u);
+    for (const stage of current.stages) {
+      assert.equal(result.lanes.agentCustomize.data.envelopes[stage].status, "unavailable");
+      assert.match(result.lanes.agentCustomize.data.envelopes[stage].error.code, /_UNAVAILABLE$/u);
+    }
+    assert.doesNotMatch(
+      serialized,
+      /PRIVATE_SKILL_SECRET_X|PRIVATE_INSTRUCTION_SECRET_Y|sk-test-secret-credential|configuredDigest|symlinkTargetRealpath/u,
+    );
+    assert.doesNotMatch(
+      serialized,
+      /existedAtSessionTime|usedInSession|influencedSession|sameHistoricalAsset|historicalAbsence/u,
+    );
+  });
+}
 
 test("lead receives configured cwd while Project Harness remains on its generic Git scope", async () => {
   const canonicalCwd = await realpath(".");

@@ -145,10 +145,10 @@ function text(value, limit = 320) {
   return String(value ?? "").replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, limit);
 }
 
-function compactError(error, stage) {
+function compactError(error, stage, context) {
   return {
     code: `${stage.toUpperCase().replace(/[^A-Z0-9]+/gu, "_")}_UNAVAILABLE`,
-    message: text(error instanceof Error ? error.message : error),
+    message: boundedText(error instanceof Error ? error.message : error, context),
   };
 }
 
@@ -169,6 +169,7 @@ function pathLocator(filePath, context) {
   if (filePath === "<path>" || filePath.startsWith("<workspace>") || filePath.startsWith("<git-root>") || filePath.startsWith("~/")) {
     return filePath.split(/[\\/]/u).includes("..") ? "<path>" : filePath;
   }
+  if (process.platform !== "win32" && /^(?:[A-Za-z]:[\\/]|\\\\)/u.test(filePath)) return "<path>";
   const absolute = path.resolve(context.workspace, filePath);
   const resolved = canonicalIfPresent(absolute);
   const workspace = canonicalIfPresent(context.workspace);
@@ -214,6 +215,10 @@ function boundedText(value, context, knownPath) {
   const locator = knownPath ? pathLocator(knownPath, context) ?? "<path>" : undefined;
   if (knownPath) result = result.replaceAll(String(knownPath), marker);
   return result
+    .replace(
+      /(["'])((?:[A-Za-z]:[\\/]|\\\\|\/)[^"']+)\1/gu,
+      (_candidate, quote, candidate) => `${quote}${pathLocator(candidate, context) ?? "<path>"}${quote}`,
+    )
     .replace(/\\\\[^\s,;)'"\]]+\\[^\s,;)'"\]]+/gu, (candidate) => pathLocator(candidate, context) ?? "<path>")
     .replace(/[A-Za-z]:[\\/][^\s,;)'"\]]+/gu, (candidate) => pathLocator(candidate, context) ?? "<path>")
     .replace(/\/(?:[^\s,;)'"\]]+\/?)+/gu, (candidate) => pathLocator(candidate, context) ?? "<path>")
@@ -400,8 +405,8 @@ function compactIntegrity(integrity, context) {
   };
 }
 
-function unavailable(error, stage) {
-  return { status: "unavailable", error: compactError(error, stage) };
+function unavailable(error, stage, context) {
+  return { status: "unavailable", error: compactError(error, stage, context) };
 }
 
 function available(data) {
@@ -547,6 +552,14 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
     includeGlobalHooks: includeUserHome,
     includeMemories,
   };
+  const pathContext = {
+    workspace,
+    workspaceInput: normalizeWorkspace(options.workspace ?? "."),
+    gitRoot: topology?.gitRoot,
+    gitRootInput: options.topology?.gitRoot,
+    home: dependencies.homeDirectory?.() ?? os.homedir(),
+    includeUserHome,
+  };
   const collectRawInventory = dependencies.collectRawInventory ?? collectAgentCustomizeInventory;
   let rawInventory;
   try {
@@ -566,7 +579,7 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
       rawInventory = mergeInheritedInventories(rawInventory, inheritedInventories, topology);
     }
   } catch (error) {
-    const failed = unavailable(error, "inventory");
+    const failed = unavailable(error, "inventory", pathContext);
     return {
       kind: ASSET_BASELINE_KIND,
       schemaVersion: ASSET_BASELINE_SCHEMA_VERSION,
@@ -580,28 +593,20 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
   const lintRunner = dependencies.runLint ?? runAgentLint;
   const inventoryRunner = dependencies.collectPublicInventory
     ?? (provider === "qoder" ? collectQoderInventory : collectProviderInventory);
-  const pathContext = {
-    workspace,
-    workspaceInput: normalizeWorkspace(options.workspace ?? "."),
-    gitRoot: topology?.gitRoot,
-    gitRootInput: options.topology?.gitRoot,
-    home: dependencies.homeDirectory?.() ?? os.homedir(),
-    includeUserHome,
-  };
   const [lintResult, inventoryResult] = await Promise.allSettled([
     lintRunner({ ...common, profile: "agent-assets-review", inventory: rawInventory }),
     inventoryRunner({ ...common, inventory: rawInventory }),
   ]);
   const lintEnvelope = lintResult.status === "fulfilled"
     ? available(compactLint(lintResult.value, pathContext))
-    : unavailable(lintResult.reason, "lint");
+    : unavailable(lintResult.reason, "lint", pathContext);
   const inventoryEnvelope = inventoryResult.status === "fulfilled"
     ? available(await compactInventory(inventoryResult.value, workspace, {
       stat: dependencies.stat,
       now: dependencies.now,
       pathContext,
     }))
-    : unavailable(inventoryResult.reason, "inventory");
+    : unavailable(inventoryResult.reason, "inventory", pathContext);
   let integrityEnvelope;
   if (inventoryResult.status === "fulfilled") {
     try {
@@ -611,10 +616,10 @@ export async function collectAssetBaseline(options = {}, dependencies = {}) {
         pathContext,
       ));
     } catch (error) {
-      integrityEnvelope = unavailable(error, "integrity");
+      integrityEnvelope = unavailable(error, "integrity", pathContext);
     }
   } else {
-    integrityEnvelope = unavailable(new Error("The shared public inventory is unavailable."), "integrity");
+    integrityEnvelope = unavailable(new Error("The shared public inventory is unavailable."), "integrity", pathContext);
   }
   const envelopes = { lint: lintEnvelope, inventory: inventoryEnvelope, integrity: integrityEnvelope };
   const availableCount = Object.values(envelopes).filter((envelope) => envelope.status === "available").length;
