@@ -48,7 +48,7 @@
     "@shikijs/langs": "^4.4.3",
     "@tanstack/react-virtual": "^3.14.9",
     "beautiful-mermaid": "^1.1.3",
-    "esbuild-wasm": "0.28.1",
+    "esbuild-wasm": "0.28.2",
     "fast-xml-parser": "^5.11.0",
     "fflate": "^0.8.3",
     "pdfjs-dist": "^6.2.108",
@@ -62,7 +62,7 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "typescript": "7.0.2",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   },
   "publishConfig": {
     "access": "public"
