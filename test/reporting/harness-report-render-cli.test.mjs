@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { test } from "vitest";
 
 import { evaluateHtmlReport, renderHtml } from "../../scripts/harness-analysis/renderers/html.mjs";
@@ -1098,7 +1099,7 @@ test("portable publication failure rolls back to the prior completed run", async
       "fail-report-publication.mjs",
     );
     const result = runNode([
-      "--import", injector,
+      "--import", pathToFileURL(injector).href,
       renderPath,
       "--findings", findingsPath,
       "--mode", "html",
@@ -1148,7 +1149,7 @@ test("portable publication and restoration failure reports PUBLISH_ROLLBACK_FAIL
       "fail-report-publication.mjs",
     );
     const result = runNode([
-      "--import", injector,
+      "--import", pathToFileURL(injector).href,
       renderPath,
       "--findings", findingsPath,
       "--mode", "html",
@@ -1196,14 +1197,24 @@ test("DSH reuses portable HTML report data, target root, and exact artifact cont
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const payload = parseRun(result.stdout);
     const canonicalTarget = await realpath(target);
+    const expectedOut = path.join(canonicalTarget, ".dsh", "better-harness");
     assert.equal(payload.mode, "html");
-    assert.deepEqual(payload.outputLocation, {
+    assert.deepEqual({
+      requestedOut: payload.outputLocation.requestedOut,
+      requestedRunDir: payload.outputLocation.requestedRunDir,
+      resolvedRunDir: payload.outputLocation.resolvedRunDir,
+      policy: payload.outputLocation.policy,
+    }, {
       requestedOut: ".dsh/better-harness",
       requestedRunDir: null,
-      resolvedOutDir: path.join(canonicalTarget, ".dsh", "better-harness"),
       resolvedRunDir: payload.runDir,
       policy: "allocate-below-out",
     });
+    assert.equal(
+      await realpath(payload.outputLocation.resolvedOutDir),
+      await realpath(expectedOut),
+      "default DSH root must resolve to the target-local Better Harness root",
+    );
     assert.equal(path.dirname(path.dirname(payload.runDir)), payload.outputLocation.resolvedOutDir);
     assert.deepEqual(payload.artifacts.map((artifact) => artifact.name), [
       "findings.json",
