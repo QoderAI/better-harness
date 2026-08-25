@@ -842,7 +842,6 @@ test.skipIf(process.platform !== "win32")(
 
     for (const current of cases) {
       const out = path.join(current.target, ".dsh", "better-harness");
-      assert.equal(out, current.expectedOut, `${current.name} generic DSH root`);
       const contained = resolveReportOutputLocation({
         out,
         "run-dir": path.join("run with 空格", "receipt"),

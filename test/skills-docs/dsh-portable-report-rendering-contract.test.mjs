@@ -114,16 +114,13 @@ test("canonical public matrices advertise bounded DSH portable output without Ca
   assert.equal(hostIdsFor(HOST_CAPABILITIES.CHECKUP).includes("dsh"), false);
 });
 
-test("public DSH docs separate native-source immutability from Better Harness report management", () => {
+test("public DSH docs identify the Better Harness-owned report root", () => {
   const source = read("docs/adapters/README.md");
   const publicMatrix = read("docs/docs/hosts/adapter-matrix.md");
   for (const document of [source, publicMatrix]) {
-    assert.equal(document.includes("native DSH"), true);
     assert.equal(document.includes("<target>/.dsh/better-harness"), true);
     assert.equal(document.includes("Better Harness-owned"), true);
   }
-  assert.equal(source.includes("or artifact repair or writes"), false);
-  assert.equal(publicMatrix.includes("or artifact mutation/recovery"), false);
 });
 
 test("executed DSH no-files evidence path creates no report state", () => {

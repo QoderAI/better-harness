@@ -14,15 +14,14 @@ host-neutral.
 ## Support levels
 
 Better Harness currently declares ten more complete capability-level host
-adapters plus bounded DSH discovery, configured-assets, and session slices. Six
-have verified public
-Quickstart paths. Pi, Kimi Code, WorkBuddy, and Grok are visible as adapter
-support because their installation and end-to-end evidence boundaries differ
-from that six-host set. DSH has Verified install/discovery for a qualified
-runtime/preset boundary plus developer-preview configured-assets and
-session-evidence contracts. It supports shared read-only Asset Practices,
-neutral Harness analysis, Evidence Bundles, and qualified portable HTML durable
-output. The
+adapters plus bounded DSH discovery, configured-assets, and session slices.
+Six have verified public Quickstart paths. Pi, Kimi Code, WorkBuddy, and Grok
+are visible as adapter support because their installation and end-to-end
+evidence boundaries differ from that six-host set. DSH has Verified
+install/discovery for a qualified runtime/preset boundary plus developer-preview
+configured-assets and session-evidence contracts. It supports shared read-only
+Asset Practices, neutral Harness analysis, Evidence Bundles, and qualified
+portable HTML durable output. The
 [canonical adapter matrix](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)
 remains the complete capability-level source of truth.
 
