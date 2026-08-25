@@ -50,6 +50,7 @@ test("capability projections are immutable, ordered, and independently addressed
     HOST_CAPABILITIES.AGENT_CUSTOMIZE,
     HOST_CAPABILITIES.ASSET_PRACTICES,
     HOST_CAPABILITIES.HARNESS_REPORT,
+    HOST_CAPABILITIES.REPORT_RENDERING,
     HOST_CAPABILITIES.EVIDENCE_BUNDLE,
   ]);
   for (const capability of [
@@ -57,16 +58,12 @@ test("capability projections are immutable, ordered, and independently addressed
     HOST_CAPABILITIES.AGENT_CUSTOMIZE,
     HOST_CAPABILITIES.ASSET_PRACTICES,
     HOST_CAPABILITIES.HARNESS_REPORT,
+    HOST_CAPABILITIES.REPORT_RENDERING,
     HOST_CAPABILITIES.EVIDENCE_BUNDLE,
   ]) {
     assert.equal(hostIdsFor(capability).includes("dsh"), true, capability);
   }
-  for (const capability of [
-    HOST_CAPABILITIES.REPORT_RENDERING,
-    HOST_CAPABILITIES.CHECKUP,
-  ]) {
-    assert.equal(hostIdsFor(capability).includes("dsh"), false, capability);
-  }
+  assert.equal(hostIdsFor(HOST_CAPABILITIES.CHECKUP).includes("dsh"), false);
   assert.throws(() => hostIdsFor("unknown"), /Unknown host capability/u);
 });
 

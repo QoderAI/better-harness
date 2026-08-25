@@ -22,8 +22,8 @@ any owner is missing; never select another cache or runtime by search order.
 Resolve absolute target, decision, acceptance boundary, risks, locale (request
 language by default), output mode, provider, and depth. Quick uses three items
 and 7 days; normal uses five and 30 days. Default Qoder/Cursor to durable Canvas
-and other rendering hosts to HTML. DSH without REPORT_RENDERING proceeds only
-inline or no-files and must not create HTML, Markdown, or Canvas output.
+and other rendering hosts to HTML. Providers without REPORT_RENDERING proceed
+only inline or no-files and must not create HTML, Markdown, or Canvas output.
 Keep providers separate. Use the current one unless project-wide review
 explicitly authorizes multiple supported providers.
 Qoder project Memory title metadata is part of

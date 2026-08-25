@@ -92,7 +92,7 @@ test("Better Harness Skill exposes one evidence command and one render command",
   ]) assert.equal(renderCommands[0].includes(option), true, `render command must include ${option}`);
 });
 
-test("Better Harness Skill routes DSH through one cwd-aware bundle command and no durable renderer", () => {
+test("Better Harness Skill routes DSH through the shared evidence and durable renderer commands", () => {
   const commandLines = textFenceLines(read(SKILL_PATH));
   const evidenceCommands = commandLines.filter((line) => line.startsWith("<cli> harness evidence-bundle "));
 
@@ -101,6 +101,6 @@ test("Better Harness Skill routes DSH through one cwd-aware bundle command and n
   assert.equal(evidenceCommands[0].includes("--workspace <target>"), true);
   assert.equal(evidenceCommands[0].includes("--cwd <effective-cwd>"), true);
   assert.equal(hostIdsFor(HOST_CAPABILITIES.EVIDENCE_BUNDLE).includes("dsh"), true);
-  assert.equal(hostIdsFor(HOST_CAPABILITIES.REPORT_RENDERING).includes("dsh"), false);
-  assert.equal(RENDER_REPORT_PLATFORMS.includes("dsh"), false);
+  assert.equal(hostIdsFor(HOST_CAPABILITIES.REPORT_RENDERING).includes("dsh"), true);
+  assert.equal(RENDER_REPORT_PLATFORMS.includes("dsh"), true);
 });

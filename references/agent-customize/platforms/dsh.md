@@ -58,11 +58,16 @@ Every result is `configured-not-observed`. Filesystem configuration and
 applicability do not prove runtime use. Runtime/in-process or scoped Skill
 providers and active Cordis, Profile, and Preset composition remain unresolved.
 DSH advertises `sessionAnalysis`, `agentCustomize`, `assetPractices`,
-`harnessReport`, and `evidenceBundle`. The shared Asset Baseline and Evidence
+`harnessReport`, `reportRendering`, and `evidenceBundle`. The shared Asset Baseline and Evidence
 Bundle freeze a canonical cwd, retain compact configured provenance, and keep
 current configuration distinct from historical Session observation. This does
-not add checkup, rendering, output, lifecycle, managed-shell, or public
-Quickstart support; `/better-harness` is inline/no-files only for DSH.
+not change configured-assets semantics or claim historical runtime use. Durable
+`/better-harness` output reuses the portable `html` mode and publishes
+`findings.json`, `report.md`, and `report.html` at the generic Better
+Harness-owned root `<target>/.dsh/better-harness`; this is not a native DSH
+storage root. Explicit inline/no-files operation remains write-free. This does
+not add Checkup, Canvas, Studio, lifecycle, managed-shell, public Quickstart, or
+full DSH support.
 
 Repository contributors can compare the Better Harness collector with pinned
 native DSH behavior without credentials or a model request:
@@ -75,4 +80,6 @@ The [#101 configured-assets specification](../../../docs/specs/2026-08-23-101-de
 remains canonical for native DSH configured-assets semantics and Skills / Instructions collection qualification.
 The [#104 shared-analysis specification](../../../docs/specs/2026-08-24-104-deepseek-harness-shared-analysis-evidence-bundle.md)
 is canonical for shared Harness analysis admission, Asset Practices qualification, Asset Baseline v2,
-Evidence Bundle v3 with frozen cwd, Harness Report admission, and DSH inline/no-files analysis behavior.
+Evidence Bundle v3 with frozen cwd, and Harness Report admission. The
+[#112 portable-rendering specification](../../../docs/specs/2026-08-25-112-deepseek-harness-portable-report-rendering.md)
+is canonical for DSH portable durable report routing and explicit no-files preservation.

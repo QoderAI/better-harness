@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "vitest";
 
 import { evaluateHtmlReport, renderHtml } from "../../scripts/harness-analysis/renderers/html.mjs";
-import { RENDER_REPORT_PLATFORMS, renderReport } from "../../scripts/harness-analysis/render-report.mjs";
+import {
+  RENDER_REPORT_PLATFORMS,
+  renderReport,
+  resolveReportOutputLocation,
+} from "../../scripts/harness-analysis/render-report.mjs";
 import { HOST_CAPABILITIES, hostIdsFor } from "../../scripts/host-support/index.mjs";
 import { renderCanvasTsx } from "../../scripts/harness-analysis/renderers/qoder-canvas.mjs";
 import { buildTaskLoopSourceCandidate } from "../../scripts/harness-analysis/task-loop-source.mjs";
@@ -116,6 +120,76 @@ function sampleFindings() {
       dimensionRefs: ["environment-readiness", "safe-change"],
     }],
   };
+}
+
+const RAW_PRIVACY_CANARIES = Object.freeze({
+  privateHome: "/Users/private-owner/.dsh/skills/private/SKILL.md",
+  offTreePosix: "/opt/private-corpus/instructions.md",
+  windowsDrive: "C:\\Users\\PrivateOwner\\.dsh\\AGENTS.md",
+  windowsUnc: "\\\\private-server\\private-share\\sessions\\session.jsonl",
+  privateSkillBody: "PRIVATE_SKILL_BODY_CANARY_112",
+  privateInstructionBody: "PRIVATE_INSTRUCTION_BODY_CANARY_112",
+  credential: "sk-dsh-private-api-key-canary-112",
+  symlinkRealpath: "/private/realpath/behind/workspace-link",
+});
+
+const TEMPORAL_MARKERS = Object.freeze({
+  configured: "configured-not-observed",
+  historical: "historical-session-observation-independent",
+  forbidden: [
+    "current-asset-existed-historically",
+    "session-used-current-asset",
+    "current-asset-influenced-session",
+    "same-name-proves-historical-identity",
+    "snapshots-were-atomic",
+  ],
+});
+
+const APPROVED_PRIVACY_PROJECTIONS = Object.freeze([
+  "<workspace>",
+  "<git-root>/...",
+  "~/...",
+  "<path>",
+]);
+
+function dshReviewedFindings() {
+  const fixture = sampleFindings();
+  return {
+    ...fixture,
+    summary: {
+      ...fixture.summary,
+      strengths: [
+        ...fixture.summary.strengths,
+        "Reviewed paths are projected as <workspace>, <git-root>/..., ~/..., or <path>.",
+      ],
+    },
+    findings: fixture.findings.map((finding, index) => index === 0 ? {
+      ...finding,
+      title: `Current asset evidence is ${TEMPORAL_MARKERS.configured}`,
+      reason: `${TEMPORAL_MARKERS.configured}; ${TEMPORAL_MARKERS.historical}. The reviewed current configuration and independently observed historical Session evidence remain separate and non-causal. Reviewed locators remain <workspace>, <git-root>/..., ~/..., and <path>.`,
+    } : finding),
+  };
+}
+
+function assertDurableProjection(runDir) {
+  const artifacts = ["findings.json", "report.md", "report.html"];
+  for (const artifact of artifacts) {
+    const text = readFileSync(path.join(runDir, artifact), "utf8");
+    for (const [label, canary] of Object.entries(RAW_PRIVACY_CANARIES)) {
+      assert.equal(text.includes(canary), false, `${artifact} leaked ${label}`);
+    }
+    for (const projection of APPROVED_PRIVACY_PROJECTIONS) {
+      const artifactProjection = artifact === "report.html"
+        ? projection.replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+        : projection;
+      assert.equal(text.includes(artifactProjection), true, `${artifact} lost safe projection ${projection}`);
+    }
+    assert.equal(text.includes(TEMPORAL_MARKERS.configured), true, `${artifact} lost configured boundary`);
+    assert.equal(text.includes(TEMPORAL_MARKERS.historical), true, `${artifact} lost historical boundary`);
+    for (const forbidden of TEMPORAL_MARKERS.forbidden) {
+      assert.equal(text.includes(forbidden), false, `${artifact} invented ${forbidden}`);
+    }
+  }
 }
 
 function embeddedJson(html, id) {
@@ -722,6 +796,87 @@ test("render command rejects a relative run directory that escapes the output ro
   });
 });
 
+test("generic DSH output-location expectations preserve native containment without host rewrites", () => {
+  const target = path.join(process.cwd(), "target with 空格");
+  const out = path.join(target, ".dsh", "better-harness");
+  const contained = resolveReportOutputLocation({ out, "run-dir": path.join("run with 空格", "receipt") });
+  assert.equal(contained.runDir, path.join(out, "run with 空格", "receipt"));
+  assert.equal(contained.policy, "relative-below-out");
+  assert.throws(
+    () => resolveReportOutputLocation({
+      out,
+      "run-dir": path.join("..", "better-harness-sibling", "receipt"),
+    }),
+    (error) => error.code === "RUN_DIR_OUTSIDE_OUT",
+  );
+
+  const absolute = path.join(target, "caller-selected", "absolute run");
+  assert.deepEqual(resolveReportOutputLocation({ out, "run-dir": absolute }), {
+    requestedOut: out,
+    requestedRunDir: absolute,
+    outDir: out,
+    runDir: absolute,
+    policy: "exact-absolute-run-dir",
+  });
+
+});
+
+test.skipIf(process.platform !== "win32")(
+  "actual Better Harness resolver preserves DSH drive and UNC output contracts on Windows",
+  () => {
+    const cases = [
+      {
+        name: "drive",
+        target: "C:\\work with 空格\\项目",
+        expectedOut: "C:\\work with 空格\\项目\\.dsh\\better-harness",
+        absoluteRun: "D:\\caller-selected\\absolute run",
+      },
+      {
+        name: "UNC",
+        target: "\\\\server\\share with 空格\\项目",
+        expectedOut: "\\\\server\\share with 空格\\项目\\.dsh\\better-harness",
+        absoluteRun: "\\\\other-server\\reports\\absolute run",
+      },
+    ];
+
+    for (const current of cases) {
+      const out = path.join(current.target, ".dsh", "better-harness");
+      assert.equal(out, current.expectedOut, `${current.name} generic DSH root`);
+      const contained = resolveReportOutputLocation({
+        out,
+        "run-dir": path.join("run with 空格", "receipt"),
+      });
+      assert.equal(contained.outDir, current.expectedOut, `${current.name} resolved out`);
+      assert.equal(
+        contained.runDir,
+        path.join(current.expectedOut, "run with 空格", "receipt"),
+        `${current.name} contained run`,
+      );
+      assert.equal(contained.policy, "relative-below-out");
+      for (const runDir of [
+        path.join("..", "escaped", "receipt"),
+        path.join("..", "better-harness-sibling", "receipt"),
+      ]) {
+        assert.throws(
+          () => resolveReportOutputLocation({ out, "run-dir": runDir }),
+          (error) => error.code === "RUN_DIR_OUTSIDE_OUT",
+          `${current.name} rejects ${runDir}`,
+        );
+      }
+      assert.deepEqual(resolveReportOutputLocation({
+        out,
+        "run-dir": current.absoluteRun,
+      }), {
+        requestedOut: out,
+        requestedRunDir: current.absoluteRun,
+        outDir: current.expectedOut,
+        runDir: current.absoluteRun,
+        policy: "exact-absolute-run-dir",
+      });
+    }
+  },
+);
+
 test("render command finalizes a reviewed task-loop source in one validated step", async () => {
   await withTempDir("better-harness-source-render-", async (root) => {
     const sourcePath = path.join(root, "report.source.json");
@@ -848,19 +1003,232 @@ test("render command writes disk-openable HTML artifacts", async () => {
   });
 });
 
+test("DSH portable HTML preserves reviewed privacy projections and temporal boundaries across every artifact", async () => {
+  await withTempDir("better-harness-portable-projection-", async (root) => {
+    const target = path.join(root, "portable target with 空格");
+    const findingsPath = path.join(root, "reviewed.findings.json");
+    await mkdir(target, { recursive: true });
+    const reviewed = dshReviewedFindings();
+    await writeJson(findingsPath, reviewed);
+    for (const canary of Object.values(RAW_PRIVACY_CANARIES)) {
+      assert.equal(JSON.stringify(reviewed).includes(canary), false, "reviewed input must already be projected");
+    }
+
+    const result = runNode([
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "html",
+      "--platform", "dsh",
+      "--target", target,
+      "--validate",
+      "--json",
+    ], { cwd: target });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = parseRun(result.stdout);
+    assert.equal(payload.mode, "html");
+    assert.deepEqual(payload.artifacts.map((artifact) => artifact.name), [
+      "findings.json",
+      "report.md",
+      "report.html",
+    ]);
+    assertDurableProjection(payload.runDir);
+  });
+});
+
+test("portable invalid artifact-set failure preserves a prior run and creates no staging state", async () => {
+  await withTempDir("better-harness-portable-preservation-", async (root) => {
+    const findingsPath = path.join(root, "reviewed.findings.json");
+    const runDir = path.join(root, "runs", "completed-run");
+    const previous = Object.fromEntries([
+      ["findings.json", "PREVIOUS_FINDINGS\n"],
+      ["report.md", "PREVIOUS_MARKDOWN\n"],
+      ["report.html", "PREVIOUS_HTML\n"],
+    ]);
+    await writeJson(findingsPath, sampleFindings());
+    await mkdir(runDir, { recursive: true });
+    for (const [name, content] of Object.entries(previous)) {
+      await writeFile(path.join(runDir, name), content);
+    }
+    await writeFile(path.join(runDir, "unexpected.txt"), "UNEXPECTED\n");
+
+    const result = runNode([
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "html",
+      "--out", path.dirname(runDir),
+      "--run-dir", runDir,
+      "--target", root,
+      "--validate",
+      "--json",
+    ]);
+
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    const payload = parseRun(result.stdout);
+    assert.equal(payload.error.code, "VALIDATION_FAILED");
+    for (const [name, content] of Object.entries(previous)) {
+      assert.equal(readFileSync(path.join(runDir, name), "utf8"), content);
+    }
+    assert.equal(readFileSync(path.join(runDir, "unexpected.txt"), "utf8"), "UNEXPECTED\n");
+    const parentNames = await readdir(path.dirname(runDir));
+    assert.equal(parentNames.some((name) => name.includes(".staging-") || name.includes(".backup-")), false);
+  });
+});
+
+test("portable publication failure rolls back to the prior completed run", async () => {
+  await withTempDir("better-harness-portable-rollback-", async (root) => {
+    const findingsPath = path.join(root, "reviewed.findings.json");
+    const runDir = path.join(root, "runs", "completed-run");
+    const previous = Object.fromEntries([
+      ["findings.json", "PREVIOUS_FINDINGS\n"],
+      ["report.md", "PREVIOUS_MARKDOWN\n"],
+      ["report.html", "PREVIOUS_HTML\n"],
+    ]);
+    await writeJson(findingsPath, sampleFindings());
+    await mkdir(runDir, { recursive: true });
+    for (const [name, content] of Object.entries(previous)) {
+      await writeFile(path.join(runDir, name), content);
+    }
+
+    const injector = path.join(
+      process.cwd(),
+      "test",
+      "reporting",
+      "fixtures",
+      "fail-report-publication.mjs",
+    );
+    const result = runNode([
+      "--import", injector,
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "html",
+      "--out", path.dirname(runDir),
+      "--run-dir", runDir,
+      "--target", root,
+      "--validate",
+      "--json",
+    ], {
+      env: {
+        ...process.env,
+        BETTER_HARNESS_FAIL_PUBLISH_TARGET: runDir,
+      },
+    });
+
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    const payload = parseRun(result.stdout);
+    assert.equal(payload.error.code, "PUBLISH_FAILED");
+    for (const [name, content] of Object.entries(previous)) {
+      assert.equal(readFileSync(path.join(runDir, name), "utf8"), content);
+    }
+    const parentNames = await readdir(path.dirname(runDir));
+    assert.equal(parentNames.some((name) => name.includes(".staging-") || name.includes(".backup-")), false);
+  });
+});
+
+test("portable publication and restoration failure reports PUBLISH_ROLLBACK_FAILED", async () => {
+  await withTempDir("better-harness-portable-rollback-failure-", async (root) => {
+    const findingsPath = path.join(root, "reviewed.findings.json");
+    const runDir = path.join(root, "runs", "completed-run");
+    const previous = Object.fromEntries([
+      ["findings.json", "PREVIOUS_FINDINGS\n"],
+      ["report.md", "PREVIOUS_MARKDOWN\n"],
+      ["report.html", "PREVIOUS_HTML\n"],
+    ]);
+    await writeJson(findingsPath, sampleFindings());
+    await mkdir(runDir, { recursive: true });
+    for (const [name, content] of Object.entries(previous)) {
+      await writeFile(path.join(runDir, name), content);
+    }
+
+    const injector = path.join(
+      process.cwd(),
+      "test",
+      "reporting",
+      "fixtures",
+      "fail-report-publication.mjs",
+    );
+    const result = runNode([
+      "--import", injector,
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "html",
+      "--out", path.dirname(runDir),
+      "--run-dir", runDir,
+      "--target", root,
+      "--validate",
+      "--json",
+    ], {
+      env: {
+        ...process.env,
+        BETTER_HARNESS_FAIL_PUBLISH_TARGET: runDir,
+        BETTER_HARNESS_FAIL_ROLLBACK_TARGET: runDir,
+      },
+    });
+
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    const payload = parseRun(result.stdout);
+    assert.equal(payload.error.code, "PUBLISH_ROLLBACK_FAILED");
+    assert.equal(Object.hasOwn(payload, "artifacts"), false);
+    assert.equal(existsSync(runDir), false, "failed restoration must not be reported as preserved");
+    const parentNames = await readdir(path.dirname(runDir));
+    assert.equal(parentNames.some((name) => name.includes(".staging-")), false);
+    assert.equal(parentNames.some((name) => name.includes(".backup-")), true);
+  });
+});
+
+test("DSH reuses portable HTML report data, target root, and exact artifact contract", async () => {
+  await withTempDir("better-harness-dsh-portable-", async (root) => {
+    const target = path.join(root, "DSH target with 空格");
+    const findingsPath = path.join(root, "reviewed.findings.json");
+    await mkdir(target, { recursive: true });
+    await writeJson(findingsPath, dshReviewedFindings());
+
+    const result = runNode([
+      renderPath,
+      "--findings", findingsPath,
+      "--mode", "html",
+      "--platform", "dsh",
+      "--target", target,
+      "--validate",
+      "--json",
+    ], { cwd: target });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = parseRun(result.stdout);
+    const canonicalTarget = await realpath(target);
+    assert.equal(payload.mode, "html");
+    assert.deepEqual(payload.outputLocation, {
+      requestedOut: ".dsh/better-harness",
+      requestedRunDir: null,
+      resolvedOutDir: path.join(canonicalTarget, ".dsh", "better-harness"),
+      resolvedRunDir: payload.runDir,
+      policy: "allocate-below-out",
+    });
+    assert.equal(path.dirname(path.dirname(payload.runDir)), payload.outputLocation.resolvedOutDir);
+    assert.deepEqual(payload.artifacts.map((artifact) => artifact.name), [
+      "findings.json",
+      "report.md",
+      "report.html",
+    ]);
+    assertDurableProjection(payload.runDir);
+  });
+});
+
 test("render routes html output by host id and fails closed on unknown platforms", async () => {
   await withTempDir("better-harness-render-platform-", async (root) => {
     const findingsPath = path.join(root, "input.findings.json");
     await writeJson(findingsPath, sampleFindings());
 
-    const routed = runNode(
-      [renderPath, "--findings", findingsPath, "--mode", "html", "--platform", "grok", "--target", root, "--json"],
-      { cwd: root },
-    );
-    assert.equal(routed.status, 0, routed.stderr || routed.stdout);
-    const payload = parseRun(routed.stdout);
-    assert.equal(payload.outputLocation.requestedOut, ".grok/better-harness");
-    assert.equal(payload.runDir.includes(path.join(".grok", "better-harness")), true);
+    for (const platform of ["grok", "kimi", "workbuddy", "codex"]) {
+      const routed = runNode(
+        [renderPath, "--findings", findingsPath, "--mode", "html", "--platform", platform, "--target", root, "--json"],
+        { cwd: root },
+      );
+      assert.equal(routed.status, 0, `${platform}: ${routed.stderr || routed.stdout}`);
+      const payload = parseRun(routed.stdout);
+      assert.equal(payload.outputLocation.requestedOut, `.${platform}/better-harness`);
+      assert.equal(payload.runDir.includes(path.join(`.${platform}`, "better-harness")), true);
+    }
 
     const rejected = runNode(
       [renderPath, "--findings", findingsPath, "--mode", "html", "--platform", "grock", "--target", root, "--json"],
@@ -868,13 +1236,6 @@ test("render routes html output by host id and fails closed on unknown platforms
     );
     assert.equal(rejected.status, 1);
     assert.match(rejected.stderr, /unsupported render platform: grock/u);
-
-    const sessionOnly = runNode(
-      [renderPath, "--findings", findingsPath, "--mode", "html", "--platform", "dsh", "--target", root, "--json"],
-      { cwd: root },
-    );
-    assert.equal(sessionOnly.status, 1);
-    assert.match(sessionOnly.stderr, /unsupported render platform: dsh/u);
 
     // Help must stay usable even with an invalid platform so agents can self-correct.
     const help = runNode([renderPath, "--help", "--platform", "grock"], { cwd: root });
@@ -885,7 +1246,7 @@ test("render routes html output by host id and fails closed on unknown platforms
 
 test("render platform allowlist follows report-rendering capability rather than session support", () => {
   assert.deepEqual([...RENDER_REPORT_PLATFORMS], hostIdsFor(HOST_CAPABILITIES.REPORT_RENDERING));
-  assert.equal(RENDER_REPORT_PLATFORMS.includes("dsh"), false);
+  assert.equal(RENDER_REPORT_PLATFORMS.includes("dsh"), true);
 });
 
 test("HTML relative action metadata carries the finding's current repair revision", () => {

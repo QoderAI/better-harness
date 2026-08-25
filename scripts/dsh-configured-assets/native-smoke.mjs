@@ -23,6 +23,8 @@ const DSH_NATIVE_SOURCE_SHA = "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e";
 const DSH_PACKAGES = [
   "@deepseek-ai/dsh-agent",
   "@deepseek-ai/dsh-agent-instructions",
+  "@deepseek-ai/dsh-agent-presets",
+  "@deepseek-ai/dsh-app-boot",
   "@deepseek-ai/dsh-fs",
   "@deepseek-ai/dsh-fs-local",
   "@deepseek-ai/dsh-home-paths",
@@ -30,6 +32,8 @@ const DSH_PACKAGES = [
   "@deepseek-ai/dsh-llm",
   "@deepseek-ai/dsh-scope",
   "@deepseek-ai/dsh-session",
+  "@deepseek-ai/dsh-session-persistence",
+  "@deepseek-ai/dsh-session-persistence-jsonl",
   "@deepseek-ai/dsh-skill",
   "@deepseek-ai/dsh-skill-filesystem",
   "@deepseek-ai/dsh-tools",
@@ -109,6 +113,9 @@ async function createFixture(scratch) {
   const normalizationRepository = path.join(scratch, "normalization repo");
   const normalizationCwd = path.join(normalizationRepository, "workspace");
   const syntheticHome = path.join(scratch, "synthetic home");
+  const presetRoot = path.join(scratch, "native preset root");
+  const profileDir = path.join(dshHome, "profiles", "qualified");
+  const sessionRoot = path.join(dshHome, "sessions");
   await mkdir(path.join(repository, ".git"), { recursive: true });
   await mkdir(cwd, { recursive: true });
   await mkdir(path.join(budgetRepository, ".git"), { recursive: true });
@@ -116,6 +123,7 @@ async function createFixture(scratch) {
   await mkdir(path.join(normalizationRepository, ".git"), { recursive: true });
   await mkdir(normalizationCwd, { recursive: true });
   await mkdir(syntheticHome, { recursive: true });
+  await mkdir(sessionRoot, { recursive: true });
 
   await directorySkill(path.join(repository, ".dsh", "skills"), "alpha", "alpha", "project dsh");
   await write(path.join(repository, ".dsh", "skills", "flat.md"), skill("flat-skill", "flat"));
@@ -168,6 +176,13 @@ async function createFixture(scratch) {
   await write(path.join(cwd, "AGENTS.md"), "🙂".repeat(2_000));
   await write(path.join(budgetRepository, "AGENTS.md"), `ROOT${" ".repeat(400)}`);
   await write(path.join(budgetCwd, "AGENTS.md"), `LEAF${" ".repeat(400)}`);
+  await write(path.join(presetRoot, "qualified", "agent.cordis.yml"), "- name: qualified\n  apply: ./qualified.mjs\n");
+  await write(path.join(profileDir, "package.json"), `${JSON.stringify({
+    name: "dsh-profile-qualified",
+    private: true,
+    dsh: { profile: { bundles: [] } },
+  }, null, 2)}\n`);
+  await write(path.join(profileDir, "cordis.patch.yml"), "[]\n");
 
   return {
     repository,
@@ -184,6 +199,9 @@ async function createFixture(scratch) {
     budgetCwd,
     normalizationCwd,
     syntheticHome,
+    presetRoot,
+    profileDir,
+    sessionRoot,
   };
 }
 
@@ -242,11 +260,90 @@ async function probeHomeNormalization(nodeModules, fixture) {
   return probe;
 }
 
+async function captureNativeDiscovery({
+  ctx,
+  Instructions,
+  Presets,
+  AppBoot,
+  sessionPersistence,
+  fixture,
+}) {
+  const skills = await ctx.skills.snapshot({ cwd: fixture.cwd });
+  const instructionCandidates = await Instructions.discoverBaselineInstructionFiles({
+    cwd: fixture.cwd,
+    dshHome: fixture.dshHome,
+  });
+  const instructions = await Instructions.loadBaselineInstructions({
+    cwd: fixture.cwd,
+    dshHome: fixture.dshHome,
+    maxSourceBytes: 1_048_576,
+    maxBytes: 65_536,
+  });
+  const presets = await Presets.discoverPresets([{
+    path: fixture.presetRoot,
+    trust: "system",
+  }]);
+  const resolvedProfileDir = AppBoot.resolveProfileDir("qualified", fixture.dshHome);
+  const profile = AppBoot.readProfileManifest("dsh", resolvedProfileDir);
+  const sessions = await sessionPersistence.list();
+  return {
+    skills: skills.skills.map((entry) => ({
+      name: entry.name,
+      source: entry.source,
+      description: entry.description,
+      path: entry.path,
+    })),
+    instructionCandidates: instructionCandidates.map((file) => file.displayPath),
+    instructionText: instructions?.text ?? null,
+    presets: presets.map((entry) => ({
+      id: entry.id,
+      trust: entry.trust,
+      path: entry.path,
+      broken: entry.broken ?? null,
+    })),
+    profile: {
+      dir: resolvedProfileDir,
+      manifest: profile,
+    },
+    sessions,
+    configuredRoots: {
+      skills: [
+        path.join(fixture.repository, ".dsh", "skills"),
+        path.join(fixture.repository, ".agents", "skills"),
+        fixture.customOne,
+        fixture.customTwo,
+        fixture.bundled,
+        path.join(fixture.dshHome, "skills"),
+        path.join(fixture.agentsHome, "skills"),
+      ],
+      instructions: [fixture.dshHome, fixture.cwd],
+      presets: [fixture.presetRoot],
+      profiles: path.join(fixture.dshHome, "profiles"),
+      sessions: fixture.sessionRoot,
+    },
+  };
+}
+
+async function writeBetterHarnessReportSubtree(fixture) {
+  const root = path.join(fixture.repository, ".dsh", "better-harness");
+  await write(path.join(root, "findings.json"), "{\"findings\":[]}\n");
+  await write(path.join(root, "report.md"), "# Better Harness inertness receipt\n");
+  await write(path.join(root, "report.html"), "<!doctype html><title>Better Harness inertness receipt</title>\n");
+  return root;
+}
+
 async function verifyNativeOwners(nodeModules, fixture) {
   const { Context } = await loadPackage(nodeModules, "@deepseek-ai/cordis");
   const { default: SkillRegistry } = await loadPackage(nodeModules, "@deepseek-ai/dsh-skill");
   const SkillFileSystem = await loadPackage(nodeModules, "@deepseek-ai/dsh-skill-filesystem");
   const Instructions = await loadPackage(nodeModules, "@deepseek-ai/dsh-agent-instructions");
+  const Presets = await loadPackage(nodeModules, "@deepseek-ai/dsh-agent-presets");
+  const AppBoot = await loadPackage(nodeModules, "@deepseek-ai/dsh-app-boot");
+  const { default: Sessions } = await loadPackage(nodeModules, "@deepseek-ai/dsh-session");
+  const { default: JsonlSessionPersistence } = await loadPackage(
+    nodeModules,
+    "@deepseek-ai/dsh-session-persistence-jsonl",
+  );
 
   const ctx = new Context();
   await ctx.plugin(SkillRegistry);
@@ -258,8 +355,35 @@ async function verifyNativeOwners(nodeModules, fixture) {
     includeDefaultRoots: true,
     watch: false,
   });
-  const snapshot = await ctx.skills.snapshot({ cwd: fixture.cwd });
-  const skillNames = snapshot.skills.map((entry) => entry.name);
+  const sessionCtx = new Context();
+  await sessionCtx.plugin(Sessions);
+  await sessionCtx.plugin(JsonlSessionPersistence, {
+    root: fixture.sessionRoot,
+    compression: "none",
+  });
+  const sessionPersistence = sessionCtx.get("sessionPersistence");
+  assert.ok(sessionPersistence, "native DSH JSONL session persistence must be available");
+
+  const before = await captureNativeDiscovery({
+    ctx,
+    Instructions,
+    Presets,
+    AppBoot,
+    sessionPersistence,
+    fixture,
+  });
+  const reportSubtree = await writeBetterHarnessReportSubtree(fixture);
+  const after = await captureNativeDiscovery({
+    ctx,
+    Instructions,
+    Presets,
+    AppBoot,
+    sessionPersistence,
+    fixture,
+  });
+  assert.deepEqual(after, before);
+
+  const skillNames = before.skills.map((entry) => entry.name);
   assert.deepEqual(skillNames, [
     "agents-skill",
     "alpha",
@@ -274,9 +398,9 @@ async function verifyNativeOwners(nodeModules, fixture) {
     "user-skill",
   ]);
   assert.equal(skillNames.includes("broken-skill"), false);
-  assert.equal(snapshot.skills.find((entry) => entry.name === "alpha")?.source, "project-dsh");
-  assert.equal(snapshot.skills.find((entry) => entry.name === "fallback")?.source, "project-agents");
-  assert.equal(snapshot.skills.find((entry) => entry.name === "custom-tie")?.description, "first custom root");
+  assert.equal(before.skills.find((entry) => entry.name === "alpha")?.source, "project-dsh");
+  assert.equal(before.skills.find((entry) => entry.name === "fallback")?.source, "project-agents");
+  assert.equal(before.skills.find((entry) => entry.name === "custom-tie")?.description, "first custom root");
 
   const discovered = await Instructions.discoverBaselineInstructionFiles({
     cwd: fixture.cwd,
@@ -351,6 +475,15 @@ async function verifyNativeOwners(nodeModules, fixture) {
     whitespaceBudgetRules,
     utf8: "verified",
     symlinkCases: fixture.symlinkCases,
+    reportSubtree,
+    reportSubtreeInertness: {
+      skills: "verified",
+      instructions: "verified",
+      presets: "verified",
+      profiles: "verified",
+      sessions: "verified",
+      configuredRoots: "verified",
+    },
   };
 }
 
