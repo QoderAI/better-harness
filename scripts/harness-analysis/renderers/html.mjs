@@ -580,7 +580,7 @@ function renderHtmlBody(reportData) {
 
   return `<header class="hero" data-section="overview">
     <div class="hero-copy">
-      <span class="eyebrow">${renderVisibleText(copy(language, "Harness Insights · Codex HTML", "Harness 洞察 · Codex HTML"), language)}</span>
+      <span class="eyebrow">${renderVisibleText(copy(language, "Harness Insights · Portable HTML", "Harness 洞察 · 便携式 HTML"), language)}</span>
       <h1>${renderVisibleText(projectName, language)}</h1>
       <p>${renderVisibleText(overview, language)}</p>
       <div class="hero-tags"><span class="pill accent">${renderVisibleText(summary.modelId ?? "Harness", language)}</span><span class="pill muted">${renderVisibleText(copy(language, "Evidence-bound", "证据有界"), language)}</span></div>
@@ -656,7 +656,7 @@ export function renderHtml(reportData, actionContext) {
 <div id="copy-status" class="sr-only" role="status" aria-live="polite"></div>
 <main id="harness-report" data-report-mode="codex-html">
 ${renderHtmlBody(reportData)}
-<footer>${renderVisibleText(copy(reportData.language, "Generated from one reviewed Harness source · self-contained Codex HTML", "由同一份已复核 Harness source 生成 · 自包含 Codex HTML"), language)}</footer>
+<footer>${renderVisibleText(copy(reportData.language, "Generated from one reviewed Harness source · self-contained portable HTML", "由同一份已复核 Harness source 生成 · 自包含便携式 HTML"), language)}</footer>
 </main>
 <dialog id="manual-copy-dialog" class="manual-copy-dialog" aria-labelledby="manual-copy-title" aria-describedby="manual-copy-description">
   <div class="dialog-heading">

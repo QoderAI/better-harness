@@ -202,6 +202,14 @@ function embeddedJson(html, id) {
   return JSON.parse(payload);
 }
 
+function visibleHtmlText(html) {
+  return String(html)
+    .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/giu, " ")
+    .replace(/<[^>]+>/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 function reviewedTaskLoopSource() {
   const source = buildTaskLoopSourceCandidate({
     scope: { platform: "qoder", workspace: "/tmp/render-source-project" },
@@ -1224,6 +1232,49 @@ test("DSH reuses portable HTML report data, target root, and exact artifact cont
   });
 });
 
+test("generated DSH HTML uses host-neutral visible copy in both locales", async () => {
+  await withTempDir("better-harness-dsh-portable-copy-", async (root) => {
+    const findingsPath = path.join(root, "reviewed.findings.json");
+    await writeJson(findingsPath, dshReviewedFindings());
+
+    for (const row of [{
+      language: "en",
+      eyebrow: "Harness Insights · Portable HTML",
+      footer: "Generated from one reviewed Harness source · self-contained portable HTML",
+      copySuccess: "Copied. Paste into your coding agent input.",
+      oldCopySuccess: "Copied. Paste into the Codex input.",
+    }, {
+      language: "zh-CN",
+      eyebrow: "Harness 洞察 · 便携式 HTML",
+      footer: "由同一份已复核 Harness source 生成 · 自包含便携式 HTML",
+      copySuccess: "已复制，请粘贴到当前 Coding Agent 输入框。",
+      oldCopySuccess: "已复制，请粘贴到 Codex 输入框。",
+    }]) {
+      const result = runNode([
+        renderPath,
+        "--findings", findingsPath,
+        "--mode", "html",
+        "--platform", "dsh",
+        "--target", root,
+        "--run-dir", `copy-${row.language}`,
+        "--language", row.language,
+        "--validate",
+        "--json",
+      ], { cwd: root });
+
+      assert.equal(result.status, 0, `${row.language}: ${result.stderr || result.stdout}`);
+      const payload = parseRun(result.stdout);
+      const html = readFileSync(path.join(payload.runDir, "report.html"), "utf8");
+      const visibleText = visibleHtmlText(html);
+      assert.equal(visibleText.includes(row.eyebrow), true, row.language);
+      assert.equal(visibleText.includes(row.footer), true, row.language);
+      assert.equal(visibleText.includes("Codex"), false, row.language);
+      assert.equal(html.includes(row.copySuccess), true, row.language);
+      assert.equal(html.includes(row.oldCopySuccess), false, row.language);
+    }
+  });
+});
+
 test("render routes html output by host id and fails closed on unknown platforms", async () => {
   await withTempDir("better-harness-render-platform-", async (root) => {
     const findingsPath = path.join(root, "input.findings.json");
@@ -1238,6 +1289,11 @@ test("render routes html output by host id and fails closed on unknown platforms
       const payload = parseRun(routed.stdout);
       assert.equal(payload.outputLocation.requestedOut, `.${platform}/better-harness`);
       assert.equal(payload.runDir.includes(path.join(`.${platform}`, "better-harness")), true);
+      const html = readFileSync(path.join(payload.runDir, "report.html"), "utf8");
+      const visibleText = visibleHtmlText(html);
+      assert.equal(visibleText.includes("Harness Insights · Portable HTML"), true, platform);
+      assert.equal(visibleText.includes("Codex HTML"), false, platform);
+      assert.equal(html.includes("Paste into the Codex input"), false, platform);
     }
 
     const rejected = runNode(

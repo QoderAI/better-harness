@@ -265,14 +265,14 @@ export function renderHtmlInteractionScript(language) {
     ? {
         copy: "复制 AI 修复",
         copied: "已复制",
-        copySuccess: "已复制，请粘贴到 Codex 输入框。",
+        copySuccess: "已复制，请粘贴到当前 Coding Agent 输入框。",
         manualCopy: "自动复制被阻止，请手动复制已选中的提示词。",
         missingPrompt: "这个问题没有可用的 AI 修复提示词。",
       }
     : {
         copy: "Copy AI Fix",
         copied: "Copied",
-        copySuccess: "Copied. Paste into the Codex input.",
+        copySuccess: "Copied. Paste into your coding agent input.",
         manualCopy: "Automatic copy was blocked. Copy the selected prompt manually.",
         missingPrompt: "No AI Fix prompt is available for this finding.",
       };

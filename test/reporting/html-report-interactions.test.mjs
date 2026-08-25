@@ -49,7 +49,7 @@ const ACTION_PROMPT = actionPrompt();
 const LABELS = {
   copy: "Copy AI Fix",
   copied: "Copied",
-  copySuccess: "Copied. Paste into the Codex input.",
+  copySuccess: "Copied. Paste into your coding agent input.",
   manualCopy: "Automatic copy was blocked. Copy the selected prompt manually.",
   missingPrompt: "No AI Fix prompt is available for this finding.",
 };
@@ -421,6 +421,6 @@ test("rendered interaction controller localizes labels without host coupling", (
 
   assert.match(script, /id="harness-report-interactions"/u);
   assert.match(script, /复制 AI 修复/u);
-  assert.match(script, /已复制，请粘贴到 Codex 输入框。/u);
+  assert.match(script, /已复制，请粘贴到当前 Coding Agent 输入框。/u);
   assert.doesNotMatch(script, /window\.openai|codex:\/\/|chatgpt:\/\//iu);
 });
