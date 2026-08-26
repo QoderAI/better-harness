@@ -50,6 +50,29 @@ function formatNumber(value, locale) {
   }).format(number(value));
 }
 
+function reviewedSessionPopulation(summary, language) {
+  // Usage efficiency is a separate all-eligible activity census. The visible
+  // reviewed-Session metric follows the evidence selection used by findings.
+  const selection = summary?.evidenceBoundary?.manifest?.selection
+    ?? summary?.atAGlance?.coverage?.selection;
+  const hasCounts = selection
+    && Object.hasOwn(selection, "analyzedCount")
+    && Object.hasOwn(selection, "eligibleCount");
+  const analyzed = Number(selection?.analyzedCount);
+  const eligible = Number(selection?.eligibleCount);
+  const available = hasCounts
+    && Number.isInteger(analyzed)
+    && analyzed >= 0
+    && Number.isInteger(eligible)
+    && eligible >= 0;
+  return {
+    value: available
+      ? `${formatNumber(analyzed, language)} / ${formatNumber(eligible, language)}`
+      : "N/A",
+    confidence: available ? selection.confidence ?? "" : "",
+  };
+}
+
 function copy(language, en, zh) {
   return language === "zh-CN" ? zh : en;
 }
@@ -541,14 +564,14 @@ function renderCustomize(summary, language) {
 function renderEvidence(summary, language) {
   const boundary = summary?.evidenceBoundary ?? {};
   const coverage = boundary?.episodeCoverage ?? summary?.atAGlance?.coverage ?? {};
-  const selection = boundary?.manifest?.selection ?? coverage?.selection ?? {};
+  const population = reviewedSessionPopulation(summary, language);
   const learning = summary?.learningCapture ?? {};
   const facts = [
     [copy(language, "Evidence mode", "证据模式"), summary?.evidenceMode ?? "—"],
     [copy(language, "Task episodes", "任务 Episode"), coverage.episodeCount ?? 0],
     [copy(language, "Edited episodes", "含编辑 Episode"), coverage.editedEpisodeCount ?? 0],
-    [copy(language, "Sampling", "抽样"), `${selection.analyzedCount ?? 0} / ${selection.eligibleCount ?? 0}`],
-    [copy(language, "Confidence", "可信度"), selection.confidence ?? "—"],
+    [copy(language, "Sampling", "抽样"), population.value],
+    [copy(language, "Confidence", "可信度"), population.confidence || "—"],
     [copy(language, "Learning state", "学习状态"), learning.state ?? "—"],
   ];
   const gaps = textLines(boundary.sourceGaps);
@@ -570,10 +593,7 @@ function renderHtmlBody(reportData) {
   const high = findings.filter((row) => ["Critical", "High"].includes(row.severity)).length;
   const medium = findings.filter((row) => row.severity === "Medium").length;
   const overview = summary.overview ?? summary.strengths?.[0] ?? copy(language, "Reviewed Harness evidence is ready for inspection.", "已复核的 Harness 证据可供检查。" );
-  const coverage = summary.atAGlance?.coverage ?? {};
-  const selection = summary.usageEfficiency?.selection ?? coverage.selection ?? {};
-  const analyzed = selection.analyzedSessionCount ?? selection.analyzedCount ?? 0;
-  const eligible = selection.eligibleSessionCount ?? selection.eligibleCount ?? summary.usageActivity?.sessions?.total ?? 0;
+  const population = reviewedSessionPopulation(summary, language);
   const hasUsage = summary.usageActivity !== undefined || summary.usageEfficiency !== undefined;
   const effectiveness = loopEffectiveness(dimensions);
   const progress = repairProgress(findings);
@@ -590,7 +610,7 @@ function renderHtmlBody(reportData) {
   <div class="metrics">
     ${metric(evidenceScoreLabel(summary, language), `${effectiveness} / 100`, copy(language, "Changes after later task outcomes", "等待后续任务结果后更新"), language)}
     ${metric(copy(language, "Asset Health / Repair Progress", "资产健康 / 修复进度"), `${progress.score} / 100`, copy(language, `${progress.verified} verified · ${progress.partial} partial · ${progress.pending} pending`, `${progress.verified} 项已验证 · ${progress.partial} 项部分完成 · ${progress.pending} 项待处理`), language)}
-    ${metric(copy(language, "Sessions analyzed", "会话样本"), `${formatNumber(analyzed, language)} / ${formatNumber(eligible, language)}`, selection.confidence ?? "", language)}
+    ${metric(copy(language, "Sessions analyzed", "会话样本"), population.value, population.confidence, language)}
     ${metric(copy(language, "Findings", "待处理 Finding"), findings.length, `${high} High · ${medium} Medium`, language)}
   </div>
   ${section("fluency", copy(language, "01 · Readiness", "01 · 就绪度"), copy(language, "Five-dimension fluency", "五维流畅度"), renderDimensionGrid(summary, language), copy(language, "Scores and states come from the reviewed source.", "分数与状态来自已复核 source。"), language)}
