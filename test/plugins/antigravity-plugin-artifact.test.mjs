@@ -462,7 +462,7 @@ test("freezes the pinned canonical Markdown closure and source link classificati
   const closure = await verifyMarkdownSourceClosure(repositoryRoot);
   assert.deepEqual(
     { nodes: closure.nodes, edges: closure.edges, files: closure.files.length },
-    { nodes: 108, edges: 307, files: 111 },
+    { nodes: 108, edges: 308, files: 111 },
   );
   for (const required of [
     "AGENTS.md",
@@ -983,7 +983,7 @@ test("builds, verifies, runs, and atomically replaces the real pinned artifact",
     const verified = await verifyAntigravityPluginArtifact(outputRoot);
     assert.deepEqual(
       { nodes: verified.markdownClosure.nodes, edges: verified.markdownClosure.edges, files: verified.markdownClosure.files.length },
-      { nodes: 108, edges: 307, files: 111 },
+      { nodes: 108, edges: 308, files: 111 },
     );
     assert.equal(verified.runtimeClosure.modules, 19);
     const help = spawnSync(process.execPath, ["scripts/better-harness.mjs", "--help"], {
