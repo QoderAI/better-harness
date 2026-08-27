@@ -23,6 +23,9 @@ dev/terminal-demo/*.cast
 /harness-qoder-profile-evidence/
 design-qa.md
 
+# Linked AgentReact bundles written by the Artifact Runtime tests.
+packages/harness-studio/test/.artifacts/
+
 # Local Artifact View scratch decks and their inspection dumps.
 /*.pptx
 /*.pptx.inspect.ndjson

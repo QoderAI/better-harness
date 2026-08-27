@@ -98,6 +98,7 @@ const DOCUMENT_EXTENSIONS = new Set([".pptx", ".xlsx", ".docx", ".pdf"]);
  * server-side format selector: the browser consumes only the selected Surface.
  */
 export const PROVIDER_HOSTED_CANVAS_TSX_FORMAT = "cursor-canvas-tsx";
+export const AGENT_REACT_TSX_FORMAT = "agent-react-tsx";
 
 export class ArtifactCatalogContractError extends Error {
   constructor(message: string) {
@@ -482,6 +483,7 @@ export function resolveArtifactFamily(path: string, kind = resolveArtifactKind(p
  * the wire and gives translators nothing to work with.
  */
 export function resolveArtifactFormatCode(path: string): string {
+  if (path.toLowerCase().endsWith(".agent.canvas.tsx")) return AGENT_REACT_TSX_FORMAT;
   if (path.toLowerCase().endsWith(".canvas.tsx")) return PROVIDER_HOSTED_CANVAS_TSX_FORMAT;
   const extension = extname(path).toLowerCase();
   return extension === "" ? "file" : extension.slice(1);

@@ -117,6 +117,47 @@ The module must export `createArtifactProvider()`. Contributions remain inactive
 until `harness-studio artifact-provider activate` records the exact Provider
 fingerprint and matcher.
 
+### AgentReact artifacts
+
+Studio selects the production AgentReact runtime only for the explicit compound
+suffix `*.agent.canvas.tsx`; existing `*.canvas.tsx` keeps the general React
+preview, and ordinary TSX remains source-only. The static view id must equal the
+portable filename stem before `.agent.canvas.tsx`:
+
+```tsx
+import {
+  defineArtifactView,
+  useArtifactAction,
+  useArtifactState,
+} from "@studio/agent-react";
+
+function Orders() {
+  const [orders, setOrders] = useArtifactState<readonly string[]>("/orders");
+  const showSource = useArtifactAction("studio.show-source");
+  return <main>
+    <h1>Orders</h1>
+    <output>{orders.length}</output>
+    <button onClick={() => setOrders([...orders, "next"])}>Add</button>
+    <button onClick={() => void showSource()}>Show source</button>
+  </main>;
+}
+
+export default defineArtifactView({
+  id: "orders", // orders.agent.canvas.tsx
+  state: { "/orders": { schema: "list", version: 1 } },
+  capabilities: ["studio.show-source"],
+  component: Orders,
+});
+```
+
+The built-in Host provides `json@1`, `list@1`, and `record@1` state and grants
+only `studio.show-source`; other requested actions fail closed. Source is
+compiled by a deadline-enforced Worker and runs only after an opaque, no-network
+staging frame verifies the build. A failed replacement leaves the last verified
+Current frame visible. See the
+[AgentReact production foundation spec](../../docs/specs/2026-08-27-agent-react-artifact-runtime-poc.md)
+for the exact language profile, ABI, and evidence boundary.
+
 ## Architecture
 
 ```text

@@ -6,6 +6,12 @@ export const REACT_SOURCE_BUILD_RUNTIME: ArtifactBuildRuntimeImplementation = Ob
   module: { kind: "source" },
 } satisfies ArtifactBuildRuntimeImplementation);
 
+export const AGENT_REACT_BUILD_RUNTIME: ArtifactBuildRuntimeImplementation = Object.freeze({
+  id: "studio.agent-react",
+  version: "1",
+  module: { kind: "agent-react" },
+} satisfies ArtifactBuildRuntimeImplementation);
+
 export const SVG_REACT_BUILD_RUNTIME: ArtifactBuildRuntimeImplementation = Object.freeze({
   id: "studio.svg-react",
   version: "1",

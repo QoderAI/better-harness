@@ -37,6 +37,7 @@ describe("ArtifactCompileRuntime", () => {
     const first = await compileEntry(directory, "card.canvas.tsx");
     const second = await compileEntry(directory, "card.canvas.tsx");
     expect(first.snapshot.status).toBe("ready");
+    expect(first.snapshot.runtime).toEqual({ id: "studio.sandboxed-react", version: "5" });
     expect(first.snapshot.buildId).toBe(second.snapshot.buildId);
     expect(first.snapshot.sequence).toBe(second.snapshot.sequence);
     expect(first.css).toContain("rebeccapurple");
@@ -72,6 +73,90 @@ describe("ArtifactCompileRuntime", () => {
     expect(second.snapshot.buildId).toBe(first.snapshot.buildId);
     expect(second.snapshot.sequence).toBe(first.snapshot.sequence);
     expect(artifactCompileCount()).toBe(1);
+  });
+
+  it("compiles explicit AgentReact projects through the production Worker and profile", async () => {
+    resetArtifactCompileRuntime();
+    const directory = await mkdtemp(join(tmpdir(), "artifact-agent-react-"));
+    await writeFile(join(directory, "stat-row.tsx"), [
+      "export function StatRow({value}:{value:number}) {",
+      '  return <strong data-value="count">{value}</strong>;',
+      "}",
+    ].join("\n"), "utf8");
+    await writeFile(join(directory, "orders.agent.canvas.tsx"), [
+      'import { defineArtifactView, useArtifactAction, useArtifactState } from "@studio/agent-react";',
+      'import { StatRow } from "./stat-row.js";',
+      "function Orders() {",
+      '  const [items, setItems] = useArtifactState<readonly string[]>("/items");',
+      '  const showSource = useArtifactAction("studio.show-source");',
+      "  return <main><h1>AgentReact orders</h1><StatRow value={items.length} />",
+      '    <button onClick={() => setItems([...items, "next"])}>Add</button>',
+      '    <button onClick={() => void showSource()}>Show source</button></main>;',
+      "}",
+      "export default defineArtifactView({",
+      '  id: "orders",',
+      '  state: { "/items": { schema: "list", version: 1 } },',
+      '  capabilities: ["studio.show-source"],',
+      "  component: Orders,",
+      "});",
+    ].join("\n"), "utf8");
+
+    const compiled = await compileEntry(directory, "orders.agent.canvas.tsx");
+
+    expect(compiled.snapshot.status, JSON.stringify(compiled.snapshot.diagnostics)).toBe("ready");
+    expect(compiled.snapshot).toMatchObject({
+      status: "ready",
+      agentReact: {
+        protocolVersion: "agent-react/1",
+        view: {
+          id: "orders",
+          state: [{ path: "/items", schema: "list", version: 1 }],
+          capabilities: ["studio.show-source"],
+        },
+      },
+    });
+    expect(compiled.code?.length).toBeGreaterThan(10_000);
+    expect(JSON.stringify(compiled.snapshot)).not.toContain(directory);
+  });
+
+  it("compiles an AgentReact project through a barrel re-export", async () => {
+    resetArtifactCompileRuntime();
+    const directory = await mkdtemp(join(tmpdir(), "artifact-agent-react-barrel-"));
+    await writeFile(join(directory, "orders.tsx"), [
+      "export function Orders() {",
+      "  return <main><h1>Orders through barrel</h1></main>;",
+      "}",
+    ].join("\n"), "utf8");
+    await writeFile(join(directory, "index.ts"), 'export { Orders } from "./orders.js";\n', "utf8");
+    await writeFile(join(directory, "orders.agent.canvas.tsx"), [
+      'import { defineArtifactView } from "@studio/agent-react";',
+      'import { Orders } from "./index.js";',
+      'export default defineArtifactView({ id: "orders", component: Orders });',
+    ].join("\n"), "utf8");
+
+    const compiled = await compileEntry(directory, "orders.agent.canvas.tsx");
+
+    expect(compiled.snapshot.status, JSON.stringify(compiled.snapshot.diagnostics)).toBe("ready");
+    expect(compiled.snapshot.agentReact?.view.id).toBe("orders");
+    expect(compiled.code).toContain("Orders through barrel");
+  });
+
+  it("does not cache a transient AgentReact build deadline", async () => {
+    resetArtifactCompileRuntime();
+    const directory = await mkdtemp(join(tmpdir(), "artifact-agent-react-timeout-"));
+    await writeFile(join(directory, "orders.agent.canvas.tsx"), [
+      'import { defineArtifactView } from "@studio/agent-react";',
+      "function Orders() { return <h1>Orders</h1>; }",
+      'export default defineArtifactView({ id: "orders", component: Orders });',
+    ].join("\n"), "utf8");
+
+    const first = await compileEntry(directory, "orders.agent.canvas.tsx", { timeoutMs: 1 });
+    const second = await compileEntry(directory, "orders.agent.canvas.tsx", { timeoutMs: 1 });
+
+    expect(first.snapshot.status).toBe("failed");
+    expect(first.snapshot.diagnostics[0]?.message).toContain("deadline");
+    expect(second.snapshot.status).toBe("failed");
+    expect(artifactCompileCount()).toBe(2);
   });
 
   it("fails closed for package imports and filesystem escapes", async () => {

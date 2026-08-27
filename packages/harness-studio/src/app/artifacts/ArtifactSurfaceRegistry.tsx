@@ -1,5 +1,6 @@
 import type { ArtifactDescriptor } from "../../contracts/artifact.js";
 import { ArtifactPreviewHost } from "./ArtifactPreviewHost.js";
+import { AgentReactPreviewHost } from "./AgentReactPreviewHost.js";
 import { MarkdownArtifactView } from "./MarkdownArtifactView.js";
 import { DocxArtifactView } from "./docx/DocxArtifactView.js";
 import { ExternalHostedArtifactView } from "./ExternalHostedArtifactView.js";
@@ -27,6 +28,13 @@ export function normalizeArtifactSurfaceKind(artifact: ArtifactDescriptor): Arti
 const TEXT_RENDERER_IDS = new Set(["studio.code", "studio.diff", "studio.json", "studio.text"]);
 
 export const ARTIFACT_SURFACE_MOUNTS: readonly ArtifactSurfaceMount[] = Object.freeze([
+  {
+    id: "studio.agent-react-preview",
+    matches: (artifact) => normalizeArtifactSurfaceKind(artifact) === "studio-sandbox"
+      && artifact.backing === "code"
+      && artifact.renderer.id === "studio.agent-react-preview",
+    Component: AgentReactPreviewHost,
+  },
   {
     id: "studio.sandboxed-preview",
     matches: (artifact) => normalizeArtifactSurfaceKind(artifact) === "studio-sandbox" && artifact.backing === "code",

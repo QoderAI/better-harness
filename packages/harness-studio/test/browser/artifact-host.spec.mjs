@@ -29,6 +29,7 @@ test.beforeAll(async () => {
   await writeFile(join(artifactDirectory, "deck.pptx"), createPptxFixture("01"));
   await writeFile(join(artifactDirectory, "workbook.xlsx"), createXlsxFixture());
   await writeFile(join(artifactDirectory, "component.canvas.tsx"), 'document.body.dataset.moduleEvaluated = "yes"; export default () => <p data-preview="current">first render</p>;\n', "utf8");
+  await writeFile(join(artifactDirectory, "orders.agent.canvas.tsx"), agentReactSource("first verified build"), "utf8");
   await writeFile(join(artifactDirectory, "fallback.canvas.tsx"), 'export default () => <p data-preview="canvas-fallback">Studio React fallback</p>;\n', "utf8");
   await writeFile(join(artifactDirectory, "broken.canvas.tsx"), 'export default () => <main>broken;\n', "utf8");
   await writeFile(join(artifactDirectory, "throws.canvas.tsx"), 'export default function Boom() { throw new Error("render exploded"); }\n', "utf8");
@@ -205,6 +206,35 @@ function watchFailures(page) {
   return failures;
 }
 
+function agentReactSource(label, throwMessage, lateThrowMessage) {
+  return [
+    'import { defineArtifactView, useArtifactAction, useArtifactState } from "@studio/agent-react";',
+    "function Orders() {",
+    ...(throwMessage === undefined ? [] : [`  throw new Error(${JSON.stringify(throwMessage)});`]),
+    '  const [orders, setOrders] = useArtifactState<readonly string[]>("/orders");',
+    '  const showSource = useArtifactAction("studio.show-source");',
+    "  const addOrder = () => setOrders([...orders, `order-${orders.length + 1}`]);",
+    "  const openSource = () => { void showSource(); };",
+    ...(lateThrowMessage === undefined ? [] : [`  const breakCurrent = () => { setTimeout(() => { throw new Error(${JSON.stringify(lateThrowMessage)}); }, 0); };`]),
+    '  return <main data-agent-react-build={"' + label + '"}>',
+    "    <h1>Orders AgentReact</h1>",
+    '    <p data-agent-react-label>{"' + label + '"}</p>',
+    "    <output aria-label=\"Order count\">{orders.length}</output>",
+    "    <button type=\"button\" onClick={addOrder}>Add order</button>",
+    "    <button type=\"button\" onClick={openSource}>Show source</button>",
+    ...(lateThrowMessage === undefined ? [] : ['    <button type="button" onClick={breakCurrent}>Break current</button>']),
+    "  </main>;",
+    "}",
+    "export default defineArtifactView({",
+    '  id: "orders",',
+    '  state: { "/orders": { schema: "list", version: 1 } },',
+    '  capabilities: ["studio.show-source"],',
+    "  component: Orders,",
+    "});",
+    "",
+  ].join("\n");
+}
+
 async function openArtifacts(page) {
   await page.goto(`${studio.url}/#/artifacts`);
   const artifactsPaneTab = page.getByRole("tab", { name: "Artifacts", exact: true });
@@ -277,6 +307,170 @@ test("keeps an unactivated Canvas TSX file on the Studio React fallback", async 
     format: "cursor-canvas-tsx",
     renderer: { id: "studio.react-preview", type: "sandboxed-web", status: "ready" },
   });
+  expect(failures).toEqual([]);
+});
+
+test("runs explicit AgentReact end to end and commits only a verified staging build", async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  const failures = watchFailures(page);
+  await page.addInitScript(() => {
+    globalThis.__agentReactObservations = [];
+    addEventListener("harness.artifact-observation", (event) => globalThis.__agentReactObservations.push(event.detail));
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openArtifacts(page);
+  await page.getByRole("button", { name: /orders\.agent\.canvas\.tsx/ }).click();
+
+  const liveFrame = page.locator('iframe[title="Live AgentReact preview: orders.agent.canvas.tsx"]');
+  const live = page.frameLocator('iframe[title="Live AgentReact preview: orders.agent.canvas.tsx"]');
+  await expect(live.locator("h1")).toHaveText("Orders AgentReact", { timeout: 15_000 });
+  await expect(live.locator("[data-agent-react-label]")).toHaveText("first verified build");
+  await expect(live.locator("[data-artifact-node]").first()).toBeVisible();
+  await expect(page.getByText("AgentReact build committed from isolated staging.")).toBeVisible();
+  await expect(liveFrame).toHaveAttribute("sandbox", "allow-scripts");
+  await expect(liveFrame).toHaveAttribute("referrerpolicy", "no-referrer");
+  const previewUri = await liveFrame.getAttribute("src");
+  const previewResponse = await page.request.get(`${studio.url}${previewUri}`);
+  expect(previewResponse.headers()["cache-control"]).toBe("private, max-age=31536000, immutable");
+  expect(previewResponse.headers()["content-security-policy"]).toContain("default-src 'none'");
+  expect(previewResponse.headers()["content-security-policy"]).toContain("connect-src 'none'");
+
+  const catalog = await (await page.request.get(`${studio.url}/api/artifacts`)).json();
+  expect(catalog.artifacts.find((artifact) => artifact.label === "orders.agent.canvas.tsx")).toMatchObject({
+    format: "agent-react-tsx",
+    renderer: { id: "studio.agent-react-preview", type: "sandboxed-web", status: "ready" },
+    capabilities: expect.arrayContaining(["actions", "execute", "live-update", "state"]),
+  });
+
+  const direct = await page.context().newPage();
+  await direct.goto(`${studio.url}${previewUri}`);
+  await expect(direct.getByRole("heading", { name: "Orders AgentReact" })).toHaveCount(0);
+  await direct.close();
+
+  await live.getByRole("button", { name: "Add order" }).click();
+  await expect(live.getByLabel("Order count")).toHaveText("1");
+  const firstBuildUri = await liveFrame.getAttribute("src");
+
+  try {
+    await writeFile(join(artifactDirectory, "orders.agent.canvas.tsx"), agentReactSource("must not commit", "staging exploded"), "utf8");
+    await expect(page.locator(".artifact-runtime-status")).toContainText("staging exploded", { timeout: 15_000 });
+    await expect(page.locator(".artifact-runtime-status")).toContainText("Current remains on the last verified build.");
+    await expect(live.locator("[data-agent-react-label]")).toHaveText("first verified build");
+    await expect(live.getByLabel("Order count")).toHaveText("1");
+    await expect(liveFrame).toHaveAttribute("src", firstBuildUri);
+
+    await writeFile(join(artifactDirectory, "orders.agent.canvas.tsx"), agentReactSource("second verified build"), "utf8");
+    await expect(live.locator("[data-agent-react-label]")).toHaveText("second verified build", { timeout: 15_000 });
+    await expect(live.getByLabel("Order count")).toHaveText("1");
+    await expect(liveFrame).not.toHaveAttribute("src", firstBuildUri);
+    await expect(page.getByText("AgentReact build committed from isolated staging.")).toBeVisible();
+
+    await writeFile(join(artifactDirectory, "orders.agent.canvas.tsx"), agentReactSource("interactive failure build", undefined, "current exploded"), "utf8");
+    await expect(live.locator("[data-agent-react-label]")).toHaveText("interactive failure build", { timeout: 15_000 });
+    await live.getByRole("button", { name: "Break current" }).click();
+    await expect(page.locator(".artifact-runtime-status")).toContainText("current exploded");
+    await expect(page.getByRole("tab", { name: "Source", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(liveFrame).toHaveCount(0);
+
+    await writeFile(join(artifactDirectory, "orders.agent.canvas.tsx"), agentReactSource("recovered current build"), "utf8");
+    await expect(page.getByText("AgentReact build committed from isolated staging.")).toBeVisible({ timeout: 15_000 });
+    await page.locator(".artifact-runtime-tabs").getByRole("tab", { name: "Preview", exact: true }).click();
+    await expect(live.locator("[data-agent-react-label]")).toHaveText("recovered current build");
+    await expect(live.getByLabel("Order count")).toHaveText("1");
+
+    const observations = await page.evaluate(() => globalThis.__agentReactObservations);
+    expect(observations.length).toBeGreaterThanOrEqual(5);
+    expect(observations.map((entry) => entry?.value?.kind)).toEqual(expect.arrayContaining([
+      "renderCompleted",
+      "renderFailed",
+    ]));
+    expect(observations.every((entry, index) => entry.type === "CUSTOM"
+      && entry.name === "harness.artifact-observation"
+      && entry.value.sequence === index + 1
+      && typeof entry.value.artifactDigest === "string"
+      && typeof entry.value.buildDigest === "string")).toBe(true);
+
+    await live.getByRole("button", { name: "Show source" }).click();
+    await expect(page.getByRole("tab", { name: "Source", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-artifact-code-view="source"]')).toContainText("recovered current build");
+    await page.screenshot({ path: testInfo.outputPath("agent-react-source-action.png"), fullPage: true });
+  } finally {
+    await writeFile(join(artifactDirectory, "orders.agent.canvas.tsx"), agentReactSource("first verified build"), "utf8");
+  }
+  expect(failures).toEqual(["current exploded"]);
+});
+
+test("keeps the current AgentReact session across unrelated artifact invalidations", async ({ page }) => {
+  const failures = watchFailures(page);
+  await openArtifacts(page);
+  await page.getByRole("button", { name: /orders\.agent\.canvas\.tsx/ }).click();
+
+  const live = page.frameLocator('iframe[title="Live AgentReact preview: orders.agent.canvas.tsx"]');
+  const status = page.locator(".artifact-runtime-status");
+  await expect(live.getByRole("heading", { name: "Orders AgentReact" })).toBeVisible({ timeout: 15_000 });
+  await expect(status).toContainText("AgentReact build committed from isolated staging.");
+  await live.getByRole("button", { name: "Add order" }).click();
+  await expect(live.getByLabel("Order count")).toHaveText("1");
+
+  const catalog = await (await page.request.get(`${studio.url}/api/artifacts`)).json();
+  const snapshotUri = catalog.artifacts.find((artifact) => artifact.label === "orders.agent.canvas.tsx")?.build?.snapshotUri;
+  expect(snapshotUri).toBeTruthy();
+  try {
+    for (const text of ["unrelated invalidation one\n", "unrelated invalidation two\n"]) {
+      const refreshed = page.waitForResponse((response) => response.request().method() === "GET"
+        && new URL(response.url()).pathname === snapshotUri);
+      await writeFile(join(artifactDirectory, "notes.txt"), text, "utf8");
+      await refreshed;
+      await expect(status).toContainText("AgentReact build committed from isolated staging.");
+      await expect(live.getByLabel("Order count")).toHaveText("1");
+    }
+
+    await live.getByRole("button", { name: "Add order" }).click();
+    await expect(live.getByLabel("Order count")).toHaveText("2");
+    await live.getByRole("button", { name: "Show source" }).click();
+    await expect(page.getByRole("tab", { name: "Source", exact: true })).toHaveAttribute("aria-selected", "true");
+    await page.locator(".artifact-runtime-tabs").getByRole("tab", { name: "Preview", exact: true }).click();
+    await expect(live.getByLabel("Order count")).toHaveText("2");
+  } finally {
+    await writeFile(join(artifactDirectory, "notes.txt"), "followed the declared content reference\n", "utf8");
+  }
+  expect(failures).toEqual([]);
+});
+
+test("keeps AgentReact Preview primary at wide, compact, and narrow widths", async ({ page }, testInfo) => {
+  const failures = watchFailures(page);
+  for (const layout of [
+    { name: "wide", width: 1440, height: 900 },
+    { name: "compact", width: 1024, height: 768 },
+    { name: "narrow", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: layout.width, height: layout.height });
+    await openArtifacts(page);
+    await page.getByRole("button", { name: /orders\.agent\.canvas\.tsx/ }).click();
+    const live = page.frameLocator('iframe[title="Live AgentReact preview: orders.agent.canvas.tsx"]');
+    await expect(live.getByRole("heading", { name: "Orders AgentReact" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".artifact-runtime-tabs").getByRole("tab", { name: "Preview", exact: true })).toHaveAttribute("aria-selected", "true");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), `${layout.name} AgentReact preview overflows horizontally`).toBe(false);
+    await page.locator(".artifact-runtime-tabs").getByRole("tab", { name: "Source" }).focus();
+    expect(Number.parseFloat(await page.locator(".artifact-runtime-tabs").getByRole("tab", { name: "Source" }).evaluate((element) => getComputedStyle(element).outlineWidth))).toBeGreaterThan(0);
+    await page.screenshot({ path: testInfo.outputPath(`agent-react-${layout.name}.png`), fullPage: true });
+  }
+  expect(failures).toEqual([]);
+});
+
+test("commits AgentReact when preview paint callbacks are suspended", async ({ page }) => {
+  const failures = watchFailures(page);
+  await page.addInitScript(() => {
+    if (location.pathname.includes("/api/artifacts/") && location.pathname.endsWith("/preview")) {
+      globalThis.requestAnimationFrame = () => 1;
+    }
+  });
+  await openArtifacts(page);
+  await page.getByRole("button", { name: /orders\.agent\.canvas\.tsx/ }).click();
+
+  const live = page.frameLocator('iframe[title="Live AgentReact preview: orders.agent.canvas.tsx"]');
+  await expect(live.getByRole("heading", { name: "Orders AgentReact" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("AgentReact build committed from isolated staging.")).toBeVisible();
   expect(failures).toEqual([]);
 });
 

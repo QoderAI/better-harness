@@ -56,6 +56,8 @@
     "esbuild-wasm": "0.28.2",
     "fast-xml-parser": "^5.11.0",
     "fflate": "^0.8.3",
+    "oxc-parser": "0.147.0",
+    "oxc-transform": "0.147.0",
     "pdfjs-dist": "^6.2.108",
     "react": "19.2.8",
     "react-arborist": "^3.16.0",
