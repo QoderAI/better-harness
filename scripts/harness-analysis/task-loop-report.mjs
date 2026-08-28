@@ -3054,8 +3054,8 @@ function contextUsageErrors(usage) {
   if (!new Set(["observed", "unobserved"]).has(usage.status)) {
     errors.push(`${prefix}.status must be observed or unobserved`);
   }
-  if (usage.evidence !== "cursor-native-context-usage-canvas") {
-    errors.push(`${prefix}.evidence must identify the Cursor native Canvas snapshot`);
+  if (!new Set(["cursor-native-context-usage-canvas", "cursor-native-composer-state"]).has(usage.evidence)) {
+    errors.push(`${prefix}.evidence must identify supported Cursor native context state`);
   }
   if (!Array.isArray(usage.categories)) errors.push(`${prefix}.categories must be an array`);
   else for (const [index, category] of usage.categories.entries()) {

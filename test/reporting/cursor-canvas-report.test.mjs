@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "vitest";
 
 import { renderCursorCanvasTsx } from "../../scripts/harness-analysis/renderers/cursor-canvas.mjs";
@@ -19,6 +20,7 @@ import { buildTaskLoopSourceCandidate } from "../../scripts/harness-analysis/tas
 import { validateCursorCanvasArtifacts } from "../../scripts/harness-analysis/validate-cursor-canvas.mjs";
 import {
   CursorSessionAnalyzer,
+  defaultCursorStateDbPath,
   readCursorContextUsage,
   workspaceToCursorSlugVariants,
 } from "../../scripts/session-analysis/platforms/cursor.mjs";
@@ -38,6 +40,48 @@ async function withTempDir(name, fn) {
 async function writeJson(filePath, value) {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function writeCursorStateDb(filePath, { composers = [], models = [] } = {}) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const db = new DatabaseSync(filePath);
+  try {
+    db.exec(`
+      create table cursorDiskKV (key text primary key, value text);
+      create table composerHeaders (
+        composerId text primary key,
+        workspaceId text,
+        createdAt integer,
+        lastUpdatedAt integer,
+        value text
+      );
+      create table ItemTable (key text primary key, value text);
+    `);
+    db.prepare("insert into ItemTable (key, value) values (?, ?)").run(
+      "src.vs.platform.reactivestorage.browser.reactiveStorageServiceImpl.persistentStorage.applicationUser",
+      JSON.stringify({ availableDefaultModels2: models }),
+    );
+    const insertData = db.prepare("insert into cursorDiskKV (key, value) values (?, ?)");
+    const insertHeader = db.prepare(`
+      insert into composerHeaders (composerId, workspaceId, createdAt, lastUpdatedAt, value)
+      values (?, ?, ?, ?, ?)
+    `);
+    for (const composer of composers) {
+      insertData.run(`composerData:${composer.id}`, JSON.stringify(composer.data));
+      insertHeader.run(
+        composer.id,
+        composer.workspaceId ?? "workspace-id",
+        composer.createdAt,
+        composer.lastUpdatedAt,
+        JSON.stringify({
+          composerId: composer.id,
+          workspaceIdentifier: { uri: { fsPath: composer.workspace } },
+        }),
+      );
+    }
+  } finally {
+    db.close();
+  }
 }
 
 function canvasesDir(cursorHome, workspace) {
@@ -160,6 +204,198 @@ test("Cursor context usage projects bounded native evidence and omits raw item t
   });
 });
 
+test("Cursor composer state reproduces the current native breakdown and model-catalog window", async () => {
+  await withTempDir("cursor-composer-context-", async (root) => {
+    const workspace = path.join(root, "workspace");
+    const otherWorkspace = path.join(root, "other-workspace");
+    const cursorHome = path.join(root, ".cursor");
+    const stateDbPath = path.join(root, "Cursor", "User", "globalStorage", "state.vscdb");
+    const sessionId = "6c6b3fe1-6ba5-4f39-93c4-364535eb78c0";
+    const promptSecret = "RAW-COMPOSER-PROMPT-MUST-NOT-LEAK";
+    await mkdir(workspace, { recursive: true });
+    await writeCursorStateDb(stateDbPath, {
+      models: [{ name: "grok-4.6", contextTokenLimit: 256_000 }],
+      composers: [
+        {
+          id: "other-composer",
+          workspace: otherWorkspace,
+          createdAt: Date.parse("2026-07-02T13:10:00.000Z"),
+          lastUpdatedAt: Date.parse("2026-07-02T13:12:00.000Z"),
+          data: {
+            modelConfig: { modelName: "grok-4.6" },
+            promptTokenBreakdown: { totalUsedTokens: 199_999, maxTokens: 200_000, categories: [] },
+          },
+        },
+        {
+          id: sessionId,
+          workspace,
+          createdAt: Date.parse("2026-07-02T11:50:12.000Z"),
+          lastUpdatedAt: Date.parse("2026-07-02T13:01:01.027Z"),
+          data: {
+            modelConfig: { modelName: "grok-4.6" },
+            contextUsagePercent: 61.384,
+            promptTokenBreakdown: {
+              totalUsedTokens: 122_768,
+              maxTokens: 200_000,
+              categories: [
+                { id: "system_prompt", label: "System prompt", estimatedTokens: 822 },
+                { id: "tools", label: "Tool definitions", estimatedTokens: 14_143 },
+                { id: "rules", label: "Rules", estimatedTokens: 6_851 },
+                { id: "skills", label: "Skills", estimatedTokens: 6_635 },
+                { id: "mcp", label: "MCP", estimatedTokens: 4_983 },
+                { id: "subagents", label: "Subagent definitions", estimatedTokens: 1_440 },
+                { id: "summarized_conversation", label: "Summarized conversation", estimatedTokens: 0 },
+                { id: "conversation", label: "Conversation", estimatedTokens: 87_894 },
+              ],
+            },
+            promptContextUsageTree: { nodes: [{ text: promptSecret, estimatedTokens: 122_768 }] },
+          },
+        },
+      ],
+    });
+
+    const analyzer = new CursorSessionAnalyzer();
+    const scope = await analyzer.resolveScope({ workspace, home: cursorHome, stateDbPath, sessionId });
+    const usage = await readCursorContextUsage(scope);
+
+    assert.equal(usage.status, "observed");
+    assert.equal(usage.evidence, "cursor-native-composer-state");
+    assert.equal(usage.actions.openAgentId, sessionId);
+    assert.equal(usage.capturedAt, "2026-07-02T13:01:01.027Z");
+    assert.equal(usage.totalTokensUsed, 122_768);
+    assert.equal(usage.contextWindowSize, 256_000, "the current model catalog wins over composer maxTokens");
+    assert.equal(usage.percentFull, 48);
+    assert.deepEqual(usage.categories.map((category) => category.id), [
+      "system_prompt", "tools", "rules", "skills", "mcp", "subagents", "conversation",
+    ]);
+    assert.equal(usage.categories.reduce((sum, category) => sum + category.estimatedTokens, 0), 122_768);
+    assert.deepEqual(usage.items, []);
+    assert.equal(JSON.stringify(usage).includes(promptSecret), false);
+    assert.equal(JSON.stringify(usage).includes(workspace), false);
+    assert.equal(JSON.stringify(usage).includes(stateDbPath), false);
+  });
+});
+
+test("Cursor state database paths use target-platform path semantics", () => {
+  assert.equal(
+    defaultCursorStateDbPath({ platform: "darwin", homedir: "/Users/example", env: {} }),
+    "/Users/example/Library/Application Support/Cursor/User/globalStorage/state.vscdb",
+  );
+  assert.equal(
+    defaultCursorStateDbPath({ platform: "linux", homedir: "/home/example", env: { XDG_CONFIG_HOME: "/config" } }),
+    "/config/Cursor/User/globalStorage/state.vscdb",
+  );
+  assert.equal(
+    defaultCursorStateDbPath({ platform: "win32", homedir: "C:\\Users\\example", env: { APPDATA: "D:\\Profiles\\Roaming" } }),
+    "D:\\Profiles\\Roaming\\Cursor\\User\\globalStorage\\state.vscdb",
+  );
+});
+
+test("Cursor Session discovery prefers composer state and excludes an older Canvas", async () => {
+  await withTempDir("cursor-composer-precedence-", async (root) => {
+    const workspace = path.join(root, "workspace");
+    const cursorHome = path.join(root, ".cursor");
+    const stateDbPath = path.join(root, "Cursor", "User", "globalStorage", "state.vscdb");
+    const sessionId = "77777777-7777-4777-8777-777777777777";
+    const slug = workspaceToCursorSlugVariants(workspace)[0];
+    await writeJson(
+      path.join(cursorHome, "projects", slug, "agent-transcripts", sessionId, `${sessionId}.jsonl`),
+      { role: "user", message: { content: [{ type: "text", text: "Inspect usage" }] } },
+    );
+    const canvasPath = path.join(canvasesDir(cursorHome, workspace), "context-usage-old.canvas.data.json");
+    await writeJson(canvasPath, {
+      contextUsage: {
+        composerId: sessionId,
+        totalTokensUsed: 56_860,
+        contextWindowSize: 300_000,
+        categories: [{ id: "conversation", label: "Conversation", tokens: 7_532 }],
+        items: [],
+      },
+    });
+    await utimes(canvasPath, new Date("2026-07-02T11:51:30.000Z"), new Date("2026-07-02T11:51:30.000Z"));
+    await writeCursorStateDb(stateDbPath, {
+      models: [{ name: "grok-4.6", contextTokenLimit: 256_000 }],
+      composers: [{
+        id: sessionId,
+        workspace,
+        createdAt: Date.parse("2026-07-02T11:50:12.000Z"),
+        lastUpdatedAt: Date.parse("2026-07-02T13:01:01.027Z"),
+        data: {
+          modelConfig: { modelName: "grok-4.6" },
+          promptTokenBreakdown: {
+            totalUsedTokens: 122_768,
+            maxTokens: 200_000,
+            categories: [{ id: "conversation", label: "Conversation", estimatedTokens: 122_768 }],
+          },
+        },
+      }],
+    });
+
+    const analyzer = new CursorSessionAnalyzer();
+    const scope = await analyzer.resolveScope({ workspace, home: cursorHome, stateDbPath });
+    const roots = await analyzer.discoverSourceRoots(scope);
+    const sessions = await analyzer.discoverSessions(scope, roots);
+    const session = sessions.find((candidate) => candidate.sessionId === sessionId);
+    const events = await analyzer.readSession(session, scope, {});
+    const contexts = events.filter((event) => event.type === "context.usage");
+
+    assert.deepEqual(session.sourceKinds.filter((kind) => kind.includes("context") || kind.includes("composer")), [
+      "cursor-composer-state",
+    ]);
+    assert.equal(contexts.length, 1);
+    assert.equal(contexts[0].sourceKind, "cursor-composer-state");
+    assert.deepEqual(contexts[0].currentContextUsage, {
+      usedTokens: 122_768,
+      windowTokens: 256_000,
+      percentFull: 48,
+      basis: "host-context-snapshot",
+      source: "cursor-native-composer-state",
+      rawTextOmitted: true,
+    });
+  });
+});
+
+test("Cursor Session discovery does not present an older Canvas as current context", async () => {
+  await withTempDir("cursor-canvas-stale-", async (root) => {
+    const workspace = path.join(root, "workspace");
+    const cursorHome = path.join(root, ".cursor");
+    const sessionId = "88888888-8888-4888-8888-888888888888";
+    const slug = workspaceToCursorSlugVariants(workspace)[0];
+    await writeJson(
+      path.join(cursorHome, "projects", slug, "agent-transcripts", sessionId, `${sessionId}.jsonl`),
+      { role: "user", message: { content: [{ type: "text", text: "Continue after snapshot" }] } },
+    );
+    const canvasPath = path.join(canvasesDir(cursorHome, workspace), "context-usage-stale.canvas.data.json");
+    await writeJson(canvasPath, {
+      contextUsage: {
+        composerId: sessionId,
+        totalTokensUsed: 56_860,
+        contextWindowSize: 300_000,
+        categories: [{ id: "conversation", label: "Conversation", tokens: 56_860 }],
+        items: [],
+      },
+    });
+    await utimes(canvasPath, new Date("2026-07-02T11:51:30.000Z"), new Date("2026-07-02T11:51:30.000Z"));
+    await writeJson(path.join(cursorHome, "chats", "hash", sessionId, "meta.json"), {
+      schemaVersion: 1,
+      cwd: workspace,
+      createdAtMs: Date.parse("2026-07-02T11:50:12.000Z"),
+      updatedAtMs: Date.parse("2026-07-02T13:01:01.027Z"),
+      hasConversation: true,
+    });
+
+    const analyzer = new CursorSessionAnalyzer();
+    const scope = await analyzer.resolveScope({ workspace, home: cursorHome });
+    const roots = await analyzer.discoverSourceRoots(scope);
+    const sessions = await analyzer.discoverSessions(scope, roots);
+    const session = sessions.find((candidate) => candidate.sessionId === sessionId);
+    const events = await analyzer.readSession(session, scope, {});
+
+    assert.equal(session.sourceKinds.includes("cursor-context-usage-canvas"), false);
+    assert.equal(events.some((event) => event.type === "context.usage"), false);
+  });
+});
+
 test("Cursor context usage admits only workspace-local file sources", async () => {
   await withTempDir("cursor-context-usage-sources-", async (root) => {
     const workspace = path.join(root, "workspace");
@@ -205,6 +441,38 @@ test("Cursor context usage reports unobserved without inventing zero usage", asy
     assert.equal(usage.actions.openAgentId, null);
     assert.equal(Object.hasOwn(usage, "totalTokensUsed"), false);
     assert.equal(Object.hasOwn(usage, "percentFull"), false);
+  });
+});
+
+test("Cursor context usage never borrows a Canvas from another requested Session", async () => {
+  await withTempDir("cursor-context-usage-session-isolation-", async (root) => {
+    const workspace = path.join(root, "workspace");
+    const cursorHome = path.join(root, ".cursor");
+    await mkdir(workspace, { recursive: true });
+    await writeJson(
+      path.join(canvasesDir(cursorHome, workspace), "context-usage-other.canvas.data.json"),
+      {
+        contextUsage: {
+          composerId: "other-session",
+          totalTokensUsed: 60_000,
+          contextWindowSize: 256_000,
+          categories: [{ id: "conversation", label: "Conversation", tokens: 60_000 }],
+          items: [],
+        },
+      },
+    );
+
+    const analyzer = new CursorSessionAnalyzer();
+    const scope = await analyzer.resolveScope({
+      workspace,
+      home: cursorHome,
+      sessionId: "requested-session",
+    });
+    const usage = await readCursorContextUsage(scope);
+
+    assert.equal(usage.status, "unobserved");
+    assert.equal(usage.actions.openAgentId, null);
+    assert.deepEqual(usage.categories, []);
   });
 });
 
@@ -299,6 +567,13 @@ test("Canvas split validation bounds the Context Usage contract", () => {
     validateTaskLoopCanvasSplit(split.findings, relativeSource).join("; "),
     /contextUsage\.items\[0\]\.source must identify an absolute local file/u,
   );
+
+  const composerState = splitTaskLoopFindings(reviewedFindingsInput(observedContextUsage({
+    evidence: "cursor-native-composer-state",
+    items: [],
+    coverage: { snapshotCount: 1, itemCount: 0, sourceItemCount: 0, truncated: false, rawTextOmitted: true },
+  })));
+  assert.deepEqual(validateTaskLoopCanvasSplit(composerState.findings, composerState.canvas), []);
 });
 
 test("Cursor Canvas renderer embeds the merged report behind the public SDK surface", () => {

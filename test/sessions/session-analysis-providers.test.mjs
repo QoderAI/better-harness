@@ -707,6 +707,7 @@ test("Cursor keeps timestamp-unobserved transcripts with labelled source time an
   assert.deepEqual(context?.currentContextUsage, {
     usedTokens: 250,
     windowTokens: 1_000,
+    percentFull: 25,
     basis: "host-context-snapshot",
     source: "cursor-native-context-usage-canvas",
     rawTextOmitted: true,

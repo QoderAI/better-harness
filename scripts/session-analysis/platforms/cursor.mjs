@@ -9,6 +9,11 @@ import { parseArgs, parseBooleanFlag } from "../cli.mjs";
 import { forEachJsonLine, pathExists, readJson, walkFiles } from "../fs.mjs";
 import { expandHome, normalizeWorkspace } from "../paths.mjs";
 import {
+  defaultCursorStateDbPath,
+  findCursorComposerContextUsages,
+  resolveCursorStateDbPath,
+} from "./cursor-state.mjs";
+import {
   bindSessionWorkspaceCwds,
   emitProviderResult,
   markSessionReadCoverage,
@@ -22,6 +27,9 @@ import { mergeTimeRange, normalizeCliDate, normalizeTimestamp, timestampMillis, 
 
 export const CURSOR_CONTEXT_USAGE_SCHEMA_VERSION = 1;
 const CURSOR_CONTEXT_USAGE_ITEM_LIMIT = 200;
+const CURSOR_CANVAS_CURRENT_TOLERANCE_MS = 60_000;
+
+export { defaultCursorStateDbPath };
 
 function isWorkspaceMatch(candidate, workspace) {
   if (!candidate) return false;
@@ -150,12 +158,17 @@ export async function findCursorContextUsageSnapshots(scope) {
 }
 
 export async function readCursorContextUsage(scope) {
+  const composerUsages = (await findCursorComposerContextUsages(scope, {
+    ...(scope.sessionId ? { sessionIds: [scope.sessionId] } : {}),
+  })).filter((usage) => withinTimeRange(usage.capturedAt, scope));
+  if (composerUsages.length > 0) return composerUsages[0];
   const snapshots = await findCursorContextUsageSnapshots(scope);
   const candidates = snapshots.filter((candidate) => withinTimeRange(candidate.capturedAt, scope));
   for (const candidate of candidates) {
     let raw;
     try { raw = await readJson(candidate.filePath); } catch { continue; }
     const projected = projectContextUsageSnapshot(raw, { capturedAt: candidate.capturedAt, scope });
+    if (scope.sessionId && projected?.actions?.openAgentId !== scope.sessionId) continue;
     if (projected) {
       return {
         ...projected,
@@ -375,6 +388,7 @@ function contextUsageEvents(sourceRef) {
     currentContextUsage: {
       usedTokens: usage.totalTokensUsed,
       windowTokens: usage.contextWindowSize,
+      percentFull: usage.percentFull,
       basis: "host-context-snapshot",
       source: usage.evidence,
       rawTextOmitted: true,
@@ -385,6 +399,24 @@ function contextUsageEvents(sourceRef) {
       estimatedTokens: category.estimatedTokens,
     })),
   }];
+}
+
+function discardStaleCanvasContext(sessions) {
+  for (const session of sessions.values()) {
+    const lastSeen = timestampMillis(session.lastSeen);
+    if (lastSeen === null) continue;
+    let removed = false;
+    session.sourceRefs = session.sourceRefs.filter((ref) => {
+      if (ref.kind !== "cursor-context-usage-canvas") return true;
+      const capturedAt = timestampMillis(ref.contextUsage?.capturedAt);
+      const current = capturedAt !== null && capturedAt + CURSOR_CANVAS_CURRENT_TOLERANCE_MS >= lastSeen;
+      if (!current) removed = true;
+      return current;
+    });
+    if (removed && !session.sourceRefs.some((ref) => ref.kind === "cursor-context-usage-canvas")) {
+      session.sourceKinds.delete("cursor-context-usage-canvas");
+    }
+  }
 }
 
 function cursorLifecycle(raw) {
@@ -633,6 +665,9 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
     const until = normalizeCliDate(options.until, true);
     const workspace = normalizeWorkspace(options.workspace);
     const workspaceMatchScope = workspaceMatchScopeFromOptions(options);
+    const home = path.resolve(expandHome(options.home ?? options.cursorHome ?? options["cursor-home"] ?? "~/.cursor"));
+    const defaultHome = path.resolve(expandHome("~/.cursor"));
+    const explicitStateDbPath = options.stateDbPath ?? options["state-db"];
     const transcriptWorkspaces = [...new Set([
       workspace,
       workspaceMatchScope?.requestedWorkspace,
@@ -641,7 +676,7 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
     return {
       platform: "cursor",
       workspace,
-      home: path.resolve(expandHome(options.home ?? options.cursorHome ?? options["cursor-home"] ?? "~/.cursor")),
+      home,
       _workspaceSlugVariants: [...new Set(
         transcriptWorkspaces.flatMap((candidate) => workspaceToCursorSlugVariants(candidate)),
       )],
@@ -650,6 +685,11 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
       until: until.label,
       untilTime: until.time,
       sessionId: options["session-id"] ?? options.sessionId ?? options._?.[0] ?? null,
+      stateDbPath: explicitStateDbPath
+        ? resolveCursorStateDbPath({ stateDbPath: explicitStateDbPath })
+        : home === defaultHome
+          ? resolveCursorStateDbPath()
+          : path.join(home, "state.vscdb"),
       includeGlobalCapabilities: parseBooleanFlag(options["include-global-capabilities"] ?? false),
       _command: options.command ?? null,
       _workspaceMatchScope: workspaceMatchScope,
@@ -682,6 +722,16 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
         enabled: true,
         workspaceScoped: false,
         coverage: "session-time",
+      },
+      {
+        id: "cursor-composer-state",
+        kind: "cursor-composer-state",
+        role: "context-usage-snapshot",
+        path: scope.stateDbPath,
+        optional: true,
+        enabled: true,
+        workspaceScoped: false,
+        coverage: "optional-context-usage",
       },
       {
         id: "cursor-context-usage",
@@ -756,6 +806,19 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
     }
     const knownIds = new Set(sessions.keys());
     const contextSessions = new Set();
+    for (const usage of await findCursorComposerContextUsages(scope, { sessionIds: [...knownIds] })) {
+      if (!withinTimeRange(usage.capturedAt, scope)) continue;
+      const sessionId = usage.actions.openAgentId;
+      if (!sessionId || !knownIds.has(sessionId) || contextSessions.has(sessionId)) continue;
+      contextSessions.add(sessionId);
+      addRef(sessions, sessionId, scope.workspace, {
+        kind: "cursor-composer-state",
+        role: "context-usage-snapshot",
+        path: scope.stateDbPath,
+        sourceTimestampFallback: usage.capturedAt,
+        contextUsage: usage,
+      });
+    }
     for (const candidate of await findCursorContextUsageSnapshots(scope)) {
       if (!withinTimeRange(candidate.capturedAt, scope)) continue;
       let raw;
@@ -817,6 +880,7 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
         });
       }
     }
+    discardStaleCanvasContext(sessions);
     const workspaceSessions = [...sessions.values()].map(finalizeSession);
     const inWindowSessions = workspaceSessions
       .filter((session) => withinTimeRange(session.lastSeen ?? session.firstSeen, scope))
@@ -839,7 +903,7 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
 
   normalizeEvents(raw, sourceRef, options = {}) {
     if (sourceRef.kind === "cursor-chat-meta") return metaEvents(raw, sourceRef);
-    if (sourceRef.kind === "cursor-context-usage-canvas") return contextUsageEvents(sourceRef);
+    if (["cursor-composer-state", "cursor-context-usage-canvas"].includes(sourceRef.kind)) return contextUsageEvents(sourceRef);
     if (sourceRef.kind.includes("audit")) return auditEvents(raw, sourceRef, options);
     return transcriptEvents(raw, sourceRef, options);
   }
@@ -871,7 +935,7 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
           .filter((event) => withinTimeRange(event.timestamp, scope)));
         continue;
       }
-      if (ref.kind === "cursor-context-usage-canvas") {
+      if (["cursor-composer-state", "cursor-context-usage-canvas"].includes(ref.kind)) {
         events.push(...contextUsageEvents({ ...ref, sessionId: session.sessionId })
           .filter((event) => withinTimeRange(event.timestamp, scope)));
         continue;

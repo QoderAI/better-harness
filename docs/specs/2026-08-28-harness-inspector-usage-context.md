@@ -5,6 +5,8 @@
 - Spec ID: harness-inspector-usage-context
 - Status: Implemented
 - Refs: https://github.com/QoderAI/better-harness/pull/122
+- Cursor current-context source precedence: superseded by
+  [Read current Cursor composer context usage](2026-08-28-cursor-composer-context-usage.md)
 
 ## Intent
 
