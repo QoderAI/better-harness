@@ -6,6 +6,7 @@ import { test } from "vitest";
 
 import { createAnalyzer } from "../../scripts/session-analysis.mjs";
 import {
+  mergeQoderAssistantContextIntoResponses,
   QoderSessionAnalyzer,
   workspaceToQoderSlug,
   workspaceToQoderSlugVariants,
@@ -928,6 +929,69 @@ test("Qoder preserves host context ratio, real session window, and compaction bo
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
+});
+
+test("Qoder merges assistant context into one canonical model response (AC-23)", () => {
+  const events = [
+    {
+      sessionId: "qoder-multi-lane",
+      type: "model.response.completed",
+      sourceKind: "logs-session",
+      timestamp: "2026-08-28T06:30:23.930Z",
+      model: "performance",
+      stopReason: "tool_use",
+      requestId: "request-1",
+      modelInvocationUsage: { inputTokens: 0, outputTokens: 0 },
+    },
+    {
+      sessionId: "qoder-multi-lane",
+      type: "assistant",
+      sourceKind: "project-jsonl",
+      timestamp: "2026-08-28T06:30:23.933Z",
+      model: "performance",
+      stopReason: "tool_use",
+      responseId: "response-1",
+      currentContextUsage: {
+        percentFull: 11.6,
+        basis: "host-context-ratio",
+        source: "qoder-project-context-ratio",
+      },
+    },
+    {
+      sessionId: "qoder-multi-lane",
+      type: "model.response.completed",
+      sourceKind: "logs-session",
+      timestamp: "2026-08-28T06:30:24.000Z",
+      model: "performance",
+      stopReason: "end_turn",
+      requestId: "request-2",
+      modelInvocationUsage: { inputTokens: 0, outputTokens: 0 },
+    },
+    {
+      sessionId: "qoder-multi-lane",
+      type: "assistant",
+      sourceKind: "project-jsonl",
+      timestamp: "2026-08-28T06:30:24.001Z",
+      model: "performance",
+      stopReason: "tool_use",
+      responseId: "unmatched-response",
+      currentContextUsage: {
+        percentFull: 12.5,
+        basis: "host-context-ratio",
+        source: "qoder-project-context-ratio",
+      },
+    },
+  ];
+
+  const merged = mergeQoderAssistantContextIntoResponses(events);
+  const responses = merged.filter((event) => event.type === "model.response.completed");
+  assert.equal(responses.length, 2);
+  assert.equal(responses[0].currentContextUsage.percentFull, 11.6);
+  assert.equal(Object.hasOwn(responses[1], "currentContextUsage"), false);
+  assert.equal(merged[3].currentContextUsage.percentFull, 12.5);
+  assert.equal(merged[1].responseId, "response-1");
+  assert.equal(merged[1].usageProgressionExcluded, true);
+  assert.equal(merged[3].usageProgressionExcluded, true);
 });
 
 test("Qoder workspace analysis excludes unrelated home-only sessions", async () => {

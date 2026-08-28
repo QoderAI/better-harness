@@ -96,6 +96,7 @@ function retained(record) {
  * translation into the progression contract.
  */
 export function usageObservationFromEvent(event) {
+  if (event?.usageProgressionExcluded === true) return null;
   const usage = observedUsageRecord(event);
   const tokenUsage = observedTokenUsage(usage);
   const contextUsage = observedContextUsage(event?.currentContextUsage, { boundText: truncateText });

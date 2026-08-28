@@ -425,7 +425,7 @@ function enrichQoderContextUsage(events) {
     .filter((value) => Number.isFinite(value) && value > 0))];
   const sessionWindow = observedWindows.length === 1 ? observedWindows[0] : null;
   let currentWindow = sessionWindow;
-  return events.map((event) => {
+  const enriched = events.map((event) => {
     if (Number.isFinite(event.observedContextWindowTokens) && event.observedContextWindowTokens > 0) {
       currentWindow = event.observedContextWindowTokens;
     }
@@ -444,6 +444,69 @@ function enrichQoderContextUsage(events) {
         } : {}),
       },
     };
+  });
+  return mergeQoderAssistantContextIntoResponses(enriched);
+}
+
+const QODER_CONTEXT_MERGE_MAX_GAP_MS = 1_000;
+
+function sameObservedValue(left, right) {
+  return !left || !right || left === right;
+}
+
+/**
+ * Qoder retains one inference in parallel logs-session and project-jsonl
+ * lanes. The logs lane owns the canonical `model.response.completed` event;
+ * the project lane may add the context ratio a few milliseconds later. Merge
+ * that evidence one-to-one instead of presenting both lanes as model calls.
+ *
+ * Unmatched assistant context is intentionally preserved on its original
+ * event: it can still describe Session-current occupancy, but the shared usage
+ * progression accepts canonical model responses only.
+ */
+export function mergeQoderAssistantContextIntoResponses(events, {
+  maxGapMs = QODER_CONTEXT_MERGE_MAX_GAP_MS,
+} = {}) {
+  const merged = events.map((event) => event);
+  const availableResponses = new Set(events
+    .map((event, index) => event?.type === "model.response.completed" ? index : null)
+    .filter((index) => index !== null));
+
+  for (const assistant of events) {
+    if (assistant?.type !== "assistant" || !assistant.currentContextUsage) continue;
+    const assistantTime = timestampMillis(assistant.timestamp);
+    if (assistantTime === null) continue;
+    let matchIndex = null;
+    let matchGap = Number.POSITIVE_INFINITY;
+    for (const index of availableResponses) {
+      const response = merged[index];
+      if (!sameObservedValue(response?.sessionId, assistant.sessionId)
+        || !sameObservedValue(response?.model, assistant.model)
+        || !sameObservedValue(response?.stopReason, assistant.stopReason)) continue;
+      const responseTime = timestampMillis(response.timestamp);
+      if (responseTime === null) continue;
+      const gap = assistantTime - responseTime;
+      if (gap < 0 || gap > maxGapMs || gap >= matchGap) continue;
+      matchIndex = index;
+      matchGap = gap;
+    }
+    if (matchIndex === null) continue;
+    const response = merged[matchIndex];
+    merged[matchIndex] = {
+      ...response,
+      currentContextUsage: {
+        ...assistant.currentContextUsage,
+        ...(response.currentContextUsage ?? {}),
+      },
+    };
+    availableResponses.delete(matchIndex);
+  }
+  return merged.map((event) => {
+    const carriesUsageEvidence = event?.modelUsage || event?.modelInvocationUsage
+      || event?.currentContextUsage || Number.isFinite(event?.processedTokens);
+    return event?.type !== "model.response.completed" && carriesUsageEvidence
+      ? { ...event, usageProgressionExcluded: true }
+      : event;
   });
 }
 

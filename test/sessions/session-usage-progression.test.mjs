@@ -139,6 +139,7 @@ test("usageObservationFromEvent ignores an event with no usage evidence", () => 
   assert.equal(usageObservationFromEvent({ type: "model.response.completed", model: "model-a" }), null);
   assert.deepEqual(
     usageObservationFromEvent({
+      type: "token_count",
       model: "model-a",
       modelInvocationUsage: { inputTokens: 4, outputTokens: 6 },
       currentContextUsage: { usedTokens: 40, windowTokens: 100 },
@@ -155,6 +156,12 @@ test("usageObservationFromEvent ignores an event with no usage evidence", () => 
       outputTokens: 6,
     },
   );
+  assert.equal(usageObservationFromEvent({
+    type: "turn.finished",
+    usageProgressionExcluded: true,
+    modelInvocationUsage: { inputTokens: 4, outputTokens: 6 },
+    currentContextUsage: { usedTokens: 40, windowTokens: 100 },
+  }), null);
 });
 
 test("usageObservationFromEvent never reads a cumulative Session total as one invocation", () => {

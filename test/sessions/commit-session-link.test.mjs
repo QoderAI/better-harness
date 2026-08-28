@@ -632,6 +632,77 @@ test("summarizeSessionEvents keeps provider-specific partial context evidence ho
   });
 });
 
+test("summarizeSessionEvents counts only canonical Qoder model responses (AC-23)", () => {
+  const contextUsage = {
+    usedTokens: 116,
+    windowTokens: 1_000,
+    percentFull: 11.6,
+    basis: "host-context-ratio",
+    source: "qoder-project-context-ratio",
+  };
+  const zeroUsage = { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 };
+  const summary = summarizeSessionEvents(
+    { sessionId: "qoder-multi-lane", firstSeen: null, lastSeen: null },
+    [
+      {
+        type: "model.response.completed",
+        model: "performance",
+        modelInvocationUsage: zeroUsage,
+        modelUsage: zeroUsage,
+        currentContextUsage: contextUsage,
+        timestamp: "2026-08-28T06:30:23.930Z",
+      },
+      {
+        type: "assistant",
+        usageProgressionExcluded: true,
+        model: "performance",
+        modelInvocationUsage: zeroUsage,
+        modelUsage: zeroUsage,
+        currentContextUsage: contextUsage,
+        timestamp: "2026-08-28T06:30:23.933Z",
+      },
+      {
+        type: "model.response.completed",
+        model: "performance",
+        modelInvocationUsage: zeroUsage,
+        modelUsage: zeroUsage,
+        timestamp: "2026-08-28T06:30:24.000Z",
+      },
+      {
+        type: "turn.finished",
+        usageProgressionExcluded: true,
+        modelInvocationUsage: zeroUsage,
+        modelUsage: zeroUsage,
+        timestamp: "2026-08-28T06:30:25.000Z",
+      },
+      {
+        type: "fork.agent.completed",
+        usageProgressionExcluded: true,
+        modelInvocationUsage: zeroUsage,
+        modelUsage: zeroUsage,
+        timestamp: "2026-08-28T06:30:25.001Z",
+      },
+      {
+        type: "assistant",
+        usageProgressionExcluded: true,
+        currentContextUsage: {
+          percentFull: 12.5,
+          basis: "host-context-ratio",
+          source: "qoder-project-context-ratio",
+        },
+        timestamp: "2026-08-28T06:30:27.000Z",
+      },
+    ],
+    { repoRoot: path.join(os.tmpdir(), "fixture-repo"), platform: "qoder" },
+  );
+
+  assert.equal(summary.usageReport.actualModelCalls, 2);
+  assert.equal(summary.usageReport.progressionTotalCount, 2);
+  assert.equal(summary.usageReport.currentContextTokens, 116);
+  assert.equal(summary.usageReport.progression[0].percentFull, 11.6);
+  assert.equal(summary.contextManifest.percentFull, 12.5);
+});
+
 test("summarizeSessionEvents retains Claude processed usage and dedupe diagnostics (AC-19/AC-20)", () => {
   const repoRoot = path.join(os.tmpdir(), "fixture-repo");
   const summary = summarizeSessionEvents(

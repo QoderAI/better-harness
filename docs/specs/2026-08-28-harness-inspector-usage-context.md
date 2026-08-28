@@ -135,6 +135,14 @@ from the default Inspector window.
   The detailed report uses an absolute context-progression chart plus a separate
   processing-accounting visualization; it never presents cache/input/output
   accounting as Cursor-style current-context composition.
+- AC-23: Qoder contributes exactly one Usage progression point for each
+  retained `model.response.completed` event. A nearby project-transcript
+  `assistant` event may enrich that response with its observed context ratio
+  when both records agree on model and stop reason, but it never contributes a
+  second call. Turn, fork-agent, and other usage-bearing summary events remain
+  Session evidence and never become model calls. Unmatched assistant context
+  stays available to the Session-current context manifest without being
+  invented as a historical response.
 
 ## Provider evidence matrix
 
@@ -142,7 +150,7 @@ from the default Inspector window.
 | --- | --- | --- | --- | --- |
 | Cursor | Native Canvas used/window snapshot, matched by composer id (`host-context-snapshot`) | Native Canvas categories only | Usage counters when retained; Canvas occupancy remains current-snapshot evidence | Unobserved |
 | Codex | `last_token_usage.input_tokens` plus `model_context_window` (`prompt-tokens`) | Unavailable; bounded layer counts are not token categories | Per `token_count` response | `compacted` events |
-| Qoder | `context_usage_ratio`, optionally paired with a retained Session `contextWindow` | Unavailable | Per assistant usage observation | `compactMetadata` records |
+| Qoder | `context_usage_ratio`, optionally paired with a retained Session `contextWindow` | Unavailable | Per canonical model response, enriched by a matched assistant observation | `compactMetadata` records |
 | Claude Code | Input + cache-read input + cache-creation input prompt tokens | Unavailable | Per unique assistant response | Unobserved |
 
 ## Non-goals
@@ -213,6 +221,11 @@ from the default Inspector window.
     shrink/reset and model-boundary counts, processing coverage, and whether the
     retained progression is a sample must all be visible in both Inspector
     hosts.
+17. Canonicalize Qoder multi-lane usage evidence before report derivation:
+    enrich a retained model response from a one-to-one nearby assistant context
+    observation, keep non-response summary events out of the call series, and
+    cover the real logs-session/project-jsonl/turn-finished shape with a
+    behavioral fixture.
 
 ## Test and Review Evidence
 
@@ -266,6 +279,11 @@ from the default Inspector window.
   Studio and standalone visual checks verify the shared summary metrics, chart
   labelling, bounded detail rows, keyboard reachability, and separation between
   context composition and processing accounting.
+- AC-23: Qoder provider tests retain the real multi-lane ordering of
+  logs-session model responses, project-jsonl assistant context observations,
+  and usage-bearing turn/fork summaries. Assertions verify one progression
+  point per canonical response, one-to-one context enrichment, unmatched
+  context fallback, and exclusion of non-response summary events.
 - Cross-platform evidence: focused tests must use `node:path` and temporary
   directories, then the full Node 22/24 macOS, Windows, and Ubuntu PR jobs remain
   authoritative for target-platform acceptance.
@@ -342,3 +360,17 @@ from the default Inspector window.
   Studio suite rebuilt successfully and passed all 293 tests. JavaScript syntax,
   TypeScript/build output, `git diff --check`, and the Canvas preview `/health`
   and `/canvas-module.js` endpoints also passed.
+- AC-23 replayed the comparable retained Qoder usage Sessions before and after
+  canonicalization. Their reported model-call total fell from 127 multi-lane
+  observations to 80 canonical responses, exactly matching the retained
+  `model.response.completed` count in every Session; the representative Session
+  changed from 51 to 31 calls while preserving all 18 matched ratio progression
+  points and its 11.6% Session-current occupancy. Five Claude Sessions were
+  unchanged, and 18 stable Codex Sessions were unchanged while the active Codex
+  Session continued to grow during validation. The focused AC-23 tests passed
+  109 assertions, the final root suite passed 1,572 tests with 2 skipped,
+  Harness/Harness UI/Studio passed 172/31/293 tests, package verification passed,
+  and the 15-surface visual contract plus focused Studio Playwright scenario
+  completed without overflow or page errors. A privacy scan of the real portable
+  report found no absolute home path, raw response id, encrypted content,
+  rate-limit data, or credit data.
