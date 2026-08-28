@@ -688,11 +688,15 @@
   .session-bulk button { min-height:32px; font-size:12px; }
   .session-filter-list { gap:8px; }
   .session-filter { font-size:12px; }
-  .session-filter-disclosure { border-bottom:1px solid var(--color-border); }
-  .session-filter-disclosure > summary { min-height:48px; padding:10px 22px; display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--color-text-muted); cursor:pointer; list-style:none; font-size:12px; font-weight:700; }
-  .session-filter-disclosure > summary::-webkit-details-marker { display:none; }
-  .session-filter-disclosure > summary em { color:var(--color-text-subtle); font-size:12px; font-style:normal; font-weight:500; }
+  .session-filter-disclosure, .session-usage-disclosure { border-bottom:1px solid var(--color-border); }
+  .session-filter-disclosure > summary, .session-usage-disclosure > summary { min-height:48px; padding:10px 22px; display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--color-text-muted); cursor:pointer; list-style:none; font-size:12px; font-weight:700; }
+  .session-filter-disclosure > summary::-webkit-details-marker, .session-usage-disclosure > summary::-webkit-details-marker { display:none; }
+  .session-filter-disclosure > summary em, .session-usage-disclosure > summary em { color:var(--color-text-subtle); font-size:12px; font-style:normal; font-weight:500; }
   .session-filter-disclosure .session-filter-list { padding:0 22px 16px; }
+  .session-usage-disclosure dl { margin:0; padding:0 22px 16px; display:grid; gap:9px; }
+  .session-usage-disclosure dl div { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .session-usage-disclosure dt { flex:0 0 108px; overflow:hidden; color:var(--color-text-subtle); text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+  .session-usage-disclosure dd { min-width:0; margin:0; overflow:hidden; color:var(--color-text); text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600; }
   .session-outline-facts dl { margin:0; display:grid; gap:10px; }
   .session-outline-facts dl div { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
   .session-outline-facts dt { color:var(--color-text-subtle); font-size:12px; }
@@ -723,6 +727,7 @@
     .session-filter-disclosure > summary { min-height:42px; padding:9px; }
     .session-filter-disclosure > summary em { display:none; }
     .session-sidebar .session-outline-facts { grid-column:1 / -1; padding:12px; border-top:1px solid var(--color-border); }
+    .session-sidebar .session-usage-disclosure { grid-column:1 / -1; border-top:1px solid var(--color-border); border-bottom:0; }
     .session-filter-disclosure .session-filter-list { position:absolute; right:8px; z-index:4; width:min(280px,calc(100vw - 16px)); padding:10px; border:1px solid var(--color-border); border-radius:var(--radius-lg); background:var(--color-surface); box-shadow:0 12px 30px rgba(15,23,42,.12); }
     .session-cell { grid-template-columns:52px minmax(0,1fr); gap:0 7px; }
     .session-cell[data-session-cell="run"] > .session-turn-head { margin-left:59px; }

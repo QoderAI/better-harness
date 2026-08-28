@@ -248,7 +248,7 @@ test("Claude provider expands nested tool requests and results without using gen
       message: {
         role: "assistant",
         model: "claude-fixture",
-        usage: { input_tokens: 10, output_tokens: 4 },
+        usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 5, cache_creation_input_tokens: 3 },
         content: [
           { type: "text", text: "I will inspect and validate it." },
           { type: "tool_use", id: "tool-1", name: "Bash", input: { command: "npm test" } },
@@ -309,11 +309,14 @@ test("Claude provider expands nested tool requests and results without using gen
   assert.equal(events.filter((event) => event.type === "tool.call").length, 2);
   assert.equal(events.filter((event) => event.type === "tool.result").length, 2);
   assert.equal(events.find((event) => event.model === "claude-fixture")?.modelUsage.inputTokens, 10);
+  assert.equal(events.find((event) => event.model === "claude-fixture")?.modelUsage.cacheCreationInputTokens, 3);
+  assert.equal(events.find((event) => event.model === "claude-fixture")?.usageSource, "claude-project-transcript");
   assert.equal(events.find((event) => event.toolInvocationId === "tool-2")?.filePath, path.join(workspace, "package.json"));
   assert.equal(events.find((event) => event.toolInvocationId === "tool-2" && event.type === "tool.result")?.success, false);
   const insights = await analyzer.analyze({ command: "insights", workspace, home, selection: "all-eligible" });
   assert.equal(insights.insights.keySignals.usageEfficiency.coverage.responseCount, 1);
   assert.equal(insights.insights.keySignals.usageEfficiency.tokenTotals.inputTokens, 10);
+  assert.equal(insights.insights.keySignals.usageEfficiency.tokenTotals.cacheCreationInputTokens, 3);
   const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
   assert.equal(facts.kind, "session-core-facts");
   assert.equal(facts.scope.platform, "claude");
@@ -574,6 +577,46 @@ test("Cursor time filters use metadata before excluding out-of-window transcript
   assert.equal(facts.sourceCoverage.transcript.inWindowSessions, 0);
   assert.equal(facts.sourceCoverage.transcript.outOfWindowSessions, 1);
   assert.equal(facts.sourceCoverage.transcript.relevantSessions, 0);
+});
+
+test("Cursor keeps timestamp-unobserved transcripts with labelled source time and matching context usage", async () => {
+  const root = await fixtureRoot("session-cursor-source-time-");
+  const home = path.join(root, ".cursor");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "77777777-7777-4777-8777-777777777777";
+  const slug = workspaceToCursorSlugVariants(workspace)[0];
+  await writeJsonl(path.join(home, "projects", slug, "agent-transcripts", sessionId, `${sessionId}.jsonl`), [
+    { role: "user", message: { content: [{ type: "text", text: "Inspect context usage" }] } },
+    { role: "assistant", message: { content: [{ type: "text", text: "Done" }] } },
+  ]);
+  const canvasPath = path.join(home, "projects", slug, "canvases", "context-usage-fixture.canvas.data.json");
+  await mkdir(path.dirname(canvasPath), { recursive: true });
+  await writeFile(canvasPath, JSON.stringify({
+    contextUsage: {
+      composerId: sessionId,
+      totalTokensUsed: 250,
+      contextWindowSize: 1_000,
+      categories: [{ id: "rules", label: "Rules", tokens: 80 }],
+      items: [{ categoryId: "rules", label: "Private rule text", estimatedTokens: 80, characterCount: 320 }],
+    },
+  }));
+
+  const analyzer = new CursorSessionAnalyzer();
+  const result = await analyzer.analyze({ command: "sources", workspace, home, since: "2026-08-20" });
+  assert.equal(result.sessions.length, 1);
+  assert.equal(result.sessions[0].timestampBasis, "source-file-mtime");
+  assert.equal(result.sessions[0].eventTimestampCoverage, "unobserved");
+  const scope = await analyzer.resolveScope({ workspace, home, since: "2026-08-20" });
+  const events = await analyzer.readSession(result.sessions[0], scope, { includeContent: true, includeUserText: true });
+  const context = events.find((event) => event.type === "context.usage");
+  assert.deepEqual(context?.currentContextUsage, {
+    usedTokens: 250,
+    windowTokens: 1_000,
+    source: "cursor-native-context-usage-canvas",
+    rawTextOmitted: true,
+  });
+  assert.deepEqual(context?.contextCategories, [{ kind: "rules", label: "Rules", estimatedTokens: 80 }]);
+  assert.equal(JSON.stringify(context).includes("Private rule text"), false);
 });
 
 test("Qwen provider expands function calls and tool results from parts", async () => {

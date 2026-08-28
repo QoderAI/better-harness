@@ -81,7 +81,30 @@ export interface InspectorSession {
   files?: string[];
   prompts?: Array<{ text: string; timestamp?: string | null; turnIndex?: number | null }>;
   models?: string[];
-  tokenUsage?: { inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number };
+  tokenUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadInputTokens?: number;
+    cacheCreationInputTokens?: number;
+    reasoningOutputTokens?: number;
+    totalTokens?: number;
+    basis?: string;
+    source?: string;
+    coverage?: "observed" | "partial" | "unobserved";
+  };
+  runtime?: { modelProvider?: string; cliVersion?: string; effort?: string } | null;
+  contextManifest?: {
+    status?: "observed" | "partial" | "unobserved";
+    source?: string;
+    rawTextOmitted?: boolean;
+    usedTokens?: number;
+    windowTokens?: number;
+    percentFull?: number;
+    compactionCount?: number;
+    layers?: Array<{ kind: string; itemCount: number }>;
+    categories?: Array<{ kind: string; label: string; estimatedTokens: number }>;
+  } | null;
+  timestampBasis?: "native-event" | "native-metadata" | "source-file-mtime" | "unobserved";
   toolActivity?: {
     totalCalls?: number;
     failedCalls?: number;

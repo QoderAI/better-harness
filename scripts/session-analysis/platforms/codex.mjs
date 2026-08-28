@@ -82,17 +82,75 @@ function inferType(raw, fallback = "record") {
   const payload = raw?.payload ?? {};
   if (outer === "event_msg") {
     if (payload.type === "user_message") return "user";
-    if (payload.type === "agent_message" || payload.type === "agent_reasoning") return "assistant";
+    if (payload.type === "agent_message") return "assistant";
+    if (payload.type === "agent_reasoning") return "reasoning";
     return payload.type ? `event.${payload.type}` : outer;
   }
   if (outer === "response_item") {
-    if (payload.type === "message") return payload.role === "user" ? "user" : "assistant";
+    if (payload.type === "message") {
+      if (payload.role === "user" || payload.role === "assistant") return payload.role;
+      if (payload.role === "developer" || payload.role === "system") return `context.${payload.role}`;
+      return "response.message";
+    }
     if (payload.type === "agent_message") return "assistant";
     if (payload.type === "custom_tool_call" || payload.type === "function_call") return "tool.call";
     if (payload.type === "custom_tool_call_output" || payload.type === "function_call_output") return "tool.result";
     return payload.type ? `response.${payload.type}` : outer;
   }
   return outer ?? payload?.type ?? fallback;
+}
+
+const CODEX_USAGE_FIELDS = Object.freeze({
+  inputTokens: "input_tokens",
+  outputTokens: "output_tokens",
+  cacheReadInputTokens: "cached_input_tokens",
+  cacheCreationInputTokens: "cache_write_input_tokens",
+  reasoningOutputTokens: "reasoning_output_tokens",
+  totalTokens: "total_tokens",
+});
+
+function normalizeCodexUsage(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const usage = {};
+  for (const [target, source] of Object.entries(CODEX_USAGE_FIELDS)) {
+    if (!Object.hasOwn(value, source)) continue;
+    const number = Number(value[source]);
+    if (Number.isFinite(number) && number >= 0) usage[target] = Math.round(number);
+  }
+  return Object.keys(usage).length > 0 ? usage : null;
+}
+
+function contextItemCount(value) {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === "object") return Object.keys(value).length;
+  return typeof value === "string" ? Number(value.trim().length > 0) : Number(value !== null && value !== undefined);
+}
+
+function codexContextLayers(raw) {
+  const outer = raw?.type ?? raw?.event ?? raw?._event ?? null;
+  const payload = raw?.payload ?? {};
+  if (outer === "response_item" && payload.type === "message"
+    && (payload.role === "developer" || payload.role === "system")) {
+    return [{ kind: `${payload.role}-message`, itemCount: 1, aggregation: "sum" }];
+  }
+  if (outer === "session_meta" && payload.base_instructions) {
+    return [{ kind: "base-instructions", itemCount: 1, aggregation: "max" }];
+  }
+  if (outer !== "world_state" || !payload.state || typeof payload.state !== "object") return [];
+  const state = payload.state;
+  const definitions = [
+    ["agents-md", ["agents_md"]],
+    ["managed-developer-instructions", ["managed_developer_instructions"]],
+    ["skills", ["skills", "host_skills", "orchestrator_skills"]],
+    ["plugins", ["plugins_instructions"]],
+    ["apps", ["apps_instructions"]],
+    ["permissions", ["permissions"]],
+  ];
+  return definitions.map(([kind, keys]) => ({
+    kind,
+    itemCount: keys.reduce((sum, key) => sum + contextItemCount(state[key]), 0),
+    aggregation: "max",
+  })).filter((layer) => layer.itemCount > 0);
 }
 
 function userVisibleAssistantText(raw) {
@@ -816,6 +874,7 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
   normalizeEvent(raw, sourceRef, options = {}) {
     const type = inferType(raw);
     const text = messageText(raw);
+    const retainsDialogueText = ["user", "assistant", "last-prompt", "UserPromptSubmit"].includes(type);
     const event = {
       sessionId: inferSessionId(raw, sourceRef.sessionId),
       type,
@@ -830,8 +889,46 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
         seq: raw?.seq ?? null,
         type,
       },
-      summary: text ? `${type} message (${text.length} chars)` : type,
+      summary: retainsDialogueText && text ? `${type} message (${text.length} chars)` : type,
     };
+    const outer = raw?.type ?? raw?.event ?? raw?._event ?? null;
+    const payload = raw?.payload ?? {};
+    const contextLayers = codexContextLayers(raw);
+    if (contextLayers.length > 0) event.contextLayers = contextLayers;
+    if (outer === "session_meta") {
+      event.runtimeMetadata = {
+        ...(payload.model_provider ? { modelProvider: String(payload.model_provider) } : {}),
+        ...(payload.cli_version ? { cliVersion: String(payload.cli_version) } : {}),
+      };
+    }
+    if (outer === "turn_context") {
+      if (payload.model) event.model = String(payload.model);
+      event.runtimeMetadata = {
+        ...(payload.effort ? { effort: String(payload.effort) } : {}),
+      };
+    }
+    if (outer === "event_msg" && payload.type === "token_count") {
+      const info = payload.info && typeof payload.info === "object" ? payload.info : {};
+      const modelUsage = normalizeCodexUsage(info.total_token_usage);
+      const lastModelUsage = normalizeCodexUsage(info.last_token_usage);
+      const contextWindowTokens = Number(info.model_context_window);
+      if (modelUsage) {
+        event.modelUsage = modelUsage;
+        event.usageFieldsObserved = true;
+        event.usageCumulative = true;
+        event.usageBasis = "model-inference";
+        event.usageSource = "codex-rollout-token-count";
+      }
+      if (lastModelUsage && Number.isFinite(contextWindowTokens) && contextWindowTokens > 0) {
+        event.currentContextUsage = {
+          usedTokens: Number(lastModelUsage.inputTokens) || 0,
+          windowTokens: Math.round(contextWindowTokens),
+          source: "codex-rollout-token-count",
+          rawTextOmitted: true,
+        };
+      }
+    }
+    if (outer === "compacted") event.compactionBoundary = true;
     const cwd = inferCwd(raw);
     if (cwd) event.cwd = cwd;
     if (type === "user" || type === "last-prompt" || type === "UserPromptSubmit") {
@@ -928,13 +1025,13 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
       if (raw?.permission_escalated === true || raw?.permissionEscalated === true
         || raw?.payload?.permission_escalated === true || raw?.payload?.permissionEscalated === true) event.permissionEscalated = true;
     }
-    if (text) {
+    if (retainsDialogueText && text) {
       event.contentLength = text.length;
     }
-    if (options.includeContent && text) {
+    if (options.includeContent && retainsDialogueText && text) {
       event.content = text;
     }
-    if (options.includeUserText && (type === "user" || type === "last-prompt" || type === "response_item" || type === "UserPromptSubmit")) {
+    if (options.includeUserText && (type === "user" || type === "last-prompt" || type === "UserPromptSubmit")) {
       const promptText = userText(raw);
       if (promptText) {
         event.userText = promptText;

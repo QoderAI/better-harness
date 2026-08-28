@@ -135,10 +135,44 @@
     const time = new Date(value ?? NaN);
     return Number.isNaN(time.getTime()) ? null : pad(time.getUTCHours()) + ':' + pad(time.getUTCMinutes()) + ':' + pad(time.getUTCSeconds());
   };
+  const formatTokenCount = value => value >= 1000000 ? (Math.round(value / 100000) / 10) + 'M'
+    : value >= 1000 ? (Math.round(value / 100) / 10) + 'K' : String(value);
+  const formatObservedTokenCount = value => Number.isFinite(value) ? formatTokenCount(value) : 'not reported';
   const formatTokens = usage => {
-    const total = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0) + (usage?.cacheReadInputTokens ?? 0);
-    if (!usage || total === 0) return 'token usage unavailable';
-    return total >= 1000 ? (Math.round(total / 100) / 10) + 'K tokens' : total + ' tokens';
+    if (!usage) return 'token usage unavailable';
+    if (Number.isFinite(usage.totalTokens)) return formatTokenCount(usage.totalTokens) + ' total tokens';
+    const inputOutput = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+    return inputOutput > 0 ? formatTokenCount(inputOutput) + ' input + output tokens' : 'usage observed';
+  };
+  const usageContextMarkup = session => {
+    const usage = session.tokenUsage;
+    const context = session.contextManifest;
+    const runtime = session.runtime;
+    const layers = context?.layers?.map(layer => layer.kind + ' ×' + layer.itemCount).join(' · ') || 'not observed';
+    const categories = context?.categories?.map(category => category.label + ' ' + formatTokenCount(category.estimatedTokens)).join(' · ') || 'not observed';
+    const contextWindow = Number.isFinite(context?.windowTokens) && Number.isFinite(context?.usedTokens)
+      ? formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' (' + (context.percentFull ?? 0) + '%)'
+      : 'not observed';
+    const row = (label,value,title = value) => '<div><dt>' + escape(label) + '</dt><dd title="' + escape(title) + '">' + escape(value) + '</dd></div>';
+    return '<details class="session-usage-disclosure"><summary><span>Usage and context</span><em>'
+      + escape(usage?.coverage ?? context?.status ?? 'unobserved') + '</em></summary><dl>'
+      + row('Total',Number.isFinite(usage?.totalTokens) ? formatTokenCount(usage.totalTokens) : 'not reported')
+      + row('Input',formatObservedTokenCount(usage?.inputTokens))
+      + row('Output',formatObservedTokenCount(usage?.outputTokens))
+      + row('Cache read',formatObservedTokenCount(usage?.cacheReadInputTokens))
+      + row('Cache write',formatObservedTokenCount(usage?.cacheCreationInputTokens))
+      + row('Reasoning',formatObservedTokenCount(usage?.reasoningOutputTokens))
+      + row('Context window',contextWindow)
+      + row('Context layers',layers)
+      + row('Context categories',categories)
+      + row('Compactions',context ? String(context.compactionCount ?? 0) : 'not observed')
+      + row('Effort',runtime?.effort ?? 'not observed')
+      + row('Provider',runtime?.modelProvider ?? 'not observed')
+      + row('CLI',runtime?.cliVersion ?? 'not observed')
+      + row('Time basis',session.timestampBasis ?? 'unobserved')
+      + row('Evidence source',usage?.source ?? context?.source ?? 'not observed')
+      + row('Raw context','omitted')
+      + '</dl></details>';
   };
   const evidence = (kind, label = kind) => '<span class="evidence ' + escape(kind) + '">' + escape(label) + '</span>';
   const isDirectCommitLink = link => link?.evidenceKind === 'explicit' || link?.evidenceKind === 'observed-commit';
@@ -919,7 +953,7 @@
       + '<div><dt>File edits</dt><dd>' + session.fileEditCount + '</dd></div>'
       + '<div><dt>Token usage</dt><dd>' + escape(formatTokens(session.tokenUsage)) + '</dd></div>'
       + projectionFact;
-    const sessionOutline = '<aside class="session-sidebar" aria-label="Session outline"><header><div><strong>Session outline</strong><span>Read-only</span></div></header><section><h3>Cells</h3><select class="jump-select" data-session-jump>' + jumpOptions + '</select><div class="session-bulk"><button type="button" data-expand-tools="open">Expand process</button><button type="button" data-expand-tools="close">Collapse process</button></div></section><details class="session-filter-disclosure"><summary><span>Evidence filters</span><em>' + session.toolActivity.totalCalls + ' calls</em></summary><div class="session-filter-list"><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="prompts"><span>Prompts</span><em>' + turns.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="responses"><span>Results</span><em>' + responseCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="intermediate"><span>Intermediate</span><em>' + noteCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="commits"><span>Commits</span><em>' + commits.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="tools"><span>Tool calls</span><em>' + session.toolActivity.totalCalls + '</em></label>' + filters + '<label class="session-filter subtype"><input type="checkbox" checked data-session-file-filter><span>File paths</span><em>' + session.toolActivity.files.length + '</em></label></div></details><section class="session-outline-facts"><h3>Session</h3><dl>' + sessionFacts + '</dl></section></aside>';
+    const sessionOutline = '<aside class="session-sidebar" aria-label="Session outline"><header><div><strong>Session outline</strong><span>Read-only</span></div></header><section><h3>Cells</h3><select class="jump-select" data-session-jump>' + jumpOptions + '</select><div class="session-bulk"><button type="button" data-expand-tools="open">Expand process</button><button type="button" data-expand-tools="close">Collapse process</button></div></section><details class="session-filter-disclosure"><summary><span>Evidence filters</span><em>' + session.toolActivity.totalCalls + ' calls</em></summary><div class="session-filter-list"><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="prompts"><span>Prompts</span><em>' + turns.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="responses"><span>Results</span><em>' + responseCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="intermediate"><span>Intermediate</span><em>' + noteCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="commits"><span>Commits</span><em>' + commits.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="tools"><span>Tool calls</span><em>' + session.toolActivity.totalCalls + '</em></label>' + filters + '<label class="session-filter subtype"><input type="checkbox" checked data-session-file-filter><span>File paths</span><em>' + session.toolActivity.files.length + '</em></label></div></details><section class="session-outline-facts"><h3>Session</h3><dl>' + sessionFacts + '</dl></section>' + usageContextMarkup(session) + '</aside>';
     const overallActivity = session.toolActivity.totalCalls ? '<section class="session-overall-activity"><details class="session-axis-panel" data-session-axis><summary><span>Overall session activity <em>' + session.toolActivity.totalCalls + ' calls</em></span><small>All retained Turns and unplaced calls</small></summary><div class="session-axis" data-activity-chart="' + escape(session.sessionId) + '"></div></details></section>' : '';
     const tracePanel = '<section class="session-mode-panel" id="session-panel-trace" role="tabpanel" aria-labelledby="session-tab-trace" data-session-mode-panel="trace">'
       + '<div class="session-layout"><main class="session-notebook-main"><div class="session-timeline" aria-label="Session run cells">' + timeline + overallActivity + '</div></main>' + sessionOutline + '</div></section>';

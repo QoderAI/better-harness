@@ -204,6 +204,8 @@ function transcriptEvents(raw, sourceRef, options) {
         model: model ?? null,
         modelUsage: usage,
         usageFieldsObserved: true,
+        usageBasis: "model-inference",
+        usageSource: "claude-project-transcript",
         responseId: raw?.message?.id ?? raw?.uuid ?? null,
         evidenceRef: evidenceRef(raw, sourceRef, "model.response.completed"),
         summary: "Claude model response completed",

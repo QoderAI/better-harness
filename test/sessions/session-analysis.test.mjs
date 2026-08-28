@@ -542,6 +542,28 @@ test("Qoder and Codex preserve only explicit user-visible handoff and delivery f
     type: "event_msg",
     payload: { type: "agent_message", message: "done" },
   }, sourceRef);
+  const codexDeveloper = codexAnalyzer.normalizeEvent({
+    type: "response_item",
+    payload: { type: "message", role: "developer", content: [{ type: "input_text", text: "private developer context" }] },
+  }, sourceRef, { includeContent: true });
+  const codexUsage = codexAnalyzer.normalizeEvent({
+    type: "event_msg",
+    payload: {
+      type: "token_count",
+      info: {
+        total_token_usage: {
+          input_tokens: 120,
+          cached_input_tokens: 80,
+          cache_write_input_tokens: 4,
+          output_tokens: 30,
+          reasoning_output_tokens: 8,
+          total_tokens: 150,
+        },
+        last_token_usage: { input_tokens: 40, output_tokens: 10, total_tokens: 50 },
+        model_context_window: 200,
+      },
+    },
+  }, sourceRef);
   const qoderToolUseOnly = qoderAnalyzer.normalizeEvent({
     type: "assistant",
     stop_reason: "tool_use",
@@ -553,11 +575,24 @@ test("Qoder and Codex preserve only explicit user-visible handoff and delivery f
     assert.equal(normalized.taskCompleted, true);
     assert.equal(normalized.userCorrection, true);
   }
-  assert.equal(codexReasoning.type, "assistant");
+  assert.equal(codexReasoning.type, "reasoning");
   assert.equal(codexReasoning.userVisibleAssistantMessage, undefined);
+  assert.equal(codexReasoning.content, undefined);
   assert.equal(codexReasoning.taskCompleted, undefined);
   assert.equal(codexReasoning.userCorrection, undefined);
   assert.equal(codexAgentMessage.userVisibleAssistantMessage, true);
+  assert.equal(codexDeveloper.type, "context.developer");
+  assert.equal(codexDeveloper.content, undefined);
+  assert.deepEqual(codexDeveloper.contextLayers, [{ kind: "developer-message", itemCount: 1, aggregation: "sum" }]);
+  assert.equal(codexUsage.usageCumulative, true);
+  assert.equal(codexUsage.modelUsage.totalTokens, 150);
+  assert.equal(codexUsage.modelUsage.cacheReadInputTokens, 80);
+  assert.deepEqual(codexUsage.currentContextUsage, {
+    usedTokens: 40,
+    windowTokens: 200,
+    source: "codex-rollout-token-count",
+    rawTextOmitted: true,
+  });
   assert.equal(qoderToolUseOnly.userVisibleAssistantMessage, undefined);
 });
 

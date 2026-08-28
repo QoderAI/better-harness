@@ -508,9 +508,78 @@ test("summarizeSessionEvents extracts repo-relative files, prompts, tools, and t
   assert.equal(summary.toolCallCount, 2);
   assert.equal(summary.promptCount, 1);
   assert.equal(summary.prompts.length, 1);
-  assert.deepEqual(summary.tokenUsage, { inputTokens: 100, outputTokens: 50, cacheReadInputTokens: 10 });
+  assert.deepEqual(summary.tokenUsage, {
+    inputTokens: 100,
+    outputTokens: 50,
+    cacheReadInputTokens: 10,
+    basis: "model-inference",
+    source: "normalized-session-events",
+    coverage: "observed",
+  });
   assert.equal(summary.firstSeen, new Date("2026-08-02T10:00:00+08:00").toISOString());
   assert.equal(summary.toolTrace.totalCalls, 2);
+});
+
+test("summarizeSessionEvents aggregates cumulative usage segments and bounded context metadata", () => {
+  const snapshots = [
+    { inputTokens: 100, outputTokens: 10, cacheReadInputTokens: 50, cacheCreationInputTokens: 2, reasoningOutputTokens: 2, totalTokens: 110 },
+    { inputTokens: 100, outputTokens: 10, cacheReadInputTokens: 50, cacheCreationInputTokens: 2, reasoningOutputTokens: 2, totalTokens: 110 },
+    { inputTokens: 150, outputTokens: 15, cacheReadInputTokens: 80, cacheCreationInputTokens: 4, reasoningOutputTokens: 5, totalTokens: 165 },
+    { inputTokens: 20, outputTokens: 2, cacheReadInputTokens: 5, cacheCreationInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 22 },
+    { inputTokens: 30, outputTokens: 3, cacheReadInputTokens: 10, cacheCreationInputTokens: 1, reasoningOutputTokens: 1, totalTokens: 33 },
+  ];
+  const events = snapshots.map((modelUsage, index) => ({
+    type: "model.usage.snapshot",
+    category: "model",
+    timestamp: `2026-08-28T10:00:0${index}.000Z`,
+    modelUsage,
+    usageCumulative: true,
+    usageBasis: "model-inference",
+    usageSource: "codex-rollout-token-count",
+  }));
+  events.push(
+    { type: "context.developer", contextLayers: [{ kind: "developer-message", itemCount: 1, aggregation: "sum" }] },
+    { type: "context.developer", contextLayers: [{ kind: "developer-message", itemCount: 1, aggregation: "sum" }] },
+    { type: "session_meta", contextLayers: [{ kind: "base-instructions", itemCount: 1, aggregation: "max" }], runtimeMetadata: { modelProvider: "openai", cliVersion: "fixture-cli" } },
+    { type: "turn_context", model: "fixture-model", runtimeMetadata: { effort: "high" } },
+    { type: "compacted", compactionBoundary: true },
+    { type: "context.usage", currentContextUsage: { usedTokens: 25, windowTokens: 100, source: "codex-rollout-token-count", rawTextOmitted: true } },
+  );
+
+  const summary = summarizeSessionEvents(
+    { sessionId: "usage-session", firstSeen: null, lastSeen: null },
+    events,
+    { repoRoot: path.join(os.tmpdir(), "fixture-repo"), platform: "codex", includeDialogue: true },
+  );
+
+  assert.deepEqual(summary.tokenUsage, {
+    inputTokens: 180,
+    outputTokens: 18,
+    cacheReadInputTokens: 90,
+    cacheCreationInputTokens: 5,
+    reasoningOutputTokens: 6,
+    totalTokens: 198,
+    basis: "model-inference",
+    source: "codex-rollout-token-count",
+    coverage: "observed",
+  });
+  assert.deepEqual(summary.runtime, { modelProvider: "openai", cliVersion: "fixture-cli", effort: "high" });
+  assert.deepEqual(summary.contextManifest, {
+    status: "observed",
+    source: "codex-rollout-token-count",
+    rawTextOmitted: true,
+    usedTokens: 25,
+    windowTokens: 100,
+    percentFull: 25,
+    compactionCount: 1,
+    layers: [
+      { kind: "base-instructions", itemCount: 1 },
+      { kind: "developer-message", itemCount: 2 },
+    ],
+    categories: [],
+  });
+  assert.deepEqual(summary.models, ["fixture-model"]);
+  assert.equal(JSON.stringify(summary.dialogue).includes("developer"), false);
 });
 
 test("summarizeSessionEvents projects Entire-style dialogue without raw command payloads", () => {

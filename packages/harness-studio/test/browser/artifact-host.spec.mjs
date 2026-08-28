@@ -137,6 +137,30 @@ test.beforeAll(async () => {
       promptCount: 1,
       assistantMessageCount: 1,
       toolCallCount: record.toolCallCount,
+      tokenUsage: {
+        inputTokens: 180,
+        outputTokens: 18,
+        cacheReadInputTokens: 90,
+        cacheCreationInputTokens: 5,
+        reasoningOutputTokens: 6,
+        totalTokens: 198,
+        basis: "model-inference",
+        source: "fixture-session-usage",
+        coverage: "observed",
+      },
+      runtime: { modelProvider: "fixture", cliVersion: "1.0.0", effort: "high" },
+      timestampBasis: "native-event",
+      contextManifest: {
+        status: "observed",
+        source: "fixture-context-usage",
+        rawTextOmitted: true,
+        usedTokens: 25,
+        windowTokens: 100,
+        percentFull: 25,
+        compactionCount: 1,
+        layers: [{ kind: "developer-message", itemCount: 2 }],
+        categories: [{ kind: "rules", label: "Rules", estimatedTokens: 10 }],
+      },
       toolActivity: {
         calls: record.timeline.filter((event) => event.kind === "tool-call").map((event, index) => ({
           id: event.id,
@@ -914,6 +938,21 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspector.locator("details.session-process")).toHaveAttribute("open", "");
   await inspector.locator("details.session-filter-disclosure > summary").click();
   await expect(inspector.getByRole("checkbox", { name: /Tool calls/u })).toBeChecked();
+  await inspector.locator("details.session-usage-disclosure > summary").click();
+  await expect(inspector.locator("details.session-usage-disclosure")).toContainText("198");
+  await expect(inspector.locator("details.session-usage-disclosure")).toContainText("25 / 100 (25%)");
+  await expect(inspector.locator("details.session-usage-disclosure")).toContainText(/Raw context\s*omitted/u);
+  for (const layout of [
+    { name: "wide", width: 1440, height: 900 },
+    { name: "compact", width: 1024, height: 768 },
+    { name: "narrow", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: layout.width, height: layout.height });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+    expect(overflow, `${layout.name} usage and context detail overflows horizontally`).toBe(false);
+    await page.screenshot({ path: `test-results/session-detail-usage-${layout.name}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await inspector.getByRole("tab", { name: "Replay" }).click();
   await expect(inspector.getByRole("tab", { name: /Events/u })).toHaveAttribute("aria-selected", "true");
   await expect(inspector.getByRole("tab", { name: /Files/u })).toBeVisible();

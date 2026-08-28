@@ -133,6 +133,49 @@ function summarizeDialogue(events) {
   };
 }
 
+const TOKEN_USAGE_FIELDS = Object.freeze([
+  "inputTokens",
+  "outputTokens",
+  "cacheReadInputTokens",
+  "cacheCreationInputTokens",
+  "reasoningOutputTokens",
+  "totalTokens",
+]);
+
+function addTokenUsage(target, usage, observedFields) {
+  if (!usage || typeof usage !== "object") return;
+  for (const field of TOKEN_USAGE_FIELDS) {
+    if (!Object.hasOwn(usage, field)) continue;
+    const value = Number(usage[field]);
+    if (!Number.isFinite(value) || value < 0) continue;
+    target[field] = (target[field] ?? 0) + value;
+    observedFields.add(field);
+  }
+}
+
+function cumulativeCounter(usage) {
+  const explicit = Number(usage?.totalTokens);
+  if (Number.isFinite(explicit) && explicit >= 0) return explicit;
+  return (Number(usage?.inputTokens) || 0) + (Number(usage?.outputTokens) || 0);
+}
+
+// Codex emits cumulative snapshots rather than one independent usage record per
+// response. Repeated snapshots replace the prior point, while a decreasing
+// counter starts a new accounting segment (for example after a resumed run).
+function aggregateCumulativeUsage(snapshots) {
+  const aggregate = {};
+  const observedFields = new Set();
+  let previous = null;
+  for (const snapshot of snapshots) {
+    if (previous && cumulativeCounter(snapshot) < cumulativeCounter(previous)) {
+      addTokenUsage(aggregate, previous, observedFields);
+    }
+    previous = snapshot;
+  }
+  if (previous) addTokenUsage(aggregate, previous, observedFields);
+  return { aggregate, observedFields };
+}
+
 // Reduce hydrated session events into the bounded, privacy-safe summary shape
 // consumed by correlate.mjs and render-html.mjs. Pure over events + repoRoot.
 export function summarizeSessionEvents(session, events = [], {
@@ -157,6 +200,15 @@ export function summarizeSessionEvents(session, events = [], {
   const distinctUserTurns = new Set();
   const seenToolInvocations = new Set();
   const tokenTotals = { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0 };
+  const observedTokenFields = new Set(["inputTokens", "outputTokens", "cacheReadInputTokens"]);
+  const cumulativeUsageSnapshots = [];
+  const usageSources = new Set();
+  const usageBases = new Set();
+  const runtimeMetadata = {};
+  const contextLayers = new Map();
+  const contextCategories = new Map();
+  let currentContextUsage = null;
+  let compactionCount = 0;
   let usageObserved = false;
 
   for (const event of attributedEvents) {
@@ -203,11 +255,45 @@ export function summarizeSessionEvents(session, events = [], {
     }
     if (event?.modelUsage && typeof event.modelUsage === "object") {
       usageObserved = true;
-      tokenTotals.inputTokens += Number(event.modelUsage.inputTokens) || 0;
-      tokenTotals.outputTokens += Number(event.modelUsage.outputTokens) || 0;
-      tokenTotals.cacheReadInputTokens += Number(event.modelUsage.cacheReadInputTokens) || 0;
+      if (event.usageCumulative === true) cumulativeUsageSnapshots.push(event.modelUsage);
+      else addTokenUsage(tokenTotals, event.modelUsage, observedTokenFields);
+      if (event.usageSource) usageSources.add(String(event.usageSource));
+      else if (event.sourceKind) usageSources.add(String(event.sourceKind));
+      if (event.usageBasis) usageBases.add(String(event.usageBasis));
     }
     if (event?.model && models.size < MAX_MODELS_PER_SESSION) models.add(String(event.model));
+    if (event?.runtimeMetadata && typeof event.runtimeMetadata === "object") {
+      for (const field of ["modelProvider", "cliVersion", "effort"]) {
+        if (event.runtimeMetadata[field]) runtimeMetadata[field] = String(event.runtimeMetadata[field]);
+      }
+    }
+    for (const layer of Array.isArray(event?.contextLayers) ? event.contextLayers : []) {
+      const kind = String(layer?.kind ?? "").trim();
+      const count = Number(layer?.itemCount);
+      if (!kind || !Number.isFinite(count) || count <= 0) continue;
+      const current = contextLayers.get(kind) ?? 0;
+      contextLayers.set(kind, layer.aggregation === "sum" ? current + count : Math.max(current, count));
+    }
+    for (const category of Array.isArray(event?.contextCategories) ? event.contextCategories : []) {
+      const kind = String(category?.kind ?? "").trim();
+      const estimatedTokens = Number(category?.estimatedTokens);
+      if (!kind || !Number.isFinite(estimatedTokens) || estimatedTokens < 0) continue;
+      contextCategories.set(kind, {
+        kind,
+        label: String(category?.label ?? kind),
+        estimatedTokens: Math.round(estimatedTokens),
+      });
+    }
+    if (event?.currentContextUsage && typeof event.currentContextUsage === "object") {
+      currentContextUsage = event.currentContextUsage;
+    }
+    if (event?.compactionBoundary === true) compactionCount += 1;
+  }
+
+  if (cumulativeUsageSnapshots.length > 0) {
+    const cumulative = aggregateCumulativeUsage(cumulativeUsageSnapshots);
+    addTokenUsage(tokenTotals, cumulative.aggregate, observedTokenFields);
+    for (const field of cumulative.observedFields) observedTokenFields.add(field);
   }
 
   const toolTrace = includeToolTrace
@@ -221,6 +307,36 @@ export function summarizeSessionEvents(session, events = [], {
   if (toolTrace) {
     toolTrace.calls = toolTrace.calls.map(({ transientInvocationKey: _transientInvocationKey, ...call }) => call);
   }
+
+  const contextWindowTokens = Number(currentContextUsage?.windowTokens);
+  const contextUsedTokens = Number(currentContextUsage?.usedTokens);
+  const hasContextWindow = Number.isFinite(contextWindowTokens) && contextWindowTokens > 0
+    && Number.isFinite(contextUsedTokens) && contextUsedTokens >= 0;
+  const contextManifestObserved = contextLayers.size > 0 || contextCategories.size > 0 || hasContextWindow || compactionCount > 0;
+  const tokenUsage = usageObserved ? {
+    ...Object.fromEntries(TOKEN_USAGE_FIELDS
+      .filter((field) => observedTokenFields.has(field))
+      .map((field) => [field, tokenTotals[field] ?? 0])),
+    basis: usageBases.size === 1 ? [...usageBases][0] : usageBases.size > 1 ? "mixed" : "model-inference",
+    source: usageSources.size === 1 ? [...usageSources][0] : usageSources.size > 1 ? "mixed-normalized-events" : "normalized-session-events",
+    coverage: "observed",
+  } : null;
+  const contextManifest = contextManifestObserved ? {
+    status: "observed",
+    source: currentContextUsage?.source ?? "normalized-context-events",
+    rawTextOmitted: true,
+    ...(hasContextWindow ? {
+      usedTokens: Math.round(contextUsedTokens),
+      windowTokens: Math.round(contextWindowTokens),
+      percentFull: Math.min(100, Math.round((contextUsedTokens / contextWindowTokens) * 100)),
+    } : {}),
+    compactionCount,
+    layers: [...contextLayers.entries()]
+      .map(([kind, itemCount]) => ({ kind, itemCount: Math.round(itemCount) }))
+      .sort((left, right) => left.kind.localeCompare(right.kind)),
+    categories: [...contextCategories.values()]
+      .sort((left, right) => right.estimatedTokens - left.estimatedTokens || left.kind.localeCompare(right.kind)),
+  } : null;
 
   return {
     sessionId: session.sessionId,
@@ -243,7 +359,10 @@ export function summarizeSessionEvents(session, events = [], {
     ...(toolTrace ? { toolTrace, toolActivity } : {}),
     ...(dialogue ? { dialogue } : {}),
     models: [...models].sort(),
-    tokenUsage: usageObserved ? tokenTotals : null,
+    tokenUsage,
+    runtime: Object.keys(runtimeMetadata).length > 0 ? runtimeMetadata : null,
+    contextManifest,
+    timestampBasis: session.timestampBasis ?? (firstSeen !== null || lastSeen !== null ? "native-event" : "unobserved"),
   };
 }
 
@@ -480,6 +599,15 @@ export async function normalizeEntireCheckpointSession({
       inputTokens: Number(metadata.tokenUsage.input_tokens ?? metadata.tokenUsage.inputTokens) || 0,
       outputTokens: Number(metadata.tokenUsage.output_tokens ?? metadata.tokenUsage.outputTokens) || 0,
       cacheReadInputTokens: Number(metadata.tokenUsage.cache_read_tokens ?? metadata.tokenUsage.cacheReadInputTokens) || 0,
+      ...(metadata.tokenUsage.cache_creation_input_tokens !== undefined || metadata.tokenUsage.cacheCreationInputTokens !== undefined
+        ? { cacheCreationInputTokens: Number(metadata.tokenUsage.cache_creation_input_tokens ?? metadata.tokenUsage.cacheCreationInputTokens) || 0 }
+        : {}),
+      ...(metadata.tokenUsage.total_tokens !== undefined || metadata.tokenUsage.totalTokens !== undefined
+        ? { totalTokens: Number(metadata.tokenUsage.total_tokens ?? metadata.tokenUsage.totalTokens) || 0 }
+        : {}),
+      basis: "model-inference",
+      source: "entire-checkpoint-metadata",
+      coverage: "observed",
     };
   }
   if ((!Number.isFinite(summary.durationMs) || summary.durationMs === 0) && Number.isFinite(metadata?.sessionMetrics?.duration_ms)) {

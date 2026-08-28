@@ -356,6 +356,60 @@ function turnCoverage(session, prompts, dialogue) {
   };
 }
 
+function nonNegativeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function projectTokenUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const projected = {
+    inputTokens: nonNegativeNumber(usage.inputTokens),
+    outputTokens: nonNegativeNumber(usage.outputTokens),
+    cacheReadInputTokens: nonNegativeNumber(usage.cacheReadInputTokens),
+  };
+  for (const field of ["cacheCreationInputTokens", "reasoningOutputTokens", "totalTokens"]) {
+    if (Object.hasOwn(usage, field)) projected[field] = nonNegativeNumber(usage[field]);
+  }
+  projected.basis = safeText(usage.basis, 40, "model-inference");
+  projected.source = safeText(usage.source, 80, "normalized-session-events");
+  projected.coverage = ["observed", "partial", "unobserved"].includes(usage.coverage)
+    ? usage.coverage
+    : "observed";
+  return projected;
+}
+
+function projectRuntime(runtime) {
+  if (!runtime || typeof runtime !== "object") return null;
+  const projected = Object.fromEntries(["modelProvider", "cliVersion", "effort"]
+    .map((field) => [field, safeText(runtime[field], 80)])
+    .filter(([_field, value]) => value));
+  return Object.keys(projected).length > 0 ? projected : null;
+}
+
+function projectContextManifest(manifest) {
+  if (!manifest || typeof manifest !== "object") return null;
+  const projected = {
+    status: ["observed", "partial", "unobserved"].includes(manifest.status) ? manifest.status : "partial",
+    source: safeText(manifest.source, 80, "normalized-context-events"),
+    rawTextOmitted: true,
+    compactionCount: Math.round(nonNegativeNumber(manifest.compactionCount)),
+    layers: (Array.isArray(manifest.layers) ? manifest.layers : []).slice(0, 16).map((layer) => ({
+      kind: safeText(layer?.kind, 80, "other"),
+      itemCount: Math.round(nonNegativeNumber(layer?.itemCount)),
+    })),
+    categories: (Array.isArray(manifest.categories) ? manifest.categories : []).slice(0, 20).map((category) => ({
+      kind: safeText(category?.kind, 80, "other"),
+      label: safeText(category?.label, 120, "Other"),
+      estimatedTokens: Math.round(nonNegativeNumber(category?.estimatedTokens)),
+    })),
+  };
+  if (Number.isFinite(Number(manifest.usedTokens))) projected.usedTokens = Math.round(nonNegativeNumber(manifest.usedTokens));
+  if (Number.isFinite(Number(manifest.windowTokens))) projected.windowTokens = Math.round(nonNegativeNumber(manifest.windowTokens));
+  if (Number.isFinite(Number(manifest.percentFull))) projected.percentFull = Math.min(100, Math.round(nonNegativeNumber(manifest.percentFull)));
+  return projected;
+}
+
 function projectSession(session) {
   const sessionId = safeLocator(session.sessionId);
   if (!sessionId) return null;
@@ -391,11 +445,12 @@ function projectSession(session) {
     assistantMessageCount: Number(session.assistantMessageCount) || 0,
     fileEditCount: Number(session.fileEditCount) || 0,
     models: (session.models ?? []).map((model) => safeText(model, 80)).filter(Boolean),
-    tokenUsage: session.tokenUsage && typeof session.tokenUsage === "object" ? {
-      inputTokens: Number(session.tokenUsage.inputTokens) || 0,
-      outputTokens: Number(session.tokenUsage.outputTokens) || 0,
-      cacheReadInputTokens: Number(session.tokenUsage.cacheReadInputTokens) || 0,
-    } : null,
+    tokenUsage: projectTokenUsage(session.tokenUsage),
+    runtime: projectRuntime(session.runtime),
+    contextManifest: projectContextManifest(session.contextManifest),
+    timestampBasis: ["native-event", "native-metadata", "source-file-mtime", "unobserved"].includes(session.timestampBasis)
+      ? session.timestampBasis
+      : "unobserved",
     toolTrace,
     toolActivity,
     dialogue,
