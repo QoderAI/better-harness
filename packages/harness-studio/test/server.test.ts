@@ -149,6 +149,14 @@ async function waitForWorkspaceOpenStage(
   throw new Error(`Workspace open stage did not become '${expected}'.`);
 }
 
+async function waitForCondition(predicate: () => boolean, message: string): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error(message);
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 5));
+  }
+}
+
 function retainedRunFixture(id: string, savedAt: string, prompt: string, tools: string[]) {
   return {
     id,
@@ -233,6 +241,7 @@ describe("harness-studio server", () => {
       workspaceWorkbenchEnabled: false,
       workspaceDiscoveryEnabled: false,
       workspaceConnected: false,
+      projectRevision: 0,
       sessionCount: 0,
       inputCount: 0,
       intentAnalysisEnabled: false,
@@ -472,6 +481,10 @@ describe("harness-studio server", () => {
     const workspace = await makeTempDir("studio-intent-workspace-");
     let observedPacket: IntentCorrelationPacketV1 | undefined;
     let invalid = false;
+    let block = false;
+    let analyzerCalls = 0;
+    let releaseAnalyzer: (() => void) | undefined;
+    const analyzerGate = new Promise<void>((resolveGate) => { releaseAnalyzer = resolveGate; });
     started = await startHarnessStudioServer({
       appDir,
       workspaceDirectoryPicker: async () => workspace,
@@ -498,7 +511,9 @@ describe("harness-studio server", () => {
       },
       intentAnalyzer: {
         analyze: async (packet) => {
+          analyzerCalls += 1;
           observedPacket = packet;
+          if (block) await analyzerGate;
           const proposed = proposedIntentFixture(packet);
           return invalid ? { ...proposed, claims: [{ ...proposed.claims[0], reviewStatus: "confirmed" }] } : proposed;
         },
@@ -521,6 +536,18 @@ describe("harness-studio server", () => {
 
     const crossOrigin = await fetch(`${started.url}/api/intent-analysis`, { method: "POST", headers: { Origin: "https://example.test" } });
     expect(crossOrigin.status).toBe(403);
+
+    invalid = false;
+    block = true;
+    const pending = fetch(`${started.url}/api/intent-analysis`, { method: "POST" });
+    await waitForCondition(() => analyzerCalls === 3, "Intent analyzer did not start.");
+    expect((await fetch(`${started.url}/api/projects/open`, { method: "POST" })).status).toBe(200);
+    releaseAnalyzer?.();
+    const stale = await pending;
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({
+      error: "The active Project changed before Intent analysis completed. Run the analysis again for the current Project.",
+    });
   });
 
   it("provides a default local harness and runs it inside the selected workspace", async () => {
@@ -560,11 +587,54 @@ describe("harness-studio server", () => {
       harnessMode: "workspace-default",
       workspaceDiscoveryEnabled: true,
     });
+    const beforeProject = await fetch(`${started.url}/agui`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threadId: "before-project-thread",
+        runId: "before-project-run",
+        messages: [{ role: "user", content: "must not start" }],
+      }),
+    });
+    expect(beforeProject.status).toBe(409);
+    expect(await beforeProject.json()).toEqual({ error: "Open a Project before starting a Project-scoped run." });
     expect(await (await fetch(`${started.url}/api/workspace/open`, { method: "POST" })).json()).toMatchObject({ opened: true });
+
+    const projectCatalog = await (await fetch(`${started.url}/api/projects`)).json() as { activeProjectId: string; revision: number };
+    const missingBinding = await fetch(`${started.url}/agui`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threadId: "missing-thread",
+        runId: "missing-run",
+        messages: [{ role: "user", content: "must not start" }],
+      }),
+    });
+    expect(missingBinding.status).toBe(409);
+    expect(await missingBinding.json()).toEqual({ error: "A Project id and revision are required to start a Project-scoped run." });
+    const staleBinding = await fetch(`${started.url}/agui`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Harness-Project-Id": projectCatalog.activeProjectId,
+        "X-Harness-Project-Revision": String(projectCatalog.revision - 1),
+      },
+      body: JSON.stringify({
+        threadId: "stale-thread",
+        runId: "stale-run",
+        messages: [{ role: "user", content: "must not start" }],
+      }),
+    });
+    expect(staleBinding.status).toBe(409);
+    expect(observedTask).toBeUndefined();
 
     const response = await fetch(`${started.url}/agui`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Harness-Project-Id": projectCatalog.activeProjectId,
+        "X-Harness-Project-Revision": String(projectCatalog.revision),
+      },
       body: JSON.stringify({
         threadId: "default-thread",
         runId: "default-run",
@@ -593,11 +663,16 @@ describe("harness-studio server", () => {
       acpAgentLabel: "Fixture ACP",
     });
     await fetch(`${started.url}/api/workspace/open`, { method: "POST" });
+    const projectCatalog = await (await fetch(`${started.url}/api/projects`)).json() as { activeProjectId: string; revision: number };
 
     const runId = "acp-run";
     const response = await fetch(`${started.url}/agui/acp`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Harness-Project-Id": projectCatalog.activeProjectId,
+        "X-Harness-Project-Revision": String(projectCatalog.revision),
+      },
       body: JSON.stringify({
         threadId: "acp-thread",
         runId,
@@ -709,7 +784,8 @@ describe("harness-studio server", () => {
   it("opens a browser-selected workspace, indexes Sessions, and compares two retained runs", async () => {
     const appDir = await makeAppDir();
     started = await startHarnessStudioServer({ appDir });
-    const created = await fetch(`${started.url}/api/workspaces?label=review-sessions`, { method: "POST" });
+    const privateImportLabel = "C:\\Users\\private\\review-sessions";
+    const created = await fetch(`${started.url}/api/workspaces?label=${encodeURIComponent(privateImportLabel)}`, { method: "POST" });
     expect(created.status).toBe(201);
     const { sessionId } = await created.json() as { sessionId: string };
 
@@ -727,6 +803,9 @@ describe("harness-studio server", () => {
     const committed = await fetch(`${started.url}/api/workspaces/${sessionId}/commit`, { method: "POST" });
     expect(committed.status).toBe(200);
     expect(await committed.json()).toEqual({ label: "review-sessions", sessionCount: 2, omittedCount: 1 });
+    const projects = await (await fetch(`${started.url}/api/projects`)).text();
+    expect(projects).not.toContain(privateImportLabel);
+    expect(projects).not.toContain("Users");
 
     const config = await (await fetch(`${started.url}/api/config`)).json() as { workspaceConnected: boolean; sessionCount: number };
     expect(config).toMatchObject({ workspaceConnected: true, sessionCount: 2 });

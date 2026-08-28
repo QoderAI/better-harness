@@ -66,11 +66,9 @@ export function SimpleCompareView(props: {
   return <section className="simple-compare-shell">
     <main className="simple-compare-main">
       <form className={`simple-compare-composer${needsAcpAgents ? " has-agent-catalog" : ""}`} onSubmit={submit}>
-        <div className="simple-project-control">
-          <label htmlFor="compare-project">Current project</label>
-          <select id="compare-project" defaultValue={project.value} aria-describedby="compare-project-detail">
-            <option value={project.value}>{project.value}</option>
-          </select>
+        <div className="simple-project-control" aria-label="Checkpoint project">
+          <span>Checkpoint project</span>
+          <strong>{project.value}</strong>
           <span id="compare-project-detail">Current checkpoint · {revision.value}</span>
         </div>
         {needsAcpAgents && <div className="simple-agent-controls" aria-label="ACP Agents">

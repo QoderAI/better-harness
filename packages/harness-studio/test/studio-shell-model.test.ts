@@ -3,6 +3,7 @@ import {
   capabilitySummary,
   compareSurfaces,
   inspectorSurfaces,
+  studioProjectGateRequired,
   studioOverview,
   studioDestinations,
   type StudioConfig,
@@ -46,19 +47,19 @@ describe("Studio control-plane navigation", () => {
     expect(destinations.find((destination) => destination.id === "overview")).toMatchObject({ availability: "ready" });
     expect(destinations.find((destination) => destination.id === "sessions")).toMatchObject({
       availability: "partial",
-      status: "Open workspace",
+      status: "Open Project",
     });
     expect(destinations.find((destination) => destination.id === "inputs")).toMatchObject({
       availability: "foundation",
-      status: "Workspace required",
+      status: "Project required",
     });
     expect(destinations.find((destination) => destination.id === "artifacts")).toMatchObject({
       availability: "foundation",
-      status: "Workspace required",
+      status: "Project required",
     });
     expect(destinations.find((destination) => destination.id === "commits")).toMatchObject({
       availability: "foundation",
-      status: "Workspace required",
+      status: "Project required",
     });
     expect(destinations.find((destination) => destination.id === "debugger")).toMatchObject({
       availability: "foundation",
@@ -66,7 +67,7 @@ describe("Studio control-plane navigation", () => {
     });
     expect(destinations.find((destination) => destination.id === "compare")).toMatchObject({
       availability: "foundation",
-      status: "Workspace required",
+      status: "Project required",
     });
     expect(capabilitySummary(EMPTY)).toEqual({ ready: 1, partial: 1, foundation: 6 });
   });
@@ -134,7 +135,7 @@ describe("Studio control-plane navigation", () => {
     expect(compareSurfaces(config)).toEqual([]);
     expect(studioDestinations(config).find((destination) => destination.id === "sessions")).toMatchObject({
       availability: "partial",
-      status: "Open workspace",
+      status: "Open Project",
     });
     expect(studioDestinations(config).find((destination) => destination.id === "compare")).toMatchObject({
       availability: "foundation",
@@ -145,8 +146,8 @@ describe("Studio control-plane navigation", () => {
     const config: StudioConfig = { ...EMPTY, aguiEnabled: true, harnessMode: "workspace-default", workspaceDiscoveryEnabled: true };
 
     expect(studioDestinations(config).find((destination) => destination.id === "debugger")).toMatchObject({
-      availability: "ready",
-      status: "Local default",
+      availability: "foundation",
+      status: "Project required",
     });
     expect(inspectorSurfaces(config)).toEqual([]);
     expect(compareSurfaces(config)).toEqual([]);
@@ -189,6 +190,26 @@ describe("Studio control-plane navigation", () => {
       secondaryActions: [],
     });
     expect(overview.primaryAction).toBeUndefined();
+  });
+
+  it("requires an initial Project only when no independent configured context is available", () => {
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true }, false)).toBe(true);
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, evidenceEnabled: true }, true)).toBe(false);
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, artifactsEnabled: true }, false)).toBe(false);
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, aguiEnabled: true, harnessMode: "configured" }, false)).toBe(false);
+  });
+
+  it("does not advertise the Project-default Debugger before a Project is active", () => {
+    const overview = studioOverview({
+      ...EMPTY,
+      aguiEnabled: true,
+      harnessMode: "workspace-default",
+      inspectorEnabled: true,
+    });
+
+    expect(overview.mode).toBe("configured");
+    expect(overview.facts.map((fact) => fact.id)).toEqual(["inspector"]);
+    expect(overview.secondaryActions).not.toContainEqual({ area: "debugger", label: "Open Debugger" });
   });
 
   it("summarizes connected workspace evidence without capability maturity totals", () => {

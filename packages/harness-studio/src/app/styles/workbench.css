@@ -61,6 +61,8 @@
   font: inherit;
 }
 .simple-project-control > span { overflow: hidden; color: var(--color-text-muted); font-size: var(--type-meta-size); text-overflow: ellipsis; white-space: nowrap; }
+.simple-project-control > span:first-child { color: var(--color-text); font-size: var(--type-label-size); font-weight: var(--weight-semibold); }
+.simple-project-control > strong { min-height: var(--control-height); display: flex; align-items: center; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-xs); padding: 0 var(--space-sm); color: var(--color-text); background: var(--color-surface-subtle); text-overflow: ellipsis; white-space: nowrap; }
 .simple-agent-controls { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-sm); }
 .simple-agent-control { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px var(--space-sm); }
 .simple-agent-control > span { font-size: var(--type-label-size); font-weight: var(--weight-semibold); }
@@ -1100,6 +1102,10 @@
   .simple-agent-controls,
   .simple-prompt-control,
   .simple-run-control { grid-column: 1; }
+  .simple-compare-composer.has-agent-catalog .simple-project-control,
+  .simple-compare-composer.has-agent-catalog .simple-agent-controls,
+  .simple-compare-composer.has-agent-catalog .simple-prompt-control,
+  .simple-compare-composer.has-agent-catalog .simple-run-control { grid-column: 1; }
   .simple-agent-controls { grid-template-columns: minmax(0, 1fr); }
   .simple-agent-control { grid-template-columns: minmax(0, 1fr); }
   .simple-agent-control small { grid-column: 1; white-space: normal; }
@@ -1839,11 +1845,6 @@
 }
 .workspace-open-progress > small { color: inherit; }
 @keyframes workspace-progress-spin { to { transform: rotate(360deg); } }
-.workspace-folder-controls.is-compact { display: flex; align-items: center; }
-.workspace-folder-controls.is-compact button { min-height: var(--control-height); padding-inline: var(--space-xs); font-size: var(--type-meta-size); }
-.workspace-folder-controls.is-compact > small { width: 220px; position: absolute; z-index: 3; right: 0; bottom: calc(100% + var(--space-xs)); border: 1px solid var(--color-border); padding: var(--space-xs) var(--space-sm); background: var(--color-surface); box-shadow: var(--shadow-overlay); white-space: normal; }
-.workspace-folder-controls.is-compact > .workspace-open-progress { width: 260px; position: absolute; z-index: 3; right: 0; bottom: calc(100% + var(--space-xs)); justify-content: flex-start; border: 1px solid var(--color-border); padding: var(--space-xs) var(--space-sm); background: var(--color-surface); box-shadow: var(--shadow-overlay); white-space: normal; }
-.workspace-folder-controls.is-compact > .workspace-folder-error { border-color: var(--color-danger); color: var(--color-danger); background: var(--color-danger-surface); }
 
 @media (prefers-reduced-motion: reduce) {
   .workspace-open-progress > i { animation: none; }

@@ -127,14 +127,14 @@ export function ArtifactsWorkspace(props: { config: StudioConfig }): React.JSX.E
   });
 
   if (!props.config.artifactsEnabled) {
-    return <ArtifactEmpty title={props.config.workspaceConnected ? "No workspace artifacts are available" : "Open a project workspace"} detail={props.config.workspaceConnected
+    return <ArtifactEmpty title={props.config.workspaceConnected ? "No Project artifacts are available" : "Open a Project"} detail={props.config.workspaceConnected
       ? "Studio found no current files backed by retained change or delivery evidence."
-      : "Choose the project once; Artifacts will use the same workspace as Sessions and Commits."} />;
+      : "Open or select a Project once; Artifacts, Sessions, and Commits will share that Project context."} />;
   }
-  if (failure !== undefined) return <ArtifactEmpty title="Cannot read workspace artifacts" detail={failure} />;
-  if (catalog === undefined) return <p className="artifact-status" role="status">Indexing workspace artifacts…</p>;
+  if (failure !== undefined) return <ArtifactEmpty title="Cannot read Project artifacts" detail={failure} />;
+  if (catalog === undefined) return <p className="artifact-status" role="status">Indexing Project artifacts…</p>;
   if (catalog.artifacts.length === 0) {
-    return <ArtifactEmpty title="No changed artifacts in this workspace" detail="No current regular files are referenced by retained change or delivery evidence. Read-only and missing paths are not promoted into the Artifact catalog." />;
+    return <ArtifactEmpty title="No changed artifacts in this Project" detail="No current regular files are referenced by retained change or delivery evidence. Read-only and missing paths are not promoted into the Artifact catalog." />;
   }
 
   const active = catalog.artifacts.find((artifact) => artifact.id === selected);
@@ -150,8 +150,8 @@ export function ArtifactsWorkspace(props: { config: StudioConfig }): React.JSX.E
     setNarrowPane("preview");
   };
 
-  return <section className="artifact-workspace" data-narrow-pane={narrowPane} aria-label="Workspace artifacts">
-    <div className="artifact-narrow-tabs" role="tablist" aria-label="Artifact workspace panes" onKeyDown={narrowTabs.onKeyDown}>
+  return <section className="artifact-workspace" data-narrow-pane={narrowPane} aria-label="Project artifacts">
+    <div className="artifact-narrow-tabs" role="tablist" aria-label="Artifact Project panes" onKeyDown={narrowTabs.onKeyDown}>
       {(["scope", "artifacts", "preview"] as const).map((pane) => <button
         key={pane}
         type="button"
@@ -167,7 +167,7 @@ export function ArtifactsWorkspace(props: { config: StudioConfig }): React.JSX.E
     </div>
 
     <aside className="artifact-scope-pane" id="artifact-scope-pane" role="tabpanel" aria-labelledby="artifact-tab-scope">
-      <header><div><small>Open workspace</small><h2>{catalog.navigation?.workspaceLabel ?? "Compatibility catalog"}</h2></div><span>{catalog.artifacts.length}</span></header>
+      <header><div><small>{catalog.navigation === undefined ? "Configured source" : "Project scope"}</small><h2>{catalog.navigation === undefined ? "Compatibility catalog" : "Browse"}</h2></div><span>{catalog.artifacts.length}</span></header>
       <div className="artifact-scope-switch" role="tablist" aria-label="Artifact scope mode">
         <button type="button" role="tab" aria-selected={effectiveMode === "date"} disabled={catalog.navigation === undefined} onClick={() => setScopeMode("date")}><CalendarBlank aria-hidden="true" size={14} />Date</button>
         <button type="button" role="tab" aria-selected={effectiveMode === "files"} onClick={() => setScopeMode("files")}><TreeStructure aria-hidden="true" size={14} />Files</button>
@@ -191,7 +191,7 @@ export function ArtifactsWorkspace(props: { config: StudioConfig }): React.JSX.E
 
     <main className="artifact-preview-pane" id="artifact-preview-pane" role="tabpanel" aria-labelledby="artifact-tab-preview">
       {active === undefined
-        ? <p className="artifact-status" role="status">Select an Artifact to preview its current workspace revision.</p>
+        ? <p className="artifact-status" role="status">Select an Artifact to preview its current Project revision.</p>
         : <>
           <header className="artifact-editor-header">
             <div><strong title={active.label}>{basename(active.label)}</strong><small>{formatLabel(active.format)} · {formatBytes(active.size)} · {active.adapter.id} · current {shortRevision(active.revision.id)}</small></div>

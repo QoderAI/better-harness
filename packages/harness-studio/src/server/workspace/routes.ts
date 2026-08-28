@@ -1,6 +1,7 @@
 import { GitCommitDetail } from "../../contracts/git-history.js";
 import { isUserInputTrace, projectUserInputTrace } from "../../contracts/input-trace.js";
 import { IntentCorrelationAnalysisV1, IntentCorrelationContractError, validateIntentCorrelationAnalysis } from "../../contracts/intent-correlation.js";
+import { STUDIO_PROJECT_CATALOG_KIND, type StudioProjectDescriptor } from "../../contracts/studio-project.js";
 import { validateStudioCustomizationAnalysis } from "../customization-collector.js";
 import { sessionFromRetainedRun } from "../debugger-session-transform.js";
 import { resolveGitRepositoryRoot } from "../git-history.js";
@@ -12,9 +13,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, open, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, normalize, resolve } from "node:path";
+import { basename, dirname, join, normalize, posix, resolve, win32 } from "node:path";
 import { IMPORT_SESSION_TTL_MS, MAX_IMPORT_BYTES, MAX_IMPORT_SESSIONS, respondJson, sameOriginRequest } from "../http-utils.js";
-import { HarnessStudioServerOptions, HarnessStudioState, StoredWorkspaceSession, StudioWorkspaceSession, WorkspaceImportSession } from "../studio-types.js";
+import { HarnessStudioServerOptions, HarnessStudioState, StoredStudioProject, StoredWorkspaceSession, StudioWorkspace, StudioWorkspaceSession, WorkspaceImportSession } from "../studio-types.js";
 
 export const MAX_WORKSPACE_FILES = 512;
 export const MAX_WORKSPACE_SESSIONS = 200;
@@ -42,7 +43,7 @@ export async function createWorkspaceImport(
     fileCount: 0,
     totalBytes: 0,
     paths: new Set(),
-    label: portableWorkspaceLabel(requestedLabel),
+    label: portableProjectLabel(requestedLabel),
     expiry,
   });
   respondJson(response, 201, { sessionId, maxFiles: MAX_WORKSPACE_FILES, maxBytes: MAX_IMPORT_BYTES });
@@ -78,55 +79,212 @@ export async function openWorkspace(
       respondJson(response, 422, { error: "The selected workspace is not a directory." });
       return;
     }
-    const discovered = await options.workspaceSessionProvider.discover(workspacePath);
-    const sessions = new Map<string, StoredWorkspaceSession>();
-    for (const candidate of discovered.sessions.slice(0, MAX_WORKSPACE_SESSIONS)) {
-      const normalized = normalizeDiscoveredWorkspaceSession(candidate);
-      if (!sessions.has(normalized.summary.id)) sessions.set(normalized.summary.id, normalized);
-    }
-    const providers = (discovered.providers ?? []).map((provider) => ({
-      provider: portableWorkspaceLabel(provider.provider),
-      status: provider.status,
-      discovered: boundedNonNegativeInteger(provider.discovered),
-      included: boundedNonNegativeInteger(provider.included),
-      ...(provider.status === "error" ? { message: "Provider discovery failed." } : {}),
-    }));
-    const inspectorReport = discovered.inspectorReport === undefined
-      ? undefined
-      : validWorkspaceInspectorReport(discovered.inspectorReport)
-        ? discovered.inspectorReport
-        : (() => { throw new Error("Workspace Inspector report is malformed."); })();
-    const inputTrace = inspectorReport === undefined ? undefined : projectUserInputTrace(inspectorReport);
-    const previous = state.workspace?.ownedDirectory;
-    const gitRoot = await resolveGitRepositoryRoot(workspacePath);
-    const artifactObservations = await collectWorkspaceArtifactObservations(workspacePath, [...sessions.values()]);
-    const artifactPaths = [...new Set(artifactObservations.map((observation) => observation.relativePath))];
-    state.workspace = {
-      label: portableWorkspaceLabel(discovered.label),
-      sessionCount: sessions.size,
-      omittedCount: Math.max(0, discovered.sessions.length - sessions.size),
-      sessions,
-      providers,
-      ...(inspectorReport === undefined ? {} : { inspectorReport, inputTrace }),
+    const workspace = await discoverWorkspace(options, workspacePath);
+    const existing = [...state.projects.entries()].find(([, project]) => project.localDirectory !== undefined && sameNativePath(project.localDirectory, workspacePath));
+    const projectId = existing?.[0] ?? `project_${randomUUID().replaceAll("-", "")}`;
+    const project: StoredStudioProject = {
+      descriptor: descriptorForWorkspace(projectId, "local", workspace),
+      kind: "local",
       localDirectory: workspacePath,
-      artifactObservations,
-      ...(gitRoot === undefined ? {} : { gitRoot, gitCommitCache: new Map<string, GitCommitDetail>() }),
     };
-    state.artifactDirectory = workspacePath;
-    state.artifactPaths = artifactPaths;
-    state.customizationAnalysis = undefined;
-    if (previous !== undefined) await rm(previous, { recursive: true, force: true }).catch(() => undefined);
+    state.projects.set(projectId, project);
+    activateWorkspace(state, options, projectId, workspace);
     respondJson(response, 200, {
       opened: true,
-      label: state.workspace.label,
-      sessionCount: state.workspace.sessionCount,
-      providers,
+      project: project.descriptor,
+      revision: state.projectRevision,
+      label: workspace.label,
+      sessionCount: workspace.sessionCount,
+      providers: workspace.providers,
     });
   } catch {
     respondJson(response, 422, { error: "Studio could not discover Sessions for the selected workspace." });
   } finally {
     state.workspaceOpenStage = "idle";
   }
+}
+
+async function discoverWorkspace(options: HarnessStudioServerOptions, workspacePath: string): Promise<StudioWorkspace> {
+  if (options.workspaceSessionProvider === undefined) throw new Error("Workspace discovery is unavailable.");
+  const discovered = await options.workspaceSessionProvider.discover(workspacePath);
+  const sessions = new Map<string, StoredWorkspaceSession>();
+  for (const candidate of discovered.sessions.slice(0, MAX_WORKSPACE_SESSIONS)) {
+    const normalized = normalizeDiscoveredWorkspaceSession(candidate);
+    if (!sessions.has(normalized.summary.id)) sessions.set(normalized.summary.id, normalized);
+  }
+  const providers = (discovered.providers ?? []).map((provider) => ({
+    provider: portableWorkspaceLabel(provider.provider),
+    status: provider.status,
+    discovered: boundedNonNegativeInteger(provider.discovered),
+    included: boundedNonNegativeInteger(provider.included),
+    ...(provider.status === "error" ? { message: "Provider discovery failed." } : {}),
+  }));
+  const inspectorReport = discovered.inspectorReport === undefined
+    ? undefined
+    : validWorkspaceInspectorReport(discovered.inspectorReport)
+      ? discovered.inspectorReport
+      : (() => { throw new Error("Workspace Inspector report is malformed."); })();
+  const inputTrace = inspectorReport === undefined ? undefined : projectUserInputTrace(inspectorReport);
+  const gitRoot = await resolveGitRepositoryRoot(workspacePath);
+  const artifactObservations = await collectWorkspaceArtifactObservations(workspacePath, [...sessions.values()]);
+  return {
+    label: portableProjectLabel(discovered.label),
+    sessionCount: sessions.size,
+    omittedCount: Math.max(0, discovered.sessions.length - sessions.size),
+    sessions,
+    providers,
+    ...(inspectorReport === undefined ? {} : { inspectorReport, inputTrace }),
+    localDirectory: workspacePath,
+    artifactObservations,
+    ...(gitRoot === undefined ? {} : { gitRoot, gitCommitCache: new Map<string, GitCommitDetail>() }),
+  };
+}
+
+function activateWorkspace(
+  state: HarnessStudioState,
+  options: HarnessStudioServerOptions,
+  projectId: string,
+  workspace: StudioWorkspace,
+): void {
+  state.workspace = workspace;
+  state.activeProjectId = projectId;
+  state.projectRevision += 1;
+  state.artifactDirectory = workspace.localDirectory ?? options.artifactDirectory;
+  state.artifactPaths = workspace.localDirectory === undefined
+    ? options.artifactPaths
+    : [...new Set((workspace.artifactObservations ?? []).map((observation) => observation.relativePath))];
+  state.customizationAnalysis = undefined;
+  const project = state.projects.get(projectId);
+  if (project !== undefined) {
+    project.descriptor = descriptorForWorkspace(projectId, project.kind, workspace);
+  }
+}
+
+function descriptorForWorkspace(
+  id: string,
+  kind: "local" | "imported",
+  workspace: StudioWorkspace,
+  lastOpenedAt = new Date().toISOString(),
+): StudioProjectDescriptor {
+  return {
+    id,
+    label: workspace.label,
+    kind,
+    availability: "ready",
+    lastOpenedAt,
+    sessionCount: workspace.sessionCount,
+    inputCount: workspace.inputTrace?.summary.inputCount ?? 0,
+    artifactCount: new Set((workspace.artifactObservations ?? []).map((observation) => observation.relativePath)).size,
+    gitEnabled: workspace.gitRoot !== undefined,
+    workspaceWorkbenchEnabled: workspace.inspectorReport !== undefined,
+  };
+}
+
+function sameNativePath(left: string, right: string): boolean {
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  return process.platform === "win32"
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
+export function serveProjectCatalog(response: ServerResponse, state: HarnessStudioState): void {
+  respondJson(response, 200, {
+    kind: STUDIO_PROJECT_CATALOG_KIND,
+    revision: state.projectRevision,
+    ...(state.activeProjectId === undefined ? {} : { activeProjectId: state.activeProjectId }),
+    projects: [...state.projects.values()].map((project) => project.descriptor)
+      .sort((left, right) => right.lastOpenedAt.localeCompare(left.lastOpenedAt)),
+    stage: state.workspaceOpenStage,
+  }, { "Cache-Control": "no-store" });
+}
+
+export async function activateProject(
+  request: IncomingMessage,
+  response: ServerResponse,
+  options: HarnessStudioServerOptions,
+  state: HarnessStudioState,
+  projectId: string,
+): Promise<void> {
+  if (!sameOriginRequest(request)) {
+    respondJson(response, 403, { error: "Cross-origin Project changes are not allowed." });
+    return;
+  }
+  const project = projectForId(state, projectId);
+  if (project === undefined) {
+    respondJson(response, 404, { error: "The requested Project is not registered." });
+    return;
+  }
+  if (state.workspaceOpenStage !== "idle") {
+    respondJson(response, 409, { error: "Another Project is already being opened." });
+    return;
+  }
+  state.workspaceOpenStage = "discovering";
+  try {
+    let workspace: StudioWorkspace | undefined;
+    if (project.kind === "local") {
+      const workspacePath = await realpath(project.localDirectory!);
+      if (!sameNativePath(workspacePath, project.localDirectory!)) throw new Error("The Project directory identity changed.");
+      if (!(await stat(workspacePath)).isDirectory()) throw new Error("The Project directory is unavailable.");
+      workspace = await discoverWorkspace(options, workspacePath);
+    } else {
+      workspace = project.importedWorkspace;
+    }
+    if (workspace === undefined) throw new Error("The Project workspace is no longer available.");
+    activateWorkspace(state, options, projectId, workspace);
+    respondJson(response, 200, { activated: true, project: project.descriptor, revision: state.projectRevision });
+  } catch {
+    project.descriptor = { ...project.descriptor, availability: "unavailable" };
+    respondJson(response, 422, { error: "Studio could not refresh the requested Project. The previous Project remains active." });
+  } finally {
+    state.workspaceOpenStage = "idle";
+  }
+}
+
+export async function removeProject(
+  request: IncomingMessage,
+  response: ServerResponse,
+  options: HarnessStudioServerOptions,
+  state: HarnessStudioState,
+  projectId: string,
+): Promise<void> {
+  if (!sameOriginRequest(request)) {
+    respondJson(response, 403, { error: "Cross-origin Project changes are not allowed." });
+    return;
+  }
+  const project = projectForId(state, projectId);
+  if (project === undefined) {
+    respondJson(response, 404, { error: "The requested Project is not registered." });
+    return;
+  }
+  if (state.workspaceOpenStage !== "idle") {
+    respondJson(response, 409, { error: "Another Project change is already in progress." });
+    return;
+  }
+  state.workspaceOpenStage = "removing";
+  try {
+    if (project.importedWorkspace?.ownedDirectory !== undefined) {
+      await rm(project.importedWorkspace.ownedDirectory, { recursive: true, force: true });
+    }
+    state.projects.delete(projectId);
+    if (state.activeProjectId === projectId) {
+      state.activeProjectId = undefined;
+      state.workspace = undefined;
+      state.projectRevision += 1;
+      state.artifactDirectory = options.artifactDirectory;
+      state.artifactPaths = options.artifactPaths;
+      state.customizationAnalysis = undefined;
+    }
+    respondJson(response, 200, { removed: true, revision: state.projectRevision });
+  } catch {
+    respondJson(response, 500, { error: "Studio could not remove the imported Project materialization." });
+  } finally {
+    state.workspaceOpenStage = "idle";
+  }
+}
+
+function projectForId(state: HarnessStudioState, projectId: string): StoredStudioProject | undefined {
+  return /^project_[a-f0-9]{32}$/u.test(projectId) ? state.projects.get(projectId) : undefined;
 }
 function validWorkspaceInspectorReport(report: Record<string, unknown> | undefined): report is Record<string, unknown> {
   return report !== undefined
@@ -229,6 +387,7 @@ export async function importWorkspaceFile(
 export async function commitWorkspaceImport(
   request: IncomingMessage,
   response: ServerResponse,
+  options: HarnessStudioServerOptions,
   state: HarnessStudioState,
   sessionId: string,
 ): Promise<void> {
@@ -241,6 +400,25 @@ export async function commitWorkspaceImport(
     respondJson(response, 404, { error: "Workspace import session is unavailable." });
     return;
   }
+  if (state.workspaceOpenStage !== "idle") {
+    respondJson(response, 409, { error: "Another Project change is already in progress." });
+    return;
+  }
+  state.workspaceOpenStage = "discovering";
+  try {
+    await commitWorkspaceImportSession(response, options, state, sessionId, session);
+  } finally {
+    state.workspaceOpenStage = "idle";
+  }
+}
+
+async function commitWorkspaceImportSession(
+  response: ServerResponse,
+  options: HarnessStudioServerOptions,
+  state: HarnessStudioState,
+  sessionId: string,
+  session: WorkspaceImportSession,
+): Promise<void> {
   const accepted = new Map<string, StoredWorkspaceSession>();
   let omittedCount = 0;
   for (const relativePath of session.paths) {
@@ -279,8 +457,7 @@ export async function commitWorkspaceImport(
   }
   clearTimeout(session.expiry);
   state.workspaceImports.delete(sessionId);
-  const previous = state.workspace?.ownedDirectory;
-  state.workspace = {
+  const workspace: StudioWorkspace = {
     label: session.label,
     sessionCount: accepted.size,
     omittedCount,
@@ -288,10 +465,14 @@ export async function commitWorkspaceImport(
     providers: [{ provider: "Harness Studio", status: "ok", discovered: accepted.size, included: accepted.size }],
     ownedDirectory: session.directory,
   };
-  state.customizationAnalysis = undefined;
-  if (previous !== undefined && previous !== session.directory) {
-    await rm(previous, { recursive: true, force: true }).catch(() => undefined);
-  }
+  const projectId = `project_${randomUUID().replaceAll("-", "")}`;
+  const project: StoredStudioProject = {
+    descriptor: descriptorForWorkspace(projectId, "imported", workspace),
+    kind: "imported",
+    importedWorkspace: workspace,
+  };
+  state.projects.set(projectId, project);
+  activateWorkspace(state, options, projectId, workspace);
   respondJson(response, 200, { label: session.label, sessionCount: accepted.size, omittedCount });
 }
 export async function abortWorkspaceImport(
@@ -321,12 +502,17 @@ export async function disconnectWorkspace(
     respondJson(response, 403, { error: "Cross-origin workspace changes are not allowed." });
     return;
   }
+  if (state.workspaceOpenStage !== "idle") {
+    respondJson(response, 409, { error: "Another Project change is already in progress." });
+    return;
+  }
   const workspace = state.workspace;
   state.workspace = undefined;
+  state.activeProjectId = undefined;
+  if (workspace !== undefined) state.projectRevision += 1;
   state.artifactDirectory = options.artifactDirectory;
   state.artifactPaths = options.artifactPaths;
   state.customizationAnalysis = undefined;
-  if (workspace?.ownedDirectory !== undefined) await rm(workspace.ownedDirectory, { recursive: true, force: true });
   respondJson(response, 200, { disconnected: workspace !== undefined });
 }
 function workspaceImportSession(state: HarnessStudioState, sessionId: string): WorkspaceImportSession | undefined {
@@ -337,6 +523,12 @@ function workspaceImportSession(state: HarnessStudioState, sessionId: string): W
 function portableWorkspaceLabel(value: string | null): string {
   const label = (value ?? "Selected workspace").trim().replace(/[\u0000-\u001f]/gu, " ").slice(0, 80);
   return label || "Selected workspace";
+}
+function portableProjectLabel(value: string | null): string {
+  const label = portableWorkspaceLabel(value);
+  if (win32.isAbsolute(label)) return portableWorkspaceLabel(win32.basename(label));
+  if (posix.isAbsolute(label)) return portableWorkspaceLabel(posix.basename(label));
+  return label;
 }
 function portableWorkspacePath(value: string | null): string {
   if (value === null || value.trim() === "") throw new Error("Workspace file path is required.");
@@ -362,7 +554,12 @@ async function removeWorkspaceImport(state: HarnessStudioState, sessionId: strin
 }
 export async function cleanupWorkspaceImports(state: HarnessStudioState): Promise<void> {
   await Promise.all([...state.workspaceImports.keys()].map((sessionId) => removeWorkspaceImport(state, sessionId)));
-  if (state.workspace?.ownedDirectory !== undefined) await rm(state.workspace.ownedDirectory, { recursive: true, force: true });
+  const ownedDirectories = new Set([...state.projects.values()]
+    .map((project) => project.importedWorkspace?.ownedDirectory)
+    .filter((directory): directory is string => directory !== undefined));
+  await Promise.all([...ownedDirectories].map((directory) => rm(directory, { recursive: true, force: true }).catch(() => undefined)));
+  state.projects.clear();
+  state.activeProjectId = undefined;
   state.workspace = undefined;
   state.customizationAnalysis = undefined;
 }
@@ -372,7 +569,7 @@ export async function serveWorkspaceSessions(response: ServerResponse, state: Ha
     return;
   }
   respondJson(response, 200, {
-    workspace: { label: state.workspace.label, omittedCount: state.workspace.omittedCount, providers: state.workspace.providers },
+    workspace: { id: state.activeProjectId, revision: state.projectRevision, label: state.workspace.label, omittedCount: state.workspace.omittedCount, providers: state.workspace.providers },
     sessions: [...state.workspace.sessions.values()].map((session) => session.summary)
       .sort((left, right) => right.savedAt.localeCompare(left.savedAt)),
   });
@@ -424,12 +621,17 @@ export async function analyzeWorkspaceCustomizations(
     respondJson(response, 409, { error: "Customization analysis is already running." });
     return;
   }
+  const projectBinding = { id: state.activeProjectId, revision: state.projectRevision };
   state.customizationAnalysisRunning = true;
   try {
     const analysis = validateStudioCustomizationAnalysis(
       await options.customizationCollector.analyze(workspacePath),
       [workspacePath],
     );
+    if (!isCurrentProjectBinding(state, projectBinding)) {
+      respondJson(response, 409, { error: "The active Project changed before customization analysis completed. Run the analysis again for the current Project." });
+      return;
+    }
     state.customizationAnalysis = analysis;
     respondJson(response, 200, analysis, { "Cache-Control": "no-store" });
   } catch {
@@ -460,11 +662,16 @@ export async function analyzeWorkspaceIntent(
     respondJson(response, 409, { error: "An Intent analysis is already running." });
     return;
   }
+  const projectBinding = { id: state.activeProjectId, revision: state.projectRevision };
   state.intentAnalysisRunning = true;
   try {
     const packet = buildIntentCorrelationPacket(state.workspace.inputTrace);
     const proposed = await options.intentAnalyzer.analyze(packet);
     const analysis: IntentCorrelationAnalysisV1 = validateIntentCorrelationAnalysis(packet, proposed);
+    if (!isCurrentProjectBinding(state, projectBinding)) {
+      respondJson(response, 409, { error: "The active Project changed before Intent analysis completed. Run the analysis again for the current Project." }, { "Cache-Control": "no-store" });
+      return;
+    }
     respondJson(response, 200, analysis, { "Cache-Control": "no-store" });
   } catch (error) {
     respondJson(response, error instanceof IntentCorrelationContractError ? 502 : 503, {
@@ -475,6 +682,12 @@ export async function analyzeWorkspaceIntent(
   } finally {
     state.intentAnalysisRunning = false;
   }
+}
+function isCurrentProjectBinding(
+  state: HarnessStudioState,
+  binding: { id: string | undefined; revision: number },
+): boolean {
+  return state.activeProjectId === binding.id && state.projectRevision === binding.revision;
 }
 export async function serveWorkspaceSession(
   response: ServerResponse,

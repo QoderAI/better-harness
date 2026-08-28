@@ -89,11 +89,18 @@ async function streamRun(
   prompt: string,
   threadId: string,
   runId: string,
+  project: { id: string; label: string; revision: number } | undefined,
   onEvents: (events: AguiEvent[]) => void,
 ): Promise<void> {
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(project === undefined ? {} : {
+        "X-Harness-Project-Id": project.id,
+        "X-Harness-Project-Revision": String(project.revision),
+      }),
+    },
     body: JSON.stringify({
       threadId,
       runId,
@@ -249,6 +256,7 @@ export function RunView({
   harnessLabel = "Live Trial",
   navigation,
   initialMode = "live",
+  project,
 }: {
   aguiEndpoint: string;
   acpEndpoint?: string;
@@ -257,12 +265,14 @@ export function RunView({
   harnessLabel?: string;
   navigation?: ReactNode;
   initialMode?: SurfaceMode;
+  project?: { id: string; label: string; revision: number };
 }): React.JSX.Element {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>(initialMode);
   const [prompt, setPrompt] = useState("");
   const [runtime, setRuntime] = useState<LiveRuntime>("qoder");
   const [activeRuntime, setActiveRuntime] = useState<LiveRuntime>("qoder");
   const [submittedPrompt, setSubmittedPrompt] = useState("");
+  const [runProject, setRunProject] = useState(project);
   const [state, setState] = useState<AguiRunState>(initialRunState);
   const [cursor, setCursor] = useState<DebuggerCursor>(DEFAULT_DEBUGGER_CURSOR);
   const [stopConditions, setStopConditions] = useState<StopConditionState>(DEFAULT_STOP_CONDITIONS);
@@ -386,6 +396,7 @@ export function RunView({
     const runId = `run_${stamp}`;
     setActiveRuntime(selectedRuntime);
     setSubmittedPrompt(promptText);
+    setRunProject(project);
     setSurfaceMode("live");
     setSavedRun(null);
     setRetainedSession(SAMPLE_DEBUGGER_SESSION);
@@ -395,7 +406,7 @@ export function RunView({
     liveStateRef.current = fresh;
     setState(fresh);
     try {
-      await streamRun(endpoint, promptText, threadId, runId, (events) => {
+      await streamRun(endpoint, promptText, threadId, runId, project, (events) => {
         // Fold outside any React updater: applyAguiEvent mutates the keyed
         // map for O(1) deltas and each batch must be applied exactly once.
         liveStateRef.current = events.reduce(applyAguiEvent, liveStateRef.current);
@@ -429,7 +440,7 @@ export function RunView({
         // Saving is best-effort evidence retention; the live view already holds the run.
       }
     }
-  }, [acpEndpoint, aguiEndpoint, prompt, refreshRuns, runtime]);
+  }, [acpEndpoint, aguiEndpoint, project, prompt, refreshRuns, runtime]);
 
   const cancelLiveRun = useCallback(async (): Promise<void> => {
     if (activeRuntime !== "acp" || state.runId === undefined) return;
@@ -450,10 +461,11 @@ export function RunView({
   const sessionName = live ? (viewPrompt || "New harness run") : retainedSession.name;
   const connectionState = live ? viewState.status : retainedSession.connection;
   const runMode = saved ? "Saved run · Evidence Cursor" : live ? (state.status === "running" ? "Live · Following" : "Live · Soft paused") : retainedSession.mode;
+  const visibleProject = submittedPrompt === "" ? project : runProject;
 
   return <section className={`debugger-shell${treeCollapsed ? " tree-collapsed" : ""}${inspectorCollapsed ? " inspector-collapsed" : ""}`}>
     <header className="debugger-topbar">
-      <div className="debugger-brand"><span className="debugger-mark"><BugBeetle size={18} weight="fill" /></span><strong>{live ? "Harness Run" : "Inspector"}</strong><span>{live ? harnessLabel : saved ? "Retained Session Debugger" : "Session Debugger · Demo"}</span></div>
+      <div className="debugger-brand"><span className="debugger-mark"><BugBeetle size={18} weight="fill" /></span><strong>{live ? "Harness Run" : "Inspector"}</strong><span title={visibleProject === undefined ? undefined : `Project ${visibleProject.label}, revision ${visibleProject.revision}`}>{live ? `${harnessLabel}${visibleProject === undefined ? "" : ` · ${visibleProject.label}`}` : saved ? "Retained Session Debugger" : "Session Debugger · Demo"}</span></div>
       <div className="debugger-session-meta"><span>Session</span><strong title={sessionName}>{sessionName}</strong><em className={live ? "live" : "recorded"}>{runMode}</em></div>
       <div className="debugger-runtime-meta"><span className={`connection-dot status-${connectionState}`} /><strong>{connectionState}</strong><i /><span>Agent</span><strong>{live ? activeRuntime === "acp" ? acpAgentLabel : "local harness" : retainedSession.agent}</strong><i /><span>Protocol</span><strong>{live ? activeRuntime === "acp" ? "ACP v1 · AG-UI projection" : "AG-UI" : retainedSession.protocol}</strong></div>
       <div className="debugger-top-actions">{navigation}{live && activeRuntime === "acp" && state.status === "running" ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />Cancel run</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>Saved runs{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label="Saved runs">{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>Back to live view</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">No saved runs yet. Finished runs are saved automatically.</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{run.toolCallCount} call{run.toolCallCount === 1 ? "" : "s"} · {run.savedAt.slice(0, 19).replace("T", " ")}</span></button>)}</div>}</div><button type="button" onClick={() => setTreeCollapsed((value) => !value)} aria-pressed={!treeCollapsed} title="Toggle Execution Tree"><TreeStructure size={15} /></button><button type="button" onClick={() => setInspectorCollapsed((value) => !value)} aria-pressed={!inspectorCollapsed} title="Toggle State Inspector"><SidebarSimple size={15} /></button><button type="button" className="new-run" onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" />New live run</button></div>
@@ -482,7 +494,7 @@ export function RunView({
 
     {live ? <LiveTimeline state={viewState} bins={liveBins} eventCount={liveTimeline.length} /> : <TimelineMinimap session={retainedSession} cursor={cursor} onSelect={selectCursor} />}
 
-    {composerOpen && <div className="live-composer-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setComposerOpen(false); }}><section className="live-composer" role="dialog" aria-modal="true" aria-labelledby="live-composer-title"><header><div><small>{harnessLabel}</small><h2 id="live-composer-title">Start a live harness session</h2></div><button type="button" onClick={() => setComposerOpen(false)} aria-label="Close live run dialog"><XCircle size={19} /></button></header><p>Live events use the selected workspace. ACP runs launch the server-configured local Agent and expose its real protocol evidence.</p>{acpEndpoint !== undefined ? <label className="live-runtime-select"><span>Runtime</span><select value={runtime} onChange={(event) => setRuntime(event.target.value as LiveRuntime)}><option value="qoder">Qoder SDK · AG-UI</option><option value="acp">{acpAgentLabel} · ACP v1</option></select></label> : null}<textarea value={prompt} placeholder="Task prompt for the harness run…" onChange={(event) => setPrompt(event.target.value)} rows={5} autoFocus /><footer><button type="button" onClick={() => setComposerOpen(false)}>Cancel</button><button type="button" className="primary" onClick={() => void start()} disabled={state.status === "running" || prompt.trim().length === 0}><Play size={14} weight="fill" />Run harness</button></footer></section></div>}
+    {composerOpen && <div className="live-composer-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setComposerOpen(false); }}><section className="live-composer" role="dialog" aria-modal="true" aria-labelledby="live-composer-title"><header><div><small>{harnessLabel}</small><h2 id="live-composer-title">Start a live harness session</h2></div><button type="button" onClick={() => setComposerOpen(false)} aria-label="Close live run dialog"><XCircle size={19} /></button></header><p>Live events use {project === undefined ? "the configured runtime context" : `Project ${project.label} at revision ${project.revision}`}. The run keeps that binding if the selected Project changes later. ACP runs expose the configured local Agent's real protocol evidence.</p>{acpEndpoint !== undefined ? <label className="live-runtime-select"><span>Runtime</span><select value={runtime} onChange={(event) => setRuntime(event.target.value as LiveRuntime)}><option value="qoder">Qoder SDK · AG-UI</option><option value="acp">{acpAgentLabel} · ACP v1</option></select></label> : null}<textarea value={prompt} placeholder="Task prompt for the harness run…" onChange={(event) => setPrompt(event.target.value)} rows={5} autoFocus /><footer><button type="button" onClick={() => setComposerOpen(false)}>Cancel</button><button type="button" className="primary" onClick={() => void start()} disabled={state.status === "running" || prompt.trim().length === 0}><Play size={14} weight="fill" />Run harness</button></footer></section></div>}
   </section>;
 }
 

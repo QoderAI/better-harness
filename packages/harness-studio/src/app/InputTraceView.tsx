@@ -161,7 +161,7 @@ export function InputTraceView(props: { intentAnalysisEnabled: boolean }): React
         </div>}
     </aside>
     <section className={`input-list-pane${trace.summary.truncatedSessionCount > 0 ? " has-boundary" : ""}${analysis !== undefined || analysisFailure !== undefined ? " has-analysis" : ""}`} aria-label="Retained user inputs">
-      <header><div><strong>{trace.workspace.label}</strong><span>Retained inputs and exact observed file operations</span></div>{selectedPath !== undefined && <button type="button" onClick={() => setSelectedPath(undefined)}><X aria-hidden="true" size={13} />{selectedPath}</button>}</header>
+      <header><div><strong>Retained inputs</strong><span>Exact observed file operations</span></div>{selectedPath !== undefined && <button type="button" onClick={() => setSelectedPath(undefined)}><X aria-hidden="true" size={13} />{selectedPath}</button>}</header>
       {trace.summary.truncatedSessionCount > 0 && <p className="input-trace-boundary">{trace.summary.truncatedSessionCount} Session{trace.summary.truncatedSessionCount === 1 ? " was" : "s were"} truncated by retained dialogue limits.</p>}
       {(analysis !== undefined || analysisFailure !== undefined) && <IntentAnalysisPane analysis={analysis} failure={analysisFailure} onClose={() => { setAnalysis(undefined); setAnalysisFailure(undefined); }} />}
       {visibleInputs.length === 0

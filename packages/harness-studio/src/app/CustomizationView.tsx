@@ -82,7 +82,7 @@ export function CustomizationView(props: CustomizationViewProps): React.JSX.Elem
     {busy && <p className="customization-progress" role="status" aria-live="polite">Collecting Codex, Claude, and Qoder independently…</p>}
     {failure !== undefined && <p className="customization-failure" role="alert">{failure}</p>}
     {loading
-      ? <p className="customization-progress" role="status">Loading the current workspace catalog…</p>
+      ? <p className="customization-progress" role="status">Loading the current Project catalog…</p>
       : analysis === undefined
         ? <CustomizationEmpty />
         : <CustomizationResults analysis={analysis} hostsByDefinition={hostsByDefinition} />}
@@ -91,7 +91,7 @@ export function CustomizationView(props: CustomizationViewProps): React.JSX.Elem
 
 function CustomizationEmpty(): React.JSX.Element {
   return <div className="customization-empty">
-    <section><h2>Analysis starts only when requested</h2><p>Studio has not read local customization metadata for this workspace. Analyze collects recognized definitions from Codex, Claude, and Qoder while keeping native paths and private values on the server.</p></section>
+    <section><h2>Analysis starts only when requested</h2><p>Studio has not read local customization metadata for this Project. Analyze collects recognized definitions from Codex, Claude, and Qoder while keeping native paths and private values on the server.</p></section>
     <dl>
       <div><dt>Collected</dt><dd>Plugin manifests, Skills, instructions, Prompt Commands, Agent definitions, Hooks, and MCP registrations</dd></div>
       <div><dt>Not collected</dt><dd>Memory bodies, environment values, authorization headers, raw Hook commands, and MCP call results</dd></div>

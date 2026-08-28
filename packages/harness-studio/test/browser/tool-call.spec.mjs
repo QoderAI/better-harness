@@ -50,7 +50,7 @@ async function openDestination(page, label) {
     await quickAction.click();
     return;
   }
-  const destination = page.getByRole("navigation", { name: "Harness control plane" }).getByRole("button", { name: new RegExp(`^${label}`) });
+  const destination = page.getByRole("navigation", { name: "Studio project and View navigation" }).getByRole("button", { name: new RegExp(`^${label}`) });
   const toggle = page.getByRole("button", { name: "Open Studio navigation" });
   if (await toggle.isVisible() && await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
   await destination.click();
@@ -285,12 +285,12 @@ test("organizes configured surfaces around the Harness control plane", async ({ 
   await page.goto(inspectorStudio.url);
 
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Harness control plane" })).toContainText("Sessions");
-  await expect(page.getByRole("navigation", { name: "Harness control plane" })).toContainText("Debugger");
-  await expect(page.getByRole("navigation", { name: "Harness control plane" })).toContainText("Compare");
-  await page.getByRole("button", { name: "Open workspace" }).first().click();
-  await expect(page.getByRole("heading", { name: "Open a project workspace" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Choose workspace" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Studio project and View navigation" })).toContainText("Sessions");
+  await expect(page.getByRole("navigation", { name: "Studio project and View navigation" })).toContainText("Debugger");
+  await expect(page.getByRole("navigation", { name: "Studio project and View navigation" })).toContainText("Compare");
+  await page.getByRole("button", { name: "Open Project" }).first().click();
+  await expect(page.getByRole("heading", { name: "Select a Project" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Project opening unavailable" })).toBeDisabled();
 });
 
 test("compares a focused ACP pair across roles, views, filters, and evidence", async ({ page }, testInfo) => {
@@ -303,7 +303,7 @@ test("compares a focused ACP pair across roles, views, filters, and evidence", a
 
   await page.goto(experimentStudio.url);
   await openDestination(page, "Compare");
-  await expect(page.getByLabel("Current project")).toHaveValue("better-harness");
+  await expect(page.getByLabel("Checkpoint project")).toContainText("better-harness");
   await expect(page.getByLabel("User prompt")).toBeVisible();
   await expect(page.getByLabel("AI 1 Agent")).toHaveValue("qodercli");
   await expect(page.getByLabel("AI 2 Agent")).toHaveValue("qodercli");
@@ -599,18 +599,20 @@ test("renders the shell, local workspace intake, and empty compare surfaces at a
     }
 
     await openDestination(page, "Sessions");
-    await expect(page.getByRole("heading", { name: "Open a project workspace" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Select a Project" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Choose Project" })).toHaveCount(0);
     await assertRenderedContract(page);
     await page.screenshot({ path: testInfo.outputPath(`foundation-${layout.name}.png`) });
 
     await page.goto(inspectorStudio.url);
     await openDestination(page, "Compare");
-    await expect(page.getByRole("heading", { name: "Open a project workspace" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Open a Project" })).toBeVisible();
     await assertRenderedContract(page);
     await page.screenshot({ path: testInfo.outputPath(`empty-${layout.name}.png`) });
 
     await openDestination(page, "Sessions");
-    await expect(page.getByRole("button", { name: "Choose workspace" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Select a Project" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Choose Project" })).toHaveCount(0);
     await assertRenderedContract(page);
     await page.screenshot({ path: testInfo.outputPath(`sessions-${layout.name}.png`) });
   }
@@ -626,7 +628,7 @@ test("keeps Bench decision workspaces primary at all layout modes", async ({ pag
     await page.setViewportSize({ width: layout.width, height: layout.height });
     await page.goto(experimentStudio.url);
     await openDestination(page, "Compare");
-    await expect(page.getByLabel("Current project")).toBeVisible();
+    await expect(page.getByLabel("Checkpoint project")).toBeVisible();
     await expect(page.getByLabel("User prompt")).toBeInViewport();
     await expect(page.getByRole("button", { name: "Run compare" })).toBeInViewport();
     await expect(page.locator(".simple-lane")).toHaveCount(2);

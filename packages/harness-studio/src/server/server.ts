@@ -37,6 +37,7 @@ import {
 import { effectiveAcpAgentProfiles } from "./acp-agent-catalog.js";
 import {
   abortWorkspaceImport,
+  activateProject,
   analyzeWorkspaceCustomizations,
   analyzeWorkspaceIntent,
   cleanupWorkspaceImports,
@@ -45,6 +46,8 @@ import {
   disconnectWorkspace,
   importWorkspaceFile,
   openWorkspace,
+  removeProject,
+  serveProjectCatalog,
   serveSessionComparison,
   serveWorkspaceCustomizations,
   serveWorkspaceInputs,
@@ -134,6 +137,8 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
     artifactPaths: resolvedOptions.artifactPaths,
     artifactImports: new Map(),
     artifactEventStreams: 0,
+    projects: new Map(),
+    projectRevision: 0,
     workspaceImports: new Map(),
     workspaceOpenStage: "idle",
     intentAnalysisRunning: false,
@@ -204,26 +209,48 @@ async function route(
       workspaceWorkbenchEnabled: state.workspace?.inspectorReport !== undefined,
       workspaceDiscoveryEnabled: options.workspaceSessionProvider !== undefined,
       workspaceConnected: state.workspace !== undefined,
+      activeProjectId: state.activeProjectId,
+      projectRevision: state.projectRevision,
       sessionCount: state.workspace?.sessionCount ?? 0,
       inputCount: state.workspace?.inputTrace?.summary.inputCount ?? 0,
       intentAnalysisEnabled: options.intentAnalyzer !== undefined,
       customizationAnalysisEnabled: options.customizationCollector !== undefined,
       customizationAnalyzed: state.customizationAnalysis !== undefined,
       customizationDefinitionCount: state.customizationAnalysis?.summary.definitionCount ?? 0,
-    });
+    }, { "Cache-Control": "no-store" });
     return;
   }
   if (request.method === "GET" && url.pathname === "/api/workspace") {
     respondJson(response, 200, state.workspace === undefined
-      ? { connected: false, sessionCount: 0, omittedCount: 0 }
-      : { connected: true, label: state.workspace.label, sessionCount: state.workspace.sessionCount, omittedCount: state.workspace.omittedCount, providers: state.workspace.providers });
+      ? { connected: false, revision: state.projectRevision, sessionCount: 0, omittedCount: 0 }
+      : { connected: true, id: state.activeProjectId, revision: state.projectRevision, label: state.workspace.label, sessionCount: state.workspace.sessionCount, omittedCount: state.workspace.omittedCount, providers: state.workspace.providers }, { "Cache-Control": "no-store" });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/projects") {
+    serveProjectCatalog(response, state);
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/projects/open") {
+    await openWorkspace(request, response, options, state);
+    return;
+  }
+  const projectActivation = url.pathname.match(/^\/api\/projects\/([^/]+)\/(?:activate|refresh)$/);
+  if (request.method === "POST" && projectActivation !== null) {
+    const projectId = decodeRouteComponent(response, projectActivation[1]!);
+    if (projectId !== undefined) await activateProject(request, response, options, state, projectId);
+    return;
+  }
+  const projectRemoval = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
+  if (request.method === "DELETE" && projectRemoval !== null) {
+    const projectId = decodeRouteComponent(response, projectRemoval[1]!);
+    if (projectId !== undefined) await removeProject(request, response, options, state, projectId);
     return;
   }
   if (request.method === "DELETE" && url.pathname === "/api/workspace") {
     await disconnectWorkspace(request, response, options, state);
     return;
   }
-  if (request.method === "GET" && url.pathname === "/api/workspace/open/status") {
+  if (request.method === "GET" && (url.pathname === "/api/projects/open/status" || url.pathname === "/api/workspace/open/status")) {
     respondJson(response, 200, { stage: state.workspaceOpenStage });
     return;
   }
@@ -244,7 +271,7 @@ async function route(
   const workspaceImportCommit = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/commit$/);
   if (request.method === "POST" && workspaceImportCommit !== null) {
     const sessionId = decodeRouteComponent(response, workspaceImportCommit[1]!);
-    if (sessionId !== undefined) await commitWorkspaceImport(request, response, state, sessionId);
+    if (sessionId !== undefined) await commitWorkspaceImport(request, response, options, state, sessionId);
     return;
   }
   const workspaceImportAbort = url.pathname.match(/^\/api\/workspaces\/([^/]+)$/);
@@ -305,7 +332,7 @@ async function route(
     respondJson(response, 200, {
       sources: describeSources(state.sourceCatalog, state.activeSources),
       active: state.activeSources,
-    });
+    }, { "Cache-Control": "no-store" });
     return;
   }
   if (request.method === "POST" && url.pathname === "/api/sources/select") {
@@ -490,6 +517,7 @@ async function route(
       respondJson(response, 405, { error: "Use POST for /agui/acp." });
       return;
     }
+    if (!acceptProjectBinding(request, response, state, options.harnessMode === "workspace-default")) return;
     const runtimeOptions = activeWorkspaceOptions(options, state);
     const acpAgent = options.acpAgent
       ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)!.agent!;
@@ -511,6 +539,7 @@ async function route(
       return;
     }
     if (request.method === "POST" && url.pathname === "/agui") {
+      if (!acceptProjectBinding(request, response, state, options.harnessMode === "workspace-default")) return;
       const runtimeOptions = activeWorkspaceOptions(options, state);
       await handleAguiRun(request, response, {
         source: runtimeOptions.harnessSource!,
@@ -532,6 +561,33 @@ async function route(
     return;
   }
   respondJson(response, 404, { error: `No route for ${request.method} ${url.pathname}` });
+}
+
+function acceptProjectBinding(
+  request: IncomingMessage,
+  response: ServerResponse,
+  state: HarnessStudioState,
+  required: boolean,
+): boolean {
+  const requestedProjectId = request.headers["x-harness-project-id"];
+  const requestedRevision = request.headers["x-harness-project-revision"];
+  if (requestedProjectId === undefined && requestedRevision === undefined) {
+    if (!required) return true;
+    respondJson(response, 409, { error: state.activeProjectId === undefined
+      ? "Open a Project before starting a Project-scoped run."
+      : "A Project id and revision are required to start a Project-scoped run." });
+    return false;
+  }
+  if (typeof requestedProjectId !== "string" || typeof requestedRevision !== "string") {
+    respondJson(response, 409, { error: "The requested Project binding is incomplete." });
+    return false;
+  }
+  const parsedRevision = Number(requestedRevision);
+  if (requestedProjectId !== state.activeProjectId || !Number.isSafeInteger(parsedRevision) || parsedRevision !== state.projectRevision) {
+    respondJson(response, 409, { error: "The selected Project changed before the run started. Review the current Project and retry." });
+    return false;
+  }
+  return true;
 }
 
 function activeWorkspaceOptions(

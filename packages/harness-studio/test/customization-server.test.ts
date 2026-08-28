@@ -105,6 +105,43 @@ describe("Studio customization analysis routes", () => {
     expect(selected).toBe(launchWorkspace);
   });
 
+  it("does not publish analysis completed for a previously active Project", async () => {
+    const appDir = await tempDirectory("customization-binding-app-");
+    const projectA = await tempDirectory("customization-binding-a-");
+    const projectB = await tempDirectory("customization-binding-b-");
+    await writeFile(join(appDir, "index.html"), "<!doctype html><title>fixture</title>", "utf8");
+    const selections = [projectA, projectB];
+    let calls = 0;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    started = await startHarnessStudioServer({
+      appDir,
+      workspaceDirectoryPicker: async () => selections.shift(),
+      workspaceSessionProvider: { discover: async (workspace) => ({ label: workspace, sessions: [] }) },
+      customizationCollector: {
+        analyze: async () => {
+          calls += 1;
+          await gate;
+          return emptyAnalysis();
+        },
+      },
+    });
+    expect((await fetch(`${started.url}/api/projects/open`, { method: "POST" })).status).toBe(200);
+
+    const pending = fetch(`${started.url}/api/customizations/analyze`, { method: "POST" });
+    await viWaitFor(() => calls === 1);
+    expect((await fetch(`${started.url}/api/projects/open`, { method: "POST" })).status).toBe(200);
+    release?.();
+
+    const stale = await pending;
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({
+      error: "The active Project changed before customization analysis completed. Run the analysis again for the current Project.",
+    });
+    expect(await (await fetch(`${started.url}/api/config`)).json()).toMatchObject({ customizationAnalyzed: false });
+    expect((await fetch(`${started.url}/api/customizations`)).status).toBe(404);
+  });
+
   it("rejects private fields returned by an injected collector", async () => {
     const appDir = await tempDirectory("customization-app-");
     const launchWorkspace = await tempDirectory("customization-private-workspace-");

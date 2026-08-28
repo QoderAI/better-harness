@@ -1044,11 +1044,11 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   const requestedUrls = [];
   page.on("request", (request) => requestedUrls.push(request.url()));
   await page.goto(emptyStudio.url);
-  const gate = page.getByRole("dialog", { name: "Open a workspace to start" });
+  const gate = page.getByRole("dialog", { name: "Open a Project to start" });
   await expect(gate).toBeVisible();
   await expect(page.locator(".studio-control-plane")).toHaveAttribute("inert", "");
   await expect(page.locator(".studio-control-plane")).toHaveAttribute("aria-hidden", "true");
-  await expect(page.getByRole("button", { name: "Choose workspace" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose Project" })).toBeVisible();
 
   for (const layout of [
     { name: "wide", width: 1440, height: 900 },
@@ -1063,15 +1063,17 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   }
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole("button", { name: "Choose workspace" }).click();
-  await expect(page.getByRole("button", { name: "Opening workspace" })).toBeDisabled();
-  await expect(page.locator(".workspace-open-progress")).toContainText("Finding matching Sessions across local providers");
+  await page.getByRole("button", { name: "Choose Project" }).click();
+  await expect(page.getByRole("button", { name: "Opening Project" })).toBeDisabled();
+  await expect(page.locator(".workspace-open-progress")).toContainText("Finding matching Project Sessions across local providers");
   await expect(page.locator(".workspace-open-progress > i")).toHaveCSS("animation-name", "workspace-progress-spin");
   await page.screenshot({ path: "test-results/session-workspace-loading-wide.png", fullPage: true });
 
   await expect(gate).toHaveCount(0);
   await expect(page.locator(".studio-control-plane")).not.toHaveAttribute("inert", "");
-  await expect(page).toHaveURL(/#\/sessions$/);
+  await expect(page).toHaveURL(/#\/projects\/project_[a-f0-9]{32}\/overview$/u);
+  await page.getByRole("navigation", { name: "Studio project and View navigation" }).getByRole("button", { name: /^Sessions/ }).click();
+  await expect(page).toHaveURL(/#\/projects\/project_[a-f0-9]{32}\/sessions$/u);
   const inspector = page.locator("[data-studio-native-inspector]");
   await expect(inspector).toBeVisible();
   await expect(inspector).toHaveAttribute("data-react-inspector-workbench", "true");
@@ -1170,10 +1172,10 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   }
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole("navigation", { name: "Harness control plane" }).getByRole("button", { name: /^Debugger/ }).click();
-  await expect(page.getByText("Workspace default · Qoder", { exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Studio project and View navigation" }).getByRole("button", { name: /^Debugger/ }).click();
+  await expect(page.getByText(/Project default · Qoder · fixture-project/u)).toBeVisible();
   await page.getByRole("button", { name: "New live run" }).click();
-  await expect(page.getByRole("dialog", { name: "Start a live harness session" })).toContainText("selected workspace");
+  await expect(page.getByRole("dialog", { name: "Start a live harness session" })).toContainText("Project fixture-project");
   await page.getByPlaceholder("Task prompt for the harness run…").fill("verify the default workspace harness");
   await page.getByRole("button", { name: "Run harness" }).click();
   await expect(page.locator(".session-notebook")).toContainText("default harness: verify the default workspace harness");
