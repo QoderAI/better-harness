@@ -31,7 +31,7 @@ const DEFAULT_OBSERVATION_KIND = Object.freeze({
 });
 
 const BETTER_HARNESS_IDENTITY = Object.freeze({
-  names: ["better-harness", "@qoderai/better-harness"],
+  names: ["better-harness", "@qoderai/better-harness", "@qoder-ai/better-harness"],
   nativeIds: ["better-harness", "better-harness@better-harness", "better-harness/better-harness"],
   repositories: [
     "qoderai/better-harness",

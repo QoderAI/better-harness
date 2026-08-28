@@ -56,6 +56,7 @@ test("Better Harness identity matching rejects display-name-only candidates", ()
   assert.equal(matchesBetterHarnessPlugin({ displayName: "Better Harness", name: "other" }, profile), false);
   assert.equal(matchesBetterHarnessPlugin({ name: "@qoderai/better-harness" }, getHostProfile("pi")), true);
   assert.equal(matchesBetterHarnessPlugin({ piPackageSource: "git:github.com/QoderAI/better-harness" }, getHostProfile("pi")), true);
+  assert.equal(matchesBetterHarnessPlugin({ name: "@qoder-ai/better-harness", piPackageSource: "npm:@qoder-ai/better-harness" }, getHostProfile("pi")), true);
   assert.equal(matchesBetterHarnessPlugin({ id: "better-harness" }, profile), true);
   assert.equal(matchesBetterHarnessPlugin({ remotePluginId: "git+ssh://git@github.com/QoderAI/better-harness.git#main" }, profile), true);
 });
