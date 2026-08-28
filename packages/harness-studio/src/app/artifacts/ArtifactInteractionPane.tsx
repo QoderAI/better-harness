@@ -15,6 +15,8 @@ const HUMAN_ACTOR = { id: "human:studio", kind: "human" as const, label: "Studio
 
 export function ArtifactInteractionPane(props: {
   artifact: ArtifactDescriptor;
+  surfaceSelectedAddress?: string;
+  onSelectedAddressChange: (address: string) => void;
   onApplied: () => void;
 }): React.JSX.Element | null {
   const workspaceUri = props.artifact.interaction?.workspaceUri;
@@ -44,9 +46,14 @@ export function ArtifactInteractionPane(props: {
       .then(async (response) => {
         if (!response.ok) throw new Error(await responseError(response, "Cannot inspect this Artifact interaction."));
         const payload = await response.json() as { workspace?: unknown };
-        if (!isWorkspace(payload.workspace, props.artifact)) throw new Error("Artifact interaction workspace contract is unsupported.");
-        setWorkspace(payload.workspace);
-        setSelectedAddress(payload.workspace.targets[0]?.address ?? "");
+        const nextWorkspace = payload.workspace;
+        if (!isWorkspace(nextWorkspace, props.artifact)) throw new Error("Artifact interaction workspace contract is unsupported.");
+        setWorkspace(nextWorkspace);
+        setSelectedAddress((current) => {
+          return nextWorkspace.targets.some((target) => target.address === current)
+            ? current
+            : nextWorkspace.targets[0]?.address ?? "";
+        });
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setFailure(error instanceof Error ? error.message : String(error));
@@ -54,6 +61,13 @@ export function ArtifactInteractionPane(props: {
       .finally(() => { if (!controller.signal.aborted) setBusy(undefined); });
     return () => controller.abort();
   }, [props.artifact, workspaceUri]);
+
+  useEffect(() => {
+    if (workspace === undefined || props.surfaceSelectedAddress === undefined || prepared !== undefined || receipt !== undefined) return;
+    if (workspace.targets.some((target) => target.address === props.surfaceSelectedAddress)) {
+      setSelectedAddress(props.surfaceSelectedAddress);
+    }
+  }, [prepared, props.surfaceSelectedAddress, receipt, workspace]);
 
   if (workspaceUri === undefined) return null;
 
@@ -122,7 +136,7 @@ export function ArtifactInteractionPane(props: {
       {workspace !== undefined && <>
         <section className="artifact-collaboration-section" aria-labelledby="artifact-selection-heading">
           <header><span>1</span><div><h3 id="artifact-selection-heading">Shared selection</h3><p>{workspace.summary}</p></div></header>
-          <label>Semantic target<select value={selectedAddress} disabled={busy !== undefined || prepared !== undefined || receipt !== undefined} onChange={(event) => { setSelectedAddress(event.currentTarget.value); setPrepared(undefined); setReceipt(undefined); setFailure(undefined); }}>
+          <label>Semantic target<select value={selectedAddress} disabled={busy !== undefined || prepared !== undefined || receipt !== undefined} onChange={(event) => { setSelectedAddress(event.currentTarget.value); props.onSelectedAddressChange(event.currentTarget.value); setPrepared(undefined); setReceipt(undefined); setFailure(undefined); }}>
             {workspace.targets.map((target) => <option key={target.address} value={target.address}>{target.label} · {target.kind}</option>)}
           </select></label>
           {selected !== undefined && <code title={selected.address}>{selected.address}</code>}

@@ -115,6 +115,25 @@ export interface ArtifactHostedRuntimeImplementation {
 }
 
 export const ARTIFACT_INTERACTION_PROTOCOL_VERSION = "1" as const;
+export const ARTIFACT_HOSTED_EVENT_PROTOCOL_VERSION = "1" as const;
+
+/** Host-normalized selection shared by direct Artifact interaction and controls. */
+export interface ArtifactSurfaceSelectionV1 {
+  artifactId: string;
+  revision: ArtifactDigest;
+  bindingId: ArtifactDigest;
+  address: string;
+}
+
+/**
+ * Browser-safe selection emitted by a hosted surface. It is an observation,
+ * never mutation authority; the Host must bind it to the current frame,
+ * Artifact revision, surface binding, and interaction workspace.
+ */
+export interface ArtifactHostedSelectionEventV1 extends ArtifactSurfaceSelectionV1 {
+  kind: "HarnessStudioArtifactHostedSelectionV1";
+  protocolVersion: typeof ARTIFACT_HOSTED_EVENT_PROTOCOL_VERSION;
+}
 
 export interface ArtifactInteractionActorV1 {
   id: string;
