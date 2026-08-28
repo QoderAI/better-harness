@@ -32,6 +32,7 @@ const SOURCE = `
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 let studio;
 let experimentStudio;
+let blockedExperimentStudio;
 let inspectorStudio;
 let lockedFixtureDir;
 let inspectorFixtureDir;
@@ -268,11 +269,18 @@ test.beforeAll(async () => {
       return compareSet;
     },
   });
+  blockedExperimentStudio = await startHarnessStudioServer({
+    appDir: resolve(packageRoot, "dist/app"),
+    experimentManifestPath: resolve(packageRoot, "../harness/examples/checkpoint-experiment/experiment.json"),
+    acpAgents: [{ id: "codex-acp", label: "Codex ACP", unavailableReason: "not used by Qoder" }],
+    experimentRunner: async () => { throw new Error("blocked comparison must not start"); },
+  });
 });
 
 test.afterAll(async () => {
   await studio?.close();
   await experimentStudio?.close();
+  await blockedExperimentStudio?.close();
   await inspectorStudio?.close();
   if (lockedFixtureDir) await rm(lockedFixtureDir, { recursive: true, force: true });
   if (inspectorFixtureDir) await rm(inspectorFixtureDir, { recursive: true, force: true });
@@ -292,6 +300,46 @@ test("organizes configured surfaces around the Harness control plane", async ({ 
   await openDestination(page, "Sessions");
   await expect(page.getByRole("heading", { name: "Open a Project" })).toBeVisible();
   await expect(page.getByText("This Studio launcher does not provide Project discovery.")).toBeVisible();
+});
+
+test("blocks an unavailable Qoder comparison without assigning ACP identity", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const browserErrors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(`console: ${message.text()}`);
+  });
+  page.on("pageerror", (error) => browserErrors.push(`page: ${error.message}`));
+
+  await page.goto(blockedExperimentStudio.url);
+  await openDestination(page, "Compare");
+
+  await expect(page.getByLabel("AI 1 Agent")).toHaveCount(0);
+  await expect(page.getByLabel("AI 2 Agent")).toHaveCount(0);
+  await expect(page.locator(".simple-lane")).toHaveCount(2);
+  await expect(page.locator(".simple-lane").nth(0)).toContainText("Qoder");
+  await expect(page.locator(".simple-lane").nth(1)).toContainText("Qoder");
+  await expect(page.locator(".simple-compare-shell")).not.toContainText("Codex ACP");
+  await expect(page.getByRole("button", { name: "Run compare" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Advanced evidence" })).toBeDisabled();
+  await expect(page.locator(".simple-run-control [role=status]")).not.toHaveText("Ready");
+
+  await page.getByRole("button", { name: "Review setup" }).click();
+  await expect(page.getByText("Blocked", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("View status: Comparison")).toContainText("Comparison blocked");
+  await expect(page.locator(".builder-footer").getByText("Comparison blocked", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Checkpoint unavailable" })).toBeDisabled();
+
+  const directRunResponse = await fetch(new URL("api/experiment/runs", blockedExperimentStudio.url), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ experimentId: "exp_browser_blocked" }),
+  });
+  const directRun = { status: directRunResponse.status, payload: await directRunResponse.json() };
+  expect(directRun.status).toBe(409);
+  expect(directRun.payload.error).toBeTruthy();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  expect(browserErrors).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("blocked-qoder-compare-narrow.png"), fullPage: true });
 });
 
 test("compares a focused ACP pair across roles, views, filters, and evidence", async ({ page }, testInfo) => {

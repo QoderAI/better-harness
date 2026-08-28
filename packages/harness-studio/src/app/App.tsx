@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { ArrowRight } from "@phosphor-icons/react/ArrowRight";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { GitBranch } from "@phosphor-icons/react/GitBranch";
@@ -58,6 +58,7 @@ const EMPTY_CONFIG: StudioConfig = {
   artifactsEnabled: false,
   evidenceEnabled: false,
   experimentEnabled: false,
+  experimentRunnable: false,
   gitEnabled: false,
   harnessMode: "none",
   historyEnabled: false,
@@ -345,25 +346,29 @@ export function App(): React.JSX.Element {
     return <main className="studio-loading" role="alert"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><strong>Cannot load Studio configuration.</strong><p>{configFailure}</p><button className="primary" type="button" onClick={() => { setConfig(undefined); setConfigFailure(null); setBootstrapRevision((revision) => revision + 1); }}>Retry</button></main>;
   }
 
-  const destinations = studioDestinations(config);
+  const availableCompareSurfaces = compareSurfaces(config);
+  const effectiveCompareSurface = availableCompareSurfaces.includes(compareSurface)
+    ? compareSurface
+    : availableCompareSurfaces[0] ?? compareSurface;
+  const destinations = studioDestinations(config, effectiveCompareSurface);
   const current = destinations.find((destination) => destination.id === area) ?? destinations[0]!;
   const compareNavigation = (
     <SurfaceNavigation
       label="Compare surfaces"
-      items={compareSurfaces(config).map((id) => ({
+      items={availableCompareSurfaces.map((id) => ({
         id,
         label: id === "sessions" ? "Sessions" : id === "bench" ? "Bench" : "Evidence results",
       }))}
-      active={compareSurface}
+      active={effectiveCompareSurface}
       onSelect={setCompareSurface}
     />
   );
-  const contextNavigation = area === "compare" && compareSurfaces(config).length > 1
+  const contextNavigation = area === "compare" && availableCompareSurfaces.length > 1
     ? compareNavigation
     : null;
   const activeProject = projects.find((project) => project.id === activeProjectId);
-  const openProjectAction = config.workspaceDiscoveryEnabled && !config.workspaceConnected
-    ? { label: "Open Project", onClick: () => void openProject() }
+  const openProjectAction = config.workspaceDiscoveryEnabled
+    ? { label: config.workspaceConnected ? "Open Another Project" : "Open Project", onClick: () => void openProject() }
     : undefined;
   const projectDiscoveryDetail = config.workspaceDiscoveryEnabled
     ? "Choose a remembered Project or open another local directory."
@@ -401,13 +406,13 @@ export function App(): React.JSX.Element {
         {area === "overview" && <Overview key={`overview-${workspaceRevision}`} config={overviewConfig} onOpen={openArea} onOpenSession={(id) => { setSessionOpenId(id); openArea("sessions"); }} />}
         {area === "customizations" && (config.customizationAnalysisEnabled
           ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />
-          : <EmptyWorkspace eyebrow="Customization catalog" title="Customization analysis is unavailable" detail="This Studio launcher does not include the local customization collector. Opening a Project will not enable it." />)}
+          : <EmptyWorkspace eyebrow="Customization catalog" title="Customization analysis is unavailable" detail="This Studio launcher does not include the local customization collector. Opening a Project will not enable it." command="npx @qoder-ai/harness-studio" />)}
         {area === "inputs" && (config.workspaceWorkbenchEnabled ? <InputTraceView key={`inputs-${workspaceRevision}`} intentAnalysisEnabled={config.intentAnalysisEnabled} /> : <EmptyWorkspace eyebrow="User input trace" title={config.workspaceConnected ? "No retained input trace is available" : "Open a Project"} detail={config.workspaceConnected ? "This Project source does not include structured Inspector dialogue evidence." : projectDiscoveryDetail} action={openProjectAction} />)}
-        {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} config={config} initialSessionId={sessionOpenId} onOpenProject={openProjectAction?.onClick} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
+        {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} /> : <EmptyWorkspace eyebrow="Repository history" title={config.workspaceConnected ? "The selected Project is not a Git repository" : "Open a Project"} detail={config.workspaceConnected ? "Commit history is available only for a local Project backed by Git." : projectDiscoveryDetail} action={openProjectAction} />)}
-        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} onOpenProject={openProjectAction?.onClick} />}
-        {area === "debugger" && <DebuggerWorkspace config={config} onOpenProject={openProjectAction?.onClick} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
-        {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={compareSurface} navigation={null} sessionIds={sessionCompareIds} onOpenProject={openProjectAction?.onClick} />}
+        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} openProjectAction={openProjectAction} />}
+        {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
+        {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} />}
       </div>
     </section>
   </div>
@@ -555,7 +560,7 @@ interface SessionSummary {
 function SessionsWorkspace(props: {
   config: StudioConfig;
   initialSessionId?: string;
-  onOpenProject?: () => void;
+  openProjectAction?: { label: string; onClick: () => void };
   onCompare: (ids: [string, string]) => void;
 }): React.JSX.Element {
   const [sessions, setSessions] = useState<SessionSummary[]>();
@@ -565,6 +570,8 @@ function SessionsWorkspace(props: {
   const [detail, setDetail] = useState<DebuggerSession>();
   const [failure, setFailure] = useState<string>();
   const [detailFailure, setDetailFailure] = useState<string>();
+  const sessionRowRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [focusedSessionId, setFocusedSessionId] = useState<string>();
   const [surface, setSurface] = useState<"inspector" | "catalog">(
     props.config.workspaceWorkbenchEnabled ? "inspector" : "catalog",
   );
@@ -588,6 +595,13 @@ function SessionsWorkspace(props: {
     })();
     return () => { cancelled = true; };
   }, [props.config.workspaceConnected, props.initialSessionId]);
+
+  useEffect(() => {
+    if (sessions === undefined || sessions.length === 0) return;
+    setFocusedSessionId((current) => sessions.some((session) => session.id === current)
+      ? current
+      : sessions.find((session) => session.id === props.initialSessionId)?.id ?? selected ?? sessions[0]!.id);
+  }, [props.initialSessionId, selected, sessions]);
 
   async function openSession(id: string, cancelled: () => boolean = () => false): Promise<void> {
     try {
@@ -614,8 +628,24 @@ function SessionsWorkspace(props: {
     });
   }
 
+  function moveSessionFocus(event: ReactKeyboardEvent<HTMLButtonElement>, id: string): void {
+    if (sessions === undefined || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const index = Math.max(0, sessions.findIndex((session) => session.id === id));
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? sessions.length - 1
+        : event.key === "ArrowDown"
+          ? (index + 1) % sessions.length
+          : (index - 1 + sessions.length) % sessions.length;
+    const nextId = sessions[nextIndex]!.id;
+    setFocusedSessionId(nextId);
+    sessionRowRefs.current.get(nextId)?.focus();
+  }
+
   if (!props.config.workspaceConnected) {
-    return <EmptyWorkspace eyebrow="Project Sessions" title="Open a Project" detail={props.config.workspaceDiscoveryEnabled ? "Choose a remembered Project or open another local directory." : "This Studio launcher does not provide Project discovery."} action={props.onOpenProject === undefined ? undefined : { label: "Open Project", onClick: props.onOpenProject }} />;
+    return <EmptyWorkspace eyebrow="Project Sessions" title="Open a Project" detail={props.config.workspaceDiscoveryEnabled ? "Choose a remembered Project or open another local directory." : "This Studio launcher does not provide Project discovery."} action={props.openProjectAction} />;
   }
   if (failure !== undefined) {
     return <EmptyWorkspace eyebrow="Project Sessions" title="Session discovery failed" detail={failure} />;
@@ -628,8 +658,8 @@ function SessionsWorkspace(props: {
       <header><div><small>Project evidence</small><h2>Sessions</h2></div><span>{sessions.length}</span></header>
       {omittedCount > 0 && <p className="session-omissions">{omittedCount} unsupported or malformed file{omittedCount === 1 ? "" : "s"} omitted.</p>}
       <ul className="session-catalog-rows">{sessions.map((session) => <li key={session.id}>
-        <label title="Select for comparison"><input type="checkbox" checked={compareIds.has(session.id)} disabled={!compareIds.has(session.id) && compareIds.size >= 2} onChange={() => toggleCompare(session.id)} /></label>
-        <button type="button" className={selected === session.id ? "selected" : undefined} onClick={() => void openSession(session.id)}><small>{session.provider ?? "Local agent"} · {formatSessionTime(session.savedAt)}</small><strong>{session.prompt}</strong><small>{session.status} · {session.toolCallCount} calls</small></button>
+        <label title={`Select ${session.prompt} for comparison`}><input type="checkbox" aria-label={`Select ${session.prompt} from ${session.provider ?? "Local agent"} at ${formatSessionTime(session.savedAt)} for comparison`} checked={compareIds.has(session.id)} disabled={!compareIds.has(session.id) && compareIds.size >= 2} onChange={() => toggleCompare(session.id)} /></label>
+        <button ref={(node) => { if (node) sessionRowRefs.current.set(session.id, node); else sessionRowRefs.current.delete(session.id); }} type="button" tabIndex={focusedSessionId === session.id ? 0 : -1} className={selected === session.id ? "selected" : undefined} onFocus={() => setFocusedSessionId(session.id)} onKeyDown={(event) => moveSessionFocus(event, session.id)} onClick={() => { setFocusedSessionId(session.id); void openSession(session.id); }}><small>{session.provider ?? "Local agent"} · {formatSessionTime(session.savedAt)}</small><strong>{session.prompt}</strong><small>{session.status} · {session.toolCallCount} calls</small></button>
       </li>)}</ul>
       <footer><button type="button" className="primary" disabled={pair.length !== 2} onClick={() => props.onCompare(pair as [string, string])}>Compare {pair.length}/2</button></footer>
     </aside>
@@ -732,12 +762,12 @@ function formatSessionTime(value: string): string {
 }
 
 
-function DebuggerWorkspace(props: { config: StudioConfig; onOpenProject?: () => void; project?: { id: string; label: string; revision: number } }): React.JSX.Element {
+function DebuggerWorkspace(props: { config: StudioConfig; openProjectAction?: { label: string; onClick: () => void }; project?: { id: string; label: string; revision: number } }): React.JSX.Element {
   if (!props.config.aguiEnabled) {
     return <EmptyWorkspace eyebrow="Live runs" title="Load a harness for live runs" detail="The Debugger drives a live harness run over the embedded AG-UI endpoint and saves finished runs for replay." command="--harness ./my-agent.harness" />;
   }
   if (props.config.harnessMode === "workspace-default" && !props.config.projectExecutionEnabled) {
-    return <EmptyWorkspace eyebrow="Project-scoped live runs" title={props.project === undefined ? "Open a Project for live runs" : "This Project is read-only evidence"} detail={props.project === undefined ? (props.config.workspaceDiscoveryEnabled ? "Open a local Project before starting the default harness." : "This Studio launcher does not provide Project discovery.") : "Imported retained-run folders can be inspected and compared, but they do not provide a local execution root for the default harness."} action={props.onOpenProject === undefined ? undefined : { label: "Open Project", onClick: props.onOpenProject }} />;
+    return <EmptyWorkspace eyebrow="Project-scoped live runs" title={props.project === undefined ? "Open a Project for live runs" : "This Project is read-only evidence"} detail={props.project === undefined ? (props.config.workspaceDiscoveryEnabled ? "Open a local Project before starting the default harness." : "This Studio launcher does not provide Project discovery.") : "Imported retained-run folders can be inspected and compared, but they do not provide a local execution root for the default harness."} action={props.openProjectAction} />;
   }
   return <div className="debugger-mode"><RunView aguiEndpoint="agui" acpEndpoint={props.config.acpEnabled ? "/agui/acp" : undefined} acpAgentLabel={props.config.acpAgentLabel} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? "Project default · Qoder" : "Live Trial"} project={props.project} /></div>;
 }
@@ -747,17 +777,17 @@ function CompareWorkspace(props: {
   surface: StudioCompareSurface;
   navigation: ReactNode;
   sessionIds?: [string, string];
-  onOpenProject?: () => void;
+  openProjectAction?: { label: string; onClick: () => void };
 }): React.JSX.Element {
   const available = compareSurfaces(props.config);
   if (available.length === 0) {
-    return <EmptyWorkspace eyebrow="Session comparison" title={props.config.workspaceConnected ? "Choose a Project with at least two Sessions" : "Open a Project"} detail={props.config.workspaceConnected ? "The selected Project needs two discovered Sessions before observational comparison is available." : props.config.workspaceDiscoveryEnabled ? "Open a local Project. Studio will discover its matching agent Sessions without startup parameters." : "This Studio launcher does not provide Project discovery."} action={props.onOpenProject === undefined ? undefined : { label: "Open Project", onClick: props.onOpenProject }} />;
+    return <EmptyWorkspace eyebrow="Session comparison" title={props.config.workspaceConnected ? "Choose a Project with at least two Sessions" : "Open a Project"} detail={props.config.workspaceConnected ? "The selected Project needs two discovered Sessions before observational comparison is available." : props.config.workspaceDiscoveryEnabled ? "Open a local Project. Studio will discover its matching agent Sessions without startup parameters." : "This Studio launcher does not provide Project discovery."} action={props.openProjectAction} />;
   }
   if (props.surface === "sessions" && props.config.sessionCount >= 2) {
     return <SessionCompareView navigation={props.navigation} initialIds={props.sessionIds} />;
   }
   if (props.surface === "bench" && props.config.experimentEnabled) {
-    return <main className="experiment-mode"><ExperimentView navigation={props.navigation} /></main>;
+    return <main className="experiment-mode"><ExperimentView historyEnabled={props.config.historyEnabled} navigation={props.navigation} /></main>;
   }
   if (props.surface === "results" && props.config.evidenceEnabled) {
     return <main className="evidence-results"><header><div><small>Frozen comparison</small><h1>Evidence results</h1></div>{props.navigation}</header><CompareView /></main>;
@@ -834,6 +864,7 @@ function SessionCompareView(props: { navigation: ReactNode; initialIds?: [string
       <p className="session-compare-boundary"><strong>No winner inferred.</strong> {comparison.boundary}</p>
       <div className="session-compare-heads"><article><small>Left</small><h2>{comparison.left.prompt}</h2><span className={`run-badge status-${comparison.left.status}`}>{comparison.left.status}</span></article><article><small>Right</small><h2>{comparison.right.prompt}</h2><span className={`run-badge status-${comparison.right.status}`}>{comparison.right.status}</span></article></div>
       <div className="session-compare-table" role="table" aria-label="Observed Session differences">
+        <div className="session-compare-columns" role="row"><strong role="columnheader">Metric</strong><strong role="columnheader">Left</strong><strong role="columnheader">Right</strong></div>
         {(["retainedEventCount", "toolCallCount", "messageCount", "warningCount"] as const).map((metric) => <div role="row" key={metric}><strong role="rowheader">{sessionMetricLabel(metric)}</strong><span role="cell">{comparison.left[metric]}</span><span role="cell">{comparison.right[metric]}</span></div>)}
       </div>
       <div className="session-tool-sequences"><section><header>Left tool sequence</header><ol>{comparison.left.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section><section><header>Right tool sequence</header><ol>{comparison.right.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section></div>

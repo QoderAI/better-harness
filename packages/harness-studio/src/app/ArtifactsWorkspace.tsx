@@ -51,7 +51,7 @@ interface ArtifactDayGroup {
   sessions: ArtifactSessionGroup[];
 }
 
-export function ArtifactsWorkspace(props: { config: StudioConfig; onOpenProject?: () => void }): React.JSX.Element {
+export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAction?: { label: string; onClick: () => void } }): React.JSX.Element {
   const [catalog, setCatalog] = useState<StudioArtifactCatalogResponse>();
   const [failure, setFailure] = useState<string>();
   const [selected, setSelected] = useState<string>();
@@ -129,12 +129,12 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; onOpenProject?
   if (!props.config.artifactsEnabled) {
     return <ArtifactEmpty title={props.config.workspaceConnected ? "No Project artifacts are available" : "Open a Project"} detail={props.config.workspaceConnected
       ? "Studio found no current files backed by retained change or delivery evidence."
-      : props.config.workspaceDiscoveryEnabled ? "Open a local Project once; Artifacts, Sessions, and Commits will share that Project context." : "This Studio launcher does not provide Project discovery."} action={props.onOpenProject} />;
+      : props.config.workspaceDiscoveryEnabled ? "Open a local Project once; Artifacts, Sessions, and Commits will share that Project context." : "This Studio launcher does not provide Project discovery."} action={props.openProjectAction} />;
   }
   if (failure !== undefined) return <ArtifactEmpty title="Cannot read Project artifacts" detail={failure} />;
   if (catalog === undefined) return <p className="artifact-status" role="status">Indexing Project artifacts…</p>;
   if (catalog.artifacts.length === 0) {
-    return <ArtifactEmpty title="No changed artifacts in this Project" detail="No current regular files are referenced by retained change or delivery evidence. Read-only and missing paths are not promoted into the Artifact catalog." />;
+    return <ArtifactEmpty title="No changed artifacts in this Project" detail="No current regular files are referenced by retained change or delivery evidence. Read-only and missing paths are not promoted into the Artifact catalog." action={props.openProjectAction} />;
   }
 
   const active = catalog.artifacts.find((artifact) => artifact.id === selected);
@@ -311,8 +311,8 @@ function ArtifactRow(props: { artifact: ArtifactDescriptor; selected: boolean; o
   </button>;
 }
 
-function ArtifactEmpty(props: { title: string; detail: string; action?: () => void }): React.JSX.Element {
-  return <main className="artifact-empty"><span><FolderOpen aria-hidden="true" size={22} /></span><small>Workspace artifacts</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" onClick={props.action}>Open Project</button>}</main>;
+function ArtifactEmpty(props: { title: string; detail: string; action?: { label: string; onClick: () => void } }): React.JSX.Element {
+  return <main className="artifact-empty"><span><FolderOpen aria-hidden="true" size={22} /></span><small>Workspace artifacts</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" onClick={props.action.onClick}>{props.action.label}</button>}</main>;
 }
 
 function artifactDays(navigation: WorkspaceArtifactNavigation | undefined): ArtifactDayGroup[] {

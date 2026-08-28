@@ -19,6 +19,7 @@ export interface StudioConfig {
   artifactCount?: number;
   evidenceEnabled: boolean;
   experimentEnabled: boolean;
+  experimentRunnable: boolean;
   gitEnabled: boolean;
   harnessMode: "none" | "configured" | "workspace-default";
   historyEnabled: boolean;
@@ -70,9 +71,14 @@ export interface StudioOverviewModel {
   facts: readonly StudioOverviewFact[];
 }
 
-export function studioDestinations(config: StudioConfig): readonly StudioDestination[] {
+export function studioDestinations(config: StudioConfig, activeCompareSurface?: StudioCompareSurface): readonly StudioDestination[] {
   const compareAvailable = config.experimentEnabled || config.evidenceEnabled;
   const debuggerReady = isDebuggerReady(config);
+  const artifactsReady = hasUsableArtifacts(config);
+  const availableCompareSurfaces = compareSurfaces(config);
+  const effectiveCompareSurface = activeCompareSurface !== undefined && availableCompareSurfaces.includes(activeCompareSurface)
+    ? activeCompareSurface
+    : availableCompareSurfaces[0];
   return [
     { id: "overview", label: "Overview", group: "Control", availability: "ready", status: "Control plane" },
     {
@@ -115,8 +121,8 @@ export function studioDestinations(config: StudioConfig): readonly StudioDestina
       id: "artifacts",
       label: "Artifacts",
       group: "Observe",
-      availability: config.artifactsEnabled ? "ready" : config.workspaceConnected ? "partial" : "foundation",
-      status: config.artifactsEnabled
+      availability: artifactsReady ? "ready" : config.workspaceConnected ? "partial" : "foundation",
+      status: artifactsReady
         ? config.artifactCount === undefined
           ? "Compatibility catalog"
           : `${config.artifactCount} artifact${config.artifactCount === 1 ? "" : "s"}`
@@ -137,8 +143,16 @@ export function studioDestinations(config: StudioConfig): readonly StudioDestina
       id: "compare",
       label: "Compare",
       group: "Validate",
-      availability: compareAvailable || config.sessionCount >= 2 ? "ready" : config.workspaceConnected ? "partial" : "foundation",
-      status: config.sessionCount >= 2 ? "Session compare" : config.experimentEnabled ? "Harness Bench" : config.evidenceEnabled ? "Frozen results" : config.workspaceConnected ? "Choose 2 sessions" : "Project required",
+      availability: effectiveCompareSurface === "bench" && !config.experimentRunnable
+        ? "partial"
+        : compareAvailable || config.sessionCount >= 2 ? "ready" : config.workspaceConnected ? "partial" : "foundation",
+      status: effectiveCompareSurface === "bench"
+        ? config.experimentRunnable ? "Harness Bench" : "Comparison blocked"
+        : effectiveCompareSurface === "results"
+          ? "Frozen results"
+          : effectiveCompareSurface === "sessions"
+            ? "Session compare"
+            : config.workspaceConnected ? "Choose 2 sessions" : "Project required",
     },
   ];
 }
@@ -156,6 +170,7 @@ export function inspectorSurfaces(config: StudioConfig): readonly StudioInspecto
 }
 
 export function studioOverview(config: StudioConfig): StudioOverviewModel {
+  const artifactsReady = hasUsableArtifacts(config);
   if (config.workspaceConnected) {
     return {
       mode: "workspace",
@@ -168,7 +183,7 @@ export function studioOverview(config: StudioConfig): StudioOverviewModel {
         ...(config.workspaceWorkbenchEnabled ? [{ area: "inputs" as const, label: "Review Inputs" }] : []),
         ...(config.sessionCount >= 2 || config.experimentEnabled || config.evidenceEnabled ? [{ area: "compare" as const, label: "Open Compare" }] : []),
         ...(isDebuggerReady(config) ? [{ area: "debugger" as const, label: "Open Debugger" }] : []),
-        ...(config.artifactsEnabled ? [{ area: "artifacts" as const, label: "Open Artifacts" }] : []),
+        ...(artifactsReady ? [{ area: "artifacts" as const, label: "Open Artifacts" }] : []),
       ],
       facts: [
         {
@@ -186,8 +201,8 @@ export function studioOverview(config: StudioConfig): StudioOverviewModel {
         {
           id: "artifacts",
           label: "Artifacts",
-          value: config.artifactsEnabled && config.artifactCount !== undefined ? String(config.artifactCount) : "—",
-          detail: config.artifactsEnabled ? "Retained outputs" : "No observed outputs",
+          value: config.artifactCount !== undefined ? String(config.artifactCount) : "—",
+          detail: artifactsReady ? "Retained outputs" : "No observed outputs",
         },
         {
           id: "repository",
@@ -210,10 +225,15 @@ export function studioOverview(config: StudioConfig): StudioOverviewModel {
   }
 
   const configuredFacts: StudioOverviewFact[] = [
-    ...(config.experimentEnabled ? [{ id: "experiment", label: "Harness Bench", value: "Ready", detail: "Experiment manifest loaded" }] : []),
+    ...(config.experimentEnabled ? [{
+      id: "experiment",
+      label: "Harness Bench",
+      value: config.experimentRunnable ? "Ready" : "Blocked",
+      detail: config.experimentRunnable ? "Runnable experiment loaded" : "Checkpoint source unavailable",
+    }] : []),
     ...(config.evidenceEnabled ? [{ id: "evidence", label: "Evidence results", value: "Ready", detail: "Frozen verdict loaded" }] : []),
     ...(isDebuggerReady(config) ? [{ id: "debugger", label: "Debugger", value: "Ready", detail: config.harnessMode === "workspace-default" ? "Project default harness" : "Harness runtime loaded" }] : []),
-    ...(config.artifactsEnabled ? [{ id: "artifacts", label: "Artifacts", value: config.artifactCount === undefined ? "Ready" : String(config.artifactCount), detail: config.artifactCount === undefined ? "Catalog loaded" : "Retained outputs" }] : []),
+    ...(artifactsReady ? [{ id: "artifacts", label: "Artifacts", value: config.artifactCount === undefined ? "Ready" : String(config.artifactCount), detail: config.artifactCount === undefined ? "Catalog loaded" : "Retained outputs" }] : []),
     ...(config.inspectorEnabled ? [{ id: "inspector", label: "Inspector", value: "Loaded", detail: "Read-only evidence source" }] : []),
     ...(config.customizationAnalysisEnabled ? [{ id: "customizations", label: "Customizations", value: config.customizationAnalyzed ? String(config.customizationDefinitionCount) : "Available", detail: config.customizationAnalyzed ? "Definitions discovered" : "Local collector ready" }] : []),
   ];
@@ -232,7 +252,7 @@ export function studioOverview(config: StudioConfig): StudioOverviewModel {
     ? { area: "compare", label: "Open Compare" }
     : isDebuggerReady(config)
       ? { area: "debugger", label: "Open Debugger" }
-      : config.artifactsEnabled
+      : artifactsReady
         ? { area: "artifacts", label: "Open Artifacts" }
         : config.customizationAnalysisEnabled
           ? { area: "customizations", label: config.customizationAnalyzed ? "Open Customizations" : "Analyze Customizations" }
@@ -241,12 +261,12 @@ export function studioOverview(config: StudioConfig): StudioOverviewModel {
   return {
     mode: "configured",
     title: config.experimentEnabled
-      ? "Comparison setup is ready."
+      ? config.experimentRunnable ? "Comparison setup is ready." : "Comparison setup needs attention."
       : config.evidenceEnabled
         ? "Evidence results are ready."
         : isDebuggerReady(config)
           ? "Live debugging is ready."
-          : config.artifactsEnabled
+          : artifactsReady
             ? "Artifact evidence is ready."
             : config.customizationAnalysisEnabled
               ? "Customization analysis is available."
@@ -256,7 +276,7 @@ export function studioOverview(config: StudioConfig): StudioOverviewModel {
     secondaryActions: [
       ...(config.experimentEnabled || config.evidenceEnabled ? [{ area: "compare" as const, label: "Open Compare" }] : []),
       ...(isDebuggerReady(config) ? [{ area: "debugger" as const, label: "Open Debugger" }] : []),
-      ...(config.artifactsEnabled ? [{ area: "artifacts" as const, label: "Open Artifacts" }] : []),
+      ...(artifactsReady ? [{ area: "artifacts" as const, label: "Open Artifacts" }] : []),
       ...(config.customizationAnalysisEnabled ? [{ area: "customizations" as const, label: config.customizationAnalyzed ? "Open Customizations" : "Analyze Customizations" }] : []),
     ].filter((action) => action.area !== primaryAction?.area),
     facts: configuredFacts,
@@ -267,12 +287,16 @@ function isDebuggerReady(config: StudioConfig): boolean {
   return config.aguiEnabled && (config.harnessMode !== "workspace-default" || config.projectExecutionEnabled);
 }
 
+function hasUsableArtifacts(config: StudioConfig): boolean {
+  return config.artifactsEnabled && (config.artifactCount === undefined || config.artifactCount > 0);
+}
+
 export function studioProjectGateRequired(config: StudioConfig, hasConfiguredSources: boolean): boolean {
   const independentContext = hasConfiguredSources
     || config.inspectorEnabled
     || config.evidenceEnabled
     || config.experimentEnabled
-    || config.artifactsEnabled
+    || hasUsableArtifacts(config)
     || config.harnessMode === "configured";
   return config.workspaceDiscoveryEnabled
     && !config.workspaceConnected

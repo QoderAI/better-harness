@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useRovingTablist } from "../roving-tablist.js";
 import type { ExperimentToolCall } from "../../contracts/experiment-stream-contract.js";
+import { isExperimentRunnable } from "../../contracts/experiment-setup.js";
 import {
   activityPhaseSequence,
   alignToolCalls,
@@ -97,7 +98,18 @@ export function ExperimentWorkbench(props: {
   const freshDefinitions = props.preview.manifest.lanes.filter((lane) => lane.origin === "execute");
   const harnesses = [...new Set(freshDefinitions.map((lane) => lane.harnessId ?? "unknown"))].join(" · ");
   const runtimes = [...new Set(freshDefinitions.map((lane) => laneIdentityLabel(lane)))].join(" ↔ ");
-  const selectedAgents = [props.agentIds?.[props.baselineId], props.agentIds?.[props.candidateId]].filter(Boolean).join(" ↔ ");
+  const agentLabels = new Map((props.preview.acpAgents?.agents ?? []).map((agent) => [agent.id, agent.label]));
+  const selectedAgents = [props.agentIds?.[props.baselineId], props.agentIds?.[props.candidateId]]
+    .filter((id): id is string => typeof id === "string" && id !== "")
+    .map((id) => agentLabels.get(id) ?? id)
+    .join(" ↔ ");
+  const acpHosted = props.preview.manifest.runtime?.host === "acp";
+  const executionIdentity = acpHosted ? selectedAgents || "ACP Agent unavailable" : `Qoder · ${runtimes || "runtime unavailable"}`;
+  const runnable = isExperimentRunnable(props.preview.setup);
+  const runState = props.running ? "Streaming" : runnable ? "Ready" : "Blocked";
+  const runDetail = runnable
+    ? `Fresh ${acpHosted ? "ACP " : "Qoder "}runs execute from the shared checkpoint; the recorded run remains Reference evidence.`
+    : props.preview.setup.checkpointSource.limitation ?? "Fresh runs are blocked because the checkpoint source is unavailable.";
   const compareTablist = useRovingTablist({ ids: COMPARE_VIEWS.map((view) => view.id), active: props.activeView, onSelect: props.onActiveView, panelId: "compare-view-panel" });
 
   return <section className={`experiment-shell${props.railCollapsed ? " rail-collapsed" : ""}`}>
@@ -105,7 +117,7 @@ export function ExperimentWorkbench(props: {
       <div className="notebook-brand"><strong>Harness Bench</strong><span>Experiment Notebook</span></div>
       <div className="notebook-navigation">{props.navigation}</div>
       <div className="notebook-document"><strong>Comparison workbench</strong><span>{treatment.value}</span></div>
-      <div className="notebook-bar-actions"><span className={`notebook-save-state${props.running ? " running" : ""}`}>{props.running ? "Running" : "Saved"}</span><button type="button" onClick={props.onSimple}>Simple compare</button><button type="button" onClick={props.onSetup}>Setup</button><button className="rail-toggle" type="button" aria-label={props.railCollapsed ? "Show checkpoints" : "Hide checkpoints"} aria-expanded={!props.railCollapsed} onClick={() => props.onRailCollapsed(!props.railCollapsed)}>{props.railCollapsed ? "Checkpoints" : "Hide rail"}</button></div>
+      <div className="notebook-bar-actions"><span className={`notebook-save-state${props.running ? " running" : ""}`}>{props.running ? "Running" : runnable ? "Saved" : "Blocked"}</span><button type="button" onClick={props.onSimple}>Simple compare</button><button type="button" onClick={props.onSetup}>Setup</button><button className="rail-toggle" type="button" aria-label={props.railCollapsed ? "Show checkpoints" : "Hide checkpoints"} aria-expanded={!props.railCollapsed} onClick={() => props.onRailCollapsed(!props.railCollapsed)}>{props.railCollapsed ? "Checkpoints" : "Hide rail"}</button></div>
     </header>
 
     <div className="experiment-workspace">
@@ -115,7 +127,7 @@ export function ExperimentWorkbench(props: {
           <div className="notebook-context-grid">
             <article className="notebook-request"><small>Request</small><p>{compactPrompt(props.preview.setup.request.prompt)}</p><span>{requestProvenanceLabel(props.preview.setup.request.provenance)}</span></article>
             <article><small>Starting checkpoint</small><code title={props.preview.checkpoint.digest}>{shortDigest(props.preview.checkpoint.digest)}</code><span>{props.preview.setup.checkpointSource.revision.value}</span></article>
-            <article><small>Harness</small><strong>{harnesses || "unverified"}</strong><span>{selectedAgents || runtimes || "runtime unavailable"}</span></article>
+            <article><small>Harness</small><strong>{harnesses || "unverified"}</strong><span>{executionIdentity}</span></article>
             <article><small>{treatment.label}</small><strong>{treatment.value}</strong><span>{treatment.controlled ? "Single setting changed" : "Descriptive comparison"}</span></article>
           </div>
         </section>
@@ -123,7 +135,7 @@ export function ExperimentWorkbench(props: {
         <section className="notebook-cell notebook-run-cell" aria-labelledby="run-cell-title">
           <div className="notebook-cell-marker"><span>In [1]</span></div>
           <div className="notebook-cell-card">
-            <header className="compare-titlebar"><div><h2 id="run-cell-title">Run comparison</h2><p>Fresh {props.preview.manifest.runtime?.host === "acp" ? "ACP " : ""}runs execute from the shared checkpoint; the recorded run remains Reference evidence.</p></div><div className="compare-actions"><span className={`live-state${props.running ? " running" : ""}`}>{props.running ? "Streaming" : "Ready"}</span>{props.running ? <button className="secondary" onClick={props.onCancel}>Cancel comparison</button> : <button onClick={props.onRun}>Run comparison</button>}</div></header>
+            <header className="compare-titlebar"><div><h2 id="run-cell-title">Run comparison</h2><p>{runDetail}</p></div><div className="compare-actions"><span className={`live-state${props.running ? " running" : ""}`}>{runState}</span>{props.running ? <button className="secondary" onClick={props.onCancel}>Cancel comparison</button> : <button disabled={!runnable} onClick={props.onRun}>Run comparison</button>}</div></header>
             <section className="run-prompt"><small>Prompt</small><p>{compactPrompt(props.preview.setup.request.prompt)}</p></section>
             {pendingPermissions.length > 0 && <section className="acp-permission-queue" aria-live="polite" aria-label="ACP permission requests"><header><strong>ACP permissions</strong><span>{pendingPermissions.length} waiting</span></header>{pendingPermissions.map(({ laneId, permission }) => <article key={`${permission.runId}:${permission.requestId}`}><div><small>{laneId}</small><strong>{permission.title}</strong><code>{permission.toolCallId}</code></div><div>{permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => props.onPermission(laneId, permission.runId, permission.requestId, option.optionId)}>{option.name}</button>)}</div></article>)}</section>}
             <details className="run-process-summary"><summary><span>Process</span><em>{totalCalls} canonical tool calls across {props.preview.manifest.lanes.length} runs</em></summary><ol>{props.preview.manifest.lanes.map((definition) => {
@@ -155,7 +167,7 @@ export function ExperimentWorkbench(props: {
             </div>
           </div>
         </section>
-        <footer className="notebook-footer" aria-label="Notebook actions"><button type="button" onClick={props.onSetup}>Edit setup</button><button type="button" onClick={props.onRun} disabled={props.running}>Run again</button><button type="button" onClick={() => props.onActiveView("summary")}>Open summary</button></footer>
+        <footer className="notebook-footer" aria-label="Notebook actions"><button type="button" onClick={props.onSetup}>Edit setup</button><button type="button" onClick={props.onRun} disabled={props.running || !runnable}>Run again</button><button type="button" onClick={() => props.onActiveView("summary")}>Open summary</button></footer>
       </section></div>
     </div>
 
@@ -171,7 +183,7 @@ export function ExperimentWorkbench(props: {
         })}</ol>
         <section className="checkpoint-detail"><header><strong>{props.candidateId}</strong><span>Candidate</span></header><dl><div><dt>Harness</dt><dd>{candidateDefinition?.harnessId ?? "unverified"}</dd></div><div><dt>Runtime</dt><dd>{candidateDefinition ? laneIdentityLabel(candidateDefinition) : "unavailable"}</dd></div><div><dt>Status</dt><dd>{candidate.status}</dd></div><div><dt>Evidence</dt><dd>{candidate.calls.length} calls</dd></div></dl><footer><button type="button" onClick={() => props.onActiveView("evidence")}>View evidence</button><button type="button" onClick={() => props.onActiveView("trace")}>Inspect trace</button></footer></section>
       </div>
-      <footer className="rail-footer"><div><strong>{props.running ? "Comparison running" : `${totalCalls} tool calls`}</strong><span>{props.experimentId ? shortDigest(props.experimentId) : "ready"}</span></div><button className="secondary" onClick={props.onSetup}>Setup</button></footer>
+      <footer className="rail-footer"><div><strong>{props.running ? "Comparison running" : runnable ? `${totalCalls} tool calls` : "Comparison blocked"}</strong><span>{props.experimentId ? shortDigest(props.experimentId) : runnable ? "ready" : "blocked"}</span></div><button className="secondary" onClick={props.onSetup}>Setup</button></footer>
     </aside>
   </section>;
 }

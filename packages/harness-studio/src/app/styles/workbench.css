@@ -1919,6 +1919,7 @@
 .session-compare-table > div > * { display: flex; align-items: center; padding: var(--space-sm) var(--space-md); border-left: 1px solid var(--color-border); }
 .session-compare-table > div > :first-child { border-left: 0; }
 .session-compare-table > div > :nth-child(n + 2) { justify-content: flex-end; background: var(--color-surface-subtle); font-variant-numeric: tabular-nums; }
+.session-compare-table > .session-compare-columns > * { color: var(--color-text-muted); background: var(--color-titlebar); font-size: var(--type-meta-size); font-weight: var(--weight-medium); }
 .session-tool-sequences { display: grid; grid-template-columns: 1fr 1fr; }
 .session-tool-sequences section { min-width: 0; }
 .session-tool-sequences section + section { border-left: 1px solid var(--color-border); }
@@ -2136,6 +2137,8 @@
   .session-compare-picker,
   .session-compare-heads,
   .session-tool-sequences { grid-template-columns: minmax(0, 1fr); }
+  .session-compare-table > div { min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(56px, 72px) minmax(56px, 72px); }
+  .session-compare-table > div > * { min-width: 0; padding: var(--space-sm); }
   .session-compare-picker label + label,
   .session-compare-heads article + article,
   .session-tool-sequences section + section { border-left: 0; border-top: 1px solid var(--color-border); }

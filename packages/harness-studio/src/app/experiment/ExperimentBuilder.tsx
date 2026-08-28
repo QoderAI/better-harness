@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   canLockCompare,
+  isExperimentRunnable,
   type CheckpointHistoryPreview,
   type ExperimentSetupPreview,
   type ResolvedHistoryDraftPreview,
@@ -40,7 +41,8 @@ export function ExperimentBuilder(props: {
   const selectedHistoryLocked = props.preview.lock !== undefined
     && historyRequiresDraft
     && props.preview.lock.historyId === props.selectedHistoryId;
-  const canOpenWorkbench = selectedHistoryLocked || loadedDefinition;
+  const runnable = isExperimentRunnable(setup);
+  const canOpenWorkbench = runnable && (selectedHistoryLocked || loadedDefinition);
   const facts = [source.resource, source.revision, ...(source.history ? [source.history] : []), source.materialization];
   const executeRuns = props.preview.manifest.lanes.filter((lane) => lane.origin === "execute");
   const treatment = deriveTreatmentSummary(props.preview);
@@ -56,10 +58,12 @@ export function ExperimentBuilder(props: {
   const actionEnabled = (lockable || canOpenWorkbench) && !busy;
   const actionLabel = props.historyAction.phase === "locking"
     ? "Locking…"
+    : !runnable
+      ? "Checkpoint unavailable"
     : canOpenWorkbench
       ? "Open workbench"
       : "Lock and compare";
-  const status = builderStatus(props.history, props.historyAction, lockable, canOpenWorkbench);
+  const status = builderStatus(props.history, props.historyAction, lockable, canOpenWorkbench, runnable, source.limitation);
 
   return <section className="builder-shell">
     <header className="builder-topbar">
@@ -161,11 +165,14 @@ function builderStatus(
   action: HistoryActionState,
   lockable: boolean,
   canOpenWorkbench: boolean,
+  runnable: boolean,
+  limitation?: string,
 ): { title: string; detail: string } {
   if (action.phase === "locking") return { title: "Locking comparison…", detail: "Writing the immutable request and checkpoint definition." };
   if (action.phase === "error") return { title: "Comparison not ready", detail: action.detail };
   if (history.phase === "loading") return { title: "Checking project history", detail: "The lock action will appear after history is ready." };
   if (history.phase === "error") return { title: "Project history unavailable", detail: history.detail };
+  if (!runnable) return { title: "Comparison blocked", detail: limitation ?? "The checkpoint source cannot create isolated fresh runs." };
   if (canOpenWorkbench) return { title: "Comparison ready", detail: "Isolated copies are created only when Run starts." };
   if (lockable) return { title: "Ready to compare", detail: "Lock the selected request and checkpoint before opening the workbench." };
   return { title: "Choose a valid request", detail: "Resolve a request with a valid checkpoint and at least one fresh run." };

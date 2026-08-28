@@ -1,4 +1,4 @@
-import { ResolvedHistoryDraftPreview, canLockCompare, countLaneMaterializations } from "../../contracts/experiment-setup.js";
+import { ResolvedHistoryDraftPreview, canLockCompare, countLaneMaterializations, isExperimentRunnable, type ExperimentSetupPreview } from "../../contracts/experiment-setup.js";
 import { canonicalToolEvents } from "../experiment/events.js";
 import { lockHistoryExperiment } from "../experiment/lock.js";
 import { ResolvedCheckpointHistory } from "../query/checkpoint-history.js";
@@ -36,9 +36,29 @@ export async function serveExperiment(
       lockReceipt: state.lockReceipt,
       observedIndexes: state.observedIndexes,
     });
-    respondJson(response, 200, { ...preview, acpAgents: publicAcpAgentProfiles(options) });
+    respondJson(response, 200, experimentPreviewResponse(preview, options));
   } catch (error) {
     respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+export async function isActiveExperimentRunnable(
+  options: HarnessStudioServerOptions,
+  state: HarnessStudioState,
+): Promise<boolean> {
+  const manifestPath = state.activeManifestPath;
+  if (manifestPath === undefined) return false;
+  try {
+    const preview = await buildExperimentPreview({
+      manifestPath,
+      trajectoryOverrides: state.trajectoryOverrides,
+      checkpointSourcePreview: state.lockReceipt === undefined ? options.checkpointSourcePreview : undefined,
+      lockReceipt: state.lockReceipt,
+      observedIndexes: state.observedIndexes,
+    });
+    return isExperimentRunnable(experimentSetupForReadiness(preview));
+  } catch {
+    return false;
   }
 }
 export async function serveCheckpointHistory(response: ServerResponse, state: HarnessStudioState): Promise<void> {
@@ -111,7 +131,7 @@ export async function lockCheckpointHistory(
     state.activeManifestPath = locked.manifestPath;
     state.trajectoryOverrides = undefined;
     state.lockReceipt = locked.receipt;
-    respondJson(response, 200, { ...preview, acpAgents: publicAcpAgentProfiles(options) });
+    respondJson(response, 200, experimentPreviewResponse(preview, options));
   } catch (error) {
     respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
   }
@@ -209,6 +229,25 @@ export async function streamExperiment(
     return;
   }
   const experimentHost = loadedManifest.value.runtime.host;
+  try {
+    const preview = await buildExperimentPreview({
+      manifestPath,
+      trajectoryOverrides: state.trajectoryOverrides,
+      checkpointSourcePreview: state.lockReceipt === undefined ? options.checkpointSourcePreview : undefined,
+      lockReceipt: state.lockReceipt,
+      observedIndexes: state.observedIndexes,
+    });
+    const setup = experimentSetupForReadiness(preview);
+    if (!isExperimentRunnable(setup)) {
+      respondJson(response, 409, {
+        error: setup.checkpointSource.limitation ?? "The checkpoint source cannot create isolated fresh runs.",
+      });
+      return;
+    }
+  } catch (error) {
+    respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+    return;
+  }
   let agentSelections: Map<string, StudioAcpAgentOptions> | undefined;
   let agentSelectionEvidence: Record<string, {
     agentId: string;
@@ -216,6 +255,10 @@ export async function streamExperiment(
     protocol: "acp-v1-stdio";
     modelPolicy: "lane" | "agent-default";
   }> | undefined;
+  if (experimentHost !== "acp" && body.agentIds !== undefined) {
+    respondJson(response, 400, { error: "agentIds is available only for ACP-hosted experiments." });
+    return;
+  }
   if (experimentHost === "acp") {
     try {
       const selected = selectExperimentAcpAgents(
@@ -286,6 +329,38 @@ export async function streamExperiment(
     experimentRuns.delete(experimentId);
     response.end();
   }
+}
+
+function experimentPreviewResponse(
+  preview: Record<string, unknown>,
+  options: HarnessStudioServerOptions,
+): Record<string, unknown> {
+  const manifest = preview.manifest;
+  const runtime = manifest !== null && typeof manifest === "object" ? (manifest as { runtime?: unknown }).runtime : undefined;
+  const host = runtime !== null && typeof runtime === "object" ? (runtime as { host?: unknown }).host : undefined;
+  return host === "acp"
+    ? { ...preview, acpAgents: publicAcpAgentProfiles(options) }
+    : preview;
+}
+
+function experimentSetupForReadiness(preview: Record<string, unknown>): ExperimentSetupPreview {
+  const setup = preview.setup;
+  const checkpointSource = setup !== null && typeof setup === "object"
+    ? (setup as { checkpointSource?: unknown }).checkpointSource
+    : undefined;
+  const materialization = checkpointSource !== null && typeof checkpointSource === "object"
+    ? (checkpointSource as { materialization?: unknown }).materialization
+    : undefined;
+  const status = checkpointSource !== null && typeof checkpointSource === "object"
+    ? (checkpointSource as { status?: unknown }).status
+    : undefined;
+  const count = materialization !== null && typeof materialization === "object"
+    ? (materialization as { count?: unknown }).count
+    : undefined;
+  if (!(["ready", "unavailable"] as unknown[]).includes(status) || !Number.isInteger(count) || Number(count) < 0) {
+    throw new Error("Experiment preview does not contain a valid checkpoint readiness contract.");
+  }
+  return setup as ExperimentSetupPreview;
 }
 
 export function selectExperimentAcpAgents(

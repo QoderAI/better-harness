@@ -50,6 +50,27 @@ source code. Unavailable capabilities must remain honest and actionable.
 - **AC-9:** The package README starts with an actionable Project-first command
   and accurately distinguishes packaged CLI behavior from repository
   development launchers.
+- **AC-10:** A comparison whose checkpoint source is unavailable is blocked by
+  one shared readiness predicate in Setup, Simple Compare, Advanced Workbench,
+  and the server execution route. No surface calls it Ready, enables entry or
+  Run, or claims that fresh runs share a valid checkpoint.
+- **AC-11:** A Qoder experiment never receives or renders an ACP Agent
+  selection. Simple and Advanced surfaces identify Qoder execution from the
+  manifest runtime, while ACP manifests retain their registered Agent chooser
+  and server-side selection validation.
+- **AC-12:** Session comparison exposes explicit Metric, Left, and Right column
+  headers. At 390x844 both values remain visible and associated with their lane
+  without document-level or table-level horizontal scrolling.
+- **AC-13:** Every Session comparison checkbox has a unique accessible name
+  containing the Session identity, and Up/Down/Home/End move one roving row
+  focus through the Session catalog.
+- **AC-14:** An exact zero Artifact count is unavailable evidence rather than a
+  ready catalog. Overview does not recommend the empty View, and Project-backed
+  evidence empty states offer the shell-owned command for opening another
+  Project when discovery is available.
+- **AC-15:** The Compare destination status follows the active Compare surface,
+  so an open Bench is labelled Harness Bench even when Session comparison is
+  also available.
 
 ## Non-goals
 
@@ -74,6 +95,14 @@ source code. Unavailable capabilities must remain honest and actionable.
    simplify live Debugger status copy and narrow layout priorities.
 6. Update the package README and verify the tarball contents, installed CLI,
    HTTP config, Project open flow, customization analysis, and browser layouts.
+7. Reuse the checkpoint readiness contract across all experiment surfaces and
+   reject direct execution when the server observes an unavailable source.
+8. Project runtime identity from the manifest host and expose ACP Agent catalogs
+   only for ACP-hosted experiments.
+9. Add semantic Session comparison headers, narrow columns, unique checkbox
+   names, and roving Session-row focus.
+10. Derive navigation and Overview actions from usable evidence counts and the
+    active Compare surface rather than only source presence.
 
 ## Test and Review Evidence
 
@@ -88,6 +117,13 @@ source code. Unavailable capabilities must remain honest and actionable.
 - **AC-7:** component/model and browser assertions for Ready, Running,
   Permission required, Finished, and Failed labels without claiming a pause.
 - **AC-9:** inspect the packed README and `npm pack --dry-run` file list.
+- **AC-10/AC-11:** focused contract and server tests plus Playwright against one
+  unavailable Qoder manifest and one ready ACP manifest. Assert disabled actions,
+  a 409 direct-run boundary, truthful Qoder labels, and an ACP-only catalog.
+- **AC-12/AC-13:** Playwright at 390x844 with explicit column-header assertions,
+  bounded cell rectangles, unique checkbox names, and arrow-key row focus.
+- **AC-14/AC-15:** pure shell-model tests for zero evidence, Overview actions,
+  Project recovery actions, and active Bench status.
 - Required commands:
   - `npm run build -w @qoder-ai/harness-studio`
   - `npm run typecheck -w @qoder-ai/harness-studio`
@@ -104,6 +140,11 @@ source code. Unavailable capabilities must remain honest and actionable.
 - Risk: denser narrow-screen changes can hide commands. Retain accessible names,
   one primary action, visible focus, and desktop labels while collapsing only
   secondary copy.
+- Risk: UI-only experiment gating can be bypassed by a direct request. Apply the
+  same readiness contract at the server route before allocating a run.
+- Risk: runtime identity can drift if it is inferred from an installed catalog.
+  Use the loaded manifest host as authority and treat Agent selection as an
+  ACP-only refinement.
 
 ### Implementation receipt
 
@@ -123,9 +164,23 @@ source code. Unavailable capabilities must remain honest and actionable.
 - **AC-9:** `npm pack --dry-run --ignore-scripts` included the package README,
   both bundled runtimes, and the Inspector runtime's HTML, CSS, and JavaScript
   assets. The package contained 1,142 files (6.9 MB compressed).
+- **AC-10/AC-11:** One shared checkpoint predicate now controls Setup, Simple,
+  Advanced, `/api/config`, and the run route. Focused server and browser checks
+  proved that an unavailable Qoder experiment reports Blocked, returns 409
+  without calling its runner, omits the ACP catalog and selector, and continues
+  to identify ready ACP manifests through their registered Agent selection.
+- **AC-12/AC-13:** Session comparison now exposes semantic Metric, Left, and
+  Right headers. Playwright verified bounded 390x844 cells, unique comparison
+  checkbox names, and Up/Down roving row focus; wide, compact, and narrow
+  screenshots were visually reviewed.
+- **AC-14/AC-15:** Shell-model coverage proved that zero Artifacts are partial
+  evidence and are not recommended by Overview, Project recovery actions retain
+  their shell-owned labels, and Compare status follows Sessions, Bench, or
+  frozen Results. The configured Overview also reports a blocked checkpoint as
+  needing attention rather than ready.
 - `npm run typecheck -w @qoder-ai/harness-studio` passed.
-- `npm test -w @qoder-ai/harness-studio` passed 61 files / 483 tests.
-- `npm run test:browser -w @qoder-ai/harness-studio` passed 51 tests.
+- `npm test -w @qoder-ai/harness-studio` passed 61 files / 487 tests.
+- `npm run test:browser -w @qoder-ai/harness-studio` passed 52 tests.
 - `npx vitest run test/skills-docs/doc-link-graph.test.mjs` passed 8 tests after
   regenerating the routing graph.
 - The required repository Canvas preview remains independently blocked before

@@ -77,6 +77,7 @@ import {
 } from "./artifacts/routes.js";
 import {
   lockCheckpointHistory,
+  isActiveExperimentRunnable,
   resolveCheckpointHistory,
   selectSource,
   serveCheckpointHistory,
@@ -203,6 +204,7 @@ async function route(
       artifactCount: state.artifactPaths?.length,
       evidenceEnabled: activeSourcePath(state.sourceCatalog, state.activeSources, "evidence") !== undefined,
       experimentEnabled: state.activeManifestPath !== undefined,
+      experimentRunnable: await isActiveExperimentRunnable(options, state),
       harnessMode: options.harnessSource === undefined ? "none" : options.harnessMode ?? "configured",
       historyEnabled: state.historyAdapter !== undefined,
       inspectorEnabled: activeSourcePath(state.sourceCatalog, state.activeSources, "inspector") !== undefined,

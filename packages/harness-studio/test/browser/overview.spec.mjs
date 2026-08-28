@@ -90,7 +90,9 @@ test("labels a configured source action for the workbench it opens", async ({ pa
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${sourceStudio.url}/#/overview`);
 
-  await expect(page.getByRole("heading", { name: "Comparison setup is ready." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Comparison setup needs attention." })).toBeVisible();
+  await expect(page.getByRole("term").filter({ hasText: "Harness Bench" })).toContainText("Checkpoint source unavailable");
+  await expect(page.getByRole("definition").filter({ hasText: "Blocked" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Open Project", exact: true })).toHaveCount(0);
   const action = page.getByRole("button", { name: "Open Compare" });
   await expect(action).toBeVisible();

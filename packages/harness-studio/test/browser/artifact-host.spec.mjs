@@ -1151,11 +1151,24 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   }
 
   await page.setViewportSize({ width: 1440, height: 900 });
+  const sessionRows = page.locator(".session-catalog-rows > li > button");
+  await expect(sessionRows).toHaveCount(2);
+  await expect(page.locator('.session-catalog-rows > li > button[tabindex="0"]')).toHaveCount(1);
+  await sessionRows.first().focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(sessionRows.nth(1)).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(sessionRows.first()).toBeFocused();
+  await expect(page.getByRole("checkbox", { name: /Select Repair parser .* for comparison/u })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /Select Repair renderer .* for comparison/u })).toBeVisible();
   const compareChecks = page.locator(".session-catalog-rows input[type=checkbox]");
   await compareChecks.nth(0).check();
   await compareChecks.nth(1).check();
   await page.getByRole("button", { name: "Compare 2/2" }).click();
   await expect(page.getByRole("heading", { name: "Compare Sessions" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Metric" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Left" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Right" })).toBeVisible();
   await expect(page.locator(".session-compare-boundary")).toContainText("No winner inferred");
   await expect(page.locator(".session-compare-workspace")).toContainText("Repair parser");
   await expect(page.locator(".session-compare-workspace")).toContainText("Repair renderer");
@@ -1168,6 +1181,22 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
     if (layout.width <= 1080) await expect(page.locator(".studio-primary-nav")).not.toBeInViewport();
     const overflows = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
     expect(overflows, `${layout.name} session comparison overflows horizontally`).toBe(false);
+    if (layout.name === "narrow") {
+      const metricLayout = await page.evaluate(() => {
+        const table = document.querySelector(".session-compare-table");
+        const cells = [...document.querySelectorAll(".session-compare-table [role=cell]")];
+        return {
+          tableClient: table?.clientWidth ?? 0,
+          tableScroll: table?.scrollWidth ?? Infinity,
+          cells: cells.map((cell) => {
+            const rect = cell.getBoundingClientRect();
+            return { left: rect.left, right: rect.right };
+          }),
+        };
+      });
+      expect(metricLayout.tableScroll).toBeLessThanOrEqual(metricLayout.tableClient + 1);
+      expect(metricLayout.cells.every((cell) => cell.left >= 0 && cell.right <= layout.width + 1)).toBe(true);
+    }
     await page.screenshot({ path: `test-results/session-compare-${layout.name}.png`, fullPage: true });
   }
 

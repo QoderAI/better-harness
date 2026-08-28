@@ -26,6 +26,15 @@ const ACP_AGENT_FIXTURE = resolve(
   "../../harness/test/fixtures/acp-agent.mjs",
 );
 
+const READY_CHECKPOINT_SOURCE = {
+  status: "ready" as const,
+  adapter: { id: "test-checkpoint-v1", label: "Test checkpoint" },
+  resource: { label: "Repository", value: "better-harness" },
+  revision: { label: "Revision", value: "fixture-ready" },
+  materialization: { label: "Isolated checkout", value: "10 copies", timing: "on-run" as const, count: 10 },
+  capabilities: { isolatedMaterialization: true, observedHistory: true, preserveResult: true },
+};
+
 const SOURCE = `
   language 0.3
   skill require-tests {
@@ -234,6 +243,7 @@ describe("harness-studio server", () => {
       artifactsEnabled: false,
       evidenceEnabled: true,
       experimentEnabled: false,
+      experimentRunnable: false,
       gitEnabled: false,
       harnessMode: "none",
       historyEnabled: false,
@@ -1115,6 +1125,8 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
+      acpAgents: [{ id: "codex-acp", label: "Codex ACP", unavailableReason: "not used by Qoder" }],
       experimentRunner: async (options) => {
         submittedPrompt = options.promptOverride;
         options.onEvent?.({
@@ -1162,7 +1174,7 @@ describe("harness-studio server", () => {
     expect(preview.setup).toMatchObject({
       scenario: "historical-replay",
       checkpointSource: {
-        status: "unavailable",
+        status: "ready",
         materialization: { timing: "on-run", count: 10 },
       },
       request: { provenance: "unverified-history" },
@@ -1175,6 +1187,11 @@ describe("harness-studio server", () => {
     });
     expect(preview.observedCallPages.history).toMatchObject({ complete: true, malformedLines: 0 });
     expect(preview).not.toHaveProperty("observedEvents");
+    expect(preview).not.toHaveProperty("acpAgents");
+    expect(await (await fetch(`${started.url}/api/config`)).json()).toMatchObject({
+      experimentEnabled: true,
+      experimentRunnable: true,
+    });
 
     const observedPage = await (await fetch(`${started.url}/api/experiment/observed-calls?laneId=history&limit=100`)).json();
     expect(observedPage.complete).toBe(true);
@@ -1198,6 +1215,14 @@ describe("harness-studio server", () => {
     expect(body).not.toContain('"type":"tool.requested"');
     expect(submittedPrompt).toBe("Use this live request exactly.\n");
 
+    const qoderAgentSelection = await fetch(`${started.url}/api/experiment/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentIds: { "fresh-default": "codex-acp" } }),
+    });
+    expect(qoderAgentSelection.status).toBe(400);
+    expect(await qoderAgentSelection.json()).toMatchObject({ error: expect.stringContaining("only for ACP-hosted") });
+
     const emptyPrompt = await fetch(`${started.url}/api/experiment/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1205,6 +1230,37 @@ describe("harness-studio server", () => {
     });
     expect(emptyPrompt.status).toBe(400);
     expect(await emptyPrompt.json()).toMatchObject({ error: expect.stringContaining("non-empty") });
+  });
+
+  it("blocks execution when the checkpoint source is unavailable", async () => {
+    const appDir = await makeAppDir();
+    let runnerCalled = false;
+    started = await startHarnessStudioServer({
+      appDir,
+      experimentManifestPath: EXPERIMENT_MANIFEST,
+      experimentRunner: async () => {
+        runnerCalled = true;
+        return {} as never;
+      },
+    });
+
+    const preview = await (await fetch(`${started.url}/api/experiment`)).json();
+    expect(preview.setup.checkpointSource.status).toBe("unavailable");
+    expect(preview).not.toHaveProperty("acpAgents");
+    expect(await (await fetch(`${started.url}/api/config`)).json()).toMatchObject({
+      experimentEnabled: true,
+      experimentRunnable: false,
+    });
+
+    const response = await fetch(`${started.url}/api/experiment/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ experimentId: "exp_blocked_checkpoint" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: expect.any(String) });
+    expect(runnerCalled).toBe(false);
   });
 
   it("rejects cross-origin experiment execution", async () => {
@@ -1230,6 +1286,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       experimentRunner: async () => ({} as never),
     });
 
@@ -1252,6 +1309,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       acpAgent: alpha,
       acpAgents: [
         { id: "alpha", label: "Alpha ACP", agent: alpha },
@@ -1300,6 +1358,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       acpAgent: alpha,
       acpAgents: [
         { id: "alpha", label: "Alpha ACP", agent: alpha },
@@ -1332,6 +1391,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       acpAgent: { command: process.execPath, args: [ACP_AGENT_FIXTURE] },
       experimentRunner: async (options) => {
         factoryConfigured = options.executorFactory !== undefined;
@@ -1355,6 +1415,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       experimentRunner: (options) => new Promise((_, reject) => {
         options.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true });
       }),
@@ -1379,6 +1440,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       experimentRunner: (options) => new Promise((_, reject) => {
         options.signal?.addEventListener("abort", () => {
           resolveAborted();

@@ -4,6 +4,7 @@ import {
   countLaneMaterializations,
   deriveCompareScenario,
   deriveRequestProvenance,
+  isExperimentRunnable,
   type ExperimentSetupPreview,
 } from "../src/contracts/experiment-setup.js";
 
@@ -62,5 +63,10 @@ describe("checkpoint-backed compare setup", () => {
     };
 
     expect(canLockCompare(setup)).toBe(true);
+    expect(isExperimentRunnable(setup)).toBe(true);
+    expect(isExperimentRunnable({
+      ...setup,
+      checkpointSource: { ...setup.checkpointSource, status: "unavailable", limitation: "Revision missing." },
+    })).toBe(false);
   });
 });
