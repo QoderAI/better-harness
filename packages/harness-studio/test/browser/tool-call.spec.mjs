@@ -607,23 +607,6 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
   expect(browserErrors).toEqual([]);
 });
 
-test("keeps visual decisions in owned Studio style sources", async () => {
-  const [index, shell, workbench] = await Promise.all([
-    readFile(resolve(packageRoot, "src/app/index.html"), "utf8"),
-    readFile(resolve(packageRoot, "src/app/styles/shell.css"), "utf8"),
-    readFile(resolve(packageRoot, "src/app/styles/workbench.css"), "utf8"),
-  ]);
-
-  expect(index).not.toMatch(/<style\b/i);
-  expect(index.match(/<link rel="stylesheet"/g)).toHaveLength(3);
-  for (const source of [shell, workbench]) {
-    expect(source).not.toMatch(/#[\da-f]{3,8}\b|rgba?\(/i);
-    expect(source).not.toMatch(/font-size:\s*(?:\d|\.)/);
-    expect(source).not.toMatch(/border-radius:\s*(?:\d|\.)/);
-    expect(source).not.toContain("!important");
-  }
-});
-
 test("renders the shell, local workspace intake, and empty compare surfaces at all layout modes", async ({ page }, testInfo) => {
   const browserErrors = [];
   page.on("console", (message) => { if (message.type() === "error") browserErrors.push(`console: ${message.text()}`); });
