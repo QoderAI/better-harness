@@ -45,6 +45,9 @@ import { WORKSPACE_CWD_MATCH, classifyWorkspaceCwd } from "../workspace-match.mj
 const DEFAULT_LIMIT = 50;
 
 function inferSessionId(raw, fallback) {
+  // A child rollout records its own id beside the parent/root session_id.
+  // Keep the rollout id authoritative so independent cumulative counters never
+  // become one accounting or context-progression stream.
   const sessionMetaId = raw?.type === "session_meta" || raw?.event === "session_meta"
     ? raw?.payload?.id ?? raw?.payload?.session_id
     : null;
@@ -54,8 +57,8 @@ function inferSessionId(raw, fallback) {
     raw?.session_meta?.id ??
     raw?.session_meta?.session_id ??
     raw?.session_meta?.payload?.id ??
-    raw?.payload?.session_id ??
     sessionMetaId ??
+    raw?.payload?.session_id ??
     fallback ??
     null
   );

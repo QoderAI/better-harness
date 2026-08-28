@@ -18,6 +18,7 @@ import { detectPlanningSignals } from "../../scripts/session-analysis/planning-s
 import { privacySafeUserInputSummary } from "../../scripts/session-analysis/privacy-safe-text.mjs";
 import { isSessionAnalysisRef, sessionAnalysisRef } from "../../scripts/session-analysis/session-ref.mjs";
 import { buildToolCallTrace } from "../../scripts/session-analysis/tool-call-trace.mjs";
+import { summarizeSessionEvents } from "../../scripts/commit-session-link/index.mjs";
 
 async function writeJson(filePath, value) {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -2479,6 +2480,87 @@ test("Codex adapter normalizes current event_msg and response_item records", asy
     assert.equal(result.selection.strategy, "all-eligible");
     assert.equal("sessions" in result.selection, false);
     assert.equal(result.insights.manifest.adapter.version, "codex-v2");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Codex keeps child rollout usage out of the parent while retaining real parent compaction", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-codex-rollout-identity-"));
+  const workspace = path.join(root, "workspace", "better-harness");
+  const home = path.join(root, ".codex");
+  const parentId = "codex-parent-rollout";
+  const reviewOneId = "codex-auto-review-one";
+  const reviewTwoId = "codex-auto-review-two";
+  const sessionPath = (...parts) => path.join(home, "sessions", "2026", "08", "28", ...parts);
+  const tokenCount = (timestamp, cumulativeTotal, currentInput) => ({
+    timestamp,
+    type: "event_msg",
+    payload: {
+      type: "token_count",
+      info: {
+        total_token_usage: {
+          input_tokens: cumulativeTotal,
+          output_tokens: 0,
+          total_tokens: cumulativeTotal,
+        },
+        last_token_usage: {
+          input_tokens: currentInput,
+          output_tokens: 0,
+          total_tokens: currentInput,
+        },
+        model_context_window: 1_000,
+      },
+    },
+  });
+
+  await writeJsonl(sessionPath(`rollout-2026-08-28T10-00-00-${parentId}.jsonl`), [
+    { timestamp: "2026-08-28T10:00:00.000Z", type: "session_meta", payload: { id: parentId, session_id: parentId, cwd: workspace } },
+    tokenCount("2026-08-28T10:00:01.000Z", 30, 30),
+    tokenCount("2026-08-28T10:00:04.000Z", 250, 240),
+    { timestamp: "2026-08-28T10:00:07.000Z", type: "compacted", payload: {} },
+    tokenCount("2026-08-28T10:00:08.000Z", 260, 0),
+    tokenCount("2026-08-28T10:00:10.000Z", 400, 120),
+  ]);
+  await writeJsonl(sessionPath(`rollout-2026-08-28T10-00-02-${reviewOneId}.jsonl`), [
+    { timestamp: "2026-08-28T10:00:02.000Z", type: "session_meta", payload: { id: reviewOneId, session_id: parentId, cwd: workspace } },
+    tokenCount("2026-08-28T10:00:03.000Z", 90, 80),
+    tokenCount("2026-08-28T10:00:06.000Z", 150, 140),
+  ]);
+  await writeJsonl(sessionPath(`rollout-2026-08-28T10-00-05-${reviewTwoId}.jsonl`), [
+    { timestamp: "2026-08-28T10:00:05.000Z", type: "session_meta", payload: { id: reviewTwoId, session_id: parentId, cwd: workspace } },
+    tokenCount("2026-08-28T10:00:09.000Z", 25, 20),
+  ]);
+
+  const { CodexSessionAnalyzer } = await import("../../scripts/session-analysis/platforms/codex.mjs");
+  const analyzer = new CodexSessionAnalyzer();
+  try {
+    const scope = await analyzer.resolveScope({ home, workspace });
+    const roots = await analyzer.discoverSourceRoots(scope);
+    const sessions = await analyzer.discoverSessions(scope, roots);
+    assert.deepEqual(
+      sessions.map((session) => session.sessionId).sort(),
+      [parentId, reviewOneId, reviewTwoId].sort(),
+    );
+
+    const parent = sessions.find((session) => session.sessionId === parentId);
+    assert.ok(parent);
+    assert.equal(parent.sourceRefs.length, 1);
+    const events = await analyzer.readSession(parent, scope);
+    assert.equal(events.filter((event) => event.type === "event.token_count").length, 4);
+    assert.equal(events.every((event) => event.sessionId === parentId), true);
+
+    const summary = summarizeSessionEvents(parent, events, {
+      repoRoot: workspace,
+      platform: "codex",
+    });
+    assert.equal(summary.tokenUsage.totalTokens, 400);
+    assert.equal(summary.contextManifest.usedTokens, 120);
+    assert.equal(summary.contextManifest.compactionCount, 1);
+    assert.equal(summary.usageReport.actualModelCalls, 4);
+    assert.equal(summary.usageReport.currentContextTokens, 120);
+    assert.equal(summary.usageReport.netContextDeltaTokens, 90);
+    assert.equal(summary.usageReport.contextResetCount, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

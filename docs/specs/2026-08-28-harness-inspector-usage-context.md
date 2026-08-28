@@ -168,6 +168,17 @@ from the default Inspector window.
   `system_prompt`, `tools`, `rules`, `skills`, `mcp`, `subagents`, then
   `conversation`; segment widths remain token-weighted and unused context is
   always rendered after the observed categories.
+- AC-28: Each Codex rollout's `session_meta.payload.id` is the accounting and
+  context-progression stream identity. A distinct child rollout may retain the
+  parent id in `session_meta.payload.session_id`, but its token snapshots,
+  current context, model calls, and cumulative totals must not enter the parent
+  Session. Cumulative decreases start a new accounting segment only within one
+  rollout stream.
+- AC-29: Parent-stream context compression remains observable after child-stream
+  isolation. An explicit Codex `compacted` event contributes one compaction
+  boundary, and a same-model prompt-context drop inside that parent rollout
+  remains one context shrink/reset. Switching to or from a child
+  `codex-auto-review` rollout must not create a parent compaction/reset.
 
 ## Provider evidence matrix
 
@@ -261,6 +272,13 @@ from the default Inspector window.
     and usage metrics cannot widen or horizontally scroll the desktop dock.
 21. Preserve adapter-retained category order through Session summarization and
     both report renderers; verify the sequence against a real Cursor Canvas.
+22. Treat the Codex rollout id as the source Session identity and retain
+    `payload.session_id` only as parent/root linkage, so discovery and hydration
+    never merge child cumulative counters into the parent stream.
+23. Add a behavioral fixture with one parent rollout, one real parent
+    compaction, and two interleaved `codex-auto-review` child rollouts. Pin the
+    parent current context, net growth, cumulative total, model-call count, and
+    single reset/compaction while verifying both child streams stay separate.
 
 ## Test and Review Evidence
 
@@ -335,6 +353,12 @@ from the default Inspector window.
   categories and asserts the provider sequence in the report projection and
   rendered composition legend. A local replay records the same seven category
   ids from the matched native Canvas without retaining item text.
+- AC-28/AC-29: a Codex adapter fixture writes a parent rollout plus child
+  rollouts whose `payload.session_id` points back to the parent. Assertions pin
+  distinct discovered source refs and parent-only hydrated events, then the
+  Session summary and Usage report must retain the parent's own cumulative
+  total, current context, model calls, and one real compaction/reset without
+  counting child snapshots.
 - Cross-platform evidence: focused tests must use `node:path` and temporary
   directories, then the full Node 22/24 macOS, Windows, and Ubuntu PR jobs remain
   authoritative for target-platform acceptance.
