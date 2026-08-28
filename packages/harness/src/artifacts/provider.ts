@@ -153,6 +153,8 @@ export interface ArtifactInteractionSteeringControlV1 {
   label: string;
   placeholder: string;
   maxLength: number;
+  /** Provider-owned instruction for compiling natural language into this bounded steering grammar. */
+  agentInstruction?: string;
 }
 
 /** Browser-safe observation of one exact, Provider-addressable work revision. */
@@ -237,7 +239,10 @@ export interface ArtifactInteractionTransitionReceiptV1 {
 export interface ArtifactInteractionPrepareInputV1 {
   targetAddress: string;
   steering: { kind: string; message: string };
+  /** Actor asking the Provider to prepare the proposal. */
   requestedBy: ArtifactInteractionActorV1;
+  /** Human whose shared-surface selection and steering the proposal is based on. */
+  selectedBy?: ArtifactInteractionActorV1;
   requestId: string;
 }
 

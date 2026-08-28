@@ -209,6 +209,7 @@ export interface HarnessStudioState {
   ownedArtifactDirectory?: string;
   artifactImports: Map<string, ArtifactImportSession>;
   artifactEventStreams: number;
+  artifactAgentRuns: Map<string, ArtifactAgentRunControl>;
   artifactInteractionProposals: Map<string, ArtifactInteractionProposalState>;
   workspace?: StudioWorkspace;
   projects: Map<string, StoredStudioProject>;
@@ -222,6 +223,12 @@ export interface HarnessStudioState {
   customizationAnalysisRunning: boolean;
   customizationAnalysis?: CustomizationAnalysisResponseV1;
   acpRuns: Map<string, AcpRunControl>;
+}
+export interface ArtifactAgentRunControl {
+  artifactId: string;
+  revision: string;
+  abortController: AbortController;
+  startedAtMs: number;
 }
 export interface ArtifactInteractionProposalState {
   artifactId: string;

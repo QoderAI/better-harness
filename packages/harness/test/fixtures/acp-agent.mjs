@@ -71,9 +71,18 @@ const app = agent({ name: "better-harness-acp-fixture" })
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: permission.outcome.outcome === "selected"
-            ? `fixture:${permission.outcome.optionId}${sessionConfig.model ? `:${sessionConfig.model}` : ""}`
-            : "fixture:cancelled",
+          text: process.argv.includes("--artifact-plan")
+            ? JSON.stringify({
+                kind: "HarnessStudioArtifactAgentPlanV1",
+                summary: "Rename the selected target through the bounded Provider contract.",
+                plan: ["Keep the exact semantic target.", "Ask the Provider to prepare one label change."],
+                providerSteering: { kind: "rename", message: "Rename to Agent planned" },
+              })
+            : process.argv.includes("--malformed-artifact-plan")
+              ? "The plan is ready."
+              : permission.outcome.outcome === "selected"
+                ? `fixture:${permission.outcome.optionId}${sessionConfig.model ? `:${sessionConfig.model}` : ""}`
+                : "fixture:cancelled",
         },
       },
     });

@@ -82,6 +82,11 @@ import {
   serveArtifactInteractionPreview,
 } from "./artifacts/interaction-routes.js";
 import {
+  cancelAllArtifactAgentRuns,
+  cancelArtifactAgentRun,
+  streamArtifactAgentRun,
+} from "./artifacts/agent-run-routes.js";
+import {
   lockCheckpointHistory,
   isActiveExperimentRunnable,
   resolveCheckpointHistory,
@@ -144,6 +149,7 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
     artifactPaths: resolvedOptions.artifactPaths,
     artifactImports: new Map(),
     artifactEventStreams: 0,
+    artifactAgentRuns: new Map(),
     artifactInteractionProposals: new Map(),
     projects: new Map(),
     projectRevision: 0,
@@ -165,6 +171,7 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
   });
   server.once("close", () => {
     cancelAllAcpRuns(state);
+    cancelAllArtifactAgentRuns(state);
     state.artifactInteractionProposals.clear();
     void Promise.all([cleanupArtifactImports(state), cleanupWorkspaceImports(state)]);
   });
@@ -510,6 +517,16 @@ async function route(
     }
     if (request.method === "GET" && tail === "interaction") {
       await serveArtifactInteraction(response, scoped, id, revision);
+      return;
+    }
+    if (request.method === "POST" && tail === "interaction/agent-runs") {
+      await streamArtifactAgentRun(request, response, state, scoped, id, revision);
+      return;
+    }
+    const artifactAgentCancelMatch = tail.match(/^interaction\/agent-runs\/([^/]+)\/cancel$/);
+    if (request.method === "POST" && artifactAgentCancelMatch !== null) {
+      const runId = decodeRouteComponent(response, artifactAgentCancelMatch[1]!);
+      if (runId !== undefined) cancelArtifactAgentRun(request, response, state, id, revision, runId);
       return;
     }
     if (request.method === "POST" && tail === "interaction/proposals") {

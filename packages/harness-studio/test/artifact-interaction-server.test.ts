@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { decodeSseStream } from "@qoder-ai/harness-ui";
 import {
   canonicalArtifactInteractionJson,
   isArtifactCatalogResponse,
@@ -13,9 +15,11 @@ import {
 import { activateArtifactContribution } from "../src/server/artifacts/registry/artifact-provider-activation.js";
 import { envelopeSnapshot } from "../src/server/artifacts/registry/artifact-plugin-registry.js";
 import { startHarnessStudioServer, type HarnessStudioServerHandle } from "../src/server/server.js";
+import { DEFAULT_LOCAL_ACP_HARNESS_SOURCE } from "../src/server/default-local-harness.js";
 
 const temporary: string[] = [];
 let server: HarnessStudioServerHandle | undefined;
+const ACP_AGENT_FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../harness/test/fixtures/acp-agent.mjs");
 
 afterEach(async () => {
   await server?.close();
@@ -104,6 +108,94 @@ describe("Agentic Artifact interaction routes", () => {
       body: "{}",
     });
     expect(crossOrigin.status).toBe(403);
+  });
+
+  it("runs a real ACP planning turn before retaining the Provider proposal", async () => {
+    const fixture = await startInteractionFixture({ agentArgs: [ACP_AGENT_FIXTURE, "--artifact-plan"] });
+    server = fixture.server;
+    const artifact = await catalogArtifact(server.url);
+
+    const response = await fetch(agentRunUri(server.url, artifact), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        targetAddress: "fixture://root",
+        message: "Give the selected target a clearer name.",
+        requestedBy: { id: "human:test", kind: "human", label: "Test user" },
+        runId: "artifact-run:success",
+      }),
+    });
+    expect(response.status).toBe(200);
+    const events = decodeSseStream(await response.text());
+    const custom = (name: string) => events.find((event) => event.type === "CUSTOM" && event.name === name);
+    expect(events[0]).toMatchObject({ type: "RUN_STARTED", runId: "artifact-run:success" });
+    expect(custom("artifact.agent.plan")).toMatchObject({
+      type: "CUSTOM",
+      value: {
+        kind: "HarnessStudioArtifactAgentPlanV1",
+        providerSteering: { kind: "rename", message: "Rename to Agent planned" },
+      },
+    });
+    expect(custom("artifact.agent.evidence")).toMatchObject({
+      type: "CUSTOM",
+      value: {
+        kind: "HarnessStudioArtifactAgentRunEvidenceV1",
+        executor: "acp",
+        sessionId: "fixture-session",
+        permissionRequestsCancelled: 1,
+      },
+    });
+    const proposalEvent = custom("artifact.agent.proposal");
+    expect(proposalEvent).toMatchObject({
+      type: "CUSTOM",
+      value: { proposal: { proposedBy: { kind: "agent" }, steering: { message: "Rename to Agent planned" } } },
+    });
+    expect(events.at(-1)).toMatchObject({ type: "RUN_FINISHED", runId: "artifact-run:success" });
+    expect(await readFile(fixture.sourcePath, "utf8")).toBe("Original");
+  });
+
+  it("fails closed for unavailable, malformed, and interrupted Agent planning", async () => {
+    const unavailable = await startInteractionFixture();
+    server = unavailable.server;
+    const artifact = await catalogArtifact(server.url);
+    const unavailableResponse = await fetch(agentRunUri(server.url, artifact), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(agentRunBody("artifact-run:unavailable")),
+    });
+    expect(unavailableResponse.status).toBe(404);
+    await server.close();
+    server = undefined;
+
+    const malformed = await startInteractionFixture({ agentArgs: [ACP_AGENT_FIXTURE, "--malformed-artifact-plan"] });
+    server = malformed.server;
+    const malformedArtifact = await catalogArtifact(server.url);
+    const malformedEvents = decodeSseStream(await (await fetch(agentRunUri(server.url, malformedArtifact), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(agentRunBody("artifact-run:malformed")),
+    })).text());
+    expect(malformedEvents.at(-1)).toMatchObject({ type: "RUN_ERROR", message: expect.stringContaining("strict Artifact plan JSON") });
+    expect(malformedEvents.some((event) => event.type === "CUSTOM" && event.name === "artifact.agent.proposal")).toBe(false);
+    expect(await readFile(malformed.sourcePath, "utf8")).toBe("Original");
+    await server.close();
+    server = undefined;
+
+    const waiting = await startInteractionFixture({ agentArgs: [ACP_AGENT_FIXTURE, "--artifact-plan", "--wait-for-cancel"] });
+    server = waiting.server;
+    const waitingArtifact = await catalogArtifact(server.url);
+    const running = await fetch(agentRunUri(server.url, waitingArtifact), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(agentRunBody("artifact-run:cancel")),
+    });
+    expect(running.status).toBe(200);
+    const cancelled = await fetch(`${agentRunUri(server.url, waitingArtifact)}/${encodeURIComponent("artifact-run:cancel")}/cancel`, { method: "POST" });
+    expect(cancelled.status).toBe(202);
+    const cancelledEvents = decodeSseStream(await running.text());
+    expect(cancelledEvents.at(-1)).toMatchObject({ type: "RUN_ERROR", message: expect.stringContaining("interrupted") });
+    expect(cancelledEvents.some((event) => event.type === "CUSTOM" && event.name === "artifact.agent.proposal")).toBe(false);
+    expect(await readFile(waiting.sourcePath, "utf8")).toBe("Original");
   });
 });
 
@@ -218,6 +310,38 @@ function interactionProvider(): { provider: ExternalArtifactProvider; decisions:
   return { provider, decisions: () => decisionCount };
 }
 
+async function startInteractionFixture(input: { agentArgs?: string[] } = {}): Promise<{
+  server: HarnessStudioServerHandle;
+  sourcePath: string;
+}> {
+  const root = await temp("artifact-agent-run-");
+  const appDir = join(root, "app");
+  const artifactDirectory = join(root, "artifacts");
+  const stateRoot = join(root, "state");
+  const sourcePath = join(artifactDirectory, "diagram.fixture");
+  await Promise.all([mkdir(appDir), mkdir(artifactDirectory)]);
+  await writeFile(join(appDir, "index.html"), "<!doctype html><title>fixture</title>", "utf8");
+  await writeFile(sourcePath, "Original", "utf8");
+  const fixture = interactionProvider();
+  await activateArtifactContribution(fixture.provider, "fixture", "external-fallback", { extensions: ["fixture"] }, { root: stateRoot });
+  const handle = await startHarnessStudioServer({
+    appDir,
+    artifactDirectory,
+    artifactProviderStateRoot: stateRoot,
+    artifactProviders: [fixture.provider],
+    walnutCacheRoot: join(root, "walnut-cache"),
+    ...(input.agentArgs === undefined ? {} : {
+      acpAgent: {
+        command: process.execPath,
+        args: input.agentArgs,
+        label: "Fixture Artifact Agent",
+        harnessSource: DEFAULT_LOCAL_ACP_HARNESS_SOURCE,
+      },
+    }),
+  });
+  return { server: handle, sourcePath };
+}
+
 async function catalogArtifact(base: string) {
   const value: unknown = await (await fetch(`${base}/api/artifacts`)).json();
   if (!isArtifactCatalogResponse(value) || value.artifacts[0] === undefined) throw new Error("expected Artifact catalog");
@@ -245,6 +369,19 @@ function decisionBody(proposal: { proposalDigest: string; expectedRevision: stri
 
 function decisionUri(base: string, artifact: Awaited<ReturnType<typeof catalogArtifact>>, proposalId: string): string {
   return `${base}${artifact.interaction!.workspaceUri}/proposals/${encodeURIComponent(proposalId)}/decisions`;
+}
+
+function agentRunUri(base: string, artifact: Awaited<ReturnType<typeof catalogArtifact>>): string {
+  return `${base}${artifact.interaction!.workspaceUri}/agent-runs`;
+}
+
+function agentRunBody(runId: string): unknown {
+  return {
+    targetAddress: "fixture://root",
+    message: "Give the selected target a clearer name.",
+    requestedBy: { id: "human:test", kind: "human", label: "Test user" },
+    runId,
+  };
 }
 
 function digestJson(value: unknown): ArtifactDigest {

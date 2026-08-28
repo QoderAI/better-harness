@@ -211,6 +211,8 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
             <div className="artifact-surface-slot"><ArtifactView authorityId={catalog.snapshot.catalogId} artifact={active} liveGeneration={liveGeneration} onSelection={setSurfaceSelection} /></div>
             <ArtifactInteractionPane
               artifact={active}
+              agentRunsEnabled={props.config.acpEnabled}
+              agentLabel={props.config.acpAgentLabel}
               surfaceSelectedAddress={activeSurfaceSelection?.address}
               onSelectedAddressChange={(address) => {
                 if (active.renderer.bindingId === undefined) return;

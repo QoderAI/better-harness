@@ -4,6 +4,7 @@ import {
   canonicalArtifactInteractionJson,
   type ArtifactInteractionActorV1,
   type ArtifactInteractionPreparedProposalV1,
+  type ArtifactInteractionPrepareInputV1,
   type ArtifactInteractionProposalV1,
   type ArtifactInteractionTargetV1,
   type ArtifactInteractionTransitionReceiptV1,
@@ -29,6 +30,21 @@ const MAX_TARGETS = 2_000;
 const MAX_ACTIONS = 64;
 const MAX_EVIDENCE = 64;
 
+export interface RetainedArtifactInteractionBinding {
+  artifactId: string;
+  revision: string;
+  providerId: string;
+  contributionId: string;
+  providerFingerprint: string;
+  context: ArtifactInteractionProposalState["context"];
+  runtime: ArtifactInteractionProposalState["runtime"];
+}
+
+export interface ArtifactInteractionProposalResponse {
+  proposal: ArtifactInteractionProposalV1;
+  preview: { uri: string; mediaType: string; label: string; digest: string };
+}
+
 class ArtifactInteractionAuthorizationError extends Error {}
 
 export async function serveArtifactInteraction(
@@ -48,7 +64,7 @@ export async function serveArtifactInteraction(
     return;
   }
   try {
-    const workspace = assertWorkspace(await interaction.inspect({ entry: resolved.entry, descriptor: resolved.descriptor }), id, resolved.descriptor.revision.id);
+    const workspace = assertArtifactInteractionWorkspace(await interaction.inspect({ entry: resolved.entry, descriptor: resolved.descriptor }), id, resolved.descriptor.revision.id);
     respondArtifactJson(response, 200, {
       workspace,
       runtime: { id: interaction.id, version: interaction.version, protocolVersion: interaction.protocolVersion },
@@ -95,28 +111,68 @@ export async function prepareArtifactInteractionProposal(
       requestedBy,
       requestId: boundedIdentifier(body.requestId, "requestId"),
     } as const;
-    const context = { entry: resolved.entry, descriptor: resolved.descriptor };
-    const prepared = assertPrepared(await interaction.prepare(context, input), id, resolved.descriptor.revision.id);
-    if (state.artifactInteractionProposals.has(prepared.proposal.proposalId)) {
-      throw new Error("The Provider reused an active proposal id.");
-    }
-    const now = Date.now();
-    state.artifactInteractionProposals.set(prepared.proposal.proposalId, {
+    const binding = {
       artifactId: id,
       revision: resolved.descriptor.revision.id,
       providerId: provider.providerId,
       contributionId: provider.contributionId,
       providerFingerprint: provider.fingerprint,
-      context,
+      context: { entry: resolved.entry, descriptor: resolved.descriptor },
       runtime: interaction,
-      prepared,
-      createdAtMs: now,
-      expiresAtMs: now + PROPOSAL_TTL_MS,
-    });
-    respondArtifactJson(response, 201, proposalResponse(id, revision, prepared));
+    };
+    const result = await prepareAndRetainArtifactInteractionProposal(state, binding, input);
+    respondArtifactJson(response, 201, result);
   } catch (error) {
     respondArtifactJson(response, 422, { error: safeArtifactError(error) });
   }
+}
+
+/**
+ * Invoke one already-selected Provider prepare capability and retain its opaque
+ * continuation for the Host decision gate. Agent planning and direct browser
+ * preparation share this path so proposal identity, bounds, and lifetime cannot
+ * drift between the two entrypoints.
+ */
+export async function prepareAndRetainArtifactInteractionProposal(
+  state: HarnessStudioState,
+  binding: RetainedArtifactInteractionBinding,
+  input: ArtifactInteractionPrepareInputV1,
+  constraints: { proposedByKind?: ArtifactInteractionActorV1["kind"] } = {},
+): Promise<ArtifactInteractionProposalResponse> {
+  expireProposals(state);
+  if (state.artifactInteractionProposals.size >= MAX_ACTIVE_PROPOSALS) {
+    throw new Error("Too many Artifact proposals are retained.");
+  }
+  const prepared = assertPrepared(
+    await binding.runtime.prepare(binding.context, input),
+    binding.artifactId,
+    binding.revision,
+  );
+  if (prepared.proposal.target.address !== input.targetAddress
+    || prepared.proposal.steering.kind !== input.steering.kind
+    || prepared.proposal.steering.message !== input.steering.message) {
+    throw new Error("The Provider proposal does not match the retained target and steering.");
+  }
+  if (constraints.proposedByKind !== undefined && prepared.proposal.proposedBy.kind !== constraints.proposedByKind) {
+    throw new Error(`The Provider proposal actor must be '${constraints.proposedByKind}'.`);
+  }
+  if (state.artifactInteractionProposals.has(prepared.proposal.proposalId)) {
+    throw new Error("The Provider reused an active proposal id.");
+  }
+  const now = Date.now();
+  state.artifactInteractionProposals.set(prepared.proposal.proposalId, {
+    artifactId: binding.artifactId,
+    revision: binding.revision,
+    providerId: binding.providerId,
+    contributionId: binding.contributionId,
+    providerFingerprint: binding.providerFingerprint,
+    context: binding.context,
+    runtime: binding.runtime,
+    prepared,
+    createdAtMs: now,
+    expiresAtMs: now + PROPOSAL_TTL_MS,
+  });
+  return proposalResponse(binding.artifactId, binding.revision.slice("sha256:".length), prepared);
 }
 
 export function serveArtifactInteractionPreview(
@@ -229,7 +285,7 @@ async function providerStillAuthorized(options: HarnessStudioServerOptions, reco
     && activation.fingerprint === record.providerFingerprint);
 }
 
-function proposalResponse(id: string, revision: string, prepared: ArtifactInteractionPreparedProposalV1): unknown {
+function proposalResponse(id: string, revision: string, prepared: ArtifactInteractionPreparedProposalV1): ArtifactInteractionProposalResponse {
   return {
     proposal: prepared.proposal,
     preview: {
@@ -258,7 +314,7 @@ function expireProposals(state: HarnessStudioState): void {
   }
 }
 
-function assertWorkspace(value: ArtifactInteractionWorkspaceV1, artifactId: string, revision: string): ArtifactInteractionWorkspaceV1 {
+export function assertArtifactInteractionWorkspace(value: ArtifactInteractionWorkspaceV1, artifactId: string, revision: string): ArtifactInteractionWorkspaceV1 {
   if (value.kind !== "HarnessStudioArtifactInteractionWorkspaceV1" || value.protocolVersion !== "1"
     || value.artifactId !== artifactId || value.revision !== revision || value.targets.length > MAX_TARGETS) {
     throw new Error("The Provider returned an invalid interaction workspace.");
@@ -268,6 +324,7 @@ function assertWorkspace(value: ArtifactInteractionWorkspaceV1, artifactId: stri
   boundedString(value.steering.kind, "workspace.steering.kind", 128);
   boundedString(value.steering.label, "workspace.steering.label", 256);
   boundedString(value.steering.placeholder, "workspace.steering.placeholder", 512, true);
+  if (value.steering.agentInstruction !== undefined) boundedString(value.steering.agentInstruction, "workspace.steering.agentInstruction", 2_048);
   if (!Number.isInteger(value.steering.maxLength) || value.steering.maxLength < 1 || value.steering.maxLength > 8_192) {
     throw new Error("The Provider returned an invalid steering limit.");
   }

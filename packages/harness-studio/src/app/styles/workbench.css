@@ -1524,6 +1524,15 @@
 .artifact-collaboration-section textarea:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .artifact-collaboration-section > code { overflow: hidden; color: var(--color-text-muted); font-family: var(--font-code); font-size: var(--type-meta-size); text-overflow: ellipsis; white-space: nowrap; }
 .artifact-collaboration-primary { justify-self: start; }
+.artifact-agent-phase { min-width: 0; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.artifact-agent-phase strong { color: var(--color-text); font-weight: var(--weight-semibold); }
+.artifact-agent-phase > span:last-child { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-agent-summary { margin: 0; color: var(--color-text); font-size: var(--type-body-size); line-height: var(--type-body-line); }
+.artifact-agent-plan { margin: 0; padding: 0; display: grid; list-style: none; border-top: 1px solid var(--color-border); }
+.artifact-agent-plan li { min-width: 0; padding: var(--space-xs) 0; display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: var(--space-xs); border-bottom: 1px solid var(--color-border); }
+.artifact-agent-plan li > span { width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); color: var(--color-primary); font-size: var(--type-meta-size); }
+.artifact-agent-plan p { margin: 0; color: var(--color-text-muted); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
+.artifact-interrupt { justify-self: start; color: var(--color-danger); }
 .artifact-proposal > img { width: 100%; max-height: 180px; object-fit: contain; border: 1px solid var(--color-border); background: #fff; }
 .artifact-collaboration-section dl { margin: 0; display: grid; gap: var(--space-xs); }
 .artifact-collaboration-section dl > div { min-width: 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: var(--space-sm); }
@@ -2242,6 +2251,7 @@
   .artifact-collaboration-pane { min-height: 360px; overflow: visible; }
   .artifact-collaboration-scroll { overflow: visible; }
   .artifact-collaboration-section select { height: var(--touch-target); }
+  .artifact-interrupt { min-height: var(--touch-target); }
   .artifact-decision-actions button { min-height: var(--touch-target); }
   .markdown-artifact-viewer { grid-template-columns: minmax(0, 1fr); }
   .markdown-outline-rail { display: none; }
