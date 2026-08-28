@@ -103,14 +103,29 @@ test.beforeAll(async () => {
     toolCallCount: tools.length,
     warnings: [],
     timeline: [
-      ...tools.map((name, index) => ({ kind: "tool-call", id: `tool_${index}`, name, argsText: "{}", status: "completed", resultText: "ok" })),
+      ...tools.map((tool, index) => ({
+        kind: "tool-call",
+        id: `tool_${index}`,
+        name: typeof tool === "string" ? tool : tool.name,
+        argsText: typeof tool === "string" ? "{}" : tool.argsText,
+        status: "completed",
+        resultText: "ok",
+      })),
       { kind: "message", id: "message_1", text: `${prompt} complete`, complete: true },
     ],
   });
   const workspaceRecords = [
     retainedRun("run_left", "2026-08-20T10:00:00.000Z", "Repair parser", ["Read", "Edit", "Bash"]),
-    retainedRun("run_right", "2026-08-20T11:00:00.000Z", "Repair renderer", ["Read", "Bash"]),
+    retainedRun("run_right", "2026-08-20T11:00:00.000Z", "Repair renderer", ["Read", { name: "Edit", argsText: '{"path":"review.diff"}' }, "Bash"]),
   ];
+  await writeFile(join(selectedWorkspace, "review.diff"), [
+    "diff --git a/src/viewer.ts b/src/viewer.ts",
+    "--- a/src/viewer.ts",
+    "+++ b/src/viewer.ts",
+    "@@ -1 +1 @@",
+    "-export const mode = 'tool';",
+    "+export const mode = 'native-file';",
+  ].join("\n"), "utf8");
   const workspaceInspectorReport = buildHarnessInspectorReport({
     repoRoot: selectedWorkspace,
     featureTree: emptyFeatureTree(),
@@ -1138,6 +1153,14 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(page.getByRole("button", { name: /Repair renderer/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Repair renderer" })).toBeVisible();
   await expect(page.locator(".session-event-rows")).toContainText("Bash");
+  const sessionDiff = page.getByRole("button", { name: "Open Session artifact review.diff" });
+  await expect(sessionDiff).toBeVisible();
+  await sessionDiff.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator('[data-native-session-artifact="review.diff"]')).toBeVisible();
+  await sessionDiff.dblclick();
+  await expect(page.locator('[data-native-session-artifact="review.diff"]')).toBeVisible();
+  await expect(page.locator('[data-native-session-artifact="review.diff"] [data-artifact-code-view="diff"]')).toContainText("native-file");
   for (const layout of [
     { name: "wide", width: 1440, height: 900 },
     { name: "compact", width: 1024, height: 768 },

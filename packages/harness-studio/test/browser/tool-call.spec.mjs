@@ -320,7 +320,7 @@ test("blocks an unavailable Qoder comparison without assigning ACP identity", as
   await expect(page.locator(".simple-lane").nth(1)).toContainText("Qoder");
   await expect(page.locator(".simple-compare-shell")).not.toContainText("Codex ACP");
   await expect(page.getByRole("button", { name: "Run compare" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Advanced evidence" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Advanced details" })).toBeDisabled();
   await expect(page.locator(".simple-run-control [role=status]")).not.toHaveText("Ready");
 
   await page.getByRole("button", { name: "Review setup" }).click();
@@ -352,12 +352,14 @@ test("compares a focused ACP pair across roles, views, filters, and evidence", a
 
   await page.goto(experimentStudio.url);
   await openDestination(page, "Compare");
-  await expect(page.getByLabel("Checkpoint project")).toContainText("better-harness");
+  await expect(page.getByRole("group", { name: "Current project" })).toContainText("better-harness");
+  await expect(page.getByRole("group", { name: "Current project" })).toContainText("Same checkpoint for both AIs");
   await expect(page.getByLabel("User prompt")).toBeVisible();
   await expect(page.getByLabel("AI 1 Agent")).toHaveValue("qodercli");
   await expect(page.getByLabel("AI 2 Agent")).toHaveValue("qodercli");
   await page.getByLabel("AI 2 Agent").selectOption("codex-acp");
   await expect(page.getByLabel("AI 2 Agent")).toHaveValue("codex-acp");
+  await expect(page.getByRole("region", { name: "Comparison scope" })).toContainText("Descriptive comparison: Agent + model policy + model");
   await expect(page.locator(".simple-lane")).toHaveCount(2);
   await page.getByLabel("User prompt").fill("Compare this exact live request.");
   await page.getByRole("button", { name: "Run compare" }).click();
@@ -366,6 +368,9 @@ test("compares a focused ACP pair across roles, views, filters, and evidence", a
   await expect(page.locator(".resource-map-row")).toHaveCount(2);
   await expect(page.getByRole("table", { name: "ACP operations aligned by resource" })).toContainText("README.md");
   await expect(page.getByRole("table", { name: "ACP operations aligned by resource" })).toContainText("Project root");
+  await expect(page.getByRole("region", { name: "Observed comparison facts" })).toContainText("2 resources used by both AIs");
+  await expect(page.getByRole("region", { name: "Observed comparison facts" })).toContainText("Qoder CLI");
+  await expect(page.getByRole("region", { name: "Observed comparison facts" })).toContainText("Codex ACP");
   const resultTabs = page.getByRole("tablist", { name: "Comparison result views" });
   await expect(resultTabs.locator('[role="tab"][tabindex="0"]')).toHaveCount(1);
   await resultTabs.getByRole("tab", { name: "Resources" }).focus();
@@ -384,7 +389,7 @@ test("compares a focused ACP pair across roles, views, filters, and evidence", a
   await expect(page.locator(".simple-message.user-message")).toHaveCount(2);
   await expect(page.locator(".simple-message.assistant-message")).toHaveCount(2);
   await expect(page.locator(".simple-message.assistant-message").first()).toContainText("fresh-default is working on the project.");
-  await page.getByRole("button", { name: "Advanced evidence" }).click();
+  await page.getByRole("button", { name: "Advanced details" }).click();
   await expect(page.getByRole("region", { name: "Comparison notebook" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Context" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Run comparison" })).toBeVisible();
@@ -491,7 +496,7 @@ test("contains narrow experiment scrolling inside the comparison regions", async
   await page.setViewportSize({ width: 1024, height: 844 });
   await page.goto(experimentStudio.url);
   await openDestination(page, "Compare");
-  await page.getByRole("button", { name: "Advanced evidence" }).click();
+  await page.getByRole("button", { name: "Advanced details" }).click();
   await expect(page.getByRole("button", { name: "Run comparison" })).toBeEnabled();
   await page.getByRole("button", { name: "Run comparison" }).click();
   await expect(page.locator(".object-card")).toHaveCount(3);
@@ -678,14 +683,40 @@ test("keeps Bench decision workspaces primary at all layout modes", async ({ pag
     await page.setViewportSize({ width: layout.width, height: layout.height });
     await page.goto(experimentStudio.url);
     await openDestination(page, "Compare");
-    await expect(page.getByLabel("Checkpoint project")).toBeVisible();
+    await expect(page.getByRole("group", { name: "Current project" })).toBeVisible();
     await expect(page.getByLabel("User prompt")).toBeInViewport();
     await expect(page.getByRole("button", { name: "Run compare" })).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Run compare" })).toHaveClass(/primary/);
     await expect(page.locator(".simple-lane")).toHaveCount(2);
-    await expect(page.getByRole("button", { name: "Advanced evidence" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Advanced details" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Comparison scope" })).toContainText("Repeatability comparison");
     await assertRenderedContract(page);
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    expect(overflow).toBe(0);
+    const geometry = await page.evaluate(() => {
+      const selectors = [
+        ".simple-project-control",
+        "#compare-baseline-agent",
+        "#compare-candidate-agent",
+        "#compare-prompt",
+        ".simple-run-actions",
+        ".simple-run-actions .primary",
+      ];
+      return {
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        viewportWidth: window.innerWidth,
+        critical: selectors.map((selector) => {
+          const rect = document.querySelector(selector)?.getBoundingClientRect();
+          return rect ? { selector, left: rect.left, right: rect.right, width: rect.width } : null;
+        }),
+      };
+    });
+    expect(geometry.overflow).toBe(0);
+    expect(geometry.critical).not.toContain(null);
+    for (const bounds of geometry.critical) {
+      expect(bounds.left, bounds.selector).toBeGreaterThanOrEqual(0);
+      expect(bounds.right, bounds.selector).toBeLessThanOrEqual(geometry.viewportWidth);
+      const minimumWidth = layout.name === "narrow" ? 160 : bounds.selector.endsWith(".primary") ? 88 : 120;
+      expect(bounds.width, bounds.selector).toBeGreaterThanOrEqual(minimumWidth);
+    }
     await page.screenshot({ path: testInfo.outputPath(`bench-${layout.name}.png`) });
   }
   expect(browserErrors).toEqual([]);
@@ -711,13 +742,29 @@ test("keeps resource-oriented ACP results usable at all layout modes", async ({ 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBe(0);
     if (layout.name === "narrow") {
-      const inline = await page.evaluate(() => {
+      const narrowLayout = await page.evaluate(() => {
         const table = document.querySelector(".resource-map-table");
         const inspector = document.querySelector(".operation-inspector");
-        return table !== null && inspector !== null && table.contains(inspector)
-          && inspector.parentElement?.getAttribute("role") === "cell";
+        const row = document.querySelector(".resource-map-row");
+        const resource = row?.querySelector(".resource-map-resource")?.getBoundingClientRect();
+        const baseline = row?.querySelector(".baseline-operations")?.getBoundingClientRect();
+        const candidate = row?.querySelector(".candidate-operations")?.getBoundingClientRect();
+        return {
+          inspectorInline: table !== null && inspector !== null && table.contains(inspector)
+            && inspector.parentElement?.getAttribute("role") === "cell",
+          resourceTop: resource?.top ?? 0,
+          baselineTop: baseline?.top ?? 0,
+          candidateTop: candidate?.top ?? 0,
+          baselineRight: baseline?.right ?? Number.POSITIVE_INFINITY,
+          candidateRight: candidate?.right ?? Number.POSITIVE_INFINITY,
+          viewportWidth: window.innerWidth,
+        };
       });
-      expect(inline).toBe(true);
+      expect(narrowLayout.inspectorInline).toBe(true);
+      expect(narrowLayout.resourceTop).toBeLessThan(narrowLayout.baselineTop);
+      expect(narrowLayout.baselineTop).toBeLessThan(narrowLayout.candidateTop);
+      expect(narrowLayout.baselineRight).toBeLessThanOrEqual(narrowLayout.viewportWidth);
+      expect(narrowLayout.candidateRight).toBeLessThanOrEqual(narrowLayout.viewportWidth);
     }
     await page.screenshot({ path: testInfo.outputPath(`compare-resource-map-${layout.name}.png`), fullPage: layout.name === "narrow" });
   }
@@ -759,7 +806,7 @@ test("leads Evidence results with the decision at all layout modes", async ({ pa
     await page.setViewportSize({ width: layout.width, height: layout.height });
     await page.goto(experimentStudio.url);
     await openDestination(page, "Compare");
-    await page.getByRole("button", { name: "Advanced evidence" }).click();
+    await page.getByRole("button", { name: "Advanced details" }).click();
     await page.getByRole("button", { name: "Evidence results", exact: true }).click();
     const decision = page.locator(".decision-summary");
     await expect(decision).toContainText("Sufficient");

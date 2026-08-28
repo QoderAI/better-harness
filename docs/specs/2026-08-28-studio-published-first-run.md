@@ -179,7 +179,8 @@ source code. Unavailable capabilities must remain honest and actionable.
   frozen Results. The configured Overview also reports a blocked checkpoint as
   needing attention rather than ready.
 - `npm run typecheck -w @qoder-ai/harness-studio` passed.
-- `npm test -w @qoder-ai/harness-studio` passed 61 files / 487 tests.
+- `npm test -w @qoder-ai/harness-studio` passed 61 files / 489 tests after
+  merging the latest `main` Session Artifact and Compare UX work.
 - `npm run test:browser -w @qoder-ai/harness-studio` passed 52 tests.
 - `npx vitest run test/skills-docs/doc-link-graph.test.mjs` passed 8 tests after
   regenerating the routing graph.

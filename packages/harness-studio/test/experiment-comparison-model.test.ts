@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   applyLaneEvent,
   deriveComparability,
+  deriveSimpleComparisonScope,
+  deriveSimpleResultFacts,
   deriveTreatmentSummary,
   globalStreamFailure,
   relationCounts,
@@ -54,6 +56,51 @@ function trace(status: LaneTrace["status"] = "idle"): LaneTrace {
 }
 
 describe("experiment comparison model", () => {
+  it("describes the configured comparison scope without overstating evidence", () => {
+    const baseline = { ...freshDefault, runtime: { profile: "acp-v1-stdio", model: "gpt-5.4" } };
+    const candidate = { ...freshMinimal, runtime: { profile: "acp-v1-stdio", model: "gpt-5.5" } };
+    const qoder = { id: "qodercli", label: "Qoder CLI", modelPolicy: "agent-default" as const };
+    const codex = { id: "codex-acp", label: "Codex ACP", modelPolicy: "lane" as const };
+
+    expect(deriveSimpleComparisonScope(baseline, candidate, qoder, qoder)).toMatchObject({
+      kind: "repeatability",
+      axes: [],
+      title: "Repeatability comparison",
+    });
+    expect(deriveSimpleComparisonScope(baseline, candidate, codex, codex)).toMatchObject({
+      kind: "single-variable",
+      axes: ["model"],
+      title: "Configured difference: model",
+    });
+    expect(deriveSimpleComparisonScope(baseline, candidate, qoder, codex)).toMatchObject({
+      kind: "descriptive",
+      axes: ["agent", "model-policy", "model"],
+      title: "Descriptive comparison: Agent + model policy + model",
+    });
+  });
+
+  it("summarizes only retained resource, edit, verification, and lane facts", () => {
+    const baseline = trace("finished");
+    baseline.calls = [
+      { laneId: "left", runId: "left:1", id: "left-read", sequence: 0, name: "Read", input: { path: "README.md" }, status: "completed" },
+      { laneId: "left", runId: "left:1", id: "left-edit", sequence: 1, name: "Edit", input: { path: "README.md" }, status: "completed" },
+    ];
+    const candidate = trace("failed");
+    candidate.calls = [
+      { laneId: "right", runId: "right:1", id: "right-read", sequence: 0, name: "Read", input: { path: "README.md" }, status: "completed" },
+      { laneId: "right", runId: "right:1", id: "right-search", sequence: 1, name: "Search", input: { pattern: "AGENTS.md" }, status: "completed" },
+      { laneId: "right", runId: "right:1", id: "right-verify", sequence: 2, name: "Bash", input: { command: "npm test" }, status: "failed" },
+    ];
+
+    expect(deriveSimpleResultFacts(baseline, candidate)).toEqual({
+      sharedResources: 1,
+      baselineOnlyResources: 0,
+      candidateOnlyResources: 2,
+      baseline: { status: "finished", resources: 1, editedResources: ["README.md"], verificationCalls: 0 },
+      candidate: { status: "failed", resources: 3, editedResources: [], verificationCalls: 1 },
+    });
+  });
+
   it("shows the moved profile rather than equal harness ids", () => {
     expect(deriveTreatmentSummary(preview())).toEqual({
       label: "Profile",

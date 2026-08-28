@@ -33,10 +33,10 @@ flowchart LR
 This reference owns:
 
 - the four planes of a verify loop and their bootstrap order;
-- the probe verdict domain, the judging modes, and the aggregate-verdict
-  rules;
-- the post-verdict diagnose-repair-revalidate sequence, its round bound, and
-  flaky registration;
+- the probe verdict domain, the judging modes, the aggregate-verdict rules,
+  and the guards on green verdicts;
+- the post-verdict diagnose-repair-revalidate sequence, its round bound,
+  verdict-source attribution, and flaky registration;
 - the scenario-family mapping that instantiates the planes per stack;
 - the regression-skeleton asset shape; and
 - the human value gate that keeps machine-collected cases and baselines
@@ -267,11 +267,56 @@ gate definitions.
 A `partial` or `blocked` run can still inform delivery, but only a human can
 accept it — the loop itself must not treat it as `pass`.
 
+## Guard the Green Verdict
+
+A green verdict is a claim about what ran, not merely that nothing errored. The
+aggregate rules above stop a skipped case from manufacturing a `pass`; the same
+standard applies to how the run collected its cases. Three guards:
+
+- **An empty run fails.** A run that executed zero of its matched cases is not
+  `pass`, whatever its exit code. This is the zero-test case covered in
+  [Verification Environment Design](verification-environment.md): the runner
+  must refuse to report green when nothing was judged.
+- **Fail fast over silent fallback.** When a required input, fixture, or remote
+  fetch fails, the run must fail loudly at that point, not silently substitute a
+  narrower path and still report green. A fallback changes what is exercised, so
+  it changes the claim — the run must say so by not passing.
+- **No silent exits.** A harness script that stops early — under `set -e`, a
+  missing tool, a skipped stage — without reporting that it did not run is a
+  fake green. Every early exit must surface as a non-passing verdict, never a
+  zero exit code.
+
 ## After a Non-Passing Verdict
 
 A verdict is where the loop turns, not where it ends. Without a stated
 continuation an agent improvises, and the cheapest improvisation is to make the
-judge more permissive. Run this sequence instead:
+judge more permissive. Attribute the verdict source first, then run the repair
+sequence only for failures the change owns.
+
+**Attribute the verdict before touching code.** The repair sequence below
+assumes the failing check is locally runnable and reproducible; hosted CI usually
+is not. Its runner, network, caches, and consumed repositories are shared state
+the loop does not control. Classify where a red verdict comes from before
+spending a repair round, using the cheapest evidence first:
+
+| Source | Distinguishing evidence | Continuation |
+| --- | --- | --- |
+| Local change | the failing assertion touches a file or behavior the diff changes; the case reproduces on the same correlation handle | run the repair sequence below |
+| Infrastructure | the same failure also hits the base revision, unrelated branches, or other PRs; it is independent of the diff's content | rerun once, then escalate to the CI owner — do not edit the change |
+| Upstream asset drift | the consumed repository, fixture, or test corpus changed or deleted a case after the last green run; the failing surface is not touched by the diff | repin or resync the asset — do not edit the change to appease the failure |
+
+Only a local-change attribution enters the sequence below and consumes the round
+budget. Editing the diff against an infrastructure or upstream failure burns
+rounds on a cause the change does not own, and leaves the real cause live under
+a temporarily passing verdict.
+
+When the failing check cannot be reproduced locally, substitute cross-signal
+evidence for reproduction: does the base revision fail the same way, do unrelated
+branches fail the same way, did the failure start before the diff touched the
+failing surface? When none of these signals is available, the verdict is
+`blocked` pending CI evidence, not a presumed local defect.
+
+For a local-change verdict, run this sequence:
 
 ```text
 reproduce -> localize -> attribute to smallest owner -> repair
@@ -473,6 +518,9 @@ failures grow it exactly where the system actually broke.
 - **Green by omission**: reporting `pass` when required evidence was never
   collected or matched cases were skipped; missing evidence is `unobserved`
   and skipped coverage demotes the aggregate verdict.
+- **Silent fallback green**: a required fetch, fixture, or setup fails and the
+  run quietly substitutes a narrower path while still reporting `pass`, hiding
+  that the intended cases never executed.
 - **Auto-approved baselines**: regenerating goldens or screenshots whenever
   the diff fails turns the judge into a mirror — it memorizes regressions as
   the new correct.
@@ -481,6 +529,9 @@ failures grow it exactly where the system actually broke.
 - **Repair until green**: each repair round relaxing an assertion, swapping in
   an easier case, or widening a tolerance instead of testing a new root-cause
   hypothesis against the original case.
+- **Repairing the diff for the environment**: spending repair rounds editing the
+  local change to appease a failure whose source is infrastructure or upstream
+  asset drift, burning the round budget on a cause the diff does not own.
 - **Unbounded repair rounds**: retrying diagnosis and repair with no agreed
   round bound and no round record, so a wrong model of the problem burns the
   budget instead of escalating to a human.

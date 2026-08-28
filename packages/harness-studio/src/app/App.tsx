@@ -6,16 +6,25 @@ import { Moon } from "@phosphor-icons/react/Moon";
 import { SidebarSimple } from "@phosphor-icons/react/SidebarSimple";
 import { Sun } from "@phosphor-icons/react/Sun";
 import { ArtifactsWorkspace } from "./ArtifactsWorkspace.js";
+import { ArtifactView } from "./artifacts/ArtifactView.js";
 import { CompareView } from "./CompareView.js";
 import { CustomizationView } from "./CustomizationView.js";
 import { ExperimentView } from "./experiment/ExperimentView.js";
 import { GitHistoryView } from "./GitHistoryView.js";
 import { InputTraceView } from "./InputTraceView.js";
 import { RunView } from "./run/RunView.js";
+import {
+  isArtifactCatalogResponse,
+  type ArtifactDescriptor,
+} from "../contracts/artifact.js";
 import type { DebuggerSession } from "../contracts/debugger-session.js";
 import { isStudioProjectCatalog, type StudioProjectCatalog, type StudioProjectDescriptor } from "../contracts/studio-project.js";
 import { ProjectSidebar } from "./shell/ProjectSidebar.js";
 import { parseStudioLocation, studioLocationHash } from "./shell/project-routing.js";
+import {
+  isWorkspaceArtifactNavigation,
+  type StudioArtifactCatalogResponse,
+} from "../contracts/workspace-artifact.js";
 import { useRovingFocus } from "./roving-tablist.js";
 import { studioApiError } from "./studio-api.js";
 import { StudioThemeContext, type StudioTheme } from "./studio-theme.js";
@@ -557,6 +566,11 @@ interface SessionSummary {
   provider?: string;
 }
 
+interface SessionArtifactContext {
+  authorityId: string;
+  artifacts: ArtifactDescriptor[];
+}
+
 function SessionsWorkspace(props: {
   config: StudioConfig;
   initialSessionId?: string;
@@ -568,10 +582,12 @@ function SessionsWorkspace(props: {
   const [selected, setSelected] = useState<string>();
   const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<DebuggerSession>();
+  const [sessionArtifacts, setSessionArtifacts] = useState<SessionArtifactContext | null>();
   const [failure, setFailure] = useState<string>();
   const [detailFailure, setDetailFailure] = useState<string>();
   const sessionRowRefs = useRef(new Map<string, HTMLButtonElement>());
   const [focusedSessionId, setFocusedSessionId] = useState<string>();
+  const detailRequest = useRef(0);
   const [surface, setSurface] = useState<"inspector" | "catalog">(
     props.config.workspaceWorkbenchEnabled ? "inspector" : "catalog",
   );
@@ -604,16 +620,25 @@ function SessionsWorkspace(props: {
   }, [props.initialSessionId, selected, sessions]);
 
   async function openSession(id: string, cancelled: () => boolean = () => false): Promise<void> {
+    const request = ++detailRequest.current;
     try {
-      const response = await fetch(`api/sessions/${encodeURIComponent(id)}/debugger`);
+      setSessionArtifacts(undefined);
+      const [response, artifactResponse] = await Promise.all([
+        fetch(`api/sessions/${encodeURIComponent(id)}/debugger`),
+        fetch("api/artifacts"),
+      ]);
       if (!response.ok) throw new Error(await studioApiError(response));
       const loaded = await response.json() as DebuggerSession;
-      if (cancelled()) return;
+      const artifacts = artifactResponse.ok
+        ? sessionArtifactContext(await artifactResponse.json() as unknown, id)
+        : null;
+      if (cancelled() || request !== detailRequest.current) return;
       setDetailFailure(undefined);
       setSelected(id);
       setDetail(loaded);
+      setSessionArtifacts(artifacts);
     } catch (error) {
-      if (cancelled()) return;
+      if (cancelled() || request !== detailRequest.current) return;
       const message = error instanceof Error ? error.message : "Session detail failed to load.";
       setDetailFailure(message);
     }
@@ -668,7 +693,7 @@ function SessionsWorkspace(props: {
         ? <p className="artifact-status" role="alert">{detailFailure}</p>
         : detail === undefined
           ? <p className="artifact-status">Select a session to inspect retained evidence.</p>
-          : <SessionDetail session={detail} />}
+          : <SessionDetail session={detail} artifactContext={sessionArtifacts} />}
     </main>
   </section>;
 
@@ -691,13 +716,59 @@ function SessionsWorkspace(props: {
   </section>;
 }
 
-function SessionDetail({ session }: { session: DebuggerSession }): React.JSX.Element {
+function SessionDetail({ session, artifactContext }: { session: DebuggerSession; artifactContext?: SessionArtifactContext | null }): React.JSX.Element {
+  const [activeArtifactId, setActiveArtifactId] = useState<string>();
+  useEffect(() => setActiveArtifactId(undefined), [session.id]);
   const toolCalls = session.events.reduce((count, event) => count + (event.toolCalls?.length ?? 0), 0);
+  const activeArtifact = artifactContext?.artifacts.find((artifact) => artifact.id === activeArtifactId);
+  const openArtifact = (artifact: ArtifactDescriptor): void => setActiveArtifactId(artifact.id);
   return <section className="session-detail" aria-label={`Session detail: ${session.name}`}>
     <header><div><small>Retained Session</small><h1>{session.name}</h1></div><span className={`run-badge status-${session.connection}`}>{session.connection}</span></header>
     <dl><div><dt>Agent</dt><dd>{session.agent}</dd></div><div><dt>Protocol</dt><dd>{session.protocol}</dd></div><div><dt>Events</dt><dd>{session.events.length}</dd></div><div><dt>Tool calls</dt><dd>{toolCalls}</dd></div></dl>
-    <ol className="session-event-rows">{session.events.map((event) => <li key={event.id}><time>{event.timestamp}</time><span><strong>{event.phase} · {event.title}</strong><small>{event.summary}</small></span>{event.toolCalls && <em>{event.toolCalls.map((tool) => tool.name).join(", ")}</em>}</li>)}</ol>
+    <div className="session-detail-workspace">
+      <section className="session-detail-ledger" aria-label="Session evidence and files">
+        <section className="session-artifact-files" aria-label="Session files">
+          <header><strong>Session files</strong><span>{artifactContext?.artifacts.length ?? 0}</span></header>
+          {artifactContext === undefined
+            ? <p>Indexing observed Session files…</p>
+            : artifactContext === null || artifactContext.artifacts.length === 0
+              ? <p>No current regular file from this Session is available in the Artifact catalog.</p>
+              : <ul>{artifactContext.artifacts.map((artifact) => <li key={artifact.id}><button
+                type="button"
+                aria-pressed={activeArtifactId === artifact.id}
+                aria-label={`Open Session artifact ${artifact.label}`}
+                title="Select or press Enter to open; double-click is supported"
+                onClick={() => openArtifact(artifact)}
+                onDoubleClick={() => openArtifact(artifact)}
+              ><span><strong>{artifact.label}</strong><small>{artifact.format.toUpperCase()} · exact {artifact.revision.id.slice(0, 18)}</small></span><em>{artifact.renderer.status === "ready" ? artifact.renderer.label : "Preview unavailable"}</em></button></li>)}</ul>}
+        </section>
+        <ol className="session-event-rows">{session.events.map((event) => <li key={event.id}><time>{event.timestamp}</time><span><strong>{event.phase} · {event.title}</strong><small>{event.summary}</small></span>{event.toolCalls && <em>{event.toolCalls.map((tool) => tool.name).join(", ")}</em>}</li>)}</ol>
+      </section>
+      <aside className="session-artifact-preview" aria-label="Session Artifact View">
+        {activeArtifact === undefined || artifactContext == null
+          ? <div className="session-artifact-empty"><small>Artifact View</small><strong>Select a Session file</strong><p>Choose a retained file, press Enter, or double-click it to open the exact current revision here.</p></div>
+          : <>
+            <header><div><strong>{activeArtifact.label}</strong><small>{activeArtifact.format.toUpperCase()} · {activeArtifact.adapter.id}</small></div><span title={activeArtifact.revision.id}>{activeArtifact.revision.id.slice(0, 18)}</span></header>
+            <div className="session-artifact-surface" data-native-session-artifact={activeArtifact.label}>
+              <ArtifactView authorityId={artifactContext.authorityId} artifact={activeArtifact} liveGeneration={0} />
+            </div>
+          </>}
+      </aside>
+    </div>
   </section>;
+}
+
+function sessionArtifactContext(value: unknown, sessionId: string): SessionArtifactContext | null {
+  if (!isArtifactCatalogResponse(value)) return null;
+  const catalog = value as StudioArtifactCatalogResponse;
+  if (catalog.navigation === undefined || !isWorkspaceArtifactNavigation(catalog.navigation)) return null;
+  const artifactIds = new Set(catalog.navigation.observations
+    .filter((observation) => observation.sessionId === sessionId)
+    .map((observation) => observation.artifactId));
+  return {
+    authorityId: catalog.snapshot.catalogId,
+    artifacts: catalog.artifacts.filter((artifact) => artifactIds.has(artifact.id)),
+  };
 }
 
 function ProjectFolderControls(props: { autoFocus?: boolean; onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {

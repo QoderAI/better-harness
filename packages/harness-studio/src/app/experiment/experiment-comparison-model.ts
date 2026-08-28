@@ -29,6 +29,102 @@ export interface TreatmentSummary {
   controlled: boolean;
 }
 
+export interface SimpleAgentIdentity {
+  id: string;
+  label: string;
+  modelPolicy: "lane" | "agent-default";
+}
+
+export interface SimpleComparisonScope {
+  kind: "single-variable" | "descriptive" | "repeatability";
+  title: string;
+  detail: string;
+  axes: Array<"agent" | "model" | "model-policy" | "runtime-profile" | "harness">;
+}
+
+export interface SimpleLaneFacts {
+  status: LaneTrace["status"];
+  resources: number;
+  editedResources: string[];
+  verificationCalls: number;
+}
+
+export interface SimpleResultFacts {
+  sharedResources: number;
+  baselineOnlyResources: number;
+  candidateOnlyResources: number;
+  baseline: SimpleLaneFacts;
+  candidate: SimpleLaneFacts;
+}
+
+export function deriveSimpleComparisonScope(
+  baseline: LaneDefinition | undefined,
+  candidate: LaneDefinition | undefined,
+  baselineAgent?: SimpleAgentIdentity,
+  candidateAgent?: SimpleAgentIdentity,
+): SimpleComparisonScope {
+  const axes: SimpleComparisonScope["axes"] = [];
+  if (baselineAgent !== undefined && candidateAgent !== undefined && baselineAgent.id !== candidateAgent.id) {
+    axes.push("agent");
+  }
+  if (baselineAgent?.modelPolicy !== candidateAgent?.modelPolicy
+    && baselineAgent?.modelPolicy !== undefined
+    && candidateAgent?.modelPolicy !== undefined) {
+    axes.push("model-policy");
+  }
+  const baselineModel = effectiveModel(baseline, baselineAgent);
+  const candidateModel = effectiveModel(candidate, candidateAgent);
+  if (baselineModel !== undefined && candidateModel !== undefined && baselineModel !== candidateModel) axes.push("model");
+  if (baseline?.runtime?.profile !== candidate?.runtime?.profile
+    && baseline?.runtime?.profile !== undefined
+    && candidate?.runtime?.profile !== undefined) {
+    axes.push("runtime-profile");
+  }
+  if (baseline?.harnessId !== candidate?.harnessId
+    && baseline?.harnessId !== undefined
+    && candidate?.harnessId !== undefined) {
+    axes.push("harness");
+  }
+  const labels = axes.map(simpleAxisLabel);
+  if (axes.length === 0) {
+    const agent = baselineAgent?.label ?? "the same Agent configuration";
+    return {
+      kind: "repeatability",
+      title: "Repeatability comparison",
+      detail: `Both lanes use ${agent} with ${displayEffectiveModel(baselineModel)}; observed differences are run-to-run variation.`,
+      axes,
+    };
+  }
+  if (axes.length === 1) {
+    return {
+      kind: "single-variable",
+      title: `Configured difference: ${labels[0]}`,
+      detail: "The checkpoint and other visible settings are held constant. One trial is still insufficient for a general quality claim.",
+      axes,
+    };
+  }
+  return {
+    kind: "descriptive",
+    title: `Descriptive comparison: ${labels.join(" + ")}`,
+    detail: "Several configured variables change together, so observed differences cannot be attributed to one cause.",
+    axes,
+  };
+}
+
+export function deriveSimpleResultFacts(
+  baseline: LaneTrace,
+  candidate: LaneTrace,
+): SimpleResultFacts {
+  const rows = resourceComparisonRows(baseline.calls, candidate.calls);
+  return {
+    sharedResources: rows.filter((row) => row.baseline.length > 0 && row.candidate.length > 0).length,
+    baselineOnlyResources: rows.filter((row) => row.baseline.length > 0 && row.candidate.length === 0).length,
+    candidateOnlyResources: rows.filter((row) => row.baseline.length === 0 && row.candidate.length > 0).length,
+    baseline: laneFacts(baseline),
+    candidate: laneFacts(candidate),
+  };
+}
+
 export function deriveTreatmentSummary(preview: ExperimentPreview): TreatmentSummary {
   const executeIds = new Set(preview.manifest.lanes.filter((lane) => lane.origin === "execute").map((lane) => lane.id));
   const contrast = preview.contrasts.find((item) => item.lanes.length === 2
@@ -292,6 +388,39 @@ function operationLabel(kind: ToolOperation["kind"]): string {
         : kind === "list" ? "List"
           : kind === "verify" ? "Verify"
             : "Run";
+}
+
+function effectiveModel(
+  lane: LaneDefinition | undefined,
+  agent: SimpleAgentIdentity | undefined,
+): string | undefined {
+  return agent?.modelPolicy === "agent-default" ? "agent-default" : lane?.runtime?.model;
+}
+
+function displayEffectiveModel(model: string | undefined): string {
+  return model === "agent-default" ? "the Agent default model" : model ?? "the same model policy";
+}
+
+function simpleAxisLabel(axis: SimpleComparisonScope["axes"][number]): string {
+  return axis === "agent" ? "Agent"
+    : axis === "model" ? "model"
+      : axis === "model-policy" ? "model policy"
+        : axis === "runtime-profile" ? "runtime profile"
+          : "harness";
+}
+
+function laneFacts(lane: LaneTrace): SimpleLaneFacts {
+  const operations = lane.calls.flatMap(projectToolOperations);
+  const resources = new Set(operations.map((operation) => operation.resource));
+  const editedResources = [...new Set(operations
+    .filter((operation) => operation.kind === "edit")
+    .map((operation) => operation.resource))];
+  return {
+    status: lane.status,
+    resources: resources.size,
+    editedResources,
+    verificationCalls: operations.filter((operation) => operation.kind === "verify").length,
+  };
 }
 
 export function emptyLane(): LaneTrace {
