@@ -181,6 +181,25 @@ describe("Agentic Artifact interaction routes", () => {
     await server.close();
     server = undefined;
 
+    const internalError = await startInteractionFixture({ agentArgs: [ACP_AGENT_FIXTURE, "--artifact-internal-error"] });
+    server = internalError.server;
+    const internalErrorArtifact = await catalogArtifact(server.url);
+    const internalErrorEvents = decodeSseStream(await (await fetch(agentRunUri(server.url, internalErrorArtifact), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(agentRunBody("artifact-run:internal-error")),
+    })).text());
+    expect(internalErrorEvents.at(-1)).toMatchObject({
+      type: "RUN_ERROR",
+      message: "The configured ACP Agent failed before producing a valid Artifact plan.",
+    });
+    expect(JSON.stringify(internalErrorEvents)).not.toContain("fixture-secret-context");
+    expect(JSON.stringify(internalErrorEvents)).not.toContain("fixture-internal-error");
+    expect(internalErrorEvents.some((event) => event.type === "CUSTOM" && event.name === "artifact.agent.proposal")).toBe(false);
+    expect(await readFile(internalError.sourcePath, "utf8")).toBe("Original");
+    await server.close();
+    server = undefined;
+
     const waiting = await startInteractionFixture({ agentArgs: [ACP_AGENT_FIXTURE, "--artifact-plan", "--wait-for-cancel"] });
     server = waiting.server;
     const waitingArtifact = await catalogArtifact(server.url);
@@ -195,6 +214,35 @@ describe("Agentic Artifact interaction routes", () => {
     const cancelledEvents = decodeSseStream(await running.text());
     expect(cancelledEvents.at(-1)).toMatchObject({ type: "RUN_ERROR", message: expect.stringContaining("interrupted") });
     expect(cancelledEvents.some((event) => event.type === "CUSTOM" && event.name === "artifact.agent.proposal")).toBe(false);
+    expect(await readFile(waiting.sourcePath, "utf8")).toBe("Original");
+  });
+
+  it("bounds concurrent Agent runs and aborts a disconnected stream", async () => {
+    const waiting = await startInteractionFixture({ agentArgs: [ACP_AGENT_FIXTURE, "--artifact-plan", "--wait-for-cancel"] });
+    server = waiting.server;
+    const artifact = await catalogArtifact(server.url);
+    const runIds = [0, 1, 2, 3, 4].map((index) => `artifact-run:bounded-${String(index)}`);
+    const running = await Promise.all(runIds.map(async (runId) => await fetch(agentRunUri(server!.url, artifact), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(agentRunBody(runId)),
+    })));
+    expect(running.map((response) => response.status).sort()).toEqual([200, 200, 200, 200, 429]);
+    const accepted = runIds.filter((_runId, index) => running[index]?.status === 200);
+    const cancellations = await Promise.all(accepted.map(async (runId) => await fetch(`${agentRunUri(server!.url, artifact)}/${encodeURIComponent(runId)}/cancel`, { method: "POST" })));
+    expect(cancellations.map((response) => response.status)).toEqual([202, 202, 202, 202]);
+    await Promise.all(running.map(async (response) => response.text()));
+
+    const disconnected = await fetch(agentRunUri(server.url, artifact), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(agentRunBody("artifact-run:disconnect")),
+    });
+    expect(disconnected.status).toBe(200);
+    const reader = disconnected.body!.getReader();
+    expect((await reader.read()).done).toBe(false);
+    await reader.cancel();
+    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(await readFile(waiting.sourcePath, "utf8")).toBe("Original");
   });
 });

@@ -50,6 +50,10 @@ const app = agent({ name: "better-harness-acp-fixture" })
     cancelled = true;
   })
   .onRequest(methods.agent.session.prompt, async (context) => {
+    if (process.argv.includes("--artifact-internal-error")) {
+      process.stderr.write("fixture-secret-context\n");
+      throw new Error("fixture-internal-error");
+    }
     const sessionId = context.params.sessionId;
     const permission = await context.client.request(methods.client.session.requestPermission, {
       sessionId,

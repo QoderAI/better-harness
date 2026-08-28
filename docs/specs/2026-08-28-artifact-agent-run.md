@@ -3,7 +3,7 @@
 ## Traceability
 
 - Spec ID: artifact-agent-run
-- Status: Draft
+- Status: Implemented
 - Architecture input: `docs/adrs/studio-artifact-runtime-and-providers.md`
 - Depends on: `studio-agentic-artifact-interaction`
 
@@ -95,7 +95,44 @@ payloads.
 
 ## Test and Review Evidence
 
-- Pending implementation and verification.
+- Contract and route verification: Node 24.15 Studio focused
+  `test/artifact-interaction-server.test.ts` passed 1 file / 4 tests. It covers
+  real ACP fixture execution, zero permission grant, strict-plan rejection,
+  sanitized internal failure, unavailable Agent, interrupt, simultaneous
+  five-run admission with a four-run cap, disconnect cleanup, and the existing
+  reject/approve/replay/conflict/stale gate.
+- Regression verification: Node 24.15 Harness passed 20 files / 173 tests;
+  Studio build, typecheck, and 62 files / 494 tests passed. The first attempted
+  parallel run was discarded because Harness cleanup raced Studio imports and
+  child scripts used Node 26; the recorded result is the dependency-ordered run
+  with Node 24 pinned for every child process.
+- Provider verification: `@homology/integration-harness-artifact-provider`
+  build and focused 1 file / 12 tests passed; focused `oxlint` passed; dry-run
+  pack produced 21 entries, 2,940,287 packed bytes / 11,140,892 unpacked bytes.
+  Repository package naming checked 88 packages / 86 workspaces / 2 exceptions,
+  100 scripts, and 2,779 tracked files with 0 machine-local path hits.
+- Real executor smoke: Qoder CLI 1.1.32 ran through `AcpSdkExecutor`, returned
+  `HarnessStudioArtifactAgentPlanV1`, and compiled the human request into
+  `Rename to Agent Runtime Group` for
+  `drawio://complex-features.drawio/page/rich/cell/runtime-group`. Evidence
+  bound ACP session `84537291-1501-4e57-9229-8e992c0b9db5`, Harness revision
+  `hr_7d337eaa5cf81f8935770cc3877b141e`, exact source revision `bb301843`, and
+  `end_turn`. The Provider retained proposal digest `2fc4801a`; source SHA-256
+  remained `bb301843` before and after the run, proving zero pre-approval write.
+- Browser verification: the real Qoder + Draw.io flow showed shared semantic
+  selection, running/Interrupt, explicit plan, executor/session evidence,
+  proposal preview, and both `Approve once` / `Reject`. Reject preserved the
+  revision; interrupt retained no proposal and allowed rerun. Manual checks at
+  1440×900, 1024×768, and 390×844 had document/body scroll width equal to the
+  viewport and 0 captured console warnings/errors. Screenshots are
+  `.verification/agentic-artifact-agent-run-{wide,compact,narrow}.png`.
+- Review Readiness tightened two issues found after implementation: admission is
+  rechecked atomically at active-run registration, and raw Harness warnings or
+  Agent-supplied tool names are no longer projected to the browser. Internal
+  ACP stderr/error text is regression-tested as absent from the SSE stream.
+- The installed `codex-acp` 0.15.0 executable did not complete this real smoke;
+  it failed closed behind the generic public error. Only the observed Qoder ACP
+  lane is claimed as live on this host. No CI or release certification was run.
 
 ### Risks
 

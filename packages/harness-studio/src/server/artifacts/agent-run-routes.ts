@@ -107,6 +107,14 @@ export async function streamArtifactAgentRun(
     respondArtifactJson(response, 404, { error: "No ACP Agent is configured for Artifact planning." });
     return;
   }
+  if (state.artifactAgentRuns.has(input.runId)) {
+    respondArtifactJson(response, 409, { error: `Artifact Agent run '${input.runId}' is already active.` });
+    return;
+  }
+  if (state.artifactAgentRuns.size >= MAX_ACTIVE_AGENT_RUNS) {
+    respondArtifactJson(response, 429, { error: "Too many Artifact Agent runs are active." });
+    return;
+  }
   const abortController = new AbortController();
   state.artifactAgentRuns.set(input.runId, {
     artifactId,
@@ -154,10 +162,8 @@ export async function streamArtifactAgentRun(
           emit({
             type: "CUSTOM",
             name: "artifact.agent.action",
-            value: { kind: "permission-cancelled", summary: `Denied planning-time tool request '${boundedEventLabel(event.toolCallName)}'.` },
+            value: { kind: "permission-cancelled", summary: "Denied one planning-time tool request." },
           });
-        } else if (event.type === "CUSTOM" && event.name === "harness.warning" && typeof event.value === "string") {
-          emit({ type: "CUSTOM", name: "artifact.agent.warning", value: boundedEventLabel(event.value) });
         } else if (event.type === "RUN_ERROR") {
           observedRunError = publicExecutorError(event.message);
         }
@@ -376,10 +382,6 @@ function boundedIdentifier(value: unknown, path: string): string {
   const result = boundedString(value, path, 256);
   if (!/^[A-Za-z0-9][A-Za-z0-9:._-]*$/u.test(result)) throw new Error(`${path} is invalid.`);
   return result;
-}
-
-function boundedEventLabel(value: string): string {
-  return value.length <= 512 ? value : `${value.slice(0, 509)}…`;
 }
 
 function publicExecutorError(value: string): string {
