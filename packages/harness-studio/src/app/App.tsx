@@ -1,17 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import type { Icon } from "@phosphor-icons/react";
 import { ArrowRight } from "@phosphor-icons/react/ArrowRight";
-import { Binoculars } from "@phosphor-icons/react/Binoculars";
-import { BugBeetle } from "@phosphor-icons/react/BugBeetle";
-import { ChatText } from "@phosphor-icons/react/ChatText";
-import { Flask } from "@phosphor-icons/react/Flask";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { GitBranch } from "@phosphor-icons/react/GitBranch";
 import { Moon } from "@phosphor-icons/react/Moon";
-import { Package } from "@phosphor-icons/react/Package";
-import { PuzzlePiece } from "@phosphor-icons/react/PuzzlePiece";
 import { SidebarSimple } from "@phosphor-icons/react/SidebarSimple";
-import { SquaresFour } from "@phosphor-icons/react/SquaresFour";
 import { Sun } from "@phosphor-icons/react/Sun";
 import { ArtifactsWorkspace } from "./ArtifactsWorkspace.js";
 import { ArtifactView } from "./artifacts/ArtifactView.js";
@@ -26,6 +18,9 @@ import {
   type ArtifactDescriptor,
 } from "../contracts/artifact.js";
 import type { DebuggerSession } from "../contracts/debugger-session.js";
+import { isStudioProjectCatalog, type StudioProjectCatalog, type StudioProjectDescriptor } from "../contracts/studio-project.js";
+import { ProjectSidebar } from "./shell/ProjectSidebar.js";
+import { parseStudioLocation, studioLocationHash } from "./shell/project-routing.js";
 import {
   isWorkspaceArtifactNavigation,
   type StudioArtifactCatalogResponse,
@@ -37,24 +32,13 @@ import { StudioThemeContext, type StudioTheme } from "./studio-theme.js";
 const InspectorWorkbench = lazy(async () => ({ default: (await import("./InspectorWorkbench.js")).InspectorWorkbench }));
 import {
   compareSurfaces,
+  studioProjectGateRequired,
   studioOverview,
   studioDestinations,
   type StudioArea,
   type StudioCompareSurface,
   type StudioConfig,
-  type StudioDestination,
 } from "./studio-shell-model.js";
-
-const NAV_ICONS: Record<StudioArea, Icon> = {
-  overview: SquaresFour,
-  customizations: PuzzlePiece,
-  inputs: ChatText,
-  sessions: Binoculars,
-  commits: GitBranch,
-  artifacts: Package,
-  debugger: BugBeetle,
-  compare: Flask,
-};
 
 // The sidebar already groups these destinations, so the context bar carries the
 // view name alone rather than repeating the group as an eyebrow.
@@ -83,6 +67,7 @@ const EMPTY_CONFIG: StudioConfig = {
   artifactsEnabled: false,
   evidenceEnabled: false,
   experimentEnabled: false,
+  experimentRunnable: false,
   gitEnabled: false,
   harnessMode: "none",
   historyEnabled: false,
@@ -90,6 +75,8 @@ const EMPTY_CONFIG: StudioConfig = {
   workspaceWorkbenchEnabled: false,
   workspaceDiscoveryEnabled: false,
   workspaceConnected: false,
+  projectExecutionEnabled: false,
+  projectRevision: 0,
   sessionCount: 0,
   inputCount: 0,
   intentAnalysisEnabled: false,
@@ -102,29 +89,47 @@ function initialStudioTheme(): StudioTheme {
   return document.documentElement.dataset.theme === "light" ? "light" : "dark";
 }
 
-async function fetchStudioState(): Promise<{ config: StudioConfig; sources: StudioSourceOption[] }> {
-  const [configResponse, sourcesResponse] = await Promise.all([
-    fetch("api/config"),
-    fetch("api/sources"),
-  ]);
-  if (!configResponse.ok) throw new Error(`Studio config failed (${configResponse.status}).`);
-  const loaded = { ...EMPTY_CONFIG, ...(await configResponse.json() as Partial<StudioConfig>) };
-  const sourcesPayload = sourcesResponse.ok ? await sourcesResponse.json() as { sources?: StudioSourceOption[] } : {};
-  return {
-    config: loaded,
-    sources: Array.isArray(sourcesPayload.sources) ? sourcesPayload.sources : [],
-  };
+async function fetchStudioState(): Promise<{ config: StudioConfig; sources: StudioSourceOption[]; projectCatalog: StudioProjectCatalog }> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const [configResponse, sourcesResponse, projectsResponse] = await Promise.all([
+      fetch("api/config"),
+      fetch("api/sources"),
+      fetch("api/projects"),
+    ]);
+    if (!configResponse.ok) throw new Error(`Studio config failed (${configResponse.status}).`);
+    if (!projectsResponse.ok) throw new Error(`Studio Projects failed (${projectsResponse.status}).`);
+    const loaded = { ...EMPTY_CONFIG, ...(await configResponse.json() as Partial<StudioConfig>) };
+    const sourcesPayload = sourcesResponse.ok ? await sourcesResponse.json() as { sources?: StudioSourceOption[] } : {};
+    const projectCatalog = await projectsResponse.json() as unknown;
+    if (!isStudioProjectCatalog(projectCatalog)) throw new Error("Studio Project catalog is unsupported.");
+    if (loaded.projectRevision !== projectCatalog.revision || loaded.activeProjectId !== projectCatalog.activeProjectId) {
+      if (attempt < 2) continue;
+      throw new Error("Studio Project state changed while the workbench was loading.");
+    }
+    return {
+      config: loaded,
+      sources: Array.isArray(sourcesPayload.sources) ? sourcesPayload.sources : [],
+      projectCatalog,
+    };
+  }
+  throw new Error("Studio Project state is unavailable.");
 }
 
 export function App(): React.JSX.Element {
   const [config, setConfig] = useState<StudioConfig | undefined>(undefined);
   const [sources, setSources] = useState<StudioSourceOption[]>([]);
+  const [projects, setProjects] = useState<StudioProjectDescriptor[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string>();
+  const [projectOpening, setProjectOpening] = useState(false);
+  const [projectFailure, setProjectFailure] = useState<string>();
   const [dataRevision, setDataRevision] = useState(0);
   const [workspaceRevision, setWorkspaceRevision] = useState(0);
   const [sessionCompareIds, setSessionCompareIds] = useState<[string, string] | undefined>();
   const [sessionOpenId, setSessionOpenId] = useState<string>();
   const [configFailure, setConfigFailure] = useState<string | null>(null);
+  const [bootstrapRevision, setBootstrapRevision] = useState(0);
   const [area, setArea] = useState<StudioArea>(areaFromHash);
+  const [locationRevision, setLocationRevision] = useState(0);
   const [compareSurface, setCompareSurface] = useState<StudioCompareSurface>("sessions");
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [theme, setTheme] = useState<StudioTheme>(initialStudioTheme);
@@ -147,6 +152,8 @@ export function App(): React.JSX.Element {
         if (!cancelled) {
           setConfigFailure(null);
           setSources(loaded.sources);
+          setProjects(loaded.projectCatalog.projects);
+          setActiveProjectId(loaded.projectCatalog.activeProjectId);
           setConfig(loaded.config);
           setCompareSurface((currentSurface) => compareSurfaces(loaded.config).includes(currentSurface) ? currentSurface : compareSurfaces(loaded.config)[0] ?? "sessions");
         }
@@ -160,10 +167,13 @@ export function App(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [bootstrapRevision]);
 
   useEffect(() => {
-    const onHashChange = (): void => setArea(areaFromHash());
+    const onHashChange = (): void => {
+      setArea(studioLocationFromHash().area);
+      setLocationRevision((revision) => revision + 1);
+    };
     globalThis.addEventListener("hashchange", onHashChange);
     globalThis.addEventListener("popstate", onHashChange);
     return () => {
@@ -171,6 +181,22 @@ export function App(): React.JSX.Element {
       globalThis.removeEventListener("popstate", onHashChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (config === undefined || projectOpening) return;
+    const location = studioLocationFromHash();
+    if (location.projectId !== undefined && location.projectId !== activeProjectId && projects.some((project) => project.id === location.projectId)) {
+      void activateStudioProject(location.projectId, false);
+      return;
+    }
+    if (location.projectId !== undefined && !projects.some((project) => project.id === location.projectId)) {
+      globalThis.history.replaceState(null, "", studioLocationHash({ area: location.area, ...(activeProjectId === undefined ? {} : { projectId: activeProjectId }) }));
+      return;
+    }
+    if (location.projectId === undefined && activeProjectId !== undefined) {
+      globalThis.history.replaceState(null, "", studioLocationHash({ projectId: activeProjectId, area: location.area }));
+    }
+  }, [activeProjectId, config, locationRevision, projectOpening, projects]);
 
   useEffect(() => {
     if (!navigationOpen) return undefined;
@@ -189,10 +215,17 @@ export function App(): React.JSX.Element {
     };
   }, [navigationOpen]);
 
+  function closeNavigation(): void {
+    if (!navigationOpen) return;
+    setNavigationOpen(false);
+    globalThis.requestAnimationFrame(() => navigationToggleRef.current?.focus());
+  }
+
   function openArea(next: StudioArea): void {
     setArea(next);
-    setNavigationOpen(false);
-    if (area !== next) globalThis.history.pushState(null, "", `#/${next}`);
+    closeNavigation();
+    const nextHash = studioLocationHash({ area: next, ...(activeProjectId === undefined ? {} : { projectId: activeProjectId }) });
+    if (globalThis.location.hash !== nextHash) globalThis.history.pushState(null, "", nextHash);
   }
 
   async function selectSource(source: StudioSourceOption): Promise<void> {
@@ -206,6 +239,8 @@ export function App(): React.JSX.Element {
       const loaded = await fetchStudioState();
       setConfigFailure(null);
       setSources(loaded.sources);
+      setProjects(loaded.projectCatalog.projects);
+      setActiveProjectId(loaded.projectCatalog.activeProjectId);
       setConfig(loaded.config);
       setCompareSurface((currentSurface) => compareSurfaces(loaded.config).includes(currentSurface) ? currentSurface : compareSurfaces(loaded.config)[0] ?? "sessions");
       setDataRevision((revision) => revision + 1);
@@ -214,15 +249,95 @@ export function App(): React.JSX.Element {
     }
   }
 
-  async function workspaceChanged(): Promise<void> {
+  async function workspaceChanged(): Promise<string | undefined> {
     const loaded = await fetchStudioState();
     setConfigFailure(null);
     setSources(loaded.sources);
+    setProjects(loaded.projectCatalog.projects);
+    setActiveProjectId(loaded.projectCatalog.activeProjectId);
     setConfig(loaded.config);
     setSessionCompareIds(undefined);
     setSessionOpenId(undefined);
     setCompareSurface((currentSurface) => compareSurfaces(loaded.config).includes(currentSurface) ? currentSurface : compareSurfaces(loaded.config)[0] ?? "sessions");
     setWorkspaceRevision((revision) => revision + 1);
+    return loaded.projectCatalog.activeProjectId;
+  }
+
+  async function refreshProjectCatalog(): Promise<void> {
+    try {
+      const response = await fetch("api/projects");
+      if (!response.ok) return;
+      const catalog = await response.json() as unknown;
+      if (!isStudioProjectCatalog(catalog)) return;
+      setProjects(catalog.projects);
+      setActiveProjectId(catalog.activeProjectId);
+    } catch {
+      // Preserve the last coherent catalog; the Project operation remains the error channel.
+    }
+  }
+
+  async function openProject(): Promise<void> {
+    if (projectOpening) return;
+    setProjectOpening(true);
+    setProjectFailure(undefined);
+    try {
+      const response = await fetch("api/projects/open", { method: "POST" });
+      if (!response.ok) throw new Error(await studioApiError(response));
+      const result = await response.json() as { opened?: boolean; cancelled?: boolean; project?: StudioProjectDescriptor };
+      if (result.cancelled || result.opened !== true) return;
+      await workspaceChanged();
+      if (result.project !== undefined) {
+        closeNavigation();
+        const hash = studioLocationHash({ projectId: result.project.id, area });
+        globalThis.history.pushState(null, "", hash);
+      }
+    } catch (error) {
+      setProjectFailure(error instanceof Error ? error.message : "Project discovery failed.");
+      closeNavigation();
+    } finally {
+      setProjectOpening(false);
+    }
+  }
+
+  async function activateStudioProject(projectId: string, updateHistory = true): Promise<void> {
+    if (projectId === activeProjectId || projectOpening) return;
+    setProjectOpening(true);
+    setProjectFailure(undefined);
+    try {
+      const response = await fetch(`api/projects/${encodeURIComponent(projectId)}/activate`, { method: "POST" });
+      if (!response.ok) throw new Error(await studioApiError(response));
+      await workspaceChanged();
+      closeNavigation();
+      if (updateHistory) globalThis.history.pushState(null, "", studioLocationHash({ projectId, area }));
+    } catch (error) {
+      setProjectFailure(error instanceof Error ? error.message : "Project activation failed.");
+      await refreshProjectCatalog();
+      closeNavigation();
+      if (!updateHistory) {
+        globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(activeProjectId === undefined ? {} : { projectId: activeProjectId }) }));
+      }
+    } finally {
+      setProjectOpening(false);
+    }
+  }
+
+  async function removeStudioProject(projectId: string): Promise<void> {
+    if (projectOpening) return;
+    setProjectOpening(true);
+    setProjectFailure(undefined);
+    try {
+      const response = await fetch(`api/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(await studioApiError(response));
+      const wasActive = projectId === activeProjectId;
+      await workspaceChanged();
+      closeNavigation();
+      if (wasActive) globalThis.history.pushState(null, "", studioLocationHash({ area }));
+    } catch (error) {
+      setProjectFailure(error instanceof Error ? error.message : "Project removal failed.");
+      closeNavigation();
+    } finally {
+      setProjectOpening(false);
+    }
   }
 
   function customizationAnalyzed(definitionCount: number): void {
@@ -237,58 +352,83 @@ export function App(): React.JSX.Element {
     return <main className="studio-loading"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><p>Loading Harness control plane…</p></main>;
   }
   if (configFailure !== null) {
-    return <main className="studio-loading" role="alert"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><strong>Cannot load Studio configuration.</strong><p>{configFailure}</p></main>;
+    return <main className="studio-loading" role="alert"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><strong>Cannot load Studio configuration.</strong><p>{configFailure}</p><button className="primary" type="button" onClick={() => { setConfig(undefined); setConfigFailure(null); setBootstrapRevision((revision) => revision + 1); }}>Retry</button></main>;
   }
 
-  const destinations = studioDestinations(config);
+  const availableCompareSurfaces = compareSurfaces(config);
+  const effectiveCompareSurface = availableCompareSurfaces.includes(compareSurface)
+    ? compareSurface
+    : availableCompareSurfaces[0] ?? compareSurface;
+  const destinations = studioDestinations(config, effectiveCompareSurface);
   const current = destinations.find((destination) => destination.id === area) ?? destinations[0]!;
   const compareNavigation = (
     <SurfaceNavigation
       label="Compare surfaces"
-      items={compareSurfaces(config).map((id) => ({
+      items={availableCompareSurfaces.map((id) => ({
         id,
         label: id === "sessions" ? "Sessions" : id === "bench" ? "Bench" : "Evidence results",
       }))}
-      active={compareSurface}
+      active={effectiveCompareSurface}
       onSelect={setCompareSurface}
     />
   );
-  const contextNavigation = area === "compare" && compareSurfaces(config).length > 1
+  const contextNavigation = area === "compare" && availableCompareSurfaces.length > 1
     ? compareNavigation
     : null;
-  const workspaceGateOpen = config.workspaceDiscoveryEnabled && !config.workspaceConnected;
+  const activeProject = projects.find((project) => project.id === activeProjectId);
+  const openProjectAction = config.workspaceDiscoveryEnabled
+    ? { label: config.workspaceConnected ? "Open Another Project" : "Open Project", onClick: () => void openProject() }
+    : undefined;
+  const projectDiscoveryDetail = config.workspaceDiscoveryEnabled
+    ? "Choose a remembered Project or open another local directory."
+    : "This Studio launcher does not provide Project discovery. Start the packaged CLI or connect a workspace Session provider.";
+  const workspaceGateOpen = projects.length === 0 && studioProjectGateRequired(config, sources.length > 0);
+  const overviewConfig = workspaceGateOpen ? config : { ...config, workspaceDiscoveryEnabled: false };
 
   return <StudioThemeContext.Provider value={theme}>
   <div className={`studio-control-plane${navigationOpen ? " navigation-open" : ""}`} inert={workspaceGateOpen ? true : undefined} aria-hidden={workspaceGateOpen ? true : undefined}>
-    <PrimaryNavigation destinations={destinations} current={area} onSelect={openArea} />
+    <ProjectSidebar
+      projects={projects}
+      activeProjectId={activeProjectId}
+      destinations={destinations}
+      current={area}
+      opening={projectOpening}
+      canOpenProject={config.workspaceDiscoveryEnabled}
+      onOpenProject={() => void openProject()}
+      onActivateProject={(projectId) => void activateStudioProject(projectId)}
+      onRemoveProject={(projectId) => void removeStudioProject(projectId)}
+      onSelectView={openArea}
+      onCloseNavigation={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }}
+    />
     <button className="studio-nav-backdrop" type="button" aria-label="Close Studio navigation" onClick={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }} />
     <section className="studio-area">
       <header className={`studio-context-bar${contextNavigation ? " has-surface-navigation" : ""}`}>
         <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={navigationOpen ? "Close navigation" : "Open navigation"} aria-label={navigationOpen ? "Close Studio navigation" : "Open Studio navigation"} aria-expanded={navigationOpen} onClick={() => setNavigationOpen((value) => !value)}><SidebarSimple aria-hidden="true" size={17} /></button>
-        <div className="studio-context-title"><h1>{AREA_COPY[area]}</h1></div>
+        <div className="studio-context-title"><small>{activeProject?.label ?? (sources.length > 0 ? "Configured sources" : "No Project")}</small><h1>{AREA_COPY[area]}</h1></div>
         {contextNavigation && <div className="studio-context-navigation">{contextNavigation}</div>}
-        {config.workspaceDiscoveryEnabled && config.workspaceConnected && <WorkspaceFolderControls compact onWorkspaceChanged={workspaceChanged} />}
         <ThemeToggle theme={theme} onChange={setTheme} />
         {sources.length > 0 && <SourceSwitcher sources={sources} onSelect={(source) => void selectSource(source)} />}
-        <div className="studio-context-state"><span className={`availability-dot availability-${current.availability}`} /><strong>{current.status}</strong></div>
+        <div className="studio-context-state" role="status" aria-label={`View status: ${current.status}`}><span className={`availability-dot availability-${current.availability}`} /><strong>{current.status}</strong></div>
+        {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
       <div className={`studio-surface studio-surface-${area}`}>
-        {area === "overview" && <Overview key={`overview-${workspaceRevision}`} config={config} onOpen={openArea} onOpenSession={(id) => { setSessionOpenId(id); openArea("sessions"); }} />}
+        {area === "overview" && <Overview key={`overview-${workspaceRevision}`} config={overviewConfig} onOpen={openArea} onOpenSession={(id) => { setSessionOpenId(id); openArea("sessions"); }} />}
         {area === "customizations" && (config.customizationAnalysisEnabled
           ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />
-          : <EmptyWorkspace eyebrow="Customization catalog" title={config.workspaceConnected ? "Customization analysis is unavailable" : "Open a project workspace"} detail={config.workspaceConnected ? "This Studio launcher does not include the local customization collector." : "Choose the project directory in Sessions before analyzing Host customizations."} />)}
-        {area === "inputs" && (config.workspaceWorkbenchEnabled ? <InputTraceView key={`inputs-${workspaceRevision}`} intentAnalysisEnabled={config.intentAnalysisEnabled} /> : <EmptyWorkspace eyebrow="User input trace" title={config.workspaceConnected ? "No retained input trace is available" : "Open a project workspace"} detail={config.workspaceConnected ? "This workspace source does not include structured Inspector dialogue evidence." : "Choose the project directory in Sessions before browsing retained user inputs and exact file operations."} />)}
-        {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} config={config} initialSessionId={sessionOpenId} onWorkspaceChanged={workspaceChanged} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
-        {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} /> : <EmptyWorkspace eyebrow="Repository history" title={config.workspaceConnected ? "The open workspace is not a Git repository" : "Open a project workspace"} detail={config.workspaceConnected ? "Commit history is available only for a local workspace backed by Git." : "Choose the project directory in Sessions before browsing its local commit history."} />)}
-        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} />}
-        {area === "debugger" && <DebuggerWorkspace config={config} />}
-        {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={compareSurface} navigation={compareNavigation} sessionIds={sessionCompareIds} />}
+          : <EmptyWorkspace eyebrow="Customization catalog" title="Customization analysis is unavailable" detail="This Studio launcher does not include the local customization collector. Opening a Project will not enable it." command="npx @qoder-ai/harness-studio" />)}
+        {area === "inputs" && (config.workspaceWorkbenchEnabled ? <InputTraceView key={`inputs-${workspaceRevision}`} intentAnalysisEnabled={config.intentAnalysisEnabled} /> : <EmptyWorkspace eyebrow="User input trace" title={config.workspaceConnected ? "No retained input trace is available" : "Open a Project"} detail={config.workspaceConnected ? "This Project source does not include structured Inspector dialogue evidence." : projectDiscoveryDetail} action={openProjectAction} />)}
+        {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
+        {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} /> : <EmptyWorkspace eyebrow="Repository history" title={config.workspaceConnected ? "The selected Project is not a Git repository" : "Open a Project"} detail={config.workspaceConnected ? "Commit history is available only for a local Project backed by Git." : projectDiscoveryDetail} action={openProjectAction} />)}
+        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} openProjectAction={openProjectAction} />}
+        {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
+        {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} />}
       </div>
     </section>
   </div>
   {workspaceGateOpen && <WorkspaceGate onWorkspaceChanged={async () => {
-    await workspaceChanged();
-    openArea(area === "overview" ? "sessions" : area);
+    const projectId = await workspaceChanged();
+    const nextHash = studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) });
+    if (globalThis.location.hash !== nextHash) globalThis.history.pushState(null, "", nextHash);
   }} />}
   </StudioThemeContext.Provider>;
 }
@@ -296,10 +436,10 @@ export function App(): React.JSX.Element {
 function WorkspaceGate(props: { onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
   return <section className="studio-workspace-gate" role="dialog" aria-modal="true" aria-labelledby="workspace-gate-title" aria-describedby="workspace-gate-description">
     <div className="studio-workspace-gate-panel">
-      <header><span><FolderOpen aria-hidden="true" size={22} /></span><div><small>Local Web workspace</small><h1 id="workspace-gate-title">Open a workspace to start</h1></div></header>
-      <p id="workspace-gate-description">Choose the repository or project directory you worked in. Studio will discover matching local agent inputs and Sessions before opening the workbench.</p>
-      <WorkspaceFolderControls autoFocus onWorkspaceChanged={props.onWorkspaceChanged} />
-      <footer><strong>Workspace-scoped discovery</strong><span>The selected directory scopes Session lookup; Studio does not treat a global Session folder as the project.</span></footer>
+      <header><span><FolderOpen aria-hidden="true" size={22} /></span><div><small>Local Project</small><h1 id="workspace-gate-title">Open a Project to start</h1></div></header>
+      <p id="workspace-gate-description">Choose a repository or project directory. Studio will remember it as a Project and discover its matching local agent inputs and Sessions.</p>
+      <ProjectFolderControls autoFocus onWorkspaceChanged={props.onWorkspaceChanged} />
+      <footer><strong>Project-scoped discovery</strong><span>The selected directory scopes Session lookup; global Session folders are not treated as Project evidence.</span></footer>
     </div>
   </section>;
 }
@@ -321,7 +461,7 @@ function SourceSwitcher(props: {
   const active = props.sources.filter((source) => source.active);
   const kinds: StudioSourceKind[] = ["inspector", "evidence", "experiment"];
   return <div className="studio-source-switcher">
-    <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}><GitBranch aria-hidden="true" size={14} /><span>Data sources</span><em>{active.length}</em></button>
+    <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={`Data sources (${active.length} active)`} title="Data sources" onClick={() => setOpen((value) => !value)}><GitBranch aria-hidden="true" size={14} /><span>Data sources</span><em>{active.length}</em></button>
     {open && <div className="studio-source-menu" role="menu" aria-label="Studio data sources">
       {kinds.map((kind) => {
         const entries = props.sources.filter((source) => source.kind === kind);
@@ -341,54 +481,13 @@ function sourceKindLabel(kind: StudioSourceKind): string {
   return "Experiment bench";
 }
 
-function PrimaryNavigation(props: {
-  destinations: readonly StudioDestination[];
-  current: StudioArea;
-  onSelect: (area: StudioArea) => void;
-}): React.JSX.Element {
-  const groups = [...new Set(props.destinations.map((destination) => destination.group))];
-  const buttonRefs = useRef(new Map<StudioArea, HTMLButtonElement>());
-
-  function onNavigationKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const destinations = props.destinations.map((destination) => destination.id);
-    const focused = [...buttonRefs.current.entries()].find(([, button]) => button === document.activeElement)?.[0];
-    const currentIndex = Math.max(0, destinations.indexOf(focused ?? props.current));
-    const nextIndex = event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? destinations.length - 1
-        : event.key === "ArrowDown"
-          ? (currentIndex + 1) % destinations.length
-          : (currentIndex - 1 + destinations.length) % destinations.length;
-    buttonRefs.current.get(destinations[nextIndex]!)?.focus();
-  }
-
-  return <aside className="studio-primary-nav" aria-label="Studio navigation">
-    <header className="studio-product-brand"><span><GitBranch aria-hidden="true" size={18} weight="bold" /></span><div><strong>Better Harness</strong><small>Studio</small></div></header>
-    <nav aria-label="Harness control plane" onKeyDown={onNavigationKeyDown}>
-      {groups.map((group) => <section className="studio-nav-group" key={group}><h2>{group}</h2>{props.destinations.filter((destination) => destination.group === group).map((destination) => {
-        const NavIcon = NAV_ICONS[destination.id];
-        return <button key={destination.id} ref={(node) => { if (node) buttonRefs.current.set(destination.id, node); else buttonRefs.current.delete(destination.id); }} type="button" tabIndex={props.current === destination.id ? 0 : -1} aria-current={props.current === destination.id ? "page" : undefined} onClick={() => props.onSelect(destination.id)}>
-          <NavIcon aria-hidden="true" size={17} weight={props.current === destination.id ? "fill" : "regular"} />
-          <span><strong>{destination.label}</strong><small>{destination.status}</small></span>
-          <i className={`availability-dot availability-${destination.availability}`} aria-label={destination.availability} />
-        </button>;
-      })}</section>)}
-    </nav>
-  </aside>;
-}
-
 function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => void; onOpenSession: (id: string) => void }): React.JSX.Element {
   const model = studioOverview(props.config);
-  const [workspaceLabel, setWorkspaceLabel] = useState<string>();
   const [recentSessions, setRecentSessions] = useState<SessionSummary[]>();
   const [recentFailure, setRecentFailure] = useState<string>();
 
   useEffect(() => {
     if (!props.config.workspaceConnected) {
-      setWorkspaceLabel(undefined);
       setRecentSessions(undefined);
       setRecentFailure(undefined);
       return undefined;
@@ -398,9 +497,8 @@ function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => v
       try {
         const response = await fetch("api/sessions");
         if (!response.ok) throw new Error(await studioApiError(response));
-        const payload = await response.json() as { workspace: { label: string }; sessions: SessionSummary[] };
+        const payload = await response.json() as { sessions: SessionSummary[] };
         if (cancelled) return;
-        setWorkspaceLabel(payload.workspace.label);
         setRecentSessions(payload.sessions.slice(0, 5));
         setRecentFailure(undefined);
       } catch (error) {
@@ -412,13 +510,13 @@ function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => v
     return () => { cancelled = true; };
   }, [props.config.workspaceConnected, props.config.sessionCount]);
 
-  const heading = model.mode === "workspace" ? workspaceLabel ?? "Project workspace" : model.title;
+  const heading = model.title;
   const context = model.mode === "workspace"
-    ? "Workspace overview"
+    ? "Project overview"
     : model.mode === "configured"
       ? "Configured local sources"
       : model.mode === "workspace-required"
-        ? "Workspace setup"
+        ? "Project setup"
         : "Studio setup";
 
   return <main className={`control-overview overview-mode-${model.mode}`}>
@@ -426,7 +524,7 @@ function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => v
       <div className="overview-lead">
         <small>{context}</small>
         <h1>{heading}</h1>
-        <p>{model.mode === "workspace" && workspaceLabel !== undefined ? `${model.title} ${model.detail}` : model.detail}</p>
+        <p>{model.detail}</p>
         {model.primaryAction !== undefined && model.mode !== "workspace-required" && <button className="primary" type="button" onClick={() => props.onOpen(model.primaryAction!.area)}>{model.primaryAction.label}<ArrowRight aria-hidden="true" size={15} weight="bold" /></button>}
       </div>
       {model.mode === "workspace" && <dl className="overview-facts" aria-label="Workspace summary">{model.facts.map((fact) => <div key={fact.id}><dt>{fact.label}</dt><dd>{fact.value}</dd><small>{fact.detail}</small></div>)}</dl>}
@@ -440,7 +538,7 @@ function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => v
           : recentSessions === undefined
             ? <p className="overview-pane-status" role="status">Loading retained Sessions…</p>
             : recentSessions.length === 0
-              ? <p className="overview-pane-status">No retained Sessions were discovered in this workspace.</p>
+              ? <p className="overview-pane-status">No retained Sessions were discovered in this Project.</p>
               : <ol className="overview-session-rows">{recentSessions.map((session) => <li key={session.id}><button type="button" aria-label={`Open Session: ${session.prompt}`} onClick={() => props.onOpenSession(session.id)}><span><small>{session.provider ?? "Local agent"} · {formatSessionTime(session.savedAt)}</small><strong>{session.prompt}</strong></span><em>{session.toolCallCount} calls</em><ArrowRight aria-hidden="true" size={14} /></button></li>)}</ol>}
       </section> : <section className="overview-pane overview-context">
         <header><h2>{model.mode === "configured" ? "Loaded context" : "Getting started"}</h2><span>{model.facts.length || undefined}</span></header>
@@ -476,11 +574,10 @@ interface SessionArtifactContext {
 function SessionsWorkspace(props: {
   config: StudioConfig;
   initialSessionId?: string;
-  onWorkspaceChanged: () => Promise<void>;
+  openProjectAction?: { label: string; onClick: () => void };
   onCompare: (ids: [string, string]) => void;
 }): React.JSX.Element {
   const [sessions, setSessions] = useState<SessionSummary[]>();
-  const [workspaceLabel, setWorkspaceLabel] = useState("Project workspace");
   const [omittedCount, setOmittedCount] = useState(0);
   const [selected, setSelected] = useState<string>();
   const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
@@ -488,6 +585,8 @@ function SessionsWorkspace(props: {
   const [sessionArtifacts, setSessionArtifacts] = useState<SessionArtifactContext | null>();
   const [failure, setFailure] = useState<string>();
   const [detailFailure, setDetailFailure] = useState<string>();
+  const sessionRowRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [focusedSessionId, setFocusedSessionId] = useState<string>();
   const detailRequest = useRef(0);
   const [surface, setSurface] = useState<"inspector" | "catalog">(
     props.config.workspaceWorkbenchEnabled ? "inspector" : "catalog",
@@ -502,7 +601,6 @@ function SessionsWorkspace(props: {
         if (!response.ok) throw new Error(await studioApiError(response));
         const payload = await response.json() as { workspace: { label: string; omittedCount: number }; sessions: SessionSummary[] };
         if (cancelled) return;
-        setWorkspaceLabel(payload.workspace.label);
         setOmittedCount(payload.workspace.omittedCount);
         setSessions(payload.sessions);
         const initialSession = payload.sessions.find((session) => session.id === props.initialSessionId) ?? payload.sessions[0];
@@ -513,6 +611,13 @@ function SessionsWorkspace(props: {
     })();
     return () => { cancelled = true; };
   }, [props.config.workspaceConnected, props.initialSessionId]);
+
+  useEffect(() => {
+    if (sessions === undefined || sessions.length === 0) return;
+    setFocusedSessionId((current) => sessions.some((session) => session.id === current)
+      ? current
+      : sessions.find((session) => session.id === props.initialSessionId)?.id ?? selected ?? sessions[0]!.id);
+  }, [props.initialSessionId, selected, sessions]);
 
   async function openSession(id: string, cancelled: () => boolean = () => false): Promise<void> {
     const request = ++detailRequest.current;
@@ -548,33 +653,40 @@ function SessionsWorkspace(props: {
     });
   }
 
-  async function disconnect(): Promise<void> {
-    const response = await fetch("api/workspace", { method: "DELETE" });
-    if (!response.ok) {
-      setFailure(await studioApiError(response));
-      return;
-    }
-    await props.onWorkspaceChanged();
+  function moveSessionFocus(event: ReactKeyboardEvent<HTMLButtonElement>, id: string): void {
+    if (sessions === undefined || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const index = Math.max(0, sessions.findIndex((session) => session.id === id));
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? sessions.length - 1
+        : event.key === "ArrowDown"
+          ? (index + 1) % sessions.length
+          : (index - 1 + sessions.length) % sessions.length;
+    const nextId = sessions[nextIndex]!.id;
+    setFocusedSessionId(nextId);
+    sessionRowRefs.current.get(nextId)?.focus();
   }
 
   if (!props.config.workspaceConnected) {
-    return <WorkspaceIntake onWorkspaceChanged={props.onWorkspaceChanged} />;
+    return <EmptyWorkspace eyebrow="Project Sessions" title="Open a Project" detail={props.config.workspaceDiscoveryEnabled ? "Choose a remembered Project or open another local directory." : "This Studio launcher does not provide Project discovery."} action={props.openProjectAction} />;
   }
   if (failure !== undefined) {
-    return <WorkspaceIntake title="Choose another project workspace" detail={failure} onWorkspaceChanged={props.onWorkspaceChanged} />;
+    return <EmptyWorkspace eyebrow="Project Sessions" title="Session discovery failed" detail={failure} />;
   }
   if (sessions === undefined) return <p className="artifact-status" role="status">Indexing sessions…</p>;
 
   const pair = [...compareIds];
   const catalog = <section className="session-browser-workspace" aria-label="Project workspace sessions">
     <aside className="session-catalog-pane">
-      <header><div><small>Local workspace</small><h2 title={workspaceLabel}>{workspaceLabel}</h2></div><span>{sessions.length}</span></header>
+      <header><div><small>Project evidence</small><h2>Sessions</h2></div><span>{sessions.length}</span></header>
       {omittedCount > 0 && <p className="session-omissions">{omittedCount} unsupported or malformed file{omittedCount === 1 ? "" : "s"} omitted.</p>}
       <ul className="session-catalog-rows">{sessions.map((session) => <li key={session.id}>
-        <label title="Select for comparison"><input type="checkbox" checked={compareIds.has(session.id)} disabled={!compareIds.has(session.id) && compareIds.size >= 2} onChange={() => toggleCompare(session.id)} /></label>
-        <button type="button" className={selected === session.id ? "selected" : undefined} onClick={() => void openSession(session.id)}><small>{session.provider ?? "Local agent"} · {formatSessionTime(session.savedAt)}</small><strong>{session.prompt}</strong><small>{session.status} · {session.toolCallCount} calls</small></button>
+        <label title={`Select ${session.prompt} for comparison`}><input type="checkbox" aria-label={`Select ${session.prompt} from ${session.provider ?? "Local agent"} at ${formatSessionTime(session.savedAt)} for comparison`} checked={compareIds.has(session.id)} disabled={!compareIds.has(session.id) && compareIds.size >= 2} onChange={() => toggleCompare(session.id)} /></label>
+        <button ref={(node) => { if (node) sessionRowRefs.current.set(session.id, node); else sessionRowRefs.current.delete(session.id); }} type="button" tabIndex={focusedSessionId === session.id ? 0 : -1} className={selected === session.id ? "selected" : undefined} onFocus={() => setFocusedSessionId(session.id)} onKeyDown={(event) => moveSessionFocus(event, session.id)} onClick={() => { setFocusedSessionId(session.id); void openSession(session.id); }}><small>{session.provider ?? "Local agent"} · {formatSessionTime(session.savedAt)}</small><strong>{session.prompt}</strong><small>{session.status} · {session.toolCallCount} calls</small></button>
       </li>)}</ul>
-      <footer><button type="button" className="primary" disabled={pair.length !== 2} onClick={() => props.onCompare(pair as [string, string])}>Compare {pair.length}/2</button><button type="button" onClick={() => void disconnect()}>Disconnect</button></footer>
+      <footer><button type="button" className="primary" disabled={pair.length !== 2} onClick={() => props.onCompare(pair as [string, string])}>Compare {pair.length}/2</button></footer>
     </aside>
     <main className="session-detail-pane">
       {detailFailure !== undefined
@@ -588,7 +700,7 @@ function SessionsWorkspace(props: {
   if (!props.config.workspaceWorkbenchEnabled) return catalog;
   return <section className="session-workbench-stack" aria-label="Workspace Session evidence">
     <header className="session-workbench-toolbar">
-      <div><strong>{workspaceLabel}</strong><span>Inspector-owned workspace evidence</span></div>
+      <div><strong>Session evidence</strong><span>Inspector-owned Project observations</span></div>
       <div className="session-surface-tabs" role="tablist" aria-label="Session views">
         <button id="session-tab-inspector" type="button" role="tab" aria-controls="session-workbench-panel" aria-selected={surface === "inspector"} tabIndex={surface === "inspector" ? 0 : -1} className={surface === "inspector" ? "selected" : undefined} onClick={() => setSurface("inspector")} onKeyDown={(event) => { if (event.key === "ArrowRight") { event.preventDefault(); setSurface("catalog"); (event.currentTarget.nextElementSibling as HTMLButtonElement | null)?.focus(); } }}>Inspector</button>
         <button id="session-tab-catalog" type="button" role="tab" aria-controls="session-workbench-panel" aria-selected={surface === "catalog"} tabIndex={surface === "catalog" ? 0 : -1} className={surface === "catalog" ? "selected" : undefined} onClick={() => setSurface("catalog")} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setSurface("inspector"); (event.currentTarget.previousElementSibling as HTMLButtonElement | null)?.focus(); } }}>Catalog &amp; Compare</button>
@@ -659,16 +771,12 @@ function sessionArtifactContext(value: unknown, sessionId: string): SessionArtif
   };
 }
 
-function WorkspaceIntake(props: { title?: string; detail?: string; onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
-  return <main className="workspace-intake empty-workspace"><span><FolderOpen aria-hidden="true" size={22} /></span><small>Local Web workspace</small><h1>{props.title ?? "Open a project workspace"}</h1><p>{props.detail ?? "Choose the repository or project directory you worked in. Studio uses Inspector's provider discovery to find matching Sessions in local agent evidence stores."}</p><WorkspaceFolderControls onWorkspaceChanged={props.onWorkspaceChanged} /></main>;
-}
-
-function WorkspaceFolderControls(props: { autoFocus?: boolean; compact?: boolean; onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
+function ProjectFolderControls(props: { autoFocus?: boolean; onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<"idle" | "choosing" | "discovering" | "opening">("idle");
   const [failure, setFailure] = useState<string>();
 
-  async function openWorkspace(): Promise<void> {
+  async function openProject(): Promise<void> {
     setBusy(true);
     setFailure(undefined);
     setStage("choosing");
@@ -678,7 +786,7 @@ function WorkspaceFolderControls(props: { autoFocus?: boolean; compact?: boolean
         await new Promise((resolve) => window.setTimeout(resolve, 150));
         if (!monitoring) return;
         try {
-          const response = await fetch("api/workspace/open/status");
+          const response = await fetch("api/projects/open/status");
           if (!response.ok) continue;
           const result = await response.json() as { stage?: "idle" | "choosing" | "discovering" };
           if (result.stage === "choosing" || result.stage === "discovering") setStage(result.stage);
@@ -688,7 +796,7 @@ function WorkspaceFolderControls(props: { autoFocus?: boolean; compact?: boolean
       }
     })();
     try {
-      const opened = await fetch("api/workspace/open", { method: "POST" });
+      const opened = await fetch("api/projects/open", { method: "POST" });
       if (!opened.ok) throw new Error(await studioApiError(opened));
       const result = await opened.json() as { opened?: boolean; cancelled?: boolean };
       if (result.cancelled || result.opened !== true) {
@@ -697,7 +805,7 @@ function WorkspaceFolderControls(props: { autoFocus?: boolean; compact?: boolean
       setStage("opening");
       await props.onWorkspaceChanged();
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "Workspace discovery failed.");
+      setFailure(error instanceof Error ? error.message : "Project discovery failed.");
     } finally {
       monitoring = false;
       await monitor;
@@ -707,13 +815,13 @@ function WorkspaceFolderControls(props: { autoFocus?: boolean; compact?: boolean
   }
 
   const progressMessage = stage === "discovering"
-    ? "Finding matching Sessions across local providers…"
+    ? "Finding matching Project Sessions across local providers…"
     : stage === "opening"
-      ? "Opening the discovered Session list…"
-      : "Waiting for a project folder selection…";
+      ? "Opening the Project workbench…"
+      : "Waiting for a Project directory selection…";
 
-  return <div className={`workspace-folder-controls${props.compact ? " is-compact" : ""}`}>
-    <button autoFocus={props.autoFocus} className={props.compact ? undefined : "primary"} type="button" disabled={busy} aria-label={busy ? "Opening workspace" : props.compact ? "Change workspace" : "Choose workspace"} onClick={() => void openWorkspace()}><FolderOpen aria-hidden="true" size={14} /><span>{busy ? "Opening…" : props.compact ? "Change workspace" : "Choose workspace"}</span></button>
+  return <div className="workspace-folder-controls">
+    <button autoFocus={props.autoFocus} className="primary" type="button" disabled={busy} aria-label={busy ? "Opening Project" : "Choose Project"} onClick={() => void openProject()}><FolderOpen aria-hidden="true" size={14} /><span>{busy ? "Opening…" : "Choose Project"}</span></button>
     {busy && <span className="workspace-open-progress" role="status" aria-live="polite"><i aria-hidden="true" /><small>{progressMessage}</small></span>}
     {failure !== undefined && <small className="workspace-folder-error" role="alert">{failure}</small>}
   </div>;
@@ -725,11 +833,14 @@ function formatSessionTime(value: string): string {
 }
 
 
-function DebuggerWorkspace(props: { config: StudioConfig }): React.JSX.Element {
+function DebuggerWorkspace(props: { config: StudioConfig; openProjectAction?: { label: string; onClick: () => void }; project?: { id: string; label: string; revision: number } }): React.JSX.Element {
   if (!props.config.aguiEnabled) {
     return <EmptyWorkspace eyebrow="Live runs" title="Load a harness for live runs" detail="The Debugger drives a live harness run over the embedded AG-UI endpoint and saves finished runs for replay." command="--harness ./my-agent.harness" />;
   }
-  return <div className="debugger-mode"><RunView aguiEndpoint="agui" acpEndpoint={props.config.acpEnabled ? "/agui/acp" : undefined} acpAgentLabel={props.config.acpAgentLabel} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? "Workspace default · Qoder" : "Live Trial"} /></div>;
+  if (props.config.harnessMode === "workspace-default" && !props.config.projectExecutionEnabled) {
+    return <EmptyWorkspace eyebrow="Project-scoped live runs" title={props.project === undefined ? "Open a Project for live runs" : "This Project is read-only evidence"} detail={props.project === undefined ? (props.config.workspaceDiscoveryEnabled ? "Open a local Project before starting the default harness." : "This Studio launcher does not provide Project discovery.") : "Imported retained-run folders can be inspected and compared, but they do not provide a local execution root for the default harness."} action={props.openProjectAction} />;
+  }
+  return <div className="debugger-mode"><RunView aguiEndpoint="agui" acpEndpoint={props.config.acpEnabled ? "/agui/acp" : undefined} acpAgentLabel={props.config.acpAgentLabel} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? "Project default · Qoder" : "Live Trial"} project={props.project} /></div>;
 }
 
 function CompareWorkspace(props: {
@@ -737,16 +848,17 @@ function CompareWorkspace(props: {
   surface: StudioCompareSurface;
   navigation: ReactNode;
   sessionIds?: [string, string];
+  openProjectAction?: { label: string; onClick: () => void };
 }): React.JSX.Element {
   const available = compareSurfaces(props.config);
   if (available.length === 0) {
-    return <EmptyWorkspace eyebrow="Session comparison" title={props.config.workspaceConnected ? "Choose a workspace with at least two Sessions" : "Open a project workspace"} detail={props.config.workspaceConnected ? "The current workspace needs two discovered Sessions before observational comparison is available." : "Choose the project directory in Sessions. Studio discovers its matching local agent Sessions without startup parameters."} />;
+    return <EmptyWorkspace eyebrow="Session comparison" title={props.config.workspaceConnected ? "Choose a Project with at least two Sessions" : "Open a Project"} detail={props.config.workspaceConnected ? "The selected Project needs two discovered Sessions before observational comparison is available." : props.config.workspaceDiscoveryEnabled ? "Open a local Project. Studio will discover its matching agent Sessions without startup parameters." : "This Studio launcher does not provide Project discovery."} action={props.openProjectAction} />;
   }
   if (props.surface === "sessions" && props.config.sessionCount >= 2) {
     return <SessionCompareView navigation={props.navigation} initialIds={props.sessionIds} />;
   }
   if (props.surface === "bench" && props.config.experimentEnabled) {
-    return <main className="experiment-mode"><ExperimentView navigation={props.navigation} /></main>;
+    return <main className="experiment-mode"><ExperimentView historyEnabled={props.config.historyEnabled} navigation={props.navigation} /></main>;
   }
   if (props.surface === "results" && props.config.evidenceEnabled) {
     return <main className="evidence-results"><header><div><small>Frozen comparison</small><h1>Evidence results</h1></div>{props.navigation}</header><CompareView /></main>;
@@ -823,6 +935,7 @@ function SessionCompareView(props: { navigation: ReactNode; initialIds?: [string
       <p className="session-compare-boundary"><strong>No winner inferred.</strong> {comparison.boundary}</p>
       <div className="session-compare-heads"><article><small>Left</small><h2>{comparison.left.prompt}</h2><span className={`run-badge status-${comparison.left.status}`}>{comparison.left.status}</span></article><article><small>Right</small><h2>{comparison.right.prompt}</h2><span className={`run-badge status-${comparison.right.status}`}>{comparison.right.status}</span></article></div>
       <div className="session-compare-table" role="table" aria-label="Observed Session differences">
+        <div className="session-compare-columns" role="row"><strong role="columnheader">Metric</strong><strong role="columnheader">Left</strong><strong role="columnheader">Right</strong></div>
         {(["retainedEventCount", "toolCallCount", "messageCount", "warningCount"] as const).map((metric) => <div role="row" key={metric}><strong role="rowheader">{sessionMetricLabel(metric)}</strong><span role="cell">{comparison.left[metric]}</span><span role="cell">{comparison.right[metric]}</span></div>)}
       </div>
       <div className="session-tool-sequences"><section><header>Left tool sequence</header><ol>{comparison.left.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section><section><header>Right tool sequence</header><ol>{comparison.right.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section></div>
@@ -834,8 +947,8 @@ function sessionMetricLabel(metric: "retainedEventCount" | "toolCallCount" | "me
   return ({ retainedEventCount: "Retained events", toolCallCount: "Tool calls", messageCount: "Messages", warningCount: "Warnings" })[metric];
 }
 
-function EmptyWorkspace(props: { eyebrow: string; title: string; detail: string; command?: string }): React.JSX.Element {
-  return <main className="empty-workspace"><span><GitBranch aria-hidden="true" size={22} /></span><small>{props.eyebrow}</small><h1>{props.title}</h1><p>{props.detail}</p>{props.command && <code>{props.command}</code>}</main>;
+function EmptyWorkspace(props: { eyebrow: string; title: string; detail: string; command?: string; action?: { label: string; onClick: () => void } }): React.JSX.Element {
+  return <main className="empty-workspace"><span><GitBranch aria-hidden="true" size={22} /></span><small>{props.eyebrow}</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" onClick={props.action.onClick}>{props.action.label}</button>}{props.command && <code>{props.command}</code>}</main>;
 }
 
 // The surface switcher navigates between separate top-level views (each its own
@@ -851,7 +964,10 @@ function SurfaceNavigation<T extends string>(props: {
   return <nav className="studio-tabs studio-secondary-tabs" aria-label={props.label} onKeyDown={roving.onKeyDown} style={{ gridTemplateColumns: `repeat(${props.items.length}, minmax(0, 1fr))` }}>{props.items.map((item) => <button key={item.id} ref={roving.itemRef(item.id)} type="button" tabIndex={roving.tabIndexFor(item.id)} aria-current={props.active === item.id ? "page" : undefined} className={props.active === item.id ? "active" : ""} onClick={() => props.onSelect(item.id)}>{item.label}</button>)}</nav>;
 }
 
+function studioLocationFromHash(): { area: StudioArea; projectId?: string } {
+  return parseStudioLocation(globalThis.location?.hash, new Set(Object.keys(AREA_COPY)));
+}
+
 function areaFromHash(): StudioArea {
-  const candidate = globalThis.location?.hash.replace(/^#\/?/, "") as StudioArea | undefined;
-  return candidate !== undefined && Object.hasOwn(AREA_COPY, candidate) ? candidate : "overview";
+  return studioLocationFromHash().area;
 }

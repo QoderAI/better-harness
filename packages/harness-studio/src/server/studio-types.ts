@@ -2,6 +2,7 @@ import { DebuggerSession } from "../contracts/debugger-session.js";
 import { CheckpointSourcePreview, ExperimentLockReceipt } from "../contracts/experiment-setup.js";
 import { GitCommitDetail, GitRefsSnapshot } from "../contracts/git-history.js";
 import { UserInputTraceV1 } from "../contracts/input-trace.js";
+import { StudioProjectDescriptor, StudioProjectKind } from "../contracts/studio-project.js";
 import { ArtifactCompileLimits } from "./artifacts/registry/artifact-compile-runtime.js";
 import { ExternalArtifactProvider } from "./artifacts/registry/artifact-plugin-registry.js";
 import { StudioCustomizationCollector } from "./customization-collector.js";
@@ -149,6 +150,8 @@ export interface WorkspaceImportSession {
   paths: Set<string>;
   label: string;
   expiry: NodeJS.Timeout;
+  busy: boolean;
+  expired: boolean;
 }
 export interface StudioWorkspace {
   label: string;
@@ -173,6 +176,19 @@ export interface StudioWorkspace {
 export interface StoredWorkspaceSession extends StudioWorkspaceSession {
   retainedRun?: SavedRunRecord;
 }
+export interface StoredStudioProject {
+  descriptor: StudioProjectDescriptor;
+  kind: StudioProjectKind;
+  /** Canonical server-only directory for a remembered local Project. */
+  localDirectory?: string;
+  /** Imported workspaces retain their bounded materialization until removal. */
+  importedWorkspace?: StudioWorkspace;
+}
+export interface StudioProjectRevisionContext {
+  projectId: string;
+  /** Canonical server-only execution root captured when this revision was active. */
+  localDirectory: string;
+}
 export interface HarnessStudioState {
   sourceCatalog: StudioSourceCandidate[];
   activeSources: Partial<Record<StudioSourceKind, string>>;
@@ -188,8 +204,13 @@ export interface HarnessStudioState {
   artifactImports: Map<string, ArtifactImportSession>;
   artifactEventStreams: number;
   workspace?: StudioWorkspace;
+  projects: Map<string, StoredStudioProject>;
+  activeProjectId?: string;
+  projectRevision: number;
+  /** Bounded recent revision bindings keep completed runs in their starting Project. */
+  projectRevisionContexts: Map<number, StudioProjectRevisionContext>;
   workspaceImports: Map<string, WorkspaceImportSession>;
-  workspaceOpenStage: "idle" | "choosing" | "discovering";
+  workspaceOpenStage: "idle" | "choosing" | "discovering" | "removing";
   intentAnalysisRunning: boolean;
   customizationAnalysisRunning: boolean;
   customizationAnalysis?: CustomizationAnalysisResponseV1;

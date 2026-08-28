@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ARTIFACT_PROVIDER_API_VERSION,
   defineArtifactProvider,
+  isArtifactBuildSnapshot,
   isArtifactCatalogResponse,
   isArtifactDataSnapshot,
   type ArtifactDataSnapshot,
@@ -97,5 +98,34 @@ describe("Artifact provider SDK", () => {
     expect(isArtifactCatalogResponse(catalog)).toBe(true);
     catalog.artifacts[0]!.renderer.bindingId = "not-a-digest";
     expect(isArtifactCatalogResponse(catalog)).toBe(false);
+  });
+
+  it("validates AgentReact metadata on immutable build snapshots", () => {
+    const snapshot = {
+      kind: "ArtifactBuildSnapshotV1",
+      artifactId: "orders",
+      revisionId: DIGEST,
+      buildId: DIGEST,
+      sequence: 1,
+      status: "ready",
+      runtime: { id: "studio.sandboxed-react", version: "4" },
+      previewUri: `/api/artifacts/orders/revisions/${"a".repeat(64)}/builds/${"a".repeat(64)}/preview`,
+      diagnostics: [],
+      agentReact: {
+        protocolVersion: "agent-react/1",
+        artifactDigest: DIGEST,
+        buildDigest: DIGEST,
+        buildPolicyDigest: DIGEST,
+        view: {
+          id: "orders",
+          state: [{ path: "/orders", schema: "list", version: 1 }],
+          capabilities: ["studio.show-source"],
+        },
+      },
+    };
+
+    expect(isArtifactBuildSnapshot(snapshot)).toBe(true);
+    snapshot.agentReact.view.state[0]!.version = 0;
+    expect(isArtifactBuildSnapshot(snapshot)).toBe(false);
   });
 });

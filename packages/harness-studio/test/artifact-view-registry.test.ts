@@ -13,6 +13,7 @@ import {
 describe("Artifact View surface registry", () => {
   it("keeps one stable ordered composition boundary for every view family", () => {
     expect(ARTIFACT_SURFACE_MOUNTS.map((mount) => mount.id)).toEqual([
+      "studio.agent-react-preview",
       "studio.sandboxed-preview",
       "external-hosted",
       "studio.markdown",
@@ -26,6 +27,7 @@ describe("Artifact View surface registry", () => {
   });
 
   it.each([
+    ["AgentReact", descriptor({ id: "studio.agent-react-preview", type: "sandboxed-web" }, { backing: "code", format: "agent-react-tsx" }), "studio.agent-react-preview"],
     ["dynamic React", descriptor({ id: "studio.react-preview", type: "sandboxed-web" }, { backing: "code", format: "tsx" }), "studio.sandboxed-preview"],
     ["Qoder Canvas", descriptor({ id: "qoder-canvas.deck", type: "qoder-canvas", viewUri: "/api/artifacts/deck/view" }), "external-hosted"],
     ["Structurizr", descriptor({ id: "homology.structurizr-svg", type: "homology-diagram-svg", viewUri: "/api/artifacts/structurizr/view" }, { format: "dsl" }), "external-hosted"],

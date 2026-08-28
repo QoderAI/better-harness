@@ -90,8 +90,10 @@ test("labels a configured source action for the workbench it opens", async ({ pa
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${sourceStudio.url}/#/overview`);
 
-  await expect(page.getByRole("heading", { name: "Comparison setup is ready." })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open workspace", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Comparison setup needs attention." })).toBeVisible();
+  await expect(page.getByRole("term").filter({ hasText: "Harness Bench" })).toContainText("Checkpoint source unavailable");
+  await expect(page.getByRole("definition").filter({ hasText: "Blocked" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Project", exact: true })).toHaveCount(0);
   const action = page.getByRole("button", { name: "Open Compare" });
   await expect(action).toBeVisible();
   await action.focus();
@@ -109,7 +111,7 @@ test("renders the connected workspace home across layout modes", async ({ page }
   for (const layout of layouts) {
     await page.setViewportSize({ width: layout.width, height: layout.height });
     await page.goto(`${workspaceStudio.url}/#/overview`);
-    await expect(page.getByRole("heading", { name: "better-harness-dashboard" })).toBeVisible();
+    await expect(page.locator(".studio-context-title")).toContainText("better-harness-dashboard");
     await expect(page.getByLabel("Workspace summary")).toContainText("Sessions2");
     await expect(page.getByRole("heading", { name: "Recent Sessions" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open Session: Repair the Studio overview" })).toBeVisible();
@@ -121,7 +123,7 @@ test("renders the connected workspace home across layout modes", async ({ page }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${workspaceStudio.url}/#/overview`);
   await page.getByRole("button", { name: "Open Session: Inspect the workspace evidence" }).click();
-  await expect(page).toHaveURL(/#\/sessions$/u);
+  await expect(page).toHaveURL(/#\/projects\/project_[a-f0-9]{32}\/sessions$/u);
   await expect(page.getByRole("heading", { name: "Inspect the workspace evidence" })).toBeVisible();
   expect(browserErrors).toEqual([]);
 });

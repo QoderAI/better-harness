@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { CheckpointHistoryPreview, ResolvedHistoryDraftPreview } from "../../contracts/experiment-setup.js";
+import { isExperimentRunnable, type CheckpointHistoryPreview, type ResolvedHistoryDraftPreview } from "../../contracts/experiment-setup.js";
 import { applyLaneEvent, emptyLane, globalStreamFailure, mergeCallPage } from "./experiment-comparison-model.js";
 import { ExperimentBuilder, type HistoryActionState, type HistoryLoadState } from "./ExperimentBuilder.js";
 import { ExperimentWorkbench } from "./ExperimentWorkbench.js";
@@ -20,7 +20,7 @@ type LoadState =
   | { phase: "error"; detail: string }
   | { phase: "ready"; preview: ExperimentPreview };
 
-export function ExperimentView(props: { navigation?: ReactNode } = {}): React.JSX.Element {
+export function ExperimentView(props: { historyEnabled?: boolean; navigation?: ReactNode } = {}): React.JSX.Element {
   const [load, setLoad] = useState<LoadState>({ phase: "loading" });
   const [lanes, setLanes] = useState<Record<string, LaneTrace>>({});
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -39,7 +39,9 @@ export function ExperimentView(props: { navigation?: ReactNode } = {}): React.JS
   const [submittedPrompt, setSubmittedPrompt] = useState<string | null>(null);
   const [runError, setRunError] = useState<string>();
   const [agentIds, setAgentIds] = useState<Record<string, string>>({});
-  const [history, setHistory] = useState<HistoryLoadState>({ phase: "loading" });
+  const [history, setHistory] = useState<HistoryLoadState>(props.historyEnabled === false
+    ? { phase: "disabled" }
+    : { phase: "loading" });
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [historyDraft, setHistoryDraft] = useState<ResolvedHistoryDraftPreview | null>(null);
   const [historyAction, setHistoryAction] = useState<HistoryActionState>({ phase: "idle" });
@@ -57,6 +59,10 @@ export function ExperimentView(props: { navigation?: ReactNode } = {}): React.JS
         initializePreview(payload);
       } catch (error) {
         if (!cancelled) setLoad({ phase: "error", detail: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      if (props.historyEnabled === false) {
+        setHistory({ phase: "disabled" });
         return;
       }
       try {
@@ -78,7 +84,7 @@ export function ExperimentView(props: { navigation?: ReactNode } = {}): React.JS
       }
     })();
     return () => { cancelled = true; abortRef.current?.abort(); };
-  }, []);
+  }, [props.historyEnabled]);
 
   useEffect(() => {
     const media = globalThis.matchMedia?.("(max-width: 1080px)");
@@ -113,8 +119,9 @@ export function ExperimentView(props: { navigation?: ReactNode } = {}): React.JS
     setPrompt(payload.setup.request.prompt);
     setSubmittedPrompt(null);
     setRunError(undefined);
-    const defaultAgentId = payload.acpAgents?.defaultAgentId ?? "";
-    setAgentIds(Object.fromEntries(fresh.map((lane) => [lane.id, defaultAgentId])));
+    const acpHosted = payload.manifest.runtime?.host === "acp";
+    const defaultAgentId = acpHosted ? payload.acpAgents?.defaultAgentId ?? "" : "";
+    setAgentIds(acpHosted ? Object.fromEntries(fresh.map((lane) => [lane.id, defaultAgentId])) : {});
   }
 
   async function loadMoreCalls(laneId: string): Promise<void> {
@@ -177,7 +184,7 @@ export function ExperimentView(props: { navigation?: ReactNode } = {}): React.JS
 
   async function lockBuilder(): Promise<void> {
     if (history.phase === "disabled") {
-      setSurface("workbench");
+      if (load.phase === "ready" && isExperimentRunnable(load.preview.setup)) setSurface("workbench");
       return;
     }
     if (history.phase !== "ready" || historyId === null || historyDraft?.selection.id !== historyId) return;
@@ -223,6 +230,12 @@ export function ExperimentView(props: { navigation?: ReactNode } = {}): React.JS
   }
 
   async function runExperiment(): Promise<void> {
+    if (load.phase !== "ready" || !isExperimentRunnable(load.preview.setup)) {
+      setRunError(load.phase === "ready"
+        ? load.preview.setup.checkpointSource.limitation ?? "The checkpoint source cannot create isolated fresh runs."
+        : "Comparison setup is not ready.");
+      return;
+    }
     const nextId = `exp_${globalThis.crypto.randomUUID().replaceAll("-", "")}`;
     const controller = new AbortController();
     abortRef.current = controller;
@@ -240,7 +253,11 @@ export function ExperimentView(props: { navigation?: ReactNode } = {}): React.JS
       const response = await fetch("api/experiment/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ experimentId: nextId, prompt, agentIds }),
+        body: JSON.stringify({
+          experimentId: nextId,
+          prompt,
+          ...(load.preview.manifest.runtime?.host === "acp" ? { agentIds } : {}),
+        }),
         signal: controller.signal,
       });
       if (!response.ok || response.body === null) {
@@ -359,6 +376,7 @@ export function ExperimentView(props: { navigation?: ReactNode } = {}): React.JS
       onCancel={() => void cancelExperiment()}
       onPermission={(laneId, runId, requestId, optionId) =>
         void decidePermission(laneId, runId, requestId, optionId)}
+      onSetup={() => setSurface("builder")}
       onAdvanced={() => setSurface("workbench")}
     />;
   }

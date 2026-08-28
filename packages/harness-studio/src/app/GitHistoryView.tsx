@@ -197,7 +197,7 @@ export function GitHistoryView(): React.JSX.Element {
   const canLoadMore = hasMore && !loading && loadedLogKey === logQueryKey;
   return <main className="git-history-workbench" data-narrow-pane={narrowPane}>
     <header className="git-history-titlebar">
-      <div><GitCommit aria-hidden="true" size={18} weight="fill" /><span><strong>Commit history</strong><small>{refs?.repository.label ?? "Open workspace"}</small></span></div>
+      <div><GitCommit aria-hidden="true" size={18} weight="fill" /><span><strong>Commit history</strong><small>Repository evidence</small></span></div>
       {refs !== undefined && <span className="git-current-branch"><GitBranch aria-hidden="true" size={14} /><strong>{refs.repository.currentBranch ?? "Detached HEAD"}</strong><code>{refs.repository.headSha?.slice(0, 8) ?? "no commits"}</code></span>}
       <button type="button" title="Refresh Git history" aria-label="Refresh Git history" disabled={loading || refsLoading} onClick={() => setRevision((value) => value + 1)}><ArrowClockwise aria-hidden="true" size={15} className={loading || refsLoading ? "spin" : undefined} /></button>
     </header>

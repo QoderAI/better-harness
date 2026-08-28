@@ -22,7 +22,7 @@ async function runAcpPrompt(page, prompt) {
   await page.getByRole("combobox", { name: "Runtime" }).selectOption("acp");
   await page.getByRole("textbox", { name: "Task prompt for the harness run…" }).fill(prompt);
   await page.getByRole("button", { name: "Run harness" }).click();
-  await expect(page.getByText("ACP permission requested")).toBeVisible();
+  await expect(page.locator(".live-inspector > header")).toContainText("Permission required");
   await page.getByRole("button", { name: "Allow once allow_once" }).click();
   await expect(page.getByText("fixture:allow-once", { exact: true })).toBeVisible();
 }
@@ -51,7 +51,7 @@ test("runs ACP through the Debugger permission gate at wide, compact, and narrow
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize(layouts[0]);
   await page.goto(`${studio.url}/#/debugger`);
-  await page.getByRole("button", { name: "Choose workspace" }).click();
+  await page.getByRole("button", { name: "Choose Project" }).click();
   await expect(page.getByRole("button", { name: "New live run" })).toBeVisible();
   await runAcpPrompt(page, "Verify the browser ACP bridge");
   await expect(page.getByText("session/request_permission", { exact: true })).toBeVisible();

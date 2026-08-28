@@ -19,6 +19,14 @@ export {
 } from "./app/compare-model.js";
 export { createSseParser, type SseParser } from "./app/sse-client.js";
 export {
+  isStudioProjectCatalog,
+  STUDIO_PROJECT_CATALOG_KIND,
+  type ActiveStudioProject,
+  type StudioProjectCatalog,
+  type StudioProjectDescriptor,
+  type StudioProjectKind,
+} from "./contracts/studio-project.js";
+export {
   alignToolCalls,
   compareToolCalls,
   localToolChain,

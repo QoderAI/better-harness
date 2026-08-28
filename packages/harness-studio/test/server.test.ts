@@ -26,6 +26,15 @@ const ACP_AGENT_FIXTURE = resolve(
   "../../harness/test/fixtures/acp-agent.mjs",
 );
 
+const READY_CHECKPOINT_SOURCE = {
+  status: "ready" as const,
+  adapter: { id: "test-checkpoint-v1", label: "Test checkpoint" },
+  resource: { label: "Repository", value: "better-harness" },
+  revision: { label: "Revision", value: "fixture-ready" },
+  materialization: { label: "Isolated checkout", value: "10 copies", timing: "on-run" as const, count: 10 },
+  capabilities: { isolatedMaterialization: true, observedHistory: true, preserveResult: true },
+};
+
 const SOURCE = `
   language 0.3
   skill require-tests {
@@ -149,6 +158,14 @@ async function waitForWorkspaceOpenStage(
   throw new Error(`Workspace open stage did not become '${expected}'.`);
 }
 
+async function waitForCondition(predicate: () => boolean, message: string): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error(message);
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 5));
+  }
+}
+
 function retainedRunFixture(id: string, savedAt: string, prompt: string, tools: string[]) {
   return {
     id,
@@ -226,6 +243,7 @@ describe("harness-studio server", () => {
       artifactsEnabled: false,
       evidenceEnabled: true,
       experimentEnabled: false,
+      experimentRunnable: false,
       gitEnabled: false,
       harnessMode: "none",
       historyEnabled: false,
@@ -233,6 +251,8 @@ describe("harness-studio server", () => {
       workspaceWorkbenchEnabled: false,
       workspaceDiscoveryEnabled: false,
       workspaceConnected: false,
+      projectRevision: 0,
+      projectExecutionEnabled: false,
       sessionCount: 0,
       inputCount: 0,
       intentAnalysisEnabled: false,
@@ -472,6 +492,10 @@ describe("harness-studio server", () => {
     const workspace = await makeTempDir("studio-intent-workspace-");
     let observedPacket: IntentCorrelationPacketV1 | undefined;
     let invalid = false;
+    let block = false;
+    let analyzerCalls = 0;
+    let releaseAnalyzer: (() => void) | undefined;
+    const analyzerGate = new Promise<void>((resolveGate) => { releaseAnalyzer = resolveGate; });
     started = await startHarnessStudioServer({
       appDir,
       workspaceDirectoryPicker: async () => workspace,
@@ -498,7 +522,9 @@ describe("harness-studio server", () => {
       },
       intentAnalyzer: {
         analyze: async (packet) => {
+          analyzerCalls += 1;
           observedPacket = packet;
+          if (block) await analyzerGate;
           const proposed = proposedIntentFixture(packet);
           return invalid ? { ...proposed, claims: [{ ...proposed.claims[0], reviewStatus: "confirmed" }] } : proposed;
         },
@@ -521,6 +547,18 @@ describe("harness-studio server", () => {
 
     const crossOrigin = await fetch(`${started.url}/api/intent-analysis`, { method: "POST", headers: { Origin: "https://example.test" } });
     expect(crossOrigin.status).toBe(403);
+
+    invalid = false;
+    block = true;
+    const pending = fetch(`${started.url}/api/intent-analysis`, { method: "POST" });
+    await waitForCondition(() => analyzerCalls === 3, "Intent analyzer did not start.");
+    expect((await fetch(`${started.url}/api/projects/open`, { method: "POST" })).status).toBe(200);
+    releaseAnalyzer?.();
+    const stale = await pending;
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({
+      error: "The active Project changed before Intent analysis completed. Run the analysis again for the current Project.",
+    });
   });
 
   it("provides a default local harness and runs it inside the selected workspace", async () => {
@@ -560,11 +598,54 @@ describe("harness-studio server", () => {
       harnessMode: "workspace-default",
       workspaceDiscoveryEnabled: true,
     });
+    const beforeProject = await fetch(`${started.url}/agui`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threadId: "before-project-thread",
+        runId: "before-project-run",
+        messages: [{ role: "user", content: "must not start" }],
+      }),
+    });
+    expect(beforeProject.status).toBe(409);
+    expect(await beforeProject.json()).toEqual({ error: "Open a Project before starting a Project-scoped run." });
     expect(await (await fetch(`${started.url}/api/workspace/open`, { method: "POST" })).json()).toMatchObject({ opened: true });
+
+    const projectCatalog = await (await fetch(`${started.url}/api/projects`)).json() as { activeProjectId: string; revision: number };
+    const missingBinding = await fetch(`${started.url}/agui`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threadId: "missing-thread",
+        runId: "missing-run",
+        messages: [{ role: "user", content: "must not start" }],
+      }),
+    });
+    expect(missingBinding.status).toBe(409);
+    expect(await missingBinding.json()).toEqual({ error: "A Project id and revision are required to start a Project-scoped run." });
+    const staleBinding = await fetch(`${started.url}/agui`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Harness-Project-Id": projectCatalog.activeProjectId,
+        "X-Harness-Project-Revision": String(projectCatalog.revision - 1),
+      },
+      body: JSON.stringify({
+        threadId: "stale-thread",
+        runId: "stale-run",
+        messages: [{ role: "user", content: "must not start" }],
+      }),
+    });
+    expect(staleBinding.status).toBe(409);
+    expect(observedTask).toBeUndefined();
 
     const response = await fetch(`${started.url}/agui`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Harness-Project-Id": projectCatalog.activeProjectId,
+        "X-Harness-Project-Revision": String(projectCatalog.revision),
+      },
       body: JSON.stringify({
         threadId: "default-thread",
         runId: "default-run",
@@ -593,11 +674,16 @@ describe("harness-studio server", () => {
       acpAgentLabel: "Fixture ACP",
     });
     await fetch(`${started.url}/api/workspace/open`, { method: "POST" });
+    const projectCatalog = await (await fetch(`${started.url}/api/projects`)).json() as { activeProjectId: string; revision: number };
 
     const runId = "acp-run";
     const response = await fetch(`${started.url}/agui/acp`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Harness-Project-Id": projectCatalog.activeProjectId,
+        "X-Harness-Project-Revision": String(projectCatalog.revision),
+      },
       body: JSON.stringify({
         threadId: "acp-thread",
         runId,
@@ -708,8 +794,12 @@ describe("harness-studio server", () => {
 
   it("opens a browser-selected workspace, indexes Sessions, and compares two retained runs", async () => {
     const appDir = await makeAppDir();
-    started = await startHarnessStudioServer({ appDir });
-    const created = await fetch(`${started.url}/api/workspaces?label=review-sessions`, { method: "POST" });
+    started = await startHarnessStudioServer({
+      appDir,
+      workspaceSessionProvider: { discover: async () => ({ label: "unused-local-project", sessions: [] }) },
+    });
+    const privateImportLabel = "C:\\Users\\private\\review-sessions";
+    const created = await fetch(`${started.url}/api/workspaces?label=${encodeURIComponent(privateImportLabel)}`, { method: "POST" });
     expect(created.status).toBe(201);
     const { sessionId } = await created.json() as { sessionId: string };
 
@@ -727,9 +817,24 @@ describe("harness-studio server", () => {
     const committed = await fetch(`${started.url}/api/workspaces/${sessionId}/commit`, { method: "POST" });
     expect(committed.status).toBe(200);
     expect(await committed.json()).toEqual({ label: "review-sessions", sessionCount: 2, omittedCount: 1 });
+    const projects = await (await fetch(`${started.url}/api/projects`)).text();
+    expect(projects).not.toContain(privateImportLabel);
+    expect(projects).not.toContain("Users");
 
-    const config = await (await fetch(`${started.url}/api/config`)).json() as { workspaceConnected: boolean; sessionCount: number };
-    expect(config).toMatchObject({ workspaceConnected: true, sessionCount: 2 });
+    const config = await (await fetch(`${started.url}/api/config`)).json() as { workspaceConnected: boolean; projectExecutionEnabled: boolean; sessionCount: number };
+    expect(config).toMatchObject({ workspaceConnected: true, projectExecutionEnabled: false, sessionCount: 2 });
+    const activeProject = await (await fetch(`${started.url}/api/projects`)).json() as { activeProjectId: string; revision: number };
+    const runAttempt = await fetch(`${started.url}/agui`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Harness-Project-Id": activeProject.activeProjectId,
+        "X-Harness-Project-Revision": String(activeProject.revision),
+      },
+      body: JSON.stringify({ threadId: "imported-thread", runId: "imported-run", messages: [{ role: "user", content: "must not execute" }] }),
+    });
+    expect(runAttempt.status).toBe(422);
+    expect(await runAttempt.json()).toEqual({ error: "The selected Project is read-only evidence and cannot host a live run." });
     const catalog = await (await fetch(`${started.url}/api/sessions`)).json() as { sessions: Array<{ id: string; prompt: string }> };
     expect(catalog.sessions.map((session) => session.id)).toEqual(["run_right", "run_left"]);
     const debuggerSession = await (await fetch(`${started.url}/api/sessions/run_left/debugger`)).json();
@@ -756,6 +861,39 @@ describe("harness-studio server", () => {
     const traversal = await fetch(`${started.url}/api/workspaces/${sessionId}/files?path=${encodeURIComponent("../run_escape.json")}`, { method: "PUT", body: "{}" });
     expect(traversal.status).toBe(400);
     expect((await fetch(`${started.url}/api/workspaces/${sessionId}/commit`, { method: "POST" })).status).toBe(422);
+    expect((await fetch(`${started.url}/api/workspaces/${sessionId}`, { method: "DELETE" })).status).toBe(200);
+  });
+
+  it("serializes upload, commit, and abort operations for one workspace import", async () => {
+    const appDir = await makeAppDir();
+    started = await startHarnessStudioServer({ appDir });
+    const created = await fetch(`${started.url}/api/workspaces`, { method: "POST" });
+    const { sessionId } = await created.json() as { sessionId: string };
+    let finishUpload!: () => void;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{\"partial\":"));
+        finishUpload = () => {
+          controller.enqueue(new TextEncoder().encode("true}"));
+          controller.close();
+        };
+      },
+    });
+    const upload = fetch(
+      `${started.url}/api/workspaces/${sessionId}/files?path=run_serialized.json`,
+      { method: "PUT", body, duplex: "half" } as RequestInit & { duplex: "half" },
+    );
+
+    let conflictingStatus = 0;
+    const deadline = Date.now() + 2_000;
+    while (conflictingStatus !== 409 && Date.now() < deadline) {
+      conflictingStatus = (await fetch(`${started.url}/api/workspaces/${sessionId}/commit`, { method: "POST" })).status;
+      if (conflictingStatus !== 409) await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+    expect(conflictingStatus).toBe(409);
+    expect((await fetch(`${started.url}/api/workspaces/${sessionId}`, { method: "DELETE" })).status).toBe(409);
+    finishUpload();
+    expect((await upload).status).toBe(201);
     expect((await fetch(`${started.url}/api/workspaces/${sessionId}`, { method: "DELETE" })).status).toBe(200);
   });
 
@@ -987,6 +1125,8 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
+      acpAgents: [{ id: "codex-acp", label: "Codex ACP", unavailableReason: "not used by Qoder" }],
       experimentRunner: async (options) => {
         submittedPrompt = options.promptOverride;
         options.onEvent?.({
@@ -1034,7 +1174,7 @@ describe("harness-studio server", () => {
     expect(preview.setup).toMatchObject({
       scenario: "historical-replay",
       checkpointSource: {
-        status: "unavailable",
+        status: "ready",
         materialization: { timing: "on-run", count: 10 },
       },
       request: { provenance: "unverified-history" },
@@ -1047,6 +1187,11 @@ describe("harness-studio server", () => {
     });
     expect(preview.observedCallPages.history).toMatchObject({ complete: true, malformedLines: 0 });
     expect(preview).not.toHaveProperty("observedEvents");
+    expect(preview).not.toHaveProperty("acpAgents");
+    expect(await (await fetch(`${started.url}/api/config`)).json()).toMatchObject({
+      experimentEnabled: true,
+      experimentRunnable: true,
+    });
 
     const observedPage = await (await fetch(`${started.url}/api/experiment/observed-calls?laneId=history&limit=100`)).json();
     expect(observedPage.complete).toBe(true);
@@ -1070,6 +1215,14 @@ describe("harness-studio server", () => {
     expect(body).not.toContain('"type":"tool.requested"');
     expect(submittedPrompt).toBe("Use this live request exactly.\n");
 
+    const qoderAgentSelection = await fetch(`${started.url}/api/experiment/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentIds: { "fresh-default": "codex-acp" } }),
+    });
+    expect(qoderAgentSelection.status).toBe(400);
+    expect(await qoderAgentSelection.json()).toMatchObject({ error: expect.stringContaining("only for ACP-hosted") });
+
     const emptyPrompt = await fetch(`${started.url}/api/experiment/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1077,6 +1230,37 @@ describe("harness-studio server", () => {
     });
     expect(emptyPrompt.status).toBe(400);
     expect(await emptyPrompt.json()).toMatchObject({ error: expect.stringContaining("non-empty") });
+  });
+
+  it("blocks execution when the checkpoint source is unavailable", async () => {
+    const appDir = await makeAppDir();
+    let runnerCalled = false;
+    started = await startHarnessStudioServer({
+      appDir,
+      experimentManifestPath: EXPERIMENT_MANIFEST,
+      experimentRunner: async () => {
+        runnerCalled = true;
+        return {} as never;
+      },
+    });
+
+    const preview = await (await fetch(`${started.url}/api/experiment`)).json();
+    expect(preview.setup.checkpointSource.status).toBe("unavailable");
+    expect(preview).not.toHaveProperty("acpAgents");
+    expect(await (await fetch(`${started.url}/api/config`)).json()).toMatchObject({
+      experimentEnabled: true,
+      experimentRunnable: false,
+    });
+
+    const response = await fetch(`${started.url}/api/experiment/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ experimentId: "exp_blocked_checkpoint" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: expect.any(String) });
+    expect(runnerCalled).toBe(false);
   });
 
   it("rejects cross-origin experiment execution", async () => {
@@ -1102,6 +1286,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       experimentRunner: async () => ({} as never),
     });
 
@@ -1124,6 +1309,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       acpAgent: alpha,
       acpAgents: [
         { id: "alpha", label: "Alpha ACP", agent: alpha },
@@ -1172,6 +1358,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       acpAgent: alpha,
       acpAgents: [
         { id: "alpha", label: "Alpha ACP", agent: alpha },
@@ -1204,6 +1391,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       acpAgent: { command: process.execPath, args: [ACP_AGENT_FIXTURE] },
       experimentRunner: async (options) => {
         factoryConfigured = options.executorFactory !== undefined;
@@ -1227,6 +1415,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       experimentRunner: (options) => new Promise((_, reject) => {
         options.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true });
       }),
@@ -1251,6 +1440,7 @@ describe("harness-studio server", () => {
     started = await startHarnessStudioServer({
       appDir,
       experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
       experimentRunner: (options) => new Promise((_, reject) => {
         options.signal?.addEventListener("abort", () => {
           resolveAborted();
@@ -1509,6 +1699,55 @@ describe("harness-studio CLI", () => {
   it("accepts an empty startup so Studio can acquire artifacts in the UI", () => {
     expect(parseHarnessStudioArgs([])).toMatchObject({ host: "127.0.0.1", port: 3311 });
     expect(parseHarnessStudioArgs([]).error).toBeUndefined();
+  });
+
+  it("prints its package version without opening a server", async () => {
+    const out: string[] = [];
+    const errors: string[] = [];
+
+    const code = await runHarnessStudioCli(["--version"], {
+      stdout: (text) => out.push(text),
+      stderr: (text) => errors.push(text),
+    });
+
+    expect(code).toBe(0);
+    expect(out.join("").trim()).toBe("0.1.1");
+    expect(errors).toEqual([]);
+  });
+
+  it("preserves the first invalid option and does not consume a following flag as a value", () => {
+    expect(parseHarnessStudioArgs(["--evidenc", "./evidence"]).error).toBe("Unknown option '--evidenc'.");
+    const missingHarness = parseHarnessStudioArgs(["--harness", "--port", "9999"]);
+    expect(missingHarness.error).toBe("--harness requires a value.");
+    expect(missingHarness.port).toBe(9999);
+  });
+
+  it("reports a missing harness file with the option and recovery context", async () => {
+    const errors: string[] = [];
+    const code = await runHarnessStudioCli(["--harness", "./not-a-real-agent.harness"], {
+      stdout: () => undefined,
+      stderr: (text) => errors.push(text),
+    });
+
+    expect(code).toBe(2);
+    expect(errors.join("")).toContain("--harness file was not found: ./not-a-real-agent.harness");
+    expect(errors.join("")).not.toContain("ENOENT");
+  });
+
+  it("explains how to recover when the requested port is occupied", async () => {
+    const appDir = await makeAppDir();
+    started = await startHarnessStudioServer({ appDir, port: 0 });
+    const occupiedPort = new URL(started.url).port;
+    const errors: string[] = [];
+
+    const code = await runHarnessStudioCli(["--port", occupiedPort], {
+      stdout: () => undefined,
+      stderr: (text) => errors.push(text),
+    });
+
+    expect(code).toBe(2);
+    expect(errors.join("")).toContain(`Port ${occupiedPort} is already in use`);
+    expect(errors.join("")).toContain("--port <n>");
   });
 
   it("parses repeated operator-provisioned Artifact Provider modules", () => {

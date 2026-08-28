@@ -3,6 +3,7 @@ import {
   capabilitySummary,
   compareSurfaces,
   inspectorSurfaces,
+  studioProjectGateRequired,
   studioOverview,
   studioDestinations,
   type StudioConfig,
@@ -14,6 +15,7 @@ const EMPTY: StudioConfig = {
   artifactsEnabled: false,
   evidenceEnabled: false,
   experimentEnabled: false,
+  experimentRunnable: false,
   gitEnabled: false,
   harnessMode: "none",
   historyEnabled: false,
@@ -21,6 +23,7 @@ const EMPTY: StudioConfig = {
   workspaceWorkbenchEnabled: false,
   workspaceDiscoveryEnabled: false,
   workspaceConnected: false,
+  projectExecutionEnabled: false,
   sessionCount: 0,
   inputCount: 0,
   intentAnalysisEnabled: false,
@@ -46,19 +49,19 @@ describe("Studio control-plane navigation", () => {
     expect(destinations.find((destination) => destination.id === "overview")).toMatchObject({ availability: "ready" });
     expect(destinations.find((destination) => destination.id === "sessions")).toMatchObject({
       availability: "partial",
-      status: "Open workspace",
+      status: "Project required",
     });
     expect(destinations.find((destination) => destination.id === "inputs")).toMatchObject({
       availability: "foundation",
-      status: "Workspace required",
+      status: "Project required",
     });
     expect(destinations.find((destination) => destination.id === "artifacts")).toMatchObject({
       availability: "foundation",
-      status: "Workspace required",
+      status: "Project required",
     });
     expect(destinations.find((destination) => destination.id === "commits")).toMatchObject({
       availability: "foundation",
-      status: "Workspace required",
+      status: "Project required",
     });
     expect(destinations.find((destination) => destination.id === "debugger")).toMatchObject({
       availability: "foundation",
@@ -66,7 +69,7 @@ describe("Studio control-plane navigation", () => {
     });
     expect(destinations.find((destination) => destination.id === "compare")).toMatchObject({
       availability: "foundation",
-      status: "Workspace required",
+      status: "Project required",
     });
     expect(capabilitySummary(EMPTY)).toEqual({ ready: 1, partial: 1, foundation: 6 });
   });
@@ -78,6 +81,7 @@ describe("Studio control-plane navigation", () => {
       artifactsEnabled: true,
       evidenceEnabled: true,
       experimentEnabled: true,
+      experimentRunnable: true,
       gitEnabled: true,
       harnessMode: "configured",
       historyEnabled: true,
@@ -85,6 +89,7 @@ describe("Studio control-plane navigation", () => {
       workspaceWorkbenchEnabled: true,
       workspaceDiscoveryEnabled: true,
       workspaceConnected: true,
+      projectExecutionEnabled: true,
       sessionCount: 3,
       inputCount: 8,
       intentAnalysisEnabled: true,
@@ -127,6 +132,25 @@ describe("Studio control-plane navigation", () => {
     });
   });
 
+  it("does not advertise an exact zero Artifact count as usable evidence", () => {
+    const config: StudioConfig = { ...EMPTY, artifactsEnabled: true, artifactCount: 0, workspaceConnected: true };
+
+    expect(studioDestinations(config).find((destination) => destination.id === "artifacts")).toMatchObject({
+      availability: "partial",
+      status: "No observed outputs",
+    });
+    expect(studioOverview(config).secondaryActions).not.toContainEqual({ area: "artifacts", label: "Open Artifacts" });
+    expect(studioOverview(config).facts.find((fact) => fact.id === "artifacts")).toMatchObject({ value: "0", detail: "No observed outputs" });
+  });
+
+  it("labels Compare from its active surface", () => {
+    const config: StudioConfig = { ...EMPTY, experimentEnabled: true, experimentRunnable: true, evidenceEnabled: true, sessionCount: 3, workspaceConnected: true };
+
+    expect(studioDestinations(config, "bench").find((destination) => destination.id === "compare")?.status).toBe("Harness Bench");
+    expect(studioDestinations(config, "sessions").find((destination) => destination.id === "compare")?.status).toBe("Session compare");
+    expect(studioDestinations(config, "results").find((destination) => destination.id === "compare")?.status).toBe("Frozen results");
+  });
+
   it("does not present a live AG-UI endpoint as retained Inspector evidence or a Compare input", () => {
     const config: StudioConfig = { ...EMPTY, aguiEnabled: true, harnessMode: "configured" };
 
@@ -134,7 +158,7 @@ describe("Studio control-plane navigation", () => {
     expect(compareSurfaces(config)).toEqual([]);
     expect(studioDestinations(config).find((destination) => destination.id === "sessions")).toMatchObject({
       availability: "partial",
-      status: "Open workspace",
+      status: "Project required",
     });
     expect(studioDestinations(config).find((destination) => destination.id === "compare")).toMatchObject({
       availability: "foundation",
@@ -145,8 +169,8 @@ describe("Studio control-plane navigation", () => {
     const config: StudioConfig = { ...EMPTY, aguiEnabled: true, harnessMode: "workspace-default", workspaceDiscoveryEnabled: true };
 
     expect(studioDestinations(config).find((destination) => destination.id === "debugger")).toMatchObject({
-      availability: "ready",
-      status: "Local default",
+      availability: "foundation",
+      status: "Project required",
     });
     expect(inspectorSurfaces(config)).toEqual([]);
     expect(compareSurfaces(config)).toEqual([]);
@@ -166,6 +190,7 @@ describe("Studio control-plane navigation", () => {
     const overview = studioOverview({
       ...EMPTY,
       experimentEnabled: true,
+      experimentRunnable: true,
       inspectorEnabled: true,
       customizationAnalysisEnabled: true,
     });
@@ -181,6 +206,19 @@ describe("Studio control-plane navigation", () => {
     ]);
   });
 
+  it("does not call an unavailable experiment ready outside the Experiment workbench", () => {
+    const config: StudioConfig = { ...EMPTY, experimentEnabled: true, experimentRunnable: false };
+
+    expect(studioDestinations(config, "bench").find((destination) => destination.id === "compare")).toMatchObject({
+      availability: "partial",
+      status: "Comparison blocked",
+    });
+    expect(studioOverview(config)).toMatchObject({
+      title: "Comparison setup needs attention.",
+      facts: [expect.objectContaining({ id: "experiment", value: "Blocked" })],
+    });
+  });
+
   it("leaves workspace opening to the modal gate when discovery is available", () => {
     const overview = studioOverview({ ...EMPTY, workspaceDiscoveryEnabled: true });
 
@@ -191,6 +229,43 @@ describe("Studio control-plane navigation", () => {
     expect(overview.primaryAction).toBeUndefined();
   });
 
+  it("requires an initial Project only when no independent configured context is available", () => {
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true }, false)).toBe(true);
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, evidenceEnabled: true }, true)).toBe(false);
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, artifactsEnabled: true }, false)).toBe(false);
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, artifactsEnabled: true, artifactCount: 0 }, false)).toBe(true);
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, aguiEnabled: true, harnessMode: "configured" }, false)).toBe(false);
+  });
+
+  it("does not advertise the Project-default Debugger before a Project is active", () => {
+    const overview = studioOverview({
+      ...EMPTY,
+      aguiEnabled: true,
+      harnessMode: "workspace-default",
+      inspectorEnabled: true,
+    });
+
+    expect(overview.mode).toBe("configured");
+    expect(overview.facts.map((fact) => fact.id)).toEqual(["inspector"]);
+    expect(overview.secondaryActions).not.toContainEqual({ area: "debugger", label: "Open Debugger" });
+  });
+
+  it("keeps imported retained-run Projects out of the default execution path", () => {
+    const config: StudioConfig = {
+      ...EMPTY,
+      aguiEnabled: true,
+      harnessMode: "workspace-default",
+      workspaceConnected: true,
+      projectExecutionEnabled: false,
+    };
+
+    expect(studioDestinations(config).find((destination) => destination.id === "debugger")).toMatchObject({
+      availability: "foundation",
+      status: "Read-only Project",
+    });
+    expect(studioOverview(config).secondaryActions).not.toContainEqual({ area: "debugger", label: "Open Debugger" });
+  });
+
   it("summarizes connected workspace evidence without capability maturity totals", () => {
     const overview = studioOverview({
       ...EMPTY,
@@ -199,6 +274,7 @@ describe("Studio control-plane navigation", () => {
       artifactCount: 6,
       gitEnabled: true,
       harnessMode: "workspace-default",
+      projectExecutionEnabled: true,
       workspaceWorkbenchEnabled: true,
       workspaceDiscoveryEnabled: true,
       workspaceConnected: true,

@@ -25,12 +25,14 @@ import type {
 } from "../../../contracts/artifact.js";
 import {
   PROVIDER_HOSTED_CANVAS_TSX_FORMAT,
+  AGENT_REACT_TSX_FORMAT,
   resolveArtifactFormatCode,
   resolveArtifactKind,
   type ArtifactEntry,
   type ArtifactKind,
 } from "./artifact-catalog.js";
 import {
+  AGENT_REACT_BUILD_RUNTIME,
   MERMAID_REACT_BUILD_RUNTIME,
   REACT_SOURCE_BUILD_RUNTIME,
   SVG_REACT_BUILD_RUNTIME,
@@ -181,6 +183,28 @@ function studioCodePreviewResolution(entry: ArtifactEntry): ArtifactPluginBindin
   };
 }
 
+function studioAgentReactResolution(entry: ArtifactEntry): ArtifactPluginBinding | undefined {
+  if (entry.kind !== "code" || resolveArtifactFormatCode(entry.label) !== AGENT_REACT_TSX_FORMAT) return undefined;
+  return {
+    backing: "code",
+    adapter: RAW_ARTIFACT_ADAPTER,
+    buildRuntime: AGENT_REACT_BUILD_RUNTIME,
+    renderer: {
+      id: "studio.agent-react-preview",
+      label: "Studio AgentReact Preview",
+      provider: "studio",
+      type: "sandboxed-web",
+      status: "ready",
+    },
+    surface: {
+      kind: "studio-sandbox",
+      rendererId: "studio.agent-react-preview",
+      runtimeId: AGENT_REACT_BUILD_RUNTIME.id,
+    },
+    capabilities: ["execute", "live-update", "state", "actions"],
+  };
+}
+
 function studioDocumentPreviewResolution(entry: ArtifactEntry): ArtifactPluginBinding | undefined {
   const buildRuntime = entry.kind === "svg"
     ? SVG_REACT_BUILD_RUNTIME
@@ -216,6 +240,7 @@ function nativeRendererLabel(kind: Exclude<ArtifactKind, "unknown" | "docx" | "p
 }
 
 const PROTECTED_PLUGINS: readonly ArtifactPlugin[] = Object.freeze([
+  { id: "studio-agent-react", resolve: studioAgentReactResolution },
   { id: "studio-code-preview", resolve: studioCodePreviewResolution },
 ]);
 

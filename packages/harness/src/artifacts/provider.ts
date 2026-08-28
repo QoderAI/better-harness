@@ -55,6 +55,7 @@ export interface ArtifactBuildRuntimeImplementation {
   version: string;
   module:
     | { kind: "source" }
+    | { kind: "agent-react" }
     | {
       kind: "virtual";
       source: string;

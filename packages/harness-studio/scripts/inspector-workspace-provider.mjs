@@ -33,7 +33,25 @@ export function createInspectorWorkspaceSessionProvider({
 } = {}) {
   return {
     async discover(workspacePath) {
-      const repoRoot = repoRootFor(workspacePath);
+      let repoRoot = workspacePath;
+      let commits = [];
+      let gitHistoryAvailable = false;
+      let checkpointResolution = { checkpoints: [], unresolved: [] };
+      const discoveryDiagnostics = [];
+      try {
+        repoRoot = repoRootFor(workspacePath);
+        ({ commits } = collectCommits({ workspace: repoRoot, limit: MAX_COMMITS }));
+        gitHistoryAvailable = true;
+      } catch {
+        discoveryDiagnostics.push("Git history is unavailable for this Project; Session evidence remains available.");
+      }
+      if (gitHistoryAvailable) {
+        try {
+          checkpointResolution = collectCheckpoints({ repoRoot, commits });
+        } catch {
+          discoveryDiagnostics.push("Entire checkpoint evidence is unavailable; Git history remains available.");
+        }
+      }
       const { sessions, providers } = await collect({
         workspace: workspacePath,
         repoRoot,
@@ -42,8 +60,6 @@ export function createInspectorWorkspaceSessionProvider({
         includeToolTrace: true,
         includeDialogue: true,
       });
-      const { commits } = collectCommits({ workspace: repoRoot, limit: MAX_COMMITS });
-      const checkpointResolution = collectCheckpoints({ repoRoot, commits });
       const sessionsWithCheckpoints = attachCheckpointFactsToSessions(sessions, checkpointResolution.checkpoints);
       const correlated = correlate(commits, sessionsWithCheckpoints);
       const filesByCommit = new Map(commits.map((commit) => [commit.hash, commit.files]));
@@ -70,6 +86,7 @@ export function createInspectorWorkspaceSessionProvider({
           sessionLimit: MAX_SESSIONS,
         },
         diagnostics: [
+          ...discoveryDiagnostics,
           ...diagnostics,
           ...(checkpointResolution.unresolved.length > 0
             ? [`${checkpointResolution.unresolved.length} Entire checkpoint link(s) could not be resolved locally.`]

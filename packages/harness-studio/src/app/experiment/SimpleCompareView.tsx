@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { ExperimentToolCall } from "../../contracts/experiment-stream-contract.js";
+import { isExperimentRunnable } from "../../contracts/experiment-setup.js";
 import {
   deriveSimpleComparisonScope,
   deriveSimpleResultFacts,
@@ -26,6 +27,7 @@ export function SimpleCompareView(props: {
   onRun: () => void;
   onCancel: () => void;
   onPermission: (laneId: string, runId: string, requestId: string, optionId: string) => void;
+  onSetup: () => void;
   onAdvanced: () => void;
 }): React.JSX.Element {
   const baseline = props.preview.manifest.lanes.find((lane) => lane.id === props.baselineId);
@@ -41,6 +43,14 @@ export function SimpleCompareView(props: {
   const candidateAgent = agentProfiles.find((agent) => agent.id === props.agentIds[props.candidateId]);
   const needsAcpAgents = props.preview.manifest.runtime?.host === "acp";
   const agentsReady = !needsAcpAgents || (baselineAgent?.available === true && candidateAgent?.available === true);
+  const checkpointReady = isExperimentRunnable(props.preview.setup);
+  const runReady = checkpointReady && agentsReady;
+  const runtimeLabel = needsAcpAgents ? undefined : "Qoder";
+  const readyMessage = !checkpointReady
+    ? props.preview.setup.checkpointSource.limitation ?? "The checkpoint source cannot create isolated fresh runs."
+    : agentsReady
+      ? "Ready"
+      : "Select an available ACP Agent for both AIs";
   const hasRun = props.submittedPrompt !== null;
   const baselineModelLabel = agentModelName(baseline, baselineAgent);
   const candidateModelLabel = agentModelName(candidate, candidateAgent);
@@ -56,7 +66,7 @@ export function SimpleCompareView(props: {
   }, [props.running, hasRun, baselineLane?.status, candidateLane?.status]);
   const submit = (event: FormEvent): void => {
     event.preventDefault();
-    if (!props.running && props.prompt.trim() !== "" && agentsReady) props.onRun();
+    if (!props.running && props.prompt.trim() !== "" && runReady) props.onRun();
   };
   const selectResultViewFromKeyboard = (event: KeyboardEvent<HTMLButtonElement>): void => {
     const views: SimpleResultView[] = ["resources", "messages"];
@@ -119,14 +129,15 @@ export function SimpleCompareView(props: {
             <strong>{comparisonScope.title}</strong>
             <span>{comparisonScope.detail}</span>
             <em role="status" aria-live="polite">
-              {props.running ? "Both AIs are running…" : props.runError ?? (agentsReady ? "Ready to run from the shared checkpoint." : "Select an available ACP Agent for both AIs.")}
+              {props.running ? "Both AIs are running…" : props.runError ?? readyMessage}
             </em>
           </div>
           <div className="simple-run-actions">
-            <button className="secondary simple-advanced-action" type="button" onClick={props.onAdvanced}>Advanced details</button>
+            <button className="secondary" type="button" onClick={props.onSetup}>Review setup</button>
+            <button className="secondary simple-advanced-action" type="button" disabled={!checkpointReady} onClick={props.onAdvanced}>Advanced details</button>
             {props.running
               ? <button className="secondary cancel-comparison" type="button" onClick={props.onCancel}>Cancel</button>
-              : <button className="primary" type="submit" disabled={props.prompt.trim() === "" || !agentsReady}>Run compare</button>}
+              : <button className="primary" type="submit" disabled={props.prompt.trim() === "" || !runReady}>Run compare</button>}
           </div>
         </div>
       </form>
@@ -134,8 +145,8 @@ export function SimpleCompareView(props: {
       <section className={`simple-compare-results${hasRun ? " has-run" : ""}`} aria-label="Comparison result">
         {hasRun && <ResultFacts
           facts={resultFacts}
-          baselineAgent={baselineAgent?.label ?? "Agent"}
-          candidateAgent={candidateAgent?.label ?? "Agent"}
+          baselineAgent={baselineAgent?.label ?? runtimeLabel ?? "Agent"}
+          candidateAgent={candidateAgent?.label ?? runtimeLabel ?? "Agent"}
           baselineModel={baselineModelLabel}
           candidateModel={candidateModelLabel}
         />}
@@ -159,8 +170,8 @@ export function SimpleCompareView(props: {
               candidateLane={candidateLane}
               selectedOperationId={selectedOperationId}
               onSelectOperation={(id) => setSelectedOperationId((current) => current === id ? null : id)}
-              baselineAgentLabel={baselineAgent?.label}
-              candidateAgentLabel={candidateAgent?.label}
+              baselineAgentLabel={baselineAgent?.label ?? runtimeLabel}
+              candidateAgentLabel={candidateAgent?.label ?? runtimeLabel}
               baselineModelLabel={baselineModelLabel}
               candidateModelLabel={candidateModelLabel}
             />
@@ -170,7 +181,7 @@ export function SimpleCompareView(props: {
                 definition={baseline}
                 lane={baselineLane}
                 submittedPrompt={props.submittedPrompt}
-                agentLabel={baselineAgent?.label}
+                agentLabel={baselineAgent?.label ?? runtimeLabel}
                 modelLabel={baselineModelLabel}
                 onPermission={(runId, requestId, optionId) => props.onPermission(props.baselineId, runId, requestId, optionId)}
               />
@@ -179,7 +190,7 @@ export function SimpleCompareView(props: {
                 definition={candidate}
                 lane={candidateLane}
                 submittedPrompt={props.submittedPrompt}
-                agentLabel={candidateAgent?.label}
+                agentLabel={candidateAgent?.label ?? runtimeLabel}
                 modelLabel={candidateModelLabel}
                 onPermission={(runId, requestId, optionId) => props.onPermission(props.candidateId, runId, requestId, optionId)}
               />

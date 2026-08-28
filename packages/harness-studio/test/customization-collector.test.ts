@@ -148,5 +148,8 @@ describe("Studio customization collector", () => {
       observation.kind === "host-collection" || observation.kind === "mcp-server-discovery")).toBe(true);
     expect(serialized).toContain("Workspace/.agents/skills/review/SKILL.md");
     expect(serialized).toContain("Claude customization collection failed");
+    expect(serialized).toContain("collector runtime failed unexpectedly");
+    expect(serialized).toContain("Analyze again to retry");
+    expect(serialized).not.toContain("private failure");
   });
 });

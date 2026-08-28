@@ -106,6 +106,10 @@ export function deriveRequestProvenance(
     : "unverified-history";
 }
 
-export function canLockCompare(setup: ExperimentSetupPreview): boolean {
+export function isExperimentRunnable(setup: ExperimentSetupPreview): boolean {
   return setup.checkpointSource.status === "ready" && setup.checkpointSource.materialization.count > 0;
+}
+
+export function canLockCompare(setup: ExperimentSetupPreview): boolean {
+  return isExperimentRunnable(setup);
 }

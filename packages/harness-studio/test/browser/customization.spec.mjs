@@ -96,7 +96,10 @@ test("analyzes Host customizations only after the explicit action across layouts
   await expect(page.getByRole("table")).toContainText("Codex, Qoder");
   await expect(page.getByRole("table")).toContainText("MCP Server");
   await expect(page.getByRole("row").filter({ hasText: "schedule" })).toContainText("Qoder");
-  await expect(page.getByText("Claude customization collection failed. Other Host results remain available.")).toBeVisible();
+  const hostFailure = page.getByRole("alert");
+  await expect(hostFailure).toContainText("Claude customization collection failed");
+  await expect(hostFailure).toContainText("collector runtime failed unexpectedly");
+  await expect(hostFailure).toContainText("use Analyze again to retry");
   expect(calls).toBe(3);
   expect(await page.locator("body").innerText()).not.toContain(workspace);
   expect(await page.locator("body").innerText()).not.toContain("private-token");

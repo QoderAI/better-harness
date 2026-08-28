@@ -15,14 +15,14 @@ export async function pickLocalWorkspaceDirectory(platform = process.platform): 
   if (platform === "darwin") {
     return runPicker("/usr/bin/osascript", [
       "-e",
-      'POSIX path of (choose folder with prompt "Open a project workspace in Harness Studio")',
+      'POSIX path of (choose folder with prompt "Open a Project in Harness Studio")',
     ]);
   }
   if (platform === "win32") {
     const script = [
       "Add-Type -AssemblyName System.Windows.Forms",
       "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
-      "$dialog.Description = 'Open a project workspace in Harness Studio'",
+      "$dialog.Description = 'Open a Project in Harness Studio'",
       "$dialog.ShowNewFolderButton = $false",
       "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.SelectedPath) }",
     ].join("; ");
@@ -30,8 +30,8 @@ export async function pickLocalWorkspaceDirectory(platform = process.platform): 
   }
   if (platform === "linux") {
     for (const candidate of [
-      { command: "/usr/bin/zenity", args: ["--file-selection", "--directory", "--title=Open a project workspace in Harness Studio"] },
-      { command: "/usr/bin/kdialog", args: ["--getexistingdirectory", ".", "--title", "Open a project workspace in Harness Studio"] },
+      { command: "/usr/bin/zenity", args: ["--file-selection", "--directory", "--title=Open a Project in Harness Studio"] },
+      { command: "/usr/bin/kdialog", args: ["--getexistingdirectory", ".", "--title", "Open a Project in Harness Studio"] },
     ]) {
       if (await access(candidate.command).then(() => true).catch(() => false)) {
         return runPicker(candidate.command, candidate.args);

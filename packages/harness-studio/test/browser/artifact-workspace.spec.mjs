@@ -107,9 +107,10 @@ test("keeps Date, Files, Artifact selection, and Canvas reachable at all target 
   ]) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto(`${studio.url}/#/artifacts`);
-    const workspaceRegion = page.getByRole("region", { name: "Workspace artifacts" });
+    const workspaceRegion = page.getByRole("region", { name: "Project artifacts" });
     if (viewport.width <= 760) await workspaceRegion.getByRole("tab", { name: "Browse" }).click();
-    await expect(workspaceRegion.getByRole("heading", { name: "artifact-fixture" })).toBeVisible();
+    await expect(page.locator(".studio-context-title")).toContainText("artifact-fixture");
+    await expect(workspaceRegion.locator(".artifact-scope-pane > header")).toContainText("Project scopeBrowse");
     await expect(workspaceRegion.getByRole("gridcell", { name: /August 24, 2026, 3 artifacts/ })).toHaveAttribute("aria-selected", "true");
     await expect(page.locator(".artifact-editor-header small")).toContainText("current ");
 
@@ -149,7 +150,7 @@ test("keeps Date, Files, Artifact selection, and Canvas reachable at all target 
 test("switches between Date and file-tree scopes without changing catalog authority", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${studio.url}/#/artifacts`);
-  const workspaceRegion = page.getByRole("region", { name: "Workspace artifacts" });
+  const workspaceRegion = page.getByRole("region", { name: "Project artifacts" });
   await workspaceRegion.getByRole("gridcell", { name: /August 23, 2026, 1 artifact/ }).click();
   await expect(page.locator(".artifact-list-pane").getByRole("button", { name: /contract\.md/ })).toBeVisible();
   await expect(page.locator(".artifact-list-pane").getByRole("button", { name: /report\.md/ })).toHaveCount(0);

@@ -71,14 +71,14 @@ export function createAgentCustomizationCollector(options: AgentCustomizationCol
         try {
           const raw = await options.collectInventory({ provider: hostId, workspace: workspaceRoot, includeUserHome: true });
           return { hostId, raw } as const;
-        } catch {
-          return { hostId, error: true } as const;
+        } catch (error) {
+          return { hostId, error: customizationFailureReason(error) } as const;
         }
       }));
 
       for (const result of results) {
         if ("error" in result) {
-          addHostFailure(accumulator, result.hostId, generatedAt);
+          addHostFailure(accumulator, result.hostId, generatedAt, result.error);
           continue;
         }
         await addHostInventory(accumulator, result.hostId, result.raw, generatedAt, resolveSourcePath);
@@ -169,7 +169,12 @@ function createAccumulator(workspaceRoot: string, generatedAt: string): CatalogA
   };
 }
 
-function addHostFailure(accumulator: CatalogAccumulator, hostId: CustomizationHostId, observedAt: string): void {
+function addHostFailure(
+  accumulator: CatalogAccumulator,
+  hostId: CustomizationHostId,
+  observedAt: string,
+  reason = "The Host collector returned an unsupported result.",
+): void {
   const label = hostLabel(hostId);
   accumulator.hosts.set(hostId, { id: hostId, label, status: "error" });
   const observation: HostCollectionObservationV1 = {
@@ -178,7 +183,7 @@ function addHostFailure(accumulator: CatalogAccumulator, hostId: CustomizationHo
     hostId,
     status: "error",
     observedAt,
-    message: `${label} customization collection failed. Other Host results remain available.`,
+    message: `${label} customization collection failed. ${reason} Other Host results remain available; use Analyze again to retry.`,
     counts: { packages: 0, definitions: 0, registrations: 0 },
   };
   accumulator.runtimeObservations.set(observation.id, observation);
@@ -275,6 +280,22 @@ async function addHostInventory(
     },
   };
   accumulator.runtimeObservations.set(observation.id, observation);
+}
+
+function customizationFailureReason(error: unknown): string {
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code ?? "")
+    : "";
+  const message = error instanceof Error ? error.message : String(error);
+  if (code === "EACCES" || code === "EPERM") return "Host metadata could not be read because access was denied.";
+  if (code === "ENOENT") return "A required Host metadata location is unavailable.";
+  if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND" || /dynamic require|cannot find (?:module|package)/iu.test(message)) {
+    return "The packaged collector runtime could not load a required Node module.";
+  }
+  if (error instanceof SyntaxError || /(?:parse|invalid|malformed).*(?:json|yaml|metadata)/iu.test(message)) {
+    return "Host metadata uses an unsupported or malformed format.";
+  }
+  return "The collector runtime failed unexpectedly.";
 }
 
 async function addDefinitions(

@@ -25,6 +25,7 @@ describe("Artifact plugin registry and the Qoder Canvas provider", () => {
       ["deck.pptx", "pptx", ["navigate", "outline", "select", "zoom"]],
       ["workbook.xlsx", "xlsx", ["navigate", "select"]],
       ["component.tsx", "code", []],
+      ["orders.agent.canvas.tsx", "code", ["execute", "live-update", "state", "actions"]],
       ["component.canvas.tsx", "code", ["execute", "live-update"]],
       ["diagram.svg", "svg", ["live-update"]],
       ["diagram.mmd", "mermaid", ["live-update"]],

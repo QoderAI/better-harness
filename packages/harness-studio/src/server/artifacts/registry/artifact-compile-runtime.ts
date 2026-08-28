@@ -13,9 +13,13 @@ import {
 } from "../../../contracts/artifact.js";
 import type { ArtifactBuildRuntimeImplementation } from "../../../contracts/artifact.js";
 import { REACT_SOURCE_BUILD_RUNTIME } from "./artifact-build-runtimes.js";
+import { compileAgentReactProduction } from "./agent-react-production-runtime.js";
 import { digestHex, type ArtifactEntry } from "./artifact-catalog.js";
 
-const COMPILE_RUNTIME_VERSION = "3";
+// This version participates in immutable build/preview URLs. Bump it whenever
+// generated preview HTML or its Host protocol changes so deployed clients can
+// never reuse an incompatible cached frame document.
+const COMPILE_RUNTIME_VERSION = "5";
 const MAX_DIAGNOSTICS = 32;
 const MAX_DIAGNOSTIC_LENGTH = 600;
 const MAX_RETAINED_BUILDS = 64;
@@ -153,7 +157,36 @@ async function compileArtifactRevision(
   let diagnostics: ArtifactBuildDiagnostic[] = [];
   let status: ArtifactBuildSnapshot["status"] = "ready";
   let timedOut = false;
-  try {
+  let agentReact: ArtifactBuildSnapshot["agentReact"];
+  if (buildRuntime.module.kind === "agent-react") {
+    const result = await compileAgentReactProduction({
+      artifactRoot: root,
+      entryPath,
+      viewId: agentReactViewId(options.entry.label),
+      maxModules: limits.maxSourceFiles,
+      maxSourceBytes: limits.maxSourceBytes,
+      maxOutputBytes: limits.maxOutputBytes,
+      timeoutMs: limits.timeoutMs,
+    });
+    for (const [path, stamp] of result.sources) sources.set(path, stamp);
+    status = result.status;
+    timedOut = !result.cacheable;
+    diagnostics = [...result.diagnostics];
+    code = result.code;
+    if (result.snapshot?.status === "ready" && result.snapshot.viewDeclaration !== undefined) {
+      agentReact = {
+        protocolVersion: "agent-react/1",
+        artifactDigest: result.snapshot.artifactDigest,
+        buildDigest: result.snapshot.buildDigest,
+        buildPolicyDigest: result.snapshot.buildPolicyDigest,
+        view: {
+          id: result.snapshot.viewDeclaration.id,
+          state: result.snapshot.viewDeclaration.state,
+          capabilities: result.snapshot.viewDeclaration.capabilities,
+        },
+      };
+    }
+  } else try {
     const result = await withCompileTimeout(build({
       absWorkingDir: root,
       entryPoints: ["artifact-runtime:entry"],
@@ -198,6 +231,7 @@ async function compileArtifactRevision(
     runtime: { id: "studio.sandboxed-react", version: COMPILE_RUNTIME_VERSION },
     ...(status === "ready" ? { previewUri: `${base}/builds/${digestHex(buildId)}/preview` } : {}),
     diagnostics: diagnostics.slice(0, MAX_DIAGNOSTICS),
+    ...(agentReact === undefined ? {} : { agentReact }),
   };
   const compiled = { snapshot, ...(code === undefined ? {} : { code }), css, sources };
   // An abandoned build is still running and still mutating `sources`, so its
@@ -226,6 +260,7 @@ export function artifactPreviewHtml(compiled: CompiledArtifactPreview): string {
     revisionId: compiled.snapshot.revisionId,
     buildId: compiled.snapshot.buildId,
     runtimeId: compiled.snapshot.runtime.id,
+    ...(compiled.snapshot.agentReact === undefined ? {} : { agentReact: compiled.snapshot.agentReact }),
   });
   const code = escapeInlineScript(compiled.code);
   const css = compiled.css.replaceAll("</style", "<\\/style");
@@ -246,12 +281,12 @@ function previewBootstrap(identity: string): string {
   return [
     "(()=>{",
     `const expected=${identity};`,
-    "let port;let started=false;let reported=false;",
+    "let port;let frameToken;let readyTimer;let started=false;let reported=false;",
     "const fail=(error)=>{",
     "if(reported||port===undefined)return;",
     "reported=true;",
     "const detail=(error&&error.message)||error;",
-    'port.postMessage({...expected,type:"renderFailed",message:String(detail===undefined||detail===null?"Artifact preview failed at runtime.":detail).slice(0,600)});',
+    'port.postMessage({...expected,...(frameToken===undefined?{}:{frameToken}),type:"renderFailed",message:String(detail===undefined||detail===null?"Artifact preview failed at runtime.":detail).slice(0,600)});',
     "};",
     "globalThis.__HARNESS_ARTIFACT_FAIL__=fail;",
     'addEventListener("error",(event)=>fail(event.error||event.message));',
@@ -268,21 +303,35 @@ function previewBootstrap(identity: string): string {
     'script.onerror=()=>{URL.revokeObjectURL(url);rejectBundle(new Error("Artifact bundle could not start."))};',
     "document.head.append(script)",
     "});",
+    "const waitForRenderBoundary=()=>new Promise((resolveBoundary)=>{",
+    "let settled=false;",
+    "const finish=()=>{if(settled)return;settled=true;clearTimeout(fallback);resolveBoundary()};",
+    "const fallback=setTimeout(finish,250);",
+    'if(document.visibilityState!=="visible"){finish();return}',
+    "requestAnimationFrame(()=>requestAnimationFrame(finish));",
+    "});",
     'addEventListener("message",(event)=>{',
     "const message=event.data;const incoming=event.ports&&event.ports[0];",
-    'if(started||!incoming||!message||message.type!=="runtime.init")return;',
+    'if(event.source!==parent||started||!incoming||!message||message.type!=="runtime.init")return;',
     "if(message.artifactId!==expected.artifactId||message.revisionId!==expected.revisionId",
     "||message.buildId!==expected.buildId||message.runtimeId!==expected.runtimeId)return;",
-    "started=true;port=incoming;",
+    "if(expected.agentReact&&(message.agentReact?.buildDigest!==expected.agentReact.buildDigest||typeof message.frameToken!=='string'||!['dry-run','live'].includes(message.actionMode)||!message.state||typeof message.state!=='object'))return;",
+    "started=true;clearTimeout(readyTimer);port=incoming;frameToken=message.frameToken;",
     "applyTheme(message.theme);",
     'port.onmessage=(update)=>{if(update.data&&update.data.type==="runtime.theme")applyTheme(update.data.theme)};',
     "port.start();",
     "executeBundle()",
-    '.then(()=>globalThis.__HARNESS_ARTIFACT_MOUNT__(document.getElementById("artifact-root"),{...expected,theme:document.documentElement.dataset.artifactTheme}))',
-    ".then(()=>new Promise(resolveFrame=>requestAnimationFrame(()=>requestAnimationFrame(resolveFrame))))",
-    '.then(()=>{if(!reported)port.postMessage({...expected,type:"renderCompleted"})})',
+    '.then(()=>globalThis.__HARNESS_ARTIFACT_MOUNT__(document.getElementById("artifact-root"),{...expected,theme:document.documentElement.dataset.artifactTheme,port,frameToken:message.frameToken,actionMode:message.actionMode,state:message.state||{}}))',
+    ".then(waitForRenderBoundary)",
+    '.then(()=>{if(!reported)port.postMessage({...expected,...(frameToken===undefined?{}:{frameToken}),type:"renderCompleted"})})',
     ".catch(fail);",
     "},{once:false});",
+    "const announceReady=(attempt=0)=>{",
+    "if(started||!expected.agentReact||parent===self||attempt>=40)return;",
+    'parent.postMessage({...expected,type:"runtime.ready"},"*");',
+    "readyTimer=setTimeout(()=>announceReady(attempt+1),250);",
+    "};",
+    "announceReady();",
     "})();",
   ].join("");
 }
@@ -539,4 +588,17 @@ function isWithin(root: string, path: string): boolean {
 
 function escapeInlineScript(source: string): string {
   return source.replaceAll("</script", "<\\/script").replaceAll("<!--", "<\\!--");
+}
+
+function agentReactViewId(label: string): string {
+  const suffix = ".agent.canvas.tsx";
+  const basenameLabel = basename(label);
+  if (!basenameLabel.toLowerCase().endsWith(suffix)) {
+    throw new Error("AgentReact build runtime requires a '*.agent.canvas.tsx' entry.");
+  }
+  const id = basenameLabel.slice(0, -suffix.length);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(id)) {
+    throw new Error("AgentReact view id must be a portable filename stem.");
+  }
+  return id;
 }
