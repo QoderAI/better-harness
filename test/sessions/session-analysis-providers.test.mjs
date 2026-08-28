@@ -46,6 +46,7 @@ import {
 import { KimiSessionAnalyzer } from "../../scripts/session-analysis/platforms/kimi.mjs";
 import { DshSessionAnalyzer } from "../../scripts/session-analysis/platforms/dsh.mjs";
 import { measureLongSessionRows } from "../../scripts/session-analysis/long-sessions.mjs";
+import { summarizeSessionEvents } from "../../scripts/commit-session-link/session-source.mjs";
 
 async function fixtureRoot(prefix) {
   return mkdtemp(path.join(os.tmpdir(), prefix));
@@ -453,6 +454,28 @@ test("Cursor provider joins transcript, metadata, and only matching audit sessio
       workspace_roots: [workspace],
     },
     {
+      _event: "afterAgentResponse",
+      _timestamp: "2026-07-20T02:03:10.000Z",
+      session_id: sessionId,
+      conversation_id: sessionId,
+      generation_id: "cursor-generation-1",
+      model: "cursor-fixture",
+      input_tokens: 20,
+      output_tokens: 5,
+      workspace_roots: [workspace],
+    },
+    ...["2026-07-20T02:03:11.000Z", "2026-07-20T02:03:12.000Z"].map((_timestamp) => ({
+      _event: "stop",
+      _timestamp,
+      session_id: sessionId,
+      conversation_id: sessionId,
+      generation_id: "cursor-generation-1",
+      model: "cursor-fixture",
+      input_tokens: 20,
+      output_tokens: 5,
+      workspace_roots: [workspace],
+    })),
+    {
       _event: "postToolUseFailure",
       _timestamp: "2026-07-20T02:03:30.000Z",
       session_id: "foreign-session",
@@ -485,7 +508,12 @@ test("Cursor provider joins transcript, metadata, and only matching audit sessio
     cacheReadInputTokens: 0,
     cacheCreationInputTokens: 0,
   });
-  assert.equal(events.find((event) => event.usageSource === "cursor-hook-audit")?.modelUsage.inputTokens, 20);
+  const auditUsage = events.filter((event) => event.usageSource === "cursor-hook-audit");
+  assert.deepEqual(auditUsage.map((event) => event.type), ["audit.afterAgentResponse"]);
+  assert.equal(auditUsage[0].modelUsage.inputTokens, 20);
+  assert.equal(events.find((event) => event.type === "tool.result")?.modelUsage, undefined);
+  assert.equal(events.filter((event) => event.type === "audit.stop").length, 2);
+  assert.equal(events.some((event) => event.type === "audit.stop" && event.modelUsage), false);
   const duration = measureLongSessionRows(discovery.sessions, events).rows[0];
   assert.equal(duration.activeTimeObserved, true);
   const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
@@ -675,6 +703,7 @@ test("Cursor keeps timestamp-unobserved transcripts with labelled source time an
   const scope = await analyzer.resolveScope({ workspace, home, since: "2026-08-20" });
   const events = await analyzer.readSession(result.sessions[0], scope, { includeContent: true, includeUserText: true });
   const context = events.find((event) => event.type === "context.usage");
+  assert.equal(context?.usageProgressionExcluded, true);
   assert.deepEqual(context?.currentContextUsage, {
     usedTokens: 250,
     windowTokens: 1_000,
@@ -684,6 +713,102 @@ test("Cursor keeps timestamp-unobserved transcripts with labelled source time an
   });
   assert.deepEqual(context?.contextCategories, [{ kind: "rules", label: "Rules", estimatedTokens: 80 }]);
   assert.equal(JSON.stringify(context).includes("Private rule text"), false);
+});
+
+test("Cursor canonicalizes repeated stop usage and keeps Canvas context current-only (AC-24)", async () => {
+  const root = await fixtureRoot("session-cursor-canonical-usage-");
+  const home = path.join(root, ".cursor");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "78787878-7878-4787-8787-787878787878";
+  const slug = workspaceToCursorSlugVariants(workspace)[0];
+  await writeJsonl(path.join(home, "projects", slug, "agent-transcripts", sessionId, `${sessionId}.jsonl`), [
+    { role: "user", message: { content: [{ type: "text", text: "Inspect usage" }] } },
+    { role: "assistant", message: { content: [{ type: "text", text: "Done" }] } },
+  ]);
+  await writeJsonl(path.join(home, "audit", "audit.jsonl"), [
+    {
+      _event: "afterAgentResponse",
+      _timestamp: "2026-07-20T02:03:10.000Z",
+      session_id: sessionId,
+      conversation_id: sessionId,
+      generation_id: "cursor-generation-1",
+      model: "cursor-fixture",
+      input_tokens: 120,
+      output_tokens: 12,
+      cache_read_tokens: 60,
+      cache_write_tokens: 5,
+      workspace_roots: [workspace],
+    },
+    ...["2026-07-20T02:03:11.000Z", "2026-07-20T02:03:12.000Z"].map((_timestamp) => ({
+      _event: "stop",
+      _timestamp,
+      session_id: sessionId,
+      conversation_id: sessionId,
+      generation_id: "cursor-generation-1",
+      model: "cursor-fixture",
+      input_tokens: 120,
+      output_tokens: 12,
+      cache_read_tokens: 60,
+      cache_write_tokens: 5,
+      workspace_roots: [workspace],
+    })),
+  ]);
+  const canvasPath = path.join(home, "projects", slug, "canvases", "context-usage-fixture.canvas.data.json");
+  await mkdir(path.dirname(canvasPath), { recursive: true });
+  await writeFile(canvasPath, JSON.stringify({
+    contextUsage: {
+      composerId: sessionId,
+      totalTokensUsed: 250,
+      contextWindowSize: 1_000,
+      categories: [
+        { id: "system_prompt", label: "System prompt", tokens: 10 },
+        { id: "tools", label: "Tool definitions", tokens: 100 },
+        { id: "rules", label: "Rules", tokens: 5 },
+        { id: "skills", label: "Skills", tokens: 60 },
+        { id: "mcp", label: "MCP", tokens: 20 },
+        { id: "subagents", label: "Subagent definitions", tokens: 15 },
+        { id: "conversation", label: "Conversation", tokens: 40 },
+      ],
+      items: [{ categoryId: "rules", label: "Private rule text", estimatedTokens: 5, characterCount: 20 }],
+    },
+  }));
+
+  const analyzer = new CursorSessionAnalyzer();
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const roots = await analyzer.discoverSourceRoots(scope);
+  const sessions = await analyzer.discoverSessions(scope, roots);
+  const events = await analyzer.readSession(sessions[0], scope, {});
+  const usageEvents = events.filter((event) => event.modelUsage);
+  const context = events.find((event) => event.type === "context.usage");
+  const summary = summarizeSessionEvents(sessions[0], events, { repoRoot: workspace, platform: "cursor" });
+
+  assert.deepEqual(usageEvents.map((event) => event.type), ["audit.afterAgentResponse"]);
+  assert.equal(events.filter((event) => event.type === "audit.stop").length, 2);
+  assert.equal(context?.usageProgressionExcluded, true);
+  assert.equal(summary.usageReport.actualModelCalls, 1);
+  assert.equal(summary.usageReport.progressionTotalCount, 1);
+  assert.deepEqual(summary.tokenUsage, {
+    inputTokens: 120,
+    outputTokens: 12,
+    cacheReadInputTokens: 60,
+    cacheCreationInputTokens: 5,
+    basis: "agent-response",
+    source: "cursor-hook-audit",
+    coverage: "observed",
+  });
+  assert.equal(summary.contextManifest.usedTokens, 250);
+  assert.equal(summary.contextManifest.windowTokens, 1_000);
+  assert.equal(summary.contextManifest.percentFull, 25);
+  assert.deepEqual(summary.contextManifest.categories, [
+    { kind: "system_prompt", label: "System prompt", estimatedTokens: 10 },
+    { kind: "tools", label: "Tool definitions", estimatedTokens: 100 },
+    { kind: "rules", label: "Rules", estimatedTokens: 5 },
+    { kind: "skills", label: "Skills", estimatedTokens: 60 },
+    { kind: "mcp", label: "MCP", estimatedTokens: 20 },
+    { kind: "subagents", label: "Subagent definitions", estimatedTokens: 15 },
+    { kind: "conversation", label: "Conversation", estimatedTokens: 40 },
+  ]);
+  assert.equal(JSON.stringify(summary).includes("Private rule text"), false);
 });
 
 test("Qwen provider expands function calls and tool results from parts", async () => {

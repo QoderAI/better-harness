@@ -366,6 +366,7 @@ function contextUsageEvents(sourceRef) {
     sessionId: sourceRef.sessionId,
     type: "context.usage",
     category: "context",
+    usageProgressionExcluded: true,
     timestamp: usage.capturedAt ?? null,
     sourceKind: sourceRef.kind,
     planningScope: "workspace",
@@ -396,6 +397,7 @@ function cursorLifecycle(raw) {
 
 function auditEvents(raw, sourceRef, options) {
   const auditType = String(raw?._event ?? raw?.event ?? "audit");
+  const isAgentResponse = /afteragentresponse/i.test(auditType);
   const phase = cursorLifecycle(raw);
   const failed = auditType.toLowerCase().includes("failure")
     || Boolean(raw?.error_message)
@@ -439,15 +441,15 @@ function auditEvents(raw, sourceRef, options) {
   }
   if (raw?.model) event.model = raw.model;
   const usage = inferUsage(raw);
-  if (usage) {
+  if (usage && isAgentResponse) {
     event.modelUsage = usage;
+    event.modelInvocationUsage = usage;
     event.usageFieldsObserved = true;
-    event.usageBasis = "model-inference";
+    event.usageBasis = "agent-response";
     event.usageSource = "cursor-hook-audit";
-    if (/afteragentresponse/i.test(auditType)) event.modelInvocationUsage = usage;
   }
   if (/subagentstart/i.test(auditType)) event.isSubagent = true;
-  if (/afteragentresponse/i.test(auditType)) event.userVisibleAssistantMessage = true;
+  if (isAgentResponse) event.userVisibleAssistantMessage = true;
   return [event];
 }
 

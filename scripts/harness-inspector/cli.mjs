@@ -34,6 +34,8 @@ Default:
   inspector             Render and open the current workspace with activity
                         from the latest 30 UTC days (up to 200 commits and
                         100 hydrated sessions)
+  render                Uses the same 30-day window unless --since or --until
+                        supplies a caller-owned time bound
 
 Options:
   --workspace <dir>      Repository to inspect (default: current directory)
@@ -76,18 +78,23 @@ function utcDayLabel(value) {
   return value.toISOString().slice(0, 10);
 }
 
-function defaultInspectorArgs(now = new Date()) {
+function defaultWindowBounds(now = new Date()) {
   const end = new Date(now);
   if (Number.isNaN(end.getTime())) throw new TypeError("default Inspector clock must be a valid date");
   end.setUTCHours(0, 0, 0, 0);
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - (DEFAULT_WINDOW_DAYS - 1));
+  return { since: utcDayLabel(start), until: utcDayLabel(end) };
+}
+
+function defaultInspectorArgs(now = new Date()) {
+  const { since, until } = defaultWindowBounds(now);
   return [
     "render",
     "--workspace", ".",
     "--open",
-    "--since", utcDayLabel(start),
-    "--until", utcDayLabel(end),
+    "--since", since,
+    "--until", until,
     "--commits", String(DEFAULT_WINDOW_COMMIT_LIMIT),
     "--max-sessions", String(DEFAULT_WINDOW_SESSION_LIMIT),
   ];
@@ -167,12 +174,14 @@ function parsePlatforms(value) {
   return requested;
 }
 
-async function runRender(options, { open = openRenderedReport, cwd = process.cwd() } = {}) {
+async function runRender(options, { open = openRenderedReport, cwd = process.cwd(), now = new Date() } = {}) {
   const workspace = path.resolve(cwd, options["--workspace"] ?? ".");
   const requestedPlatform = options["--platform"] ?? "all";
   const platforms = parsePlatforms(requestedPlatform);
-  const since = normalizedBound(options["--since"]);
-  const until = normalizedBound(options["--until"], { endOfDay: true });
+  const hasExplicitWindow = Object.hasOwn(options, "--since") || Object.hasOwn(options, "--until");
+  const defaultWindow = hasExplicitWindow ? { since: null, until: null } : defaultWindowBounds(now);
+  const since = normalizedBound(options["--since"] ?? defaultWindow.since);
+  const until = normalizedBound(options["--until"] ?? defaultWindow.until, { endOfDay: true });
   if (since && until && new Date(since) > new Date(until)) throw new UsageError("--since must not be after --until");
   const commitLimit = boundedCommitLimit(options["--commits"]);
   const sessionLimit = boundedMaxSessions(options["--max-sessions"]);

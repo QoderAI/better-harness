@@ -138,6 +138,7 @@ test.beforeAll(async () => {
       promptCount: 1,
       assistantMessageCount: 1,
       toolCallCount: record.toolCallCount,
+      models: ["claude-4.5-sonnet", "claude-fable-5", "claude-fable-5-thinking-high", "composer-2.5-fast"],
       tokenUsage: {
         inputTokens: 180,
         outputTokens: 18,
@@ -972,6 +973,25 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(usageSummary).toContainText(/Provider total\s*198/u);
   await expect(usageSummary).toContainText(/Current context\s*40/u);
   await expect(usageSummary).toContainText("40 / 100");
+  const modelValue = inspector.locator(".session-outline-facts dd[title]");
+  await expect(modelValue).toHaveAttribute("title", "claude-4.5-sonnet, claude-fable-5, claude-fable-5-thinking-high, composer-2.5-fast");
+  for (const layout of [
+    { name: "wide", width: 1440, height: 900 },
+    { name: "compact", width: 1024, height: 768 },
+    { name: "narrow", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: layout.width, height: layout.height });
+    const measurement = {
+      documentOverflow: await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
+      outlineOverflow: await inspector.locator(".session-sidebar").evaluate((outline) => outline.scrollWidth - outline.clientWidth),
+      primaryRatio: await inspector.locator(".session-notebook-main").evaluate((primary) => primary.getBoundingClientRect().width / window.innerWidth),
+    };
+    expect(measurement.documentOverflow, `${layout.name} Session detail document overflow`).toBeLessThanOrEqual(1);
+    expect(measurement.outlineOverflow, `${layout.name} Session outline overflow`).toBeLessThanOrEqual(1);
+    if (layout.name === "wide") expect(measurement.primaryRatio).toBeGreaterThanOrEqual(0.5);
+    await page.screenshot({ path: `test-results/session-detail-trace-${layout.name}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await usageSummary.getByRole("button", { name: "View report" }).click();
   await expect(page).toHaveURL(/inspector-view=usage/u);
   const usageReport = inspector.getByRole("region", { name: "Usage report" });

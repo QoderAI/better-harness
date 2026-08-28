@@ -372,8 +372,9 @@ export function summarizeSessionEvents(session, events = [], {
     layers: [...contextLayers.entries()]
       .map(([kind, itemCount]) => ({ kind, itemCount: Math.round(itemCount) }))
       .sort((left, right) => left.kind.localeCompare(right.kind)),
-    categories: [...contextCategories.values()]
-      .sort((left, right) => right.estimatedTokens - left.estimatedTokens || left.kind.localeCompare(right.kind)),
+    // Context categories are semantic lanes owned by the host. Preserve their
+    // retained order; the UI already uses token estimates for segment widths.
+    categories: [...contextCategories.values()],
   } : null;
 
   return {

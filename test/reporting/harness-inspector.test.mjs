@@ -860,15 +860,20 @@ test("Inspector preserves Cursor, Codex, Qoder, and Claude context capabilities"
         contextManifest: {
           status: "observed",
           source: "cursor-native-context-usage-canvas",
-          usedTokens: 44_600,
-          windowTokens: 272_000,
-          percentFull: 16.4,
+          usedTokens: 56_860,
+          windowTokens: 300_000,
+          percentFull: 19,
           basis: "host-context-snapshot",
           compactionCount: 0,
           layers: [],
           categories: [
-            { kind: "tools", label: "Tool definitions", estimatedTokens: 12_300 },
-            { kind: "conversation", label: "Conversation", estimatedTokens: 25_000 },
+            { kind: "system_prompt", label: "System prompt", estimatedTokens: 6_495 },
+            { kind: "tools", label: "Tool definitions", estimatedTokens: 24_004 },
+            { kind: "rules", label: "Rules", estimatedTokens: 1_814 },
+            { kind: "skills", label: "Skills", estimatedTokens: 9_986 },
+            { kind: "mcp", label: "MCP", estimatedTokens: 5_227 },
+            { kind: "subagents", label: "Subagent definitions", estimatedTokens: 1_802 },
+            { kind: "conversation", label: "Conversation", estimatedTokens: 7_532 },
           ],
         },
       }),
@@ -925,12 +930,17 @@ test("Inspector preserves Cursor, Codex, Qoder, and Claude context capabilities"
     compactionCount: 0,
     layers: [],
     categories: [
-      { kind: "tools", label: "Tool definitions", estimatedTokens: 12_300 },
-      { kind: "conversation", label: "Conversation", estimatedTokens: 25_000 },
+      { kind: "system_prompt", label: "System prompt", estimatedTokens: 6_495 },
+      { kind: "tools", label: "Tool definitions", estimatedTokens: 24_004 },
+      { kind: "rules", label: "Rules", estimatedTokens: 1_814 },
+      { kind: "skills", label: "Skills", estimatedTokens: 9_986 },
+      { kind: "mcp", label: "MCP", estimatedTokens: 5_227 },
+      { kind: "subagents", label: "Subagent definitions", estimatedTokens: 1_802 },
+      { kind: "conversation", label: "Conversation", estimatedTokens: 7_532 },
     ],
-    usedTokens: 44_600,
-    windowTokens: 272_000,
-    percentFull: 16.4,
+    usedTokens: 56_860,
+    windowTokens: 300_000,
+    percentFull: 19,
     basis: "host-context-snapshot",
   });
   assert.deepEqual(sessions.codex.contextManifest, {
@@ -1320,6 +1330,49 @@ test("zero arguments render the current workspace and open the written report", 
   assert.equal(embeddedReport.filters.until, "2026-08-14T23:59:59.999Z");
   assert.equal(embeddedReport.filters.commitLimit, 200);
   assert.equal(embeddedReport.filters.sessionLimit, 100);
+});
+
+test("explicit render defaults to 30 UTC days unless a time bound is supplied (AC-25)", async () => {
+  const workspace = await seededWorkspace("better-harness-inspector-render-window-");
+  const stdoutWrite = process.stdout.write;
+
+  async function renderFilters(extraArgs, suffix) {
+    const outputPath = path.join(workspace, `inspector-${suffix}.html`);
+    const written = [];
+    process.stdout.write = (chunk) => {
+      written.push(String(chunk));
+      return true;
+    };
+    const exitCode = await main([
+      "render",
+      "--workspace", workspace,
+      "--out", outputPath,
+      ...extraArgs,
+    ], { now: new Date("2026-08-14T10:00:00.000Z") });
+    assert.equal(exitCode, 0, written.join(""));
+    const html = await readFile(outputPath, "utf8");
+    return JSON.parse(scriptBody(
+      html,
+      "<script type=\"application/json\" id=\"inspector-data\">",
+    )).filters;
+  }
+
+  try {
+    const defaults = await renderFilters([], "default");
+    assert.equal(defaults.since, "2026-07-16T00:00:00.000Z");
+    assert.equal(defaults.until, "2026-08-14T23:59:59.999Z");
+
+    const sinceOnly = await renderFilters(["--since", "2026-08-01"], "since");
+    assert.equal(sinceOnly.since, "2026-08-01T00:00:00.000Z");
+    assert.equal(sinceOnly.until, null);
+
+    const untilOnly = await renderFilters(["--until", "2026-08-10"], "until");
+    assert.equal(untilOnly.since, null);
+    assert.equal(untilOnly.until, "2026-08-10T23:59:59.999Z");
+  } finally {
+    process.stdout.write = stdoutWrite;
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("render leaves the browser alone when --open is absent", async () => {

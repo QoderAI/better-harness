@@ -143,12 +143,35 @@ from the default Inspector window.
   Session evidence and never become model calls. Unmatched assistant context
   stays available to the Session-current context manifest without being
   invented as a historical response.
+- AC-24: Cursor audit evidence contributes one model call only from each
+  usage-bearing `afterAgentResponse` record. Usage counters repeated on `stop`
+  or tool lifecycle records remain excluded from Session token totals and
+  progression. A composer-matched Context Usage Canvas remains available to the
+  Session-current context manifest, but it never contributes a historical
+  inference or increases the unique model-call count. Cursor hook counters use
+  the basis `agent-response`: they describe the retained parent-agent response,
+  not subagent usage, billing, or a reconstructed low-level inference trace.
+- AC-25: Every Inspector render without an explicit `--since` or `--until`
+  uses the latest 30 UTC calendar days, including the explicit `render`
+  subcommand and the package `npm run inspector` path. Either explicit bound
+  keeps the caller-owned window instead of silently adding the default range.
+- AC-26: At wide desktop width, the Session Detail outline remains a bounded
+  330-pixel dock and never derives its grid width from long fact values. Model
+  names and summary metrics truncate inside the dock while retaining the full
+  model value on hover, the main evidence lane keeps at least half of the
+  viewport, and wide, compact, and narrow views have no document-level or
+  outline-level horizontal overflow.
+- AC-27: Token-weighted context categories preserve the order retained by the
+  host instead of sorting by token count. For native Cursor evidence this is
+  `system_prompt`, `tools`, `rules`, `skills`, `mcp`, `subagents`, then
+  `conversation`; segment widths remain token-weighted and unused context is
+  always rendered after the observed categories.
 
 ## Provider evidence matrix
 
 | Provider | Current context evidence | Token-weighted composition | Progression | Compaction evidence |
 | --- | --- | --- | --- | --- |
-| Cursor | Native Canvas used/window snapshot, matched by composer id (`host-context-snapshot`) | Native Canvas categories only | Usage counters when retained; Canvas occupancy remains current-snapshot evidence | Unobserved |
+| Cursor | Native Canvas used/window snapshot, matched by composer id (`host-context-snapshot`) | Native Canvas categories only | Parent-agent response counters when retained; Canvas occupancy remains current-snapshot evidence | Unobserved |
 | Codex | `last_token_usage.input_tokens` plus `model_context_window` (`prompt-tokens`) | Unavailable; bounded layer counts are not token categories | Per `token_count` response | `compacted` events |
 | Qoder | `context_usage_ratio`, optionally paired with a retained Session `contextWindow` | Unavailable | Per canonical model response, enriched by a matched assistant observation | `compactMetadata` records |
 | Claude Code | Input + cache-read input + cache-creation input prompt tokens | Unavailable | Per unique assistant response | Unobserved |
@@ -226,6 +249,16 @@ from the default Inspector window.
     observation, keep non-response summary events out of the call series, and
     cover the real logs-session/project-jsonl/turn-finished shape with a
     behavioral fixture.
+18. Canonicalize Cursor audit usage before report derivation: retain
+    `afterAgentResponse` as the audit call boundary, keep repeated `stop` and
+    tool-lifecycle counters out of token accounting, and mark the native Canvas
+    observation as Session-current-only evidence.
+19. Apply the 30-day UTC default when no explicit render bound is supplied,
+    while preserving one-sided and two-sided caller-owned bounds.
+20. Bound the Session Detail outline grid and its children so long model names
+    and usage metrics cannot widen or horizontally scroll the desktop dock.
+21. Preserve adapter-retained category order through Session summarization and
+    both report renderers; verify the sequence against a real Cursor Canvas.
 
 ## Test and Review Evidence
 
@@ -284,6 +317,22 @@ from the default Inspector window.
   and usage-bearing turn/fork summaries. Assertions verify one progression
   point per canonical response, one-to-one context enrichment, unmatched
   context fallback, and exclusion of non-response summary events.
+- AC-24: Cursor provider fixtures retain one usage-bearing
+  `afterAgentResponse`, two matching usage-bearing `stop` records, and a
+  composer-matched native Context Usage Canvas. Assertions verify one model
+  call, one set of Session token counters, current Context Usage availability,
+  and exclusion of both repeated stops and the Canvas snapshot from progression.
+- AC-25: a frozen-clock CLI fixture invokes explicit `render` without bounds
+  and inspects the embedded report filters; companion fixtures keep explicit
+  one-sided bounds unchanged.
+- AC-26: standalone and Studio browser checks measure the Session Detail grid,
+  outline, fact rows, and usage summary at 1440x900, 1024x768, and 390x844.
+  The outline has no horizontal scroll, the document has no horizontal
+  overflow, and the long model value remains available through `title`.
+- AC-27: a Session-summary fixture retains intentionally non-size-sorted Cursor
+  categories and asserts the provider sequence in the report projection and
+  rendered composition legend. A local replay records the same seven category
+  ids from the matched native Canvas without retaining item text.
 - Cross-platform evidence: focused tests must use `node:path` and temporary
   directories, then the full Node 22/24 macOS, Windows, and Ubuntu PR jobs remain
   authoritative for target-platform acceptance.
@@ -374,3 +423,38 @@ from the default Inspector window.
   completed without overflow or page errors. A privacy scan of the real portable
   report found no absolute home path, raw response id, encrypted content,
   rate-limit data, or credit data.
+- AC-24 replayed all 96 retained Cursor project Sessions across 10 local project
+  roots. The normalized report retained 30 `afterAgentResponse` observations,
+  exactly matched 30 reported calls, and retained zero usage-bearing `stop`
+  records after excluding 56 repeated local stop payloads. The composer-matched
+  `slice-compiler` Session changed from 10 observations to 3 canonical parent
+  responses while preserving its 56,860 / 300,000 (19%) current-context
+  snapshot and all 7 categories, whose token estimates still sum to 56,860.
+  A multi-response local audit sample had decreasing output counters across
+  responses, confirming that Cursor hook counters are response-local rather
+  than cumulative Session snapshots. The focused provider/Session/progression
+  suites passed 115 tests. The final `npm run check` passed 1,573 root tests
+  with 2 skipped, Harness/Harness UI/Studio passed 172/31/293 tests, generated
+  sources remained clean, and package verification passed for both npm and the
+  runtime archive.
+- AC-25 added a frozen-clock explicit-`render` fixture. With no bound it
+  projected `2026-07-16T00:00:00.000Z` through
+  `2026-08-14T23:59:59.999Z`; `--since`-only and `--until`-only invocations
+  retained a null opposite bound. The focused report/provider run passed all
+  89 tests.
+- AC-26 used Chrome against the real `slice-compiler` Cursor Session. At
+  1440x900, 1024x768, and 390x844 the Session outline had zero horizontal
+  overflow and widths of 330, 292, and 390 pixels; the primary evidence lane
+  used 77%, 71%, and 100% of the viewport. The long four-model value truncated
+  with its full `title`, the focused native Studio Playwright scenario passed,
+  and the standalone 15-surface visual contract reported zero document or
+  outline overflow, clipping, below-floor text, and page/console errors.
+- AC-27 read the matched native Cursor Canvas as seven categories in the order
+  `system_prompt`, `tools`, `rules`, `skills`, `mcp`, `subagents`, and
+  `conversation`. The regenerated Session summary and Chrome Usage report kept
+  that sequence, preserved the 56,860 / 300,000 (19%) totals, and appended the
+  unused 243,140-token window after the seven observed segments.
+- The final `npm run check` passed 1,574 root tests with 2 skipped,
+  Harness/Harness UI/Studio passed 172/31/293 tests, generated sources remained
+  clean, and package verification passed for 597 npm and 867 runtime entries.
+  The Canvas preview returned HTTP 200 for `/health` and `/canvas-module.js`.

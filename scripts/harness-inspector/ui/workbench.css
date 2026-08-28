@@ -679,7 +679,8 @@
   .session-overall-activity .session-axis-panel > summary small { font-size:12px; }
   .session-overall-activity .session-axis { padding:2px 0 12px; }
 
-  .session-sidebar { position:sticky; top:0; min-height:calc(100vh - 68px); max-height:calc(100vh - 68px); overflow:auto; align-content:start; border:0; border-left:1px solid var(--color-border); border-radius:0; background:var(--color-surface); }
+  .session-sidebar { position:sticky; top:0; min-width:0; min-height:calc(100vh - 68px); max-height:calc(100vh - 68px); overflow-x:hidden; overflow-y:auto; grid-template-columns:minmax(0,1fr); align-content:start; border:0; border-left:1px solid var(--color-border); border-radius:0; background:var(--color-surface); }
+  .session-sidebar > * { min-width:0; }
   .session-sidebar > header { min-height:70px; padding:16px 22px; display:flex; align-items:center; border-bottom:1px solid var(--color-border); }
   .session-sidebar > header div { display:grid; gap:3px; }
   .session-sidebar > header strong { color:var(--color-text); font-size:15px; }
@@ -736,10 +737,10 @@
   .usage-summary-legend strong, .usage-composition-list strong { color:var(--color-text); font-size:12px; font-variant-numeric:tabular-nums; }
   .usage-summary-more { display:block !important; padding-left:18px; color:var(--color-text-subtle) !important; }
   .usage-summary-unavailable, .usage-report-unavailable { margin:11px 0 0; color:var(--color-text-muted); font-size:12px; }
-  .session-outline-facts dl { margin:0; display:grid; gap:10px; }
-  .session-outline-facts dl div { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
-  .session-outline-facts dt { color:var(--color-text-subtle); font-size:12px; }
-  .session-outline-facts dd { min-width:0; margin:0; overflow:hidden; color:var(--color-text); text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600; }
+  .session-outline-facts dl { margin:0; display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
+  .session-outline-facts dl div { min-width:0; width:100%; display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .session-outline-facts dt { flex:none; color:var(--color-text-subtle); font-size:12px; }
+  .session-outline-facts dd { min-width:0; flex:1; margin:0; overflow:hidden; color:var(--color-text); text-align:right; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600; }
 
   .usage-report { min-height:calc(100vh - 138px); background:var(--color-surface); }
   .usage-report-lead { min-height:176px; padding:26px 28px; display:grid; grid-template-columns:minmax(0,1fr) auto 210px; align-items:center; gap:28px; border-bottom:1px solid var(--color-border); background:var(--color-surface-subtle); }

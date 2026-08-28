@@ -91,10 +91,22 @@ function measureContract(minFontPx) {
   }
 
   const root = document.documentElement;
+  const outline = document.querySelector(".session-mode-panel:not([hidden]) .session-sidebar");
+  const outlineRect = outline?.getBoundingClientRect();
+  const outlineOverflow = outline && outlineRect && outlineRect.width > 0
+    ? outline.scrollWidth - outline.clientWidth
+    : 0;
+  const primary = document.querySelector(".session-mode-panel:not([hidden]) .session-notebook-main");
+  const primaryRect = primary?.getBoundingClientRect();
+  const primaryWidthRatio = primaryRect && primaryRect.width > 0
+    ? primaryRect.width / window.innerWidth
+    : null;
   return {
     tooSmall,
     clipped,
     documentOverflow: root.scrollWidth - root.clientWidth,
+    outlineOverflow,
+    primaryWidthRatio,
   };
 }
 
@@ -193,13 +205,19 @@ async function main() {
       if (measured.documentOverflow > 1) {
         problems.push(`document overflows horizontally by ${measured.documentOverflow}px`);
       }
+      if (measured.outlineOverflow > 1) {
+        problems.push(`Session outline overflows horizontally by ${measured.outlineOverflow}px`);
+      }
+      if (mode.name === "wide" && measured.primaryWidthRatio !== null && measured.primaryWidthRatio < 0.5) {
+        problems.push(`primary Session evidence uses only ${Math.round(measured.primaryWidthRatio * 100)}% of the viewport`);
+      }
       if (pageProblems.length > 0) problems.push(`${pageProblems.length} page/console error(s)`);
 
       const id = `${mode.name} ${mode.width}x${mode.height} [${surface.label}]`;
       console.log(
         `${problems.length === 0 ? "PASS" : "FAIL"} ${id} ` +
           `overflow=${measured.documentOverflow}px belowFloor=${measured.tooSmall.length} ` +
-          `clipped=${measured.clipped.length} errors=${pageProblems.length}`,
+          `outlineOverflow=${measured.outlineOverflow}px clipped=${measured.clipped.length} errors=${pageProblems.length}`,
       );
       for (const entry of measured.tooSmall.slice(0, 8)) {
         console.log(`       ${entry.fontSize}px ${entry.selector} :: ${entry.text}`);
