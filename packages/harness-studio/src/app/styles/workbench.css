@@ -1496,6 +1496,51 @@
 
 .artifact-preview-pane { display: grid; grid-template-rows: var(--pane-header-height) minmax(0, 1fr); background: var(--color-workspace); }
 .artifact-preview-pane > .artifact-status:only-child { grid-row: 1 / -1; place-self: center; }
+.artifact-shared-workspace { min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 320px); }
+.artifact-shared-workspace.solo { grid-template-columns: minmax(0, 1fr); }
+.artifact-surface-slot { min-width: 0; min-height: 0; overflow: hidden; }
+.artifact-surface-slot > * { width: 100%; height: 100%; }
+.artifact-collaboration-pane { min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: var(--pane-header-height) minmax(0, 1fr); border-left: 1px solid var(--color-border); background: var(--color-sidebar); }
+.artifact-collaboration-pane > header { min-width: 0; padding: 0 var(--space-md); display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.artifact-collaboration-pane > header > div { min-width: 0; }
+.artifact-collaboration-pane > header small { display: block; color: var(--color-primary); font-size: var(--type-meta-size); }
+.artifact-collaboration-pane > header h2 { margin: 0; font-size: var(--type-label-size); line-height: var(--type-label-line); }
+.artifact-collaboration-pane > header > span { overflow: hidden; color: var(--color-text-muted); font-family: var(--font-code); font-size: var(--type-meta-size); text-overflow: ellipsis; white-space: nowrap; }
+.artifact-collaboration-scroll { min-width: 0; min-height: 0; overflow-y: auto; }
+.artifact-collaboration-status,
+.artifact-collaboration-error { margin: 0; padding: var(--space-md); color: var(--color-text-muted); }
+.artifact-collaboration-error { color: var(--color-danger); background: var(--color-danger-surface); }
+.artifact-collaboration-section { padding: var(--space-md); display: grid; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); }
+.artifact-collaboration-section > header { min-width: 0; display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: var(--space-sm); }
+.artifact-collaboration-section > header > span { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); color: var(--color-primary); font-size: var(--type-meta-size); font-weight: var(--weight-semibold); }
+.artifact-collaboration-section h3 { margin: 0; font-size: var(--type-label-size); line-height: var(--type-label-line); }
+.artifact-collaboration-section header p { margin: 2px 0 0; color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.artifact-collaboration-section label { min-width: 0; display: grid; gap: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.artifact-collaboration-section select,
+.artifact-collaboration-section textarea { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); font: inherit; }
+.artifact-collaboration-section select { height: var(--control-height); padding: 0 var(--space-sm); }
+.artifact-collaboration-section textarea { min-height: 72px; padding: var(--space-sm); resize: vertical; }
+.artifact-collaboration-section select:focus-visible,
+.artifact-collaboration-section textarea:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.artifact-collaboration-section > code { overflow: hidden; color: var(--color-text-muted); font-family: var(--font-code); font-size: var(--type-meta-size); text-overflow: ellipsis; white-space: nowrap; }
+.artifact-collaboration-primary { justify-self: start; }
+.artifact-proposal > img { width: 100%; max-height: 180px; object-fit: contain; border: 1px solid var(--color-border); background: #fff; }
+.artifact-collaboration-section dl { margin: 0; display: grid; gap: var(--space-xs); }
+.artifact-collaboration-section dl > div { min-width: 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: var(--space-sm); }
+.artifact-collaboration-section dt { color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.artifact-collaboration-section dd { min-width: 0; margin: 0; overflow: hidden; font-size: var(--type-meta-size); text-overflow: ellipsis; white-space: nowrap; }
+.artifact-collaboration-section dd code { font-family: var(--font-code); }
+.artifact-proposal ol,
+.artifact-receipt ul { margin: 0; padding: 0; display: grid; list-style: none; }
+.artifact-proposal li,
+.artifact-receipt li { min-width: 0; padding: var(--space-xs) 0; display: grid; gap: 2px; border-top: 1px solid var(--color-border); font-size: var(--type-meta-size); }
+.artifact-proposal li span,
+.artifact-receipt li { color: var(--color-text-muted); }
+.artifact-decision-actions { display: flex; align-items: center; gap: var(--space-sm); }
+.artifact-receipt.status-applied > header > span { color: var(--color-success); border-color: var(--color-success); }
+.artifact-receipt.status-rejected > header > span,
+.artifact-receipt.status-stale > header > span { color: var(--color-warning); border-color: var(--color-warning); }
+.artifact-receipt.status-failed > header > span { color: var(--color-danger); border-color: var(--color-danger); }
 .artifact-editor-header > div { min-width: 0; display: flex; align-items: baseline; gap: var(--space-sm); }
 .artifact-editor-header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artifact-editor-header small,
@@ -1550,6 +1595,8 @@
 
 @media (max-width: 1080px) {
   .artifact-workspace { grid-template-columns: minmax(216px, 232px) minmax(248px, 280px) minmax(0, 1fr); }
+  .artifact-shared-workspace { grid-template: minmax(0, 1fr) minmax(220px, 38%) / minmax(0, 1fr); }
+  .artifact-collaboration-pane { border-top: 1px solid var(--color-border); border-left: 0; }
 }
 
 /* Customization analysis is a docked inventory workbench. The toolbar owns the
@@ -2190,6 +2237,12 @@
   .artifact-workspace[data-narrow-pane="preview"] .artifact-scope-pane,
   .artifact-workspace[data-narrow-pane="preview"] .artifact-list-pane { display: none; }
   .artifact-editor-header > span { display: none; }
+  .artifact-shared-workspace { grid-template: minmax(220px, 42%) minmax(0, 1fr) / minmax(0, 1fr); overflow-y: auto; }
+  .artifact-shared-workspace.solo { grid-template: minmax(0, 1fr) / minmax(0, 1fr); overflow: hidden; }
+  .artifact-collaboration-pane { min-height: 360px; overflow: visible; }
+  .artifact-collaboration-scroll { overflow: visible; }
+  .artifact-collaboration-section select { height: var(--touch-target); }
+  .artifact-decision-actions button { min-height: var(--touch-target); }
   .markdown-artifact-viewer { grid-template-columns: minmax(0, 1fr); }
   .markdown-outline-rail { display: none; }
   .markdown-document-scroll { padding: var(--space-md); }

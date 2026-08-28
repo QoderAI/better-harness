@@ -76,6 +76,12 @@ import {
   serveCanvasSdk,
 } from "./artifacts/routes.js";
 import {
+  decideArtifactInteractionProposal,
+  prepareArtifactInteractionProposal,
+  serveArtifactInteraction,
+  serveArtifactInteractionPreview,
+} from "./artifacts/interaction-routes.js";
+import {
   lockCheckpointHistory,
   isActiveExperimentRunnable,
   resolveCheckpointHistory,
@@ -138,6 +144,7 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
     artifactPaths: resolvedOptions.artifactPaths,
     artifactImports: new Map(),
     artifactEventStreams: 0,
+    artifactInteractionProposals: new Map(),
     projects: new Map(),
     projectRevision: 0,
     projectRevisionContexts: new Map(),
@@ -158,6 +165,7 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
   });
   server.once("close", () => {
     cancelAllAcpRuns(state);
+    state.artifactInteractionProposals.clear();
     void Promise.all([cleanupArtifactImports(state), cleanupWorkspaceImports(state)]);
   });
   return server;
@@ -452,7 +460,7 @@ async function route(
   // Every reference the catalog publishes is revision-scoped, so a stale handle
   // fails loudly instead of quietly resolving to whatever the path holds now.
   const artifactRevision = url.pathname.match(/^\/api\/artifacts\/([^/]+)\/revisions\/([0-9a-f]{64})\/(.*)$/);
-  if (request.method === "GET" && artifactRevision !== null) {
+  if (artifactRevision !== null) {
     const id = decodeRouteComponent(response, artifactRevision[1]!);
     const revision = artifactRevision[2]!;
     const tail = artifactRevision[3]!;
@@ -460,44 +468,64 @@ async function route(
     // Viewer documents run at an opaque origin and must fetch their own module,
     // so they are the one artifact surface that stays cross-origin readable.
     // Everything below carries artifact bytes and answers same-origin only.
-    if (!tail.startsWith("viewer/") && !allowArtifactRead(request, response)) return;
+    if ((request.method !== "GET" || !tail.startsWith("viewer/")) && !allowArtifactRead(request, response)) return;
     const scoped = artifactOptions(options, state);
-    if (tail === "content") {
+    if (request.method === "GET" && tail === "content") {
       await serveArtifactContent(response, scoped, id, revision, request.headers["if-none-match"]);
       return;
     }
-    if (tail === "snapshot") {
+    if (request.method === "GET" && tail === "snapshot") {
       await serveArtifactSnapshot(response, scoped, id, revision);
       return;
     }
-    if (tail === "build") {
+    if (request.method === "GET" && tail === "build") {
       await serveArtifactBuild(response, scoped, id, revision);
       return;
     }
     const previewBuildMatch = tail.match(/^builds\/([0-9a-f]{64})\/preview$/);
-    if (previewBuildMatch !== null) {
+    if (request.method === "GET" && previewBuildMatch !== null) {
       await serveArtifactBuildPreview(response, scoped, id, revision, previewBuildMatch[1]!);
       return;
     }
     const resourceMatch = tail.match(/^resources\/([^/]+)$/);
-    if (resourceMatch !== null) {
+    if (request.method === "GET" && resourceMatch !== null) {
       const resourceId = decodeRouteComponent(response, resourceMatch[1]!);
       if (resourceId !== undefined) await serveArtifactSnapshotResource(response, scoped, id, revision, resourceId);
       return;
     }
-    if (tail === "viewer/" || tail === "viewer/index.html") {
+    if (request.method === "GET" && (tail === "viewer/" || tail === "viewer/index.html")) {
       await serveArtifactHostedDocument(response, scoped, id, revision);
       return;
     }
-    if (tail === "viewer/runtime-module.js" || tail === "viewer/runtime-module.js.map"
-      || tail === "viewer/canvas-module.js" || tail === "viewer/canvas-module.js.map") {
+    if (request.method === "GET" && (tail === "viewer/runtime-module.js" || tail === "viewer/runtime-module.js.map"
+      || tail === "viewer/canvas-module.js" || tail === "viewer/canvas-module.js.map")) {
       await serveArtifactHostedModule(response, scoped, id, revision, tail.endsWith(".map"));
       return;
     }
     const viewerResourceMatch = tail.match(/^viewer\/(.+)$/);
-    if (viewerResourceMatch !== null) {
+    if (request.method === "GET" && viewerResourceMatch !== null) {
       const resource = decodeRouteComponent(response, viewerResourceMatch[1]!);
       if (resource !== undefined) await serveArtifactHostedResource(response, scoped, id, revision, resource);
+      return;
+    }
+    if (request.method === "GET" && tail === "interaction") {
+      await serveArtifactInteraction(response, scoped, id, revision);
+      return;
+    }
+    if (request.method === "POST" && tail === "interaction/proposals") {
+      await prepareArtifactInteractionProposal(request, response, state, scoped, id, revision);
+      return;
+    }
+    const interactionPreviewMatch = tail.match(/^interaction\/proposals\/([^/]+)\/preview$/);
+    if (request.method === "GET" && interactionPreviewMatch !== null) {
+      const proposalId = decodeRouteComponent(response, interactionPreviewMatch[1]!);
+      if (proposalId !== undefined) serveArtifactInteractionPreview(response, state, id, revision, proposalId);
+      return;
+    }
+    const interactionDecisionMatch = tail.match(/^interaction\/proposals\/([^/]+)\/decisions$/);
+    if (request.method === "POST" && interactionDecisionMatch !== null) {
+      const proposalId = decodeRouteComponent(response, interactionDecisionMatch[1]!);
+      if (proposalId !== undefined) await decideArtifactInteractionProposal(request, response, state, scoped, id, revision, proposalId);
       return;
     }
     respondArtifactJson(response, 404, { error: "No such artifact revision route." });

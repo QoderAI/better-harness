@@ -133,6 +133,7 @@ export interface ArtifactSurfaceBindingIdentityV1 {
     }
     | { kind: "unavailable"; reason: string };
   capabilities: string[];
+  interaction?: { id: string; version: string; protocolVersion: string };
   provider?: {
     providerId: string;
     contributionId: string;
@@ -190,6 +191,13 @@ export function artifactSurfaceBindingIdentity(
     },
     surface,
     capabilities: [...new Set(binding.capabilities)].sort(),
+    ...(binding.interaction === undefined ? {} : {
+      interaction: {
+        id: binding.interaction.id,
+        version: binding.interaction.version,
+        protocolVersion: binding.interaction.protocolVersion,
+      },
+    }),
     ...(binding.provider === undefined ? {} : {
       provider: {
         providerId: binding.provider.providerId,
@@ -404,6 +412,7 @@ export function describeArtifactCatalog(
         snapshotUri: `${base}/snapshot`,
       },
       ...(selected.backing === "code" ? { build: { snapshotUri: `${base}/build` } } : {}),
+      ...(selected.interaction === undefined ? {} : { interaction: { workspaceUri: `${base}/interaction` } }),
       renderer: {
         ...renderer,
         ...(selected.renderer.status === "ready" ? { bindingId: artifactSurfaceBindingId(selected) } : {}),

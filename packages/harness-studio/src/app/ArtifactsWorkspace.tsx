@@ -24,6 +24,7 @@ import {
   type WorkspaceArtifactObservation,
 } from "../contracts/workspace-artifact.js";
 import { ArtifactView } from "./artifacts/ArtifactView.js";
+import { ArtifactInteractionPane } from "./artifacts/ArtifactInteractionPane.js";
 import { useRovingFocus } from "./roving-tablist.js";
 import type { StudioConfig } from "./studio-shell-model.js";
 
@@ -61,6 +62,7 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
   const [narrowPane, setNarrowPane] = useState<ArtifactNarrowPane>("scope");
   const [liveGeneration, setLiveGeneration] = useState(0);
   const [liveUpdates, setLiveUpdates] = useState(true);
+  const [catalogRefresh, setCatalogRefresh] = useState(0);
 
   useEffect(() => {
     if (!props.config.artifactsEnabled) return;
@@ -94,7 +96,7 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
       if (!cancelled && events.readyState === EventSource.CLOSED) setLiveUpdates(false);
     });
     return () => { cancelled = true; events.close(); };
-  }, [props.config.artifactsEnabled]);
+  }, [catalogRefresh, props.config.artifactsEnabled]);
 
   const days = useMemo(() => artifactDays(catalog?.navigation), [catalog?.navigation]);
   const effectiveMode: ArtifactScopeMode = catalog?.navigation === undefined ? "files" : scopeMode;
@@ -197,7 +199,10 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
             <div><strong title={active.label}>{basename(active.label)}</strong><small>{formatLabel(active.format)} · {formatBytes(active.size)} · {active.adapter.id} · current {shortRevision(active.revision.id)}</small></div>
             <span title={active.label}>{activeObservations[0] === undefined ? dirname(active.label) : `${activeObservations[0].provider ?? "Local agent"} · ${formatObservedTime(activeObservations[0].savedAt)}`}</span>
           </header>
-          <ArtifactView authorityId={catalog.snapshot.catalogId} artifact={active} liveGeneration={liveGeneration} />
+          <div className={`artifact-shared-workspace${active.interaction === undefined ? " solo" : ""}`}>
+            <div className="artifact-surface-slot"><ArtifactView authorityId={catalog.snapshot.catalogId} artifact={active} liveGeneration={liveGeneration} /></div>
+            <ArtifactInteractionPane artifact={active} onApplied={() => setCatalogRefresh((value) => value + 1)} />
+          </div>
         </>}
     </main>
   </section>;

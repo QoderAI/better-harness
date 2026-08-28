@@ -233,7 +233,7 @@ async function resolveArtifactRevision(
   }
   return { entry, index };
 }
-async function resolveArtifactRevisionPlugin(
+export async function resolveArtifactRevisionPlugin(
   options: HarnessStudioServerOptions,
   id: string,
   revision: string,
@@ -555,7 +555,7 @@ export async function serveArtifactSnapshotResource(
     respondArtifactJson(response, 422, { error: safeArtifactError(error) });
   }
 }
-function safeArtifactError(error: unknown): string {
+export function safeArtifactError(error: unknown): string {
   const message = error instanceof Error && error.message !== "" ? error.message : "Artifact adaptation failed.";
   return message.replaceAll(process.cwd(), "<workspace>").slice(0, 1_000);
 }

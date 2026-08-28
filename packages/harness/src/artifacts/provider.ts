@@ -114,6 +114,138 @@ export interface ArtifactHostedRuntimeImplementation {
   readResource(context: ArtifactHostedRuntimeContext, relativePath: string): Promise<ArtifactHostedResource | undefined>;
 }
 
+export const ARTIFACT_INTERACTION_PROTOCOL_VERSION = "1" as const;
+
+export interface ArtifactInteractionActorV1 {
+  id: string;
+  kind: "human" | "agent" | "system";
+  label: string;
+}
+
+export interface ArtifactInteractionTargetV1 {
+  address: string;
+  kind: string;
+  label: string;
+  description?: string;
+}
+
+export interface ArtifactInteractionSteeringControlV1 {
+  kind: string;
+  label: string;
+  placeholder: string;
+  maxLength: number;
+}
+
+/** Browser-safe observation of one exact, Provider-addressable work revision. */
+export interface ArtifactInteractionWorkspaceV1 {
+  kind: "HarnessStudioArtifactInteractionWorkspaceV1";
+  protocolVersion: typeof ARTIFACT_INTERACTION_PROTOCOL_VERSION;
+  artifactId: string;
+  revision: ArtifactDigest;
+  summary: string;
+  targets: readonly ArtifactInteractionTargetV1[];
+  steering: ArtifactInteractionSteeringControlV1;
+}
+
+export interface ArtifactInteractionActionV1 {
+  kind: string;
+  summary: string;
+  target?: ArtifactInteractionTargetV1;
+}
+
+export interface ArtifactInteractionProposalV1 {
+  kind: "HarnessStudioArtifactInteractionProposalV1";
+  proposalId: string;
+  proposalDigest: ArtifactDigest;
+  artifactId: string;
+  expectedRevision: ArtifactDigest;
+  target: ArtifactInteractionTargetV1;
+  steering: { kind: string; message: string };
+  summary: string;
+  actions: readonly ArtifactInteractionActionV1[];
+  verificationClaims: readonly string[];
+  proposedBy: ArtifactInteractionActorV1;
+  preparedAt: string;
+}
+
+/** Server-private preview bytes retained by the Host until proposal settlement. */
+export interface ArtifactInteractionPreviewResourceV1 {
+  bytes: Uint8Array;
+  mediaType: string;
+  label: string;
+  digest: ArtifactDigest;
+}
+
+export interface ArtifactInteractionPreparedProposalV1 {
+  proposal: ArtifactInteractionProposalV1;
+  preview: ArtifactInteractionPreviewResourceV1;
+  /** Opaque Provider state. It is never serialized or accepted from a browser. */
+  continuation: unknown;
+}
+
+export interface ArtifactInteractionEvidenceV1 {
+  kind: string;
+  label: string;
+  digest?: ArtifactDigest;
+  revision?: ArtifactDigest;
+}
+
+export interface ArtifactInteractionDiagnosticV1 {
+  code: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+}
+
+export type ArtifactInteractionTransitionStatusV1 = "applied" | "rejected" | "stale" | "failed";
+
+export interface ArtifactInteractionTransitionReceiptV1 {
+  kind: "HarnessStudioArtifactInteractionTransitionReceiptV1";
+  transitionId: string;
+  proposalId: string;
+  proposalDigest: ArtifactDigest;
+  decisionId: string;
+  decision: "approve" | "reject";
+  status: ArtifactInteractionTransitionStatusV1;
+  beforeRevision: ArtifactDigest;
+  afterRevision: ArtifactDigest;
+  verification: { status: "passed" | "failed" | "not-run"; summary: string };
+  affectedTargets: readonly ArtifactInteractionTargetV1[];
+  evidence: readonly ArtifactInteractionEvidenceV1[];
+  diagnostics: readonly ArtifactInteractionDiagnosticV1[];
+  settledAt: string;
+}
+
+export interface ArtifactInteractionPrepareInputV1 {
+  targetAddress: string;
+  steering: { kind: string; message: string };
+  requestedBy: ArtifactInteractionActorV1;
+  requestId: string;
+}
+
+export interface ArtifactInteractionDecisionInputV1 {
+  prepared: ArtifactInteractionPreparedProposalV1;
+  decision: "approve" | "reject";
+  decisionId: string;
+  decidedBy: ArtifactInteractionActorV1;
+  decidedAt: string;
+  signal?: AbortSignal;
+}
+
+/**
+ * Server-private interaction implementation selected with the Artifact plugin.
+ *
+ * `prepare` is read-only. Only a Host call to `decide` may authorize mutation;
+ * the Provider remains responsible for format-specific CAS and readback.
+ */
+export interface ArtifactInteractionRuntimeImplementation {
+  id: string;
+  version: string;
+  protocolVersion: typeof ARTIFACT_INTERACTION_PROTOCOL_VERSION;
+  inspect(context: ArtifactAdaptContext): Promise<ArtifactInteractionWorkspaceV1>;
+  prepare(context: ArtifactAdaptContext, input: ArtifactInteractionPrepareInputV1): Promise<ArtifactInteractionPreparedProposalV1>;
+  decide(context: ArtifactAdaptContext, input: ArtifactInteractionDecisionInputV1): Promise<ArtifactInteractionTransitionReceiptV1>;
+}
+
 export type ArtifactSurfaceBinding =
   | { kind: "native"; rendererId: string }
   | { kind: "studio-sandbox"; rendererId: string; runtimeId: string }
@@ -143,6 +275,7 @@ export interface ArtifactPluginBinding {
   renderer: ArtifactRendererReference;
   surface: ArtifactSurfaceBinding;
   capabilities: readonly ArtifactCapability[];
+  interaction?: ArtifactInteractionRuntimeImplementation;
   provider?: ArtifactProviderBinding;
 }
 
@@ -154,6 +287,8 @@ export interface ExternalAdapterContribution {
   surface: ArtifactSurfaceBinding;
   renderer: ArtifactRendererReference;
   capabilities: readonly ArtifactCapability[];
+  /** Optional Host-gated shared-work interaction; absent means review-only. */
+  interaction?: ArtifactInteractionRuntimeImplementation;
   support: ArtifactContributionSupport;
   adapterExecutionProfile?: ArtifactAdapterExecutionProfile;
   /** Import-only hint; runtime precedence always comes from Studio activation. */
@@ -212,4 +347,24 @@ export const ARTIFACT_PROVIDER_API_VERSION = "1" as const;
  */
 export function defineArtifactProvider<const Provider extends ExternalArtifactProvider>(provider: Provider): Provider {
   return provider;
+}
+
+/** Stable JSON used when a Provider binds an interaction proposal digest. */
+export function canonicalArtifactInteractionJson(value: unknown): string {
+  return JSON.stringify(canonicalArtifactInteractionValue(value));
+}
+
+function canonicalArtifactInteractionValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalArtifactInteractionValue);
+  if (value !== null && typeof value === "object") {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+      const entry = (value as Record<string, unknown>)[key];
+      if (entry !== undefined) sorted[key] = canonicalArtifactInteractionValue(entry);
+    }
+    return sorted;
+  }
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  throw new TypeError("Artifact interaction JSON must contain only finite JSON values.");
 }

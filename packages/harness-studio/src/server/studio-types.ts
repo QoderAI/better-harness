@@ -4,7 +4,13 @@ import { GitCommitDetail, GitRefsSnapshot } from "../contracts/git-history.js";
 import { UserInputTraceV1 } from "../contracts/input-trace.js";
 import { StudioProjectDescriptor, StudioProjectKind } from "../contracts/studio-project.js";
 import { ArtifactCompileLimits } from "./artifacts/registry/artifact-compile-runtime.js";
-import { ExternalArtifactProvider } from "./artifacts/registry/artifact-plugin-registry.js";
+import {
+  ArtifactAdaptContext,
+  ArtifactInteractionPreparedProposalV1,
+  ArtifactInteractionRuntimeImplementation,
+  ArtifactInteractionTransitionReceiptV1,
+  ExternalArtifactProvider,
+} from "./artifacts/registry/artifact-plugin-registry.js";
 import { StudioCustomizationCollector } from "./customization-collector.js";
 import { lockHistoryExperiment } from "./experiment/lock.js";
 import { StudioIntentAnalyzer } from "./intent-analyzer.js";
@@ -203,6 +209,7 @@ export interface HarnessStudioState {
   ownedArtifactDirectory?: string;
   artifactImports: Map<string, ArtifactImportSession>;
   artifactEventStreams: number;
+  artifactInteractionProposals: Map<string, ArtifactInteractionProposalState>;
   workspace?: StudioWorkspace;
   projects: Map<string, StoredStudioProject>;
   activeProjectId?: string;
@@ -215,6 +222,30 @@ export interface HarnessStudioState {
   customizationAnalysisRunning: boolean;
   customizationAnalysis?: CustomizationAnalysisResponseV1;
   acpRuns: Map<string, AcpRunControl>;
+}
+export interface ArtifactInteractionProposalState {
+  artifactId: string;
+  revision: string;
+  providerId: string;
+  contributionId: string;
+  providerFingerprint: string;
+  context: ArtifactAdaptContext;
+  runtime: ArtifactInteractionRuntimeImplementation;
+  prepared: ArtifactInteractionPreparedProposalV1;
+  createdAtMs: number;
+  expiresAtMs: number;
+  settling?: {
+    decision: "approve" | "reject";
+    decisionId: string;
+    actorId: string;
+    promise: Promise<ArtifactInteractionTransitionReceiptV1>;
+  };
+  terminal?: {
+    decision: "approve" | "reject";
+    decisionId: string;
+    actorId: string;
+    receipt: ArtifactInteractionTransitionReceiptV1;
+  };
 }
 export interface AcpRunControl {
   abortController: AbortController;
