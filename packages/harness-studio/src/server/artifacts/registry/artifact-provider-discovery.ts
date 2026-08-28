@@ -115,6 +115,12 @@ function validateInjectedProvider(provider: ExternalArtifactProvider): string | 
         || contribution.surface.runtimeId !== contribution.surface.runtime.id)) {
       return `Artifact provider contribution '${contribution.id}' has inconsistent hosted surface identity.`;
     }
+    if (contribution.interaction !== undefined
+      && (contribution.interaction.id.trim() === ""
+        || contribution.interaction.version.trim() === ""
+        || contribution.interaction.protocolVersion !== "1")) {
+      return `Artifact provider contribution '${contribution.id}' has an unsupported interaction runtime.`;
+    }
   }
   return undefined;
 }

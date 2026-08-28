@@ -9,6 +9,10 @@ import {
   normalizeArtifactSurfaceKind,
   resolveArtifactSurfaceMount,
 } from "../src/app/artifacts/ArtifactView.js";
+import {
+  hostedArtifactSelection,
+  hostedArtifactSelectionFromFrame,
+} from "../src/app/artifacts/ExternalHostedArtifactView.js";
 
 describe("Artifact View surface registry", () => {
   it("keeps one stable ordered composition boundary for every view family", () => {
@@ -105,6 +109,39 @@ describe("Artifact View surface registry", () => {
 
     expect(artifactSurfaceInstanceKey(firstMount, "catalog-a", first))
       .toBe(artifactSurfaceInstanceKey(secondMount, "catalog-a", second));
+  });
+
+  it("accepts hosted selection only for the exact interactive Artifact revision and binding", () => {
+    const artifact = {
+      ...descriptor({
+        id: "provider.diagram",
+        provider: "provider-a",
+        type: "provider-svg",
+        bindingId: BINDING_DIGEST,
+        viewUri: "/api/artifacts/example/revisions/111/viewer/",
+      }),
+      interaction: { workspaceUri: "/api/artifacts/example/revisions/111/interaction" },
+    };
+    const event = {
+      kind: "HarnessStudioArtifactHostedSelectionV1",
+      protocolVersion: "1",
+      artifactId: artifact.id,
+      revision: artifact.revision.id,
+      bindingId: BINDING_DIGEST,
+      address: "drawio://example.drawio/page/main/cell/orders",
+    };
+
+    expect(hostedArtifactSelection(event, artifact)).toEqual(event);
+    expect(hostedArtifactSelection({ ...event, revision: NEXT_DIGEST }, artifact)).toBeUndefined();
+    expect(hostedArtifactSelection({ ...event, bindingId: NEXT_DIGEST }, artifact)).toBeUndefined();
+    expect(hostedArtifactSelection({ ...event, address: "" }, artifact)).toBeUndefined();
+    expect(hostedArtifactSelection({ ...event, address: "x".repeat(8_193) }, artifact)).toBeUndefined();
+    expect(hostedArtifactSelection(event, { ...artifact, interaction: undefined })).toBeUndefined();
+
+    const frameWindow = {} as Window;
+    expect(hostedArtifactSelectionFromFrame({ source: frameWindow, data: event }, frameWindow, artifact)).toEqual(event);
+    expect(hostedArtifactSelectionFromFrame({ source: {} as Window, data: event }, frameWindow, artifact)).toBeUndefined();
+    expect(hostedArtifactSelectionFromFrame({ source: null, data: event }, null, artifact)).toBeUndefined();
   });
 
   it("remounts when authority or binding changes and conservatively remounts old V2 responses", () => {

@@ -81,6 +81,9 @@ describe("Artifact provider SDK", () => {
           snapshotId: DIGEST,
           snapshotUri: `/api/artifacts/notes/revisions/${"a".repeat(64)}/snapshot`,
         },
+        interaction: {
+          workspaceUri: `/api/artifacts/notes/revisions/${"a".repeat(64)}/interaction`,
+        },
         renderer: {
           id: "studio.markdown",
           label: "Studio Markdown",
@@ -94,6 +97,9 @@ describe("Artifact provider SDK", () => {
     };
 
     expect(isArtifactCatalogResponse(catalog)).toBe(true);
+    catalog.artifacts[0]!.interaction.workspaceUri = "https://untrusted.invalid/interaction";
+    expect(isArtifactCatalogResponse(catalog)).toBe(false);
+    catalog.artifacts[0]!.interaction.workspaceUri = `/api/artifacts/notes/revisions/${"a".repeat(64)}/interaction`;
     catalog.artifacts[0]!.renderer.bindingId = DIGEST;
     expect(isArtifactCatalogResponse(catalog)).toBe(true);
     catalog.artifacts[0]!.renderer.bindingId = "not-a-digest";

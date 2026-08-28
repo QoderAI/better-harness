@@ -16,6 +16,7 @@ import { TreeStructure } from "@phosphor-icons/react/TreeStructure";
 import {
   isArtifactCatalogResponse,
   type ArtifactDescriptor,
+  type ArtifactSurfaceSelectionV1,
 } from "../contracts/artifact.js";
 import {
   isWorkspaceArtifactNavigation,
@@ -24,6 +25,7 @@ import {
   type WorkspaceArtifactObservation,
 } from "../contracts/workspace-artifact.js";
 import { ArtifactView } from "./artifacts/ArtifactView.js";
+import { ArtifactInteractionPane } from "./artifacts/ArtifactInteractionPane.js";
 import { useRovingFocus } from "./roving-tablist.js";
 import type { StudioConfig } from "./studio-shell-model.js";
 
@@ -61,6 +63,8 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
   const [narrowPane, setNarrowPane] = useState<ArtifactNarrowPane>("scope");
   const [liveGeneration, setLiveGeneration] = useState(0);
   const [liveUpdates, setLiveUpdates] = useState(true);
+  const [catalogRefresh, setCatalogRefresh] = useState(0);
+  const [surfaceSelection, setSurfaceSelection] = useState<ArtifactSurfaceSelectionV1>();
 
   useEffect(() => {
     if (!props.config.artifactsEnabled) return;
@@ -94,7 +98,7 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
       if (!cancelled && events.readyState === EventSource.CLOSED) setLiveUpdates(false);
     });
     return () => { cancelled = true; events.close(); };
-  }, [props.config.artifactsEnabled]);
+  }, [catalogRefresh, props.config.artifactsEnabled]);
 
   const days = useMemo(() => artifactDays(catalog?.navigation), [catalog?.navigation]);
   const effectiveMode: ArtifactScopeMode = catalog?.navigation === undefined ? "files" : scopeMode;
@@ -139,6 +143,12 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
 
   const active = catalog.artifacts.find((artifact) => artifact.id === selected);
   const activeObservations = active === undefined ? [] : observationsForArtifact(catalog.navigation, active.id);
+  const activeSurfaceSelection = active !== undefined
+    && surfaceSelection?.artifactId === active.id
+    && surfaceSelection.revision === active.revision.id
+    && surfaceSelection.bindingId === active.renderer.bindingId
+    ? surfaceSelection
+    : undefined;
   const selectScope = (next: ArtifactScope): void => {
     setScope(next);
     const ids = artifactIdsForScope(next, catalog.navigation, catalog.artifacts);
@@ -197,7 +207,23 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
             <div><strong title={active.label}>{basename(active.label)}</strong><small>{formatLabel(active.format)} · {formatBytes(active.size)} · {active.adapter.id} · current {shortRevision(active.revision.id)}</small></div>
             <span title={active.label}>{activeObservations[0] === undefined ? dirname(active.label) : `${activeObservations[0].provider ?? "Local agent"} · ${formatObservedTime(activeObservations[0].savedAt)}`}</span>
           </header>
-          <ArtifactView authorityId={catalog.snapshot.catalogId} artifact={active} liveGeneration={liveGeneration} />
+          <div className={`artifact-shared-workspace${active.interaction === undefined ? " solo" : ""}`}>
+            <div className="artifact-surface-slot"><ArtifactView authorityId={catalog.snapshot.catalogId} artifact={active} liveGeneration={liveGeneration} onSelection={setSurfaceSelection} /></div>
+            <ArtifactInteractionPane
+              artifact={active}
+              surfaceSelectedAddress={activeSurfaceSelection?.address}
+              onSelectedAddressChange={(address) => {
+                if (active.renderer.bindingId === undefined) return;
+                setSurfaceSelection({
+                  artifactId: active.id,
+                  revision: active.revision.id,
+                  bindingId: active.renderer.bindingId,
+                  address,
+                });
+              }}
+              onApplied={() => setCatalogRefresh((value) => value + 1)}
+            />
+          </div>
         </>}
     </main>
   </section>;
