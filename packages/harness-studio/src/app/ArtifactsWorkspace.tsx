@@ -51,7 +51,7 @@ interface ArtifactDayGroup {
   sessions: ArtifactSessionGroup[];
 }
 
-export function ArtifactsWorkspace(props: { config: StudioConfig }): React.JSX.Element {
+export function ArtifactsWorkspace(props: { config: StudioConfig; onOpenProject?: () => void }): React.JSX.Element {
   const [catalog, setCatalog] = useState<StudioArtifactCatalogResponse>();
   const [failure, setFailure] = useState<string>();
   const [selected, setSelected] = useState<string>();
@@ -129,7 +129,7 @@ export function ArtifactsWorkspace(props: { config: StudioConfig }): React.JSX.E
   if (!props.config.artifactsEnabled) {
     return <ArtifactEmpty title={props.config.workspaceConnected ? "No Project artifacts are available" : "Open a Project"} detail={props.config.workspaceConnected
       ? "Studio found no current files backed by retained change or delivery evidence."
-      : "Open or select a Project once; Artifacts, Sessions, and Commits will share that Project context."} />;
+      : props.config.workspaceDiscoveryEnabled ? "Open a local Project once; Artifacts, Sessions, and Commits will share that Project context." : "This Studio launcher does not provide Project discovery."} action={props.onOpenProject} />;
   }
   if (failure !== undefined) return <ArtifactEmpty title="Cannot read Project artifacts" detail={failure} />;
   if (catalog === undefined) return <p className="artifact-status" role="status">Indexing Project artifacts…</p>;
@@ -311,8 +311,8 @@ function ArtifactRow(props: { artifact: ArtifactDescriptor; selected: boolean; o
   </button>;
 }
 
-function ArtifactEmpty(props: { title: string; detail: string }): React.JSX.Element {
-  return <main className="artifact-empty"><span><FolderOpen aria-hidden="true" size={22} /></span><small>Workspace artifacts</small><h1>{props.title}</h1><p>{props.detail}</p></main>;
+function ArtifactEmpty(props: { title: string; detail: string; action?: () => void }): React.JSX.Element {
+  return <main className="artifact-empty"><span><FolderOpen aria-hidden="true" size={22} /></span><small>Workspace artifacts</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" onClick={props.action}>Open Project</button>}</main>;
 }
 
 function artifactDays(navigation: WorkspaceArtifactNavigation | undefined): ArtifactDayGroup[] {

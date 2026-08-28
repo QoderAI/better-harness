@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { startHarnessStudioServer } from "./server.js";
 import { readSourceCatalogFile } from "./workspace/source-catalog.js";
 import { runWalnutBootstrapCli } from "./providers/walnut/cli.js";
@@ -9,6 +9,7 @@ import { runArtifactProviderCli } from "./artifacts/registry/artifact-provider-c
 import { createBundledAgentCustomizationCollector } from "./customization-collector.js";
 import { loadArtifactProviderModules } from "./artifacts/registry/artifact-provider-modules.js";
 import { discoverAcpAgentProfiles } from "./acp-agent-catalog.js";
+import { createBundledInspectorWorkspaceSessionProvider } from "./workspace/bundled-session-provider.js";
 import type { StudioAcpAgentOptions } from "./studio-types.js";
 
 const HELP = `harness-studio — local studio for harness runs and compare evidence
@@ -18,6 +19,7 @@ Usage:
   harness-studio walnut <probe|install|verify|remove> [options]
   harness-studio artifact-provider <list|activate|deactivate> [options]
   harness-studio --help
+  harness-studio --version
 
 Options:
   --inspector <file>  self-contained Harness Inspector HTML (enables Inspector)
@@ -62,7 +64,17 @@ Options:
                       Permit a non-loopback --host. The studio's /agui endpoint is
                       unauthenticated and runs a coding agent in --cwd.
   -h, --help          Print help without reading any file or opening a port
+  -v, --version       Print the package version without opening a port
 `;
+
+const KNOWN_OPTIONS = new Set([
+  "-h", "--help", "-v", "--version", "--inspector", "--evidence", "--harness",
+  "--experiment", "--experiment-out", "--history-catalog", "--experiment-locks",
+  "--runs", "--artifacts", "--canvas-viewers", "--canvas-sdk-root", "--canvas-sdk-media",
+  "--provider-state", "--artifact-provider-module", "--walnut-cache", "--source-catalog",
+  "--harness-id", "--runtime", "--acp-agent", "--acp-arg", "--port", "--host", "--cwd",
+  "--source-root", "--unsafe-allow-remote",
+]);
 
 export interface HarnessStudioCliIo {
   stdout: (text: string) => void;
@@ -85,6 +97,17 @@ export async function discoverDefaultInspectorReport(cwd: string): Promise<strin
     return candidate;
   } catch {
     return undefined;
+  }
+}
+
+async function validateCliPath(option: string, value: string | undefined, kind: "file" | "directory"): Promise<string | undefined> {
+  if (value === undefined) return undefined;
+  try {
+    const observed = await stat(resolve(value));
+    const valid = kind === "file" ? observed.isFile() : observed.isDirectory();
+    return valid ? undefined : `${option} must name a ${kind}: ${value}`;
+  } catch {
+    return `${option} ${kind} was not found: ${value}`;
   }
 }
 
@@ -115,6 +138,7 @@ interface ParsedArgs {
   cwd?: string;
   sourceRoot?: string;
   help: boolean;
+  version: boolean;
   error?: string;
 }
 
@@ -124,19 +148,32 @@ export function parseHarnessStudioArgs(argv: string[]): ParsedArgs {
     host: "127.0.0.1",
     allowRemote: false,
     help: false,
+    version: false,
     acpArgs: [],
     artifactProviderModules: [],
   };
+  const setError = (message: string): void => {
+    parsed.error ??= message;
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    const takeValue = (): string | undefined => {
+    const takeValue = (missingMessage = `${arg} requires a value.`): string | undefined => {
+      const next = argv[index + 1];
+      if (next === undefined || KNOWN_OPTIONS.has(next)) {
+        setError(missingMessage);
+        return undefined;
+      }
       index += 1;
-      return argv[index];
+      return next;
     };
     switch (arg) {
       case "-h":
       case "--help":
         parsed.help = true;
+        break;
+      case "-v":
+      case "--version":
+        parsed.version = true;
         break;
       case "--evidence":
         parsed.evidence = takeValue();
@@ -192,9 +229,8 @@ export function parseHarnessStudioArgs(argv: string[]): ParsedArgs {
         parsed.providerState = takeValue();
         break;
       case "--artifact-provider-module": {
-        const value = takeValue();
-        if (value === undefined) parsed.error = "--artifact-provider-module requires a package name or filesystem path.";
-        else parsed.artifactProviderModules.push(value);
+        const value = takeValue("--artifact-provider-module requires a package name or filesystem path.");
+        if (value !== undefined) parsed.artifactProviderModules.push(value);
         break;
       }
       case "--walnut-cache":
@@ -216,16 +252,18 @@ export function parseHarnessStudioArgs(argv: string[]): ParsedArgs {
         parsed.sourceRoot = takeValue();
         break;
       case "--port": {
-        const value = Number(takeValue());
+        const rawValue = takeValue();
+        if (rawValue === undefined) break;
+        const value = Number(rawValue);
         if (!Number.isInteger(value) || value < 0 || value > 65535) {
-          parsed.error = "--port must be an integer between 0 and 65535.";
+          setError("--port must be an integer between 0 and 65535.");
         } else {
           parsed.port = value;
         }
         break;
       }
       default:
-        parsed.error = `Unknown option '${arg}'.`;
+        setError(`Unknown option '${arg}'.`);
     }
   }
   return parsed;
@@ -245,9 +283,34 @@ export async function runHarnessStudioCli(argv: string[], io: HarnessStudioCliIo
     io.stdout(HELP);
     return 0;
   }
+  if (parsed.version) {
+    const manifest = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8")) as { version?: unknown };
+    io.stdout(`${typeof manifest.version === "string" ? manifest.version : "unknown"}\n`);
+    return 0;
+  }
   if (parsed.error !== undefined) {
     io.stderr(`${parsed.error}\n`);
     return 2;
+  }
+  for (const [option, value, kind] of [
+    ["--inspector", parsed.inspector, "file"],
+    ["--evidence", parsed.evidence, "directory"],
+    ["--harness", parsed.harness, "file"],
+    ["--experiment", parsed.experiment, "file"],
+    ["--history-catalog", parsed.historyCatalog, "file"],
+    ["--source-catalog", parsed.sourceCatalog, "file"],
+    ["--artifacts", parsed.artifacts, "directory"],
+    ["--canvas-viewers", parsed.canvasViewers, "directory"],
+    ["--canvas-sdk-root", parsed.canvasSdkRoot, "directory"],
+    ["--canvas-sdk-media", parsed.canvasSdkMedia, "directory"],
+    ["--cwd", parsed.cwd, "directory"],
+    ["--source-root", parsed.sourceRoot, "directory"],
+  ] as const) {
+    const pathFailure = await validateCliPath(option, value, kind);
+    if (pathFailure !== undefined) {
+      io.stderr(`${pathFailure}\n`);
+      return 2;
+    }
   }
   // The Inspector CLI writes to one conventional local path; discovering it
   // keeps `harness-studio` usable in a repository without restating flags.
@@ -255,8 +318,15 @@ export async function runHarnessStudioCli(argv: string[], io: HarnessStudioCliIo
     ? await discoverDefaultInspectorReport(parsed.cwd ?? process.cwd())
     : undefined;
   const inspectorPath = parsed.inspector ?? discoveredInspector;
-  const sourceCatalog = parsed.sourceCatalog === undefined ? [] : await readSourceCatalogFile(parsed.sourceCatalog);
-  const harnessSource = parsed.harness !== undefined ? await readFile(parsed.harness, "utf8") : undefined;
+  let sourceCatalog;
+  let harnessSource;
+  try {
+    sourceCatalog = parsed.sourceCatalog === undefined ? [] : await readSourceCatalogFile(parsed.sourceCatalog);
+    harnessSource = parsed.harness !== undefined ? await readFile(parsed.harness, "utf8") : undefined;
+  } catch (error) {
+    io.stderr(`Studio could not load its startup inputs: ${error instanceof Error ? error.message : String(error)}\n`);
+    return 2;
+  }
   if (parsed.acpAgent !== undefined && harnessSource === undefined && parsed.experiment === undefined) {
     io.stderr("--acp-agent requires --harness or --experiment so the ACP runtime contract is explicit.\n");
     return 2;
@@ -287,35 +357,50 @@ export async function runHarnessStudioCli(argv: string[], io: HarnessStudioCliIo
     io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
     return 2;
   }
-  const started = await startHarnessStudioServer({
-    appDir: defaultAppDir(),
-    port: parsed.port,
-    host: parsed.host,
-    allowRemote: parsed.allowRemote,
-    customizationCollector: createBundledAgentCustomizationCollector(),
-    ...(inspectorPath !== undefined ? { inspectorReportPath: resolve(inspectorPath) } : {}),
-    ...(parsed.evidence !== undefined ? { evidenceDir: resolve(parsed.evidence) } : {}),
-    ...(harnessSource !== undefined ? { harnessSource } : {}),
-    ...(parsed.harnessId !== undefined ? { harnessId: parsed.harnessId } : {}),
-    ...(parsed.runtime !== undefined ? { runtimeId: parsed.runtime } : {}),
-    ...(preferredAcpAgent === undefined ? {} : { acpAgent: preferredAcpAgent }),
-    ...(acpAgents.length === 0 ? {} : { acpAgents }),
-    ...(parsed.runs !== undefined ? { runDirectory: resolve(parsed.runs) } : {}),
-    ...(parsed.artifacts !== undefined ? { artifactDirectory: resolve(parsed.artifacts) } : {}),
-    ...(parsed.canvasViewers !== undefined ? { canvasViewerRoot: resolve(parsed.canvasViewers) } : {}),
-    ...(parsed.canvasSdkRoot !== undefined ? { canvasSdkRoot: resolve(parsed.canvasSdkRoot) } : {}),
-    ...(parsed.canvasSdkMedia !== undefined ? { canvasSdkMedia: resolve(parsed.canvasSdkMedia) } : {}),
-    ...(parsed.providerState !== undefined ? { artifactProviderStateRoot: resolve(parsed.providerState) } : {}),
-    ...(artifactProviders.length > 0 ? { artifactProviders } : {}),
-    ...(parsed.walnutCache !== undefined ? { walnutCacheRoot: resolve(parsed.walnutCache) } : {}),
-    ...(sourceCatalog.length > 0 ? { sourceCatalog } : {}),
-    ...(parsed.cwd !== undefined ? { cwd: parsed.cwd } : {}),
-    ...(sourceRoot !== undefined ? { sourceRoot } : {}),
-    ...(parsed.experiment !== undefined ? { experimentManifestPath: resolve(parsed.experiment) } : {}),
-    ...(parsed.experimentOut !== undefined ? { experimentOutputDirectory: resolve(parsed.experimentOut) } : {}),
-    ...(parsed.historyCatalog !== undefined ? { checkpointHistoryCatalogPath: resolve(parsed.historyCatalog) } : {}),
-    ...(parsed.experimentLocks !== undefined ? { experimentLockDirectory: resolve(parsed.experimentLocks) } : {}),
-  });
+  let started;
+  try {
+    started = await startHarnessStudioServer({
+      appDir: defaultAppDir(),
+      port: parsed.port,
+      host: parsed.host,
+      allowRemote: parsed.allowRemote,
+      customizationCollector: createBundledAgentCustomizationCollector(),
+      workspaceSessionProvider: createBundledInspectorWorkspaceSessionProvider(),
+      ...(inspectorPath !== undefined ? { inspectorReportPath: resolve(inspectorPath) } : {}),
+      ...(parsed.evidence !== undefined ? { evidenceDir: resolve(parsed.evidence) } : {}),
+      ...(harnessSource !== undefined ? { harnessSource } : {}),
+      ...(parsed.harnessId !== undefined ? { harnessId: parsed.harnessId } : {}),
+      ...(parsed.runtime !== undefined ? { runtimeId: parsed.runtime } : {}),
+      ...(preferredAcpAgent === undefined ? {} : { acpAgent: preferredAcpAgent }),
+      ...(acpAgents.length === 0 ? {} : { acpAgents }),
+      ...(parsed.runs !== undefined ? { runDirectory: resolve(parsed.runs) } : {}),
+      ...(parsed.artifacts !== undefined ? { artifactDirectory: resolve(parsed.artifacts) } : {}),
+      ...(parsed.canvasViewers !== undefined ? { canvasViewerRoot: resolve(parsed.canvasViewers) } : {}),
+      ...(parsed.canvasSdkRoot !== undefined ? { canvasSdkRoot: resolve(parsed.canvasSdkRoot) } : {}),
+      ...(parsed.canvasSdkMedia !== undefined ? { canvasSdkMedia: resolve(parsed.canvasSdkMedia) } : {}),
+      ...(parsed.providerState !== undefined ? { artifactProviderStateRoot: resolve(parsed.providerState) } : {}),
+      ...(artifactProviders.length > 0 ? { artifactProviders } : {}),
+      ...(parsed.walnutCache !== undefined ? { walnutCacheRoot: resolve(parsed.walnutCache) } : {}),
+      ...(sourceCatalog.length > 0 ? { sourceCatalog } : {}),
+      ...(parsed.cwd !== undefined ? { cwd: parsed.cwd } : {}),
+      ...(sourceRoot !== undefined ? { sourceRoot } : {}),
+      ...(parsed.experiment !== undefined ? { experimentManifestPath: resolve(parsed.experiment) } : {}),
+      ...(parsed.experimentOut !== undefined ? { experimentOutputDirectory: resolve(parsed.experimentOut) } : {}),
+      ...(parsed.historyCatalog !== undefined ? { checkpointHistoryCatalogPath: resolve(parsed.historyCatalog) } : {}),
+      ...(parsed.experimentLocks !== undefined ? { experimentLockDirectory: resolve(parsed.experimentLocks) } : {}),
+    });
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+    if (code === "EADDRINUSE") {
+      io.stderr(`Port ${parsed.port} is already in use on ${parsed.host}. Choose another with --port <n>.\n`);
+      return 2;
+    }
+    if (code === "EACCES") {
+      io.stderr(`Studio cannot listen on ${parsed.host}:${parsed.port}. Choose an unprivileged port with --port <n>.\n`);
+      return 2;
+    }
+    throw error;
+  }
   if (parsed.allowRemote) {
     io.stderr(
       `Warning: ${started.url} is reachable beyond loopback and has no authentication. ` +
@@ -329,8 +414,11 @@ export async function runHarnessStudioCli(argv: string[], io: HarnessStudioCliIo
   return 0;
 }
 
-const invokedDirectly =
-  typeof process.argv[1] === "string" && import.meta.url === pathToFileURL(process.argv[1]).href;
+const invokedPath = typeof process.argv[1] === "string"
+  ? await realpath(process.argv[1]).catch(() => resolve(process.argv[1]!))
+  : undefined;
+const invokedDirectly = invokedPath !== undefined
+  && await realpath(fileURLToPath(import.meta.url)).catch(() => fileURLToPath(import.meta.url)) === invokedPath;
 
 if (invokedDirectly) {
   runHarnessStudioCli(process.argv.slice(2), {

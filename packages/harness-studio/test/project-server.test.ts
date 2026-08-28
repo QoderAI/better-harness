@@ -1,9 +1,10 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startHarnessStudioServer, type StartedHarnessStudioServer } from "../src/server/server.js";
-import type { StudioProjectCatalog, StudioProjectDescriptor } from "../src/contracts/studio-project.js";
+import { MAX_STUDIO_PROJECTS, type StudioProjectCatalog, type StudioProjectDescriptor } from "../src/contracts/studio-project.js";
+import { DirectoryPickerUnavailableError } from "../src/server/workspace/native-directory-picker.js";
 
 let started: StartedHarnessStudioServer | undefined;
 const directories: string[] = [];
@@ -27,6 +28,20 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 describe("Studio Project catalog", () => {
+  it("preserves actionable native picker availability errors", async () => {
+    const appDir = await directory("studio-project-picker-app-");
+    await writeFile(join(appDir, "index.html"), "<!doctype html><title>Project fixture</title>", "utf8");
+    started = await startHarnessStudioServer({
+      appDir,
+      workspaceDirectoryPicker: async () => { throw new DirectoryPickerUnavailableError("No supported native directory chooser is installed (expected zenity or kdialog)."); },
+      workspaceSessionProvider: { discover: async () => ({ label: "unused", sessions: [] }) },
+    });
+
+    const response = await fetch(`${started.url}/api/projects/open`, { method: "POST" });
+    expect(response.status).toBe(501);
+    expect(await response.json()).toEqual({ error: "No supported native directory chooser is installed (expected zenity or kdialog)." });
+  });
+
   it("registers, refreshes, switches, rolls back failed discovery, and removes opaque Projects", async () => {
     const appDir = await directory("studio-project-app-");
     await writeFile(join(appDir, "index.html"), "<!doctype html><title>Project fixture</title>", "utf8");
@@ -114,6 +129,61 @@ describe("Studio Project catalog", () => {
     await json(`${started.url}/api/projects/${openedB.project.id}`, { method: "DELETE" });
     expect(await json<StudioProjectCatalog>(`${started.url}/api/projects`)).toMatchObject({ projects: [] });
     expect(await json<{ connected: boolean }>(`${started.url}/api/workspace`)).toMatchObject({ connected: false });
+  });
+
+  it("retains a completed run in its starting Project after the active Project changes", async () => {
+    const appDir = await directory("studio-project-run-app-");
+    await writeFile(join(appDir, "index.html"), "<!doctype html><title>Project run fixture</title>", "utf8");
+    const projectA = await directory("studio-project-run-a-");
+    const projectB = await directory("studio-project-run-b-");
+    const selections = [projectA, projectB];
+    started = await startHarnessStudioServer({
+      appDir,
+      workspaceDirectoryPicker: async () => selections.shift(),
+      workspaceSessionProvider: { discover: async (selected) => ({ label: basename(selected), sessions: [] }) },
+    });
+
+    const openedA = await json<{ project: StudioProjectDescriptor; revision: number }>(`${started.url}/api/projects/open`, { method: "POST" });
+    await json(`${started.url}/api/projects/open`, { method: "POST" });
+    const saved = await fetch(`${started.url}/api/runs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Harness-Project-Id": openedA.project.id,
+        "X-Harness-Project-Revision": String(openedA.revision),
+      },
+      body: JSON.stringify({
+        prompt: "retain the starting Project",
+        status: "finished",
+        runId: "run_bound_a",
+        threadId: "thread_bound_a",
+        warnings: [],
+        timeline: [],
+      }),
+    });
+
+    expect(saved.status).toBe(201);
+    expect((await readdir(join(projectA, ".harness-studio-runs"))).filter((name) => name.endsWith(".json"))).toHaveLength(1);
+    expect(await readdir(join(projectB, ".harness-studio-runs")).catch(() => [])).toEqual([]);
+  });
+
+  it("bounds the process-local Project catalog", async () => {
+    const appDir = await directory("studio-project-limit-app-");
+    await writeFile(join(appDir, "index.html"), "<!doctype html><title>Project limit fixture</title>", "utf8");
+    const selections = await Promise.all(Array.from({ length: MAX_STUDIO_PROJECTS + 1 }, (_, index) => directory(`studio-project-limit-${index}-`)));
+    started = await startHarnessStudioServer({
+      appDir,
+      workspaceDirectoryPicker: async () => selections.shift(),
+      workspaceSessionProvider: { discover: async (selected) => ({ label: basename(selected), sessions: [] }) },
+    });
+
+    for (let index = 0; index < MAX_STUDIO_PROJECTS; index += 1) {
+      expect((await fetch(`${started.url}/api/projects/open`, { method: "POST" })).status).toBe(200);
+    }
+    const overflow = await fetch(`${started.url}/api/projects/open`, { method: "POST" });
+    expect(overflow.status).toBe(429);
+    expect(await overflow.json()).toEqual({ error: `Studio remembers at most ${MAX_STUDIO_PROJECTS} Projects. Remove one before opening another.` });
+    expect((await json<StudioProjectCatalog>(`${started.url}/api/projects`)).projects).toHaveLength(MAX_STUDIO_PROJECTS);
   });
 });
 

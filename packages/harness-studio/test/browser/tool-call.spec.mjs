@@ -288,9 +288,10 @@ test("organizes configured surfaces around the Harness control plane", async ({ 
   await expect(page.getByRole("navigation", { name: "Studio project and View navigation" })).toContainText("Sessions");
   await expect(page.getByRole("navigation", { name: "Studio project and View navigation" })).toContainText("Debugger");
   await expect(page.getByRole("navigation", { name: "Studio project and View navigation" })).toContainText("Compare");
-  await page.getByRole("button", { name: "Open Project" }).first().click();
-  await expect(page.getByRole("heading", { name: "Select a Project" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Project opening unavailable" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Open Project", exact: true })).toHaveCount(0);
+  await openDestination(page, "Sessions");
+  await expect(page.getByRole("heading", { name: "Open a Project" })).toBeVisible();
+  await expect(page.getByText("This Studio launcher does not provide Project discovery.")).toBeVisible();
 });
 
 test("compares a focused ACP pair across roles, views, filters, and evidence", async ({ page }, testInfo) => {
@@ -489,7 +490,7 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
   await page.getByRole("button", { name: "Run harness" }).click();
 
   await expect(page.getByRole("navigation", { name: "Session debugger controls" })).toHaveCount(0);
-  await expect(page.getByText("Live observation · no Evidence Cursor")).toBeVisible();
+  await expect(page.getByText("Run finished", { exact: true })).toBeVisible();
 
   await expect(page.locator(".run-status strong")).toHaveText("finished");
   const card = page.locator("details.tool-card");
@@ -599,7 +600,8 @@ test("renders the shell, local workspace intake, and empty compare surfaces at a
     }
 
     await openDestination(page, "Sessions");
-    await expect(page.getByRole("heading", { name: "Select a Project" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Open a Project" })).toBeVisible();
+    await expect(page.getByText("This Studio launcher does not provide Project discovery.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Choose Project" })).toHaveCount(0);
     await assertRenderedContract(page);
     await page.screenshot({ path: testInfo.outputPath(`foundation-${layout.name}.png`) });
@@ -611,7 +613,7 @@ test("renders the shell, local workspace intake, and empty compare surfaces at a
     await page.screenshot({ path: testInfo.outputPath(`empty-${layout.name}.png`) });
 
     await openDestination(page, "Sessions");
-    await expect(page.getByRole("heading", { name: "Select a Project" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Open a Project" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Choose Project" })).toHaveCount(0);
     await assertRenderedContract(page);
     await page.screenshot({ path: testInfo.outputPath(`sessions-${layout.name}.png`) });

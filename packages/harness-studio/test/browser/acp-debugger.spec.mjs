@@ -22,7 +22,7 @@ async function runAcpPrompt(page, prompt) {
   await page.getByRole("combobox", { name: "Runtime" }).selectOption("acp");
   await page.getByRole("textbox", { name: "Task prompt for the harness run…" }).fill(prompt);
   await page.getByRole("button", { name: "Run harness" }).click();
-  await expect(page.getByText("ACP permission requested")).toBeVisible();
+  await expect(page.locator(".live-inspector > header")).toContainText("Permission required");
   await page.getByRole("button", { name: "Allow once allow_once" }).click();
   await expect(page.getByText("fixture:allow-once", { exact: true })).toBeVisible();
 }

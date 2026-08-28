@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isStudioProjectCatalog, STUDIO_PROJECT_CATALOG_KIND } from "../src/contracts/studio-project.js";
+import { isStudioProjectCatalog, MAX_STUDIO_PROJECTS, STUDIO_PROJECT_CATALOG_KIND } from "../src/contracts/studio-project.js";
 import { parseStudioLocation, studioLocationHash } from "../src/app/shell/project-routing.js";
 
 const PROJECT_ID = `project_${"a".repeat(32)}`;
@@ -52,6 +52,15 @@ describe("Studio Project contracts", () => {
       kind: STUDIO_PROJECT_CATALOG_KIND,
       revision: 1,
       projects: [{ ...descriptor, id: "../../workspace" }],
+      stage: "idle",
+    })).toBe(false);
+    expect(isStudioProjectCatalog({
+      kind: STUDIO_PROJECT_CATALOG_KIND,
+      revision: 1,
+      projects: Array.from({ length: MAX_STUDIO_PROJECTS + 1 }, (_, index) => ({
+        ...descriptor,
+        id: `project_${index.toString(16).padStart(32, "0")}`,
+      })),
       stage: "idle",
     })).toBe(false);
   });

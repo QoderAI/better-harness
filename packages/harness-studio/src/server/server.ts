@@ -24,7 +24,7 @@ import {
 import { createCheckpointHistoryCatalogAdapter } from "./query/checkpoint-history.js";
 import { discoverArtifactProviderRuntime } from "./artifacts/registry/artifact-provider-discovery.js";
 import type { HarnessStudioServerOptions, HarnessStudioState } from "./studio-types.js";
-import { decodeRouteComponent, respondJson } from "./http-utils.js";
+import { decodeRouteComponent, respondJson, sameOriginRequest } from "./http-utils.js";
 import {
   acpAgentEnabled,
   acpExecutorFactory,
@@ -139,6 +139,7 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
     artifactEventStreams: 0,
     projects: new Map(),
     projectRevision: 0,
+    projectRevisionContexts: new Map(),
     workspaceImports: new Map(),
     workspaceOpenStage: "idle",
     intentAnalysisRunning: false,
@@ -209,6 +210,7 @@ async function route(
       workspaceWorkbenchEnabled: state.workspace?.inspectorReport !== undefined,
       workspaceDiscoveryEnabled: options.workspaceSessionProvider !== undefined,
       workspaceConnected: state.workspace !== undefined,
+      projectExecutionEnabled: state.workspace?.localDirectory !== undefined,
       activeProjectId: state.activeProjectId,
       projectRevision: state.projectRevision,
       sessionCount: state.workspace?.sessionCount ?? 0,
@@ -354,7 +356,12 @@ async function route(
   const runRead = url.pathname.match(/^\/api\/runs\/([^/]+)(?:\/(session))?$/);
   if (url.pathname === "/api/runs" || runRead !== null) {
     const runId = runRead === null ? undefined : decodeRouteComponent(response, runRead[1]!);
-    if (runRead === null || runId !== undefined) await routeRuns(request, response, activeWorkspaceOptions(options, state), url, runId, runRead?.[2] === "session");
+    if (runRead === null || runId !== undefined) {
+      const scopedOptions = request.method === "POST" && options.harnessMode === "workspace-default"
+        ? retainedRunWorkspaceOptions(request, response, options, state)
+        : activeWorkspaceOptions(options, state);
+      if (scopedOptions !== undefined) await routeRuns(request, response, scopedOptions, url, runId, runRead?.[2] === "session");
+    }
     return;
   }
   if (request.method === "GET" && url.pathname === "/inspector") {
@@ -587,7 +594,36 @@ function acceptProjectBinding(
     respondJson(response, 409, { error: "The selected Project changed before the run started. Review the current Project and retry." });
     return false;
   }
+  if (required && state.workspace?.localDirectory === undefined) {
+    respondJson(response, 422, { error: "The selected Project is read-only evidence and cannot host a live run." });
+    return false;
+  }
   return true;
+}
+
+function retainedRunWorkspaceOptions(
+  request: IncomingMessage,
+  response: ServerResponse,
+  options: HarnessStudioServerOptions,
+  state: HarnessStudioState,
+): HarnessStudioServerOptions | undefined {
+  if (!sameOriginRequest(request)) {
+    respondJson(response, 403, { error: "Cross-origin run saving is not allowed." });
+    return undefined;
+  }
+  const requestedProjectId = request.headers["x-harness-project-id"];
+  const requestedRevision = request.headers["x-harness-project-revision"];
+  const parsedRevision = typeof requestedRevision === "string" ? Number(requestedRevision) : Number.NaN;
+  const context = Number.isSafeInteger(parsedRevision) ? state.projectRevisionContexts.get(parsedRevision) : undefined;
+  if (typeof requestedProjectId !== "string" || context === undefined || context.projectId !== requestedProjectId) {
+    respondJson(response, 409, { error: "The starting Project binding is required to retain this run safely." });
+    return undefined;
+  }
+  return {
+    ...options,
+    cwd: context.localDirectory,
+    sourceRoot: options.sourceRoot ?? context.localDirectory,
+  };
 }
 
 function activeWorkspaceOptions(

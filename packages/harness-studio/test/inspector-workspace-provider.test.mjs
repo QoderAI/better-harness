@@ -3,6 +3,62 @@ import { describe, expect, it, vi } from "vitest";
 import { createInspectorWorkspaceSessionProvider } from "../scripts/inspector-workspace-provider.mjs";
 
 describe("Inspector workspace provider", () => {
+  it("keeps Session discovery available for a Project without Git history", async () => {
+    const collect = vi.fn(async () => ({ providers: [], sessions: [] }));
+    const collectCommits = vi.fn();
+    const collectCheckpoints = vi.fn();
+    const provider = createInspectorWorkspaceSessionProvider({
+      collect,
+      collectCommits,
+      collectCheckpoints,
+      repoRootFor: () => { throw new Error("not a Git repository"); },
+      platforms: ["codex"],
+    });
+
+    const result = await provider.discover("/private/plain-project");
+
+    expect(collect).toHaveBeenCalledWith(expect.objectContaining({
+      workspace: "/private/plain-project",
+      repoRoot: "/private/plain-project",
+    }));
+    expect(collectCommits).not.toHaveBeenCalled();
+    expect(collectCheckpoints).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ label: "plain-project", sessions: [] });
+    expect(result.inspectorReport.diagnostics).toContain("Git history is unavailable for this Project; Session evidence remains available.");
+  });
+
+  it("keeps Git history when Entire checkpoint discovery fails", async () => {
+    const collect = vi.fn(async () => ({ providers: [], sessions: [] }));
+    const provider = createInspectorWorkspaceSessionProvider({
+      collect,
+      collectCommits: vi.fn(() => ({
+        repoRoot: "/private/repository",
+        commits: [{
+          hash: "0123456789abcdef",
+          shortHash: "0123456",
+          subject: "retain history",
+          authorName: "Developer",
+          authoredAt: "2026-08-20T09:06:00.000Z",
+          committedAt: "2026-08-20T09:06:00.000Z",
+          files: [],
+          sessionTrailers: [],
+          sessionLinks: [],
+        }],
+      })),
+      collectCheckpoints: vi.fn(() => { throw new Error("checkpoint unavailable"); }),
+      repoRootFor: () => "/private/repository",
+      platforms: ["codex"],
+    });
+
+    const result = await provider.discover("/private/repository");
+
+    expect(result.inspectorReport.commits).toEqual([
+      expect.objectContaining({ shortHash: "0123456", subject: "retain history" }),
+    ]);
+    expect(result.inspectorReport.diagnostics).toContain("Entire checkpoint evidence is unavailable; Git history remains available.");
+    expect(result.inspectorReport.diagnostics).not.toContain("Git history is unavailable for this Project; Session evidence remains available.");
+  });
+
   it("reuses the injected multi-provider collector and projects privacy-safe Session evidence", async () => {
     const collect = vi.fn(async () => ({
       providers: [

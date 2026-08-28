@@ -95,15 +95,33 @@ export async function buildStudioApp() {
 }
 
 export async function buildStudioServerRuntime() {
-  await build({
-    entryPoints: [join(repositoryRoot, "scripts", "agent-customize", "index.mjs")],
-    outfile: join(packageRoot, "dist", "server", "runtime", "agent-customize-runtime.mjs"),
+  const runtimeAssetRoot = join(packageRoot, "dist", "server", "runtime", "ui");
+  await mkdir(runtimeAssetRoot, { recursive: true });
+  const nodeRuntime = {
     bundle: true,
     format: "esm",
     platform: "node",
     target: "node22",
     logLevel: "warning",
-  });
+    banner: {
+      js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
+    },
+  };
+  await Promise.all([
+    build({
+      ...nodeRuntime,
+      entryPoints: [join(repositoryRoot, "scripts", "agent-customize", "index.mjs")],
+      outfile: join(packageRoot, "dist", "server", "runtime", "agent-customize-runtime.mjs"),
+    }),
+    build({
+      ...nodeRuntime,
+      entryPoints: [join(packageRoot, "scripts", "inspector-workspace-provider.mjs")],
+      outfile: join(packageRoot, "dist", "server", "runtime", "inspector-workspace-runtime.mjs"),
+    }),
+    ...["workbench.html", "workbench.css", "workbench.js"].map((file) =>
+      copyFile(join(inspectorAssetRoot, file), join(runtimeAssetRoot, file)),
+    ),
+  ]);
 }
 
 export function createStudioDevReloadPlugin({

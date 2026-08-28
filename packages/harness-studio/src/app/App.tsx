@@ -65,6 +65,7 @@ const EMPTY_CONFIG: StudioConfig = {
   workspaceWorkbenchEnabled: false,
   workspaceDiscoveryEnabled: false,
   workspaceConnected: false,
+  projectExecutionEnabled: false,
   projectRevision: 0,
   sessionCount: 0,
   inputCount: 0,
@@ -116,6 +117,7 @@ export function App(): React.JSX.Element {
   const [sessionCompareIds, setSessionCompareIds] = useState<[string, string] | undefined>();
   const [sessionOpenId, setSessionOpenId] = useState<string>();
   const [configFailure, setConfigFailure] = useState<string | null>(null);
+  const [bootstrapRevision, setBootstrapRevision] = useState(0);
   const [area, setArea] = useState<StudioArea>(areaFromHash);
   const [locationRevision, setLocationRevision] = useState(0);
   const [compareSurface, setCompareSurface] = useState<StudioCompareSurface>("sessions");
@@ -155,7 +157,7 @@ export function App(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [bootstrapRevision]);
 
   useEffect(() => {
     const onHashChange = (): void => {
@@ -340,7 +342,7 @@ export function App(): React.JSX.Element {
     return <main className="studio-loading"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><p>Loading Harness control plane…</p></main>;
   }
   if (configFailure !== null) {
-    return <main className="studio-loading" role="alert"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><strong>Cannot load Studio configuration.</strong><p>{configFailure}</p></main>;
+    return <main className="studio-loading" role="alert"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><strong>Cannot load Studio configuration.</strong><p>{configFailure}</p><button className="primary" type="button" onClick={() => { setConfig(undefined); setConfigFailure(null); setBootstrapRevision((revision) => revision + 1); }}>Retry</button></main>;
   }
 
   const destinations = studioDestinations(config);
@@ -360,6 +362,12 @@ export function App(): React.JSX.Element {
     ? compareNavigation
     : null;
   const activeProject = projects.find((project) => project.id === activeProjectId);
+  const openProjectAction = config.workspaceDiscoveryEnabled && !config.workspaceConnected
+    ? { label: "Open Project", onClick: () => void openProject() }
+    : undefined;
+  const projectDiscoveryDetail = config.workspaceDiscoveryEnabled
+    ? "Choose a remembered Project or open another local directory."
+    : "This Studio launcher does not provide Project discovery. Start the packaged CLI or connect a workspace Session provider.";
   const workspaceGateOpen = projects.length === 0 && studioProjectGateRequired(config, sources.length > 0);
   const overviewConfig = workspaceGateOpen ? config : { ...config, workspaceDiscoveryEnabled: false };
 
@@ -386,20 +394,20 @@ export function App(): React.JSX.Element {
         {contextNavigation && <div className="studio-context-navigation">{contextNavigation}</div>}
         <ThemeToggle theme={theme} onChange={setTheme} />
         {sources.length > 0 && <SourceSwitcher sources={sources} onSelect={(source) => void selectSource(source)} />}
-        <div className="studio-context-state"><span className={`availability-dot availability-${current.availability}`} /><strong>{current.status}</strong></div>
+        <div className="studio-context-state" role="status" aria-label={`View status: ${current.status}`}><span className={`availability-dot availability-${current.availability}`} /><strong>{current.status}</strong></div>
         {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
       <div className={`studio-surface studio-surface-${area}`}>
         {area === "overview" && <Overview key={`overview-${workspaceRevision}`} config={overviewConfig} onOpen={openArea} onOpenSession={(id) => { setSessionOpenId(id); openArea("sessions"); }} />}
         {area === "customizations" && (config.customizationAnalysisEnabled
           ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />
-          : <EmptyWorkspace eyebrow="Customization catalog" title={config.workspaceConnected ? "Customization analysis is unavailable" : "Open a Project"} detail={config.workspaceConnected ? "This Studio launcher does not include the local customization collector." : "Open or select a Project from the Projects sidebar before analyzing Host customizations."} />)}
-        {area === "inputs" && (config.workspaceWorkbenchEnabled ? <InputTraceView key={`inputs-${workspaceRevision}`} intentAnalysisEnabled={config.intentAnalysisEnabled} /> : <EmptyWorkspace eyebrow="User input trace" title={config.workspaceConnected ? "No retained input trace is available" : "Open a Project"} detail={config.workspaceConnected ? "This Project source does not include structured Inspector dialogue evidence." : "Open or select a Project from the Projects sidebar before browsing retained user inputs and exact file operations."} />)}
-        {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} config={config} initialSessionId={sessionOpenId} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
-        {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} /> : <EmptyWorkspace eyebrow="Repository history" title={config.workspaceConnected ? "The selected Project is not a Git repository" : "Open a Project"} detail={config.workspaceConnected ? "Commit history is available only for a local Project backed by Git." : "Open or select a Project from the Projects sidebar before browsing local commit history."} />)}
-        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} />}
-        {area === "debugger" && <DebuggerWorkspace config={config} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
-        {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={compareSurface} navigation={null} sessionIds={sessionCompareIds} />}
+          : <EmptyWorkspace eyebrow="Customization catalog" title="Customization analysis is unavailable" detail="This Studio launcher does not include the local customization collector. Opening a Project will not enable it." />)}
+        {area === "inputs" && (config.workspaceWorkbenchEnabled ? <InputTraceView key={`inputs-${workspaceRevision}`} intentAnalysisEnabled={config.intentAnalysisEnabled} /> : <EmptyWorkspace eyebrow="User input trace" title={config.workspaceConnected ? "No retained input trace is available" : "Open a Project"} detail={config.workspaceConnected ? "This Project source does not include structured Inspector dialogue evidence." : projectDiscoveryDetail} action={openProjectAction} />)}
+        {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} config={config} initialSessionId={sessionOpenId} onOpenProject={openProjectAction?.onClick} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
+        {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} /> : <EmptyWorkspace eyebrow="Repository history" title={config.workspaceConnected ? "The selected Project is not a Git repository" : "Open a Project"} detail={config.workspaceConnected ? "Commit history is available only for a local Project backed by Git." : projectDiscoveryDetail} action={openProjectAction} />)}
+        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} onOpenProject={openProjectAction?.onClick} />}
+        {area === "debugger" && <DebuggerWorkspace config={config} onOpenProject={openProjectAction?.onClick} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
+        {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={compareSurface} navigation={null} sessionIds={sessionCompareIds} onOpenProject={openProjectAction?.onClick} />}
       </div>
     </section>
   </div>
@@ -439,7 +447,7 @@ function SourceSwitcher(props: {
   const active = props.sources.filter((source) => source.active);
   const kinds: StudioSourceKind[] = ["inspector", "evidence", "experiment"];
   return <div className="studio-source-switcher">
-    <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}><GitBranch aria-hidden="true" size={14} /><span>Data sources</span><em>{active.length}</em></button>
+    <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={`Data sources (${active.length} active)`} title="Data sources" onClick={() => setOpen((value) => !value)}><GitBranch aria-hidden="true" size={14} /><span>Data sources</span><em>{active.length}</em></button>
     {open && <div className="studio-source-menu" role="menu" aria-label="Studio data sources">
       {kinds.map((kind) => {
         const entries = props.sources.filter((source) => source.kind === kind);
@@ -547,6 +555,7 @@ interface SessionSummary {
 function SessionsWorkspace(props: {
   config: StudioConfig;
   initialSessionId?: string;
+  onOpenProject?: () => void;
   onCompare: (ids: [string, string]) => void;
 }): React.JSX.Element {
   const [sessions, setSessions] = useState<SessionSummary[]>();
@@ -606,7 +615,7 @@ function SessionsWorkspace(props: {
   }
 
   if (!props.config.workspaceConnected) {
-    return <EmptyWorkspace eyebrow="Project Sessions" title="Select a Project" detail="Choose a remembered Project or open another directory from the Projects sidebar." />;
+    return <EmptyWorkspace eyebrow="Project Sessions" title="Open a Project" detail={props.config.workspaceDiscoveryEnabled ? "Choose a remembered Project or open another local directory." : "This Studio launcher does not provide Project discovery."} action={props.onOpenProject === undefined ? undefined : { label: "Open Project", onClick: props.onOpenProject }} />;
   }
   if (failure !== undefined) {
     return <EmptyWorkspace eyebrow="Project Sessions" title="Session discovery failed" detail={failure} />;
@@ -723,12 +732,12 @@ function formatSessionTime(value: string): string {
 }
 
 
-function DebuggerWorkspace(props: { config: StudioConfig; project?: { id: string; label: string; revision: number } }): React.JSX.Element {
+function DebuggerWorkspace(props: { config: StudioConfig; onOpenProject?: () => void; project?: { id: string; label: string; revision: number } }): React.JSX.Element {
   if (!props.config.aguiEnabled) {
     return <EmptyWorkspace eyebrow="Live runs" title="Load a harness for live runs" detail="The Debugger drives a live harness run over the embedded AG-UI endpoint and saves finished runs for replay." command="--harness ./my-agent.harness" />;
   }
-  if (props.config.harnessMode === "workspace-default" && props.project === undefined) {
-    return <EmptyWorkspace eyebrow="Project-scoped live runs" title="Open a Project for live runs" detail="Select or open a Project from the Projects sidebar before starting the default local harness." />;
+  if (props.config.harnessMode === "workspace-default" && !props.config.projectExecutionEnabled) {
+    return <EmptyWorkspace eyebrow="Project-scoped live runs" title={props.project === undefined ? "Open a Project for live runs" : "This Project is read-only evidence"} detail={props.project === undefined ? (props.config.workspaceDiscoveryEnabled ? "Open a local Project before starting the default harness." : "This Studio launcher does not provide Project discovery.") : "Imported retained-run folders can be inspected and compared, but they do not provide a local execution root for the default harness."} action={props.onOpenProject === undefined ? undefined : { label: "Open Project", onClick: props.onOpenProject }} />;
   }
   return <div className="debugger-mode"><RunView aguiEndpoint="agui" acpEndpoint={props.config.acpEnabled ? "/agui/acp" : undefined} acpAgentLabel={props.config.acpAgentLabel} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? "Project default · Qoder" : "Live Trial"} project={props.project} /></div>;
 }
@@ -738,10 +747,11 @@ function CompareWorkspace(props: {
   surface: StudioCompareSurface;
   navigation: ReactNode;
   sessionIds?: [string, string];
+  onOpenProject?: () => void;
 }): React.JSX.Element {
   const available = compareSurfaces(props.config);
   if (available.length === 0) {
-    return <EmptyWorkspace eyebrow="Session comparison" title={props.config.workspaceConnected ? "Choose a Project with at least two Sessions" : "Open a Project"} detail={props.config.workspaceConnected ? "The selected Project needs two discovered Sessions before observational comparison is available." : "Open or select a Project from the Projects sidebar. Studio discovers its matching local agent Sessions without startup parameters."} />;
+    return <EmptyWorkspace eyebrow="Session comparison" title={props.config.workspaceConnected ? "Choose a Project with at least two Sessions" : "Open a Project"} detail={props.config.workspaceConnected ? "The selected Project needs two discovered Sessions before observational comparison is available." : props.config.workspaceDiscoveryEnabled ? "Open a local Project. Studio will discover its matching agent Sessions without startup parameters." : "This Studio launcher does not provide Project discovery."} action={props.onOpenProject === undefined ? undefined : { label: "Open Project", onClick: props.onOpenProject }} />;
   }
   if (props.surface === "sessions" && props.config.sessionCount >= 2) {
     return <SessionCompareView navigation={props.navigation} initialIds={props.sessionIds} />;
@@ -835,8 +845,8 @@ function sessionMetricLabel(metric: "retainedEventCount" | "toolCallCount" | "me
   return ({ retainedEventCount: "Retained events", toolCallCount: "Tool calls", messageCount: "Messages", warningCount: "Warnings" })[metric];
 }
 
-function EmptyWorkspace(props: { eyebrow: string; title: string; detail: string; command?: string }): React.JSX.Element {
-  return <main className="empty-workspace"><span><GitBranch aria-hidden="true" size={22} /></span><small>{props.eyebrow}</small><h1>{props.title}</h1><p>{props.detail}</p>{props.command && <code>{props.command}</code>}</main>;
+function EmptyWorkspace(props: { eyebrow: string; title: string; detail: string; command?: string; action?: { label: string; onClick: () => void } }): React.JSX.Element {
+  return <main className="empty-workspace"><span><GitBranch aria-hidden="true" size={22} /></span><small>{props.eyebrow}</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" onClick={props.action.onClick}>{props.action.label}</button>}{props.command && <code>{props.command}</code>}</main>;
 }
 
 // The surface switcher navigates between separate top-level views (each its own

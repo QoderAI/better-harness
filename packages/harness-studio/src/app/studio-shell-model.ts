@@ -26,6 +26,7 @@ export interface StudioConfig {
   workspaceWorkbenchEnabled: boolean;
   workspaceDiscoveryEnabled: boolean;
   workspaceConnected: boolean;
+  projectExecutionEnabled: boolean;
   activeProjectId?: string;
   projectRevision?: number;
   sessionCount: number;
@@ -101,7 +102,7 @@ export function studioDestinations(config: StudioConfig): readonly StudioDestina
       label: "Sessions",
       group: "Observe",
       availability: config.workspaceConnected ? "ready" : "partial",
-      status: config.workspaceConnected ? `${config.sessionCount} session${config.sessionCount === 1 ? "" : "s"}` : "Open Project",
+      status: config.workspaceConnected ? `${config.sessionCount} session${config.sessionCount === 1 ? "" : "s"}` : "Project required",
     },
     {
       id: "commits",
@@ -126,7 +127,11 @@ export function studioDestinations(config: StudioConfig): readonly StudioDestina
       label: "Debugger",
       group: "Run",
       availability: debuggerReady ? "ready" : "foundation",
-      status: debuggerReady ? config.harnessMode === "workspace-default" ? "Project default" : "Live runs" : config.harnessMode === "workspace-default" ? "Project required" : "Harness required",
+      status: debuggerReady
+        ? config.harnessMode === "workspace-default" ? "Project default" : "Live runs"
+        : config.harnessMode === "workspace-default"
+          ? config.workspaceConnected ? "Read-only Project" : "Project required"
+          : "Harness required",
     },
     {
       id: "compare",
@@ -162,7 +167,7 @@ export function studioOverview(config: StudioConfig): StudioOverviewModel {
       secondaryActions: [
         ...(config.workspaceWorkbenchEnabled ? [{ area: "inputs" as const, label: "Review Inputs" }] : []),
         ...(config.sessionCount >= 2 || config.experimentEnabled || config.evidenceEnabled ? [{ area: "compare" as const, label: "Open Compare" }] : []),
-        ...(config.aguiEnabled ? [{ area: "debugger" as const, label: "Open Debugger" }] : []),
+        ...(isDebuggerReady(config) ? [{ area: "debugger" as const, label: "Open Debugger" }] : []),
         ...(config.artifactsEnabled ? [{ area: "artifacts" as const, label: "Open Artifacts" }] : []),
       ],
       facts: [
@@ -259,7 +264,7 @@ export function studioOverview(config: StudioConfig): StudioOverviewModel {
 }
 
 function isDebuggerReady(config: StudioConfig): boolean {
-  return config.aguiEnabled && (config.harnessMode !== "workspace-default" || config.workspaceConnected);
+  return config.aguiEnabled && (config.harnessMode !== "workspace-default" || config.projectExecutionEnabled);
 }
 
 export function studioProjectGateRequired(config: StudioConfig, hasConfiguredSources: boolean): boolean {

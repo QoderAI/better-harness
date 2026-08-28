@@ -1205,9 +1205,9 @@
   .debugger-toolbar { padding-inline: var(--space-xs); }
   .step-controls button span { display: none; }
   .pause-boundary { margin-left: 0; }
-  .debugger-shell { grid-template-rows: var(--titlebar-height) 56px minmax(0, 1fr) 64px; }
-  .live-observation-bar { padding: var(--space-xs) var(--space-sm); align-items: flex-start; flex-direction: column; justify-content: center; gap: 0; }
-  .live-observation-bar strong { max-width: none; overflow: visible; white-space: normal; }
+  .debugger-shell { grid-template-rows: var(--titlebar-height) var(--pane-header-height) minmax(0, 1fr) 48px; }
+  .live-observation-bar { padding-inline: var(--space-sm); align-items: center; flex-direction: row; gap: var(--space-xs); }
+  .live-observation-bar strong { display: none; }
   .debugger-event { grid-template-columns: var(--toolbar-target) minmax(0, 1fr); }
   .notebook-viewbar > span,
   .notebook-viewbar button:not(.active) { display: none; }
@@ -1462,6 +1462,7 @@
 .artifact-empty > small { color: var(--color-primary); font-weight: var(--weight-semibold); }
 .artifact-empty h1 { margin: var(--space-xs) 0 0; font-size: var(--type-section-size); line-height: var(--type-section-line); }
 .artifact-empty p { max-width: 64ch; margin: 0; color: var(--color-text-muted); }
+.artifact-empty > button { margin-top: var(--space-md); }
 
 /* Existing Artifact Surface implementations remain mounted inside the right pane. */
 .artifact-frame { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; background: var(--color-surface); }

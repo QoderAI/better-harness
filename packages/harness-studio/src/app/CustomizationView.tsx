@@ -125,8 +125,8 @@ function CustomizationResults(props: {
           <div><strong>{host.label}</strong><small>{host.status === "ok" ? "Collected" : host.status}</small></div>
           <dl><div><dt>Definitions</dt><dd>{host.definitions}</dd></div><div><dt>Packages</dt><dd>{host.packages}</dd></div><div><dt>MCP</dt><dd>{host.registrations}</dd></div></dl>
         </li>)}</ul>
-        <footer>{catalog.runtimeObservations.map((item) => item.kind === "host-collection" && item.status === "error"
-          ? <p key={item.id}>{item.message}</p>
+        <footer aria-live="polite">{catalog.runtimeObservations.map((item) => item.kind === "host-collection" && item.status === "error"
+          ? <p key={item.id} role="alert">{item.message}</p>
           : null)}</footer>
       </aside>
       <section className="customization-definitions">

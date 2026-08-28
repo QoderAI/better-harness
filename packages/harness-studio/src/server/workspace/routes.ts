@@ -1,13 +1,13 @@
 import { GitCommitDetail } from "../../contracts/git-history.js";
 import { isUserInputTrace, projectUserInputTrace } from "../../contracts/input-trace.js";
 import { IntentCorrelationAnalysisV1, IntentCorrelationContractError, validateIntentCorrelationAnalysis } from "../../contracts/intent-correlation.js";
-import { STUDIO_PROJECT_CATALOG_KIND, type StudioProjectDescriptor } from "../../contracts/studio-project.js";
+import { MAX_STUDIO_PROJECTS, STUDIO_PROJECT_CATALOG_KIND, type StudioProjectDescriptor } from "../../contracts/studio-project.js";
 import { validateStudioCustomizationAnalysis } from "../customization-collector.js";
 import { sessionFromRetainedRun } from "../debugger-session-transform.js";
 import { resolveGitRepositoryRoot } from "../git-history.js";
 import { buildIntentCorrelationPacket } from "../intent-correlation.js";
 import { parseSavedRunRecord } from "../run-log.js";
-import { pickLocalWorkspaceDirectory } from "../workspace/native-directory-picker.js";
+import { DirectoryPickerUnavailableError, pickLocalWorkspaceDirectory } from "../workspace/native-directory-picker.js";
 import { collectWorkspaceArtifactObservations } from "../workspace/workspace-artifacts.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, open, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
@@ -19,6 +19,7 @@ import { HarnessStudioServerOptions, HarnessStudioState, StoredStudioProject, St
 
 export const MAX_WORKSPACE_FILES = 512;
 export const MAX_WORKSPACE_SESSIONS = 200;
+const MAX_PROJECT_REVISION_CONTEXTS = 128;
 
 export async function createWorkspaceImport(
   request: IncomingMessage,
@@ -36,7 +37,15 @@ export async function createWorkspaceImport(
   }
   const sessionId = randomUUID();
   const directory = await mkdtemp(join(tmpdir(), "harness-studio-workspace-"));
-  const expiry = setTimeout(() => { void removeWorkspaceImport(state, sessionId); }, IMPORT_SESSION_TTL_MS);
+  const expiry = setTimeout(() => {
+    const session = state.workspaceImports.get(sessionId);
+    if (session === undefined) return;
+    if (session.busy) {
+      session.expired = true;
+      return;
+    }
+    void removeWorkspaceImport(state, sessionId);
+  }, IMPORT_SESSION_TTL_MS);
   expiry.unref();
   state.workspaceImports.set(sessionId, {
     directory,
@@ -45,6 +54,8 @@ export async function createWorkspaceImport(
     paths: new Set(),
     label: portableProjectLabel(requestedLabel),
     expiry,
+    busy: false,
+    expired: false,
   });
   respondJson(response, 201, { sessionId, maxFiles: MAX_WORKSPACE_FILES, maxBytes: MAX_IMPORT_BYTES });
 }
@@ -79,8 +90,12 @@ export async function openWorkspace(
       respondJson(response, 422, { error: "The selected workspace is not a directory." });
       return;
     }
-    const workspace = await discoverWorkspace(options, workspacePath);
     const existing = [...state.projects.entries()].find(([, project]) => project.localDirectory !== undefined && sameNativePath(project.localDirectory, workspacePath));
+    if (existing === undefined && state.projects.size >= MAX_STUDIO_PROJECTS) {
+      respondJson(response, 429, { error: `Studio remembers at most ${MAX_STUDIO_PROJECTS} Projects. Remove one before opening another.` });
+      return;
+    }
+    const workspace = await discoverWorkspace(options, workspacePath);
     const projectId = existing?.[0] ?? `project_${randomUUID().replaceAll("-", "")}`;
     const project: StoredStudioProject = {
       descriptor: descriptorForWorkspace(projectId, "local", workspace),
@@ -97,7 +112,11 @@ export async function openWorkspace(
       sessionCount: workspace.sessionCount,
       providers: workspace.providers,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof DirectoryPickerUnavailableError) {
+      respondJson(response, 501, { error: error.message });
+      return;
+    }
     respondJson(response, 422, { error: "Studio could not discover Sessions for the selected workspace." });
   } finally {
     state.workspaceOpenStage = "idle";
@@ -149,6 +168,14 @@ function activateWorkspace(
   state.workspace = workspace;
   state.activeProjectId = projectId;
   state.projectRevision += 1;
+  if (workspace.localDirectory !== undefined) {
+    state.projectRevisionContexts.delete(state.projectRevision);
+    state.projectRevisionContexts.set(state.projectRevision, { projectId, localDirectory: workspace.localDirectory });
+    if (state.projectRevisionContexts.size > MAX_PROJECT_REVISION_CONTEXTS) {
+      const oldestRevision = state.projectRevisionContexts.keys().next().value as number | undefined;
+      if (oldestRevision !== undefined) state.projectRevisionContexts.delete(oldestRevision);
+    }
+  }
   state.artifactDirectory = workspace.localDirectory ?? options.artifactDirectory;
   state.artifactPaths = workspace.localDirectory === undefined
     ? options.artifactPaths
@@ -338,50 +365,59 @@ export async function importWorkspaceFile(
     respondJson(response, 404, { error: "Workspace import session is unavailable." });
     return;
   }
-  if (session.fileCount >= MAX_WORKSPACE_FILES) {
-    respondJson(response, 413, { error: `Workspace imports are limited to ${MAX_WORKSPACE_FILES} files.` });
+  if (session.busy || session.expired) {
+    respondJson(response, 409, { error: "Another operation is already using this workspace import session." });
     return;
   }
-  let relativePath: string;
+  session.busy = true;
   try {
-    relativePath = portableWorkspacePath(requestedPath);
-    if ([...session.paths].some((candidate) => candidate.toLowerCase() === relativePath.toLowerCase())) {
-      throw new Error("Workspace file paths must be unique on every supported platform.");
+    if (session.fileCount >= MAX_WORKSPACE_FILES) {
+      respondJson(response, 413, { error: `Workspace imports are limited to ${MAX_WORKSPACE_FILES} files.` });
+      return;
     }
-  } catch (error) {
-    respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
-    return;
-  }
-  const declaredBytes = Number(request.headers["content-length"]);
-  if (Number.isFinite(declaredBytes) && declaredBytes >= 0 && session.totalBytes + declaredBytes > MAX_IMPORT_BYTES) {
-    request.resume();
-    respondJson(response, 413, { error: "Workspace import exceeds the 128 MiB aggregate limit." });
-    return;
-  }
-  const chunks: Buffer[] = [];
-  let fileBytes = 0;
-  const destination = resolve(session.directory, ...relativePath.split("/"));
-  try {
-    for await (const chunk of request) {
-      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      fileBytes += bytes.length;
-      if (session.totalBytes + fileBytes > MAX_IMPORT_BYTES) throw new Error("Workspace import exceeds the 128 MiB aggregate limit.");
-      chunks.push(bytes);
-    }
-    await mkdir(dirname(destination), { recursive: true });
-    const handle = await open(destination, "wx");
+    let relativePath: string;
     try {
-      await handle.writeFile(Buffer.concat(chunks));
-    } finally {
-      await handle.close();
+      relativePath = portableWorkspacePath(requestedPath);
+      if ([...session.paths].some((candidate) => candidate.toLowerCase() === relativePath.toLowerCase())) {
+        throw new Error("Workspace file paths must be unique on every supported platform.");
+      }
+    } catch (error) {
+      respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+      return;
     }
-    session.fileCount += 1;
-    session.totalBytes += fileBytes;
-    session.paths.add(relativePath);
-    respondJson(response, 201, { path: relativePath, size: fileBytes });
-  } catch (error) {
-    await rm(destination, { force: true });
-    respondJson(response, 413, { error: error instanceof Error ? error.message : String(error) });
+    const declaredBytes = Number(request.headers["content-length"]);
+    if (Number.isFinite(declaredBytes) && declaredBytes >= 0 && session.totalBytes + declaredBytes > MAX_IMPORT_BYTES) {
+      request.resume();
+      respondJson(response, 413, { error: "Workspace import exceeds the 128 MiB aggregate limit." });
+      return;
+    }
+    const chunks: Buffer[] = [];
+    let fileBytes = 0;
+    const destination = resolve(session.directory, ...relativePath.split("/"));
+    try {
+      for await (const chunk of request) {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        fileBytes += bytes.length;
+        if (session.totalBytes + fileBytes > MAX_IMPORT_BYTES) throw new Error("Workspace import exceeds the 128 MiB aggregate limit.");
+        chunks.push(bytes);
+      }
+      await mkdir(dirname(destination), { recursive: true });
+      const handle = await open(destination, "wx");
+      try {
+        await handle.writeFile(Buffer.concat(chunks));
+      } finally {
+        await handle.close();
+      }
+      session.fileCount += 1;
+      session.totalBytes += fileBytes;
+      session.paths.add(relativePath);
+      respondJson(response, 201, { path: relativePath, size: fileBytes });
+    } catch (error) {
+      await rm(destination, { force: true });
+      respondJson(response, 413, { error: error instanceof Error ? error.message : String(error) });
+    }
+  } finally {
+    await releaseWorkspaceImportSession(state, sessionId, session);
   }
 }
 export async function commitWorkspaceImport(
@@ -400,15 +436,25 @@ export async function commitWorkspaceImport(
     respondJson(response, 404, { error: "Workspace import session is unavailable." });
     return;
   }
+  if (session.busy || session.expired) {
+    respondJson(response, 409, { error: "Another operation is already using this workspace import session." });
+    return;
+  }
   if (state.workspaceOpenStage !== "idle") {
     respondJson(response, 409, { error: "Another Project change is already in progress." });
     return;
   }
+  if (state.projects.size >= MAX_STUDIO_PROJECTS) {
+    respondJson(response, 429, { error: `Studio remembers at most ${MAX_STUDIO_PROJECTS} Projects. Remove one before importing another.` });
+    return;
+  }
+  session.busy = true;
   state.workspaceOpenStage = "discovering";
   try {
     await commitWorkspaceImportSession(response, options, state, sessionId, session);
   } finally {
     state.workspaceOpenStage = "idle";
+    await releaseWorkspaceImportSession(state, sessionId, session);
   }
 }
 
@@ -485,10 +531,16 @@ export async function abortWorkspaceImport(
     respondJson(response, 403, { error: "Cross-origin workspace imports are not allowed." });
     return;
   }
-  if (workspaceImportSession(state, sessionId) === undefined) {
+  const session = workspaceImportSession(state, sessionId);
+  if (session === undefined) {
     respondJson(response, 404, { error: "Workspace import session is unavailable." });
     return;
   }
+  if (session.busy) {
+    respondJson(response, 409, { error: "Another operation is already using this workspace import session." });
+    return;
+  }
+  session.busy = true;
   await removeWorkspaceImport(state, sessionId);
   respondJson(response, 200, { aborted: true });
 }
@@ -552,6 +604,16 @@ async function removeWorkspaceImport(state: HarnessStudioState, sessionId: strin
   state.workspaceImports.delete(sessionId);
   await rm(session.directory, { recursive: true, force: true });
 }
+async function releaseWorkspaceImportSession(
+  state: HarnessStudioState,
+  sessionId: string,
+  session: WorkspaceImportSession,
+): Promise<void> {
+  session.busy = false;
+  if (session.expired && state.workspaceImports.get(sessionId) === session) {
+    await removeWorkspaceImport(state, sessionId);
+  }
+}
 export async function cleanupWorkspaceImports(state: HarnessStudioState): Promise<void> {
   await Promise.all([...state.workspaceImports.keys()].map((sessionId) => removeWorkspaceImport(state, sessionId)));
   const ownedDirectories = new Set([...state.projects.values()]
@@ -559,6 +621,7 @@ export async function cleanupWorkspaceImports(state: HarnessStudioState): Promis
     .filter((directory): directory is string => directory !== undefined));
   await Promise.all([...ownedDirectories].map((directory) => rm(directory, { recursive: true, force: true }).catch(() => undefined)));
   state.projects.clear();
+  state.projectRevisionContexts.clear();
   state.activeProjectId = undefined;
   state.workspace = undefined;
   state.customizationAnalysis = undefined;

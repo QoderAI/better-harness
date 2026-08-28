@@ -242,6 +242,7 @@ describe("harness-studio server", () => {
       workspaceDiscoveryEnabled: false,
       workspaceConnected: false,
       projectRevision: 0,
+      projectExecutionEnabled: false,
       sessionCount: 0,
       inputCount: 0,
       intentAnalysisEnabled: false,
@@ -783,7 +784,10 @@ describe("harness-studio server", () => {
 
   it("opens a browser-selected workspace, indexes Sessions, and compares two retained runs", async () => {
     const appDir = await makeAppDir();
-    started = await startHarnessStudioServer({ appDir });
+    started = await startHarnessStudioServer({
+      appDir,
+      workspaceSessionProvider: { discover: async () => ({ label: "unused-local-project", sessions: [] }) },
+    });
     const privateImportLabel = "C:\\Users\\private\\review-sessions";
     const created = await fetch(`${started.url}/api/workspaces?label=${encodeURIComponent(privateImportLabel)}`, { method: "POST" });
     expect(created.status).toBe(201);
@@ -807,8 +811,20 @@ describe("harness-studio server", () => {
     expect(projects).not.toContain(privateImportLabel);
     expect(projects).not.toContain("Users");
 
-    const config = await (await fetch(`${started.url}/api/config`)).json() as { workspaceConnected: boolean; sessionCount: number };
-    expect(config).toMatchObject({ workspaceConnected: true, sessionCount: 2 });
+    const config = await (await fetch(`${started.url}/api/config`)).json() as { workspaceConnected: boolean; projectExecutionEnabled: boolean; sessionCount: number };
+    expect(config).toMatchObject({ workspaceConnected: true, projectExecutionEnabled: false, sessionCount: 2 });
+    const activeProject = await (await fetch(`${started.url}/api/projects`)).json() as { activeProjectId: string; revision: number };
+    const runAttempt = await fetch(`${started.url}/agui`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Harness-Project-Id": activeProject.activeProjectId,
+        "X-Harness-Project-Revision": String(activeProject.revision),
+      },
+      body: JSON.stringify({ threadId: "imported-thread", runId: "imported-run", messages: [{ role: "user", content: "must not execute" }] }),
+    });
+    expect(runAttempt.status).toBe(422);
+    expect(await runAttempt.json()).toEqual({ error: "The selected Project is read-only evidence and cannot host a live run." });
     const catalog = await (await fetch(`${started.url}/api/sessions`)).json() as { sessions: Array<{ id: string; prompt: string }> };
     expect(catalog.sessions.map((session) => session.id)).toEqual(["run_right", "run_left"]);
     const debuggerSession = await (await fetch(`${started.url}/api/sessions/run_left/debugger`)).json();
@@ -835,6 +851,39 @@ describe("harness-studio server", () => {
     const traversal = await fetch(`${started.url}/api/workspaces/${sessionId}/files?path=${encodeURIComponent("../run_escape.json")}`, { method: "PUT", body: "{}" });
     expect(traversal.status).toBe(400);
     expect((await fetch(`${started.url}/api/workspaces/${sessionId}/commit`, { method: "POST" })).status).toBe(422);
+    expect((await fetch(`${started.url}/api/workspaces/${sessionId}`, { method: "DELETE" })).status).toBe(200);
+  });
+
+  it("serializes upload, commit, and abort operations for one workspace import", async () => {
+    const appDir = await makeAppDir();
+    started = await startHarnessStudioServer({ appDir });
+    const created = await fetch(`${started.url}/api/workspaces`, { method: "POST" });
+    const { sessionId } = await created.json() as { sessionId: string };
+    let finishUpload!: () => void;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{\"partial\":"));
+        finishUpload = () => {
+          controller.enqueue(new TextEncoder().encode("true}"));
+          controller.close();
+        };
+      },
+    });
+    const upload = fetch(
+      `${started.url}/api/workspaces/${sessionId}/files?path=run_serialized.json`,
+      { method: "PUT", body, duplex: "half" } as RequestInit & { duplex: "half" },
+    );
+
+    let conflictingStatus = 0;
+    const deadline = Date.now() + 2_000;
+    while (conflictingStatus !== 409 && Date.now() < deadline) {
+      conflictingStatus = (await fetch(`${started.url}/api/workspaces/${sessionId}/commit`, { method: "POST" })).status;
+      if (conflictingStatus !== 409) await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+    expect(conflictingStatus).toBe(409);
+    expect((await fetch(`${started.url}/api/workspaces/${sessionId}`, { method: "DELETE" })).status).toBe(409);
+    finishUpload();
+    expect((await upload).status).toBe(201);
     expect((await fetch(`${started.url}/api/workspaces/${sessionId}`, { method: "DELETE" })).status).toBe(200);
   });
 
@@ -1588,6 +1637,55 @@ describe("harness-studio CLI", () => {
   it("accepts an empty startup so Studio can acquire artifacts in the UI", () => {
     expect(parseHarnessStudioArgs([])).toMatchObject({ host: "127.0.0.1", port: 3311 });
     expect(parseHarnessStudioArgs([]).error).toBeUndefined();
+  });
+
+  it("prints its package version without opening a server", async () => {
+    const out: string[] = [];
+    const errors: string[] = [];
+
+    const code = await runHarnessStudioCli(["--version"], {
+      stdout: (text) => out.push(text),
+      stderr: (text) => errors.push(text),
+    });
+
+    expect(code).toBe(0);
+    expect(out.join("").trim()).toBe("0.1.1");
+    expect(errors).toEqual([]);
+  });
+
+  it("preserves the first invalid option and does not consume a following flag as a value", () => {
+    expect(parseHarnessStudioArgs(["--evidenc", "./evidence"]).error).toBe("Unknown option '--evidenc'.");
+    const missingHarness = parseHarnessStudioArgs(["--harness", "--port", "9999"]);
+    expect(missingHarness.error).toBe("--harness requires a value.");
+    expect(missingHarness.port).toBe(9999);
+  });
+
+  it("reports a missing harness file with the option and recovery context", async () => {
+    const errors: string[] = [];
+    const code = await runHarnessStudioCli(["--harness", "./not-a-real-agent.harness"], {
+      stdout: () => undefined,
+      stderr: (text) => errors.push(text),
+    });
+
+    expect(code).toBe(2);
+    expect(errors.join("")).toContain("--harness file was not found: ./not-a-real-agent.harness");
+    expect(errors.join("")).not.toContain("ENOENT");
+  });
+
+  it("explains how to recover when the requested port is occupied", async () => {
+    const appDir = await makeAppDir();
+    started = await startHarnessStudioServer({ appDir, port: 0 });
+    const occupiedPort = new URL(started.url).port;
+    const errors: string[] = [];
+
+    const code = await runHarnessStudioCli(["--port", occupiedPort], {
+      stdout: () => undefined,
+      stderr: (text) => errors.push(text),
+    });
+
+    expect(code).toBe(2);
+    expect(errors.join("")).toContain(`Port ${occupiedPort} is already in use`);
+    expect(errors.join("")).toContain("--port <n>");
   });
 
   it("parses repeated operator-provisioned Artifact Provider modules", () => {

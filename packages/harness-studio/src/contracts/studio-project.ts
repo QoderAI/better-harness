@@ -1,4 +1,5 @@
 export const STUDIO_PROJECT_CATALOG_KIND = "HarnessStudioProjectCatalogV1" as const;
+export const MAX_STUDIO_PROJECTS = 32;
 
 export type StudioProjectKind = "local" | "imported";
 
@@ -38,6 +39,7 @@ export function isStudioProjectCatalog(value: unknown): value is StudioProjectCa
     && (candidate.activeProjectId === undefined || (typeof candidate.activeProjectId === "string" && PROJECT_ID.test(candidate.activeProjectId)))
     && ["idle", "choosing", "discovering", "removing"].includes(String(candidate.stage))
     && Array.isArray(candidate.projects)
+    && candidate.projects.length <= MAX_STUDIO_PROJECTS
     && candidate.projects.every(isStudioProjectDescriptor))) return false;
   const ids = new Set(candidate.projects.map((project) => project.id));
   return ids.size === candidate.projects.length

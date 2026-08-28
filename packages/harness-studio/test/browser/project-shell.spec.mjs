@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -122,6 +122,7 @@ test("switches one shared View workbench between remembered Projects", async ({ 
   await expect(page.getByRole("button", { name: /^Overview/ })).toBeFocused();
   await page.keyboard.press("End");
   await expect(projectButton(page, labelB)).toBeFocused();
+  expect(await page.locator(".studio-primary-nav nav button").evaluateAll((buttons) => buttons.filter((button) => button.tabIndex === 0).length)).toBe(1);
 
   for (const layout of layouts) {
     await page.setViewportSize({ width: layout.width, height: layout.height });
@@ -148,14 +149,39 @@ test("switches one shared View workbench between remembered Projects", async ({ 
   expect(errors).toEqual([]);
 });
 
+test("recovers a failed workbench bootstrap without reloading the page", async ({ page }) => {
+  let configRequests = 0;
+  await page.route("**/api/config", async (route) => {
+    configRequests += 1;
+    if (configRequests === 1) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "temporary fixture failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(`${studio.url}/#/overview`);
+  await expect(page.getByRole("alert")).toContainText("Cannot load Studio configuration");
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  expect(configRequests).toBeGreaterThanOrEqual(2);
+});
+
 test("keeps a live run bound to its starting Project across a sidebar switch", async ({ page }) => {
+  const runCount = async (directory) => (await readdir(join(directory, ".harness-studio-runs")).catch(() => [])).filter((name) => name.endsWith(".json")).length;
+  const beforeA = await runCount(projectA);
+  const beforeB = await runCount(projectB);
   await page.setViewportSize(layouts[0]);
   await page.goto(`${studio.url}/#/projects/${descriptorA.id}/debugger`);
   await expect(projectButton(page, labelA)).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("status").filter({ hasText: "Ready for a live run" })).toBeVisible();
+  await expect(page.locator(".live-inspector > header")).toContainText("Ready");
+  await expect(page.getByText(/Soft Pause|no Evidence Cursor/u)).toHaveCount(0);
   await page.getByRole("button", { name: "New live run" }).click();
   await expect(page.getByRole("dialog", { name: "Start a live harness session" })).toContainText(`Project ${labelA}`);
   await page.getByPlaceholder("Task prompt for the harness run…").fill("prove the Project binding");
   await page.getByRole("button", { name: "Run harness" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Live run in progress" })).toBeVisible();
   await expect(page.locator(".debugger-brand")).toContainText(labelA);
 
   await projectButton(page, labelB).click();
@@ -163,23 +189,44 @@ test("keeps a live run bound to its starting Project across a sidebar switch", a
   await expect(page.locator(".debugger-brand")).toContainText(labelA);
   await expect(page.locator(".session-notebook")).toContainText(`bound project: ${labelA}`);
   expect(await realpath(observedRunCwd)).toBe(await realpath(projectA));
+  await expect.poll(() => runCount(projectA)).toBe(beforeA + 1);
+  expect(await runCount(projectB)).toBe(beforeB);
 });
 
-test("keeps configured Sources reachable before a Project is opened", async ({ page }) => {
+test("keeps configured Sources reachable without an active Project", async ({ page }) => {
+  const sourceSelections = [projectA, projectB];
   const sourceStudio = await startHarnessStudioServer({
     appDir: join(packageRoot, "dist", "app"),
     port: 0,
-    workspaceDirectoryPicker: async () => projectA,
-    workspaceSessionProvider: { discover: async () => ({ label: labelA, sessions: [] }) },
+    workspaceDirectoryPicker: async () => sourceSelections.shift(),
+    workspaceSessionProvider: { discover: async (selected) => ({ label: basename(selected), sessions: [] }) },
     sourceCatalog: [{ id: "evidence_fixture", kind: "evidence", label: "Frozen evidence", path: projectA }],
   });
   try {
+    await fetch(`${sourceStudio.url}/api/projects/open`, { method: "POST" });
+    const openedB = await (await fetch(`${sourceStudio.url}/api/projects/open`, { method: "POST" })).json();
+    await fetch(`${sourceStudio.url}/api/projects/${openedB.project.id}`, { method: "DELETE" });
     await page.setViewportSize(layouts[0]);
     await page.goto(sourceStudio.url);
     await expect(page.getByRole("dialog", { name: "Open a Project to start" })).toHaveCount(0);
-    await expect(page.getByLabel("Configured source Views")).toBeVisible();
+    await expect(page.getByLabel("Studio Views")).toBeVisible();
+    await expect(projectButton(page, labelA)).not.toHaveAttribute("aria-current", "true");
     await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Evidence results are ready." })).toBeVisible();
+
+    await page.goto(`${sourceStudio.url}/#/sessions`);
+    const openProject = page.getByRole("button", { name: "Open Project", exact: true });
+    await expect(openProject).toBeVisible();
+    await openProject.focus();
+    await expect(openProject).toBeFocused();
+
+    await page.goto(sourceStudio.url);
+    await page.setViewportSize(layouts[2]);
+    await expect(page.locator(".studio-context-title h1")).toHaveText("Overview");
+    const sourceControl = page.getByRole("button", { name: "Data sources (1 active)" });
+    await expect(sourceControl).toBeVisible();
+    expect((await sourceControl.boundingBox())?.width).toBeLessThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
   } finally {
     await sourceStudio.close();
   }
