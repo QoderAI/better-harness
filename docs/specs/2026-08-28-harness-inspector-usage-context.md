@@ -59,6 +59,10 @@ from the default Inspector window.
   Cursor rows without an observed context window say that it is unavailable;
   Cursor Context Usage Canvas remains a session-current snapshot rather than
   being repeated across historical responses.
+- AC-10: Without an explicit time window, Cursor coverage treats every matched
+  workspace transcript as relevant, including terminal-only and unreadable
+  transcripts whose native event time is unobserved. A partial in-window subset
+  must not silently reduce the coverage denominator.
 
 ## Non-goals
 
@@ -89,6 +93,9 @@ from the default Inspector window.
 6. Preserve per-inference usage/context snapshots in Turn order, render them as
    compact process evidence in both Inspector hosts, and keep missing provider
    fields explicitly unavailable.
+7. Keep Cursor coverage denominators independent of timestamp observability
+   when no time filter was requested, and retain the cross-platform fixture as
+   the behavioral guard.
 
 ## Test and Review Evidence
 
@@ -104,6 +111,9 @@ from the default Inspector window.
 - AC-8/AC-9: Turn-folding tests for Codex invocation usage and Claude response
   usage, report-projection privacy assertions, and the same three-width
   Playwright/standalone visual contract with multiple usage rows expanded.
+- AC-10: `Cursor facts distinguish absent, terminal-only, and unreadable
+  transcripts` must pass on Windows as well as POSIX hosts; the Windows PR job
+  is the authoritative receipt for filesystem behavior.
 - Cross-platform evidence: focused tests must use `node:path` and temporary
   directories, then the full Node 22/24 macOS, Windows, and Ubuntu PR jobs remain
   authoritative for target-platform acceptance.
@@ -118,6 +128,10 @@ from the default Inspector window.
 
 ## Validation Evidence
 
+- The first follow-up Windows Node 22 PR run exposed AC-10 by reporting one
+  relevant Cursor transcript where the fixture contained two. After the
+  denominator fix, the focused Cursor/provider suite passed all 53 tests; the
+  refreshed Windows PR job remains the authoritative platform receipt.
 - `npm run check` passed on supported Node 24.19.0: root Vitest reported
   1,549 passed and 2 skipped; Harness reported 172 passed; Harness UI reported
   31 passed; Studio reported 293 passed; generated-source and package/archive

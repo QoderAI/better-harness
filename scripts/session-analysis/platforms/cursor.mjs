@@ -558,11 +558,11 @@ function buildCursorSourceCoverage({ scope, roots, sessions, inWindowSessions, t
     .filter((session) => session.timestampBasis === "source-file-mtime" || (!session.firstSeen && !session.lastSeen))
     .map((session) => session.sessionId));
   const requestedWindow = scope.sinceTime !== null || scope.untilTime !== null;
-  const relevantIds = inWindowIds.size > 0
-    ? inWindowIds
-    : requestedWindow
-      ? unknownTimeIds
-      : new Set(sessions.map((session) => session.sessionId));
+  const relevantIds = requestedWindow
+    ? inWindowIds.size > 0
+      ? inWindowIds
+      : unknownTimeIds
+    : new Set(sessions.map((session) => session.sessionId));
   const relevantSummaries = [...relevantIds]
     .map((sessionId) => transcriptCoverage.get(sessionId))
     .filter(Boolean);
