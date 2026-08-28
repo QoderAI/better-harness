@@ -309,6 +309,7 @@ test("Claude provider expands nested tool requests and results without using gen
   assert.equal(events.filter((event) => event.type === "tool.call").length, 2);
   assert.equal(events.filter((event) => event.type === "tool.result").length, 2);
   assert.equal(events.find((event) => event.model === "claude-fixture")?.modelUsage.inputTokens, 10);
+  assert.equal(events.find((event) => event.model === "claude-fixture")?.modelInvocationUsage.outputTokens, 4);
   assert.equal(events.find((event) => event.model === "claude-fixture")?.modelUsage.cacheCreationInputTokens, 3);
   assert.equal(events.find((event) => event.model === "claude-fixture")?.usageSource, "claude-project-transcript");
   assert.equal(events.find((event) => event.toolInvocationId === "tool-2")?.filePath, path.join(workspace, "package.json"));
@@ -351,6 +352,8 @@ test("Cursor provider joins transcript, metadata, and only matching audit sessio
     { role: "user", message: { content: [{ type: "text", text: "Fix the Cursor adapter" }] } },
     {
       role: "assistant",
+      input_tokens: 18,
+      output_tokens: 4,
       message: { content: [
         { type: "text", text: "I will edit and test it." },
         { type: "tool_use", name: "Write", input: { file_path: path.join(workspace, "adapter.mjs"), content: "x" } },
@@ -419,7 +422,13 @@ test("Cursor provider joins transcript, metadata, and only matching audit sessio
   assert.equal(events.filter((event) => event.type === "tool.call").length, 2);
   assert.equal(events.filter((event) => event.type === "tool.result").length, 1);
   assert.equal(events.some((event) => event.sessionId === "foreign-session"), false);
-  assert.equal(events.find((event) => event.usageFieldsObserved)?.modelUsage.inputTokens, 20);
+  assert.deepEqual(events.find((event) => event.type === "assistant")?.modelInvocationUsage, {
+    inputTokens: 18,
+    outputTokens: 4,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+  });
+  assert.equal(events.find((event) => event.usageSource === "cursor-hook-audit")?.modelUsage.inputTokens, 20);
   const duration = measureLongSessionRows(discovery.sessions, events).rows[0];
   assert.equal(duration.activeTimeObserved, true);
   const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });

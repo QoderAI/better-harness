@@ -755,6 +755,38 @@ test("buildSessionTurns folds prompts, steps, and responses into turns (AC-7)", 
   assert.equal(turns[1].response, "Committed.");
 });
 
+test("buildSessionTurns keeps per-inference usage and only same-event context windows (AC-8)", () => {
+  const { turns } = buildSessionTurns([
+    { type: "user", userPrompt: true, userText: "measure each response", timestamp: "2026-08-02T10:00:00Z" },
+    { type: "assistant", content: "I will inspect it.", timestamp: "2026-08-02T10:01:00Z" },
+    {
+      type: "model.response.completed",
+      modelInvocationUsage: { inputTokens: 80, outputTokens: 8, totalTokens: 88 },
+      usageBasis: "model-inference",
+      usageSource: "claude-project-transcript",
+      timestamp: "2026-08-02T10:01:00Z",
+    },
+    { type: "assistant", content: "Measured.", timestamp: "2026-08-02T10:02:00Z" },
+    {
+      type: "event.token_count",
+      modelInvocationUsage: { inputTokens: 120, outputTokens: 12, cacheReadInputTokens: 60, totalTokens: 132 },
+      currentContextUsage: { usedTokens: 120, windowTokens: 400, source: "codex-rollout-token-count" },
+      usageBasis: "model-inference",
+      usageSource: "codex-rollout-token-count",
+      timestamp: "2026-08-02T10:02:01Z",
+    },
+  ]);
+
+  assert.equal(turns.length, 1);
+  assert.deepEqual(turns[0].steps.map((step) => step.kind), ["note", "usage", "usage"]);
+  assert.equal(turns[0].usageEventCount, 2);
+  assert.equal(turns[0].eventCount, 3);
+  assert.equal(turns[0].response, "Measured.");
+  assert.deepEqual(turns[0].steps[1].tokenUsage, { inputTokens: 80, outputTokens: 8, totalTokens: 88 });
+  assert.equal(turns[0].steps[1].contextUsage, undefined);
+  assert.deepEqual(turns[0].steps[2].contextUsage, { usedTokens: 120, windowTokens: 400, percentFull: 30 });
+});
+
 test("buildSessionTurns preserves interleaved assistant and tool evidence and marks an unfinished Turn", () => {
   const { turns } = buildSessionTurns([
     { type: "user", userPrompt: true, userText: "refactor it", timestamp: "2026-08-02T10:00:00Z" },

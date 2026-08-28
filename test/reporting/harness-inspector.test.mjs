@@ -580,6 +580,26 @@ test("Inspector projects usage and context metadata without raw context text", (
     repoRoot: "/workspace/repo",
     featureTree: parseFeatureTreeMarkdown(FEATURE_TREE),
     sessions: [fixtureSession({
+      dialogue: {
+        truncated: false,
+        turns: [{
+          index: 1,
+          prompt: { text: "Inspect usage", timestamp: "2026-08-12T08:00:00.000Z" },
+          steps: [{
+            kind: "usage",
+            tokenUsage: { inputTokens: 90, outputTokens: 8, totalTokens: 98, raw: secret },
+            contextUsage: { usedTokens: 25, windowTokens: 100, percentFull: 25, raw: secret },
+            source: "fixture-response-usage",
+            raw: secret,
+          }],
+          usageEventCount: 1,
+          eventCount: 1,
+          shownEventCount: 1,
+          toolCallCount: 0,
+          response: "Measured.",
+          responseStatus: "retained",
+        }],
+      },
       tokenUsage: {
         inputTokens: 180,
         outputTokens: 18,
@@ -633,8 +653,16 @@ test("Inspector projects usage and context metadata without raw context text", (
     windowTokens: 100,
     percentFull: 25,
   });
+  assert.deepEqual(session.dialogue.turns[0].steps[0], {
+    kind: "usage",
+    tokenUsage: { inputTokens: 90, outputTokens: 8, totalTokens: 98 },
+    contextUsage: { usedTokens: 25, windowTokens: 100, percentFull: 25 },
+    source: "fixture-response-usage",
+    timestamp: null,
+  });
   const html = renderHarnessInspectorHtml(report);
   assert.match(html, /Usage and context/u);
+  assert.match(html, /Model response/u);
   assert.doesNotMatch(html, new RegExp(secret, "u"));
 });
 

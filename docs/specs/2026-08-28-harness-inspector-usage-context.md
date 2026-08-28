@@ -49,6 +49,16 @@ from the default Inspector window.
 - AC-7: The self-contained report contains no raw base instructions,
   developer/system message content, context item text, absolute home paths,
   rate-limit/credit data, encrypted reasoning, or raw tool payloads.
+- AC-8: Every retained model-inference event in a Turn exposes its own observed
+  token usage. When that same event includes a context-window observation, the
+  row also shows used tokens, window size, and percent full. Session totals,
+  hard-coded model limits, and later snapshots must never be substituted for
+  missing per-inference evidence.
+- AC-9: Standalone Inspector and Studio render per-inference usage as compact,
+  ordered process-trace rows at wide, compact, and narrow widths. Claude or
+  Cursor rows without an observed context window say that it is unavailable;
+  Cursor Context Usage Canvas remains a session-current snapshot rather than
+  being repeated across historical responses.
 
 ## Non-goals
 
@@ -57,6 +67,8 @@ from the default Inspector window.
   `CLAUDE.md`, rules, skills, tool schemas, or conversation/context item text.
 - Adding billing claims, account balances, rate limits, or estimated cost.
 - Making Cursor transcript modification time authoritative Session chronology.
+- Reconstructing historical per-response context occupancy from a current
+  Cursor Context Usage Canvas snapshot or a model-name lookup table.
 - Unifying provider transcript/event IRs beyond the bounded shared usage and
   context-evidence projection consumed by Inspector.
 
@@ -74,6 +86,9 @@ from the default Inspector window.
 5. Add behavioral fixtures for role privacy, cumulative usage resets, Claude
    cache creation, Cursor timestamp fallback/context matching, report escaping,
    and UI projection.
+6. Preserve per-inference usage/context snapshots in Turn order, render them as
+   compact process evidence in both Inspector hosts, and keep missing provider
+   fields explicitly unavailable.
 
 ## Test and Review Evidence
 
@@ -86,6 +101,9 @@ from the default Inspector window.
 - AC-6/AC-7: generated-report assertions, Studio component tests, Playwright at
   1440x900, 1024x768, and 390x844, console/page-error inspection, and saved
   screenshots.
+- AC-8/AC-9: Turn-folding tests for Codex invocation usage and Claude response
+  usage, report-projection privacy assertions, and the same three-width
+  Playwright/standalone visual contract with multiple usage rows expanded.
 - Cross-platform evidence: focused tests must use `node:path` and temporary
   directories, then the full Node 22/24 macOS, Windows, and Ubuntu PR jobs remain
   authoritative for target-platform acceptance.
@@ -101,7 +119,7 @@ from the default Inspector window.
 ## Validation Evidence
 
 - `npm run check` passed on supported Node 24.19.0: root Vitest reported
-  1,548 passed and 2 skipped; Harness reported 172 passed; Harness UI reported
+  1,549 passed and 2 skipped; Harness reported 172 passed; Harness UI reported
   31 passed; Studio reported 293 passed; generated-source and package/archive
   verification also passed.
 - The focused Studio Playwright scenario passed at 1440x900, 1024x768, and
@@ -110,6 +128,8 @@ from the default Inspector window.
   standalone Inspector surface/viewport combinations with no clipped facts,
   below-floor targets, page errors, or horizontal overflow.
 - A live local Inspector render over Codex, Cursor, and Claude evidence produced
-  58 sessions and 7,989 tool calls. It projected token evidence for 44 of 45
-  Codex sessions and all 13 Claude sessions; the current workspace supplied no
-  matching Cursor session, so Cursor context matching remains fixture-backed.
+  58 sessions and 8,322 tool calls. It projected 5,341 per-inference usage rows
+  for 44 of 45 Codex sessions, all with same-event context-window evidence, and
+  981 per-inference usage rows for all 13 Claude sessions, whose events supplied
+  no context-window field. The current workspace supplied no matching Cursor
+  session, so Cursor per-inference/context matching remains fixture-backed.

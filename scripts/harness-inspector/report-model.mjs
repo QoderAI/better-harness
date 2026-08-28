@@ -259,6 +259,20 @@ function projectDialogue(dialogue, toolActivity) {
         const text = safeText(step.text, 400);
         return text ? { kind: "note", text } : null;
       }
+      if (step?.kind === "usage") {
+        const tokenUsage = projectInvocationTokenUsage(step.tokenUsage);
+        const contextUsage = projectContextWindowUsage(step.contextUsage);
+        if (!tokenUsage && !contextUsage) return null;
+        return {
+          kind: "usage",
+          ...(tokenUsage ? { tokenUsage } : {}),
+          ...(contextUsage ? { contextUsage } : {}),
+          ...(step.basis ? { basis: safeText(step.basis, 40) } : {}),
+          ...(step.source ? { source: safeText(step.source, 80) } : {}),
+          ...(step.model ? { model: safeText(step.model, 80) } : {}),
+          timestamp: step.timestamp ?? null,
+        };
+      }
       if (step?.kind !== "tool") return null;
       const callStep = Number(step.callStep);
       const call = callsByStep.get(callStep);
@@ -283,6 +297,12 @@ function projectDialogue(dialogue, toolActivity) {
     const intermediateCount = Number.isInteger(turn?.intermediateCount)
       ? turn.intermediateCount
       : steps.filter((step) => step.kind === "note").length;
+    const usageEventCount = Number.isInteger(turn?.usageEventCount)
+      ? turn.usageEventCount
+      : steps.filter((step) => step.kind === "usage").length;
+    const derivedEventCount = intermediateCount
+      + steps.filter((step) => step.kind === "tool").length
+      + usageEventCount;
     return {
       index: Number(turn?.index) || index + 1,
       anchorId: `turn-${Number(turn?.index) || index + 1}`,
@@ -291,9 +311,10 @@ function projectDialogue(dialogue, toolActivity) {
       toolCallCount: Number(turn?.toolCallCount) || steps.filter((step) => step.kind === "tool").length,
       messageCount: Number(turn?.messageCount) || 0,
       intermediateCount,
+      usageEventCount,
       eventCount: Number.isInteger(turn?.eventCount)
-        ? turn.eventCount
-        : intermediateCount + steps.filter((step) => step.kind === "tool").length,
+        ? Math.max(turn.eventCount, derivedEventCount)
+        : derivedEventCount,
       shownEventCount: Number.isInteger(turn?.shownEventCount) ? turn.shownEventCount : steps.length,
       processTruncated: turn?.processTruncated === true,
       response,
@@ -377,6 +398,34 @@ function projectTokenUsage(usage) {
     ? usage.coverage
     : "observed";
   return projected;
+}
+
+function projectInvocationTokenUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const projected = {};
+  for (const field of [
+    "inputTokens",
+    "outputTokens",
+    "cacheReadInputTokens",
+    "cacheCreationInputTokens",
+    "reasoningOutputTokens",
+    "totalTokens",
+  ]) {
+    if (Object.hasOwn(usage, field)) projected[field] = nonNegativeNumber(usage[field]);
+  }
+  return Object.keys(projected).length > 0 ? projected : null;
+}
+
+function projectContextWindowUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const usedTokens = Number(usage.usedTokens);
+  const windowTokens = Number(usage.windowTokens);
+  if (!Number.isFinite(usedTokens) || usedTokens < 0 || !Number.isFinite(windowTokens) || windowTokens <= 0) return null;
+  return {
+    usedTokens: Math.round(usedTokens),
+    windowTokens: Math.round(windowTokens),
+    percentFull: Math.min(100, Math.round((usedTokens / windowTokens) * 1_000) / 10),
+  };
 }
 
 function projectRuntime(runtime) {

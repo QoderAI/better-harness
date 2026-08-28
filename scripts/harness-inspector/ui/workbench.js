@@ -144,6 +144,31 @@
     const inputOutput = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
     return inputOutput > 0 ? formatTokenCount(inputOutput) + ' input + output tokens' : 'usage observed';
   };
+  const formatInvocationUsage = usage => {
+    if (!usage) return 'not observed';
+    const parts = [];
+    if (Number.isFinite(usage.totalTokens)) parts.push(formatTokenCount(usage.totalTokens) + ' total');
+    if (Number.isFinite(usage.inputTokens)) parts.push(formatTokenCount(usage.inputTokens) + ' input');
+    if (Number.isFinite(usage.outputTokens)) parts.push(formatTokenCount(usage.outputTokens) + ' output');
+    if (Number.isFinite(usage.cacheReadInputTokens)) parts.push(formatTokenCount(usage.cacheReadInputTokens) + ' cache read');
+    if (Number.isFinite(usage.cacheCreationInputTokens)) parts.push(formatTokenCount(usage.cacheCreationInputTokens) + ' cache write');
+    if (Number.isFinite(usage.reasoningOutputTokens)) parts.push(formatTokenCount(usage.reasoningOutputTokens) + ' reasoning');
+    return parts.join(' · ') || 'not observed';
+  };
+  const formatContextWindowUsage = context => {
+    if (!context || !Number.isFinite(context.usedTokens) || !Number.isFinite(context.windowTokens)) return 'not observed for this response';
+    const percent = Number.isFinite(context.percentFull)
+      ? context.percentFull
+      : Math.min(100,Math.round((context.usedTokens / context.windowTokens) * 1000) / 10);
+    return formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + percent + '% full';
+  };
+  const usageStepMarkup = (step,index) => {
+    const source = step.source ?? 'normalized model evidence';
+    return '<article class="session-event usage" data-session-event="usage"><header><strong>Model response ' + index + '</strong><span title="' + escape(source) + '">' + escape(step.model ?? source) + '</span></header><dl>'
+      + '<div><dt>Tokens</dt><dd>' + escape(formatInvocationUsage(step.tokenUsage)) + '</dd></div>'
+      + '<div><dt>Context</dt><dd>' + escape(formatContextWindowUsage(step.contextUsage)) + '</dd></div>'
+      + '</dl></article>';
+  };
   const usageContextMarkup = session => {
     const usage = session.tokenUsage;
     const context = session.contextManifest;
@@ -800,6 +825,7 @@
     const rows = [];
     let pendingCalls = [];
     let noteIndex = 0;
+    let usageIndex = 0;
     const flushCalls = () => {
       if (!pendingCalls.length) return;
       const calls = pendingCalls;
@@ -821,6 +847,9 @@
       if (step.kind === 'note') {
         noteIndex += 1;
         rows.push('<article class="session-event intermediate" data-session-event="intermediate"><div class="session-note-label">Intermediate ' + noteIndex + '</div><div class="session-markdown">' + renderSessionMarkdown(step.text) + '</div></article>');
+      } else if (step.kind === 'usage') {
+        usageIndex += 1;
+        rows.push(usageStepMarkup(step,usageIndex));
       }
     });
     flushCalls();
@@ -889,10 +918,11 @@
       const processTimeline = calls.length ? '<section class="session-turn-activity" aria-label="Turn ' + turn.index + ' activity timeline"><div data-activity-chart="' + escape(session.sessionId) + '" data-activity-turn="' + turn.index + '"></div></section>' : '';
       const clock = Number.isFinite(turn.startMs) ? formatShortClock(turn.startMs) + (Number.isFinite(turn.endMs) ? '–' + formatShortClock(turn.endMs) : '') + ' UTC · ' : '';
       const intermediateCount = Number.isInteger(turn.intermediateCount) ? turn.intermediateCount : turn.steps.filter(step => step.kind === 'note').length;
-      const eventCount = Number.isInteger(turn.eventCount) ? turn.eventCount : intermediateCount + turn.toolCallCount;
+      const usageEventCount = Number.isInteger(turn.usageEventCount) ? turn.usageEventCount : turn.steps.filter(step => step.kind === 'usage').length;
+      const eventCount = Number.isInteger(turn.eventCount) ? turn.eventCount : intermediateCount + usageEventCount + turn.toolCallCount;
       const shownEventCount = Number.isInteger(turn.shownEventCount) ? turn.shownEventCount : turn.steps.length;
       const truncationSummary = turn.processTruncated ? shownEventCount + ' of ' + eventCount + ' process events retained · ' : eventCount + ' process events · ';
-      const kindSummary = intermediateCount + ' intermediate response' + (intermediateCount === 1 ? '' : 's') + ' · ' + turn.toolCallCount + ' tool calls' + (turn.processTruncated ? ' observed' : '');
+      const kindSummary = usageEventCount + ' model response' + (usageEventCount === 1 ? '' : 's') + ' · ' + intermediateCount + ' intermediate response' + (intermediateCount === 1 ? '' : 's') + ' · ' + turn.toolCallCount + ' tool calls' + (turn.processTruncated ? ' observed' : '');
       const summary = clock + truncationSummary + kindSummary + (Number.isFinite(turn.durationMs) ? ' · ' + formatDuration(turn.durationMs) : '');
       const turnCommits = placement.inTurn.get(turn.index) ?? [];
       const processStream = processStreamMarkup(session,turn,callsById);
@@ -939,6 +969,7 @@
     const coverage = turnCoverageOf(session);
     const responseCount = session.dialogue?.responseCount ?? turns.filter(turn => turn.response).length;
     const noteCount = session.dialogue?.noteCount ?? turns.reduce((sum,turn) => sum + turn.steps.filter(step => step.kind === 'note').length,0);
+    const usageCount = turns.reduce((sum,turn) => sum + (turn.usageEventCount ?? turn.steps.filter(step => step.kind === 'usage').length),0);
     const projectionFact = session.dialogue?.truncated ? '<div><dt>Projection</dt><dd>Truncated</dd></div>' : '';
     const jumpOptions = turns.map(turn => '<option value="session-' + escape(turn.anchorId ?? ('turn-' + turn.index)) + '">In [' + turn.index + ']' + (Number.isFinite(turn.startMs) ? ' · ' + formatShortClock(turn.startMs) : '') + '</option>').join('')
       + (unplacedMarkup ? '<option value="session-unplaced">Unplaced evidence</option>' : '')
@@ -953,7 +984,7 @@
       + '<div><dt>File edits</dt><dd>' + session.fileEditCount + '</dd></div>'
       + '<div><dt>Token usage</dt><dd>' + escape(formatTokens(session.tokenUsage)) + '</dd></div>'
       + projectionFact;
-    const sessionOutline = '<aside class="session-sidebar" aria-label="Session outline"><header><div><strong>Session outline</strong><span>Read-only</span></div></header><section><h3>Cells</h3><select class="jump-select" data-session-jump>' + jumpOptions + '</select><div class="session-bulk"><button type="button" data-expand-tools="open">Expand process</button><button type="button" data-expand-tools="close">Collapse process</button></div></section><details class="session-filter-disclosure"><summary><span>Evidence filters</span><em>' + session.toolActivity.totalCalls + ' calls</em></summary><div class="session-filter-list"><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="prompts"><span>Prompts</span><em>' + turns.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="responses"><span>Results</span><em>' + responseCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="intermediate"><span>Intermediate</span><em>' + noteCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="commits"><span>Commits</span><em>' + commits.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="tools"><span>Tool calls</span><em>' + session.toolActivity.totalCalls + '</em></label>' + filters + '<label class="session-filter subtype"><input type="checkbox" checked data-session-file-filter><span>File paths</span><em>' + session.toolActivity.files.length + '</em></label></div></details><section class="session-outline-facts"><h3>Session</h3><dl>' + sessionFacts + '</dl></section>' + usageContextMarkup(session) + '</aside>';
+    const sessionOutline = '<aside class="session-sidebar" aria-label="Session outline"><header><div><strong>Session outline</strong><span>Read-only</span></div></header><section><h3>Cells</h3><select class="jump-select" data-session-jump>' + jumpOptions + '</select><div class="session-bulk"><button type="button" data-expand-tools="open">Expand process</button><button type="button" data-expand-tools="close">Collapse process</button></div></section><details class="session-filter-disclosure"><summary><span>Evidence filters</span><em>' + session.toolActivity.totalCalls + ' calls</em></summary><div class="session-filter-list"><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="prompts"><span>Prompts</span><em>' + turns.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="responses"><span>Results</span><em>' + responseCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="intermediate"><span>Intermediate</span><em>' + noteCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="usage"><span>Model usage</span><em>' + usageCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="commits"><span>Commits</span><em>' + commits.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="tools"><span>Tool calls</span><em>' + session.toolActivity.totalCalls + '</em></label>' + filters + '<label class="session-filter subtype"><input type="checkbox" checked data-session-file-filter><span>File paths</span><em>' + session.toolActivity.files.length + '</em></label></div></details><section class="session-outline-facts"><h3>Session</h3><dl>' + sessionFacts + '</dl></section>' + usageContextMarkup(session) + '</aside>';
     const overallActivity = session.toolActivity.totalCalls ? '<section class="session-overall-activity"><details class="session-axis-panel" data-session-axis><summary><span>Overall session activity <em>' + session.toolActivity.totalCalls + ' calls</em></span><small>All retained Turns and unplaced calls</small></summary><div class="session-axis" data-activity-chart="' + escape(session.sessionId) + '"></div></details></section>' : '';
     const tracePanel = '<section class="session-mode-panel" id="session-panel-trace" role="tabpanel" aria-labelledby="session-tab-trace" data-session-mode-panel="trace">'
       + '<div class="session-layout"><main class="session-notebook-main"><div class="session-timeline" aria-label="Session run cells">' + timeline + overallActivity + '</div></main>' + sessionOutline + '</div></section>';

@@ -85,6 +85,49 @@ function assistantText(event) {
   return cleaned.length > 0 ? cleaned : null;
 }
 
+const TURN_TOKEN_USAGE_FIELDS = Object.freeze([
+  "inputTokens",
+  "outputTokens",
+  "cacheReadInputTokens",
+  "cacheCreationInputTokens",
+  "reasoningOutputTokens",
+  "totalTokens",
+]);
+
+function inferenceUsageStep(event) {
+  const sourceUsage = event?.modelInvocationUsage
+    ?? (event?.usageCumulative === true ? null : event?.modelUsage);
+  const tokenUsage = {};
+  if (sourceUsage && typeof sourceUsage === "object") {
+    for (const field of TURN_TOKEN_USAGE_FIELDS) {
+      if (!Object.hasOwn(sourceUsage, field)) continue;
+      const value = Number(sourceUsage[field]);
+      if (Number.isFinite(value) && value >= 0) tokenUsage[field] = Math.round(value);
+    }
+  }
+  const usedTokens = Number(event?.currentContextUsage?.usedTokens);
+  const windowTokens = Number(event?.currentContextUsage?.windowTokens);
+  const hasContext = Number.isFinite(usedTokens) && usedTokens >= 0
+    && Number.isFinite(windowTokens) && windowTokens > 0;
+  if (Object.keys(tokenUsage).length === 0 && !hasContext) return null;
+  const evidenceSource = event?.usageSource ?? event?.currentContextUsage?.source ?? null;
+  return {
+    kind: "usage",
+    ...(Object.keys(tokenUsage).length > 0 ? { tokenUsage } : {}),
+    ...(hasContext ? {
+      contextUsage: {
+        usedTokens: Math.round(usedTokens),
+        windowTokens: Math.round(windowTokens),
+        percentFull: Math.min(100, Math.round((usedTokens / windowTokens) * 1_000) / 10),
+      },
+    } : {}),
+    ...(event?.usageBasis ? { basis: String(event.usageBasis) } : {}),
+    ...(evidenceSource ? { source: String(evidenceSource) } : {}),
+    ...(event?.model ? { model: String(event.model) } : {}),
+    timestamp: event?.timestamp ?? null,
+  };
+}
+
 function toolDetail(event) {
   const detail = event?.commandText ?? event?.filePath ?? null;
   if (!detail) return null;
@@ -106,6 +149,7 @@ function newTurn(index, promptEvent, promptText) {
     toolCallCount: 0,
     messageCount: 0,
     intermediateCount: 0,
+    usageEventCount: 0,
     eventCount: 0,
     response: null,
     responseStatus: "unavailable",
@@ -117,6 +161,7 @@ function newTurn(index, promptEvent, promptText) {
     _lastObservedKind: null,
     _terminalAssistantText: null,
     _terminalAssistantStepRetained: false,
+    _terminalAssistantStep: null,
   };
 }
 
@@ -126,13 +171,16 @@ function closeTurn(turn) {
   if (hasTerminalResponse) {
     turn.response = redactTranscriptText(turn._terminalAssistantText, { limit: RESPONSE_TEXT_LIMIT });
     turn.responseStatus = turn.response ? "retained" : "unavailable";
-    if (turn._terminalAssistantStepRetained && turn.steps.at(-1)?.kind === "note") turn.steps.pop();
+    if (turn._terminalAssistantStepRetained && turn._terminalAssistantStep) {
+      const retainedIndex = turn.steps.indexOf(turn._terminalAssistantStep);
+      if (retainedIndex >= 0) turn.steps.splice(retainedIndex, 1);
+    }
   } else if (turn._assistantMessageCount > 0) {
     turn.responseStatus = "incomplete";
   }
   turn.intermediateCount = turn._assistantMessageCount - (turn.responseStatus === "retained" ? 1 : 0);
   turn.messageCount = turn.intermediateCount;
-  turn.eventCount = turn.intermediateCount + turn.toolCallCount;
+  turn.eventCount = turn.intermediateCount + turn.toolCallCount + turn.usageEventCount;
   turn.shownEventCount = turn.steps.length;
   turn.processTruncated = turn.shownEventCount < turn.eventCount;
   turn.durationMs = turn.startMs !== null && turn.endMs !== null && turn.endMs >= turn.startMs
@@ -143,6 +191,7 @@ function closeTurn(turn) {
   delete turn._lastObservedKind;
   delete turn._terminalAssistantText;
   delete turn._terminalAssistantStepRetained;
+  delete turn._terminalAssistantStep;
   return turn;
 }
 
@@ -202,6 +251,7 @@ export function buildSessionTurns(events = [], options = {}) {
       current._lastObservedKind = "tool";
       current._lastAssistantText = null;
       current._terminalAssistantStepRetained = false;
+      current._terminalAssistantStep = null;
       if (current.steps.length < MAX_STEPS_PER_TURN) {
         current.steps.push({
           kind: "tool",
@@ -218,13 +268,21 @@ export function buildSessionTurns(events = [], options = {}) {
       current._lastObservedKind = "assistant";
       current._terminalAssistantText = text;
       current._terminalAssistantStepRetained = false;
+      current._terminalAssistantStep = null;
       if (current.steps.length < MAX_STEPS_PER_TURN) {
         const note = redactTranscriptText(text, { limit: NOTE_TEXT_LIMIT });
         if (note) {
-          current.steps.push({ kind: "note", text: note });
+          const step = { kind: "note", text: note };
+          current.steps.push(step);
           current._terminalAssistantStepRetained = true;
+          current._terminalAssistantStep = step;
         }
       }
+    }
+    const usageStep = inferenceUsageStep(event);
+    if (usageStep) {
+      current.usageEventCount += 1;
+      if (current.steps.length < MAX_STEPS_PER_TURN) current.steps.push(usageStep);
     }
   }
   if (current) turns.push(closeTurn(current));

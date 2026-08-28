@@ -919,6 +919,7 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
         event.usageBasis = "model-inference";
         event.usageSource = "codex-rollout-token-count";
       }
+      if (lastModelUsage) event.modelInvocationUsage = lastModelUsage;
       if (lastModelUsage && Number.isFinite(contextWindowTokens) && contextWindowTokens > 0) {
         event.currentContextUsage = {
           usedTokens: Number(lastModelUsage.inputTokens) || 0,

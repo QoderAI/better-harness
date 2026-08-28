@@ -356,6 +356,14 @@
   .session-event.intermediate { padding:7px 9px; display:grid; grid-template-columns:96px minmax(0,1fr); gap:8px; background:var(--color-surface-subtle); }
   .session-event.intermediate .session-note-label { margin:0; color:var(--color-warning); font-size:12px; font-weight:700; }
   .session-event.intermediate p { margin:0; font-size:12px; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .session-event.usage { padding:8px 9px; display:grid; gap:7px; background:var(--color-surface-subtle); }
+  .session-event.usage > header { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .session-event.usage > header strong { color:var(--color-categorical-1); font-size:12px; font-weight:700; }
+  .session-event.usage > header span { min-width:0; overflow:hidden; color:var(--color-text-subtle); text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+  .session-event.usage dl { margin:0; display:grid; gap:5px; }
+  .session-event.usage dl div { display:grid; grid-template-columns:96px minmax(0,1fr); gap:8px; }
+  .session-event.usage dt { color:var(--color-text-subtle); font-size:12px; }
+  .session-event.usage dd { margin:0; color:var(--color-text); overflow-wrap:anywhere; font-size:12px; font-variant-numeric:tabular-nums; }
   .session-prose p { white-space:pre-wrap; overflow-wrap:anywhere; }
   .session-process { border-bottom:1px solid var(--color-border); background:var(--color-surface-subtle); }
   details.session-process > summary, .session-process-empty { min-height:35px; padding:7px 10px; display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--color-text-muted); list-style:none; }

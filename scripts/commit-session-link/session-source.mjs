@@ -97,6 +97,43 @@ function safeDialogueText(value, limit) {
     .replace(WINDOWS_PRIVATE_PATH_RE, "<absolute-path>");
 }
 
+const TOKEN_USAGE_FIELDS = Object.freeze([
+  "inputTokens",
+  "outputTokens",
+  "cacheReadInputTokens",
+  "cacheCreationInputTokens",
+  "reasoningOutputTokens",
+  "totalTokens",
+]);
+
+function summarizeUsageStep(step) {
+  const tokenUsage = Object.fromEntries(TOKEN_USAGE_FIELDS.flatMap((field) => {
+    if (!Object.hasOwn(step?.tokenUsage ?? {}, field)) return [];
+    const value = Number(step.tokenUsage[field]);
+    return Number.isFinite(value) && value >= 0 ? [[field, Math.round(value)]] : [];
+  }));
+  const usedTokens = Number(step?.contextUsage?.usedTokens);
+  const windowTokens = Number(step?.contextUsage?.windowTokens);
+  const hasContext = Number.isFinite(usedTokens) && usedTokens >= 0
+    && Number.isFinite(windowTokens) && windowTokens > 0;
+  if (Object.keys(tokenUsage).length === 0 && !hasContext) return null;
+  return {
+    kind: "usage",
+    ...(Object.keys(tokenUsage).length > 0 ? { tokenUsage } : {}),
+    ...(hasContext ? {
+      contextUsage: {
+        usedTokens: Math.round(usedTokens),
+        windowTokens: Math.round(windowTokens),
+        percentFull: Math.min(100, Math.round((usedTokens / windowTokens) * 1_000) / 10),
+      },
+    } : {}),
+    ...(step?.basis ? { basis: String(step.basis).slice(0, 40) } : {}),
+    ...(step?.source ? { source: String(step.source).slice(0, 80) } : {}),
+    ...(step?.model ? { model: String(step.model).slice(0, 80) } : {}),
+    timestamp: step?.timestamp ?? null,
+  };
+}
+
 function summarizeDialogue(events) {
   const { turns, truncated } = buildSessionTurns(events);
   let toolCallStep = 0;
@@ -114,11 +151,13 @@ function summarizeDialogue(events) {
           toolCallStep += 1;
           return { kind: "tool", callStep: toolCallStep, toolName: String(step.toolName ?? "Unknown tool") };
         }
-        return { kind: "note", text: safeDialogueText(step.text, 400) };
-      }).filter((step) => step.kind === "tool" || step.text),
+        if (step.kind === "usage") return summarizeUsageStep(step);
+        return step.kind === "note" ? { kind: "note", text: safeDialogueText(step.text, 400) } : null;
+      }).filter(Boolean).filter((step) => step.kind !== "note" || step.text),
       toolCallCount: Number(turn.toolCallCount) || 0,
       messageCount: Number(turn.messageCount) || 0,
       intermediateCount: Number(turn.intermediateCount) || 0,
+      usageEventCount: Number(turn.usageEventCount) || 0,
       eventCount: Number(turn.eventCount) || 0,
       shownEventCount: Number(turn.shownEventCount) || 0,
       processTruncated: turn.processTruncated === true,
@@ -132,15 +171,6 @@ function summarizeDialogue(events) {
     })),
   };
 }
-
-const TOKEN_USAGE_FIELDS = Object.freeze([
-  "inputTokens",
-  "outputTokens",
-  "cacheReadInputTokens",
-  "cacheCreationInputTokens",
-  "reasoningOutputTokens",
-  "totalTokens",
-]);
 
 function addTokenUsage(target, usage, observedFields) {
   if (!usage || typeof usage !== "object") return;

@@ -203,6 +203,7 @@ function transcriptEvents(raw, sourceRef, options) {
         category: "model",
         model: model ?? null,
         modelUsage: usage,
+        modelInvocationUsage: usage,
         usageFieldsObserved: true,
         usageBasis: "model-inference",
         usageSource: "claude-project-transcript",

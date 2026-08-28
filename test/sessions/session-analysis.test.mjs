@@ -587,6 +587,7 @@ test("Qoder and Codex preserve only explicit user-visible handoff and delivery f
   assert.equal(codexUsage.usageCumulative, true);
   assert.equal(codexUsage.modelUsage.totalTokens, 150);
   assert.equal(codexUsage.modelUsage.cacheReadInputTokens, 80);
+  assert.deepEqual(codexUsage.modelInvocationUsage, { inputTokens: 40, outputTokens: 10, totalTokens: 50 });
   assert.deepEqual(codexUsage.currentContextUsage, {
     usedTokens: 40,
     windowTokens: 200,

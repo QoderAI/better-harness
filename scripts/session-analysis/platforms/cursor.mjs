@@ -277,6 +277,14 @@ function transcriptEvents(raw, sourceRef, options) {
       if (options.includeUserText && text) event.userText = text;
     }
     if (rowType === "assistant" && text) event.userVisibleAssistantMessage = true;
+    const usage = rowType === "assistant" ? inferUsage(raw) : null;
+    if (usage) {
+      event.modelUsage = usage;
+      event.modelInvocationUsage = usage;
+      event.usageFieldsObserved = true;
+      event.usageBasis = "model-inference";
+      event.usageSource = "cursor-project-transcript";
+    }
     if (options.includeContent && text) event.content = text;
     events.push(event);
   } else if (rowType === "turn_ended") {
@@ -433,6 +441,9 @@ function auditEvents(raw, sourceRef, options) {
   if (usage) {
     event.modelUsage = usage;
     event.usageFieldsObserved = true;
+    event.usageBasis = "model-inference";
+    event.usageSource = "cursor-hook-audit";
+    if (/afteragentresponse/i.test(auditType)) event.modelInvocationUsage = usage;
   }
   if (/subagentstart/i.test(auditType)) event.isSubagent = true;
   if (/afteragentresponse/i.test(auditType)) event.userVisibleAssistantMessage = true;

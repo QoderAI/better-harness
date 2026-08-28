@@ -178,8 +178,27 @@ test.beforeAll(async () => {
         index: 1,
         anchorId: "turn-1",
         prompt: { text: record.prompt, timestamp: record.savedAt },
-        steps: record.timeline.filter((event) => event.kind === "tool-call").map((event) => ({ kind: "tool", callId: event.id, toolName: event.name })),
+        steps: [
+          ...record.timeline.filter((event) => event.kind === "tool-call").map((event) => ({ kind: "tool", callId: event.id, toolName: event.name })),
+          {
+            kind: "usage",
+            tokenUsage: { inputTokens: 90, outputTokens: 8, cacheReadInputTokens: 45, totalTokens: 98 },
+            contextUsage: { usedTokens: 25, windowTokens: 100, percentFull: 25 },
+            source: "fixture-response-usage",
+            model: "fixture-model",
+          },
+          {
+            kind: "usage",
+            tokenUsage: { inputTokens: 90, outputTokens: 10, cacheReadInputTokens: 45, totalTokens: 100 },
+            contextUsage: { usedTokens: 40, windowTokens: 100, percentFull: 40 },
+            source: "fixture-response-usage",
+            model: "fixture-model",
+          },
+        ],
         toolCallCount: record.toolCallCount,
+        usageEventCount: 2,
+        eventCount: record.toolCallCount + 2,
+        shownEventCount: record.toolCallCount + 2,
         response: `${record.prompt} complete`,
         responseStatus: "retained",
       }] },
@@ -936,6 +955,9 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspector.getByRole("region", { name: "Turn 1 outcome" })).toContainText("Outcome");
   await inspector.getByRole("button", { name: "Expand process" }).click();
   await expect(inspector.locator("details.session-process")).toHaveAttribute("open", "");
+  await expect(inspector.locator(".session-event.usage")).toHaveCount(2);
+  await expect(inspector.locator(".session-event.usage").first()).toContainText("98 total");
+  await expect(inspector.locator(".session-event.usage").first()).toContainText("25 / 100 · 25% full");
   await inspector.locator("details.session-filter-disclosure > summary").click();
   await expect(inspector.getByRole("checkbox", { name: /Tool calls/u })).toBeChecked();
   await inspector.locator("details.session-usage-disclosure > summary").click();

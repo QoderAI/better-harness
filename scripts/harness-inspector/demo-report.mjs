@@ -82,10 +82,36 @@ function session({
 }) {
   const files = [...new Set(calls.flatMap((item) => item.filePaths ?? []))];
   const steps = [];
+  const usageStep = (index) => {
+    const inputTokens = 640 + (index * 220);
+    const outputTokens = 120 + (index * 40);
+    const usedTokens = 2_400 + (index * 950);
+    return {
+      kind: "usage",
+      tokenUsage: {
+        inputTokens,
+        outputTokens,
+        cacheReadInputTokens: 180 + (index * 30),
+        reasoningOutputTokens: 40 + (index * 12),
+        totalTokens: inputTokens + outputTokens,
+      },
+      contextUsage: {
+        usedTokens,
+        windowTokens: 16_000,
+        percentFull: Math.round((usedTokens / 16_000) * 1_000) / 10,
+      },
+      source: "public-demo-fixture",
+      model,
+    };
+  };
   calls.forEach((item, index) => {
-    if (notes[index]) steps.push({ kind: "note", text: notes[index] });
+    if (notes[index]) {
+      steps.push({ kind: "note", text: notes[index] });
+      steps.push(usageStep(index));
+    }
     steps.push({ kind: "tool", callStep: item.step, toolName: item.toolName });
   });
+  steps.push(usageStep(notes.length));
   return {
     sessionId,
     platform,
@@ -156,6 +182,10 @@ function session({
         prompt: { text: prompt, timestamp: firstSeen },
         steps,
         toolCallCount: calls.length,
+        intermediateCount: notes.length,
+        usageEventCount: notes.length + 1,
+        eventCount: steps.length,
+        shownEventCount: steps.length,
         messageCount: notes.length + calls.length + 2,
         response,
         durationMs: at(lastSeen) - at(firstSeen),

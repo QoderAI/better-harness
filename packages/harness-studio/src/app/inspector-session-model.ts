@@ -1,7 +1,25 @@
+export interface InspectorTokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  reasoningOutputTokens?: number;
+  totalTokens?: number;
+  basis?: string;
+  source?: string;
+  coverage?: "observed" | "partial" | "unobserved";
+}
+
+export interface InspectorContextWindowUsage {
+  usedTokens: number;
+  windowTokens: number;
+  percentFull: number;
+}
+
 export interface InspectorToolCall {
   id: string;
   callId?: string;
-  kind?: "note" | "tool";
+  kind?: "note" | "tool" | "usage";
   text?: string;
   toolName?: string;
   actionLabel?: string;
@@ -15,6 +33,12 @@ export interface InspectorToolCall {
   detailKind?: string;
   filePath?: string | null;
   filePaths?: string[];
+  tokenUsage?: InspectorTokenUsage;
+  contextUsage?: InspectorContextWindowUsage;
+  basis?: string;
+  source?: string;
+  model?: string;
+  timestamp?: string | null;
 }
 
 export interface InspectorTurn {
@@ -24,6 +48,7 @@ export interface InspectorTurn {
   steps?: InspectorToolCall[];
   toolCallCount?: number;
   intermediateCount?: number;
+  usageEventCount?: number;
   eventCount?: number;
   shownEventCount?: number;
   processTruncated?: boolean;
@@ -81,17 +106,7 @@ export interface InspectorSession {
   files?: string[];
   prompts?: Array<{ text: string; timestamp?: string | null; turnIndex?: number | null }>;
   models?: string[];
-  tokenUsage?: {
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheReadInputTokens?: number;
-    cacheCreationInputTokens?: number;
-    reasoningOutputTokens?: number;
-    totalTokens?: number;
-    basis?: string;
-    source?: string;
-    coverage?: "observed" | "partial" | "unobserved";
-  };
+  tokenUsage?: InspectorTokenUsage;
   runtime?: { modelProvider?: string; cliVersion?: string; effort?: string } | null;
   contextManifest?: {
     status?: "observed" | "partial" | "unobserved";
