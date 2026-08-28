@@ -363,6 +363,52 @@ function bindPromptsToTurns(prompts, turns) {
   });
 }
 
+function timestampMs(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Usage points and Turns are independent projections of the same transcript.
+// Join them only through observed time containment; response ordinal and array
+// position are intentionally not fallbacks because compaction and sampling can
+// make those sequences diverge.
+function bindUsageProgressionToTurns(usageReport, dialogue) {
+  const turns = dialogue?.turns ?? [];
+  const windows = turns.map((turn, index) => {
+    const promptMs = timestampMs(turn.prompt?.timestamp);
+    const startCandidates = [turn.startMs, promptMs].filter(Number.isFinite);
+    const startMs = startCandidates.length ? Math.min(...startCandidates) : null;
+    const nextPromptMs = timestampMs(turns[index + 1]?.prompt?.timestamp);
+    const nextStartMs = Number.isFinite(turns[index + 1]?.startMs) ? turns[index + 1].startMs : nextPromptMs;
+    const endCandidates = [turn.endMs, nextStartMs].filter((value) => Number.isFinite(value) && (startMs === null || value >= startMs));
+    return {
+      turn,
+      startMs,
+      endMs: endCandidates.length ? Math.min(...endCandidates) : null,
+    };
+  }).filter((window) => window.startMs !== null && window.endMs !== null);
+  const firstPointByTurn = new Set();
+  const progression = usageReport.progression.map((point) => {
+    const pointMs = timestampMs(point.timestamp);
+    if (pointMs === null) return point;
+    // Prefer the latest matching start at a shared boundary, so an event at the
+    // next prompt timestamp belongs to the new Turn rather than the prior one.
+    const window = [...windows].reverse().find((candidate) => pointMs >= candidate.startMs && pointMs <= candidate.endMs);
+    if (!window) return point;
+    const prompt = safeText(window.turn.prompt?.text, 240);
+    const promptBoundary = !firstPointByTurn.has(window.turn.index);
+    firstPointByTurn.add(window.turn.index);
+    return {
+      ...point,
+      turnIndex: window.turn.index,
+      ...(prompt ? { userPrompt: prompt } : {}),
+      ...(promptBoundary ? { promptBoundary: true } : {}),
+    };
+  });
+  return { ...usageReport, progression };
+}
+
 // One turn vocabulary for every surface. `turnCount` is the number of dialogue
 // Turns a reviewer can actually open; the other counts explain why fewer prompt
 // cards are shown, so no two views can quote different totals.
@@ -457,6 +503,10 @@ function projectSession(session) {
     timestamp: prompt.timestamp ?? null,
     day: isoDay(prompt.timestamp ?? session.firstSeen),
   })), dialogue.turns);
+  const usageReport = bindUsageProgressionToTurns(projectUsageReport(session.usageReport, {
+    providerTotalTokens: tokenUsage?.totalTokens ?? null,
+    boundText: safeText,
+  }), dialogue);
   return {
     sessionId,
     locator,
@@ -480,10 +530,7 @@ function projectSession(session) {
     // Bounded projection only. The Session that produced this report already
     // counted every inference; recomputing here from the capped dialogue would
     // quote a display artefact under the same field names.
-    usageReport: projectUsageReport(session.usageReport, {
-      providerTotalTokens: tokenUsage?.totalTokens ?? null,
-      boundText: safeText,
-    }),
+    usageReport,
     runtime: projectRuntime(session.runtime),
     contextManifest: projectContextManifest(session.contextManifest),
     timestampBasis: ["native-event", "native-metadata", "source-file-mtime", "unobserved"].includes(session.timestampBasis)

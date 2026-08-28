@@ -140,6 +140,7 @@ test("usageObservationFromEvent ignores an event with no usage evidence", () => 
   assert.deepEqual(
     usageObservationFromEvent({
       type: "token_count",
+      timestamp: "2026-08-28T01:02:03.000Z",
       model: "model-a",
       modelInvocationUsage: { inputTokens: 4, outputTokens: 6 },
       currentContextUsage: { usedTokens: 40, windowTokens: 100 },
@@ -147,6 +148,7 @@ test("usageObservationFromEvent ignores an event with no usage evidence", () => 
       processedTokensBasis: "derived-accounted-usage",
     }),
     {
+      timestamp: "2026-08-28T01:02:03.000Z",
       model: "model-a",
       contextTokens: 40,
       windowTokens: 100,
@@ -162,6 +164,19 @@ test("usageObservationFromEvent ignores an event with no usage evidence", () => 
     modelInvocationUsage: { inputTokens: 4, outputTokens: 6 },
     currentContextUsage: { usedTokens: 40, windowTokens: 100 },
   }), null);
+});
+
+test("Usage progression preserves observed response time through derivation and projection (AC-30)", () => {
+  const report = buildUsageReport([
+    { ...observation("model-a", 100, 110, 10), timestamp: "2026-08-28T01:02:03.456Z" },
+    { ...observation("model-a", 120, 130, 10), timestamp: "not-a-time" },
+  ]);
+  const projected = projectUsageReport(report);
+
+  assert.equal(report.progression[0].timestamp, "2026-08-28T01:02:03.456Z");
+  assert.equal(projected.progression[0].timestamp, "2026-08-28T01:02:03.456Z");
+  assert.equal(Object.hasOwn(report.progression[1], "timestamp"), false);
+  assert.equal(Object.hasOwn(projected.progression[1], "timestamp"), false);
 });
 
 test("usageObservationFromEvent never reads a cumulative Session total as one invocation", () => {

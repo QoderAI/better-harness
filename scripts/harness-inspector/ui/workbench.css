@@ -771,14 +771,26 @@
   .usage-chart-grid { stroke:var(--color-border); stroke-width:1; vector-effect:non-scaling-stroke; }
   .usage-chart-line { fill:none; stroke:var(--color-primary); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; }
   .usage-chart-boundary { stroke:var(--color-candidate); stroke-width:1; stroke-dasharray:5 4; vector-effect:non-scaling-stroke; }
+  .usage-chart-turn, .usage-chart-key-marker { cursor:pointer; }
+  .usage-chart-turn:focus, .usage-chart-key-marker:focus { outline:none; }
+  .usage-chart-turn-hit, .usage-chart-point-hit { fill:transparent; }
+  .usage-chart-turn-line { stroke:var(--color-categorical-4); stroke-width:1; stroke-dasharray:2 3; opacity:.55; vector-effect:non-scaling-stroke; pointer-events:none; }
+  .usage-chart-turn-marker { fill:var(--color-categorical-4); stroke:var(--color-surface); stroke-width:1.5; vector-effect:non-scaling-stroke; }
   .usage-chart-point { fill:var(--color-primary); stroke:var(--color-surface); stroke-width:2; vector-effect:non-scaling-stroke; }
   .usage-chart-point.boundary-shrink { fill:var(--color-warning); }
   .usage-chart-point.boundary-model-change { fill:var(--color-candidate); }
+  .usage-chart-turn:hover .usage-chart-turn-marker, .usage-chart-turn:focus .usage-chart-turn-marker,
+  .usage-chart-key-marker:hover .usage-chart-point, .usage-chart-key-marker:focus .usage-chart-point { stroke:var(--color-focus); stroke-width:3; }
   .usage-chart-legend { margin-top:7px; display:flex; flex-wrap:wrap; gap:8px 16px; color:var(--color-text-muted); font-size:12px; }
   .usage-chart-legend span { display:flex; align-items:center; gap:6px; }
   .usage-chart-legend i { width:9px; height:9px; border-radius:var(--radius-full); background:var(--color-primary); }
+  .usage-chart-legend i.prompt { border-radius:0; background:var(--color-categorical-4); clip-path:polygon(50% 0,100% 100%,0 100%); }
   .usage-chart-legend i.shrink { background:var(--color-warning); }
   .usage-chart-legend i.boundary { border-radius:0; background:var(--color-candidate); }
+  .usage-chart-inspector { min-height:42px; margin-top:7px; padding:7px 2px 0; display:grid; gap:2px; border-top:1px solid var(--color-border); font-size:12px; }
+  .usage-chart-inspector strong, .usage-chart-inspector span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .usage-chart-inspector strong { color:var(--color-text); }
+  .usage-chart-inspector span { color:var(--color-text-muted); }
   .usage-progress-details { margin-top:16px; }
   .usage-progress-details > summary { min-height:34px; display:flex; align-items:center; color:var(--color-text); cursor:pointer; font-size:12px; font-weight:700; }
   .usage-progress-head, .usage-progress-list li { min-width:0; display:grid; grid-template-columns:minmax(150px,1.5fr) repeat(4,minmax(88px,1fr)); align-items:center; gap:14px; }
@@ -788,6 +800,7 @@
   .usage-progress-list li > div:first-child { min-width:0; display:grid; }
   .usage-progress-list li strong { color:var(--color-text); font-size:12px; }
   .usage-progress-list li span { overflow:hidden; color:var(--color-text-muted); text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+  .usage-progress-list li small { overflow:hidden; color:var(--color-text-subtle); text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
   .usage-progress-list li.boundary-shrink .usage-delta { color:var(--color-warning); font-weight:700; }
   .usage-progress-list li.boundary-model-change .usage-delta { color:var(--color-candidate); font-weight:700; }
   .usage-progress-bar { height:7px; overflow:hidden; border-radius:var(--radius-full); background:var(--color-border); }

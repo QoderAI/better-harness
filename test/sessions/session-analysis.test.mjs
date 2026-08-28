@@ -2493,7 +2493,7 @@ test("Codex keeps child rollout usage out of the parent while retaining real par
   const reviewOneId = "codex-auto-review-one";
   const reviewTwoId = "codex-auto-review-two";
   const sessionPath = (...parts) => path.join(home, "sessions", "2026", "08", "28", ...parts);
-  const tokenCount = (timestamp, cumulativeTotal, currentInput) => ({
+  const tokenCount = (timestamp, cumulativeTotal, currentInput, lastTotal = currentInput) => ({
     timestamp,
     type: "event_msg",
     payload: {
@@ -2507,9 +2507,9 @@ test("Codex keeps child rollout usage out of the parent while retaining real par
         last_token_usage: {
           input_tokens: currentInput,
           output_tokens: 0,
-          total_tokens: currentInput,
+          total_tokens: lastTotal,
         },
-        model_context_window: 1_000,
+        model_context_window: 260,
       },
     },
   });
@@ -2519,7 +2519,7 @@ test("Codex keeps child rollout usage out of the parent while retaining real par
     tokenCount("2026-08-28T10:00:01.000Z", 30, 30),
     tokenCount("2026-08-28T10:00:04.000Z", 250, 240),
     { timestamp: "2026-08-28T10:00:07.000Z", type: "compacted", payload: {} },
-    tokenCount("2026-08-28T10:00:08.000Z", 260, 0),
+    tokenCount("2026-08-28T10:00:08.000Z", 260, 0, 24_661),
     tokenCount("2026-08-28T10:00:10.000Z", 400, 120),
   ]);
   await writeJsonl(sessionPath(`rollout-2026-08-28T10-00-02-${reviewOneId}.jsonl`), [
@@ -2549,6 +2549,11 @@ test("Codex keeps child rollout usage out of the parent while retaining real par
     const events = await analyzer.readSession(parent, scope);
     assert.equal(events.filter((event) => event.type === "event.token_count").length, 4);
     assert.equal(events.every((event) => event.sessionId === parentId), true);
+    const resetSnapshot = events.filter((event) => event.type === "event.token_count")[2];
+    assert.equal(resetSnapshot.emptyInvocationSnapshot, true);
+    assert.equal(resetSnapshot.usageProgressionExcluded, true);
+    assert.equal(Object.hasOwn(resetSnapshot, "modelInvocationUsage"), false);
+    assert.equal(Object.hasOwn(resetSnapshot, "currentContextUsage"), false);
 
     const summary = summarizeSessionEvents(parent, events, {
       repoRoot: workspace,
@@ -2557,10 +2562,11 @@ test("Codex keeps child rollout usage out of the parent while retaining real par
     assert.equal(summary.tokenUsage.totalTokens, 400);
     assert.equal(summary.contextManifest.usedTokens, 120);
     assert.equal(summary.contextManifest.compactionCount, 1);
-    assert.equal(summary.usageReport.actualModelCalls, 4);
+    assert.equal(summary.usageReport.actualModelCalls, 3);
     assert.equal(summary.usageReport.currentContextTokens, 120);
     assert.equal(summary.usageReport.netContextDeltaTokens, 90);
     assert.equal(summary.usageReport.contextResetCount, 1);
+    assert.deepEqual(summary.usageReport.progression.map((point) => point.contextTokens), [30, 240, 120]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

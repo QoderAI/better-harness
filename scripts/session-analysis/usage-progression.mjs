@@ -81,6 +81,12 @@ function percentValue(value) {
   return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number * 10) / 10)) : null;
 }
 
+function timestampValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 function count(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
@@ -103,6 +109,7 @@ export function usageObservationFromEvent(event) {
   const processing = observedProcessingAccounting(event, { boundText: truncateText });
   if (!tokenUsage && !contextUsage && processing.processedTokens === undefined) return null;
   return {
+    timestamp: timestampValue(event?.timestamp),
     model: truncateText(event?.model, MODEL_TEXT_LIMIT),
     contextTokens: contextUsage?.usedTokens ?? null,
     windowTokens: contextUsage?.windowTokens ?? null,
@@ -192,6 +199,7 @@ export function buildUsageReport(observations = [], {
     points.push(retained({
       id: `R${index}`,
       index,
+      timestamp: timestampValue(observation?.timestamp),
       model,
       contextTokens,
       windowTokens: positiveTokenCount(observation?.windowTokens),
@@ -243,6 +251,7 @@ function projectProgressionPoint(point, offset, boundText) {
   return retained({
     id: `R${index}`,
     index,
+    timestamp: timestampValue(point?.timestamp),
     model: boundText(point?.model, MODEL_TEXT_LIMIT),
     contextTokens: tokenCount(point?.contextTokens),
     windowTokens: positiveTokenCount(point?.windowTokens),

@@ -768,6 +768,55 @@ test("Inspector projects the derived Usage report instead of recounting the boun
   assert.equal(Object.hasOwn(report.sessions[0], "usageDiagnostics"), false);
 });
 
+test("Inspector links Usage points to prompts only through observed Turn time windows (AC-30)", () => {
+  const usageReport = buildUsageReport([
+    { model: "gpt-5.6", contextTokens: 100, timestamp: "2026-08-12T08:02:00.000Z" },
+    { model: "gpt-5.6", contextTokens: 120, timestamp: "2026-08-12T08:07:00.000Z" },
+    { model: "gpt-5.6", contextTokens: 140, timestamp: "2026-08-12T08:12:00.000Z" },
+    { model: "gpt-5.6", contextTokens: 160, timestamp: "2026-08-12T08:14:00.000Z" },
+  ]);
+  const report = buildHarnessInspectorReport({
+    repoRoot: "/workspace/repo",
+    featureTree: parseFeatureTreeMarkdown(FEATURE_TREE),
+    sessions: [fixtureSession({
+      usageReport,
+      dialogue: {
+        truncated: false,
+        turns: [
+          {
+            index: 1,
+            prompt: { text: "Inspect context pressure", timestamp: "2026-08-12T08:00:00.000Z" },
+            steps: [],
+            response: "Measured the first interval.",
+            startMs: Date.parse("2026-08-12T08:00:00.000Z"),
+            endMs: Date.parse("2026-08-12T08:05:00.000Z"),
+          },
+          {
+            index: 2,
+            prompt: { text: "Confirm whether compaction occurred", timestamp: "2026-08-12T08:10:00.000Z" },
+            steps: [],
+            response: "Confirmed the reset.",
+            startMs: Date.parse("2026-08-12T08:10:00.000Z"),
+            endMs: Date.parse("2026-08-12T08:20:00.000Z"),
+          },
+        ],
+      },
+    })],
+    correlation: fixtureCorrelation(),
+  });
+
+  const points = report.sessions[0].usageReport.progression;
+  assert.deepEqual(
+    points.map((point) => ({ index: point.index, timestamp: point.timestamp, turnIndex: point.turnIndex, userPrompt: point.userPrompt, promptBoundary: point.promptBoundary })),
+    [
+      { index: 1, timestamp: "2026-08-12T08:02:00.000Z", turnIndex: 1, userPrompt: "Inspect context pressure", promptBoundary: true },
+      { index: 2, timestamp: "2026-08-12T08:07:00.000Z", turnIndex: undefined, userPrompt: undefined, promptBoundary: undefined },
+      { index: 3, timestamp: "2026-08-12T08:12:00.000Z", turnIndex: 2, userPrompt: "Confirm whether compaction occurred", promptBoundary: true },
+      { index: 4, timestamp: "2026-08-12T08:14:00.000Z", turnIndex: 2, userPrompt: "Confirm whether compaction occurred", promptBoundary: undefined },
+    ],
+  );
+});
+
 test("Inspector answers a Session without usage evidence with the shared empty report", () => {
   const report = buildHarnessInspectorReport({
     repoRoot: "/workspace/repo",

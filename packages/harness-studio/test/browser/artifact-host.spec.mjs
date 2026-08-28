@@ -157,8 +157,8 @@ test.beforeAll(async () => {
       // shared builder, so the fixture cannot assert numbers the report model
       // could not produce.
       usageReport: buildUsageReport([
-        { model: "fixture-model", contextTokens: 25, windowTokens: 100, percentFull: 25, outputTokens: 8 },
-        { model: "fixture-model", contextTokens: 40, windowTokens: 100, percentFull: 40, outputTokens: 10 },
+        { model: "fixture-model", contextTokens: 25, windowTokens: 100, percentFull: 25, outputTokens: 8, timestamp: new Date(Date.parse(record.savedAt) + 1_000).toISOString() },
+        { model: "fixture-model", contextTokens: 40, windowTokens: 100, percentFull: 40, outputTokens: 10, timestamp: new Date(Date.parse(record.savedAt) + 2_000).toISOString() },
       ]),
       contextManifest: {
         status: "observed",
@@ -211,6 +211,8 @@ test.beforeAll(async () => {
         shownEventCount: record.toolCallCount + 2,
         response: `${record.prompt} complete`,
         responseStatus: "retained",
+        startMs: Date.parse(record.savedAt),
+        endMs: Date.parse(record.savedAt) + 3_000,
       }] },
     })),
     correlation: { commits: [] },
@@ -1194,7 +1196,20 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(usageReport).toContainText("Usage and Context Report");
   await expect(usageReport).toContainText(/Net context growth\s*\+15/u);
   await expect(usageReport).toContainText(/Model calls\s*2/u);
+  await expect(usageReport).toContainText(/Provider reported 1 compaction boundary\./u);
   await expect(usageReport.getByRole("img", { name: /Context progression from 25 to 40 tokens/u })).toBeVisible();
+  await expect(usageReport.locator(".chart-toolbar")).toContainText(/Response order/u);
+  await expect(usageReport.locator(".chart-toolbar")).toContainText(/10:00:01 → 10:00:02 UTC|11:00:01 → 11:00:02 UTC/u);
+  const promptMarker = usageReport.getByRole("button", { name: /User turn 1 · Repair (parser|renderer)/u }).first();
+  await promptMarker.focus();
+  await expect(promptMarker).toBeFocused();
+  await expect(usageReport.locator(".usage-chart-inspector")).toContainText(/Response 1 · (10|11):00:01 UTC · 25 context/u);
+  await expect(usageReport.locator(".usage-chart-inspector")).toContainText(/User turn 1 · Repair (parser|renderer)/u);
+  await promptMarker.click();
+  await expect(usageReport.locator(".usage-chart-turn[tabindex='0']")).toHaveCount(1);
+  await expect(usageReport.locator(".usage-chart-key-marker[tabindex='0']")).toHaveCount(2);
+  await expect(usageReport.locator(".usage-progress-list")).toContainText(/(10|11):00:02 UTC · Turn 1/u);
+  await expect(usageReport.locator(".usage-progress-list")).toContainText(/Repair (parser|renderer)/u);
   await expect(usageReport).toContainText(/Rules\s*10/u);
   await expect(usageReport).toContainText(/Other\s*30/u);
   await expect(usageReport).toContainText(/Raw context\s*omitted/u);

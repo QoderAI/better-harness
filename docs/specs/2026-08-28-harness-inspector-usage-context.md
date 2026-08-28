@@ -179,6 +179,26 @@ from the default Inspector window.
   boundary, and a same-model prompt-context drop inside that parent rollout
   remains one context shrink/reset. Switching to or from a child
   `codex-auto-review` rollout must not create a parent compaction/reset.
+- AC-30: Each retained Usage progression point preserves its observed response
+  timestamp through derivation and portable projection. The report may bind a
+  point to a user Turn only when that timestamp falls within the Turn's observed
+  time boundary; missing timestamps or unmatched points remain explicitly
+  unlinked instead of borrowing the nearest prompt or response ordinal.
+- AC-31: Standalone Inspector and Studio render Context progression with an
+  explicit response-order axis, an observed UTC time range when available, and
+  distinct focusable markers for user prompts, context shrink/reset, and model
+  boundaries. Hover, keyboard focus, or click opens a Tool-calls-style inspector
+  showing response, time, context delta, Turn, and a bounded privacy-filtered
+  prompt excerpt. Only decision-relevant markers enter the tab order, and
+  unavailable time or prompt evidence is labelled honestly.
+- AC-32: A Codex token-count snapshot whose invocation input, output, cache,
+  and reasoning counters are all zero carries no observed model inference. The
+  nonzero-total form emitted after `compacted` is compaction bookkeeping, not a
+  model response or an absolute zero-token prompt. Its cumulative Session
+  accounting remains available, but it does not update current context or add a
+  progression point. The next observed post-compaction prompt snapshot carries
+  the shrink/reset delta, while the report separately states the
+  provider-observed compaction count.
 
 ## Provider evidence matrix
 
@@ -279,6 +299,15 @@ from the default Inspector window.
     compaction, and two interleaved `codex-auto-review` child rollouts. Pin the
     parent current context, net growth, cumulative total, model-call count, and
     single reset/compaction while verifying both child streams stay separate.
+24. Preserve normalized inference timestamps in the shared Usage progression
+    contract, then bind projected points to dialogue Turns only through observed
+    time containment.
+25. Reuse the Tool calls chart interaction vocabulary for Context progression:
+    response-order and UTC range metadata, semantic boundary shapes, bounded
+    prompt excerpts, and one keyboard-accessible detail inspector in both hosts.
+26. Exclude Codex all-zero invocation bookkeeping snapshots from current
+    context and model-call progression, then surface explicit provider
+    compactions alongside observed post-compaction shrink/reset markers.
 
 ## Test and Review Evidence
 
@@ -359,6 +388,18 @@ from the default Inspector window.
   Session summary and Usage report must retain the parent's own cumulative
   total, current context, model calls, and one real compaction/reset without
   counting child snapshots.
+- AC-30: shared Usage progression tests retain a native timestamp through
+  derivation and projection. A report-model fixture places points inside and
+  outside observed Turn windows and asserts that only contained points receive
+  a bounded Turn index and user prompt.
+- AC-31: Studio Playwright and standalone browser checks focus and click prompt
+  and context-boundary markers, inspect their response/time/Turn/prompt detail,
+  verify bounded tab stops and visible focus, and retain the existing
+  1440x900, 1024x768, and 390x844 overflow and console-error checks.
+- AC-32: the parent/child Codex rollout fixture places an all-zero invocation
+  snapshot immediately after `compacted`. Assertions retain its cumulative
+  Session total but exclude it from model calls and context points, keep the
+  next real prompt as one shrink/reset, and pin the provider compaction note.
 - Cross-platform evidence: focused tests must use `node:path` and temporary
   directories, then the full Node 22/24 macOS, Windows, and Ubuntu PR jobs remain
   authoritative for target-platform acceptance.
@@ -484,3 +525,23 @@ from the default Inspector window.
   Harness/Harness UI/Studio passed 172/31/293 tests, generated sources remained
   clean, and package verification passed for 597 npm and 867 runtime entries.
   The Canvas preview returned HTTP 200 for `/health` and `/canvas-module.js`.
+- AC-28/AC-29 isolated parent and child Codex rollout streams while retaining
+  the parent's own compaction/reset evidence. The focused fixture and the real
+  parent rollout no longer admit child cumulative counters into the parent
+  model-call series.
+- AC-30 through AC-32 replayed the current parent rollout through the package
+  `better-harness inspector` CLI. One observed replay retained 340 real model
+  responses, 7 time-contained user-prompt markers, and 3 provider compaction
+  boundaries. The three post-compaction points remained shrink/resets, while
+  all-zero bookkeeping snapshots contributed zero chart/model-call points; the
+  first reset resolved to 35.6K context and a -204.5K delta instead of a false
+  zero-token prompt.
+- The focused provider/progression/report suites passed 98 tests. Native Studio
+  TypeScript/build and the focused interactive Playwright scenario passed,
+  including marker focus, click, time/Turn/prompt detail, and wide/compact/narrow
+  screenshots. The standalone visual gate exercised all 15 surface/layout
+  combinations with zero overflow, clipping, below-floor text, or page/console
+  errors.
+- The final Node 24 `npm run check` passed 1,582 root tests with 2 skipped,
+  Harness/Harness UI/Studio passed 173/31/494 tests, generated sources remained
+  clean, and package verification passed for 605 npm and 867 runtime entries.

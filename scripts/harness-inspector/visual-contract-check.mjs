@@ -125,7 +125,21 @@ async function surfacesFor(page) {
       enter: async () => {
         await page.click("#mode-feature");
         await page.waitForTimeout(200);
-        const opener = page.locator("[data-open-session]").first();
+        let opener = page.locator("[data-open-session]").first();
+        // A real workspace may have valid date-scoped Sessions without any
+        // Feature correlation. The visual gate must still exercise Session
+        // Trace/Usage/Replay instead of silently passing only the picker.
+        if ((await opener.count()) === 0) {
+          await page.click("#mode-date");
+          const date = await page.locator("[data-date]").evaluateAll((items) => (
+            items.find((item) => Number(item.dataset.sessionCount) > 0)?.dataset.date ?? null
+          ));
+          if (date) {
+            await page.click(`[data-date="${date}"]`);
+            await page.waitForTimeout(300);
+            opener = page.locator("[data-open-session]").first();
+          }
+        }
         if ((await opener.count()) === 0) return "skip";
         await opener.click();
         await page.waitForTimeout(400);

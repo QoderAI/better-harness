@@ -47,6 +47,7 @@ export interface InspectorToolCall {
 export interface InspectorUsageProgressionPoint {
   id: string;
   index: number;
+  timestamp?: string;
   model?: string;
   contextTokens?: number;
   windowTokens?: number;
@@ -54,6 +55,9 @@ export interface InspectorUsageProgressionPoint {
   contextDeltaTokens?: number;
   processedTokens?: number;
   outputTokens?: number;
+  turnIndex?: number;
+  userPrompt?: string;
+  promptBoundary?: boolean;
   boundary: "baseline" | "growth" | "steady" | "shrink" | "model-change" | "unobserved";
 }
 

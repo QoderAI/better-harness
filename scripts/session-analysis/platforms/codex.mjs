@@ -123,6 +123,16 @@ function normalizeCodexUsage(value) {
   return Object.keys(usage).length > 0 ? usage : null;
 }
 
+function hasCodexInvocationWork(usage) {
+  return [
+    usage?.inputTokens,
+    usage?.outputTokens,
+    usage?.cacheReadInputTokens,
+    usage?.cacheCreationInputTokens,
+    usage?.reasoningOutputTokens,
+  ].some((value) => Number.isFinite(value) && value > 0);
+}
+
 function contextItemCount(value) {
   if (Array.isArray(value)) return value.length;
   if (value && typeof value === "object") return Object.keys(value).length;
@@ -914,6 +924,7 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
       const info = payload.info && typeof payload.info === "object" ? payload.info : {};
       const modelUsage = normalizeCodexUsage(info.total_token_usage);
       const lastModelUsage = normalizeCodexUsage(info.last_token_usage);
+      const emptyInvocationSnapshot = lastModelUsage && !hasCodexInvocationWork(lastModelUsage);
       const contextWindowTokens = Number(info.model_context_window);
       if (modelUsage) {
         event.modelUsage = modelUsage;
@@ -922,8 +933,8 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
         event.usageBasis = "model-inference";
         event.usageSource = "codex-rollout-token-count";
       }
-      if (lastModelUsage) event.modelInvocationUsage = lastModelUsage;
-      if (lastModelUsage && Number.isFinite(contextWindowTokens) && contextWindowTokens > 0) {
+      if (lastModelUsage && !emptyInvocationSnapshot) event.modelInvocationUsage = lastModelUsage;
+      if (lastModelUsage && !emptyInvocationSnapshot && Number.isFinite(contextWindowTokens) && contextWindowTokens > 0) {
         event.currentContextUsage = {
           usedTokens: Number(lastModelUsage.inputTokens) || 0,
           windowTokens: Math.round(contextWindowTokens),
@@ -931,6 +942,10 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
           source: "codex-rollout-token-count",
           rawTextOmitted: true,
         };
+      }
+      if (emptyInvocationSnapshot) {
+        event.emptyInvocationSnapshot = true;
+        event.usageProgressionExcluded = true;
       }
     }
     if (outer === "compacted") event.compactionBoundary = true;
