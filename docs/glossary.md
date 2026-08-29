@@ -60,7 +60,7 @@ for extension surfaces, read [community.md](community.md).
 | `core-change-watch` | Project, history, core-path, and current-diff evidence collection. | [scripts/core-change-watch](../scripts/core-change-watch) |
 | Blast radius | The symbol-graph reach of a change, computed with tree-sitter (JS/TS, Go, Python) as a git hook. | [hooks/git-scripts/blast-radius](../hooks/git-scripts/blast-radius) |
 | `dependency-governance` | Update-automation, audit, and stale-dependency signals. | [scripts/dependency-governance](../scripts/dependency-governance) |
-| `session-analysis` | Normalizes Qoder, Codex, Claude, Cursor, Qwen, Copilot, Pi, Kimi Code, or WorkBuddy agent session behavior into evidence. | [scripts/session-analysis](../scripts/session-analysis) |
+| `session-analysis` | Normalizes Qoder, Codex, Claude, Augment/Auggie, Cursor, Qwen, Copilot, Pi, Kimi Code, or WorkBuddy agent session behavior into evidence. | [scripts/session-analysis](../scripts/session-analysis) |
 | Guardrails | Change-time enforcement: secret scanning and lifecycle hook checks. | [hooks](../hooks), [scripts/agent-guardrails](../scripts/agent-guardrails) |
 
 ## The Action Loop (Report → Change)

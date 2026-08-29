@@ -49,6 +49,7 @@ Options:
   --qoder-home <dir>        Qoder data root (default: ~/.qoder)
   --codex-home <dir>        Codex data root (default: ~/.codex)
   --claude-home <dir>       Claude Code data root (default: ~/.claude)
+  --augment-home <dir>      Augment/Auggie data root (default: ~/.augment)
   --cursor-home <dir>       Cursor data root (default: ~/.cursor)
   --qwen-home <dir>         Qwen Code data root (default: ~/.qwen)
   --copilot-home <dir>      Copilot CLI data root (default: ~/.copilot)
@@ -245,6 +246,7 @@ const PLATFORM_MODULES = Object.freeze({
   qoder: { specifier: "./platforms/qoder.mjs", analyzer: "QoderSessionAnalyzer" },
   codex: { specifier: "./platforms/codex.mjs", analyzer: "CodexSessionAnalyzer" },
   claude: { specifier: "./platforms/claude.mjs", analyzer: "ClaudeSessionAnalyzer" },
+  augment: { specifier: "./platforms/augment.mjs", analyzer: "AugmentSessionAnalyzer" },
   cursor: { specifier: "./platforms/cursor.mjs", analyzer: "CursorSessionAnalyzer" },
   qwen: { specifier: "./platforms/qwen.mjs", analyzer: "QwenSessionAnalyzer" },
   copilot: { specifier: "./platforms/copilot.mjs", analyzer: "CopilotSessionAnalyzer" },
@@ -332,7 +334,7 @@ export async function main(argv = process.argv.slice(2), dependencies = {}) {
       ...eventOptions,
       ...claudeOptions,
       "",
-      "Options: --kimi-home <dir> overrides the Kimi Code data root (default: ~/.kimi-code); --workbuddy-home <dir> overrides the WorkBuddy data root (default: ~/.workbuddy); --grok-home <dir> overrides the Grok data root (default: ~/.grok or $GROK_HOME); --dsh-home <dir> overrides the DeepSeek Harness data root (default: ~/.dsh or $DSH_HOME).",
+      "Options: --augment-home <dir> overrides the Augment/Auggie data root (default: ~/.augment); --kimi-home <dir> overrides the Kimi Code data root (default: ~/.kimi-code); --workbuddy-home <dir> overrides the WorkBuddy data root (default: ~/.workbuddy); --grok-home <dir> overrides the Grok data root (default: ~/.grok or $GROK_HOME); --dsh-home <dir> overrides the DeepSeek Harness data root (default: ~/.dsh or $DSH_HOME).",
       "",
       "Use facts --debug only for local diagnosis; it exposes raw session ids and must not be passed to report agents.",
     ].join("\n") + "\n");

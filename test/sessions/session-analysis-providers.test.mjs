@@ -19,6 +19,7 @@ import {
   ClaudeSessionAnalyzer,
   workspaceToClaudeSlugVariants,
 } from "../../scripts/session-analysis/platforms/claude.mjs";
+import { AugmentSessionAnalyzer } from "../../scripts/session-analysis/platforms/augment.mjs";
 import {
   CursorSessionAnalyzer,
   workspaceToCursorSlugVariants,
@@ -62,6 +63,7 @@ test("root dispatcher creates Claude and Cursor provider analyzers", async () =>
   assert.strictEqual(rootMain, capabilityMain);
   assert.strictEqual(SessionAnalyzer, CapabilitySessionAnalyzer);
   assert.ok(await createAnalyzer("claude") instanceof ClaudeSessionAnalyzer);
+  assert.ok(await createAnalyzer("augment") instanceof AugmentSessionAnalyzer);
   assert.ok(await createAnalyzer("cursor") instanceof CursorSessionAnalyzer);
   assert.ok(await createAnalyzer("qwen") instanceof QwenSessionAnalyzer);
   assert.ok(await createAnalyzer("copilot") instanceof CopilotSessionAnalyzer);
@@ -70,6 +72,7 @@ test("root dispatcher creates Claude and Cursor provider analyzers", async () =>
   assert.ok(await createAnalyzer("grok") instanceof GrokSessionAnalyzer);
   assert.ok(await createAnalyzer("dsh") instanceof DshSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("claude") instanceof ClaudeSessionAnalyzer);
+  assert.ok(await createCapabilityAnalyzer("augment") instanceof AugmentSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("cursor") instanceof CursorSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("qwen") instanceof QwenSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("copilot") instanceof CopilotSessionAnalyzer);
@@ -93,6 +96,7 @@ test("public session-analysis main preserves the bare help alias", async () => {
   assert.equal(result, 0);
   assert.equal(output, SESSION_ANALYSIS_HELP);
   assert.match(output, /\|dsh>/u);
+  assert.match(output, /--augment-home <dir>\s+Augment\/Auggie data root \(default: ~\/\.augment\)/u);
   assert.match(output, /--dsh-home <dir>\s+DeepSeek Harness data root \(default: ~\/\.dsh or \$DSH_HOME\)/u);
 });
 

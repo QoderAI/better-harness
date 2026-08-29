@@ -63,6 +63,13 @@ export const HOST_DESCRIPTORS = Object.freeze([
     sessionScopeTokens: [".claude", "claude"],
   }),
   descriptor({
+    id: "augment",
+    displayName: "Augment",
+    aliases: ["Auggie"],
+    capabilities: [HOST_CAPABILITIES.SESSION_ANALYSIS],
+    sessionScopeTokens: [".augment", "augment", "auggie"],
+  }),
+  descriptor({
     id: "cursor",
     displayName: "Cursor",
     capabilities: CHECKUP_CAPABILITIES,

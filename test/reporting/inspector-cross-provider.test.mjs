@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
+import path from "node:path";
 import { test } from "vitest";
 import { fileURLToPath } from "node:url";
 
@@ -178,4 +180,84 @@ test("a leading option flag implies the render command (AC-5)", () => {
   const unknown = spawnSync(process.execPath, [CLI_PATH, "inspect"], { cwd: os.tmpdir(), encoding: "utf8" });
   assert.equal(unknown.status, 64);
   assert.match(unknown.stderr, /Unknown command; expected render/u);
+});
+
+test("Inspector renders workspace-qualified Augment usage and dialogue from the default local home", async () => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), "augment-inspector-"));
+  try {
+    const workspace = path.join(fixture, "workspace");
+    const sessionsDir = path.join(fixture, ".augment", "sessions");
+    const output = path.join(fixture, "augment-inspector.html");
+    await mkdir(workspace, { recursive: true });
+    await mkdir(sessionsDir, { recursive: true });
+    const git = (...args) => spawnSync("git", args, { cwd: workspace, encoding: "utf8" });
+    git("init", "--initial-branch=main");
+    git("config", "commit.gpgsign", "false");
+    git("config", "user.email", "inspector@example.com");
+    git("config", "user.name", "Inspector Test");
+    await writeFile(path.join(workspace, "README.md"), "# fixture\n", "utf8");
+    git("add", "README.md");
+    git("commit", "-m", "chore: seed fixture");
+
+    const startedAt = Date.parse("2026-08-29T02:00:00.000Z");
+    await writeFile(path.join(sessionsDir, "augment-inspector-session.json"), `${JSON.stringify({
+      sessionId: "augment-inspector-session",
+      created: "2026-08-29T02:00:00.000Z",
+      modified: "2026-08-29T02:00:05.000Z",
+      chatHistory: [{
+        finishedAt: "2026-08-29T02:00:05.000Z",
+        exchange: {
+          request_id: "request-1",
+          request_nodes: [
+            { id: 1, type: 0, text_node: { content: "Inspect the Augment context window" } },
+            {
+              id: 2,
+              type: 4,
+              ide_state_node: {
+                current_terminal: { current_working_directory: workspace },
+                workspace_folders: [{ folder_root: workspace, repository_root: workspace }],
+              },
+            },
+          ],
+          response_nodes: [
+            { id: 1, type: 0, content: "The observed context is healthy.", timestamp_ms: startedAt + 1_000 },
+            {
+              id: 2,
+              type: 10,
+              timestamp_ms: startedAt + 2_000,
+              token_usage: {
+                input_tokens: 1_000,
+                output_tokens: 100,
+                cache_read_input_tokens: 19_000,
+                cache_creation_input_tokens: 0,
+                max_context_tokens: 200_000,
+              },
+            },
+          ],
+        },
+      }],
+    }, null, 2)}\n`, "utf8");
+
+    const result = spawnSync(process.execPath, [
+      CLI_PATH,
+      "render",
+      "--workspace", workspace,
+      "--platform", "augment",
+      "--since", "2026-08-29",
+      "--until", "2026-08-29",
+      "--out", output,
+    ], {
+      cwd: workspace,
+      encoding: "utf8",
+      env: { ...process.env, HOME: fixture },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const html = await readFile(output, "utf8");
+    assert.match(html, /augment · 1 session/u);
+    assert.match(html, /Inspect the Augment context window/u);
+    assert.match(html, /"currentContextTokens":20000/u);
+    assert.match(html, /"windowTokens":200000/u);
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
 });

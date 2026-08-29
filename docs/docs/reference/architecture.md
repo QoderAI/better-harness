@@ -44,7 +44,7 @@ available after the agent acts:
 | Project evidence | `better-harness core-change-watch` | Project, history, core-path, and diff signals |
 | Change confidence | `hooks/git-scripts/blast-radius` | Symbol-graph blast radius of a change |
 | Dependency governance | `better-harness dependency-governance` | Update automation, audit, stale-dep signals |
-| Session evidence | `better-harness session-analysis` | Normalize Qoder, Codex, Claude, Cursor, Qwen, or Copilot session behavior |
+| Session evidence | `better-harness session-analysis` | Normalize Qoder, Codex, Claude, Augment/Auggie, Cursor, Qwen, Copilot, Pi, Kimi Code, or WorkBuddy session behavior |
 | Agent assets | `better-harness coding-agent-practices inventory` | Inventory configured agent surfaces |
 | Guardrails | `hooks/`, `scripts/agent-guardrails` | Secret scanning and lifecycle checks |
 

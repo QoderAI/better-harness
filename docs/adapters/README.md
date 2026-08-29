@@ -1,7 +1,8 @@
 # Host Adapter Matrix
 
-This is the single entry point for Claude Code, Codex, Qoder, Cursor, Qwen,
-GitHub Copilot, Pi, Kimi Code, WorkBuddy, and Grok host boundaries, plus the
+This is the single entry point for Claude Code, Augment/Auggie, Codex, Qoder,
+Cursor, Qwen, GitHub Copilot, Pi, Kimi Code, WorkBuddy, and Grok host
+boundaries, plus the
 DeepSeek Harness (DSH) verified install/discovery, developer-preview
 configured-assets, session, Asset Practices, neutral Harness analysis, and
 Evidence Bundle slices, plus qualified portable HTML report rendering. Do not
@@ -37,6 +38,7 @@ project `.kimi-code/skills/`), then runs `/skill:better-harness`.
 | Host | Positioning | Shell | Configured Assets | Session Evidence | Default Output | Rules / Prompts | Smoke |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Claude Code | Analysis-capable source-local host | `.claude-plugin/` | `scripts/agent-customize/providers/claude.mjs` | `scripts/session-analysis/platforms/claude.mjs` | self-contained HTML + Markdown | `.claude` + `CLAUDE.md` + Plugin assets | `claude plugin validate --strict .` -> isolated install/discovery -> configured-asset baseline -> validated `html` render |
+| Augment/Auggie | Partial session adapter | none | unavailable | `scripts/session-analysis/platforms/augment.mjs`; workspace-qualified local JSON sessions from Auggie `0.36.0` | Harness Inspector self-contained HTML | unavailable; no Skill or prompt discovery claim | `auggie --version` -> `session-analysis --platform augment sources` -> bounded Inspector render |
 | Codex | Analysis-capable source-local host | `.codex-plugin/` | `scripts/agent-customize/providers/codex.mjs` | `scripts/session-analysis/platforms/codex.mjs` | self-contained HTML + Markdown | `.codex` + `.agents` + `AGENTS.md` | `harness prepare --platform codex` -> finalize with `html-report` validation |
 | Qoder | First-class product host | `.qoder-plugin/` | `scripts/agent-customize/providers/qoder.mjs` | `scripts/session-analysis/platforms/qoder.mjs` | `better-harness` | `.qoder/rules` + `AGENTS.md` + output templates | `better-harness harness render --mode qoder-canvas --validate` |
 | Cursor | Canvas-capable source-local host | `.cursor-plugin/` | `scripts/agent-customize/providers/cursor.mjs` | `scripts/session-analysis/platforms/cursor.mjs` | `cursor-canvas` | `.cursor` + `.codex` compatibility + `AGENTS.md` | native `cursor-agent --help` contract check -> unavailable install plan -> Cursor evidence bundle -> validated `cursor-canvas` render |
@@ -103,6 +105,18 @@ edit host settings, or register an `apply` path.
   user/project/Plugin assets are inventoried through
   `scripts/agent-customize/providers/claude.mjs`; installed Plugin records are
   kept separate from marketplace catalogs and runtime-use claims.
+- Augment/Auggie has a session-only adapter at
+  `scripts/session-analysis/platforms/augment.mjs`. It reads bounded JSON files
+  from `~/.augment/sessions` (or `--augment-home`), qualifies sessions only from
+  recorded IDE workspace folders, repository roots, or terminal cwd, and
+  exposes provider-observed user/assistant timing, tool lifecycle, per-inference
+  token usage, prompt occupancy, `max_context_tokens`, and explicit
+  `history_summary_node` compaction boundaries. Raw prompt, response, thinking,
+  tool output, and history-summary text stay omitted by default. The adapter
+  does not infer model attribution or parent/subagent ownership from
+  session-level settings, `rootTaskUuid`, or credits. No shell, configured-asset,
+  lifecycle, installation, Evidence Bundle, generic Harness render, or
+  Quickstart support is claimed.
 - Qoder configured assets are inventoried from Qoder plugin, rules, commands,
   skills, hooks, and MCP-facing paths through
   `scripts/agent-customize/providers/qoder.mjs`. Session evidence comes from

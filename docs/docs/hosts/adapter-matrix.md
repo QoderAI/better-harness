@@ -14,7 +14,8 @@ host-neutral.
 ## Support levels
 
 Better Harness currently declares ten more complete capability-level host
-adapters plus bounded DSH discovery, configured-assets, and session slices.
+adapters, a partial Augment/Auggie session-only adapter, plus bounded DSH
+discovery, configured-assets, and session slices.
 Six have verified public Quickstart paths. Pi, Kimi Code, WorkBuddy, and Grok
 are visible as adapter support because their installation and end-to-end
 evidence boundaries differ from that six-host set. DSH has Verified
@@ -31,6 +32,7 @@ remains the complete capability-level source of truth.
 | --- | --- | --- | --- | --- | --- |
 | Qoder | Verified Quickstart | First-class product host | `.qoder-plugin/` | Qoder sessions | Qoder Canvas report |
 | Claude Code | Verified Quickstart | Analysis-capable source-local host | `.claude-plugin/` | Workspace-matching local Claude transcripts when present | Self-contained HTML + Markdown |
+| Augment/Auggie | Partial adapter | Session evidence only; no install or configured-asset claim | None | Workspace-qualified local Augment JSON sessions with usage, context windows, and explicit history-summary boundaries | Harness Inspector self-contained HTML |
 | Codex | Verified Quickstart | Analysis-capable source-local host | `.codex-plugin/` | Codex sessions | Self-contained HTML + Markdown |
 | Cursor | Verified Quickstart | Canvas-capable source-local host | `.cursor-plugin/` | Workspace-matched transcripts, metadata, audit logs, and optional native Context Usage snapshots; partial coverage stays explicit | Cursor Canvas report |
 | Qwen Code | Verified Quickstart | Analysis-capable source-local host | `qwen-extension.json` | Workspace-matching local Qwen transcripts when present | Self-contained HTML + Markdown |
@@ -90,6 +92,24 @@ This qualification adds neither Canvas, Checkup, Studio, nor a claim of full
 DSH support.
 
 ## Adapter support boundaries
+
+### Augment/Auggie {#augment-auggie}
+
+Augment support is intentionally limited to read-only local Session evidence.
+`session-analysis --platform augment` reads bounded JSON sessions from
+`~/.augment/sessions` or an explicit `--augment-home`; Harness Inspector uses
+the default local root through that shared adapter. Admission uses recorded IDE
+workspace folders, repository roots, or terminal cwd; titles and prompt text
+are never workspace identity. Usage nodes retain input, output, cache-read, and
+cache-creation lanes, derive prompt occupancy from those additive lanes, and
+use same-response `max_context_tokens` only when observed. Native
+`history_summary_node` records are explicit compaction boundaries, while an
+unmarked context shrink remains only a measured shrink.
+
+This slice was checked against local Auggie `0.36.0`. It does not provide an
+Augment shell, installation route, configured-asset inventory, lifecycle
+target, generic Harness renderer, Evidence Bundle, model attribution, or
+parent/subagent inference, and it is not a public Quickstart.
 
 ### Pi {#pi}
 
