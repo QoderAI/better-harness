@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   type ArtifactDataSnapshot,
   type ArtifactDescriptor,
@@ -22,12 +23,13 @@ const FENCE_LANGUAGE_HINTS: Record<string, string> = {
 };
 
 export function MarkdownArtifactView({ artifact }: { artifact: ArtifactDescriptor }): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const { snapshot, failure } = useArtifactSnapshot(artifact, "markdown/v1", "Markdown");
   const documentRef = useRef<HTMLDivElement>(null);
 
   if (failure !== undefined) return <p className="artifact-status" role="alert">{failure}</p>;
   if (snapshot === undefined) {
-    return <p className="artifact-status" role="status">Adapting Markdown revision…</p>;
+    return <p className="artifact-status" role="status">{t("markdown.adapting")}</p>;
   }
   const payload = snapshot.payload;
   const context: RenderContext = {
@@ -43,11 +45,11 @@ export function MarkdownArtifactView({ artifact }: { artifact: ArtifactDescripto
   };
 
   return <div className="markdown-artifact-viewer">
-    {snapshot.structure.length > 0 && <nav className="markdown-outline-rail" aria-label={`${artifact.label} outline`}>
-      <h3>Outline</h3>
+    {snapshot.structure.length > 0 && <nav className="markdown-outline-rail" aria-label={t("markdown.outlineAria", { label: artifact.label })}>
+      <h3>{t("markdown.outline")}</h3>
       <MarkdownOutline nodes={snapshot.structure} onSelect={context.goTo} />
     </nav>}
-    <section className="markdown-document-region" aria-label={`${artifact.label} document`}>
+    <section className="markdown-document-region" aria-label={t("markdown.documentAria", { label: artifact.label })}>
       <div className="markdown-document-scroll" ref={documentRef} tabIndex={0}>
         <article className="markdown-document">
           {payload.blocks.map((block, index) => <MarkdownBlockView key={index} block={block} context={context} />)}
@@ -118,8 +120,9 @@ function MarkdownListView({
   block,
   context,
 }: { block: Extract<MarkdownBlock, { kind: "list" }>; context: RenderContext }): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const items = block.items.map((item, index) => <li key={index} className={item.checked === undefined ? undefined : "markdown-task-item"}>
-    {item.checked !== undefined && <input type="checkbox" checked={item.checked} disabled aria-label={item.checked ? "Completed task" : "Open task"} readOnly />}
+    {item.checked !== undefined && <input type="checkbox" checked={item.checked} disabled aria-label={item.checked ? t("markdown.completedTask") : t("markdown.openTask")} readOnly />}
     <MarkdownItemBody blocks={item.blocks} tight={block.tight} context={context} />
   </li>);
   const className = `markdown-list${block.tight ? " tight" : ""}`;
@@ -152,6 +155,7 @@ function MarkdownInlineView({
 }
 
 function MarkdownInlineNode({ node, context }: { node: MarkdownInline; context: RenderContext }): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   if (node.kind === "text") return <>{node.text}</>;
   if (node.kind === "code") return <code className="markdown-inline-code">{node.text}</code>;
   if (node.kind === "break") return <br />;
@@ -177,7 +181,7 @@ function MarkdownInlineNode({ node, context }: { node: MarkdownInline; context: 
     // An image Studio declined to serve keeps its alt text, so the sentence
     // around it still reads.
     if (resource === undefined) {
-      return <span className="markdown-image-unresolved" title={node.title}>{node.alt === "" ? "Image not shown" : node.alt}</span>;
+      return <span className="markdown-image-unresolved" title={node.title}>{node.alt === "" ? t("markdown.imageNotShown") : node.alt}</span>;
     }
     return <img className="markdown-image" src={resource.uri} alt={node.alt} title={node.title} loading="lazy" />;
   }

@@ -1,4 +1,5 @@
 import { createElement, useRef, useState, type MouseEvent } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   ArtifactDataSnapshot,
   DocxBlock,
@@ -12,6 +13,7 @@ import { DocumentZoomControls } from "../DocumentZoomControls.js";
 import { useArtifactSnapshot } from "../useArtifactSnapshot.js";
 
 export function DocxArtifactView({ artifact }: ArtifactSurfaceMountContext): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const { snapshot, failure } = useArtifactSnapshot(artifact, "docx/v1", "DOCX");
   const [zoom, setZoom] = useState(100);
   const [selection, setSelection] = useState<{ revisionId: string; address: string }>();
@@ -22,7 +24,7 @@ export function DocxArtifactView({ artifact }: ArtifactSurfaceMountContext): Rea
   };
 
   if (failure !== undefined) return <p className="artifact-status" role="alert">{failure}</p>;
-  if (snapshot === undefined) return <p className="artifact-status" role="status">Adapting DOCX revision…</p>;
+  if (snapshot === undefined) return <p className="artifact-status" role="status">{t("docx.adapting")}</p>;
 
   const payload = snapshot.payload;
   const headings = payload.blocks.filter((block): block is DocxParagraph => block.kind === "paragraph" && block.headingLevel !== undefined);
@@ -36,16 +38,16 @@ export function DocxArtifactView({ artifact }: ArtifactSurfaceMountContext): Rea
   };
 
   return <div className="docx-artifact-viewer">
-    <section className="docx-stage-region" aria-label={`${artifact.label} preview`}>
+    <section className="docx-stage-region" aria-label={t("docx.previewAria", { label: artifact.label })}>
       <div className="docx-view-toolbar">
-        <span>{artifact.label} · Read-only</span>
-        <DocumentZoomControls label="Document zoom" value={zoom} onChange={setZoom} />
+        <span>{t("docx.readOnlyLabel", { label: artifact.label })}</span>
+        <DocumentZoomControls label={t("docx.zoomLabel")} value={zoom} onChange={setZoom} />
       </div>
       <div className="docx-document-scroll">
         <article
           ref={documentRef}
           className="docx-document-page"
-          aria-label="Word document content"
+          aria-label={t("docx.contentAria")}
           style={{ width: "min(8.5in, 100%)", minHeight: "11in", zoom: zoom / 100 }}
         >
           {payload.blocks.map((block) => <DocxBlockView
@@ -62,15 +64,15 @@ export function DocxArtifactView({ artifact }: ArtifactSurfaceMountContext): Rea
         <ArtifactDiagnostics diagnostics={snapshot.diagnostics} />
       </footer>
     </section>
-    {headings.length > 0 && <aside className="docx-outline-pane" aria-label="Document outline">
-      <h3>Outline</h3>
+    {headings.length > 0 && <aside className="docx-outline-pane" aria-label={t("docx.outlineAria")}>
+      <h3>{t("docx.outline")}</h3>
       <ul>{headings.map((heading) => <li key={heading.id}><button
         type="button"
         className={heading.address === selectedAddress ? "selected" : undefined}
         aria-pressed={heading.address === selectedAddress}
         onClick={() => selectAddress(heading.address)}
         style={{ paddingInlineStart: `calc(var(--space-xs) + ${(heading.headingLevel ?? 1) - 1} * var(--space-sm))` }}
-      ><strong>{heading.label}</strong><small>Heading {heading.headingLevel}</small></button></li>)}</ul>
+      ><strong>{heading.label}</strong><small>{t("docx.headingLevel", { level: heading.headingLevel })}</small></button></li>)}</ul>
     </aside>}
   </div>;
 }
@@ -141,11 +143,12 @@ function DocxImage(props: {
   inline: DocxImageInline;
   resources: ArtifactDataSnapshot["resources"];
 }): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const resource = props.resources.find((candidate) => candidate.id === props.inline.resourceId);
   return <img
     className="docx-inline-image"
     src={resource?.uri}
-    alt={props.inline.alt ?? resource?.label ?? "Document image"}
+    alt={props.inline.alt ?? resource?.label ?? t("docx.documentImage")}
     style={{
       ...(props.inline.widthEmu === undefined ? {} : { width: `${props.inline.widthEmu / 9_525}px` }),
       ...(props.inline.heightEmu === undefined ? {} : { height: `${props.inline.heightEmu / 9_525}px` }),

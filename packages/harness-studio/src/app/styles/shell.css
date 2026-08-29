@@ -311,6 +311,21 @@
 }
 .studio-theme-toggle:hover { color: var(--color-text); background: var(--color-surface-hover); }
 .studio-theme-toggle svg { color: var(--color-primary); }
+.studio-language-toggle {
+  min-height: var(--control-height);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-inline: var(--space-sm);
+  color: var(--color-text-muted);
+  background: transparent;
+  font-size: var(--type-caption-size);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+}
+.studio-language-toggle:hover { color: var(--color-text); background: var(--color-surface-hover); }
+.studio-language-toggle span { color: var(--color-primary); }
 .studio-source-switcher { position: relative; flex: none; }
 .studio-source-switcher > button {
   min-height: var(--control-height);

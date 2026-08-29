@@ -2,6 +2,7 @@ import { CaretLeft } from "@phosphor-icons/react/CaretLeft";
 import { CaretRight } from "@phosphor-icons/react/CaretRight";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 import {
   GlobalWorkerOptions,
   getDocument,
@@ -17,6 +18,7 @@ import { useArtifactSnapshot } from "../useArtifactSnapshot.js";
 const PAGE_GAP = 24;
 
 export function PdfArtifactView({ artifact }: ArtifactSurfaceMountContext): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const { snapshot, failure } = useArtifactSnapshot(artifact, "pdf/v1", "PDF");
   const [zoom, setZoom] = useState(100);
   const [navigation, setNavigation] = useState<{ revisionId: string; pageIndex: number }>();
@@ -72,8 +74,8 @@ export function PdfArtifactView({ artifact }: ArtifactSurfaceMountContext): Reac
   useEffect(() => virtualizer.measure(), [virtualizer, zoom, pages]);
 
   if (failure !== undefined) return <p className="artifact-status" role="alert">{failure}</p>;
-  if (snapshot === undefined) return <p className="artifact-status" role="status">Adapting PDF revision…</p>;
-  if (resource === undefined) return <p className="artifact-status" role="alert">The PDF snapshot has no document resource.</p>;
+  if (snapshot === undefined) return <p className="artifact-status" role="status">{t("pdf.adapting")}</p>;
+  if (resource === undefined) return <p className="artifact-status" role="alert">{t("pdf.noDocumentResource")}</p>;
 
   const navigate = (pageIndex: number): void => {
     const next = Math.max(0, Math.min(snapshot.payload.pageCount - 1, pageIndex));
@@ -102,24 +104,24 @@ export function PdfArtifactView({ artifact }: ArtifactSurfaceMountContext): Reac
     }
   };
 
-  return <section className="pdf-artifact-viewer" aria-label={`${snapshot.summary.label} PDF preview`}>
+  return <section className="pdf-artifact-viewer" aria-label={t("pdf.previewAria", { label: snapshot.summary.label })}>
     <header className="pdf-view-toolbar">
       <div className="pdf-page-navigation">
-        <button type="button" aria-label="Previous PDF page" disabled={activePageIndex === 0} onClick={() => navigate(activePageIndex - 1)}><CaretLeft aria-hidden="true" /></button>
+        <button type="button" aria-label={t("pdf.previousPage")} disabled={activePageIndex === 0} onClick={() => navigate(activePageIndex - 1)}><CaretLeft aria-hidden="true" /></button>
         <output aria-live="polite">{activePageIndex + 1} / {snapshot.payload.pageCount}</output>
-        <button type="button" aria-label="Next PDF page" disabled={activePageIndex >= snapshot.payload.pageCount - 1} onClick={() => navigate(activePageIndex + 1)}><CaretRight aria-hidden="true" /></button>
+        <button type="button" aria-label={t("pdf.nextPage")} disabled={activePageIndex >= snapshot.payload.pageCount - 1} onClick={() => navigate(activePageIndex + 1)}><CaretRight aria-hidden="true" /></button>
       </div>
-      <DocumentZoomControls label="PDF zoom" value={zoom} onChange={setZoom} />
+      <DocumentZoomControls label={t("pdf.zoomLabel")} value={zoom} onChange={setZoom} />
     </header>
     <div
       ref={scrollRef}
       className="pdf-page-scroll"
       tabIndex={0}
-      aria-label="PDF pages"
+      aria-label={t("pdf.pagesAria")}
       onKeyDown={onKeyDown}
     >
       {documentFailure !== undefined && <p className="artifact-status" role="alert">{documentFailure}</p>}
-      {document === undefined && documentFailure === undefined && <p className="artifact-status" role="status">Loading PDF pages…</p>}
+      {document === undefined && documentFailure === undefined && <p className="artifact-status" role="status">{t("pdf.loadingPages")}</p>}
       <div className="pdf-page-stack" style={{ height: `${virtualizer.getTotalSize()}px` }}>
         {virtualizer.getVirtualItems().map((item) => {
           const page = pages[item.index]!;
@@ -136,7 +138,7 @@ export function PdfArtifactView({ artifact }: ArtifactSurfaceMountContext): Reac
       </div>
     </div>
     <footer className="pdf-diagnostics">
-      <span>{snapshot.adapter.id}@{snapshot.adapter.version} · Read-only</span>
+      <span>{snapshot.adapter.id}@{snapshot.adapter.version} · {t("readOnly")}</span>
       <ArtifactDiagnostics diagnostics={snapshot.diagnostics} />
     </footer>
   </section>;
@@ -147,6 +149,7 @@ function PdfPageCanvas(props: {
   page: PdfPageSnapshot;
   zoom: number;
 }): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [failure, setFailure] = useState<string>();
   const dimensions = useMemo(() => pageDimensions(props.page, props.zoom), [props.page, props.zoom]);
@@ -191,9 +194,9 @@ function PdfPageCanvas(props: {
       renderTask?.cancel();
     };
   }, [props.document, props.page.index, props.zoom]);
-  return <figure className="pdf-page-frame" style={{ width: `${dimensions.width}px`, height: `${dimensions.height}px` }} aria-label={`Page ${props.page.index}`}>
+  return <figure className="pdf-page-frame" style={{ width: `${dimensions.width}px`, height: `${dimensions.height}px` }} aria-label={t("pdf.pageAria", { index: props.page.index })}>
     <canvas ref={canvasRef} />
-    {failure !== undefined && <figcaption role="alert">Page {props.page.index}: {failure}</figcaption>}
+    {failure !== undefined && <figcaption role="alert">{t("pdf.pageFailure", { index: props.page.index, message: failure })}</figcaption>}
   </figure>;
 }
 

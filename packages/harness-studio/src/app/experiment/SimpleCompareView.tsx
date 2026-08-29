@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 import type { ExperimentToolCall } from "../../contracts/experiment-stream-contract.js";
 import { isExperimentRunnable } from "../../contracts/experiment-setup.js";
 import {
@@ -30,6 +31,7 @@ export function SimpleCompareView(props: {
   onSetup: () => void;
   onAdvanced: () => void;
 }): React.JSX.Element {
+  const { t } = useTranslation("experiment");
   const baseline = props.preview.manifest.lanes.find((lane) => lane.id === props.baselineId);
   const candidate = props.preview.manifest.lanes.find((lane) => lane.id === props.candidateId);
   const baselineLane = props.lanes[props.baselineId];
@@ -47,13 +49,13 @@ export function SimpleCompareView(props: {
   const runReady = checkpointReady && agentsReady;
   const runtimeLabel = needsAcpAgents ? undefined : "Qoder";
   const readyMessage = !checkpointReady
-    ? props.preview.setup.checkpointSource.limitation ?? "The checkpoint source cannot create isolated fresh runs."
+    ? props.preview.setup.checkpointSource.limitation ?? t("simple.blockedDetail")
     : agentsReady
-      ? "Ready"
-      : "Select an available ACP Agent for both AIs";
+      ? t("simple.ready")
+      : t("simple.selectAgents");
   const hasRun = props.submittedPrompt !== null;
-  const baselineModelLabel = agentModelName(baseline, baselineAgent);
-  const candidateModelLabel = agentModelName(candidate, candidateAgent);
+  const baselineModelLabel = agentModelName(baseline, baselineAgent, t);
+  const candidateModelLabel = agentModelName(candidate, candidateAgent, t);
   const comparisonScope = deriveSimpleComparisonScope(baseline, candidate, baselineAgent, candidateAgent);
   const resultFacts = deriveSimpleResultFacts(baselineLane ?? emptySimpleLane(), candidateLane ?? emptySimpleLane());
   useEffect(() => {
@@ -85,18 +87,18 @@ export function SimpleCompareView(props: {
   return <section className="simple-compare-shell">
     <main className="simple-compare-main">
       <form className={`simple-compare-composer${needsAcpAgents ? " has-agent-catalog" : ""}`} onSubmit={submit}>
-        <div className="simple-project-control" role="group" aria-label="Current project">
-          <span>Current project</span>
+        <div className="simple-project-control" role="group" aria-label={t("simple.currentProjectAria")}>
+          <span>{t("simple.currentProject")}</span>
           <div className="simple-project-value">
             <strong>{project.value}</strong>
             <code title={revision.value}>{shortRevision(revision.value)}</code>
           </div>
-          <small>Same checkpoint for both AIs</small>
+          <small>{t("simple.sameCheckpoint")}</small>
         </div>
-        {needsAcpAgents && <div className="simple-agent-controls" aria-label="ACP Agents">
+        {needsAcpAgents && <div className="simple-agent-controls" aria-label={t("simple.agentsAria")}>
           <AgentSelect
             id="compare-baseline-agent"
-            label="AI 1 Agent"
+            label={t("simple.agentLabel", { role: t("simple.ai1") })}
             profiles={agentProfiles}
             value={props.agentIds[props.baselineId] ?? ""}
             modelLabel={baselineModelLabel}
@@ -105,7 +107,7 @@ export function SimpleCompareView(props: {
           />
           <AgentSelect
             id="compare-candidate-agent"
-            label="AI 2 Agent"
+            label={t("simple.agentLabel", { role: t("simple.ai2") })}
             profiles={agentProfiles}
             value={props.agentIds[props.candidateId] ?? ""}
             modelLabel={candidateModelLabel}
@@ -114,52 +116,52 @@ export function SimpleCompareView(props: {
           />
         </div>}
         <label className="simple-prompt-control" htmlFor="compare-prompt">
-          <span>User prompt</span>
+          <span>{t("simple.promptLabel")}</span>
           <textarea
             id="compare-prompt"
             value={props.prompt}
             onChange={(event) => props.onPrompt(event.target.value)}
-            placeholder="Ask both AIs to work on this project…"
+            placeholder={t("simple.promptPlaceholder")}
             rows={4}
           />
         </label>
         <div className={`simple-run-control scope-${comparisonScope.kind}`}>
-          <div className="simple-scope-copy" role="region" aria-label="Comparison scope">
-            <small>Comparison scope</small>
+          <div className="simple-scope-copy" role="region" aria-label={t("simple.scope")}>
+            <small>{t("simple.scope")}</small>
             <strong>{comparisonScope.title}</strong>
             <span>{comparisonScope.detail}</span>
             <em role="status" aria-live="polite">
-              {props.running ? "Both AIs are running…" : props.runError ?? readyMessage}
+{props.running ? t("simple.running") : props.runError ?? readyMessage}
             </em>
           </div>
           <div className="simple-run-actions">
-            <button className="secondary" type="button" onClick={props.onSetup}>Review setup</button>
-            <button className="secondary simple-advanced-action" type="button" disabled={!checkpointReady} onClick={props.onAdvanced}>Advanced details</button>
+            <button className="secondary" type="button" onClick={props.onSetup}>{t("simple.reviewSetup")}</button>
+            <button className="secondary simple-advanced-action" type="button" disabled={!checkpointReady} onClick={props.onAdvanced}>{t("simple.advanced")}</button>
             {props.running
-              ? <button className="secondary cancel-comparison" type="button" onClick={props.onCancel}>Cancel</button>
-              : <button className="primary" type="submit" disabled={props.prompt.trim() === "" || !runReady}>Run compare</button>}
+              ? <button className="secondary cancel-comparison" type="button" onClick={props.onCancel}>{t("simple.cancel")}</button>
+              : <button className="primary" type="submit" disabled={props.prompt.trim() === "" || !runReady}>{t("simple.runCompare")}</button>}
           </div>
         </div>
       </form>
 
-      <section className={`simple-compare-results${hasRun ? " has-run" : ""}`} aria-label="Comparison result">
+      <section className={`simple-compare-results${hasRun ? " has-run" : ""}`} aria-label={t("simple.resultAria")}>
         {hasRun && <ResultFacts
           facts={resultFacts}
-          baselineAgent={baselineAgent?.label ?? runtimeLabel ?? "Agent"}
-          candidateAgent={candidateAgent?.label ?? runtimeLabel ?? "Agent"}
+baselineAgent={baselineAgent?.label ?? runtimeLabel ?? t("resourceMap.agent")}
+          candidateAgent={candidateAgent?.label ?? runtimeLabel ?? t("resourceMap.agent")}
           baselineModel={baselineModelLabel}
           candidateModel={candidateModelLabel}
         />}
         {hasRun && <header className="simple-result-toolbar">
           <div>
-            <strong>{resultView === "resources" ? "Resource map" : "Messages"}</strong>
+            <strong>{resultView === "resources" ? t("simple.resourceMap") : t("simple.messages")}</strong>
             <span>{resultView === "resources"
-              ? "Recorded operations aligned by project resource."
-              : "Original assistant messages and ACP tool calls."}</span>
+              ? t("simple.resourceDetail")
+              : t("simple.messagesDetail")}</span>
           </div>
-          <div className="simple-result-switcher" role="tablist" aria-label="Comparison result views">
-            <button id="simple-tab-resources" type="button" role="tab" aria-controls="simple-panel-resources" aria-selected={resultView === "resources"} tabIndex={resultView === "resources" ? 0 : -1} onKeyDown={selectResultViewFromKeyboard} onClick={() => setResultView("resources")}>Resources</button>
-            <button id="simple-tab-messages" type="button" role="tab" aria-controls="simple-panel-messages" aria-selected={resultView === "messages"} tabIndex={resultView === "messages" ? 0 : -1} onKeyDown={selectResultViewFromKeyboard} onClick={() => setResultView("messages")}>Messages</button>
+          <div className="simple-result-switcher" role="tablist" aria-label={t("simple.resultViewsAria")}>
+            <button id="simple-tab-resources" type="button" role="tab" aria-controls="simple-panel-resources" aria-selected={resultView === "resources"} tabIndex={resultView === "resources" ? 0 : -1} onKeyDown={selectResultViewFromKeyboard} onClick={() => setResultView("resources")}>{t("simple.tabs.resources")}</button>
+            <button id="simple-tab-messages" type="button" role="tab" aria-controls="simple-panel-messages" aria-selected={resultView === "messages"} tabIndex={resultView === "messages" ? 0 : -1} onKeyDown={selectResultViewFromKeyboard} onClick={() => setResultView("messages")}>{t("simple.tabs.messages")}</button>
           </div>
         </header>}
         {hasRun && resultView === "resources"
@@ -175,9 +177,9 @@ export function SimpleCompareView(props: {
               baselineModelLabel={baselineModelLabel}
               candidateModelLabel={candidateModelLabel}
             />
-          : <section id="simple-panel-messages" className="simple-lane-grid" role="tabpanel" aria-labelledby="simple-tab-messages" aria-label="AI message streams">
+          : <section id="simple-panel-messages" className="simple-lane-grid" role="tabpanel" aria-labelledby="simple-tab-messages" aria-label={t("simple.messageStreamsAria")}>
               <SimpleLane
-                role="AI 1"
+                role={t("simple.ai1")}
                 definition={baseline}
                 lane={baselineLane}
                 submittedPrompt={props.submittedPrompt}
@@ -186,7 +188,7 @@ export function SimpleCompareView(props: {
                 onPermission={(runId, requestId, optionId) => props.onPermission(props.baselineId, runId, requestId, optionId)}
               />
               <SimpleLane
-                role="AI 2"
+                role={t("simple.ai2")}
                 definition={candidate}
                 lane={candidateLane}
                 submittedPrompt={props.submittedPrompt}
@@ -215,15 +217,16 @@ function AgentSelect(props: {
   disabled: boolean;
   onChange: (value: string) => void;
 }): React.JSX.Element {
+  const { t } = useTranslation("experiment");
   const selected = props.profiles.find((profile) => profile.id === props.value);
   return <label className="simple-agent-control" htmlFor={props.id} title={selected?.detail}>
     <span>{props.label.replace(" Agent", "")}</span>
     <select id={props.id} aria-label={props.label} value={props.value} disabled={props.disabled} onChange={(event) => props.onChange(event.target.value)}>
       {props.profiles.map((profile) => <option key={profile.id} value={profile.id} disabled={!profile.available}>
-        {profile.label}{profile.available ? "" : " · unavailable"}
+        {profile.label}{profile.available ? "" : t("simple.unavailableSuffix")}
       </option>)}
     </select>
-    <small><span>Model</span><strong>{props.modelLabel}</strong></small>
+    <small><span>{t("simple.modelLabel")}</span><strong>{props.modelLabel}</strong></small>
   </label>;
 }
 
@@ -234,31 +237,33 @@ function ResultFacts(props: {
   baselineModel: string;
   candidateModel: string;
 }): React.JSX.Element {
+  const { t } = useTranslation("experiment");
   const exclusive = props.facts.baselineOnlyResources + props.facts.candidateOnlyResources;
-  return <section className="simple-result-facts" aria-label="Observed comparison facts">
+  return <section className="simple-result-facts" aria-label={t("facts.aria")}>
     <header>
-      <small>Observed result</small>
-      <strong>{props.facts.sharedResources} resources used by both AIs</strong>
+      <small>{t("facts.result")}</small>
+      <strong>{t("facts.sharedResources", { count: props.facts.sharedResources })}</strong>
       <span>{exclusive === 0
-        ? "No run-only resources recorded."
-        : `${props.facts.baselineOnlyResources} AI 1 only · ${props.facts.candidateOnlyResources} AI 2 only`}</span>
+        ? t("facts.noExclusive")
+        : t("facts.exclusive", { baseline: props.facts.baselineOnlyResources, candidate: props.facts.candidateOnlyResources })}</span>
     </header>
-    <LaneFacts role="AI 1" agent={props.baselineAgent} model={props.baselineModel} facts={props.facts.baseline} />
-    <LaneFacts role="AI 2" agent={props.candidateAgent} model={props.candidateModel} facts={props.facts.candidate} />
+    <LaneFacts role={t("simple.ai1")} agent={props.baselineAgent} model={props.baselineModel} facts={props.facts.baseline} />
+    <LaneFacts role={t("simple.ai2")} agent={props.candidateAgent} model={props.candidateModel} facts={props.facts.candidate} />
   </section>;
 }
 
 function LaneFacts(props: { role: string; agent: string; model: string; facts: SimpleLaneFacts }): React.JSX.Element {
+  const { t } = useTranslation("experiment");
   const edits = props.facts.editedResources.length === 0
-    ? "no recorded edits"
-    : `edited ${props.facts.editedResources.length}`;
+    ? t("facts.noEdits")
+    : t("facts.edited", { count: props.facts.editedResources.length });
   const verification = props.facts.verificationCalls === 0
-    ? "no recorded verification"
-    : `verified ${props.facts.verificationCalls} time${props.facts.verificationCalls === 1 ? "" : "s"}`;
+    ? t("facts.noVerification")
+    : t("facts.verified", { count: props.facts.verificationCalls });
   return <article>
-    <div><small>{props.role}</small><strong>{props.agent}</strong><span>Model: {props.model}</span></div>
+    <div><small>{props.role}</small><strong>{props.agent}</strong><span>{t("facts.model", { model: props.model })}</span></div>
     <em className={`lane-status lane-status-${props.facts.status}`}>{props.facts.status}</em>
-    <p>{props.facts.resources} resources · {edits} · {verification}</p>
+    <p>{t("facts.summary", { resources: props.facts.resources, edits, verification })}</p>
   </article>;
 }
 
@@ -274,6 +279,7 @@ function ResourceMap(props: {
   baselineModelLabel: string;
   candidateModelLabel: string;
 }): React.JSX.Element {
+  const { t } = useTranslation("experiment");
   const baselineCalls = props.baselineLane?.calls ?? [];
   const candidateCalls = props.candidateLane?.calls ?? [];
   const rows = useMemo(
@@ -287,54 +293,54 @@ function ResourceMap(props: {
   const baselineModel = props.baselineModelLabel;
   const candidateModel = props.candidateModelLabel;
 
-  return <section id="simple-panel-resources" className="simple-resource-map" role="tabpanel" aria-labelledby="simple-tab-resources" aria-label="Resource comparison">
+  return <section id="simple-panel-resources" className="simple-resource-map" role="tabpanel" aria-labelledby="simple-tab-resources" aria-label={t("resourceMap.aria")}>
     <p className="resource-map-summary" role="status">
-      <strong>{shared} shared</strong>
-      <span>{rows.length} observed resources</span>
-      <span>{changed.length === 0 ? "No recorded edits" : `${changed.length} edited`}</span>
+      <strong>{t("resourceMap.shared", { count: shared })}</strong>
+      <span>{t("resourceMap.observed", { count: rows.length })}</span>
+      <span>{changed.length === 0 ? t("resourceMap.noEdits") : t("resourceMap.edited", { count: changed.length })}</span>
     </p>
-    <div className="resource-map-table" role="table" aria-label="ACP operations aligned by resource">
+    <div className="resource-map-table" role="table" aria-label={t("resourceMap.tableAria")}>
       <div className="resource-map-header" role="row">
-        <div role="columnheader"><span>AI 1</span><strong>{props.baselineAgentLabel ?? "Agent"}</strong><small>Model: {baselineModel}</small><em className={`lane-status lane-status-${props.baselineLane?.status ?? "idle"}`}>{props.baselineLane?.status ?? "idle"}</em></div>
-        <div role="columnheader">Resource</div>
-        <div role="columnheader"><span>AI 2</span><strong>{props.candidateAgentLabel ?? "Agent"}</strong><small>Model: {candidateModel}</small><em className={`lane-status lane-status-${props.candidateLane?.status ?? "idle"}`}>{props.candidateLane?.status ?? "idle"}</em></div>
+        <div role="columnheader"><span>{t("simple.ai1")}</span><strong>{props.baselineAgentLabel ?? t("resourceMap.agent")}</strong><small>{t("facts.model", { model: baselineModel })}</small><em className={`lane-status lane-status-${props.baselineLane?.status ?? "idle"}`}>{props.baselineLane?.status ?? "idle"}</em></div>
+        <div role="columnheader">{t("resourceMap.resource")}</div>
+        <div role="columnheader"><span>{t("simple.ai2")}</span><strong>{props.candidateAgentLabel ?? t("resourceMap.agent")}</strong><small>{t("facts.model", { model: candidateModel })}</small><em className={`lane-status lane-status-${props.candidateLane?.status ?? "idle"}`}>{props.candidateLane?.status ?? "idle"}</em></div>
       </div>
       {rows.length === 0
-        ? <p className="resource-map-empty">Waiting for recorded file and command activity…</p>
+        ? <p className="resource-map-empty">{t("resourceMap.waiting")}</p>
         : rows.map((row) => <div className="resource-map-row" role="row" key={row.resource}>
             <div className="resource-map-operations baseline-operations" role="cell">
               {row.baseline.map((operation) => <OperationButton
                 key={operation.id}
                 operation={operation}
-                role="AI 1"
+                role={t("simple.ai1")}
                 selected={operation.id === selected?.id}
                 onSelect={props.onSelectOperation}
               />)}
               {selected !== undefined && row.baseline.some((operation) => operation.id === selected.id) && <OperationInspector
                 operation={selected}
                 call={baselineCalls.find((call) => call.id === selected.callId)}
-                laneLabel="AI 1"
+                laneLabel={t("simple.ai1")}
               />}
-              {row.baseline.length === 0 && <span className="resource-map-none">No recorded operation</span>}
+              {row.baseline.length === 0 && <span className="resource-map-none">{t("resourceMap.noOperation")}</span>}
             </div>
             <div className="resource-map-resource" role="rowheader">
-              <code>{displayResource(row.resource)}</code>
-              <span>{row.baseline.length > 0 && row.candidate.length > 0 ? "shared" : "one run only"}</span>
+              <code>{displayResource(row.resource, t)}</code>
+              <span>{row.baseline.length > 0 && row.candidate.length > 0 ? t("resourceMap.sharedTag") : t("resourceMap.oneRun")}</span>
             </div>
             <div className="resource-map-operations candidate-operations" role="cell">
               {row.candidate.map((operation) => <OperationButton
                 key={operation.id}
                 operation={operation}
-                role="AI 2"
+                role={t("simple.ai2")}
                 selected={operation.id === selected?.id}
                 onSelect={props.onSelectOperation}
               />)}
               {selected !== undefined && row.candidate.some((operation) => operation.id === selected.id) && <OperationInspector
                 operation={selected}
                 call={candidateCalls.find((call) => call.id === selected.callId)}
-                laneLabel="AI 2"
+                laneLabel={t("simple.ai2")}
               />}
-              {row.candidate.length === 0 && <span className="resource-map-none">No recorded operation</span>}
+              {row.candidate.length === 0 && <span className="resource-map-none">{t("resourceMap.noOperation")}</span>}
             </div>
           </div>)}
     </div>
@@ -347,16 +353,17 @@ function OperationButton(props: {
   selected: boolean;
   onSelect: (id: string) => void;
 }): React.JSX.Element {
-  const label = operationLabel(props.operation.kind);
+  const { t } = useTranslation("experiment");
+  const label = operationLabel(props.operation.kind, t);
   return <button
     className={`resource-operation operation-${props.operation.kind}`}
     type="button"
     aria-pressed={props.selected}
-    aria-label={`${props.role} ${label} ${displayResource(props.operation.resource)}, call ${Math.floor(props.operation.callSequence) + 1}, ${props.operation.status}`}
+    aria-label={t("operations.aria", { role: props.role, label, resource: displayResource(props.operation.resource, t), call: Math.floor(props.operation.callSequence) + 1, status: props.operation.status })}
     onClick={() => props.onSelect(props.operation.id)}
   >
     <strong>{label}</strong>
-    <span>Call {Math.floor(props.operation.callSequence) + 1}</span>
+    <span>{t("operations.call", { call: Math.floor(props.operation.callSequence) + 1 })}</span>
     <em>{props.operation.status}</em>
   </button>;
 }
@@ -366,22 +373,23 @@ function OperationInspector(props: {
   call?: ExperimentToolCall;
   laneLabel: string;
 }): React.JSX.Element {
+  const { t } = useTranslation("experiment");
   if (props.operation === undefined || props.call === undefined) {
-    return <aside className="operation-inspector empty" aria-label="Tool result">
-      <strong>Tool result</strong>
-      <span>Select an operation to inspect its recorded call and result.</span>
+    return <aside className="operation-inspector empty" aria-label={t("operations.inspectorAria")}>
+      <strong>{t("operations.toolResult")}</strong>
+      <span>{t("operations.selectHint")}</span>
     </aside>;
   }
   const result = summarizeToolResult(props.call);
-  return <aside className="operation-inspector" aria-label="Tool result">
+  return <aside className="operation-inspector" aria-label={t("operations.inspectorAria")}>
     <header>
-      <div><strong>{props.laneLabel} · {operationLabel(props.operation.kind)} {displayResource(props.operation.resource)}</strong><span>{props.call.name}</span></div>
+      <div><strong>{props.laneLabel} · {operationLabel(props.operation.kind, t)} {displayResource(props.operation.resource, t)}</strong><span>{props.call.name}</span></div>
       <em className={`operation-outcome outcome-${result.outcome}`}>{result.outcome}</em>
     </header>
     <dl>
-      <div><dt>Call</dt><dd>{props.operation.callSequence + 1}</dd></div>
-      {result.exitCode !== undefined && <div><dt>Exit code</dt><dd>{result.exitCode}</dd></div>}
-      {result.durationMs !== undefined && <div><dt>Duration</dt><dd>{result.durationMs} ms</dd></div>}
+      <div><dt>{t("operations.callField")}</dt><dd>{props.operation.callSequence + 1}</dd></div>
+      {result.exitCode !== undefined && <div><dt>{t("operations.exitCode")}</dt><dd>{result.exitCode}</dd></div>}
+      {result.durationMs !== undefined && <div><dt>{t("operations.duration")}</dt><dd>{result.durationMs} ms</dd></div>}
     </dl>
     {result.excerpt !== undefined && <pre>{result.excerpt}</pre>}
   </aside>;
@@ -398,8 +406,9 @@ function modelName(definition: LaneDefinition | undefined, fallback: string): st
 function agentModelName(
   definition: LaneDefinition | undefined,
   agent: { modelPolicy: "lane" | "agent-default" } | undefined,
+  t: (key: string) => string,
 ): string {
-  return agent?.modelPolicy === "agent-default" ? "Agent default" : modelName(definition, "AI");
+  return agent?.modelPolicy === "agent-default" ? t("simple.agentDefault") : modelName(definition, t("simple.ai"));
 }
 
 function shortRevision(value: string): string {
@@ -411,17 +420,12 @@ function emptySimpleLane(): LaneTrace {
   return { status: "idle", calls: [], eventCount: 0, protocolFrameCount: 0, acpSessionIds: [], pendingPermissions: [], activities: [] };
 }
 
-function displayResource(resource: string): string {
-  return resource === "." ? "Project root" : resource;
+function displayResource(resource: string, t: (key: string) => string): string {
+  return resource === "." ? t("resourceMap.projectRoot") : resource;
 }
 
-function operationLabel(kind: ToolOperationKind): string {
-  return kind === "read" ? "Read"
-    : kind === "edit" ? "Edit"
-      : kind === "search" ? "Search"
-        : kind === "list" ? "List"
-          : kind === "verify" ? "Verify"
-            : "Run";
+function operationLabel(kind: ToolOperationKind, t: (key: string) => string): string {
+  return t(`operations.${kind}`);
 }
 
 function SimpleLane(props: {
@@ -433,6 +437,7 @@ function SimpleLane(props: {
   modelLabel?: string;
   onPermission: (runId: string, requestId: string, optionId: string) => void;
 }): React.JSX.Element {
+  const { t } = useTranslation("experiment");
   const lane = props.lane ?? {
     status: "idle" as const,
     calls: [],
@@ -442,32 +447,32 @@ function SimpleLane(props: {
     pendingPermissions: [],
     activities: [],
   };
-  const model = props.modelLabel ?? props.definition?.runtime?.model ?? props.definition?.id ?? "AI";
-  const agent = props.agentLabel ?? "Agent";
+  const model = props.modelLabel ?? props.definition?.runtime?.model ?? props.definition?.id ?? t("simple.ai");
+  const agent = props.agentLabel ?? t("resourceMap.agent");
   return <article className="simple-lane">
     <header>
-      <div><small>{props.role}</small><strong>{agent}</strong><em>Model: {model}</em></div>
+      <div><small>{props.role}</small><strong>{agent}</strong><em>{t("facts.model", { model })}</em></div>
       <span className={`lane-status lane-status-${lane.status}`}>{lane.status}</span>
     </header>
     <div className="simple-message-stream" aria-live="polite" aria-label={`${agent} messages`}>
-      {props.submittedPrompt !== null && <section className="simple-message user-message"><small>You</small><p>{props.submittedPrompt}</p></section>}
+      {props.submittedPrompt !== null && <section className="simple-message user-message"><small>{t("lane.you")}</small><p>{props.submittedPrompt}</p></section>}
       {lane.activities.map((activity) => {
         if (activity.kind === "assistant") {
           return <section className="simple-message assistant-message" key={activity.id}>
             <small>{agent}</small>
-            <p>{activity.text || (activity.complete ? "No text response." : "Thinking…")}</p>
+            <p>{activity.text || (activity.complete ? t("lane.noTextResponse") : t("lane.thinking"))}</p>
           </section>;
         }
         const call = lane.calls.find((item) => item.id === `${activity.runId}:${activity.toolCallId}`);
         return <div className="simple-tool-activity" key={activity.id}>
-          <span>{call?.status === "running" ? "Running" : call?.status ?? "Observed"}</span>
-          <strong>{call?.name ?? "Tool"}</strong>
+          <span>{call?.status === "running" ? t("lane.running") : call?.status ?? t("lane.observed")}</span>
+          <strong>{call?.name ?? t("lane.tool")}</strong>
         </div>;
       })}
-      {props.submittedPrompt === null && lane.activities.length === 0 && <p className="simple-stream-empty">Run once to see this AI's messages and tool activity here.</p>}
-      {props.submittedPrompt !== null && lane.activities.length === 0 && lane.status !== "failed" && <p className="simple-stream-empty">Waiting for this AI…</p>}
+      {props.submittedPrompt === null && lane.activities.length === 0 && <p className="simple-stream-empty">{t("lane.runOnce")}</p>}
+      {props.submittedPrompt !== null && lane.activities.length === 0 && lane.status !== "failed" && <p className="simple-stream-empty">{t("lane.waiting")}</p>}
       {lane.pendingPermissions.map((permission) => <section className="simple-permission" key={`${permission.runId}:${permission.requestId}`}>
-        <div><small>Permission needed</small><strong>{permission.title}</strong></div>
+        <div><small>{t("lane.permissionNeeded")}</small><strong>{permission.title}</strong></div>
         <div>{permission.options.map((option) => <button key={option.optionId} type="button" onClick={() => props.onPermission(permission.runId, permission.requestId, option.optionId)}>{option.name}</button>)}</div>
       </section>)}
       {lane.detail && <p className="simple-lane-error">{lane.detail}</p>}

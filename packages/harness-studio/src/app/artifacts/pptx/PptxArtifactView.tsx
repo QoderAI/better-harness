@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   ArtifactDataSnapshot,
   PptxElement,
@@ -10,6 +11,7 @@ import { DocumentZoomControls } from "../DocumentZoomControls.js";
 import { useArtifactSnapshot } from "../useArtifactSnapshot.js";
 
 export function PptxArtifactView({ artifact }: ArtifactSurfaceMountContext): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const { snapshot, failure } = useArtifactSnapshot(artifact, "pptx/v1", "PPTX");
   const [navigation, setNavigation] = useState<{ revisionId: string; slideIndex: number }>();
   const [zoom, setZoom] = useState(100);
@@ -18,11 +20,11 @@ export function PptxArtifactView({ artifact }: ArtifactSurfaceMountContext): Rea
   const selectedAddress = selection?.revisionId === artifact.revision.id ? selection.address : undefined;
 
   if (failure !== undefined) return <p className="artifact-status" role="alert">{failure}</p>;
-  if (snapshot === undefined) return <p className="artifact-status" role="status">Adapting PPTX revision…</p>;
+  if (snapshot === undefined) return <p className="artifact-status" role="status">{t("pptx.adapting")}</p>;
 
   const payload = snapshot.payload;
   const active = payload.slides[Math.min(slideIndex, payload.slides.length - 1)];
-  if (active === undefined) return <p className="artifact-status" role="alert">The PPTX snapshot has no slides.</p>;
+  if (active === undefined) return <p className="artifact-status" role="alert">{t("pptx.noSlides")}</p>;
   const outline = snapshot.structure.length === payload.slides.length ? snapshot.structure : [];
   const activeOutline = outline[Math.min(slideIndex, outline.length - 1)];
   const selectAddress = (address: string): void => setSelection((current) => (
@@ -32,7 +34,7 @@ export function PptxArtifactView({ artifact }: ArtifactSurfaceMountContext): Rea
   ));
 
   return <div className="pptx-artifact-viewer">
-    <nav className="pptx-slide-rail" aria-label="Slides">
+    <nav className="pptx-slide-rail" aria-label={t("pptx.slidesAria")}>
       {payload.slides.map((slide, index) => <button
         key={slide.id}
         type="button"
@@ -44,10 +46,10 @@ export function PptxArtifactView({ artifact }: ArtifactSurfaceMountContext): Rea
         }}
       ><span className="pptx-slide-thumb" aria-hidden="true">{index + 1}</span><small>{slide.label}</small></button>)}
     </nav>
-    <section className="pptx-stage-region" aria-label={`${active.label} preview`}>
+    <section className="pptx-stage-region" aria-label={t("pptx.previewAria", { label: active.label })}>
       <div className="pptx-view-toolbar">
-        <span>{active.label}{active.notesPresent ? " · Notes" : ""}</span>
-        <DocumentZoomControls label="Slide zoom" value={zoom} onChange={setZoom} />
+        <span>{active.label}{active.notesPresent ? t("pptx.notesSuffix") : ""}</span>
+        <DocumentZoomControls label={t("pptx.zoomLabel")} value={zoom} onChange={setZoom} />
       </div>
       <div className="pptx-stage-scroll">
         <PptxSlide
@@ -64,8 +66,8 @@ export function PptxArtifactView({ artifact }: ArtifactSurfaceMountContext): Rea
         <ArtifactDiagnostics diagnostics={snapshot.diagnostics} />
       </footer>
     </section>
-    {activeOutline !== undefined && (activeOutline.children ?? []).length > 0 && <aside className="pptx-outline-pane" aria-label={`${active.label} outline`}>
-      <h3>Outline</h3>
+    {activeOutline !== undefined && (activeOutline.children ?? []).length > 0 && <aside className="pptx-outline-pane" aria-label={t("pptx.outlineAria", { label: active.label })}>
+      <h3>{t("pptx.outline")}</h3>
       <ul>
         {(activeOutline.children ?? []).map((node) => <li key={node.id}>
           <button

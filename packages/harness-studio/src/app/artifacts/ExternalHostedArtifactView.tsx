@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   ArtifactDescriptor,
   ArtifactHostedSelectionEventV1,
@@ -7,6 +8,7 @@ import type { ArtifactSurfaceMountContext } from "./ArtifactSurface.js";
 
 /** Security boundary for server-hosted Provider documents. */
 export function ExternalHostedArtifactView({ artifact, onSelection }: ArtifactSurfaceMountContext): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const viewUri = artifact.renderer.viewUri;
   const frameRef = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
@@ -19,12 +21,12 @@ export function ExternalHostedArtifactView({ artifact, onSelection }: ArtifactSu
     return () => window.removeEventListener("message", receive);
   }, [artifact, onSelection]);
   if (viewUri === undefined) {
-    return <p className="artifact-status" role="alert">The hosted Artifact surface has no view URI.</p>;
+    return <p className="artifact-status" role="alert">{t("external.noViewUri")}</p>;
   }
   return <iframe
     ref={frameRef}
     className="artifact-frame"
-    title={`Artifact preview: ${artifact.label}`}
+    title={t("external.previewTitle", { label: artifact.label })}
     src={viewUri}
     sandbox="allow-scripts"
     referrerPolicy="no-referrer"

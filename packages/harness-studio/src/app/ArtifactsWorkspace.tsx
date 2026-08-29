@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { CalendarBlank } from "@phosphor-icons/react/CalendarBlank";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
 import { CaretLeft } from "@phosphor-icons/react/CaretLeft";
@@ -26,6 +27,7 @@ import {
 } from "../contracts/workspace-artifact.js";
 import { ArtifactView } from "./artifacts/ArtifactView.js";
 import { ArtifactInteractionPane } from "./artifacts/ArtifactInteractionPane.js";
+import { studioLocale } from "./i18n/index.js";
 import { useRovingFocus } from "./roving-tablist.js";
 import type { StudioConfig } from "./studio-shell-model.js";
 
@@ -54,6 +56,7 @@ interface ArtifactDayGroup {
 }
 
 export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAction?: { label: string; onClick: () => void } }): React.JSX.Element {
+  const { t } = useTranslation("artifacts");
   const [catalog, setCatalog] = useState<StudioArtifactCatalogResponse>();
   const [failure, setFailure] = useState<string>();
   const [selected, setSelected] = useState<string>();
@@ -131,14 +134,14 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
   });
 
   if (!props.config.artifactsEnabled) {
-    return <ArtifactEmpty title={props.config.workspaceConnected ? "No Project artifacts are available" : "Open a Project"} detail={props.config.workspaceConnected
-      ? "Studio found no current files backed by retained change or delivery evidence."
-      : props.config.workspaceDiscoveryEnabled ? "Open a local Project once; Artifacts, Sessions, and Commits will share that Project context." : "This Studio launcher does not provide Project discovery."} action={props.openProjectAction} />;
+    return <ArtifactEmpty title={props.config.workspaceConnected ? t("empty.noAvailableTitle") : t("empty.openWorkspaceTitle")} detail={props.config.workspaceConnected
+      ? t("empty.noAvailableDetail")
+      : props.config.workspaceDiscoveryEnabled ? t("empty.discoveryDetail") : t("empty.noDiscoveryDetail")} action={props.openProjectAction} />;
   }
-  if (failure !== undefined) return <ArtifactEmpty title="Cannot read Project artifacts" detail={failure} />;
-  if (catalog === undefined) return <p className="artifact-status" role="status">Indexing Project artifacts…</p>;
+  if (failure !== undefined) return <ArtifactEmpty title={t("empty.unreadableTitle")} detail={failure} />;
+  if (catalog === undefined) return <p className="artifact-status" role="status">{t("indexing")}</p>;
   if (catalog.artifacts.length === 0) {
-    return <ArtifactEmpty title="No changed artifacts in this Project" detail="No current regular files are referenced by retained change or delivery evidence. Read-only and missing paths are not promoted into the Artifact catalog." action={props.openProjectAction} />;
+    return <ArtifactEmpty title={t("empty.noChangedTitle")} detail={t("empty.noChangedDetail")} action={props.openProjectAction} />;
   }
 
   const active = catalog.artifacts.find((artifact) => artifact.id === selected);
@@ -160,8 +163,8 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
     setNarrowPane("preview");
   };
 
-  return <section className="artifact-workspace" data-narrow-pane={narrowPane} aria-label="Project artifacts">
-    <div className="artifact-narrow-tabs" role="tablist" aria-label="Artifact Project panes" onKeyDown={narrowTabs.onKeyDown}>
+return <section className="artifact-workspace" data-narrow-pane={narrowPane} aria-label={t("workspaceAria")}>
+    <div className="artifact-narrow-tabs" role="tablist" aria-label={t("panesAria")} onKeyDown={narrowTabs.onKeyDown}>
       {(["scope", "artifacts", "preview"] as const).map((pane) => <button
         key={pane}
         type="button"
@@ -173,39 +176,39 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
         ref={narrowTabs.itemRef(pane)}
         tabIndex={narrowTabs.tabIndexFor(pane)}
         onClick={() => setNarrowPane(pane)}
-      >{pane === "scope" ? "Browse" : pane === "artifacts" ? "Artifacts" : "Preview"}</button>)}
+      >{pane === "scope" ? t("panes.browse") : t(`panes.${pane}`)}</button>)}
     </div>
 
     <aside className="artifact-scope-pane" id="artifact-scope-pane" role="tabpanel" aria-labelledby="artifact-tab-scope">
-      <header><div><small>{catalog.navigation === undefined ? "Configured source" : "Project scope"}</small><h2>{catalog.navigation === undefined ? "Compatibility catalog" : "Browse"}</h2></div><span>{catalog.artifacts.length}</span></header>
-      <div className="artifact-scope-switch" role="tablist" aria-label="Artifact scope mode">
-        <button type="button" role="tab" aria-selected={effectiveMode === "date"} disabled={catalog.navigation === undefined} onClick={() => setScopeMode("date")}><CalendarBlank aria-hidden="true" size={14} />Date</button>
-        <button type="button" role="tab" aria-selected={effectiveMode === "files"} onClick={() => setScopeMode("files")}><TreeStructure aria-hidden="true" size={14} />Files</button>
+<header><div><small>{catalog.navigation === undefined ? t("scopeHeader.configuredSource") : t("scopeHeader.projectScope")}</small><h2>{catalog.navigation === undefined ? t("scopeHeader.compatibilityCatalog") : t("scopeHeader.browse")}</h2></div><span>{catalog.artifacts.length}</span></header>
+      <div className="artifact-scope-switch" role="tablist" aria-label={t("scopeModeAria")}>
+        <button type="button" role="tab" aria-selected={effectiveMode === "date"} disabled={catalog.navigation === undefined} onClick={() => setScopeMode("date")}><CalendarBlank aria-hidden="true" size={14} />{t("scopeMode.date")}</button>
+        <button type="button" role="tab" aria-selected={effectiveMode === "files"} onClick={() => setScopeMode("files")}><TreeStructure aria-hidden="true" size={14} />{t("scopeMode.files")}</button>
       </div>
       {effectiveMode === "date" && catalog.navigation !== undefined
         ? <ArtifactDateNavigator days={days} scope={scope} onSelect={selectScope} />
         : <ArtifactFileNavigator artifacts={catalog.artifacts} scope={scope} onSelect={selectScope} />}
-      {!liveUpdates && <p className="artifact-pane-note" role="note">Live file updates stopped. Reopen Artifacts to resume tracking.</p>}
+      {!liveUpdates && <p className="artifact-pane-note" role="note">{t("liveUpdatesStopped")}</p>}
     </aside>
 
     <section className="artifact-list-pane" id="artifact-artifacts-pane" role="tabpanel" aria-labelledby="artifact-tab-artifacts">
-      <header><div><small>{scopeDescription(scope, catalog.navigation, catalog.artifacts)}</small><h2>Artifacts</h2></div><span>{scopedArtifacts.length}</span></header>
-      <label className="artifact-search"><MagnifyingGlass aria-hidden="true" size={14} /><span className="sr-only">Search scoped artifacts</span><input value={query} type="search" placeholder="Search artifacts…" onChange={(event) => setQuery(event.currentTarget.value)} /></label>
-      <nav className="artifact-rows" aria-label="Scoped artifacts">
+      <header><div><small>{scopeDescription(scope, catalog.navigation, catalog.artifacts, t)}</small><h2>{t("panes.artifacts")}</h2></div><span>{scopedArtifacts.length}</span></header>
+      <label className="artifact-search"><MagnifyingGlass aria-hidden="true" size={14} /><span className="sr-only">{t("search.srOnly")}</span><input value={query} type="search" placeholder={t("search.placeholder")} onChange={(event) => setQuery(event.currentTarget.value)} /></label>
+      <nav className="artifact-rows" aria-label={t("scopedAria")}>
         {scopedArtifacts.length === 0
-          ? <p className="artifact-list-empty">No artifacts match this scope{query.trim() === "" ? "." : ` and “${query}”.`}</p>
+          ? <p className="artifact-list-empty">{query.trim() === "" ? t("noMatch") : t("noMatchQuery", { query })}</p>
           : scopedArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} selected={artifact.id === selected} onSelect={selectArtifact} />)}
       </nav>
-      {catalog.omitted.length > 0 && <p className="artifact-pane-note" role="note">{catalog.omitted.length} unsafe or unsupported entr{catalog.omitted.length === 1 ? "y was" : "ies were"} omitted.</p>}
+      {catalog.omitted.length > 0 && <p className="artifact-pane-note" role="note">{t("omitted", { count: catalog.omitted.length })}</p>}
     </section>
 
     <main className="artifact-preview-pane" id="artifact-preview-pane" role="tabpanel" aria-labelledby="artifact-tab-preview">
       {active === undefined
-        ? <p className="artifact-status" role="status">Select an Artifact to preview its current Project revision.</p>
+        ? <p className="artifact-status" role="status">{t("selectPreview")}</p>
         : <>
           <header className="artifact-editor-header">
-            <div><strong title={active.label}>{basename(active.label)}</strong><small>{formatLabel(active.format)} · {formatBytes(active.size)} · {active.adapter.id} · current {shortRevision(active.revision.id)}</small></div>
-            <span title={active.label}>{activeObservations[0] === undefined ? dirname(active.label) : `${activeObservations[0].provider ?? "Local agent"} · ${formatObservedTime(activeObservations[0].savedAt)}`}</span>
+            <div><strong title={active.label}>{basename(active.label)}</strong><small>{formatLabel(active.format)} · {formatBytes(active.size)} · {active.adapter.id} · {t("currentRevision")} {shortRevision(active.revision.id)}</small></div>
+            <span title={active.label}>{activeObservations[0] === undefined ? dirname(active.label) : `${activeObservations[0].provider ?? t("common:localAgent")} · ${formatObservedTime(activeObservations[0].savedAt, studioLocale())}`}</span>
           </header>
           <div className={`artifact-shared-workspace${active.interaction === undefined ? " solo" : ""}`}>
             <div className="artifact-surface-slot"><ArtifactView authorityId={catalog.snapshot.catalogId} artifact={active} liveGeneration={liveGeneration} onSelection={setSurfaceSelection} /></div>
@@ -232,6 +235,7 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
 }
 
 function ArtifactDateNavigator(props: { days: ArtifactDayGroup[]; scope: ArtifactScope; onSelect: (scope: ArtifactScope) => void }): React.JSX.Element {
+  const { t } = useTranslation("artifacts");
   const sessionScope = props.scope.kind === "session" ? props.scope.value : undefined;
   const activeDay = props.scope.kind === "day"
     ? props.scope.value
@@ -249,14 +253,18 @@ function ArtifactDateNavigator(props: { days: ArtifactDayGroup[]; scope: Artifac
   const selectedDay = props.days.find((day) => day.day === activeDay) ?? props.days[0];
   const dayMap = new Map(props.days.map((day) => [day.day, day]));
   const cells = calendarCells(month);
+  const locale = studioLocale();
+  const weekdays = t("date.weekdays", { returnObjects: true }) as string[];
+  const weekdayShorts = t("date.weekdaysShort", { returnObjects: true }) as string[];
+  const monthLabel = month.toLocaleDateString(locale, { month: "long", year: "numeric" });
   return <div className="artifact-date-navigator">
     <header className="artifact-calendar-header">
-      <button type="button" aria-label="Previous month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><CaretLeft aria-hidden="true" size={14} /></button>
-      <strong>{month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</strong>
-      <button type="button" aria-label="Next month" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><CaretRight aria-hidden="true" size={14} /></button>
+      <button type="button" aria-label={t("date.previousMonth")} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><CaretLeft aria-hidden="true" size={14} /></button>
+      <strong>{monthLabel}</strong>
+      <button type="button" aria-label={t("date.nextMonth")} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><CaretRight aria-hidden="true" size={14} /></button>
     </header>
-    <div className="artifact-calendar" role="grid" aria-label={`${month.toLocaleDateString(undefined, { month: "long", year: "numeric" })} Artifact activity`}>
-      {["S", "M", "T", "W", "T", "F", "S"].map((label, index) => <span key={`${label}-${index}`} role="columnheader" aria-label={["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][index]}>{label}</span>)}
+    <div className="artifact-calendar" role="grid" aria-label={t("date.activityAria", { month: monthLabel })}>
+      {weekdayShorts.map((label, index) => <span key={`${label}-${index}`} role="columnheader" aria-label={weekdays[index]}>{label}</span>)}
       {cells.map((cell, index) => cell === undefined
         ? <i key={`empty-${index}`} aria-hidden="true" />
         : <button
@@ -264,25 +272,26 @@ function ArtifactDateNavigator(props: { days: ArtifactDayGroup[]; scope: Artifac
           type="button"
           role="gridcell"
           aria-selected={cell.day === activeDay}
-          aria-label={`${cell.date.toLocaleDateString(undefined, { dateStyle: "long" })}${dayMap.has(cell.day) ? `, ${dayMap.get(cell.day)!.artifactIds.length} artifact${dayMap.get(cell.day)!.artifactIds.length === 1 ? "" : "s"}` : ", no artifact activity"}`}
+          aria-label={`${cell.date.toLocaleDateString(locale, { dateStyle: "long" })}${dayMap.has(cell.day) ? `, ${t("date.activitySummary", { count: dayMap.get(cell.day)!.artifactIds.length })}` : `, ${t("date.noActivity")}`}`}
           disabled={!dayMap.has(cell.day)}
           onClick={() => props.onSelect({ kind: "day", value: cell.day })}
         ><span>{cell.date.getDate()}</span>{dayMap.has(cell.day) && <small aria-hidden="true" />}</button>)}
     </div>
-    {selectedDay !== undefined && <section className="artifact-day-sessions" aria-label={`Sessions on ${selectedDay.day}`}>
-      <header><strong>{formatDayHeading(selectedDay.day)}</strong><span>{selectedDay.sessions.length} Sessions · {selectedDay.artifactIds.length} Artifacts</span></header>
+    {selectedDay !== undefined && <section className="artifact-day-sessions" aria-label={t("date.sessionsOn", { day: selectedDay.day })}>
+      <header><strong>{formatDayHeading(selectedDay.day, locale)}</strong><span>{t("date.sessionsAndArtifacts", { sessions: selectedDay.sessions.length, artifacts: selectedDay.artifactIds.length })}</span></header>
       {selectedDay.sessions.map((session) => <button
         key={session.id}
         type="button"
         className={props.scope.kind === "session" && props.scope.value === session.id ? "selected" : undefined}
         aria-current={props.scope.kind === "session" && props.scope.value === session.id ? "true" : undefined}
         onClick={() => props.onSelect({ kind: "session", value: session.id })}
-      ><small>{session.provider ?? "Local agent"} · {formatObservedTime(session.savedAt)}</small><strong>{session.prompt}</strong><span>{session.artifactIds.length} artifact{session.artifactIds.length === 1 ? "" : "s"}</span></button>)}
+      ><small>{session.provider ?? t("common:localAgent")} · {formatObservedTime(session.savedAt, locale)}</small><strong>{session.prompt}</strong><span>{t("date.sessionArtifactCount", { count: session.artifactIds.length })}</span></button>)}
     </section>}
   </div>;
 }
 
 function ArtifactFileNavigator(props: { artifacts: ArtifactDescriptor[]; scope: ArtifactScope; onSelect: (scope: ArtifactScope) => void }): React.JSX.Element {
+  const { t } = useTranslation("artifacts");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const folders = fileTreeFolders(props.artifacts);
   const rootFiles = props.artifacts.filter((artifact) => !artifact.label.includes("/"));
@@ -291,8 +300,8 @@ function ArtifactFileNavigator(props: { artifacts: ArtifactDescriptor[]; scope: 
     if (next.has(path)) next.delete(path); else next.add(path);
     return next;
   });
-  return <nav className="artifact-file-tree" aria-label="Artifact file tree" role="tree">
-    <button type="button" role="treeitem" aria-level={1} className={props.scope.kind === "all" ? "selected" : undefined} onClick={() => props.onSelect({ kind: "all" })}><FolderOpen aria-hidden="true" size={15} /><strong>All artifacts</strong><span>{props.artifacts.length}</span></button>
+  return <nav className="artifact-file-tree" aria-label={t("fileTree.aria")} role="tree">
+    <button type="button" role="treeitem" aria-level={1} className={props.scope.kind === "all" ? "selected" : undefined} onClick={() => props.onSelect({ kind: "all" })}><FolderOpen aria-hidden="true" size={15} /><strong>{t("fileTree.all")}</strong><span>{props.artifacts.length}</span></button>
     {rootFiles.map((artifact) => <button key={artifact.id} type="button" role="treeitem" aria-level={1} className={`artifact-tree-file${props.scope.kind === "file" && props.scope.value === artifact.id ? " selected" : ""}`} aria-current={props.scope.kind === "file" && props.scope.value === artifact.id ? "true" : undefined} onClick={() => props.onSelect({ kind: "file", value: artifact.id })}><File aria-hidden="true" size={14} /><strong>{artifact.label}</strong></button>)}
     {folders.map((folder) => <ArtifactFolderRow key={folder.path} folder={folder} level={1} collapsed={collapsed} scope={props.scope} onToggle={toggle} onSelect={props.onSelect} />)}
   </nav>;
@@ -306,11 +315,12 @@ interface ArtifactFolderNode {
 }
 
 function ArtifactFolderRow(props: { folder: ArtifactFolderNode; level: number; collapsed: Set<string>; scope: ArtifactScope; onToggle: (path: string) => void; onSelect: (scope: ArtifactScope) => void }): React.JSX.Element {
+  const { t } = useTranslation("artifacts");
   const isCollapsed = props.collapsed.has(props.folder.path);
   const count = folderArtifactCount(props.folder);
   return <>
     <div className="artifact-tree-folder" role="treeitem" aria-level={props.level} aria-expanded={!isCollapsed} style={{ "--tree-depth": props.level } as React.CSSProperties}>
-      <button type="button" className="artifact-tree-disclosure" aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${props.folder.path}`} onClick={() => props.onToggle(props.folder.path)}>{isCollapsed ? <CaretRight aria-hidden="true" size={13} /> : <CaretDown aria-hidden="true" size={13} />}</button>
+      <button type="button" className="artifact-tree-disclosure" aria-label={t(`folder.${isCollapsed ? "expand" : "collapse"}`, { path: props.folder.path })} onClick={() => props.onToggle(props.folder.path)}>{isCollapsed ? <CaretRight aria-hidden="true" size={13} /> : <CaretDown aria-hidden="true" size={13} />}</button>
       <button type="button" className={props.scope.kind === "folder" && props.scope.value === props.folder.path ? "selected" : undefined} aria-current={props.scope.kind === "folder" && props.scope.value === props.folder.path ? "true" : undefined} onClick={() => props.onSelect({ kind: "folder", value: props.folder.path })}><Folder aria-hidden="true" size={15} /><strong>{props.folder.name}</strong><span>{count}</span></button>
     </div>
     {!isCollapsed && <div role="group">
@@ -330,17 +340,19 @@ function ArtifactFolderRow(props: { folder: ArtifactFolderNode; level: number; c
 }
 
 function ArtifactRow(props: { artifact: ArtifactDescriptor; selected: boolean; onSelect: (id: string) => void }): React.JSX.Element {
+  const { t } = useTranslation("artifacts");
   const ArtifactIcon = props.artifact.format === "pptx" ? FilePpt : props.artifact.family === "images-diagrams" ? FileImage : props.artifact.family === "source-text" ? FileCode : File;
   const parent = dirname(props.artifact.label);
   return <button type="button" className={`artifact-row${props.selected ? " selected" : ""}`} aria-current={props.selected ? "true" : undefined} onClick={() => props.onSelect(props.artifact.id)}>
     <ArtifactIcon aria-hidden="true" size={16} />
-    <span className="artifact-row-copy"><strong>{basename(props.artifact.label)}</strong><small>{parent === "" ? "Workspace root" : parent} · {formatLabel(props.artifact.format)} · {formatBytes(props.artifact.size)}</small></span>
-    {props.artifact.renderer.status === "unavailable" && <EyeSlash aria-label={props.artifact.renderer.reason ?? "Preview unavailable"} size={15} />}
+    <span className="artifact-row-copy"><strong>{basename(props.artifact.label)}</strong><small>{parent === "" ? t("row.workspaceRoot") : parent} · {formatLabel(props.artifact.format)} · {formatBytes(props.artifact.size)}</small></span>
+    {props.artifact.renderer.status === "unavailable" && <EyeSlash aria-label={props.artifact.renderer.reason ?? t("previewUnavailable")} size={15} />}
   </button>;
 }
 
 function ArtifactEmpty(props: { title: string; detail: string; action?: { label: string; onClick: () => void } }): React.JSX.Element {
-  return <main className="artifact-empty"><span><FolderOpen aria-hidden="true" size={22} /></span><small>Workspace artifacts</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" onClick={props.action.onClick}>{props.action.label}</button>}</main>;
+  const { t } = useTranslation("artifacts");
+  return <main className="artifact-empty"><span><FolderOpen aria-hidden="true" size={22} /></span><small>{t("empty.eyebrow")}</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" onClick={props.action.onClick}>{props.action.label}</button>}</main>;
 }
 
 function artifactDays(navigation: WorkspaceArtifactNavigation | undefined): ArtifactDayGroup[] {
@@ -389,12 +401,12 @@ function observationsForArtifact(navigation: WorkspaceArtifactNavigation | undef
     .sort((left, right) => right.savedAt.localeCompare(left.savedAt)) ?? [];
 }
 
-function scopeDescription(scope: ArtifactScope, navigation: WorkspaceArtifactNavigation | undefined, artifacts: ArtifactDescriptor[]): string {
-  if (scope.kind === "all") return "All observed outputs";
-  if (scope.kind === "day") return formatDayHeading(scope.value);
+function scopeDescription(scope: ArtifactScope, navigation: WorkspaceArtifactNavigation | undefined, artifacts: ArtifactDescriptor[], t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (scope.kind === "all") return t("scopeDescription.all");
+  if (scope.kind === "day") return formatDayHeading(scope.value, studioLocale());
   if (scope.kind === "folder") return scope.value;
-  if (scope.kind === "file") return artifacts.find((artifact) => artifact.id === scope.value)?.label ?? "Selected file";
-  return navigation?.observations.find((observation) => observation.sessionId === scope.value)?.prompt ?? "Selected Session";
+  if (scope.kind === "file") return artifacts.find((artifact) => artifact.id === scope.value)?.label ?? t("scopeDescription.selectedFile");
+  return navigation?.observations.find((observation) => observation.sessionId === scope.value)?.prompt ?? t("scopeDescription.selectedSession");
 }
 
 function fileTreeFolders(artifacts: ArtifactDescriptor[]): ArtifactFolderNode[] {
@@ -446,13 +458,13 @@ function parseLocalDay(value: string): Date {
   return new Date(year!, month! - 1, day!);
 }
 
-function formatDayHeading(value: string): string {
-  return parseLocalDay(value).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+function formatDayHeading(value: string, locale: string): string {
+  return parseLocalDay(value).toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" });
 }
 
-function formatObservedTime(value: string): string {
+function formatObservedTime(value: string, locale: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? value : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return Number.isNaN(date.valueOf()) ? value : date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 }
 
 function basename(path: string): string {

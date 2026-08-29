@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   isArtifactBuildSnapshot,
   type ArtifactBuildSnapshot,
@@ -29,6 +30,7 @@ export function ArtifactPreviewHost(props: {
   artifact: ArtifactDescriptor;
   liveGeneration: number;
 }): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const [surface, setSurface] = useState<PreviewSurface>("preview");
   const [build, setBuild] = useState<ArtifactBuildSnapshot>();
   const [previewState, setPreviewState] = useState<PreviewState>("compiling");
@@ -66,7 +68,7 @@ export function ArtifactPreviewHost(props: {
     setBuild(undefined);
     if (buildUri === undefined) {
       setPreviewState("compile-failed");
-      setFailure("The code-backed artifact has no build reference.");
+      setFailure(t("preview.noBuildReference"));
       return () => controller.abort();
     }
     void fetch(buildUri, { signal: controller.signal, cache: "no-store" }).then(async (response) => {
@@ -81,7 +83,7 @@ export function ArtifactPreviewHost(props: {
       setBuild(value);
       if (value.status === "failed") {
         setPreviewState("compile-failed");
-        setFailure(value.diagnostics[0]?.message ?? "Artifact compilation failed.");
+        setFailure(value.diagnostics[0]?.message ?? t("preview.compileFailed"));
       } else {
         setPreviewState("starting");
       }
@@ -144,39 +146,39 @@ export function ArtifactPreviewHost(props: {
         // A failure can arrive long after a completed render, because a throw
         // in an effect or a handler breaks a preview that already mounted.
         setPreviewState("runtime-failed");
-        setFailure(message.message ?? "Artifact preview failed at runtime.");
+        setFailure(message.message ?? t("preview.runtimeFailed"));
       }
     };
     channel.port1.start();
     setPreviewState("starting");
     handshakeRef.current = setTimeout(() => {
       setPreviewState("runtime-failed");
-      setFailure("The sandboxed Preview did not report a render. Its build may no longer be retained — retry to rebuild this revision.");
+      setFailure(t("preview.noRenderReport"));
     }, PREVIEW_HANDSHAKE_TIMEOUT_MS);
     frame.contentWindow.postMessage({ ...expected, type: "runtime.init", theme }, "*", [channel.port2]);
   };
 
-  return <section className="artifact-runtime-host" aria-label={`Artifact view: ${props.artifact.label}`}>
+  return <section className="artifact-runtime-host" aria-label={t("preview.viewAria", { label: props.artifact.label })}>
     <div className="artifact-runtime-header">
       {/* A tablist may only contain tabs, so the build identity sits beside the
           strip rather than inside it. */}
-      <div className="artifact-runtime-tabs" aria-label="Artifact view mode" {...tablist.tablistProps}>
-        <button type="button" {...tablist.getTabProps("preview")} onClick={() => setSurface("preview")}>Preview</button>
-        <button type="button" {...tablist.getTabProps("source")} onClick={() => setSurface("source")}>Source</button>
+      <div className="artifact-runtime-tabs" aria-label={t("preview.modeAria")} {...tablist.tablistProps}>
+        <button type="button" {...tablist.getTabProps("preview")} onClick={() => setSurface("preview")}>{t("preview.previewTab")}</button>
+        <button type="button" {...tablist.getTabProps("source")} onClick={() => setSurface("source")}>{t("preview.sourceTab")}</button>
       </div>
-      <span>{build === undefined ? "No build" : `${shortBuild(build.buildId)} · build ${build.sequence}`}</span>
+      <span>{build === undefined ? t("preview.noBuild") : t("preview.buildIdentity", { id: shortBuild(build.buildId), sequence: build.sequence })}</span>
     </div>
     <div className="artifact-runtime-panel" id={ARTIFACT_PREVIEW_PANEL_ID} role="tabpanel">
       {surface === "source"
         ? source === undefined
-          ? <p className="artifact-status" role="status">Loading source…</p>
-          : <ArtifactCodeView mode="source" content={source} sourceHint={props.artifact.label} className="artifact-code-preview" label={`Artifact source: ${props.artifact.label}`} />
+          ? <p className="artifact-status" role="status">{t("preview.loadingSource")}</p>
+          : <ArtifactCodeView mode="source" content={source} sourceHint={props.artifact.label} className="artifact-code-preview" label={t("sourceLabel", { label: props.artifact.label })} />
         : build?.status === "ready" && build.previewUri !== undefined
           ? <iframe
             key={build.buildId}
             ref={frameRef}
             className="artifact-frame artifact-runtime-frame"
-            title={`Live artifact preview: ${props.artifact.label}`}
+            title={t("preview.liveTitle", { label: props.artifact.label })}
             src={build.previewUri}
             sandbox="allow-scripts"
             referrerPolicy="no-referrer"
@@ -189,8 +191,8 @@ export function ArtifactPreviewHost(props: {
       role={previewState.endsWith("failed") ? "alert" : "status"}
       aria-live="polite"
     >
-      <span>{previewStatus(previewState, failure)}</span>
-      {previewState.endsWith("failed") && <button type="button" className="artifact-runtime-retry" onClick={() => setAttempt((value) => value + 1)}>Retry</button>}
+      <span>{previewStatus(previewState, t, failure)}</span>
+      {previewState.endsWith("failed") && <button type="button" className="artifact-runtime-retry" onClick={() => setAttempt((value) => value + 1)}>{t("preview.retry")}</button>}
     </div>
   </section>;
 }
@@ -211,12 +213,13 @@ function ArtifactBuildFailure(props: {
   failure?: string;
   state: PreviewState;
 }): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   if (props.state === "compiling" || props.state === "starting") {
-    return <p className="artifact-status" role="status">{previewStatus(props.state)}</p>;
+    return <p className="artifact-status" role="status">{previewStatus(props.state, t)}</p>;
   }
   return <div className="artifact-build-diagnostics" role="alert">
-    <strong>{props.state === "compile-failed" ? "Build failed" : "Preview failed"}</strong>
-    <p>{props.failure ?? "The artifact could not be rendered."}</p>
+    <strong>{props.state === "compile-failed" ? t("preview.buildFailed") : t("preview.previewFailed")}</strong>
+    <p>{props.failure ?? t("preview.cannotRender")}</p>
     {(props.build?.diagnostics.length ?? 0) > 0 && <ol>{props.build!.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.source ?? "build"}:${index}`}>
       <code>{diagnostic.source ?? "artifact"}{diagnostic.line === undefined ? "" : `:${diagnostic.line}:${diagnostic.column ?? 0}`}</code>
       <span>{diagnostic.message}</span>
@@ -238,11 +241,11 @@ function isRuntimeMessage(
     && (message.message === undefined || typeof message.message === "string");
 }
 
-function previewStatus(state: PreviewState, failure?: string): string {
-  if (state === "compiling") return "Compiling Artifact revision…";
-  if (state === "starting") return "Starting sandboxed Preview…";
-  if (state === "ready") return "Preview rendered from the current build.";
-  return failure ?? (state === "compile-failed" ? "Artifact build failed." : "Artifact Preview failed.");
+function previewStatus(state: PreviewState, t: (key: string, options?: Record<string, unknown>) => string, failure?: string): string {
+  if (state === "compiling") return t("preview.compiling");
+  if (state === "starting") return t("preview.starting");
+  if (state === "ready") return t("preview.rendered");
+  return failure ?? (state === "compile-failed" ? t("preview.buildFailedStatus") : t("preview.previewFailedStatus"));
 }
 
 function shortBuild(value: string): string {

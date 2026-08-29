@@ -1,5 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   XlsxCellSnapshot,
   XlsxMergedRange,
@@ -10,6 +11,7 @@ import type { ArtifactSurfaceMountContext } from "../ArtifactSurface.js";
 import { useArtifactSnapshot } from "../useArtifactSnapshot.js";
 
 export function XlsxArtifactView({ artifact }: ArtifactSurfaceMountContext): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const { snapshot, failure } = useArtifactSnapshot(artifact, "xlsx/v1", "XLSX");
   const [sheetRequest, setSheetRequest] = useState<{ revisionId: string; sheetIndex: number }>();
   const [selection, setSelection] = useState<{ revisionId: string; address: string }>();
@@ -21,21 +23,21 @@ export function XlsxArtifactView({ artifact }: ArtifactSurfaceMountContext): Rea
   };
 
   if (failure !== undefined) return <p className="artifact-status" role="alert">{failure}</p>;
-  if (snapshot === undefined) return <p className="artifact-status" role="status">Adapting XLSX revision…</p>;
+  if (snapshot === undefined) return <p className="artifact-status" role="status">{t("xlsx.adapting")}</p>;
 
   const sheetIndex = requestedSheetIndex ?? snapshot.payload.activeSheetIndex;
   const sheet = snapshot.payload.sheets[Math.min(sheetIndex, snapshot.payload.sheets.length - 1)];
-  if (sheet === undefined) return <p className="artifact-status" role="alert">The XLSX snapshot has no worksheets.</p>;
+  if (sheet === undefined) return <p className="artifact-status" role="alert">{t("xlsx.noWorksheets")}</p>;
   const selectedCell = selectedAddress === undefined ? undefined : sheet.cells.find((cell) => cell.address === selectedAddress);
   return <div className="xlsx-artifact-viewer">
     <header className="xlsx-formula-bar">
       <strong>{selectedAddress ?? sheet.label}</strong>
-      <span>{selectedCell?.formula === undefined ? (selectedCell?.display ?? "Read-only workbook") : `=${selectedCell.formula}`}</span>
+      <span>{selectedCell?.formula === undefined ? (selectedCell?.display ?? t("xlsx.readOnlyWorkbook")) : `=${selectedCell.formula}`}</span>
     </header>
-    <div ref={setScrollElement} className="xlsx-grid-scroll" aria-label={`${sheet.label} worksheet`}>
+    <div ref={setScrollElement} className="xlsx-grid-scroll" aria-label={t("xlsx.worksheetAria", { label: sheet.label })}>
       <XlsxGrid sheet={sheet} selectedAddress={selectedAddress} onSelect={setSelectedAddress} scrollElement={scrollElement} />
     </div>
-    <nav className="xlsx-sheet-tabs" aria-label="Worksheets">
+    <nav className="xlsx-sheet-tabs" aria-label={t("xlsx.worksheetsAria")}>
       {snapshot.payload.sheets.map((candidate, index) => <button
         key={candidate.id}
         type="button"
@@ -48,7 +50,7 @@ export function XlsxArtifactView({ artifact }: ArtifactSurfaceMountContext): Rea
       >{candidate.label}</button>)}
     </nav>
     <footer className="xlsx-diagnostics">
-      <span>{snapshot.adapter.id}@{snapshot.adapter.version} · Read-only</span>
+      <span>{snapshot.adapter.id}@{snapshot.adapter.version} · {t("readOnly")}</span>
       <ArtifactDiagnostics diagnostics={snapshot.diagnostics} />
     </footer>
   </div>;

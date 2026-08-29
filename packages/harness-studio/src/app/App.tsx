@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { ArrowRight } from "@phosphor-icons/react/ArrowRight";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { GitBranch } from "@phosphor-icons/react/GitBranch";
@@ -28,6 +30,11 @@ import {
 import { useRovingFocus } from "./roving-tablist.js";
 import { studioApiError } from "./studio-api.js";
 import { StudioThemeContext, type StudioTheme } from "./studio-theme.js";
+import {
+  studioLocale,
+  switchStudioLanguage,
+  type StudioLanguage,
+} from "./i18n/index.js";
 
 const InspectorWorkbench = lazy(async () => ({ default: (await import("./InspectorWorkbench.js")).InspectorWorkbench }));
 import {
@@ -40,18 +47,16 @@ import {
   type StudioConfig,
 } from "./studio-shell-model.js";
 
-// The sidebar already groups these destinations, so the context bar carries the
-// view name alone rather than repeating the group as an eyebrow.
-const AREA_COPY: Record<StudioArea, string> = {
-  overview: "Overview",
-  customizations: "Customizations",
-  inputs: "Inputs",
-  sessions: "Sessions",
-  commits: "Commits",
-  artifacts: "Artifacts",
-  debugger: "Debugger",
-  compare: "Compare",
-};
+const STUDIO_AREAS: readonly StudioArea[] = [
+  "overview",
+  "customizations",
+  "inputs",
+  "sessions",
+  "commits",
+  "artifacts",
+  "debugger",
+  "compare",
+];
 
 type StudioSourceKind = "inspector" | "evidence" | "experiment";
 interface StudioSourceOption {
@@ -116,6 +121,7 @@ async function fetchStudioState(): Promise<{ config: StudioConfig; sources: Stud
 }
 
 export function App(): React.JSX.Element {
+  const { t } = useTranslation("common");
   const [config, setConfig] = useState<StudioConfig | undefined>(undefined);
   const [sources, setSources] = useState<StudioSourceOption[]>([]);
   const [projects, setProjects] = useState<StudioProjectDescriptor[]>([]);
@@ -159,7 +165,7 @@ export function App(): React.JSX.Element {
         }
       } catch (error) {
         if (!cancelled) {
-          setConfigFailure(error instanceof Error ? error.message : "Studio configuration is unavailable.");
+          setConfigFailure(error instanceof Error ? error.message : t("config.unavailable"));
           setConfig(EMPTY_CONFIG);
         }
       }
@@ -245,7 +251,7 @@ export function App(): React.JSX.Element {
       setCompareSurface((currentSurface) => compareSurfaces(loaded.config).includes(currentSurface) ? currentSurface : compareSurfaces(loaded.config)[0] ?? "sessions");
       setDataRevision((revision) => revision + 1);
     } catch (error) {
-      setConfigFailure(error instanceof Error ? error.message : "Studio source switch failed.");
+      setConfigFailure(error instanceof Error ? error.message : t("config.sourceSwitchFailed"));
     }
   }
 
@@ -349,24 +355,24 @@ export function App(): React.JSX.Element {
   }
 
   if (config === undefined) {
-    return <main className="studio-loading"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><p>Loading Harness control plane…</p></main>;
+    return <main className="studio-loading"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><p>{t("loading")}</p></main>;
   }
   if (configFailure !== null) {
-    return <main className="studio-loading" role="alert"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><strong>Cannot load Studio configuration.</strong><p>{configFailure}</p><button className="primary" type="button" onClick={() => { setConfig(undefined); setConfigFailure(null); setBootstrapRevision((revision) => revision + 1); }}>Retry</button></main>;
+    return <main className="studio-loading" role="alert"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><strong>{t("config.failed")}</strong><p>{configFailure}</p><button className="primary" type="button" onClick={() => { setConfig(undefined); setConfigFailure(null); setBootstrapRevision((revision) => revision + 1); }}>{t("config.retry")}</button></main>;
   }
 
   const availableCompareSurfaces = compareSurfaces(config);
   const effectiveCompareSurface = availableCompareSurfaces.includes(compareSurface)
     ? compareSurface
     : availableCompareSurfaces[0] ?? compareSurface;
-  const destinations = studioDestinations(config, effectiveCompareSurface);
+  const destinations = studioDestinations(config, effectiveCompareSurface, t);
   const current = destinations.find((destination) => destination.id === area) ?? destinations[0]!;
   const compareNavigation = (
     <SurfaceNavigation
-      label="Compare surfaces"
+      label={t("compare:surfaces.label")}
       items={availableCompareSurfaces.map((id) => ({
         id,
-        label: id === "sessions" ? "Sessions" : id === "bench" ? "Bench" : "Evidence results",
+        label: t(`compare:surfaces.${id}`),
       }))}
       active={effectiveCompareSurface}
       onSelect={setCompareSurface}
@@ -377,11 +383,11 @@ export function App(): React.JSX.Element {
     : null;
   const activeProject = projects.find((project) => project.id === activeProjectId);
   const openProjectAction = config.workspaceDiscoveryEnabled
-    ? { label: config.workspaceConnected ? "Open Another Project" : "Open Project", onClick: () => void openProject() }
+    ? { label: config.workspaceConnected ? t("project.openAnother") : t("project.open"), onClick: () => void openProject() }
     : undefined;
   const projectDiscoveryDetail = config.workspaceDiscoveryEnabled
-    ? "Choose a remembered Project or open another local directory."
-    : "This Studio launcher does not provide Project discovery. Start the packaged CLI or connect a workspace Session provider.";
+    ? t("project.discoveryChoose")
+    : t("project.discoveryUnavailable");
   const workspaceGateOpen = projects.length === 0 && studioProjectGateRequired(config, sources.length > 0);
   const overviewConfig = workspaceGateOpen ? config : { ...config, workspaceDiscoveryEnabled: false };
 
@@ -400,25 +406,26 @@ export function App(): React.JSX.Element {
       onSelectView={openArea}
       onCloseNavigation={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }}
     />
-    <button className="studio-nav-backdrop" type="button" aria-label="Close Studio navigation" onClick={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }} />
+    <button className="studio-nav-backdrop" type="button" aria-label={t("workspace:gate.closeAria")} onClick={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }} />
     <section className="studio-area">
       <header className={`studio-context-bar${contextNavigation ? " has-surface-navigation" : ""}`}>
-        <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={navigationOpen ? "Close navigation" : "Open navigation"} aria-label={navigationOpen ? "Close Studio navigation" : "Open Studio navigation"} aria-expanded={navigationOpen} onClick={() => setNavigationOpen((value) => !value)}><SidebarSimple aria-hidden="true" size={17} /></button>
-        <div className="studio-context-title"><small>{activeProject?.label ?? (sources.length > 0 ? "Configured sources" : "No Project")}</small><h1>{AREA_COPY[area]}</h1></div>
+        <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={navigationOpen ? t("workspace:gate.closeTitle") : t("workspace:gate.openTitle")} aria-label={navigationOpen ? t("workspace:gate.closeAria") : t("workspace:gate.openAria")} aria-expanded={navigationOpen} onClick={() => setNavigationOpen((value) => !value)}><SidebarSimple aria-hidden="true" size={17} /></button>
+        <div className="studio-context-title"><small>{activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("contextBar.noProject"))}</small><h1>{t(`area.${area}`)}</h1></div>
         {contextNavigation && <div className="studio-context-navigation">{contextNavigation}</div>}
         <ThemeToggle theme={theme} onChange={setTheme} />
+        <LanguageToggle />
         {sources.length > 0 && <SourceSwitcher sources={sources} onSelect={(source) => void selectSource(source)} />}
-        <div className="studio-context-state" role="status" aria-label={`View status: ${current.status}`}><span className={`availability-dot availability-${current.availability}`} /><strong>{current.status}</strong></div>
+        <div className="studio-context-state" role="status" aria-label={t("contextBar.viewStatus", { status: current.status })}><span className={`availability-dot availability-${current.availability}`} /><strong>{current.status}</strong></div>
         {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
       <div className={`studio-surface studio-surface-${area}`}>
         {area === "overview" && <Overview key={`overview-${workspaceRevision}`} config={overviewConfig} onOpen={openArea} onOpenSession={(id) => { setSessionOpenId(id); openArea("sessions"); }} />}
         {area === "customizations" && (config.customizationAnalysisEnabled
           ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />
-          : <EmptyWorkspace eyebrow="Customization catalog" title="Customization analysis is unavailable" detail="This Studio launcher does not include the local customization collector. Opening a Project will not enable it." command="npx @qoder-ai/harness-studio" />)}
-        {area === "inputs" && (config.workspaceWorkbenchEnabled ? <InputTraceView key={`inputs-${workspaceRevision}`} intentAnalysisEnabled={config.intentAnalysisEnabled} /> : <EmptyWorkspace eyebrow="User input trace" title={config.workspaceConnected ? "No retained input trace is available" : "Open a Project"} detail={config.workspaceConnected ? "This Project source does not include structured Inspector dialogue evidence." : projectDiscoveryDetail} action={openProjectAction} />)}
+          : <EmptyWorkspace eyebrow={t("customize:empty.eyebrow")} title={t("customize:empty.titleConnected")} detail={t("customize:empty.detailConnected")} command="npx @qoder-ai/harness-studio" />)}
+        {area === "inputs" && (config.workspaceWorkbenchEnabled ? <InputTraceView key={`inputs-${workspaceRevision}`} intentAnalysisEnabled={config.intentAnalysisEnabled} /> : <EmptyWorkspace eyebrow={t("inputs:empty.eyebrow")} title={config.workspaceConnected ? t("inputs:empty.titleConnected") : t("inputs:empty.titleDisconnected")} detail={config.workspaceConnected ? t("inputs:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
-        {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} /> : <EmptyWorkspace eyebrow="Repository history" title={config.workspaceConnected ? "The selected Project is not a Git repository" : "Open a Project"} detail={config.workspaceConnected ? "Commit history is available only for a local Project backed by Git." : projectDiscoveryDetail} action={openProjectAction} />)}
+        {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} openProjectAction={openProjectAction} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} />}
@@ -434,55 +441,75 @@ export function App(): React.JSX.Element {
 }
 
 function WorkspaceGate(props: { onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
+  const { t } = useTranslation("workspace");
   return <section className="studio-workspace-gate" role="dialog" aria-modal="true" aria-labelledby="workspace-gate-title" aria-describedby="workspace-gate-description">
     <div className="studio-workspace-gate-panel">
-      <header><span><FolderOpen aria-hidden="true" size={22} /></span><div><small>Local Project</small><h1 id="workspace-gate-title">Open a Project to start</h1></div></header>
-      <p id="workspace-gate-description">Choose a repository or project directory. Studio will remember it as a Project and discover its matching local agent inputs and Sessions.</p>
+      <header><span><FolderOpen aria-hidden="true" size={22} /></span><div><small>{t("gate.eyebrow")}</small><h1 id="workspace-gate-title">{t("gate.title")}</h1></div></header>
+      <p id="workspace-gate-description">{t("gate.description")}</p>
       <ProjectFolderControls autoFocus onWorkspaceChanged={props.onWorkspaceChanged} />
-      <footer><strong>Project-scoped discovery</strong><span>The selected directory scopes Session lookup; global Session folders are not treated as Project evidence.</span></footer>
+      <footer><strong>{t("gate.footerTitle")}</strong><span>{t("gate.footerDetail")}</span></footer>
     </div>
   </section>;
 }
 
 function ThemeToggle(props: { theme: StudioTheme; onChange: (theme: StudioTheme) => void }): React.JSX.Element {
+  const { t } = useTranslation("common");
   const next = props.theme === "dark" ? "light" : "dark";
-  const label = `${props.theme === "dark" ? "Dark" : "Light"} theme active. Switch to ${next} theme`;
-  return <button className="studio-theme-toggle" type="button" title={`Switch to ${next} theme`} aria-label={label} onClick={() => props.onChange(next)}>
+  const themeLabel = (theme: StudioTheme): string => theme === "dark" ? t("theme.dark") : t("theme.light");
+  const label = t("theme.active", { current: themeLabel(props.theme), next: themeLabel(next) });
+  return <button className="studio-theme-toggle" type="button" title={t("theme.switchTo", { theme: themeLabel(next) })} aria-label={label} onClick={() => props.onChange(next)}>
     {props.theme === "dark" ? <Moon aria-hidden="true" size={15} weight="fill" /> : <Sun aria-hidden="true" size={15} weight="fill" />}
-    <span>{props.theme === "dark" ? "Dark" : "Light"}</span>
+    <span>{themeLabel(props.theme)}</span>
   </button>;
+}
+
+function LanguageToggle(): React.JSX.Element {
+  const { t, i18n } = useTranslation("common");
+  const language = i18n.resolvedLanguage ?? i18n.language ?? "en";
+  const active: StudioLanguage = language === "zh-CN" ? "zh-CN" : "en";
+  const next: StudioLanguage = active === "zh-CN" ? "en" : "zh-CN";
+  const labelFor = (candidate: StudioLanguage): string => t(`language.${candidate === "zh-CN" ? "zhCN" : "en"}`);
+  return <button
+    className="studio-language-toggle"
+    type="button"
+    title={t("language.switchTo", { language: labelFor(next) })}
+    aria-label={t("language.current", { language: labelFor(active) })}
+    onClick={() => switchStudioLanguage(next)}
+  ><span>{active === "zh-CN" ? "中文" : "EN"}</span></button>;
 }
 
 function SourceSwitcher(props: {
   sources: StudioSourceOption[];
   onSelect: (source: StudioSourceOption) => void;
 }): React.JSX.Element {
+  const { t } = useTranslation("workspace");
   const [open, setOpen] = useState(false);
   const active = props.sources.filter((source) => source.active);
   const kinds: StudioSourceKind[] = ["inspector", "evidence", "experiment"];
   return <div className="studio-source-switcher">
-    <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={`Data sources (${active.length} active)`} title="Data sources" onClick={() => setOpen((value) => !value)}><GitBranch aria-hidden="true" size={14} /><span>Data sources</span><em>{active.length}</em></button>
-    {open && <div className="studio-source-menu" role="menu" aria-label="Studio data sources">
+    <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={t("sources.buttonAria", { count: active.length })} title={t("sources.button")} onClick={() => setOpen((value) => !value)}><GitBranch aria-hidden="true" size={14} /><span>{t("sources.button")}</span><em>{active.length}</em></button>
+    {open && <div className="studio-source-menu" role="menu" aria-label={t("sources.menuAria")}>
       {kinds.map((kind) => {
         const entries = props.sources.filter((source) => source.kind === kind);
         if (entries.length === 0) return null;
         return <section key={kind}>
-          <h2>{sourceKindLabel(kind)}</h2>
-          {entries.map((source) => <button key={source.id} type="button" role="menuitemradio" aria-checked={source.active} className={source.active ? "selected" : ""} onClick={() => { setOpen(false); if (!source.active) props.onSelect(source); }}><strong>{source.label}</strong><span>{source.active ? "Active" : "Switch"}</span></button>)}
+          <h2>{sourceKindLabel(kind, t)}</h2>
+          {entries.map((source) => <button key={source.id} type="button" role="menuitemradio" aria-checked={source.active} className={source.active ? "selected" : ""} onClick={() => { setOpen(false); if (!source.active) props.onSelect(source); }}><strong>{source.label}</strong><span>{source.active ? t("sources.active") : t("sources.switch")}</span></button>)}
         </section>;
       })}
     </div>}
   </div>;
 }
 
-function sourceKindLabel(kind: StudioSourceKind): string {
-  if (kind === "inspector") return "Inspector";
-  if (kind === "evidence") return "Evidence results";
-  return "Experiment bench";
+function sourceKindLabel(kind: StudioSourceKind, t: TFunction): string {
+  if (kind === "inspector") return t("sources.inspector");
+  if (kind === "evidence") return t("sources.evidence");
+  return t("sources.bench");
 }
 
 function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => void; onOpenSession: (id: string) => void }): React.JSX.Element {
-  const model = studioOverview(props.config);
+  const { t } = useTranslation("overview");
+  const model = studioOverview(props.config, t);
   const [recentSessions, setRecentSessions] = useState<SessionSummary[]>();
   const [recentFailure, setRecentFailure] = useState<string>();
 
@@ -503,7 +530,7 @@ function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => v
         setRecentFailure(undefined);
       } catch (error) {
         if (cancelled) return;
-        setRecentFailure(error instanceof Error ? error.message : "Recent Sessions are unavailable.");
+        setRecentFailure(error instanceof Error ? error.message : t("panes.recentUnavailable"));
         setRecentSessions([]);
       }
     })();
@@ -512,12 +539,12 @@ function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => v
 
   const heading = model.title;
   const context = model.mode === "workspace"
-    ? "Project overview"
+    ? t("context.workspace")
     : model.mode === "configured"
-      ? "Configured local sources"
+      ? t("context.configured")
       : model.mode === "workspace-required"
-        ? "Project setup"
-        : "Studio setup";
+        ? t("context.workspaceRequired")
+        : t("context.studio");
 
   return <main className={`control-overview overview-mode-${model.mode}`}>
     <section className="overview-summary">
@@ -527,30 +554,30 @@ function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => v
         <p>{model.detail}</p>
         {model.primaryAction !== undefined && model.mode !== "workspace-required" && <button className="primary" type="button" onClick={() => props.onOpen(model.primaryAction!.area)}>{model.primaryAction.label}<ArrowRight aria-hidden="true" size={15} weight="bold" /></button>}
       </div>
-      {model.mode === "workspace" && <dl className="overview-facts" aria-label="Workspace summary">{model.facts.map((fact) => <div key={fact.id}><dt>{fact.label}</dt><dd>{fact.value}</dd><small>{fact.detail}</small></div>)}</dl>}
+      {model.mode === "workspace" && <dl className="overview-facts" aria-label={t("panes.workspaceSummaryAria")}>{model.facts.map((fact) => <div key={fact.id}><dt>{fact.label}</dt><dd>{fact.value}</dd><small>{fact.detail}</small></div>)}</dl>}
     </section>
 
     <div className="overview-workspace">
       {model.mode === "workspace" ? <section className="overview-pane overview-recent">
-        <header><h2>Recent Sessions</h2><span>{props.config.sessionCount}</span></header>
+        <header><h2>{t("panes.recentSessions")}</h2><span>{props.config.sessionCount}</span></header>
         {recentFailure !== undefined
           ? <p className="overview-pane-status" role="alert">{recentFailure}</p>
           : recentSessions === undefined
-            ? <p className="overview-pane-status" role="status">Loading retained Sessions…</p>
+            ? <p className="overview-pane-status" role="status">{t("panes.loadingSessions")}</p>
             : recentSessions.length === 0
-              ? <p className="overview-pane-status">No retained Sessions were discovered in this Project.</p>
-              : <ol className="overview-session-rows">{recentSessions.map((session) => <li key={session.id}><button type="button" aria-label={`Open Session: ${session.prompt}`} onClick={() => props.onOpenSession(session.id)}><span><small>{session.provider ?? "Local agent"} · {formatSessionTime(session.savedAt)}</small><strong>{session.prompt}</strong></span><em>{session.toolCallCount} calls</em><ArrowRight aria-hidden="true" size={14} /></button></li>)}</ol>}
+              ? <p className="overview-pane-status">{t("panes.noneRetained")}</p>
+              : <ol className="overview-session-rows">{recentSessions.map((session) => <li key={session.id}><button type="button" aria-label={t("panes.openSessionAria", { prompt: session.prompt })} onClick={() => props.onOpenSession(session.id)}><span><small>{session.provider ?? t("common:localAgent")} · {formatSessionTime(session.savedAt, studioLocale())}</small><strong>{session.prompt}</strong></span><em>{t("panes.calls", { count: session.toolCallCount })}</em><ArrowRight aria-hidden="true" size={14} /></button></li>)}</ol>}
       </section> : <section className="overview-pane overview-context">
-        <header><h2>{model.mode === "configured" ? "Loaded context" : "Getting started"}</h2><span>{model.facts.length || undefined}</span></header>
+        <header><h2>{model.mode === "configured" ? t("panes.loadedContext") : t("panes.gettingStarted")}</h2><span>{model.facts.length || undefined}</span></header>
         {model.facts.length === 0
           ? <p className="overview-pane-status">{model.detail}</p>
           : <dl className="overview-context-rows">{model.facts.map((fact) => <div key={fact.id}><dt><strong>{fact.label}</strong><small>{fact.detail}</small></dt><dd>{fact.value}</dd></div>)}</dl>}
       </section>}
 
       <aside className="overview-pane overview-actions">
-        <header><h2>Next actions</h2><span>{model.secondaryActions.length}</span></header>
+        <header><h2>{t("panes.nextActions")}</h2><span>{model.secondaryActions.length}</span></header>
         {model.secondaryActions.length === 0
-          ? <p className="overview-pane-status">{model.mode === "workspace" ? "Open Sessions to inspect the retained evidence available now." : "Load a working context to enable Studio workbenches."}</p>
+          ? <p className="overview-pane-status">{model.mode === "workspace" ? t("panes.openSessionsHint") : t("panes.loadContextHint")}</p>
           : <ul>{model.secondaryActions.map((action) => <li key={action.area}><button type="button" onClick={() => props.onOpen(action.area)}><span>{action.label}</span><ArrowRight aria-hidden="true" size={14} /></button></li>)}</ul>}
       </aside>
     </div>
@@ -577,6 +604,7 @@ function SessionsWorkspace(props: {
   openProjectAction?: { label: string; onClick: () => void };
   onCompare: (ids: [string, string]) => void;
 }): React.JSX.Element {
+  const { t } = useTranslation("sessions");
   const [sessions, setSessions] = useState<SessionSummary[]>();
   const [omittedCount, setOmittedCount] = useState(0);
   const [selected, setSelected] = useState<string>();
@@ -639,7 +667,7 @@ function SessionsWorkspace(props: {
       setSessionArtifacts(artifacts);
     } catch (error) {
       if (cancelled() || request !== detailRequest.current) return;
-      const message = error instanceof Error ? error.message : "Session detail failed to load.";
+      const message = error instanceof Error ? error.message : t("detailLoadFailed");
       setDetailFailure(message);
     }
   }
@@ -670,45 +698,45 @@ function SessionsWorkspace(props: {
   }
 
   if (!props.config.workspaceConnected) {
-    return <EmptyWorkspace eyebrow="Project Sessions" title="Open a Project" detail={props.config.workspaceDiscoveryEnabled ? "Choose a remembered Project or open another local directory." : "This Studio launcher does not provide Project discovery."} action={props.openProjectAction} />;
+    return <EmptyWorkspace eyebrow={t("empty.eyebrow")} title={t("empty.title")} detail={props.config.workspaceDiscoveryEnabled ? t("empty.discoveryDetail") : t("empty.noDiscoveryDetail")} action={props.openProjectAction} />;
   }
   if (failure !== undefined) {
-    return <EmptyWorkspace eyebrow="Project Sessions" title="Session discovery failed" detail={failure} />;
+    return <EmptyWorkspace eyebrow={t("empty.eyebrow")} title={t("empty.discoveryFailed")} detail={failure} />;
   }
-  if (sessions === undefined) return <p className="artifact-status" role="status">Indexing sessions…</p>;
+  if (sessions === undefined) return <p className="artifact-status" role="status">{t("indexing")}</p>;
 
   const pair = [...compareIds];
-  const catalog = <section className="session-browser-workspace" aria-label="Project workspace sessions">
+  const catalog = <section className="session-browser-workspace" aria-label={t("workspaceAria")}>
     <aside className="session-catalog-pane">
-      <header><div><small>Project evidence</small><h2>Sessions</h2></div><span>{sessions.length}</span></header>
-      {omittedCount > 0 && <p className="session-omissions">{omittedCount} unsupported or malformed file{omittedCount === 1 ? "" : "s"} omitted.</p>}
+      <header><div><small>{t("evidenceEyebrow")}</small><h2>{t("common:area.sessions")}</h2></div><span>{sessions.length}</span></header>
+      {omittedCount > 0 && <p className="session-omissions">{t("omitted", { count: omittedCount })}</p>}
       <ul className="session-catalog-rows">{sessions.map((session) => <li key={session.id}>
-        <label title={`Select ${session.prompt} for comparison`}><input type="checkbox" aria-label={`Select ${session.prompt} from ${session.provider ?? "Local agent"} at ${formatSessionTime(session.savedAt)} for comparison`} checked={compareIds.has(session.id)} disabled={!compareIds.has(session.id) && compareIds.size >= 2} onChange={() => toggleCompare(session.id)} /></label>
-        <button ref={(node) => { if (node) sessionRowRefs.current.set(session.id, node); else sessionRowRefs.current.delete(session.id); }} type="button" tabIndex={focusedSessionId === session.id ? 0 : -1} className={selected === session.id ? "selected" : undefined} onFocus={() => setFocusedSessionId(session.id)} onKeyDown={(event) => moveSessionFocus(event, session.id)} onClick={() => { setFocusedSessionId(session.id); void openSession(session.id); }}><small>{session.provider ?? "Local agent"} · {formatSessionTime(session.savedAt)}</small><strong>{session.prompt}</strong><small>{session.status} · {session.toolCallCount} calls</small></button>
+        <label title={t("selectTitle", { prompt: session.prompt })}><input type="checkbox" aria-label={t("selectAria", { prompt: session.prompt, provider: session.provider ?? t("common:localAgent"), time: formatSessionTime(session.savedAt, studioLocale()) })} checked={compareIds.has(session.id)} disabled={!compareIds.has(session.id) && compareIds.size >= 2} onChange={() => toggleCompare(session.id)} /></label>
+        <button ref={(node) => { if (node) sessionRowRefs.current.set(session.id, node); else sessionRowRefs.current.delete(session.id); }} type="button" tabIndex={focusedSessionId === session.id ? 0 : -1} className={selected === session.id ? "selected" : undefined} onFocus={() => setFocusedSessionId(session.id)} onKeyDown={(event) => moveSessionFocus(event, session.id)} onClick={() => { setFocusedSessionId(session.id); void openSession(session.id); }}><small>{session.provider ?? t("common:localAgent")} · {formatSessionTime(session.savedAt, studioLocale())}</small><strong>{session.prompt}</strong><small>{t("status", { status: session.status, count: session.toolCallCount })}</small></button>
       </li>)}</ul>
-      <footer><button type="button" className="primary" disabled={pair.length !== 2} onClick={() => props.onCompare(pair as [string, string])}>Compare {pair.length}/2</button></footer>
+      <footer><button type="button" className="primary" disabled={pair.length !== 2} onClick={() => props.onCompare(pair as [string, string])}>{t("compareButton", { pair: pair.length })}</button></footer>
     </aside>
     <main className="session-detail-pane">
       {detailFailure !== undefined
         ? <p className="artifact-status" role="alert">{detailFailure}</p>
         : detail === undefined
-          ? <p className="artifact-status">Select a session to inspect retained evidence.</p>
+          ? <p className="artifact-status">{t("selectSession")}</p>
           : <SessionDetail session={detail} artifactContext={sessionArtifacts} />}
     </main>
   </section>;
 
   if (!props.config.workspaceWorkbenchEnabled) return catalog;
-  return <section className="session-workbench-stack" aria-label="Workspace Session evidence">
+  return <section className="session-workbench-stack" aria-label={t("workbenchAria")}>
     <header className="session-workbench-toolbar">
-      <div><strong>Session evidence</strong><span>Inspector-owned Project observations</span></div>
-      <div className="session-surface-tabs" role="tablist" aria-label="Session views">
-        <button id="session-tab-inspector" type="button" role="tab" aria-controls="session-workbench-panel" aria-selected={surface === "inspector"} tabIndex={surface === "inspector" ? 0 : -1} className={surface === "inspector" ? "selected" : undefined} onClick={() => setSurface("inspector")} onKeyDown={(event) => { if (event.key === "ArrowRight") { event.preventDefault(); setSurface("catalog"); (event.currentTarget.nextElementSibling as HTMLButtonElement | null)?.focus(); } }}>Inspector</button>
-        <button id="session-tab-catalog" type="button" role="tab" aria-controls="session-workbench-panel" aria-selected={surface === "catalog"} tabIndex={surface === "catalog" ? 0 : -1} className={surface === "catalog" ? "selected" : undefined} onClick={() => setSurface("catalog")} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setSurface("inspector"); (event.currentTarget.previousElementSibling as HTMLButtonElement | null)?.focus(); } }}>Catalog &amp; Compare</button>
+      <div><strong>{t("workbenchTitle")}</strong><span>{t("workbenchDetail")}</span></div>
+      <div className="session-surface-tabs" role="tablist" aria-label={t("viewsTablist")}>
+        <button id="session-tab-inspector" type="button" role="tab" aria-controls="session-workbench-panel" aria-selected={surface === "inspector"} tabIndex={surface === "inspector" ? 0 : -1} className={surface === "inspector" ? "selected" : undefined} onClick={() => setSurface("inspector")} onKeyDown={(event) => { if (event.key === "ArrowRight") { event.preventDefault(); setSurface("catalog"); (event.currentTarget.nextElementSibling as HTMLButtonElement | null)?.focus(); } }}>{t("inspectorTab")}</button>
+        <button id="session-tab-catalog" type="button" role="tab" aria-controls="session-workbench-panel" aria-selected={surface === "catalog"} tabIndex={surface === "catalog" ? 0 : -1} className={surface === "catalog" ? "selected" : undefined} onClick={() => setSurface("catalog")} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setSurface("inspector"); (event.currentTarget.previousElementSibling as HTMLButtonElement | null)?.focus(); } }}>{t("catalogTab")}</button>
       </div>
     </header>
     <div id="session-workbench-panel" className="session-workbench-surface" role="tabpanel" aria-labelledby={surface === "inspector" ? "session-tab-inspector" : "session-tab-catalog"}>
       {surface === "inspector"
-        ? <Suspense fallback={<p className="artifact-status" role="status">Loading Inspector workbench…</p>}>
+        ? <Suspense fallback={<p className="artifact-status" role="status">{t("loadingInspector")}</p>}>
             <InspectorWorkbench reportUrl="api/workspace-inspector-report" fallback={catalog} />
           </Suspense>
         : catalog}
@@ -717,36 +745,37 @@ function SessionsWorkspace(props: {
 }
 
 function SessionDetail({ session, artifactContext }: { session: DebuggerSession; artifactContext?: SessionArtifactContext | null }): React.JSX.Element {
+  const { t } = useTranslation("sessions");
   const [activeArtifactId, setActiveArtifactId] = useState<string>();
   useEffect(() => setActiveArtifactId(undefined), [session.id]);
   const toolCalls = session.events.reduce((count, event) => count + (event.toolCalls?.length ?? 0), 0);
   const activeArtifact = artifactContext?.artifacts.find((artifact) => artifact.id === activeArtifactId);
   const openArtifact = (artifact: ArtifactDescriptor): void => setActiveArtifactId(artifact.id);
-  return <section className="session-detail" aria-label={`Session detail: ${session.name}`}>
-    <header><div><small>Retained Session</small><h1>{session.name}</h1></div><span className={`run-badge status-${session.connection}`}>{session.connection}</span></header>
-    <dl><div><dt>Agent</dt><dd>{session.agent}</dd></div><div><dt>Protocol</dt><dd>{session.protocol}</dd></div><div><dt>Events</dt><dd>{session.events.length}</dd></div><div><dt>Tool calls</dt><dd>{toolCalls}</dd></div></dl>
+  return <section className="session-detail" aria-label={t("detail.aria", { name: session.name })}>
+    <header><div><small>{t("detail.retained")}</small><h1>{session.name}</h1></div><span className={`run-badge status-${session.connection}`}>{session.connection}</span></header>
+    <dl><div><dt>{t("detail.agent")}</dt><dd>{session.agent}</dd></div><div><dt>{t("detail.protocol")}</dt><dd>{session.protocol}</dd></div><div><dt>{t("detail.events")}</dt><dd>{session.events.length}</dd></div><div><dt>{t("detail.toolCalls")}</dt><dd>{toolCalls}</dd></div></dl>
     <div className="session-detail-workspace">
-      <section className="session-detail-ledger" aria-label="Session evidence and files">
-        <section className="session-artifact-files" aria-label="Session files">
-          <header><strong>Session files</strong><span>{artifactContext?.artifacts.length ?? 0}</span></header>
+      <section className="session-detail-ledger" aria-label={t("detail.ledgerAria")}>
+        <section className="session-artifact-files" aria-label={t("detail.filesAria")}>
+          <header><strong>{t("detail.files")}</strong><span>{artifactContext?.artifacts.length ?? 0}</span></header>
           {artifactContext === undefined
-            ? <p>Indexing observed Session files…</p>
+            ? <p>{t("detail.indexingFiles")}</p>
             : artifactContext === null || artifactContext.artifacts.length === 0
-              ? <p>No current regular file from this Session is available in the Artifact catalog.</p>
+              ? <p>{t("detail.noCatalogFiles")}</p>
               : <ul>{artifactContext.artifacts.map((artifact) => <li key={artifact.id}><button
                 type="button"
                 aria-pressed={activeArtifactId === artifact.id}
-                aria-label={`Open Session artifact ${artifact.label}`}
-                title="Select or press Enter to open; double-click is supported"
+                aria-label={t("detail.openArtifactAria", { label: artifact.label })}
+                title={t("detail.openHint")}
                 onClick={() => openArtifact(artifact)}
                 onDoubleClick={() => openArtifact(artifact)}
-              ><span><strong>{artifact.label}</strong><small>{artifact.format.toUpperCase()} · exact {artifact.revision.id.slice(0, 18)}</small></span><em>{artifact.renderer.status === "ready" ? artifact.renderer.label : "Preview unavailable"}</em></button></li>)}</ul>}
+              ><span><strong>{artifact.label}</strong><small>{artifact.format.toUpperCase()} · {t("detail.exactRevision", { id: artifact.revision.id.slice(0, 18) })}</small></span><em>{artifact.renderer.status === "ready" ? artifact.renderer.label : t("detail.previewUnavailable")}</em></button></li>)}</ul>}
         </section>
         <ol className="session-event-rows">{session.events.map((event) => <li key={event.id}><time>{event.timestamp}</time><span><strong>{event.phase} · {event.title}</strong><small>{event.summary}</small></span>{event.toolCalls && <em>{event.toolCalls.map((tool) => tool.name).join(", ")}</em>}</li>)}</ol>
       </section>
-      <aside className="session-artifact-preview" aria-label="Session Artifact View">
+      <aside className="session-artifact-preview" aria-label={t("detail.artifactViewAria")}>
         {activeArtifact === undefined || artifactContext == null
-          ? <div className="session-artifact-empty"><small>Artifact View</small><strong>Select a Session file</strong><p>Choose a retained file, press Enter, or double-click it to open the exact current revision here.</p></div>
+          ? <div className="session-artifact-empty"><small>{t("detail.artifactView")}</small><strong>{t("detail.selectFile")}</strong><p>{t("detail.selectFileDetail")}</p></div>
           : <>
             <header><div><strong>{activeArtifact.label}</strong><small>{activeArtifact.format.toUpperCase()} · {activeArtifact.adapter.id}</small></div><span title={activeArtifact.revision.id}>{activeArtifact.revision.id.slice(0, 18)}</span></header>
             <div className="session-artifact-surface" data-native-session-artifact={activeArtifact.label}>
@@ -772,6 +801,7 @@ function sessionArtifactContext(value: unknown, sessionId: string): SessionArtif
 }
 
 function ProjectFolderControls(props: { autoFocus?: boolean; onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
+  const { t } = useTranslation("workspace");
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<"idle" | "choosing" | "discovering" | "opening">("idle");
   const [failure, setFailure] = useState<string>();
@@ -805,7 +835,7 @@ function ProjectFolderControls(props: { autoFocus?: boolean; onWorkspaceChanged:
       setStage("opening");
       await props.onWorkspaceChanged();
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "Project discovery failed.");
+      setFailure(error instanceof Error ? error.message : t("folderControls.discoveryFailed"));
     } finally {
       monitoring = false;
       await monitor;
@@ -815,32 +845,32 @@ function ProjectFolderControls(props: { autoFocus?: boolean; onWorkspaceChanged:
   }
 
   const progressMessage = stage === "discovering"
-    ? "Finding matching Project Sessions across local providers…"
+    ? t("folderControls.discovering")
     : stage === "opening"
-      ? "Opening the Project workbench…"
-      : "Waiting for a Project directory selection…";
+      ? t("folderControls.openingList")
+      : t("folderControls.waiting");
 
   return <div className="workspace-folder-controls">
-    <button autoFocus={props.autoFocus} className="primary" type="button" disabled={busy} aria-label={busy ? "Opening Project" : "Choose Project"} onClick={() => void openProject()}><FolderOpen aria-hidden="true" size={14} /><span>{busy ? "Opening…" : "Choose Project"}</span></button>
+    <button autoFocus={props.autoFocus} className="primary" type="button" disabled={busy} aria-label={busy ? t("folderControls.openingAria") : t("folderControls.choose")} onClick={() => void openProject()}><FolderOpen aria-hidden="true" size={14} /><span>{busy ? t("folderControls.opening") : t("folderControls.choose")}</span></button>
     {busy && <span className="workspace-open-progress" role="status" aria-live="polite"><i aria-hidden="true" /><small>{progressMessage}</small></span>}
     {failure !== undefined && <small className="workspace-folder-error" role="alert">{failure}</small>}
   </div>;
 }
 
-function formatSessionTime(value: string): string {
+function formatSessionTime(value: string, locale: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
+  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString(locale);
 }
 
-
 function DebuggerWorkspace(props: { config: StudioConfig; openProjectAction?: { label: string; onClick: () => void }; project?: { id: string; label: string; revision: number } }): React.JSX.Element {
+  const { t } = useTranslation("common");
   if (!props.config.aguiEnabled) {
-    return <EmptyWorkspace eyebrow="Live runs" title="Load a harness for live runs" detail="The Debugger drives a live harness run over the embedded AG-UI endpoint and saves finished runs for replay." command="--harness ./my-agent.harness" />;
+    return <EmptyWorkspace eyebrow={t("debugger.eyebrow")} title={t("debugger.title")} detail={t("debugger.detail")} command="--harness ./my-agent.harness" />;
   }
   if (props.config.harnessMode === "workspace-default" && !props.config.projectExecutionEnabled) {
-    return <EmptyWorkspace eyebrow="Project-scoped live runs" title={props.project === undefined ? "Open a Project for live runs" : "This Project is read-only evidence"} detail={props.project === undefined ? (props.config.workspaceDiscoveryEnabled ? "Open a local Project before starting the default harness." : "This Studio launcher does not provide Project discovery.") : "Imported retained-run folders can be inspected and compared, but they do not provide a local execution root for the default harness."} action={props.openProjectAction} />;
+    return <EmptyWorkspace eyebrow={t("debugger.projectScopedEyebrow")} title={props.project === undefined ? t("debugger.openProjectTitle") : t("debugger.readOnlyTitle")} detail={props.project === undefined ? (props.config.workspaceDiscoveryEnabled ? t("debugger.openProjectDetail") : t("debugger.noDiscoveryDetail")) : t("debugger.readOnlyDetail")} action={props.openProjectAction} />;
   }
-  return <div className="debugger-mode"><RunView aguiEndpoint="agui" acpEndpoint={props.config.acpEnabled ? "/agui/acp" : undefined} acpAgentLabel={props.config.acpAgentLabel} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? "Project default · Qoder" : "Live Trial"} project={props.project} /></div>;
+  return <div className="debugger-mode"><RunView aguiEndpoint="agui" acpEndpoint={props.config.acpEnabled ? "/agui/acp" : undefined} acpAgentLabel={props.config.acpAgentLabel} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? t("debugger.workspaceDefaultQoder") : t("debugger.liveTrial")} project={props.project} /></div>;
 }
 
 function CompareWorkspace(props: {
@@ -850,9 +880,10 @@ function CompareWorkspace(props: {
   sessionIds?: [string, string];
   openProjectAction?: { label: string; onClick: () => void };
 }): React.JSX.Element {
+  const { t } = useTranslation("compare");
   const available = compareSurfaces(props.config);
   if (available.length === 0) {
-    return <EmptyWorkspace eyebrow="Session comparison" title={props.config.workspaceConnected ? "Choose a Project with at least two Sessions" : "Open a Project"} detail={props.config.workspaceConnected ? "The selected Project needs two discovered Sessions before observational comparison is available." : props.config.workspaceDiscoveryEnabled ? "Open a local Project. Studio will discover its matching agent Sessions without startup parameters." : "This Studio launcher does not provide Project discovery."} action={props.openProjectAction} />;
+    return <EmptyWorkspace eyebrow={t("empty.eyebrow")} title={props.config.workspaceConnected ? t("empty.titleConnected") : t("empty.titleDisconnected")} detail={props.config.workspaceConnected ? t("empty.detailConnected") : props.config.workspaceDiscoveryEnabled ? t("empty.discoveryDetail") : t("empty.noDiscoveryDetail")} action={props.openProjectAction} />;
   }
   if (props.surface === "sessions" && props.config.sessionCount >= 2) {
     return <SessionCompareView navigation={props.navigation} initialIds={props.sessionIds} />;
@@ -861,10 +892,10 @@ function CompareWorkspace(props: {
     return <main className="experiment-mode"><ExperimentView historyEnabled={props.config.historyEnabled} navigation={props.navigation} /></main>;
   }
   if (props.surface === "results" && props.config.evidenceEnabled) {
-    return <main className="evidence-results"><header><div><small>Frozen comparison</small><h1>Evidence results</h1></div>{props.navigation}</header><CompareView /></main>;
+    return <main className="evidence-results"><header><div><small>{t("frozen.eyebrow")}</small><h1>{t("frozen.title")}</h1></div>{props.navigation}</header><CompareView /></main>;
   }
   const fallback = available[0]!;
-  return <EmptyWorkspace eyebrow="Surface unavailable" title="Choose a configured compare surface" detail={`The requested surface is not connected. Available now: ${fallback}.`} />;
+  return <EmptyWorkspace eyebrow={t("unavailable.eyebrow")} title={t("unavailable.title")} detail={t("unavailable.detail", { surfaces: fallback })} />;
 }
 
 interface SessionComparisonSide {
@@ -887,6 +918,7 @@ interface SessionComparison {
 }
 
 function SessionCompareView(props: { navigation: ReactNode; initialIds?: [string, string] }): React.JSX.Element {
+  const { t } = useTranslation("sessions");
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [leftId, setLeftId] = useState(props.initialIds?.[0] ?? "");
   const [rightId, setRightId] = useState(props.initialIds?.[1] ?? "");
@@ -928,23 +960,28 @@ function SessionCompareView(props: { navigation: ReactNode; initialIds?: [string
   }, [leftId, rightId]);
 
   return <main className="session-compare-workspace">
-    <header><div><small>Observed retained evidence</small><h1>Compare Sessions</h1></div>{props.navigation}</header>
-    <div className="session-compare-picker"><label><span>Left Session</span><select value={leftId} onChange={(event) => setLeftId(event.target.value)}>{sessions.map((session) => <option key={session.id} value={session.id} disabled={session.id === rightId}>{session.prompt}</option>)}</select></label><label><span>Right Session</span><select value={rightId} onChange={(event) => setRightId(event.target.value)}>{sessions.map((session) => <option key={session.id} value={session.id} disabled={session.id === leftId}>{session.prompt}</option>)}</select></label></div>
+    <header><div><small>{t("compare.eyebrow")}</small><h1>{t("compare.title")}</h1></div>{props.navigation}</header>
+    <div className="session-compare-picker"><label><span>{t("compare.left")}</span><select value={leftId} onChange={(event) => setLeftId(event.target.value)}>{sessions.map((session) => <option key={session.id} value={session.id} disabled={session.id === rightId}>{session.prompt}</option>)}</select></label><label><span>{t("compare.right")}</span><select value={rightId} onChange={(event) => setRightId(event.target.value)}>{sessions.map((session) => <option key={session.id} value={session.id} disabled={session.id === leftId}>{session.prompt}</option>)}</select></label></div>
     {failure !== undefined && <p className="session-compare-boundary status-danger" role="alert">{failure}</p>}
-    {comparison === undefined ? <p className="artifact-status" role="status">Loading Session comparison…</p> : <>
-      <p className="session-compare-boundary"><strong>No winner inferred.</strong> {comparison.boundary}</p>
-      <div className="session-compare-heads"><article><small>Left</small><h2>{comparison.left.prompt}</h2><span className={`run-badge status-${comparison.left.status}`}>{comparison.left.status}</span></article><article><small>Right</small><h2>{comparison.right.prompt}</h2><span className={`run-badge status-${comparison.right.status}`}>{comparison.right.status}</span></article></div>
-      <div className="session-compare-table" role="table" aria-label="Observed Session differences">
-        <div className="session-compare-columns" role="row"><strong role="columnheader">Metric</strong><strong role="columnheader">Left</strong><strong role="columnheader">Right</strong></div>
-        {(["retainedEventCount", "toolCallCount", "messageCount", "warningCount"] as const).map((metric) => <div role="row" key={metric}><strong role="rowheader">{sessionMetricLabel(metric)}</strong><span role="cell">{comparison.left[metric]}</span><span role="cell">{comparison.right[metric]}</span></div>)}
+    {comparison === undefined ? <p className="artifact-status" role="status">{t("compare.loading")}</p> : <>
+      <p className="session-compare-boundary"><strong>{t("compare.noWinner")}</strong> {comparison.boundary}</p>
+      <div className="session-compare-heads"><article><small>{t("compare.leftSide")}</small><h2>{comparison.left.prompt}</h2><span className={`run-badge status-${comparison.left.status}`}>{comparison.left.status}</span></article><article><small>{t("compare.rightSide")}</small><h2>{comparison.right.prompt}</h2><span className={`run-badge status-${comparison.right.status}`}>{comparison.right.status}</span></article></div>
+      <div className="session-compare-table" role="table" aria-label={t("compare.aria")}>
+        <div className="session-compare-columns" role="row"><strong role="columnheader">{t("compare.metricColumn")}</strong><strong role="columnheader">{t("compare.leftSide")}</strong><strong role="columnheader">{t("compare.rightSide")}</strong></div>
+        {(["retainedEventCount", "toolCallCount", "messageCount", "warningCount"] as const).map((metric) => <div role="row" key={metric}><strong role="rowheader">{sessionMetricLabel(metric, t)}</strong><span role="cell">{comparison.left[metric]}</span><span role="cell">{comparison.right[metric]}</span></div>)}
       </div>
-      <div className="session-tool-sequences"><section><header>Left tool sequence</header><ol>{comparison.left.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section><section><header>Right tool sequence</header><ol>{comparison.right.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section></div>
+      <div className="session-tool-sequences"><section><header>{t("compare.leftToolSequence")}</header><ol>{comparison.left.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section><section><header>{t("compare.rightToolSequence")}</header><ol>{comparison.right.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section></div>
     </>}
   </main>;
 }
 
-function sessionMetricLabel(metric: "retainedEventCount" | "toolCallCount" | "messageCount" | "warningCount"): string {
-  return ({ retainedEventCount: "Retained events", toolCallCount: "Tool calls", messageCount: "Messages", warningCount: "Warnings" })[metric];
+function sessionMetricLabel(metric: "retainedEventCount" | "toolCallCount" | "messageCount" | "warningCount", t: TFunction): string {
+  return ({
+    retainedEventCount: t("compare.metrics.retainedEvents"),
+    toolCallCount: t("compare.metrics.toolCalls"),
+    messageCount: t("compare.metrics.messages"),
+    warningCount: t("compare.metrics.warnings"),
+  })[metric];
 }
 
 function EmptyWorkspace(props: { eyebrow: string; title: string; detail: string; command?: string; action?: { label: string; onClick: () => void } }): React.JSX.Element {
@@ -965,7 +1002,7 @@ function SurfaceNavigation<T extends string>(props: {
 }
 
 function studioLocationFromHash(): { area: StudioArea; projectId?: string } {
-  return parseStudioLocation(globalThis.location?.hash, new Set(Object.keys(AREA_COPY)));
+  return parseStudioLocation(globalThis.location?.hash, new Set<string>(STUDIO_AREAS));
 }
 
 function areaFromHash(): StudioArea {
