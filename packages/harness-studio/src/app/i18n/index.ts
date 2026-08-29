@@ -47,6 +47,7 @@ export function initStudioI18n(): StudioLanguage {
     interpolation: { escapeValue: false },
     react: { useSuspense: false },
   });
+  if (globalThis.document !== undefined) document.documentElement.lang = language;
   return language;
 }
 
@@ -54,7 +55,7 @@ export function initStudioI18n(): StudioLanguage {
 export function switchStudioLanguage(language: StudioLanguage): void {
   persistStudioLanguage(language);
   void studioI18n.changeLanguage(language);
-  document.documentElement.lang = language;
+  if (globalThis.document !== undefined) document.documentElement.lang = language;
 }
 
 /** Locale tag for `Intl` constructors: follows the active Studio language. */

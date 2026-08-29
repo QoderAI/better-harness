@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   isArtifactBuildSnapshot,
   type ArtifactBuildSnapshot,
@@ -39,6 +41,9 @@ export function AgentReactPreviewHost(props: {
   artifact: ArtifactDescriptor;
   liveGeneration: number;
 }): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
+  const tRef = useRef(t);
+  tRef.current = t;
   const [surface, setSurface] = useState<PreviewSurface>("preview");
   const [current, setCurrent] = useState<ArtifactBuildSnapshot>();
   const [staging, setStaging] = useState<ArtifactBuildSnapshot>();
@@ -222,9 +227,9 @@ export function AgentReactPreviewHost(props: {
             promote(session);
           }
         } else if (session.mode === "live") {
-          failCurrent(build, message.message ?? "The committed AgentReact build failed at runtime.");
+          failCurrent(build, message.message ?? tRef.current("agentReact.currentRuntimeFailed"));
         } else {
-          rejectStaging(build, message.message ?? "AgentReact preview failed at runtime.");
+          rejectStaging(build, message.message ?? tRef.current("agentReact.stagingRuntimeFailed"));
         }
         return;
       }
@@ -235,7 +240,7 @@ export function AgentReactPreviewHost(props: {
       else handleAction(session, message);
     };
     channel.port1.start();
-    session.timeout = setTimeout(() => rejectStaging(build, "The AgentReact staging frame did not report a render before its deadline."), HANDSHAKE_TIMEOUT_MS);
+    session.timeout = setTimeout(() => rejectStaging(build, tRef.current("agentReact.stagingDeadline")), HANDSHAKE_TIMEOUT_MS);
     frame.contentWindow.postMessage({
       type: "runtime.init",
       artifactId: build.artifactId,
@@ -277,7 +282,7 @@ export function AgentReactPreviewHost(props: {
     setFailure(undefined);
     if (buildUri === undefined) {
       setPreviewState("compile-failed");
-      setFailure("The AgentReact Artifact has no build reference.");
+      setFailure(tRef.current("agentReact.noBuildReference"));
       return () => controller.abort();
     }
     void fetch(buildUri, { signal: controller.signal, cache: "no-store" }).then(async (response) => {
@@ -287,12 +292,12 @@ export function AgentReactPreviewHost(props: {
         || value.artifactId !== props.artifact.id
         || value.revisionId !== props.artifact.revision.id
         || (value.status === "ready" && value.agentReact === undefined)) {
-        throw new Error("AgentReact build snapshot contract is unsupported.");
+        throw new Error(tRef.current("agentReact.unsupportedSnapshot"));
       }
       if (mine !== generation.current) return;
       if (value.status === "failed") {
         setPreviewState("compile-failed");
-        setFailure(value.diagnostics[0]?.message ?? "AgentReact compilation failed.");
+        setFailure(value.diagnostics[0]?.message ?? tRef.current("agentReact.compilationFailed"));
         if (currentRef.current === undefined) setSurface("source");
         return;
       }
@@ -319,7 +324,7 @@ export function AgentReactPreviewHost(props: {
     const controller = new AbortController();
     setSource(undefined);
     void fetch(props.artifact.revision.content.uri, { signal: controller.signal }).then(async (response) => {
-      if (!response.ok) throw new Error(`Artifact source failed (${response.status}).`);
+      if (!response.ok) throw new Error(tRef.current("agentReact.sourceFailed", { status: response.status }));
       setSource(await response.text());
     }).catch((error: unknown) => {
       if (!controller.signal.aborted) setFailure(error instanceof Error ? error.message : String(error));
@@ -340,13 +345,13 @@ export function AgentReactPreviewHost(props: {
     build !== undefined && all.findIndex((candidate) => candidate?.buildId === build.buildId) === index);
   const displayedBuild = staging ?? current;
 
-  return <section className="artifact-runtime-host agent-react-runtime-host" aria-label={`AgentReact view: ${props.artifact.label}`}>
+  return <section className="artifact-runtime-host agent-react-runtime-host" aria-label={t("agentReact.viewAria", { label: props.artifact.label })}>
     <div className="artifact-runtime-header">
-      <div className="artifact-runtime-tabs" aria-label="Artifact view mode" {...tablist.tablistProps}>
-        <button type="button" {...tablist.getTabProps("preview")} onClick={() => setSurface("preview")}>Preview</button>
-        <button type="button" {...tablist.getTabProps("source")} onClick={() => setSurface("source")}>Source</button>
+      <div className="artifact-runtime-tabs" aria-label={t("preview.modeAria")} {...tablist.tablistProps}>
+        <button type="button" {...tablist.getTabProps("preview")} onClick={() => setSurface("preview")}>{t("preview.previewTab")}</button>
+        <button type="button" {...tablist.getTabProps("source")} onClick={() => setSurface("source")}>{t("preview.sourceTab")}</button>
       </div>
-      <span>{displayedBuild === undefined ? "No build" : `${displayedBuild.agentReact?.view.id ?? "AgentReact"} · build ${displayedBuild.sequence}`}</span>
+      <span>{displayedBuild === undefined ? t("preview.noBuild") : t("preview.buildIdentity", { id: displayedBuild.agentReact?.view.id ?? "AgentReact", sequence: displayedBuild.sequence })}</span>
     </div>
     <div className="artifact-runtime-panel agent-react-runtime-panel" id={PANEL_ID} role="tabpanel">
       {builds.map((build) => <iframe
@@ -356,20 +361,20 @@ export function AgentReactPreviewHost(props: {
           else frames.current.set(build.buildId, element);
         }}
         className={`artifact-frame artifact-runtime-frame agent-react-frame${build.buildId === current?.buildId && surface === "preview" ? " is-current" : " is-staging"}`}
-        title={`${build.buildId === staging?.buildId ? "Staging" : "Live"} AgentReact preview: ${props.artifact.label}`}
+        title={t(build.buildId === staging?.buildId ? "agentReact.stagingTitle" : "agentReact.liveTitle", { label: props.artifact.label })}
         src={build.previewUri}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         aria-hidden={build.buildId !== current?.buildId || surface !== "preview"}
       />)}
       {surface === "source" && (source === undefined
-        ? <p className="artifact-status" role="status">Loading source…</p>
-        : <ArtifactCodeView mode="source" content={source} sourceHint={props.artifact.label} className="artifact-code-preview" label={`Artifact source: ${props.artifact.label}`} />)}
-      {surface === "preview" && current === undefined && <p className="artifact-status agent-react-starting" role="status">{failure ?? "Verifying AgentReact build in an isolated staging frame…"}</p>}
+        ? <p className="artifact-status" role="status">{t("preview.loadingSource")}</p>
+        : <ArtifactCodeView mode="source" content={source} sourceHint={props.artifact.label} className="artifact-code-preview" label={t("sourceLabel", { label: props.artifact.label })} />)}
+      {surface === "preview" && current === undefined && <p className="artifact-status agent-react-starting" role="status">{failure ?? t("agentReact.verifyingStaging")}</p>}
     </div>
     <div className={`artifact-runtime-status state-${previewState}`} role={previewState.endsWith("failed") ? "alert" : "status"} aria-live="polite">
-      <span>{statusText(previewState, failure, current !== undefined)}</span>
-      {previewState.endsWith("failed") && <button type="button" className="artifact-runtime-retry" onClick={() => setAttempt((value) => value + 1)}>Retry</button>}
+      <span>{statusText(previewState, failure, current !== undefined, t)}</span>
+      {previewState.endsWith("failed") && <button type="button" className="artifact-runtime-retry" onClick={() => setAttempt((value) => value + 1)}>{t("preview.retry")}</button>}
     </div>
   </section>;
 }
@@ -406,10 +411,10 @@ function isRuntimeReport(
     && (message.message === undefined || typeof message.message === "string");
 }
 
-function statusText(state: PreviewState, failure: string | undefined, retained: boolean): string {
-  if (state === "compiling") return retained ? "Compiling the next AgentReact revision; Current remains live." : "Compiling AgentReact revision…";
-  if (state === "starting") return retained ? "Verifying the next build; Current remains live." : "Verifying AgentReact staging frame…";
-  if (state === "ready") return "AgentReact build committed from isolated staging.";
-  if (failure !== undefined && retained) return `${failure} Current remains on the last verified build.`;
-  return failure ?? "AgentReact build failed.";
+function statusText(state: PreviewState, failure: string | undefined, retained: boolean, t: TFunction<"artifactViewers">): string {
+  if (state === "compiling") return retained ? t("agentReact.compilingRetained") : t("agentReact.compiling");
+  if (state === "starting") return retained ? t("agentReact.startingRetained") : t("agentReact.starting");
+  if (state === "ready") return t("agentReact.ready");
+  if (failure !== undefined && retained) return t("agentReact.failedRetained", { failure });
+  return failure ?? t("agentReact.failed");
 }

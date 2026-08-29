@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { AguiEvent } from "@qoder-ai/harness-ui";
 import type {
   ArtifactDescriptor,
@@ -30,6 +31,9 @@ export function ArtifactInteractionPane(props: {
   onSelectedAddressChange: (address: string) => void;
   onApplied: () => void;
 }): React.JSX.Element | null {
+  const { t } = useTranslation("artifacts");
+  const tRef = useRef(t);
+  tRef.current = t;
   const workspaceUri = props.artifact.interaction?.workspaceUri;
   const [workspace, setWorkspace] = useState<ArtifactInteractionWorkspaceV1>();
   const [selectedAddress, setSelectedAddress] = useState("");
@@ -64,10 +68,10 @@ export function ArtifactInteractionPane(props: {
     setBusy("loading");
     void fetch(workspaceUri, { signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok) throw new Error(await responseError(response, "Cannot inspect this Artifact interaction."));
+        if (!response.ok) throw new Error(await responseError(response, tRef.current("collaboration.errors.inspect")));
         const payload = await response.json() as { workspace?: unknown };
         const nextWorkspace = payload.workspace;
-        if (!isWorkspace(nextWorkspace, props.artifact)) throw new Error("Artifact interaction workspace contract is unsupported.");
+        if (!isWorkspace(nextWorkspace, props.artifact)) throw new Error(tRef.current("collaboration.errors.workspaceContract"));
         setWorkspace(nextWorkspace);
         setSelectedAddress((current) => {
           return nextWorkspace.targets.some((target) => target.address === current)
@@ -111,9 +115,9 @@ export function ArtifactInteractionPane(props: {
           requestId: `request:${crypto.randomUUID()}`,
         }),
       });
-      if (!response.ok) throw new Error(await responseError(response, "The Provider could not prepare this change."));
+      if (!response.ok) throw new Error(await responseError(response, t("collaboration.errors.prepare")));
       const payload: unknown = await response.json();
-      if (!isPreparedResponse(payload, props.artifact)) throw new Error("Artifact proposal contract is unsupported.");
+      if (!isPreparedResponse(payload, props.artifact)) throw new Error(t("collaboration.errors.proposalContract"));
       setPrepared(payload);
     } catch (error) {
       setFailure(error instanceof Error ? error.message : String(error));
@@ -132,7 +136,7 @@ export function ArtifactInteractionPane(props: {
     setPrepared(undefined);
     setAgentPlan(undefined);
     setAgentEvidence(undefined);
-    setAgentPhase({ phase: "observing", summary: "Binding the shared Artifact state…" });
+    setAgentPhase({ phase: "observing", summary: t("collaboration.bindingState") });
     setReceipt(undefined);
     let receivedProposal = false;
     let terminalError: string | undefined;
@@ -144,7 +148,7 @@ export function ArtifactInteractionPane(props: {
         body: JSON.stringify({ targetAddress: selectedAddress, message: message.trim(), requestedBy: HUMAN_ACTOR, runId }),
       });
       if (!response.ok || response.body === null) {
-        throw new Error(await responseError(response, "The configured Agent could not start this Artifact run."));
+        throw new Error(await responseError(response, t("collaboration.errors.startAgent")));
       }
       const parser = createSseParser<AguiEvent>((event) => {
         if (event.type === "CUSTOM" && event.name === "artifact.agent.phase" && isAgentPhase(event.value)) {
@@ -154,7 +158,7 @@ export function ArtifactInteractionPane(props: {
         } else if (event.type === "CUSTOM" && event.name === "artifact.agent.evidence" && isAgentEvidence(event.value, props.artifact, runId, selectedAddress)) {
           setAgentEvidence(event.value);
         } else if (event.type === "CUSTOM" && event.name === "artifact.agent.proposal") {
-          if (!isPreparedResponse(event.value, props.artifact)) throw new Error("Artifact Agent proposal contract is unsupported.");
+          if (!isPreparedResponse(event.value, props.artifact)) throw new Error(t("collaboration.errors.agentProposalContract"));
           receivedProposal = true;
           setPrepared(event.value);
         } else if (event.type === "RUN_ERROR") {
@@ -171,7 +175,7 @@ export function ArtifactInteractionPane(props: {
       parser.push(decoder.decode());
       parser.end();
       if (terminalError !== undefined) throw new Error(terminalError);
-      if (!receivedProposal) throw new Error("The Agent run ended without a retained Provider proposal.");
+      if (!receivedProposal) throw new Error(t("collaboration.errors.noProposal"));
     } catch (error) {
       if (!controller.signal.aborted) setFailure(error instanceof Error ? error.message : String(error));
     } finally {
@@ -186,7 +190,7 @@ export function ArtifactInteractionPane(props: {
     setBusy("interrupting");
     try {
       const response = await fetch(`${workspaceUri}/agent-runs/${encodeURIComponent(run.runId)}/cancel`, { method: "POST" });
-      if (!response.ok) throw new Error(await responseError(response, "The Host could not interrupt this Agent run."));
+      if (!response.ok) throw new Error(await responseError(response, t("collaboration.errors.interrupt")));
     } catch (error) {
       setFailure(error instanceof Error ? error.message : String(error));
       setBusy("running");
@@ -210,9 +214,9 @@ export function ArtifactInteractionPane(props: {
           decidedBy: HUMAN_ACTOR,
         }),
       });
-      if (!response.ok) throw new Error(await responseError(response, "The Host could not settle this proposal."));
+      if (!response.ok) throw new Error(await responseError(response, t("collaboration.errors.settle")));
       const payload = await response.json() as { receipt?: unknown };
-      if (!isReceipt(payload.receipt, prepared.proposal, decisionId, decision)) throw new Error("Artifact transition receipt contract is unsupported.");
+      if (!isReceipt(payload.receipt, prepared.proposal, decisionId, decision)) throw new Error(t("collaboration.errors.receiptContract"));
       setReceipt(payload.receipt);
       if (payload.receipt.status === "applied") props.onApplied();
     } catch (error) {
@@ -223,46 +227,46 @@ export function ArtifactInteractionPane(props: {
   };
 
   const selected = workspace?.targets.find((target) => target.address === selectedAddress);
-  return <aside className="artifact-collaboration-pane" aria-label="Artifact collaboration">
-    <header><div><small>{props.agentRunsEnabled ? "Human + Agent" : "Human + Provider"}</small><h2>Collaboration</h2></div><span>{workspace === undefined ? "observing" : shortDigest(workspace.revision)}</span></header>
+  return <aside className="artifact-collaboration-pane" aria-label={t("collaboration.aria")}>
+    <header><div><small>{props.agentRunsEnabled ? t("collaboration.humanAgent") : t("collaboration.humanProvider")}</small><h2>{t("collaboration.title")}</h2></div><span>{workspace === undefined ? t("collaboration.observing") : shortDigest(workspace.revision)}</span></header>
     <div className="artifact-collaboration-scroll">
-      {busy === "loading" && <p className="artifact-collaboration-status" role="status">Observing shared Artifact state…</p>}
+      {busy === "loading" && <p className="artifact-collaboration-status" role="status">{t("collaboration.observingState")}</p>}
       {workspace !== undefined && <>
         <section className="artifact-collaboration-section" aria-labelledby="artifact-selection-heading">
-          <header><span>1</span><div><h3 id="artifact-selection-heading">Shared selection</h3><p>{workspace.summary}</p></div></header>
-          <label>Semantic target<select value={selectedAddress} disabled={busy !== undefined || prepared !== undefined || receipt !== undefined} onChange={(event) => { setSelectedAddress(event.currentTarget.value); props.onSelectedAddressChange(event.currentTarget.value); setPrepared(undefined); setAgentPlan(undefined); setAgentEvidence(undefined); setAgentPhase(undefined); setReceipt(undefined); setFailure(undefined); }}>
+          <header><span>1</span><div><h3 id="artifact-selection-heading">{t("collaboration.selection.title")}</h3><p>{workspace.summary}</p></div></header>
+          <label>{t("collaboration.selection.target")}<select value={selectedAddress} disabled={busy !== undefined || prepared !== undefined || receipt !== undefined} onChange={(event) => { setSelectedAddress(event.currentTarget.value); props.onSelectedAddressChange(event.currentTarget.value); setPrepared(undefined); setAgentPlan(undefined); setAgentEvidence(undefined); setAgentPhase(undefined); setReceipt(undefined); setFailure(undefined); }}>
             {workspace.targets.map((target) => <option key={target.address} value={target.address}>{target.label} · {target.kind}</option>)}
           </select></label>
           {selected !== undefined && <code title={selected.address}>{selected.address}</code>}
         </section>
 
         <section className="artifact-collaboration-section" aria-labelledby="artifact-steering-heading">
-          <header><span>2</span><div><h3 id="artifact-steering-heading">Human steering</h3><p>{props.agentRunsEnabled ? "Describe the intended outcome; the Agent must compile it into the Provider's bounded steering contract." : "No ACP Agent is configured. This uses the Provider's bounded preparation path directly."}</p></div></header>
-          <label>{props.agentRunsEnabled ? "What should change?" : workspace.steering.label}<textarea value={message} maxLength={workspace.steering.maxLength} placeholder={props.agentRunsEnabled ? "Describe the intended change…" : workspace.steering.placeholder} disabled={busy !== undefined || prepared !== undefined || receipt !== undefined} onChange={(event) => setMessage(event.currentTarget.value)} /></label>
-          {prepared === undefined && receipt === undefined && busy !== "running" && busy !== "interrupting" && <button className="primary artifact-collaboration-primary" type="button" disabled={busy !== undefined || selectedAddress === "" || message.trim() === ""} onClick={() => { void (props.agentRunsEnabled ? runAgent() : prepareProviderChange()); }}>{busy === "preparing" ? "Preparing…" : props.agentRunsEnabled ? `Run ${props.agentLabel ?? "Agent"}` : "Prepare with Provider"}</button>}
+          <header><span>2</span><div><h3 id="artifact-steering-heading">{t("collaboration.steering.title")}</h3><p>{props.agentRunsEnabled ? t("collaboration.steering.agentDetail") : t("collaboration.steering.providerDetail")}</p></div></header>
+          <label>{props.agentRunsEnabled ? t("collaboration.steering.prompt") : workspace.steering.label}<textarea value={message} maxLength={workspace.steering.maxLength} placeholder={props.agentRunsEnabled ? t("collaboration.steering.placeholder") : workspace.steering.placeholder} disabled={busy !== undefined || prepared !== undefined || receipt !== undefined} onChange={(event) => setMessage(event.currentTarget.value)} /></label>
+          {prepared === undefined && receipt === undefined && busy !== "running" && busy !== "interrupting" && <button className="primary artifact-collaboration-primary" type="button" disabled={busy !== undefined || selectedAddress === "" || message.trim() === ""} onClick={() => { void (props.agentRunsEnabled ? runAgent() : prepareProviderChange()); }}>{busy === "preparing" ? t("collaboration.preparing") : props.agentRunsEnabled ? t("collaboration.runAgent", { agent: props.agentLabel ?? t("collaboration.agent") }) : t("collaboration.prepareProvider")}</button>}
         </section>
 
         {props.agentRunsEnabled && agentPhase !== undefined && <section className="artifact-collaboration-section artifact-agent-run" aria-labelledby="artifact-agent-run-heading" aria-live="polite">
-          <header><span>3</span><div><h3 id="artifact-agent-run-heading">Agent run</h3><p>{agentPhase.summary}</p></div></header>
-          <div className="artifact-agent-phase"><span className={`status-dot status-${busy === "running" || busy === "interrupting" ? "running" : prepared === undefined ? "error" : "finished"}`} aria-hidden="true" /><strong>{agentPhase.phase}</strong><span>{props.agentLabel ?? "ACP Agent"}</span></div>
+          <header><span>3</span><div><h3 id="artifact-agent-run-heading">{t("collaboration.agentRun.title")}</h3><p>{agentPhase.summary}</p></div></header>
+          <div className="artifact-agent-phase"><span className={`status-dot status-${busy === "running" || busy === "interrupting" ? "running" : prepared === undefined ? "error" : "finished"}`} aria-hidden="true" /><strong>{agentPhase.phase}</strong><span>{props.agentLabel ?? t("collaboration.agentRun.acpAgent")}</span></div>
           {agentPlan !== undefined && <><p className="artifact-agent-summary">{agentPlan.summary}</p><ol className="artifact-agent-plan">{agentPlan.plan.map((item, index) => <li key={`${index}:${item}`}><span>{index + 1}</span><p>{item}</p></li>)}</ol></>}
-          {agentEvidence !== undefined && <dl><div><dt>Executor</dt><dd>{agentEvidence.executor}</dd></div><div><dt>Session</dt><dd><code>{agentEvidence.sessionId ?? "not observed"}</code></dd></div><div><dt>Model</dt><dd>{agentEvidence.model ?? "not observed"}</dd></div><div><dt>Permissions</dt><dd>{agentEvidence.permissionRequestsCancelled} cancelled</dd></div></dl>}
-          {(busy === "running" || busy === "interrupting") && <button type="button" className="artifact-interrupt" disabled={busy === "interrupting"} onClick={() => { void interruptAgent(); }}>{busy === "interrupting" ? "Interrupting…" : "Interrupt"}</button>}
+          {agentEvidence !== undefined && <dl><div><dt>{t("collaboration.agentRun.executor")}</dt><dd>{agentEvidence.executor}</dd></div><div><dt>{t("collaboration.agentRun.session")}</dt><dd><code>{agentEvidence.sessionId ?? t("collaboration.notObserved")}</code></dd></div><div><dt>{t("collaboration.agentRun.model")}</dt><dd>{agentEvidence.model ?? t("collaboration.notObserved")}</dd></div><div><dt>{t("collaboration.agentRun.permissions")}</dt><dd>{t("collaboration.agentRun.cancelled", { count: agentEvidence.permissionRequestsCancelled })}</dd></div></dl>}
+          {(busy === "running" || busy === "interrupting") && <button type="button" className="artifact-interrupt" disabled={busy === "interrupting"} onClick={() => { void interruptAgent(); }}>{busy === "interrupting" ? t("collaboration.agentRun.interrupting") : t("collaboration.agentRun.interrupt")}</button>}
         </section>}
 
         {prepared !== undefined && <section className="artifact-collaboration-section artifact-proposal" aria-labelledby="artifact-proposal-heading">
-          <header><span>{props.agentRunsEnabled ? 4 : 3}</span><div><h3 id="artifact-proposal-heading">{agentPlan === undefined ? "Provider proposal" : "Agent proposal"}</h3><p>{prepared.proposal.summary}</p></div></header>
-          <img src={prepared.preview.uri} alt={`${prepared.preview.label}, proposed and not yet applied`} />
-          <dl><div><dt>Expected</dt><dd><code>{shortDigest(prepared.proposal.expectedRevision)}</code></dd></div><div><dt>Proposal</dt><dd><code>{shortDigest(prepared.proposal.proposalDigest)}</code></dd></div></dl>
+          <header><span>{props.agentRunsEnabled ? 4 : 3}</span><div><h3 id="artifact-proposal-heading">{agentPlan === undefined ? t("collaboration.proposal.provider") : t("collaboration.proposal.agent")}</h3><p>{prepared.proposal.summary}</p></div></header>
+          <img src={prepared.preview.uri} alt={t("collaboration.proposal.previewAlt", { label: prepared.preview.label })} />
+          <dl><div><dt>{t("collaboration.proposal.expected")}</dt><dd><code>{shortDigest(prepared.proposal.expectedRevision)}</code></dd></div><div><dt>{t("collaboration.proposal.proposal")}</dt><dd><code>{shortDigest(prepared.proposal.proposalDigest)}</code></dd></div></dl>
           <ol>{prepared.proposal.actions.map((action, index) => <li key={`${action.kind}-${index}`}><strong>{action.kind}</strong><span>{action.summary}</span></li>)}</ol>
-          {receipt === undefined && <div className="artifact-decision-actions"><button className="primary" type="button" disabled={busy !== undefined} onClick={() => { void decide("approve"); }}>{busy === "deciding" ? "Settling…" : "Approve once"}</button><button type="button" disabled={busy !== undefined} onClick={() => { void decide("reject"); }}>Reject</button></div>}
+          {receipt === undefined && <div className="artifact-decision-actions"><button className="primary" type="button" disabled={busy !== undefined} onClick={() => { void decide("approve"); }}>{busy === "deciding" ? t("collaboration.proposal.settling") : t("collaboration.proposal.approve")}</button><button type="button" disabled={busy !== undefined} onClick={() => { void decide("reject"); }}>{t("collaboration.proposal.reject")}</button></div>}
         </section>}
 
         {receipt !== undefined && <section className={`artifact-collaboration-section artifact-receipt status-${receipt.status}`} aria-labelledby="artifact-receipt-heading">
-          <header><span>{props.agentRunsEnabled ? 5 : 4}</span><div><h3 id="artifact-receipt-heading">Transition receipt</h3><p>{receipt.verification.summary}</p></div></header>
-          <dl><div><dt>Status</dt><dd>{receipt.status}</dd></div><div><dt>Revision</dt><dd><code>{shortDigest(receipt.beforeRevision)} → {shortDigest(receipt.afterRevision)}</code></dd></div></dl>
+          <header><span>{props.agentRunsEnabled ? 5 : 4}</span><div><h3 id="artifact-receipt-heading">{t("collaboration.receipt.title")}</h3><p>{receipt.verification.summary}</p></div></header>
+          <dl><div><dt>{t("collaboration.receipt.status")}</dt><dd>{receipt.status}</dd></div><div><dt>{t("collaboration.receipt.revision")}</dt><dd><code>{shortDigest(receipt.beforeRevision)} → {shortDigest(receipt.afterRevision)}</code></dd></div></dl>
           {receipt.evidence.length > 0 && <ul>{receipt.evidence.map((entry, index) => <li key={`${entry.kind}-${index}`}>{entry.label}</li>)}</ul>}
-          <button type="button" onClick={() => { setPrepared(undefined); setAgentPlan(undefined); setAgentEvidence(undefined); setAgentPhase(undefined); setReceipt(undefined); setMessage(""); setFailure(undefined); }}>Prepare another change</button>
+          <button type="button" onClick={() => { setPrepared(undefined); setAgentPlan(undefined); setAgentEvidence(undefined); setAgentPhase(undefined); setReceipt(undefined); setMessage(""); setFailure(undefined); }}>{t("collaboration.receipt.another")}</button>
         </section>}
       </>}
       {failure !== undefined && <p className="artifact-collaboration-error" role="alert">{failure}</p>}

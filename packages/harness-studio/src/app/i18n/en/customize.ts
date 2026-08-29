@@ -68,6 +68,14 @@ export const customize = {
     unexposed: "Unexposed",
     opaqueSource: "Opaque source",
     unknownPackage: "Unknown package",
+    kinds: {
+      "agent-skill": "Agent Skill",
+      "agent-definition": "Agent Definition",
+      "mcp-server-definition": "MCP Server",
+      "prompt-command": "Prompt Command",
+      hook: "Hook",
+      instruction: "Instruction",
+    },
   },
   hosts: {
     title: "Hosts",
@@ -75,6 +83,11 @@ export const customize = {
     definitions: "Definitions",
     packages: "Packages",
     mcp: "MCP",
+    status: {
+      partial: "Partial",
+      error: "Error",
+      unsupported: "Unsupported",
+    },
   },
   memory: {
     summaryAria: "Memory audit summary",

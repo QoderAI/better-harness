@@ -29,6 +29,7 @@ test("boots in English by default without a stored preference", async ({ page })
   await expect(page.locator(".studio-context-title h1")).toHaveText("Overview");
   await expect(page.locator(".studio-primary-nav")).toContainText("Sessions");
   await expect(page.locator(".studio-language-toggle")).toContainText("EN");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
   expect(browserErrors).toEqual([]);
 });
 
@@ -37,6 +38,7 @@ test("switches the whole UI to Simplified Chinese in place and persists the choi
   await expect(page.locator(".studio-context-title h1")).toHaveText("总览");
   await expect(page.locator(".studio-language-toggle")).toContainText("中文");
   await expect(page.locator(".studio-primary-nav")).toContainText("会话");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   expect(browserErrors).toEqual([]);
 
   await page.reload();
@@ -46,12 +48,14 @@ test("switches the whole UI to Simplified Chinese in place and persists the choi
   await page.evaluate(() => localStorage.setItem("harness-studio-language", "en"));
   await page.reload();
   await expect(page.locator(".studio-context-title h1")).toHaveText("Overview");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
   expect(browserErrors).toEqual([]);
 });
 
 test("switches back to English", async ({ page }) => {
   await page.locator(".studio-language-toggle").click();
   await expect(page.locator(".studio-context-title h1")).toHaveText("总览");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await page.locator(".studio-language-toggle").click();
   await expect(page.locator(".studio-context-title h1")).toHaveText("Overview");
 });
