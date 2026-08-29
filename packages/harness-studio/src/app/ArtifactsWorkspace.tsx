@@ -72,12 +72,23 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
   const [surfaceSelection, setSurfaceSelection] = useState<ArtifactSurfaceSelectionV1>();
   const [surfaceIntentOutcome, setSurfaceIntentOutcome] = useState<ArtifactHostedIntentOutcomeV1>();
   const [surfaceIntentFailure, setSurfaceIntentFailure] = useState<ArtifactHostedIntentFailure>();
+  const [adoptedIntentId, setAdoptedIntentId] = useState<string>();
 
   useEffect(() => {
     setSurfaceSelection(undefined);
     setSurfaceIntentOutcome(undefined);
     setSurfaceIntentFailure(undefined);
+    setAdoptedIntentId(undefined);
   }, [catalog?.snapshot.catalogId]);
+
+  useEffect(() => {
+    setAdoptedIntentId(undefined);
+  }, [
+    surfaceIntentOutcome?.artifactId,
+    surfaceIntentOutcome?.revision,
+    surfaceIntentOutcome?.bindingId,
+    surfaceIntentOutcome?.intentId,
+  ]);
 
   useEffect(() => {
     if (!props.config.artifactsEnabled) return;
@@ -151,7 +162,7 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
       artifactId: outcome.artifactId,
       revision: outcome.revision,
       bindingId: outcome.bindingId,
-      address: outcome.effect.target.address,
+      address: outcome.sourceTarget?.address ?? outcome.effect.target.address,
     });
   }, [activeArtifactId, activeBindingId, activeRevision]);
 
@@ -198,6 +209,21 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
     && surfaceIntentFailure.bindingId === active.renderer.bindingId
     ? surfaceIntentFailure.message
     : undefined;
+  const activeIntentDestination = activeIntentOutcome?.destination;
+  const intentDestinationArtifact = activeIntentDestination === undefined
+    ? undefined
+    : catalog.artifacts.find((artifact) => artifact.id === activeIntentDestination.artifactId
+      && artifact.label === activeIntentDestination.artifactLabel
+      && artifact.revision.id === activeIntentDestination.revision
+      && artifact.renderer.bindingId === activeIntentDestination.bindingId
+      && artifact.interaction !== undefined);
+  const adoptedDestinationArtifact = activeIntentOutcome?.effect.kind === "steering"
+    && activeIntentOutcome.intentId === adoptedIntentId
+    ? intentDestinationArtifact
+    : undefined;
+  const collaborationArtifact = activeIntentOutcome?.effect.kind === "steering" && activeIntentDestination !== undefined
+    ? adoptedDestinationArtifact
+    : adoptedDestinationArtifact ?? (active?.interaction === undefined ? undefined : active);
   const selectScope = (next: ArtifactScope): void => {
     setScope(next);
     const ids = artifactIdsForScope(next, catalog.navigation, catalog.artifacts);
@@ -256,7 +282,7 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
             <div><strong title={active.label}>{basename(active.label)}</strong><small>{formatLabel(active.format)} · {formatBytes(active.size)} · {active.adapter.id} · {t("currentRevision")} {shortRevision(active.revision.id)}</small></div>
             <span title={active.label}>{activeObservations[0] === undefined ? dirname(active.label) : `${activeObservations[0].provider ?? t("common:localAgent")} · ${formatObservedTime(activeObservations[0].savedAt, studioLocale())}`}</span>
           </header>
-          <div className={`artifact-shared-workspace${active.interaction === undefined && activeIntentOutcome === undefined && activeIntentFailure === undefined ? " solo" : ""}`}>
+          <div className={`artifact-shared-workspace${collaborationArtifact === undefined && activeIntentOutcome === undefined && activeIntentFailure === undefined ? " solo" : ""}`}>
             <div className="artifact-surface-slot"><ArtifactView
               authorityId={catalog.snapshot.catalogId}
               artifact={active}
@@ -265,16 +291,28 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
               onIntentOutcome={receiveIntentOutcome}
               onIntentFailure={receiveIntentFailure}
             /></div>
-            {active.interaction === undefined && (activeIntentOutcome !== undefined || activeIntentFailure !== undefined)
-              && <ArtifactIntentPane outcome={activeIntentOutcome} failure={activeIntentFailure} />}
-            <ArtifactInteractionPane
-              artifact={active}
+            {collaborationArtifact === undefined && (activeIntentOutcome !== undefined || activeIntentFailure !== undefined)
+              && <ArtifactIntentPane
+                outcome={activeIntentOutcome}
+                failure={activeIntentFailure}
+                destinationAvailable={intentDestinationArtifact !== undefined}
+                onUseDraft={() => {
+                  if (activeIntentOutcome?.effect.kind === "steering" && intentDestinationArtifact !== undefined) {
+                    setAdoptedIntentId(activeIntentOutcome.intentId);
+                  }
+                }}
+              />}
+            {collaborationArtifact !== undefined && <ArtifactInteractionPane
+              artifact={collaborationArtifact}
               agentRunsEnabled={props.config.acpEnabled}
               agentLabel={props.config.acpAgentLabel}
-              surfaceSelectedAddress={activeSurfaceSelection?.address}
+              surfaceSelectedAddress={adoptedDestinationArtifact === undefined
+                ? activeSurfaceSelection?.address
+                : activeIntentOutcome?.effect.target.address}
               surfaceIntentOutcome={activeIntentOutcome}
               surfaceIntentFailure={activeIntentFailure}
               onSelectedAddressChange={(address) => {
+                if (adoptedDestinationArtifact !== undefined) return;
                 if (active.renderer.bindingId === undefined) return;
                 setSurfaceSelection({
                   artifactId: active.id,
@@ -284,14 +322,19 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
                 });
               }}
               onApplied={() => setCatalogRefresh((value) => value + 1)}
-            />
+            />}
           </div>
         </>}
     </main>
   </section>;
 }
 
-function ArtifactIntentPane(props: { outcome?: ArtifactHostedIntentOutcomeV1; failure?: string }): React.JSX.Element {
+function ArtifactIntentPane(props: {
+  outcome?: ArtifactHostedIntentOutcomeV1;
+  failure?: string;
+  destinationAvailable: boolean;
+  onUseDraft: () => void;
+}): React.JSX.Element {
   const steering = props.outcome?.effect.kind === "steering" ? props.outcome.effect.steering : undefined;
   return <aside className="artifact-collaboration-pane artifact-intent-pane" aria-label="Recorded Canvas intent" aria-live="polite">
     <header><div><small>Canvas intent</small><h2>{props.failure !== undefined ? "Rejected" : steering === undefined ? "Selection" : "Steering draft"}</h2></div><span>{props.failure !== undefined ? "closed" : "recorded"}</span></header>
@@ -303,8 +346,16 @@ function ArtifactIntentPane(props: { outcome?: ArtifactHostedIntentOutcomeV1; fa
         <dl>
           <div><dt>Target</dt><dd>{props.outcome.effect.target.label}</dd></div>
           <div><dt>Address</dt><dd><code>{props.outcome.effect.target.address}</code></dd></div>
+          {props.outcome.destination !== undefined && <div><dt>Artifact</dt><dd>{props.outcome.destination.artifactLabel}</dd></div>}
+          {props.outcome.sourceTarget !== undefined && <div><dt>Canvas source</dt><dd><code>{props.outcome.sourceTarget.address}</code></dd></div>}
           {steering !== undefined && <div><dt>Draft</dt><dd>{steering.message}</dd></div>}
         </dl>
+        {steering !== undefined && props.outcome.destination !== undefined && <button
+          type="button"
+          className="primary artifact-collaboration-primary"
+          disabled={!props.destinationAvailable}
+          onClick={props.onUseDraft}
+        >{props.destinationAvailable ? "Use draft in Collaboration" : "Destination changed"}</button>}
       </section>}
     </div>
   </aside>;

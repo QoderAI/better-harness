@@ -103,9 +103,12 @@ export function ArtifactInteractionPane(props: {
     const outcome = props.surfaceIntentOutcome;
     if (workspace === undefined || outcome?.effect.kind !== "steering" || prepared !== undefined || receipt !== undefined
       || busy !== undefined || appliedSteeringDraft.current === outcome.effect.steeringId
-      || !workspace.targets.some((target) => target.address === outcome.effect.target.address)
-      || outcome.effect.steering.kind !== workspace.steering.kind) return;
+      || !workspace.targets.some((target) => target.address === outcome.effect.target.address)) return;
     appliedSteeringDraft.current = outcome.effect.steeringId;
+    if (!props.agentRunsEnabled && outcome.effect.steering.kind !== workspace.steering.kind) {
+      setFailure("This Canvas draft requires an Agent to compile its instruction into the Provider's bounded steering grammar.");
+      return;
+    }
     if (outcome.effect.steering.message.length > workspace.steering.maxLength) {
       setFailure("The recorded steering draft exceeds this interaction workspace's input limit and was not prefilled.");
       return;
@@ -113,7 +116,7 @@ export function ArtifactInteractionPane(props: {
     setSelectedAddress(outcome.effect.target.address);
     setMessage(outcome.effect.steering.message);
     setFailure(undefined);
-  }, [busy, prepared, props.surfaceIntentOutcome, receipt, workspace]);
+  }, [busy, prepared, props.agentRunsEnabled, props.surfaceIntentOutcome, receipt, workspace]);
 
   if (workspaceUri === undefined) return null;
 

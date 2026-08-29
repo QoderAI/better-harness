@@ -245,6 +245,31 @@ describe("Artifact View surface registry", () => {
     }, artifact, intent.intentId)).toBeUndefined();
     expect(hostedArtifactIntentOutcome({ ...outcome, recordedAt: "not-a-time" }, artifact, intent.intentId)).toBeUndefined();
 
+    const nativeOutcome = {
+      ...outcome,
+      sourceTarget: { address: "json-render://element/plan", kind: "json-render:Card", label: "Plan" },
+      destination: {
+        artifactId: "diagram-abcd1234",
+        artifactLabel: "diagram.drawio",
+        revision: NEXT_DIGEST,
+        bindingId: NEXT_DIGEST,
+      },
+      effect: {
+        ...outcome.effect,
+        target: { address: "drawio://diagram.drawio/page/main/cell/runtime", kind: "drawio-cell", label: "Runtime" },
+      },
+    } as const;
+    expect(hostedArtifactIntentOutcome(nativeOutcome, artifact, intent.intentId)).toEqual(nativeOutcome);
+    expect(hostedArtifactIntentOutcome({ ...nativeOutcome, destination: undefined }, artifact, intent.intentId)).toBeUndefined();
+    expect(hostedArtifactIntentOutcome({
+      ...nativeOutcome,
+      destination: { ...nativeOutcome.destination, bindingId: "forged" },
+    }, artifact, intent.intentId)).toBeUndefined();
+    expect(hostedArtifactIntentOutcome({
+      ...nativeOutcome,
+      destination: { ...nativeOutcome.destination, artifactLabel: "../diagram.drawio" },
+    }, artifact, intent.intentId)).toBeUndefined();
+
     let request: { url: string; body: unknown } | undefined;
     const acceptedFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       request = { url: String(input), body: JSON.parse(String(init?.body)) as unknown };

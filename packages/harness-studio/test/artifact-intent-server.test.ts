@@ -181,6 +181,120 @@ describe("hosted Artifact intent admission", () => {
     expect(fixture.calls).toEqual({ admit: 1, inspect: 0, prepare: 0, decide: 0 });
   });
 
+  it("normalizes a Provider-owned native target through the exact destination interaction binding", async () => {
+    const fixture = await createFixture();
+    const descriptor = await startFixture(fixture);
+    const catalog = await (await fetch(`${server!.url}/api/artifacts`)).json() as { artifacts: any[] };
+    const destination = catalog.artifacts.find((artifact) => artifact.label === "native.target");
+    expect(destination).toMatchObject({
+      interaction: { workspaceUri: expect.stringMatching(/\/interaction$/u) },
+      renderer: { bindingId: expect.stringMatching(/^sha256:/u) },
+    });
+    fixture.hooks.admit = async (input) => {
+      fixture.calls.admit += 1;
+      return {
+        intentId: input.intentId,
+        sourceTarget: { address: "json-canvas://node/plan", kind: "json-render:Card", label: "Plan" },
+        destination: { artifactLabel: destination.label, revision: destination.revision.id },
+        effect: {
+          kind: "steering",
+          target: { address: "native://target/runtime", kind: "native-node", label: "Runtime" },
+          steering: { kind: "rename", message: "Rename to Adopted Runtime" },
+        },
+      };
+    };
+
+    const response = await fetch(
+      `${server!.url}${descriptor.intent!.intentUri}`,
+      post(intentEnvelope(descriptor, "intent:native-target", {})),
+    );
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      sourceTarget: { address: "json-canvas://node/plan", kind: "json-render:Card", label: "Plan" },
+      destination: {
+        artifactId: destination.id,
+        artifactLabel: destination.label,
+        revision: destination.revision.id,
+        bindingId: destination.renderer.bindingId,
+      },
+      effect: {
+        kind: "steering",
+        target: { address: "native://target/runtime", kind: "native-node", label: "Runtime" },
+        steering: { kind: "rename", message: "Rename to Adopted Runtime" },
+      },
+      execution: "not-executed",
+    });
+    expect(fixture.calls).toEqual({ admit: 1, inspect: 1, prepare: 0, decide: 0 });
+  });
+
+  it("fails closed when a native target claim drifts from the destination revision or workspace", async () => {
+    const fixture = await createFixture();
+    const descriptor = await startFixture(fixture);
+    const catalog = await (await fetch(`${server!.url}/api/artifacts`)).json() as { artifacts: any[] };
+    const destination = catalog.artifacts.find((artifact) => artifact.label === "native.target");
+    fixture.hooks.admit = async (input) => {
+      fixture.calls.admit += 1;
+      return {
+        intentId: input.intentId,
+        sourceTarget: { address: "json-canvas://node/plan", kind: "json-render:Card", label: "Plan" },
+        destination: { artifactLabel: "../native.target", revision: destination.revision.id },
+        effect: {
+          kind: "steering",
+          target: { address: "native://target/runtime", kind: "native-node", label: "Runtime" },
+          steering: { kind: "rename", message: "Rename to Escaped Runtime" },
+        },
+      };
+    };
+    const escaped = await fetch(
+      `${server!.url}${descriptor.intent!.intentUri}`,
+      post(intentEnvelope(descriptor, "intent:native-escape", {})),
+    );
+    expect(escaped.status).toBe(422);
+    await expect(escaped.json()).resolves.toMatchObject({ code: "INTENT_PROVIDER_REJECTED" });
+
+    fixture.hooks.admit = async (input) => {
+      fixture.calls.admit += 1;
+      return {
+        intentId: input.intentId,
+        sourceTarget: { address: "json-canvas://node/plan", kind: "json-render:Card", label: "Plan" },
+        destination: { artifactLabel: destination.label, revision: destination.revision.id },
+        effect: {
+          kind: "steering",
+          target: { address: "native://target/missing", kind: "native-node", label: "Missing" },
+          steering: { kind: "rename", message: "Rename to Missing" },
+        },
+      };
+    };
+    const missing = await fetch(
+      `${server!.url}${descriptor.intent!.intentUri}`,
+      post(intentEnvelope(descriptor, "intent:native-missing", {})),
+    );
+    expect(missing.status).toBe(409);
+    await expect(missing.json()).resolves.toMatchObject({ code: "INTENT_DESTINATION_STALE" });
+
+    await writeFile(fixture.destinationPath, "changed native target\n", "utf8");
+    fixture.hooks.admit = async (input) => {
+      fixture.calls.admit += 1;
+      return {
+        intentId: input.intentId,
+        sourceTarget: { address: "json-canvas://node/plan", kind: "json-render:Card", label: "Plan" },
+        destination: { artifactLabel: destination.label, revision: destination.revision.id },
+        effect: {
+          kind: "steering",
+          target: { address: "native://target/runtime", kind: "native-node", label: "Runtime" },
+          steering: { kind: "instruction", message: "Keep the domain grammar separate" },
+        },
+      };
+    };
+    const staleDestination = await fetch(
+      `${server!.url}${descriptor.intent!.intentUri}`,
+      post(intentEnvelope(descriptor, "intent:native-revision", {})),
+    );
+    expect(staleDestination.status).toBe(409);
+    await expect(staleDestination.json()).resolves.toMatchObject({ code: "INTENT_DESTINATION_STALE" });
+    expect(fixture.calls).toEqual({ admit: 3, inspect: 1, prepare: 0, decide: 0 });
+  });
+
   it("rejects a delayed admission after the live Artifact authority switches to identical bytes", async () => {
     const fixture = await createFixture();
     const gate = deferred();
@@ -276,6 +390,7 @@ interface Fixture {
   appDir: string;
   artifactDirectory: string;
   sourcePath: string;
+  destinationPath: string;
   stateRoot: string;
   provider: ExternalArtifactProvider;
   hooks: FixtureHooks;
@@ -291,7 +406,11 @@ async function createFixture(): Promise<Fixture> {
   const stateRoot = join(root, "state");
   await Promise.all([mkdir(appDir), mkdir(artifactDirectory)]);
   await writeFile(join(appDir, "index.html"), "<!doctype html><title>fixture</title>", "utf8");
-  await writeFile(sourcePath, "initial intent canvas\n", "utf8");
+  const destinationPath = join(artifactDirectory, "native.target");
+  await Promise.all([
+    writeFile(sourcePath, "initial intent canvas\n", "utf8"),
+    writeFile(destinationPath, "initial native target\n", "utf8"),
+  ]);
   const calls = { admit: 0, inspect: 0, prepare: 0, decide: 0 };
   const hooks: FixtureHooks = {
     admit: async (input) => ({
@@ -300,7 +419,7 @@ async function createFixture(): Promise<Fixture> {
     }),
   };
   const provider = intentProvider(hooks, calls);
-  return { root, appDir, artifactDirectory, sourcePath, stateRoot, provider, hooks, calls };
+  return { root, appDir, artifactDirectory, sourcePath, destinationPath, stateRoot, provider, hooks, calls };
 }
 
 async function startFixture(fixture: Fixture): Promise<any> {
@@ -309,6 +428,13 @@ async function startFixture(fixture: Fixture): Promise<any> {
     "intent-canvas",
     "external-override",
     { extensions: ["intentcanvas"] },
+    { root: fixture.stateRoot },
+  );
+  await activateArtifactContribution(
+    fixture.provider,
+    "native-target",
+    "external-override",
+    { extensions: ["target"] },
     { root: fixture.stateRoot },
   );
   server = await startHarnessStudioServer({
@@ -383,6 +509,52 @@ function intentProvider(
         version: "1",
         protocolVersion: "1",
         inspect: async () => { calls.inspect += 1; throw new Error("inspect must not run"); },
+        prepare: async () => { calls.prepare += 1; throw new Error("prepare must not run"); },
+        decide: async () => { calls.decide += 1; throw new Error("decide must not run"); },
+      },
+      support: "experimental-local",
+      adapterExecutionProfile: "trusted-local-process",
+    }, {
+      id: "native-target",
+      label: "Native target",
+      matcher: { extensions: ["target"] },
+      adapter: {
+        id: "fixture.native-target.adapter",
+        version: "1",
+        schemaId: "fixture/native-target-v1",
+        adapt: async (context) => await envelopeSnapshot(context, { kind: "fixture/native-target-v1" }),
+      },
+      renderer: { id: "fixture.native-target", label: "Native target", provider: "fixture", type: "external-hosted", status: "ready" },
+      surface: {
+        kind: "external-hosted",
+        rendererId: "fixture.native-target",
+        runtimeId: "fixture.native-target.hosted",
+        securityProfileId: "opaque-web-v1",
+        runtime: {
+          id: "fixture.native-target.hosted",
+          version: "1",
+          prepareDocument: async () => "<!doctype html><title>native target</title>",
+          readModule: async () => "export {};",
+          readResource: async () => undefined,
+        },
+      },
+      capabilities: ["select", "steer"],
+      interaction: {
+        id: "fixture.native-target.interaction",
+        version: "1",
+        protocolVersion: "1",
+        inspect: async (context) => {
+          calls.inspect += 1;
+          return {
+            kind: "HarnessStudioArtifactInteractionWorkspaceV1",
+            protocolVersion: "1",
+            artifactId: context.descriptor.id,
+            revision: context.descriptor.revision.id,
+            summary: "Native target workspace",
+            targets: [{ address: "native://target/runtime", kind: "native-node", label: "Runtime" }],
+            steering: { kind: "rename", label: "Rename", placeholder: "Rename to <label>", maxLength: 256 },
+          };
+        },
         prepare: async () => { calls.prepare += 1; throw new Error("prepare must not run"); },
         decide: async () => { calls.decide += 1; throw new Error("decide must not run"); },
       },

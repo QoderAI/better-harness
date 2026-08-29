@@ -168,6 +168,25 @@ export interface ArtifactInteractionTargetV1 {
   description?: string;
 }
 
+/**
+ * Provider-owned claim that an admitted projection target is bound to one
+ * exact Artifact revision. The Host resolves the label through its current
+ * catalog and never accepts an Artifact id or interaction binding from the
+ * hosted frame.
+ */
+export interface ArtifactHostedIntentDestinationClaimV1 {
+  artifactLabel: string;
+  revision: ArtifactDigest;
+}
+
+/** Host-normalized destination after current catalog and interaction checks. */
+export interface ArtifactHostedIntentDestinationV1 {
+  artifactId: string;
+  artifactLabel: string;
+  revision: ArtifactDigest;
+  bindingId: ArtifactDigest;
+}
+
 export type ArtifactHostedIntentEffectV1 =
   | {
     kind: "selection";
@@ -182,6 +201,10 @@ export type ArtifactHostedIntentEffectV1 =
 export interface ArtifactHostedIntentAdmissionV1 {
   intentId: string;
   effect: ArtifactHostedIntentEffectV1;
+  /** Projection-local target that produced a domain-native target effect. */
+  sourceTarget?: ArtifactInteractionTargetV1;
+  /** Provider claim only; the Host must resolve and normalize it before use. */
+  destination?: ArtifactHostedIntentDestinationClaimV1;
 }
 
 export interface ArtifactHostedIntentAdmissionInputV1 extends Readonly<Pick<ArtifactHostedIntentEnvelopeV1, "intentId" | "intent">> {
@@ -233,6 +256,10 @@ export interface ArtifactHostedIntentOutcomeV1 {
   status: "recorded";
   execution: "not-executed";
   effect: ArtifactHostedIntentRecordedEffectV1;
+  /** Present only for a Provider-resolved native target. */
+  sourceTarget?: ArtifactInteractionTargetV1;
+  /** Host-minted exact interaction binding for the native target Artifact. */
+  destination?: ArtifactHostedIntentDestinationV1;
   replayed: boolean;
 }
 

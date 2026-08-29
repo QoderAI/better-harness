@@ -137,7 +137,7 @@ export function hostedArtifactIntentOutcome(
   if (artifact.renderer.bindingId === undefined || !isRecord(value) || !hasExactKeys(value, [
     "kind", "protocolVersion", "artifactId", "revision", "bindingId", "intentId", "actor", "recordedAt",
     "status", "execution", "effect", "replayed",
-  ]) || !isRecord(value.actor) || !hasExactKeys(value.actor, ["id", "kind", "label"]) || !isRecord(value.effect)
+  ], ["sourceTarget", "destination"]) || !isRecord(value.actor) || !hasExactKeys(value.actor, ["id", "kind", "label"]) || !isRecord(value.effect)
     || value.kind !== "HarnessStudioArtifactHostedIntentOutcomeV1" || value.protocolVersion !== "1"
     || value.artifactId !== artifact.id || value.revision !== artifact.revision.id
     || value.bindingId !== artifact.renderer.bindingId || value.intentId !== intentId
@@ -147,6 +147,11 @@ export function hostedArtifactIntentOutcome(
     || !portableIdentifier(value.effect.selectionId)) return undefined;
   const target = intentTarget(value.effect.target);
   if (target === undefined) return undefined;
+  const sourceTarget = value.sourceTarget === undefined ? undefined : intentTarget(value.sourceTarget);
+  const destination = value.destination === undefined ? undefined : intentDestination(value.destination);
+  if ((sourceTarget === undefined) !== (destination === undefined)
+    || (value.sourceTarget !== undefined && sourceTarget === undefined)
+    || (value.destination !== undefined && destination === undefined)) return undefined;
   const common = {
     kind: value.kind,
     protocolVersion: value.protocolVersion,
@@ -158,6 +163,8 @@ export function hostedArtifactIntentOutcome(
     recordedAt: value.recordedAt,
     status: value.status,
     execution: value.execution,
+    ...(sourceTarget === undefined ? {} : { sourceTarget }),
+    ...(destination === undefined ? {} : { destination }),
     replayed: value.replayed,
   } as const;
   if (value.effect.kind === "selection" && hasExactKeys(value.effect, ["kind", "selectionId", "target"])) {
@@ -176,6 +183,18 @@ export function hostedArtifactIntentOutcome(
       target,
       steering: { kind: value.effect.steering.kind, message: value.effect.steering.message },
     },
+  };
+}
+
+function intentDestination(value: unknown): ArtifactHostedIntentOutcomeV1["destination"] | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["artifactId", "artifactLabel", "revision", "bindingId"])
+    || !portableIdentifier(value.artifactId) || !portableArtifactLabel(value.artifactLabel)
+    || !artifactDigest(value.revision) || !artifactDigest(value.bindingId)) return undefined;
+  return {
+    artifactId: value.artifactId,
+    artifactLabel: value.artifactLabel,
+    revision: value.revision,
+    bindingId: value.bindingId,
   };
 }
 
@@ -226,6 +245,15 @@ function intentTarget(value: unknown): ArtifactHostedIntentOutcomeV1["effect"]["
 
 function portableIdentifier(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value);
+}
+
+function portableArtifactLabel(value: unknown): value is string {
+  return boundedText(value, 1_024) && !value.startsWith("/") && !value.includes("\\") && !value.includes("\u0000")
+    && value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
+function artifactDigest(value: unknown): value is `sha256:${string}` {
+  return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

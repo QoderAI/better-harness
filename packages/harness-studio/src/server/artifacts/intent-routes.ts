@@ -4,13 +4,17 @@ import {
   ARTIFACT_HOSTED_INTENT_PROTOCOL_VERSION,
   canonicalArtifactInteractionJson,
   type ArtifactHostedIntentAdmissionV1,
+  type ArtifactHostedIntentDestinationClaimV1,
+  type ArtifactHostedIntentDestinationV1,
   type ArtifactHostedIntentEnvelopeV1,
   type ArtifactHostedIntentJsonV1,
   type ArtifactHostedIntentOutcomeV1,
   type ArtifactHostedIntentRuntimeImplementation,
   type ArtifactDescriptor,
   type ArtifactEntry,
+  type ArtifactInteractionRuntimeImplementation,
   type ArtifactInteractionTargetV1,
+  type ArtifactInteractionWorkspaceV1,
 } from "../../contracts/artifact.js";
 import { readJsonBody } from "../http-utils.js";
 import type {
@@ -18,7 +22,12 @@ import type {
   HarnessStudioServerOptions,
   HarnessStudioState,
 } from "../studio-types.js";
-import { artifactSurfaceBindingId } from "./registry/artifact-catalog.js";
+import {
+  artifactIdForLabel,
+  artifactSurfaceBindingId,
+  digestHex,
+} from "./registry/artifact-catalog.js";
+import { assertArtifactInteractionWorkspace } from "./interaction-routes.js";
 import { respondArtifactJson, resolveArtifactRevisionPlugin } from "./routes.js";
 
 const MAX_ACTIVE_INTENTS = 256;
@@ -43,6 +52,8 @@ type IntentErrorCode =
   | "INTENT_REVISION_STALE"
   | "INTENT_BINDING_STALE"
   | "INTENT_RUNTIME_UNAVAILABLE"
+  | "INTENT_DESTINATION_UNAVAILABLE"
+  | "INTENT_DESTINATION_STALE"
   | "INTENT_ID_CONFLICT"
   | "INTENT_CAPACITY_EXCEEDED"
   | "INTENT_PROVIDER_TIMEOUT"
@@ -210,11 +221,22 @@ async function admitAndRevalidate(
       "The Artifact authority changed while admission was pending.",
     );
   }
-  await resolveCurrentIntentBinding({
+  const currentOptions = {
     ...options,
     artifactDirectory: state.artifactDirectory,
     artifactPaths: state.artifactPaths,
-  }, artifactId, revision, envelope, initial.identity);
+  };
+  await resolveCurrentIntentBinding(currentOptions, artifactId, revision, envelope, initial.identity);
+  assertCurrentAuthority(state, expectedAuthorityId);
+
+  const destination = admitted.destination === undefined
+    ? undefined
+    : await resolveIntentDestination(
+      currentOptions,
+      admitted.destination,
+      admitted.effect.target,
+    );
+  await resolveCurrentIntentBinding(currentOptions, artifactId, revision, envelope, initial.identity);
   assertCurrentAuthority(state, expectedAuthorityId);
 
   const selectionId = `selection:${randomUUID()}`;
@@ -239,8 +261,109 @@ async function admitAndRevalidate(
     status: "recorded",
     execution: "not-executed",
     effect: recordedEffect,
+    ...(admitted.sourceTarget === undefined ? {} : { sourceTarget: admitted.sourceTarget }),
+    ...(destination === undefined ? {} : { destination }),
     replayed: false,
   };
+}
+
+async function resolveIntentDestination(
+  options: HarnessStudioServerOptions,
+  claim: ArtifactHostedIntentDestinationClaimV1,
+  expectedTarget: ArtifactInteractionTargetV1,
+): Promise<ArtifactHostedIntentDestinationV1> {
+  const artifactId = artifactIdForLabel(claim.artifactLabel);
+  const initial = await resolveDestinationBinding(options, artifactId, claim);
+  let workspace: ArtifactInteractionWorkspaceV1;
+  try {
+    workspace = assertArtifactInteractionWorkspace(
+      await initial.runtime.inspect({ entry: initial.entry, descriptor: initial.descriptor }),
+      artifactId,
+      claim.revision,
+    );
+  } catch {
+    throw new ArtifactHostedIntentError(
+      "INTENT_DESTINATION_UNAVAILABLE",
+      422,
+      "The Host could not inspect the exact destination interaction workspace.",
+    );
+  }
+  const target = workspace.targets.find((candidate) => candidate.address === expectedTarget.address);
+  if (target === undefined || canonicalArtifactInteractionJson(target) !== canonicalArtifactInteractionJson(expectedTarget)) {
+    throw new ArtifactHostedIntentError(
+      "INTENT_DESTINATION_STALE",
+      409,
+      "The Provider-resolved target is not present in the exact destination workspace.",
+    );
+  }
+  await resolveDestinationBinding(options, artifactId, claim, initial.identity);
+  return {
+    artifactId,
+    artifactLabel: initial.descriptor.label,
+    revision: initial.descriptor.revision.id,
+    bindingId: initial.bindingId,
+  };
+}
+
+interface ResolvedDestinationBinding {
+  entry: ArtifactEntry;
+  descriptor: ArtifactDescriptor;
+  runtime: ArtifactInteractionRuntimeImplementation;
+  bindingId: `sha256:${string}`;
+  identity: string;
+}
+
+async function resolveDestinationBinding(
+  options: HarnessStudioServerOptions,
+  artifactId: string,
+  claim: ArtifactHostedIntentDestinationClaimV1,
+  expectedIdentity?: string,
+): Promise<ResolvedDestinationBinding> {
+  const resolved = await resolveArtifactRevisionPlugin(options, artifactId, digestHex(claim.revision));
+  if ("error" in resolved) {
+    throw new ArtifactHostedIntentError(
+      resolved.status === 409 ? "INTENT_DESTINATION_STALE" : "INTENT_DESTINATION_UNAVAILABLE",
+      resolved.status === 409 ? 409 : 404,
+      resolved.status === 409
+        ? "The destination Artifact has moved past the Provider-resolved revision."
+        : "The Provider-resolved destination Artifact is unavailable.",
+    );
+  }
+  if (resolved.descriptor.label !== claim.artifactLabel || resolved.descriptor.revision.id !== claim.revision) {
+    throw new ArtifactHostedIntentError(
+      "INTENT_DESTINATION_STALE",
+      409,
+      "The destination Artifact identity does not match the Provider claim.",
+    );
+  }
+  const runtime = resolved.resolution.interaction;
+  const bindingId = resolved.descriptor.renderer.bindingId;
+  if (runtime === undefined || resolved.descriptor.interaction === undefined || bindingId === undefined
+    || resolved.descriptor.renderer.status !== "ready") {
+    throw new ArtifactHostedIntentError(
+      "INTENT_DESTINATION_UNAVAILABLE",
+      422,
+      "The Provider-resolved destination is not an interactive Artifact binding.",
+    );
+  }
+  const provider = resolved.resolution.provider;
+  const identity = canonicalArtifactInteractionJson({
+    bindingId,
+    provider: provider === undefined ? null : {
+      providerId: provider.providerId,
+      contributionId: provider.contributionId,
+      fingerprint: provider.fingerprint,
+    },
+    runtime: { id: runtime.id, version: runtime.version, protocolVersion: runtime.protocolVersion },
+  });
+  if (expectedIdentity !== undefined && expectedIdentity !== identity) {
+    throw new ArtifactHostedIntentError(
+      "INTENT_DESTINATION_STALE",
+      409,
+      "The destination interaction binding changed while the target was inspected.",
+    );
+  }
+  return { entry: resolved.entry, descriptor: resolved.descriptor, runtime, bindingId, identity };
 }
 
 interface ResolvedIntentBinding {
@@ -352,7 +475,12 @@ function assertIntentEnvelope(value: unknown, artifactId: string): ArtifactHoste
 }
 
 function assertIntentAdmission(value: unknown, intentId: string): ArtifactHostedIntentAdmissionV1 {
-  const admission = exactObject(value, ["intentId", "effect"], "Provider intent admission");
+  const admission = exactObject(
+    value,
+    ["intentId", "effect", "sourceTarget", "destination"],
+    "Provider intent admission",
+    ["sourceTarget", "destination"],
+  );
   if (admission.intentId !== intentId) {
     throw new ArtifactHostedIntentError(
       "INTENT_PROVIDER_REJECTED",
@@ -362,9 +490,19 @@ function assertIntentAdmission(value: unknown, intentId: string): ArtifactHosted
   }
   const effect = exactObject(admission.effect, ["kind", "target", "steering"], "Provider intent effect", ["steering"]);
   const target = targetValue(effect.target);
+  const sourceTarget = admission.sourceTarget === undefined ? undefined : targetValue(admission.sourceTarget);
+  const destination = admission.destination === undefined ? undefined : destinationClaim(admission.destination);
+  if ((sourceTarget === undefined) !== (destination === undefined)) {
+    throw invalid("A Provider-native target admission requires both sourceTarget and destination.");
+  }
   if (effect.kind === "selection") {
     if (effect.steering !== undefined) throw invalid("A selection effect cannot contain steering.");
-    return { intentId, effect: { kind: "selection", target } };
+    return {
+      intentId,
+      effect: { kind: "selection", target },
+      ...(sourceTarget === undefined ? {} : { sourceTarget }),
+      ...(destination === undefined ? {} : { destination }),
+    };
   }
   if (effect.kind !== "steering") throw invalid("The Provider intent effect kind is unsupported.");
   const steering = exactObject(effect.steering, ["kind", "message"], "Provider intent steering");
@@ -378,7 +516,26 @@ function assertIntentAdmission(value: unknown, intentId: string): ArtifactHosted
         message: boundedString(steering.message, "steering.message", 8_192),
       },
     },
+    ...(sourceTarget === undefined ? {} : { sourceTarget }),
+    ...(destination === undefined ? {} : { destination }),
   };
+}
+
+function destinationClaim(value: unknown): ArtifactHostedIntentDestinationClaimV1 {
+  const destination = exactObject(value, ["artifactLabel", "revision"], "Provider intent destination");
+  return {
+    artifactLabel: portableArtifactLabel(destination.artifactLabel, "destination.artifactLabel"),
+    revision: digest(destination.revision, "destination.revision"),
+  };
+}
+
+function portableArtifactLabel(value: unknown, label: string): string {
+  const result = boundedString(value, label, 1_024);
+  if (result.startsWith("/") || result.includes("\\") || result.includes("\u0000")
+    || result.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw invalid(`${label} must be a portable Artifact label.`);
+  }
+  return result;
 }
 
 function targetValue(value: unknown): ArtifactInteractionTargetV1 {

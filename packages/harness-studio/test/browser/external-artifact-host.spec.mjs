@@ -13,8 +13,12 @@ const fixtures = [
   { label: "delivery-platform.d2", contributionId: "d2", extension: "d2", rendererId: "homology.d2-svg", rendererType: "homology-diagram-svg", lane: "external-fallback" },
   { label: "service-flow.mmd", contributionId: "mermaid", extension: "mmd", rendererId: "homology.mermaid-svg", rendererType: "homology-diagram-svg", lane: "external-override" },
   { label: "renderer-differential.ipynb", contributionId: "jupyter-notebook", extension: "ipynb", rendererId: "homology.jupyter-notebook", rendererType: "homology-notebook-read-only", lane: "external-fallback" },
+  { label: "native-target.nativework", contributionId: "native-target", extension: "nativework", rendererId: "test.native-target", rendererType: "native-target", lane: "external-override", interactionOnly: true },
   { label: "artifact-manifest-demo.canvas.tsx", contributionId: "cursor-canvas", format: "cursor-canvas-tsx", rendererId: "test.cursor-canvas", rendererType: "cursor-canvas-tsx", lane: "external-fallback", interactive: true },
 ];
+const nativeDestinationFixture = fixtures.find((fixture) => fixture.interactionOnly === true);
+if (nativeDestinationFixture === undefined) throw new Error("missing native destination fixture");
+const nativeDestinationRevision = digestText(sourceForFixture(nativeDestinationFixture));
 
 let root;
 let server;
@@ -24,10 +28,7 @@ test.beforeAll(async () => {
   const artifactDirectory = join(root, "artifacts");
   await import("node:fs/promises").then(({ mkdir }) => mkdir(artifactDirectory));
   for (const fixture of fixtures) {
-    const source = fixture.interactive === true
-      ? 'export default function CanvasContainer() { return <main data-container="provider-owned">Cursor-like Canvas source</main>; }\n'
-      : `source for ${fixture.label}\n`;
-    await writeFile(join(artifactDirectory, fixture.label), source, "utf8");
+    await writeFile(join(artifactDirectory, fixture.label), sourceForFixture(fixture), "utf8");
   }
   const provider = externalProvider();
   for (const fixture of fixtures) {
@@ -83,7 +84,7 @@ test("mounts every provider-defined external renderer through the generic hosted
       await expect(frameElement).toHaveAttribute("sandbox", "allow-scripts");
       const frameBox = await frameElement.boundingBox();
       const previewBox = await page.locator(".artifact-preview-pane").boundingBox();
-      expect(frameBox?.width).toBeGreaterThan(fixture.interactive === true ? 250 : (previewBox?.width ?? 0) - 2);
+      expect(frameBox?.width).toBeGreaterThan(fixture.interactive === true || fixture.interactionOnly === true ? 250 : (previewBox?.width ?? 0) - 2);
       expect(frameBox?.height).toBeGreaterThan(200);
       const frame = page.frameLocator(`iframe[title="Artifact preview: ${fixture.label}"]`);
       await expect(frame.locator(`[data-external-renderer="${fixture.rendererId}"]`)).toHaveText(fixture.label);
@@ -98,12 +99,19 @@ test("mounts every provider-defined external renderer through the generic hosted
         await steeringButton.focus();
         await expect(steeringButton).toBeFocused();
         await steeringButton.click();
-        await expect(intentPane).toContainText("Steering draft");
-        await expect(intentPane).toContainText("Recorded, not executed");
-        await expect(intentPane).toContainText("Focus the order flow");
+        const recordedPane = page.getByRole("complementary", { name: "Recorded Canvas intent" });
+        await expect(recordedPane).toContainText("Steering draft");
+        await expect(recordedPane).toContainText("Recorded, not executed");
+        await expect(recordedPane).toContainText("Focus the order flow");
+        await expect(recordedPane).toContainText("Native Orders");
+        await expect(recordedPane).toContainText("native://target/orders");
+        await expect(recordedPane).toContainText("json-canvas://node/orders");
+        expect(forbiddenRequests).toEqual([]);
+        await recordedPane.getByRole("button", { name: "Use draft in Collaboration" }).click();
         await expect(intentPane.getByRole("textbox", { name: "Canvas steering" })).toHaveValue("Focus the order flow");
         await expect(intentPane.getByRole("button", { name: "Prepare with Provider" })).toBeVisible();
         await expect(intentPane.getByRole("heading", { name: /proposal/iu })).toHaveCount(0);
+        expect(forbiddenRequests).toEqual([]);
         await page.screenshot({ path: testInfo.outputPath(`external-artifact-intent-${viewport.name}.png`), fullPage: true });
         await frame.getByRole("button", { name: "Race intents" }).click();
         await expect(intentPane).toContainText("Latest target");
@@ -181,7 +189,7 @@ function externalProvider() {
         async readResource() { return undefined; },
       },
     },
-    capabilities: fixture.interactive === true ? ["navigate", "select", "steer"] : ["navigate", "select"],
+    capabilities: fixture.interactive === true || fixture.interactionOnly === true ? ["navigate", "select", "steer"] : ["navigate", "select"],
     ...(fixture.interactive === true ? {
       intent: {
         id: `${fixture.rendererId}.intent`,
@@ -204,9 +212,14 @@ function externalProvider() {
           if (action === "steer") {
             return {
               intentId: input.intentId,
+              sourceTarget: { address: "json-canvas://node/orders", kind: "node", label: "Orders" },
+              destination: {
+                artifactLabel: nativeDestinationFixture.label,
+                revision: nativeDestinationRevision,
+              },
               effect: {
                 kind: "steering",
-                target: { address: "json-canvas://node/orders", kind: "node", label: "Orders" },
+                target: { address: "native://target/orders", kind: "native-node", label: "Native Orders" },
                 steering: { kind: "canvas-steering", message: "Focus the order flow" },
               },
             };
@@ -214,11 +227,24 @@ function externalProvider() {
           throw new Error("unsupported fixture intent");
         },
       },
+    } : {}),
+    ...(fixture.interactive === true || fixture.interactionOnly === true ? {
       interaction: {
         id: `${fixture.rendererId}.interaction`,
         version: "1",
         protocolVersion: "1",
         async inspect(context) {
+          if (fixture.interactionOnly === true) {
+            return {
+              kind: "HarnessStudioArtifactInteractionWorkspaceV1",
+              protocolVersion: "1",
+              artifactId: context.descriptor.id,
+              revision: context.descriptor.revision.id,
+              summary: "Provider-owned native targets",
+              targets: [{ address: "native://target/orders", kind: "native-node", label: "Native Orders" }],
+              steering: { kind: "canvas-steering", label: "Canvas steering", placeholder: "Describe the native change", maxLength: 200 },
+            };
+          }
           return {
             kind: "HarnessStudioArtifactInteractionWorkspaceV1",
             protocolVersion: "1",
@@ -262,6 +288,16 @@ function externalProvider() {
 
 function digest(value) {
   return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
+
+function digestText(value) {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function sourceForFixture(fixture) {
+  return fixture.interactive === true
+    ? 'export default function CanvasContainer() { return <main data-container="provider-owned">Cursor-like Canvas source</main>; }\n'
+    : `source for ${fixture.label}\n`;
 }
 
 function escapeRegex(value) {
