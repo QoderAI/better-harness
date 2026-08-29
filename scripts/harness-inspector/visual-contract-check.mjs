@@ -153,7 +153,59 @@ async function surfacesFor(page) {
         if ((await usage.count()) === 0) return "skip";
         await usage.click();
         await page.waitForFunction(() => new URLSearchParams(location.search).get("session-mode") === "usage");
-        await page.locator("[data-session-mode-panel=usage]").waitFor({ state: "visible" });
+        const panel = page.locator("[data-session-mode-panel=usage]");
+        await panel.waitFor({ state: "visible" });
+        const kpis = panel.locator(".usage-report-summary > .usage-report-occupancy, .usage-report-summary > .usage-report-lead-facts > div");
+        if ((await kpis.count()) !== 6) throw new Error("Usage report dashboard must render exactly six KPI tiles.");
+        const leadText = await panel.locator(".usage-report-lead").innerText();
+        if (leadText.includes("READ-ONLY EVIDENCE") || leadText.includes("Usage and Context Report") || leadText.includes("Evidence details") || leadText.includes("Unique model responses, absolute context progression")) {
+          throw new Error("Usage report lead must omit repeated titles, eyebrow, and explanatory copy.");
+        }
+        const evidence = panel.locator(".usage-report-lead > .usage-report-evidence");
+        if ((await evidence.count()) !== 1) throw new Error("Usage report must place one always-visible Evidence details section in the lead.");
+        if ((await evidence.locator("summary").count()) !== 0) throw new Error("Evidence details must not use a disclosure control.");
+        if (!(await evidence.locator(".usage-evidence-groups").isVisible())) throw new Error("Evidence details groups must be visible by default.");
+        if ((await evidence.locator(".usage-evidence-group").count()) !== 4) throw new Error("Evidence details must group facts into four diagnostic categories.");
+        if (!/Coverage\s+(observed|partial|unobserved)/u.test(await evidence.innerText())) throw new Error("Coverage must remain an Observability fact rather than a KPI tile.");
+        if ((await panel.locator(".usage-reuse-section").count()) !== 0) throw new Error("Input reuse must be integrated into the KPI dashboard, not repeated as a full-width section.");
+        if ((await panel.getByRole("heading", { name: "Current context composition" }).count()) !== 0) throw new Error("Current context composition must be integrated into the Current context tile.");
+        const occupancy = panel.locator(".usage-report-occupancy");
+        if ((await occupancy.locator(".usage-context-bar, .usage-occupancy-bar").count()) > 1) throw new Error("Current context must render at most one integrated occupancy/composition bar.");
+        const reuse = panel.locator(".usage-report-reuse-tile");
+        if ((await reuse.count()) !== 1) throw new Error("Usage report must render one integrated Input reuse KPI tile.");
+        const structure = panel.locator(".usage-structure-section");
+        const structureText = await structure.innerText();
+        if (!structureText.includes("token sizes unavailable") && !structureText.includes("Context-layer counts were not observed")) throw new Error("Context structure must disclose unavailable layer-token evidence.");
+        const structureList = structure.locator(".usage-structure-list");
+        if ((await structureList.count()) > 0 && (await structureList.innerText()).includes("%")) throw new Error("Context structure must not imply token shares from item-count evidence.");
+        if ((await structure.locator(".usage-structure-bar, .usage-report-unavailable").count()) !== 1) throw new Error("Context structure must render a count chart or an unavailable state.");
+        const overviewTurns = panel.locator("[data-usage-overview-turn-marker]");
+        const overviewTurnCount = await overviewTurns.count();
+        if (overviewTurnCount > 0) {
+          if ((await overviewTurns.locator("title").count()) !== overviewTurnCount) {
+            throw new Error("Every Overview prompt marker must expose its retained prompt preview.");
+          }
+          if ((await overviewTurns.locator(".usage-overview-prompt-tooltip").count()) !== overviewTurnCount) {
+            throw new Error("Every Overview prompt marker must render a prompt-first tooltip.");
+          }
+          if ((await overviewTurns.locator("[tabindex]").count()) !== 0) throw new Error("Prompt markers must not add per-marker tab stops.");
+          if ((await overviewTurns.locator(".usage-overview-turn-label").count()) !== overviewTurnCount) throw new Error("Every Overview prompt marker must retain its compact Tn anchor.");
+          if ((await panel.locator("[data-usage-prompt-marker]").count()) !== 0) throw new Error("The duplicate Focus prompt lane must remain absent.");
+          const overviewChart = panel.locator("[data-usage-overview-chart]");
+          if ((await overviewChart.getAttribute("tabindex")) !== "0") throw new Error("Overview must expose one composite keyboard stop for linked prompts.");
+          const firstPromptMarker = overviewTurns.first();
+          const responsePosition = await firstPromptMarker.getAttribute("data-usage-response-position");
+          await firstPromptMarker.locator(".usage-overview-turn-hit").hover();
+          if ((await firstPromptMarker.locator(".usage-overview-prompt-tooltip").evaluate((tooltip) => getComputedStyle(tooltip).opacity)) !== "1") {
+            throw new Error("Overview prompt tooltip must be visible on hover.");
+          }
+          await firstPromptMarker.locator(".usage-overview-turn-hit").click();
+          if (responsePosition !== await panel.locator(".usage-response-row[aria-selected=true]").getAttribute("data-usage-response-position")) {
+            throw new Error("Overview prompt markers must select their linked response.");
+          }
+        }
+        const responseHead = panel.locator(".usage-response-head");
+        if ((await responseHead.count()) > 0 && (await responseHead.innerText()).includes("Turn")) throw new Error("Response rows must not repeat the internal Turn number.");
         await page.waitForTimeout(300);
         return undefined;
       },

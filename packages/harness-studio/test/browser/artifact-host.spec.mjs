@@ -168,7 +168,10 @@ test.beforeAll(async () => {
         windowTokens: 100,
         percentFull: 40,
         compactionCount: 1,
-        layers: [{ kind: "developer-message", itemCount: 2 }],
+        layers: [
+          { kind: "developer-message", itemCount: 2 },
+          { kind: "skills", itemCount: 1 },
+        ],
         categories: [{ kind: "rules", label: "Rules", estimatedTokens: 10 }],
       },
       toolActivity: {
@@ -1198,31 +1201,70 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await usageSummary.getByRole("button", { name: "View report" }).click();
   await expect(page).toHaveURL(/inspector-view=usage/u);
   const usageReport = inspector.getByRole("region", { name: "Usage report" });
-  await expect(usageReport).toContainText("Usage and Context Report");
-  await expect(usageReport).toContainText(/Net context growth\s*\+15/u);
+  await expect(usageReport).not.toContainText("Usage and Context Report");
+  await expect(usageReport).not.toContainText("Read-only evidence");
+  await expect(usageReport).not.toContainText("Unique model responses, absolute context progression");
+  await expect(usageReport).toContainText(/Net vs baseline\s*\+15/u);
   await expect(usageReport).toContainText(/Model calls\s*2/u);
   await expect(usageReport).toContainText(/Provider reported 1 compaction boundary\./u);
-  await expect(usageReport.getByRole("img", { name: /Context progression from 25 to 40 tokens/u })).toBeVisible();
-  await expect(usageReport.locator(".chart-toolbar")).toContainText(/Response order/u);
-  await expect(usageReport.locator(".chart-toolbar")).toContainText(/10:00:01 → 10:00:02 UTC|11:00:01 → 11:00:02 UTC/u);
-  const promptMarker = usageReport.getByRole("button", { name: /User turn 1 · Repair (parser|renderer)/u }).first();
-  await promptMarker.focus();
-  await expect(promptMarker).toBeFocused();
-  await expect(usageReport.locator(".usage-chart-inspector")).toContainText(/Response 1 · (10|11):00:01 UTC · 25 context/u);
-  await expect(usageReport.locator(".usage-chart-inspector")).toContainText(/User turn 1 · Repair (parser|renderer)/u);
-  await promptMarker.click();
-  await expect(usageReport.locator(".usage-chart-turn[tabindex='0']")).toHaveCount(1);
-  await expect(usageReport.locator(".usage-chart-key-marker[tabindex='0']")).toHaveCount(2);
-  await expect(usageReport.locator(".usage-chart-turn-line")).toHaveCount(0);
-  expect(await usageReport.locator(".usage-chart-turn-marker").evaluate((marker) => (
-    Math.abs(Number(marker.getAttribute("y2")) - Number(marker.getAttribute("y1")))
-  ))).toBe(12);
-  await expect(usageReport.locator(".usage-progress-list")).toContainText(/(10|11):00:02 UTC/u);
-  await expect(usageReport.locator(".usage-progress-list .usage-row-turn")).toHaveCount(1);
-  await expect(usageReport.locator(".usage-progress-list .usage-row-turn-boundary")).toContainText(/Turn 1 · Repair (parser|renderer)/u);
-  await expect(usageReport).toContainText(/Rules\s*10/u);
-  await expect(usageReport).toContainText(/Other\s*30/u);
-  await expect(usageReport).toContainText(/Raw context\s*omitted/u);
+  await expect(usageReport.locator(".usage-report-occupancy .usage-summary-compactions")).toHaveText("1 compaction");
+  await expect(usageReport.locator(".usage-report-occupancy .usage-context-bar")).toBeVisible();
+  await expect(usageReport.locator(".usage-report-reuse-tile")).toContainText(/Input reused\s*rate unavailable\s*90 cached/u);
+  await expect(usageReport.locator(".usage-reuse-section")).toHaveCount(0);
+  await expect(usageReport.getByRole("heading", { name: "Current context composition" })).toHaveCount(0);
+  await expect(usageReport.getByRole("img", { name: "Complete retained context progression" })).toBeVisible();
+  await expect(usageReport.getByRole("img", { name: /Focused context progression for responses 1 through 2/u })).toBeVisible();
+  await expect(usageReport.locator(".usage-overview-handle")).toHaveCount(2);
+  await expect(usageReport.locator(".usage-overview-turn")).toHaveCount(1);
+  await expect(usageReport.locator("[data-usage-overview-turn-marker]")).toHaveCount(1);
+  await expect(usageReport.locator("[data-usage-overview-turn-marker] title")).toContainText(/Repair (parser|renderer)[\s\S]*Response 1/u);
+  await expect(usageReport.locator(".usage-overview-prompt-tooltip")).toContainText(/Repair (parser|renderer)[\s\S]*Response 1/u);
+  await expect(usageReport.locator(".usage-overview-turn-label")).toHaveText("T1");
+  await expect(usageReport.locator(".usage-overview-turn-chip")).toHaveCount(1);
+  await expect(usageReport.locator("[data-usage-prompt-marker]")).toHaveCount(0);
+  await expect(usageReport.locator("[data-usage-overview-chart]")).toHaveAttribute("tabindex", "0");
+  await expect(usageReport.locator(".usage-overview .chart-toolbar")).toContainText(/Overview · 2 responses · 1 linked prompts/iu);
+  await expect(usageReport.locator(".usage-overview .chart-toolbar")).toContainText(/10:00:01 → 10:00:02 UTC|11:00:01 → 11:00:02 UTC/u);
+  const promptMarker = usageReport.locator("[data-usage-overview-turn-marker]");
+  await expect(promptMarker).not.toHaveAttribute("tabindex", /.+/u);
+  await promptMarker.locator(".usage-overview-turn-hit").hover();
+  await expect(usageReport.locator(".usage-overview-prompt-tooltip")).toHaveCSS("opacity", "1");
+  await promptMarker.locator(".usage-overview-turn-hit").click();
+  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 1/u);
+  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Context\s*25/u);
+  await expect(usageReport.locator(".usage-response-row[aria-selected='true']")).toContainText(/Response 1/u);
+  await expect(usageReport.locator(".usage-response-head")).not.toContainText("Turn");
+  await expect(usageReport.locator(".usage-chart-legend")).not.toContainText("User turn");
+  const selectedRow = usageReport.locator(".usage-response-row[aria-selected='true']");
+  await selectedRow.focus();
+  await selectedRow.press("ArrowDown");
+  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 2/u);
+  await expect(usageReport.locator(".usage-response-prompt")).toContainText(/Linked user prompt · T1\s*Repair (parser|renderer)/u);
+  await expect(usageReport.locator(".usage-response-row[aria-selected='true']")).toContainText(/Response 2/u);
+  const focusChart = usageReport.getByRole("img", { name: /Focused context progression/u });
+  await focusChart.focus();
+  await focusChart.press("Escape");
+  await expect(usageReport.locator(".usage-response-row[aria-selected='true']")).toHaveCount(0);
+  await focusChart.press("Enter");
+  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 1/u);
+  await expect(usageReport.locator(".usage-response-table")).toContainText(/(10|11):00:02/u);
+  await expect(usageReport.locator(".usage-report-occupancy .usage-context-bar i")).toHaveCount(3);
+  await expect(usageReport.locator(".usage-report-summary > .usage-report-occupancy")).toHaveCount(1);
+  await expect(usageReport.locator(".usage-report-summary > .usage-report-lead-facts > div")).toHaveCount(5);
+  const evidenceDetails = usageReport.locator(".usage-report-lead > .usage-report-evidence");
+  await expect(evidenceDetails).toBeVisible();
+  await expect(evidenceDetails.locator("header, .usage-evidence-status")).toHaveCount(0);
+  await expect(evidenceDetails.locator("summary")).toHaveCount(0);
+  await expect(evidenceDetails.locator(".usage-evidence-groups")).toBeVisible();
+  await expect(evidenceDetails.locator(".usage-evidence-group")).toHaveCount(4);
+  await expect(evidenceDetails).toContainText(/Coverage\s*observed/u);
+  await expect(evidenceDetails).toContainText(/Observability[\s\S]*Runtime[\s\S]*Accounting[\s\S]*Provenance/u);
+  await expect(evidenceDetails).toContainText(/Raw context\s*omitted/u);
+  await expect(usageReport.getByRole("img", { name: "Context structure by observed item count: 3 items across 2 layers" })).toBeVisible();
+  await expect(usageReport.locator(".usage-structure-list")).toContainText(/developer-message\s*×2/u);
+  await expect(usageReport.locator(".usage-structure-list")).toContainText(/skills\s*×1/u);
+  await expect(usageReport.locator(".usage-structure-section")).toContainText("token sizes unavailable");
+  await expect(usageReport.locator(".usage-structure-list")).not.toContainText("%");
   for (const layout of [
     { name: "wide", width: 1440, height: 900 },
     { name: "compact", width: 1024, height: 768 },

@@ -756,15 +756,14 @@ test("Inspector projects usage and context metadata without raw context text", (
   const html = renderHarnessInspectorHtml(report);
   assert.match(html, /Usage and context/u);
   assert.match(html, /View report/u);
-  assert.match(html, /Usage and Context Report/u);
-  assert.match(html, /class="usage-report-intro"[^]*class="usage-report-evidence"[^]*Context progression/u);
-  assert.match(html, /Context structure by observed item count: 3 items across 2 layers/u);
-  assert.match(html, /developer-message: 2 items/u);
-  assert.match(html, /skills: 1 item/u);
-  assert.match(html, /this is structure, not token usage/u);
+  assert.doesNotMatch(html, /<h3>Usage and Context Report<\/h3>/u);
+  assert.match(html, /<h3 class="visually-hidden">Usage report<\/h3>/u);
+  assert.doesNotMatch(html, /<span class="usage-report-kicker">/u);
+  assert.doesNotMatch(html, /<p>Unique model responses, absolute context progression/u);
   assert.match(html, /Input reuse/u);
+  assert.match(html, /usage-report-reuse-tile/u);
+  assert.doesNotMatch(html, /<h4>Current context composition<\/h4>/u);
   assert.match(html, /Total input \(includes cached\)/u);
-  assert.match(html, /Cached input still occupies context/u);
   assert.match(html, /Raw context/u);
   assert.match(html, /data-session-mode-panel="usage"/u);
   assert.match(html, /Model response/u);
@@ -1126,9 +1125,9 @@ test("Inspector preserves Cursor, Codex, Qoder, and Claude context capabilities"
   });
   const html = renderHarnessInspectorHtml(report);
   assert.match(html, /Context window size unavailable/u);
-  assert.match(html, /prompt tokens were observed/u);
+  assert.match(html, /Context window not observed/u);
   assert.match(html, /Tool definitions/u);
-  assert.match(html, /token-weighted categories were not retained/u);
+  assert.match(html, /Per-layer token sizes were not retained/u);
 });
 
 test("declared refs keep platform identity and reject ambiguous commit prefixes", () => {

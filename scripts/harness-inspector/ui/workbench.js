@@ -46,6 +46,8 @@
     replayTimer:null,
     // Chart zoom is a per-session view concern and stays out of the deep link.
     zoom:new Map(),
+    // Usage range and response selection are local to an open Session report.
+    usageExplorer:new Map(),
     collapsedCards:new Set(),
     items:[],
   };
@@ -264,73 +266,178 @@
     if (usageReport.modelBoundaryCount > 0) notes.push(usageReport.modelBoundaryCount + ' model boundar' + (usageReport.modelBoundaryCount === 1 ? 'y' : 'ies'));
     return notes.length ? ' Observed: ' + notes.join(' · ') + '.' : '';
   };
-  const usagePointDetail = point => {
+  const usagePromptFor = (session,point) => {
+    const direct = point.userPrompt;
+    const turn = Number.isFinite(point.turnIndex) ? session.dialogue?.turns?.find(candidate => candidate.index === point.turnIndex) : null;
+    const prompt = direct ?? turn?.prompt?.text ?? (Number.isFinite(point.turnIndex) ? session.prompts?.find(candidate => candidate.turnIndex === point.turnIndex)?.text : null);
+    const normalized = prompt == null ? '' : String(prompt).replace(/\s+/gu,' ').trim();
+    return normalized || null;
+  };
+  const usagePointDetail = (point,prompt = point.userPrompt) => {
     const stamp = formatStamp(point.timestamp);
-    const facts = ['Response ' + point.index];
+    const facts = [...(Number.isFinite(point.turnIndex) ? ['Turn ' + point.turnIndex] : []),'Response ' + point.index];
     if (stamp) facts.push(stamp + ' UTC');
     if (Number.isFinite(point.contextTokens)) facts.push(formatTokenCount(point.contextTokens) + ' context');
     if (Number.isFinite(point.contextDeltaTokens)) facts.push(formatSignedTokenCount(point.contextDeltaTokens));
     if (point.boundary === 'shrink') facts.push('context shrink/reset');
     if (point.boundary === 'model-change') facts.push('model boundary');
-    const turn = Number.isFinite(point.turnIndex) ? 'User turn ' + point.turnIndex : 'No observed user Turn link';
-    const prompt = point.userPrompt ? ' · ' + String(point.userPrompt).replace(/\s+/gu,' ').trim() : '';
-    return { primary:facts.join(' · '),secondary:turn + prompt };
+    const normalizedPrompt = prompt ? String(prompt).replace(/\s+/gu,' ').trim() : '';
+    const promptDetail = normalizedPrompt || (Number.isFinite(point.turnIndex) || point.promptBoundary
+      ? 'Linked prompt text was not retained'
+      : 'No observed linked prompt');
+    return { primary:promptDetail,secondary:facts.join(' · ') };
   };
   const usagePointAttributes = point => {
     const detail = usagePointDetail(point);
     return ' role="button" tabindex="0" aria-label="' + escape(detail.primary + '. ' + detail.secondary) + '" data-usage-chart-detail="' + escape(detail.primary) + '" data-usage-chart-secondary="' + escape(detail.secondary) + '"';
   };
-  const usageProgressChartMarkup = usageReport => {
-    const points = (usageReport?.progression ?? []).filter(point => Number.isFinite(point.contextTokens));
-    if (points.length < 2) return '<p class="usage-report-unavailable">At least two comparable context snapshots are required for a progression chart.</p>';
-    const width = 960;
-    const height = 204;
-    const padX = 28;
-    const padTop = 22;
-    const padBottom = 36;
-    const plotBottom = height - padBottom;
-    const values = points.map(point => point.contextTokens);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = Math.max(1,max - min);
-    const x = point => padX + ((point.index - 1) / Math.max(1,usageReport.actualModelCalls - 1)) * (width - padX * 2);
-    const y = point => plotBottom - ((point.contextTokens - min) / range) * (plotBottom - padTop);
+  const USAGE_WINDOW_SIZE = 60;
+  const USAGE_MIN_WINDOW_SIZE = 10;
+  const usageExplorerState = session => {
+    const points = sessionUsageReport(session).progression ?? [];
+    const defaultSize = Math.min(USAGE_WINDOW_SIZE,points.length);
+    const minSize = Math.min(USAGE_MIN_WINDOW_SIZE,points.length);
+    const previous = state.usageExplorer.get(session.sessionId);
+    const lastCycleBoundary = points.reduce((latest,point,index) => ['shrink','model-change'].includes(point.boundary) ? index : latest,-1);
+    const defaultStart = lastCycleBoundary >= 0 && points.length - lastCycleBoundary >= minSize ? lastCycleBoundary : points.length - defaultSize;
+    let start = Math.max(0,Math.min(Math.max(0,points.length - minSize),Number.isInteger(previous?.start) ? previous.start : defaultStart));
+    let end = Math.max(start,Math.min(points.length,Number.isInteger(previous?.end) ? previous.end : start + defaultSize));
+    if (end - start < minSize) {
+      if (start + minSize <= points.length) end = start + minSize;
+      else start = Math.max(0,end - minSize);
+    }
+    const size = end - start;
+    const maxStart = Math.max(0,points.length - size);
+    const next = {
+      start,
+      end,
+      selected:Number.isInteger(previous?.selected) && previous.selected >= -1 && previous.selected < points.length ? previous.selected : points.length - 1,
+    };
+    state.usageExplorer.set(session.sessionId,next);
+    return { ...next,size,minSize,maxStart,points };
+  };
+  const usageTurnEntries = entries => {
+    const turns = new Set();
+    return entries.filter(entry => {
+      if (Number.isFinite(entry.point.turnIndex)) {
+        if (turns.has(entry.point.turnIndex)) return false;
+        turns.add(entry.point.turnIndex);
+        return true;
+      }
+      return Boolean(entry.point.promptBoundary);
+    });
+  };
+  const usageSegments = points => {
     const segments = [];
     let current = [];
-    points.forEach(point => {
-      if (point.boundary === 'model-change' && current.length) {
+    points.forEach(entry => {
+      if (entry.point.boundary === 'model-change' && current.length) {
         segments.push(current);
         current = [];
       }
-      current.push(point);
+      if (Number.isFinite(entry.point.contextTokens)) current.push(entry);
     });
     if (current.length) segments.push(current);
-    const lines = [0,.5,1].map(ratio => {
-      const lineY = padTop + ratio * (plotBottom - padTop);
-      return '<line class="usage-chart-grid" x1="' + padX + '" x2="' + (width - padX) + '" y1="' + lineY + '" y2="' + lineY + '"></line>';
+    return segments;
+  };
+  const usageStepPath = (segment,x,y) => segment.reduce((path,entry,index) => {
+    const pointX = x(entry);
+    const pointY = y(entry);
+    return index === 0 ? 'M' + pointX + ' ' + pointY : path + ' H' + pointX + ' V' + pointY;
+  },'');
+  const usageBoundaryLabel = point => point.boundary === 'shrink' ? 'Context shrink/reset'
+    : point.boundary === 'model-change' ? 'Model boundary'
+      : point.boundary === 'baseline' ? 'Baseline' : 'Within context cycle';
+  const usageReuseCompact = reuse => !reuse ? '—'
+    : reuse.status === 'observed' && Number.isFinite(reuse.reusePercent) ? reuse.reusePercent + '% reused'
+      : formatTokenCount(reuse.cacheReadTokens) + ' cached';
+  const usageResponseDetailMarkup = (session,point) => {
+    if (!point) return '<aside class="usage-response-detail" aria-live="polite"><strong>Response details</strong><p>Select a chart point or response row to inspect its bounded usage evidence.</p></aside>';
+    const fact = (label,value) => '<div><dt>' + escape(label) + '</dt><dd>' + escape(value) + '</dd></div>';
+    const prompt = usagePromptFor(session,point);
+    return '<aside class="usage-response-detail" aria-live="polite"><header><span>Response details</span><strong>Response ' + point.index + '</strong><small>' + escape(formatStamp(point.timestamp) ? formatStamp(point.timestamp) + ' UTC' : 'response time unavailable') + '</small></header><dl>'
+      + fact('Context',Number.isFinite(point.contextTokens) ? formatTokenCount(point.contextTokens) : 'not observed')
+      + fact('Δ context',Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(point.contextDeltaTokens) : 'not comparable')
+      + fact('Output',Number.isFinite(point.outputTokens) ? formatTokenCount(point.outputTokens) : 'not observed')
+      + fact('Input reuse',usageReuseCompact(point.cacheReuse))
+      + fact('Boundary',usageBoundaryLabel(point))
+      + '</dl>' + (prompt ? '<div class="usage-response-prompt"><span>Linked user prompt' + (Number.isFinite(point.turnIndex) ? ' · T' + point.turnIndex : '') + '</span><p title="' + escape(prompt) + '">' + escape(prompt) + '</p></div>' : '') + '<div class="usage-response-actions"><button type="button" data-usage-step="-1">Previous</button><button type="button" data-usage-step="1">Next</button></div></aside>';
+  };
+  const usageExplorerMarkup = session => {
+    const usageReport = sessionUsageReport(session);
+    const explorer = usageExplorerState(session);
+    if (!explorer.points.length) return '<p class="usage-report-unavailable">Per-response context snapshots were not retained.</p>';
+    const entries = explorer.points.map((point,position) => ({ point,position }));
+    const visible = entries.slice(explorer.start,explorer.end);
+    const numeric = entries.filter(entry => Number.isFinite(entry.point.contextTokens));
+    const values = numeric.map(entry => entry.point.contextTokens);
+    const overviewMin = values.length ? Math.min(...values) : 0;
+    const overviewMax = values.length ? Math.max(...values) : 1;
+    const overviewRange = Math.max(1,overviewMax - overviewMin);
+    const focusValues = visible.map(entry => entry.point.contextTokens).filter(Number.isFinite);
+    const focusMin = focusValues.length ? Math.min(...focusValues) : overviewMin;
+    const focusMax = focusValues.length ? Math.max(...focusValues) : overviewMax;
+    const focusRange = Math.max(1,focusMax - focusMin);
+    const width = 960;
+    const overviewHeight = 106;
+    const focusHeight = 180;
+    const padX = 28;
+    const overviewTop = 34;
+    const overviewBottom = 78;
+    const focusTop = 30;
+    const focusBottom = 132;
+    const overviewX = entry => padX + (entry.position / Math.max(1,entries.length - 1)) * (width - padX * 2);
+    const focusX = entry => padX + ((entry.position - explorer.start) / Math.max(1,visible.length - 1)) * (width - padX * 2);
+    const overviewY = entry => overviewBottom - ((entry.point.contextTokens - overviewMin) / overviewRange) * (overviewBottom - overviewTop);
+    const focusY = entry => focusBottom - ((entry.point.contextTokens - focusMin) / focusRange) * (focusBottom - focusTop);
+    const overviewPaths = usageSegments(entries).filter(segment => segment.length > 1).map(segment => '<path class="usage-chart-line" d="' + usageStepPath(segment,overviewX,overviewY) + '"></path>').join('');
+    const focusPaths = usageSegments(visible).filter(segment => segment.length > 1).map(segment => '<path class="usage-chart-line" d="' + usageStepPath(segment,focusX,focusY) + '"></path>').join('');
+    const brushX = overviewX(entries[explorer.start]);
+    const brushEnd = overviewX(entries[Math.min(entries.length - 1,explorer.end - 1)]);
+    const promptEntries = usageTurnEntries(entries);
+    const overviewTurns = promptEntries.map(entry => {
+      const markerX = overviewX(entry);
+      const label = Number.isFinite(entry.point.turnIndex) ? 'T' + entry.point.turnIndex : 'P';
+      const chipWidth = Math.max(18,10 + label.length * 5);
+      const halfWidth = chipWidth / 2;
+      const chipX = Math.max(padX + halfWidth,Math.min(width - padX - halfWidth,markerX));
+      const tooltipWidth = 250;
+      const tooltipX = Math.max(padX,Math.min(width - padX - tooltipWidth,markerX - tooltipWidth / 2));
+      const hitX = markerX - 7;
+      const hitRight = markerX + 7;
+      const detail = usagePointDetail(entry.point,usagePromptFor(session,entry.point));
+      const selectedTurn = explorer.points[explorer.selected]?.turnIndex;
+      const selected = entry.position === explorer.selected || Number.isFinite(selectedTurn) && entry.point.turnIndex === selectedTurn;
+      return '<g class="usage-overview-turn-marker' + (selected ? ' selected' : '') + '" data-usage-overview-turn-marker data-usage-response-position="' + entry.position + '"><title>' + escape(detail.primary + '. ' + detail.secondary) + '</title><rect class="usage-overview-turn-hit" x="' + hitX + '" y="16" width="' + (hitRight - hitX) + '" height="34"></rect><line class="usage-overview-turn" x1="' + markerX + '" x2="' + markerX + '" y1="24" y2="78"></line><rect class="usage-overview-turn-chip" x="' + (chipX - halfWidth) + '" y="17" width="' + chipWidth + '" height="12" rx="2"></rect><text class="usage-overview-turn-label" x="' + chipX + '" y="26" text-anchor="middle">' + escape(label) + '</text><foreignObject class="usage-overview-prompt-tooltip" x="' + tooltipX + '" y="12" width="' + tooltipWidth + '" height="38"><div role="tooltip"><strong>' + escape(detail.primary) + '</strong><span>' + escape(detail.secondary) + '</span></div></foreignObject></g>';
     }).join('');
-    const paths = segments.filter(segment => segment.length > 1).map(segment => '<polyline class="usage-chart-line" points="' + segment.map(point => x(point) + ',' + y(point)).join(' ') + '"></polyline>').join('');
-    const boundaries = points.filter(point => point.boundary === 'model-change').map(point => '<line class="usage-chart-boundary" x1="' + x(point) + '" x2="' + x(point) + '" y1="' + padTop + '" y2="' + plotBottom + '"></line>').join('');
-    const turnRailY = plotBottom + 14;
-    const promptMarkers = points.filter(point => point.promptBoundary === true).map(point => {
-      const pointX = x(point);
-      return '<g class="usage-chart-turn"' + usagePointAttributes(point) + '><rect class="usage-chart-turn-hit" x="' + (pointX - 7) + '" y="' + (turnRailY - 8) + '" width="14" height="16"></rect><line class="usage-chart-turn-marker" x1="' + pointX + '" x2="' + pointX + '" y1="' + (turnRailY - 6) + '" y2="' + (turnRailY + 6) + '"></line></g>';
+    const overviewEvents = entries.filter(entry => ['shrink','model-change'].includes(entry.point.boundary)).map(entry => '<path class="usage-overview-event boundary-' + entry.point.boundary + '" d="M' + overviewX(entry) + ' 82 l4 4 -4 4 -4 -4z"></path>').join('');
+    const selectedEntry = entries[explorer.selected] ?? null;
+    const selectedVisible = selectedEntry && selectedEntry.position >= explorer.start && selectedEntry.position < explorer.end;
+    const crosshair = selectedVisible && Number.isFinite(selectedEntry.point.contextTokens)
+      ? '<line class="usage-selection-line" x1="' + focusX(selectedEntry) + '" x2="' + focusX(selectedEntry) + '" y1="' + focusTop + '" y2="164"></line><circle class="usage-selection-point" cx="' + focusX(selectedEntry) + '" cy="' + focusY(selectedEntry) + '" r="5"></circle>' : '';
+    const focusEvents = visible.filter(entry => ['shrink','model-change'].includes(entry.point.boundary)).map(entry => {
+      const markerX = focusX(entry);
+      const detail = usagePointDetail(entry.point,usagePromptFor(session,entry.point));
+      const marker = entry.point.boundary === 'shrink' ? '<path class="usage-focus-event boundary-shrink" d="M' + markerX + ' 147 l4 4 -4 4 -4 -4z"></path>'
+        : '<rect class="usage-focus-event boundary-model-change" x="' + (markerX - 4) + '" y="147" width="8" height="8"></rect>';
+      return '<g data-usage-response-position="' + entry.position + '"><title>' + escape(detail.primary + '. ' + detail.secondary) + '</title><rect class="usage-chart-point-hit" x="' + (markerX - 8) + '" y="140" width="16" height="22"></rect>' + marker + '</g>';
     }).join('');
-    const markers = points.filter((point,index) => index === 0 || index === points.length - 1 || ['shrink','model-change'].includes(point.boundary)).map(point => {
-      const pointX = x(point);
-      const pointY = y(point);
-      const shape = point.boundary === 'shrink'
-        ? '<rect class="usage-chart-point boundary-shrink" x="' + (pointX - 4) + '" y="' + (pointY - 4) + '" width="8" height="8" transform="rotate(45 ' + pointX + ' ' + pointY + ')"></rect>'
-        : point.boundary === 'model-change'
-          ? '<rect class="usage-chart-point boundary-model-change" x="' + (pointX - 4) + '" y="' + (pointY - 4) + '" width="8" height="8"></rect>'
-          : '<circle class="usage-chart-point boundary-' + point.boundary + '" cx="' + pointX + '" cy="' + pointY + '" r="4"></circle>';
-      return '<g class="usage-chart-key-marker"' + usagePointAttributes(point) + '><rect class="usage-chart-point-hit" x="' + (pointX - 8) + '" y="' + (pointY - 8) + '" width="16" height="16"></rect>' + shape + '</g>';
+    const processedVisible = visible.some(entry => Number.isFinite(entry.point.processedTokens));
+    const columns = processedVisible ? ' with-processed' : '';
+    const header = '<div class="usage-response-head' + columns + '" aria-hidden="true"><span>Response</span><span>Time</span><span class="numeric-cell">Context</span><span class="numeric-cell">Δ context</span><span>Reuse</span>' + (processedVisible ? '<span class="numeric-cell">Processed</span>' : '') + '<span class="numeric-cell">Output</span></div>';
+    const rows = visible.map(entry => {
+      const point = entry.point;
+      const selected = entry.position === explorer.selected;
+      return '<li class="usage-response-row' + columns + (selected ? ' selected' : '') + '" role="option" aria-selected="' + selected + '" tabindex="' + (selected || explorer.selected < 0 && entry === visible[0] ? '0' : '-1') + '" data-usage-response-position="' + entry.position + '"><strong>Response ' + point.index + '</strong><span>' + escape(formatStamp(point.timestamp) ?? '—') + '</span><strong class="numeric-cell">' + (Number.isFinite(point.contextTokens) ? formatTokenCount(point.contextTokens) : '—') + '</strong><span class="numeric-cell usage-delta">' + (Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(point.contextDeltaTokens) : '—') + '</span><em>' + escape(usageReuseCompact(point.cacheReuse)) + '</em>' + (processedVisible ? '<span class="numeric-cell">' + (Number.isFinite(point.processedTokens) ? formatTokenCount(point.processedTokens) : '—') + '</span>' : '') + '<span class="numeric-cell">' + (Number.isFinite(point.outputTokens) ? formatTokenCount(point.outputTokens) : '—') + '</span></li>';
     }).join('');
-    const timed = points.filter(point => formatStamp(point.timestamp));
-    const timeRange = timed.length > 1
-      ? formatStamp(timed[0].timestamp) + ' → ' + formatStamp(timed.at(-1).timestamp) + ' UTC · observed response time'
-      : timed.length === 1 ? formatStamp(timed[0].timestamp) + ' UTC · one observed response time' : 'Response timestamps unavailable';
-    return '<div class="usage-context-chart"><div class="chart-toolbar"><span class="chart-basis">Response order</span><span class="chart-range">' + escape(timeRange) + '</span></div><svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Context progression from ' + escape(formatTokenCount(points[0].contextTokens)) + ' to ' + escape(formatTokenCount(points.at(-1).contextTokens)) + ' tokens"><title>Absolute prompt-context snapshots across unique model responses</title>' + lines + boundaries + paths + markers + promptMarkers + '<text x="' + padX + '" y="14">' + escape(formatTokenCount(max)) + '</text><text x="' + padX + '" y="' + (height - 4) + '">' + escape(formatTokenCount(min)) + '</text></svg><div class="usage-chart-legend"><span><i class="growth"></i>Context snapshot</span><span><i class="prompt"></i>User turn boundary</span><span><i class="shrink"></i>Context shrink/reset</span><span><i class="boundary"></i>Model boundary</span></div><div class="usage-chart-inspector" data-usage-chart-inspector aria-live="polite"><strong>Focus, hover, or click a marker</strong><span>Turn boundaries and context events expose observed time, context change, and linked prompt evidence.</span></div></div>';
+    const first = visible[0]?.point.index;
+    const last = visible.at(-1)?.point.index;
+    const timed = entries.filter(entry => formatStamp(entry.point.timestamp));
+    const timeRange = timed.length > 1 ? formatStamp(timed[0].point.timestamp) + ' → ' + formatStamp(timed.at(-1).point.timestamp) + ' UTC' : 'Response timestamps unavailable';
+    return '<div class="usage-linked-explorer" data-usage-explorer="' + escape(session.sessionId) + '"><div class="usage-overview"><div class="chart-toolbar"><span class="chart-basis">Overview · ' + entries.length + ' responses · ' + promptEntries.length + ' linked prompts</span><span class="chart-range">' + escape(timeRange) + '</span></div><svg data-usage-overview-chart tabindex="0" viewBox="0 0 ' + width + ' ' + overviewHeight + '" role="img" aria-label="Complete retained context progression. Use Left and Right arrows to move between linked prompts."><rect class="usage-overview-surface" data-usage-overview-surface x="' + padX + '" y="8" width="' + (width - padX * 2) + '" height="88"></rect><rect class="usage-overview-brush" x="' + brushX + '" y="8" width="' + Math.max(6,brushEnd - brushX) + '" height="88"></rect>' + overviewPaths + overviewTurns + overviewEvents + '<rect class="usage-overview-handle start" data-usage-window-handle="start" x="' + (brushX - 4) + '" y="52" width="8" height="44"></rect><rect class="usage-overview-handle end" data-usage-window-handle="end" x="' + (brushEnd - 4) + '" y="52" width="8" height="44"></rect><text x="' + padX + '" y="14">' + escape(formatTokenCount(overviewMax)) + '</text><text x="' + padX + '" y="102">' + escape(formatTokenCount(overviewMin)) + '</text></svg></div>'
+      + '<div class="usage-window-toolbar"><div class="usage-window-summary"><strong>Responses ' + first + '–' + last + '</strong><span>' + visible.length + ' of ' + entries.length + '</span></div><button type="button" data-usage-window-step="-1"' + (explorer.start === 0 ? ' disabled' : '') + '>Previous window</button><div class="usage-window-edge-controls"><label>Start<input type="range" min="0" max="' + Math.max(0,explorer.end - explorer.minSize) + '" value="' + explorer.start + '" data-usage-window-edge="start" aria-label="Visible response window start"></label><label>End<input type="range" min="' + Math.min(entries.length,explorer.start + explorer.minSize) + '" max="' + entries.length + '" value="' + explorer.end + '" data-usage-window-edge="end" aria-label="Visible response window end"></label></div><button type="button" data-usage-window-step="1"' + (explorer.end === entries.length ? ' disabled' : '') + '>Next window</button></div>'
+      + '<div class="usage-focus-layout"><div class="usage-context-chart"><div class="chart-toolbar"><span class="chart-basis">Focus · Responses ' + first + '–' + last + '</span><span class="chart-range">Arrow keys move · Enter selects · Esc clears</span></div><svg class="usage-focus-chart" data-usage-focus-surface tabindex="0" viewBox="0 0 ' + width + ' ' + focusHeight + '" role="img" aria-label="Focused context progression for responses ' + first + ' through ' + last + '"><rect class="usage-focus-surface" x="' + padX + '" y="8" width="' + (width - padX * 2) + '" height="158"></rect>' + [0,.5,1].map(ratio => { const lineY = focusTop + ratio * (focusBottom - focusTop); return '<line class="usage-chart-grid" x1="' + padX + '" x2="' + (width - padX) + '" y1="' + lineY + '" y2="' + lineY + '"></line>'; }).join('') + focusPaths + crosshair + focusEvents + '<text x="' + padX + '" y="' + (focusTop - 4) + '">' + escape(formatTokenCount(focusMax)) + '</text><text x="' + padX + '" y="172">' + escape(formatTokenCount(focusMin)) + '</text></svg><div class="usage-chart-legend"><span><i class="growth"></i>Context snapshot</span><span><i class="shrink"></i>Context shrink/reset</span><span><i class="boundary"></i>Model boundary</span></div></div>' + usageResponseDetailMarkup(session,selectedEntry?.point) + '</div>'
+      + '<div class="usage-response-table" role="listbox" aria-label="Responses ' + first + ' through ' + last + '">' + header + '<ol>' + rows + '</ol></div></div>';
   };
   const processingBreakdownMarkup = (usage,usageReport) => {
     if (!Number.isFinite(usageReport?.processedTokens)) return '';
@@ -343,31 +450,6 @@
     const total = usageReport.processedTokens;
     const bar = buckets.length ? '<div class="usage-processing-bar" role="img" aria-label="Derived processed-token breakdown">' + buckets.map(([kind,label,value]) => '<i class="bucket-' + kind + '" style="flex-grow:' + value + '" title="' + escape(label + ': ' + formatTokenCount(value)) + '"></i>').join('') + '</div>' : '';
     return '<section class="usage-report-section"><header><div><h4>Session processing breakdown</h4><p>Additive input buckets and output across unique model responses; this is derived usage, not provider total or cost.</p></div><strong>' + formatTokenCount(total) + ' processed</strong></header>' + bar + '<ul class="usage-processing-list">' + buckets.map(([kind,label,value]) => '<li><i class="bucket-' + kind + '"></i><span>' + escape(label) + '</span><strong>' + formatTokenCount(value) + '</strong><small>' + (Math.round((value / total) * 1000) / 10) + '%</small></li>').join('') + '</ul></section>';
-  };
-  const usageProgressRowsMarkup = usageReport => {
-    const points = usageReport?.progression ?? [];
-    if (!points.length) return '<p class="usage-report-unavailable">Per-response context snapshots were not retained.</p>';
-    const visible = points.slice(-20);
-    const total = usageReport.progressionTotalCount || usageReport.actualModelCalls || points.length;
-    const scope = usageReport.progressionTruncated
-      ? 'Latest ' + visible.length + ' of ' + points.length + ' retained points, sampled from ' + total + ' unique model responses'
-      : 'Latest ' + visible.length + ' of ' + total + ' unique model responses';
-    const seenTurns = new Set();
-    const rows = visible.map(point => {
-      const stamp = formatStamp(point.timestamp);
-      const turnIndex = Number.isFinite(point.turnIndex) ? point.turnIndex : null;
-      const firstVisibleForTurn = turnIndex !== null && !seenTurns.has(turnIndex);
-      if (turnIndex !== null) seenTurns.add(turnIndex);
-      const prompt = point.promptBoundary === true && point.userPrompt ? String(point.userPrompt).replace(/\s+/gu,' ').trim() : '';
-      const turnContext = firstVisibleForTurn
-        ? prompt ? 'Turn ' + turnIndex + ' · ' + prompt : 'Turn ' + turnIndex + ' continued'
-        : '';
-      const modelTitle = point.model ? ' title="' + escape(point.model) + '"' : '';
-      const turnClass = prompt ? ' usage-row-turn-boundary' : ' usage-row-turn-continuation';
-      const turnMarkup = turnContext ? '<small class="usage-row-turn' + turnClass + '" title="' + escape(turnContext) + '">' + escape(turnContext) + '</small>' : '';
-      return '<li class="boundary-' + point.boundary + '"' + modelTitle + '><div><strong>Response ' + point.index + '</strong><span>' + escape(stamp ? stamp + ' UTC' : 'response time unavailable') + '</span>' + turnMarkup + (point.cacheReuse ? '<em class="usage-row-reuse">' + escape(formatCacheReuse(point.cacheReuse)) + '</em>' : '') + '</div><strong>' + (Number.isFinite(point.contextTokens) ? formatTokenCount(point.contextTokens) : '—') + '</strong><span class="usage-delta">' + (Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(point.contextDeltaTokens) : point.boundary === 'model-change' ? 'model boundary' : point.boundary) + '</span><span>' + (Number.isFinite(point.processedTokens) ? formatTokenCount(point.processedTokens) : '—') + '</span><span>' + (Number.isFinite(point.outputTokens) ? formatTokenCount(point.outputTokens) : '—') + '</span></li>';
-    }).join('');
-    return '<details class="usage-progress-details" open><summary>' + escape(scope) + '</summary><div class="usage-progress-head" aria-hidden="true"><span>Response</span><span>Context</span><span>Δ context</span><span>Processed</span><span>Output</span></div><ol class="usage-progress-list">' + rows + '</ol></details>';
   };
   const usageContextMarkup = session => {
     const usage = session.tokenUsage;
@@ -401,43 +483,64 @@
     const runtime = session.runtime;
     const compactionCount = Number(session.contextManifest?.compactionCount) || 0;
     const compactionNote = compactionCount > 0 ? ' Provider reported ' + compactionCount + ' compaction boundar' + (compactionCount === 1 ? 'y' : 'ies') + '.' : '';
+    const progressionContexts = (usageReport.progression ?? []).map(point => point.contextTokens).filter(Number.isFinite);
+    const peakContextTokens = progressionContexts.length ? Math.max(...progressionContexts) : null;
+    const contextBoundaryBadge = compactionCount > 0
+      ? compactionCount + ' compaction' + (compactionCount === 1 ? '' : 's')
+      : usageReport.contextResetCount > 0 ? usageReport.contextResetCount + ' reset' + (usageReport.contextResetCount === 1 ? '' : 's') : '';
+    const contextBoundaryTitle = compactionCount > 0
+      ? 'Provider reported ' + compactionCount + ' compaction boundar' + (compactionCount === 1 ? 'y' : 'ies')
+      : usageReport.contextResetCount > 0 ? usageReport.contextResetCount + ' observed context shrink/reset' + (usageReport.contextResetCount === 1 ? '' : 's') : '';
     const fact = (label,value) => '<div><dt>' + escape(label) + '</dt><dd>' + escape(value) + '</dd></div>';
     const inputLabel = usage?.cacheAccountingMode === 'included-in-input' ? 'Total input (includes cached)'
       : usage?.cacheAccountingMode === 'separate-input-lane' ? 'Uncached input' : 'Input (cache relationship unknown)';
     const accounting = [['Provider total',usage?.totalTokens],[inputLabel,usage?.inputTokens],['Output',usage?.outputTokens],['Cached input read',usage?.cacheReadInputTokens],['Cache creation',usage?.cacheCreationInputTokens],['Reasoning',usage?.reasoningOutputTokens]]
       .map(([label,value]) => fact(label,formatObservedTokenCount(value))).join('');
+    const occupancyBar = context.hasContextWindow ? contextBarMarkup(context,context.percentFull + '% of the observed context window is full')
+      : context.hasPercentFull ? occupancyBarMarkup(context.percentFull,context.percentFull + '% context occupancy observed; window size unavailable') : '';
+    const occupancyHeading = '<span>Latest context</span>' + (contextBoundaryBadge ? '<em class="usage-summary-compactions" title="' + escape(contextBoundaryTitle) + '">' + escape(contextBoundaryBadge) + '</em>' : '');
     const occupancy = context.hasContextWindow
-      ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><span>Current context</span><small>' + formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + context.percentFull + '% full</small>'
+      ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>' + formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + context.percentFull + '% full</small>' + occupancyBar
       : context.hasPercentFull
-        ? '<strong>' + context.percentFull + '%</strong><span>Full</span><small>Window size not observed</small>'
+        ? '<strong>' + context.percentFull + '%</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>Window size not observed</small>' + occupancyBar
         : context.hasUsedTokens
-          ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><span>Current context</span><small>Context window not observed</small>'
-          : '<strong>—</strong><span>Occupancy unavailable</span><small>No observed context evidence</small>';
-    const composition = context.hasContextWindow
-      ? contextBarMarkup(context,context.percentFull + '% of the observed context window is full')
-        + (context.hasCategoryBreakdown
-          ? '<ul class="usage-composition-list">' + context.segments.map(segment => '<li><i class="category-' + (segment.colorIndex % 8) + '"></i><span>' + escape(segment.label) + '</span><strong>' + formatTokenCount(segment.tokens) + '</strong></li>').join('') + '<li class="usage-composition-unused"><i></i><span>Unused context window</span><strong>' + formatTokenCount(context.unusedTokens) + '</strong></li></ul>'
-          : '<p class="usage-report-unavailable">Category breakdown unavailable; only aggregate used and window totals were retained.</p>')
-      : context.hasPercentFull
-        ? occupancyBarMarkup(context.percentFull,context.percentFull + '% context occupancy observed; window size unavailable') + '<p class="usage-report-unavailable">Absolute window and token-weighted categories were not retained.</p>'
-        : context.hasUsedTokens
-          ? '<p class="usage-report-unavailable">' + formatTokenCount(context.usedTokens) + ' prompt tokens were observed; the context window and token-weighted categories were not retained.</p>'
-          : '<p class="usage-report-unavailable">Context-window occupancy and composition were not observed.</p>';
-    const layers = session.contextManifest?.layers?.length
-      ? session.contextManifest.layers.map(layer => fact(layer.kind,'×' + layer.itemCount)).join('')
-      : fact('Layers','not observed');
+          ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>Context window not observed</small>'
+          : '<strong>—</strong><div class="usage-summary-tile-heading"><span>Occupancy unavailable</span></div><small>No observed context evidence</small>';
+    const reuseDetail = cacheReuse?.status === 'observed' && Number.isFinite(cacheReuse.promptInputTokens)
+      ? formatTokenCount(cacheReuse.cacheReadTokens) + ' cached · ' + formatTokenCount(cacheReuse.uncachedInputTokens) + ' uncached'
+      : cacheReuse ? formatTokenCount(cacheReuse.cacheReadTokens) + ' cached · rate unavailable' : 'No observed cache evidence';
+    const reuseTile = '<div class="usage-report-reuse-tile"><dt>Input reused</dt><dd><strong>'
+      + escape(cacheReuse ? (cacheReuse.status === 'observed' ? cacheReuse.reusePercent + '%' : 'rate unavailable') : 'not observed')
+      + '</strong>' + (cacheReuse ? cacheReuseBarMarkup(cacheReuse) : '') + '<small>' + escape(reuseDetail) + '</small></dd></div>';
+    const processedOrPeak = Number.isFinite(usageReport.processedTokens)
+      ? fact('Session processed',formatTokenCount(usageReport.processedTokens))
+      : fact('Peak context',Number.isFinite(peakContextTokens) ? formatTokenCount(peakContextTokens) : 'not observed');
     const duplicateEvidence = usageReport.duplicateRecordsCollapsed > 0
       ? fact('Duplicates collapsed',String(usageReport.duplicateRecordsCollapsed)) + fact('Conflicting duplicates',String(usageReport.conflictingDuplicateRecords ?? 0))
       : '';
+    const evidenceProvider = runtime?.modelProvider ?? session.platform ?? 'not observed';
+    const evidenceContextBasis = session.contextManifest?.basis ?? 'not observed';
+    const evidenceSource = usage?.source ?? session.contextManifest?.source ?? 'not observed';
+    const evidenceGroup = (label,facts) => '<div class="usage-evidence-group"><strong class="usage-evidence-group-title">' + escape(label) + '</strong><dl class="usage-report-facts">' + facts + '</dl></div>';
+    const evidenceCoverage = usage?.coverage ?? session.contextManifest?.status ?? 'unobserved';
+    const evidenceDetails = '<section class="usage-report-evidence" aria-label="Evidence details"><div class="usage-evidence-groups">'
+      + evidenceGroup('Observability',fact('Coverage',evidenceCoverage) + fact('Time basis',session.timestampBasis ?? 'unobserved') + fact('Raw context','omitted'))
+      + evidenceGroup('Runtime',fact('Provider',evidenceProvider) + fact('Effort',runtime?.effort ?? 'not observed') + fact('CLI',runtime?.cliVersion ?? 'not observed'))
+      + evidenceGroup('Accounting',fact('Context basis',evidenceContextBasis) + fact('Processed basis',usageReport.processedTokensBasis ?? 'not derived') + (usageReport.processedCoverage ? fact('Processed coverage',usageReport.processedCoverage) : ''))
+      + evidenceGroup('Provenance',fact('Evidence source',evidenceSource) + duplicateEvidence)
+      + '</div></section>';
+    const structureLayers = (session.contextManifest?.layers ?? []).filter(layer => Number.isFinite(layer.itemCount) && layer.itemCount > 0);
+    const structureTotal = structureLayers.reduce((sum,layer) => sum + layer.itemCount,0);
+    const structure = structureLayers.length
+      ? '<div class="usage-structure-bar" role="img" aria-label="Context structure by observed item count: ' + structureTotal + ' items across ' + structureLayers.length + ' layers">' + structureLayers.map((layer,index) => '<i class="category-' + (index % 8) + '" style="flex-grow:' + layer.itemCount + '" title="' + escape(layer.kind + ': ' + layer.itemCount + ' item' + (layer.itemCount === 1 ? '' : 's')) + '"></i>').join('') + '</div>'
+        + '<ul class="usage-structure-list">' + structureLayers.map((layer,index) => '<li><i class="category-' + (index % 8) + '"></i><span>' + escape(layer.kind) + '</span><strong>×' + layer.itemCount + '</strong></li>').join('') + '</ul>'
+      : '<p class="usage-report-unavailable">Context-layer counts were not observed.</p>';
     return '<section class="session-mode-panel usage-report" aria-label="Usage report" data-session-mode-panel="usage" hidden>'
-      + '<header class="usage-report-lead"><div><span class="usage-report-kicker">Read-only evidence</span><h3>Usage and Context Report</h3><p>Unique model responses, absolute context progression, and explicitly sourced token accounting for this Session.</p></div><div class="usage-report-occupancy">' + occupancy + '</div><dl class="usage-report-lead-facts">' + (cacheReuse ? fact('Input reused',cacheReuse.status === 'observed' ? cacheReuse.reusePercent + '%' : 'rate unavailable') : '') + fact('Baseline context',Number.isFinite(usageReport.baselineContextTokens) ? formatTokenCount(usageReport.baselineContextTokens) : 'not observed') + fact('Net context growth',Number.isFinite(usageReport.netContextDeltaTokens) ? formatSignedTokenCount(usageReport.netContextDeltaTokens) : 'not comparable') + fact('Session processed',Number.isFinite(usageReport.processedTokens) ? formatTokenCount(usageReport.processedTokens) : 'not derived') + fact('Model calls',usageReport.actualModelCalls ? String(usageReport.actualModelCalls) : 'not observed') + fact('Coverage',usage?.coverage ?? session.contextManifest?.status ?? 'unobserved') + '</dl></header>'
-      + cacheReuseSectionMarkup(cacheReuse)
-      + '<section class="usage-report-section"><header><div><h4>Context progression</h4><p>Absolute prompt snapshots across unique model responses. Deltas are net context change, not consumption.' + escape(progressionBoundaryNote(usageReport) + compactionNote) + '</p></div><strong>' + usageReport.actualModelCalls + ' unique calls</strong></header>' + usageProgressChartMarkup(usageReport) + usageProgressRowsMarkup(usageReport) + '</section>'
+      + '<header class="usage-report-lead"><h3 class="visually-hidden">Usage report</h3>' + evidenceDetails + '<aside class="usage-report-summary" aria-label="Session usage summary"><div class="usage-report-occupancy">' + occupancy + '</div><dl class="usage-report-lead-facts">' + reuseTile + fact('Baseline context',Number.isFinite(usageReport.baselineContextTokens) ? formatTokenCount(usageReport.baselineContextTokens) : 'not observed') + fact('Net vs baseline',Number.isFinite(usageReport.netContextDeltaTokens) ? formatSignedTokenCount(usageReport.netContextDeltaTokens) : 'not comparable') + processedOrPeak + fact('Model calls',usageReport.actualModelCalls ? String(usageReport.actualModelCalls) : 'not observed') + '</dl></aside></header>'
+      + '<section class="usage-report-section"><header><div><h4>Context progression</h4><p>Absolute prompt snapshots across unique model responses. Deltas are net context change, not consumption.' + escape(progressionBoundaryNote(usageReport) + compactionNote) + '</p></div><strong>' + usageReport.actualModelCalls + ' unique calls</strong></header>' + usageExplorerMarkup(session) + '</section>'
       + processingBreakdownMarkup(usage,usageReport)
-      + '<section class="usage-report-section"><header><div><h4>Current context composition</h4><p>Token-weighted categories within the current observed context, when the host retained them.</p></div>' + (context.hasPercentFull ? '<strong>' + context.percentFull + '% full</strong>' : '') + '</header>' + composition + '</section>'
       + '<div class="usage-report-columns"><section class="usage-report-section"><header><div><h4>Provider accounting</h4><p>Observed provider counters. Labels preserve whether cached input is included or reported as a separate lane.</p></div></header><dl class="usage-report-facts">' + accounting + '</dl></section>'
-      + '<section class="usage-report-section"><header><div><h4>Context structure</h4><p>Counts only; prompt text remains omitted.</p></div></header><dl class="usage-report-facts">' + layers + fact('Compactions',session.contextManifest ? String(session.contextManifest.compactionCount ?? 0) : 'not observed') + '</dl></section>'
-      + '<section class="usage-report-section"><header><div><h4>Evidence details</h4><p>Runtime, provenance, and normalization diagnostics retained with this Session.</p></div></header><dl class="usage-report-facts">' + fact('Provider',runtime?.modelProvider ?? session.platform ?? 'not observed') + fact('Effort',runtime?.effort ?? 'not observed') + fact('CLI',runtime?.cliVersion ?? 'not observed') + fact('Time basis',session.timestampBasis ?? 'unobserved') + fact('Context basis',session.contextManifest?.basis ?? 'not observed') + fact('Processed basis',usageReport.processedTokensBasis ?? 'not derived') + (usageReport.processedCoverage ? fact('Processed coverage',usageReport.processedCoverage) : '') + fact('Evidence source',usage?.source ?? session.contextManifest?.source ?? 'not observed') + duplicateEvidence + fact('Raw context','omitted') + '</dl></section></div></section>';
+      + '<section class="usage-report-section usage-structure-section"><header><div><h4>Context structure</h4><p>Observed layer item counts. Per-layer token sizes were not retained, so K values cannot be derived. Prompt text remains omitted.</p></div>' + (structureLayers.length ? '<strong>' + structureTotal + ' items · token sizes unavailable</strong>' : '') + '</header>' + structure + '</section></div></section>';
   };
   const evidence = (kind, label = kind) => '<span class="evidence ' + escape(kind) + '">' + escape(label) + '</span>';
   const isDirectCommitLink = link => link?.evidenceKind === 'explicit' || link?.evidenceKind === 'observed-commit';
@@ -956,7 +1059,113 @@
   function showUsageChartDetail(element) {
     const inspector = element.closest('.usage-context-chart')?.querySelector('[data-usage-chart-inspector]');
     if (!inspector || !element.dataset.usageChartDetail) return;
-    inspector.innerHTML = '<strong>' + escape(element.dataset.usageChartDetail) + '</strong><span>' + escape(element.dataset.usageChartSecondary ?? 'No observed user Turn link') + '</span>';
+    inspector.innerHTML = '<strong>' + escape(element.dataset.usageChartDetail) + '</strong><span>' + escape(element.dataset.usageChartSecondary ?? 'No observed linked prompt') + '</span>';
+  }
+
+  function usageSessionFor(element) {
+    const sessionId = element?.closest?.('[data-usage-explorer]')?.dataset.usageExplorer;
+    return sessionId ? bySession.get(sessionId) : null;
+  }
+
+  function keepUsageSelectedRowVisible(explorer) {
+    const selectedRow = explorer?.querySelector('[data-usage-response-position][aria-selected="true"]');
+    const table = explorer?.querySelector('.usage-response-table');
+    if (!selectedRow || !table) return null;
+    const rowRect = selectedRow.getBoundingClientRect();
+    const tableRect = table.getBoundingClientRect();
+    const tableBottom = tableRect.top + table.clientHeight;
+    const headerHeight = table.querySelector('.usage-response-head')?.getBoundingClientRect().height ?? 0;
+    if (rowRect.top < tableRect.top + headerHeight) table.scrollTop += rowRect.top - tableRect.top - headerHeight;
+    else if (rowRect.bottom > tableBottom) table.scrollTop += rowRect.bottom - tableBottom;
+    return selectedRow;
+  }
+
+  function refreshUsageExplorer(session,{ focus = null } = {}) {
+    const current = document.querySelector('[data-usage-explorer="' + CSS.escape(session.sessionId) + '"]');
+    if (!current) return;
+    current.outerHTML = usageExplorerMarkup(session);
+    const next = document.querySelector('[data-usage-explorer="' + CSS.escape(session.sessionId) + '"]');
+    const selectedRow = keepUsageSelectedRowVisible(next);
+    const focusTarget = focus === 'start' || focus === 'end' ? next?.querySelector('[data-usage-window-edge="' + focus + '"]')
+      : focus === 'chart' ? next?.querySelector('[data-usage-focus-surface]')
+        : focus === 'overview' ? next?.querySelector('[data-usage-overview-chart]')
+          : focus === 'row' ? selectedRow : null;
+    focusTarget?.focus({ preventScroll:true });
+  }
+
+  function setUsageSelection(session,position,{ reveal = true,focus = null } = {}) {
+    const explorer = usageExplorerState(session);
+    if (!Number.isInteger(position) || position < 0 || position >= explorer.points.length) return;
+    explorer.selected = position;
+    if (reveal && position < explorer.start) {
+      explorer.start = Math.max(0,position);
+      explorer.end = Math.min(explorer.points.length,explorer.start + explorer.size);
+    }
+    if (reveal && position >= explorer.end) {
+      explorer.end = Math.min(explorer.points.length,position + 1);
+      explorer.start = Math.max(0,explorer.end - explorer.size);
+    }
+    state.usageExplorer.set(session.sessionId,{ start:explorer.start,end:explorer.end,selected:explorer.selected });
+    refreshUsageExplorer(session,{ focus });
+  }
+
+  function stepUsageSelection(session,delta,{ focus = 'row' } = {}) {
+    const explorer = usageExplorerState(session);
+    const selected = explorer.selected >= 0 ? explorer.selected : explorer.start;
+    setUsageSelection(session,Math.max(0,Math.min(explorer.points.length - 1,selected + delta)),{ focus });
+  }
+
+  function setUsageWindow(session,start,{ focus = 'start' } = {}) {
+    const explorer = usageExplorerState(session);
+    explorer.start = Math.max(0,Math.min(explorer.maxStart,Math.round(start)));
+    explorer.end = explorer.start + explorer.size;
+    if (explorer.selected < explorer.start) explorer.selected = explorer.start;
+    if (explorer.selected >= explorer.end) explorer.selected = explorer.end - 1;
+    state.usageExplorer.set(session.sessionId,{ start:explorer.start,end:explorer.end,selected:explorer.selected });
+    refreshUsageExplorer(session,{ focus });
+  }
+
+  function centerUsageSelection(session,position,{ focus = 'chart' } = {}) {
+    const explorer = usageExplorerState(session);
+    if (!Number.isInteger(position) || position < 0 || position >= explorer.points.length) return;
+    const start = Math.max(0,Math.min(explorer.maxStart,position - Math.floor(explorer.size / 2)));
+    state.usageExplorer.set(session.sessionId,{ start,end:start + explorer.size,selected:position });
+    refreshUsageExplorer(session,{ focus });
+  }
+
+  function moveUsagePromptSelection(session,step) {
+    const explorer = usageExplorerState(session);
+    const entries = explorer.points.map((point,position) => ({ point,position }));
+    const prompts = usageTurnEntries(entries);
+    if (!prompts.length) return;
+    const selectedPoint = explorer.points[explorer.selected];
+    let current = prompts.findIndex(entry => entry.position === explorer.selected
+      || Number.isFinite(selectedPoint?.turnIndex) && entry.point.turnIndex === selectedPoint.turnIndex);
+    if (current < 0) {
+      const next = prompts.findIndex(entry => entry.position > explorer.selected);
+      current = next > 0 ? next - 1 : next === 0 ? 0 : prompts.length - 1;
+    }
+    const next = step === 'first' ? 0 : step === 'last' ? prompts.length - 1
+      : Math.max(0,Math.min(prompts.length - 1,current + Number(step || 0)));
+    centerUsageSelection(session,prompts[next].position,{ focus:'overview' });
+  }
+
+  function setUsageWindowEdge(session,edge,value,{ focus = edge } = {}) {
+    const explorer = usageExplorerState(session);
+    if (edge === 'start') explorer.start = Math.max(0,Math.min(explorer.end - explorer.minSize,Math.round(value)));
+    else explorer.end = Math.min(explorer.points.length,Math.max(explorer.start + explorer.minSize,Math.round(value)));
+    if (explorer.selected < explorer.start) explorer.selected = explorer.start;
+    if (explorer.selected >= explorer.end) explorer.selected = explorer.end - 1;
+    state.usageExplorer.set(session.sessionId,{ start:explorer.start,end:explorer.end,selected:explorer.selected });
+    refreshUsageExplorer(session,{ focus });
+  }
+
+  function usagePositionAt(surface,clientX,session,{ focusWindow = false } = {}) {
+    const explorer = usageExplorerState(session);
+    const rect = surface.getBoundingClientRect();
+    const ratio = Math.max(0,Math.min(1,(clientX - rect.left) / Math.max(1,rect.width)));
+    const count = focusWindow ? explorer.size : explorer.points.length;
+    return (focusWindow ? explorer.start : 0) + Math.round(ratio * Math.max(0,count - 1));
   }
 
   function chartPositionAt(surface, x) {
@@ -1462,6 +1671,7 @@
     if (usageReturn) usageReturn.hidden = next !== 'usage';
     document.querySelectorAll('[data-session-mode-panel]').forEach(panel => { panel.hidden = panel.dataset.sessionModePanel !== next; });
     if (next === 'replay') renderReplay();
+    if (next === 'usage') requestAnimationFrame(() => keepUsageSelectedRowVisible(document.querySelector('[data-usage-explorer]')));
     if (updateHistory) updateUrl();
   }
 
@@ -1766,6 +1976,52 @@
   }
 
   document.addEventListener('click', event => {
+    const usageOverviewTurn = event.target.closest('[data-usage-overview-turn-marker]');
+    if (usageOverviewTurn) {
+      const session = usageSessionFor(usageOverviewTurn);
+      const position = Number(usageOverviewTurn.dataset.usageResponsePosition);
+      if (session) centerUsageSelection(session,position);
+      return;
+    }
+    const usageResponse = event.target.closest('[data-usage-response-position]');
+    if (usageResponse) {
+      const session = usageSessionFor(usageResponse);
+      if (session) setUsageSelection(session,Number(usageResponse.dataset.usageResponsePosition),{ focus:usageResponse.closest('.usage-response-row') ? 'row' : 'chart' });
+      return;
+    }
+    const usageOverview = event.target.closest('[data-usage-overview-surface]');
+    if (usageOverview) {
+      const session = usageSessionFor(usageOverview);
+      if (session) {
+        const position = usagePositionAt(usageOverview,event.clientX,session);
+        const explorer = usageExplorerState(session);
+        const start = Math.max(0,Math.min(explorer.maxStart,position - Math.floor(explorer.size / 2)));
+        state.usageExplorer.set(session.sessionId,{ start,end:start + explorer.size,selected:position });
+        refreshUsageExplorer(session,{ focus:'chart' });
+      }
+      return;
+    }
+    const usageFocus = event.target.closest('[data-usage-focus-surface]');
+    if (usageFocus) {
+      const session = usageSessionFor(usageFocus);
+      if (session) setUsageSelection(session,usagePositionAt(usageFocus,event.clientX,session,{ focusWindow:true }),{ focus:'chart' });
+      return;
+    }
+    const usageWindowStep = event.target.closest('[data-usage-window-step]');
+    if (usageWindowStep) {
+      const session = usageSessionFor(usageWindowStep);
+      if (session) {
+        const explorer = usageExplorerState(session);
+        setUsageWindow(session,explorer.start + Number(usageWindowStep.dataset.usageWindowStep) * explorer.size,{ focus:'start' });
+      }
+      return;
+    }
+    const usageStep = event.target.closest('[data-usage-step]');
+    if (usageStep) {
+      const session = usageSessionFor(usageStep);
+      if (session) stepUsageSelection(session,Number(usageStep.dataset.usageStep),{ focus:'row' });
+      return;
+    }
     const usageMarker = event.target.closest('[data-usage-chart-detail]');
     if (usageMarker) { showUsageChartDetail(usageMarker); return; }
     const chartReset = event.target.closest('[data-chart-reset]');
@@ -1972,6 +2228,11 @@
   }, true);
 
   document.addEventListener('change', event => {
+    if (event.target.matches('[data-usage-window-edge]')) {
+      const session = usageSessionFor(event.target);
+      if (session) setUsageWindowEdge(session,event.target.dataset.usageWindowEdge,Number(event.target.value));
+      return;
+    }
     if (event.target.matches('[data-session-kind-filter], [data-session-tool-filter], [data-session-file-filter]')) applySessionFilters();
     if (event.target.matches('[data-session-jump]')) document.getElementById(event.target.value)?.scrollIntoView({ behavior:'smooth', block:'start' });
     if (event.target.matches('[data-scope-index]') && event.target.value) {
@@ -1981,6 +2242,16 @@
   });
 
   document.addEventListener('pointerdown', event => {
+    const usageHandle = event.target.closest('[data-usage-window-handle]');
+    if (usageHandle) {
+      const session = usageSessionFor(usageHandle);
+      const surface = usageHandle.ownerSVGElement?.querySelector('[data-usage-overview-surface]');
+      if (!session || !surface) return;
+      state.usageWindowDrag = { session,edge:usageHandle.dataset.usageWindowHandle,rect:surface.getBoundingClientRect(),lastPosition:null };
+      usageHandle.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      return;
+    }
     const surface = event.target.closest('[data-chart-surface]');
     if (surface) {
       if (surface.closest('.session-turn-activity')) return;
@@ -2010,6 +2281,17 @@
   });
 
   document.addEventListener('pointermove', event => {
+    const usageDrag = state.usageWindowDrag;
+    if (usageDrag) {
+      const explorer = usageExplorerState(usageDrag.session);
+      const ratio = Math.max(0,Math.min(1,(event.clientX - usageDrag.rect.left) / Math.max(1,usageDrag.rect.width)));
+      const position = Math.round(ratio * Math.max(0,explorer.points.length - 1));
+      if (position !== usageDrag.lastPosition) {
+        usageDrag.lastPosition = position;
+        setUsageWindowEdge(usageDrag.session,usageDrag.edge,usageDrag.edge === 'end' ? position + 1 : position,{ focus:null });
+      }
+      return;
+    }
     const brush = state.brush;
     if (brush) {
       const current = (event.clientX - brush.rect.left) * brush.scale;
@@ -2034,6 +2316,10 @@
   });
 
   document.addEventListener('pointerup', event => {
+    if (state.usageWindowDrag) {
+      state.usageWindowDrag = null;
+      return;
+    }
     const brush = state.brush;
     if (brush) {
       const current = (event.clientX - brush.rect.left) * brush.scale;
@@ -2054,6 +2340,44 @@
   });
 
   document.addEventListener('keydown', event => {
+    const usageOverviewChart = event.target.closest?.('[data-usage-overview-chart]');
+    if (usageOverviewChart && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','Enter','Escape'].includes(event.key)) {
+      const session = usageSessionFor(usageOverviewChart);
+      if (!session) return;
+      if (event.key === 'Escape') {
+        const explorer = usageExplorerState(session);
+        state.usageExplorer.set(session.sessionId,{ start:explorer.start,end:explorer.end,selected:-1 });
+        refreshUsageExplorer(session,{ focus:'overview' });
+      } else if (event.key === 'Home') moveUsagePromptSelection(session,'first');
+      else if (event.key === 'End') moveUsagePromptSelection(session,'last');
+      else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') moveUsagePromptSelection(session,-1);
+      else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') moveUsagePromptSelection(session,1);
+      else moveUsagePromptSelection(session,0);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    const usageExplorer = event.target.closest?.('[data-usage-explorer]');
+    if (usageExplorer && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter','Escape'].includes(event.key)) {
+      const session = usageSessionFor(event.target);
+      if (!session) return;
+      if (event.key === 'Escape') {
+        const explorer = usageExplorerState(session);
+        state.usageExplorer.set(session.sessionId,{ start:explorer.start,end:explorer.end,selected:-1 });
+        refreshUsageExplorer(session,{ focus:event.target.closest('.usage-response-row') ? 'row' : 'chart' });
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        stepUsageSelection(session,-1,{ focus:event.target.closest('.usage-response-row') ? 'row' : 'chart' });
+      } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        stepUsageSelection(session,1,{ focus:event.target.closest('.usage-response-row') ? 'row' : 'chart' });
+      } else if (event.key === 'Enter') {
+        const position = Number(event.target.closest('[data-usage-response-position]')?.dataset.usageResponsePosition);
+        const explorer = usageExplorerState(session);
+        if (event.target.closest('[data-usage-overview-turn-marker]') && Number.isInteger(position)) centerUsageSelection(session,position);
+        else setUsageSelection(session,Number.isInteger(position) ? position : explorer.selected >= 0 ? explorer.selected : explorer.start,{ focus:event.target.closest('.usage-response-row') ? 'row' : 'chart' });
+      }
+      event.preventDefault();
+      return;
+    }
     const usageMarker = event.target.closest?.('[data-usage-chart-detail]');
     if (usageMarker && (event.key === 'Enter' || event.key === ' ')) {
       showUsageChartDetail(usageMarker);

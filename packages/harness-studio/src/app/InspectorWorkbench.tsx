@@ -430,65 +430,250 @@ function formatUsageStamp(value?: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(11, 19);
 }
 
-function usagePointDetail(point: UsageProgressionPoint): { primary: string; secondary: string } {
+function retainedUsagePrompt(session: Session, point: UsageProgressionPoint): string | null {
+  const turn = Number.isFinite(point.turnIndex) ? session.dialogue?.turns?.find((candidate) => candidate.index === point.turnIndex) : undefined;
+  const prompt = point.userPrompt ?? turn?.prompt?.text ?? (Number.isFinite(point.turnIndex) ? session.prompts?.find((candidate) => candidate.turnIndex === point.turnIndex)?.text : undefined);
+  const normalized = prompt?.replace(/\s+/gu, " ").trim();
+  return normalized || null;
+}
+
+function usagePointDetail(point: UsageProgressionPoint, prompt = point.userPrompt): { primary: string; secondary: string } {
   const stamp = formatUsageStamp(point.timestamp);
-  const facts = [`Response ${point.index}`];
+  const facts = [...(Number.isFinite(point.turnIndex) ? [`Turn ${point.turnIndex}`] : []), `Response ${point.index}`];
   if (stamp) facts.push(`${stamp} UTC`);
   if (Number.isFinite(point.contextTokens)) facts.push(`${formatTokenCount(Number(point.contextTokens))} context`);
   if (Number.isFinite(point.contextDeltaTokens)) facts.push(formatSignedTokenCount(Number(point.contextDeltaTokens)));
   if (point.boundary === "shrink") facts.push("context shrink/reset");
   if (point.boundary === "model-change") facts.push("model boundary");
-  const turn = Number.isFinite(point.turnIndex) ? `User turn ${point.turnIndex}` : "No observed user Turn link";
-  const prompt = point.userPrompt?.replace(/\s+/gu, " ").trim();
-  return { primary: facts.join(" · "), secondary: `${turn}${prompt ? ` · ${prompt}` : ""}` };
+  const normalizedPrompt = prompt?.replace(/\s+/gu, " ").trim();
+  const promptDetail = normalizedPrompt
+    ? normalizedPrompt
+    : Number.isFinite(point.turnIndex) || point.promptBoundary
+      ? "Linked prompt text was not retained"
+      : "No observed linked prompt";
+  return { primary: promptDetail, secondary: facts.join(" · ") };
 }
 
-function ContextProgressChart({ report }: { report: UsageReport }): React.JSX.Element {
-  const [detail, setDetail] = useState<{ primary: string; secondary: string }>();
-  const points = report.progression.filter((point) => Number.isFinite(point.contextTokens));
-  if (points.length < 2) return <p className="usage-report-unavailable">At least two comparable context snapshots are required for a progression chart.</p>;
-  const width = 960;
-  const height = 204;
-  const padX = 28;
-  const padTop = 22;
-  const padBottom = 36;
-  const plotBottom = height - padBottom;
-  const values = points.map((point) => Number(point.contextTokens));
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = Math.max(1, max - min);
-  const x = (point: UsageProgressionPoint): number => padX + ((point.index - 1) / Math.max(1, report.actualModelCalls - 1)) * (width - padX * 2);
-  const y = (point: UsageProgressionPoint): number => plotBottom - ((Number(point.contextTokens) - min) / range) * (plotBottom - padTop);
-  const segments: UsageProgressionPoint[][] = [];
-  let current: UsageProgressionPoint[] = [];
-  for (const point of points) {
-    if (point.boundary === "model-change" && current.length) {
+const USAGE_WINDOW_SIZE = 60;
+const USAGE_MIN_WINDOW_SIZE = 10;
+type UsageEntry = { point: UsageProgressionPoint; position: number };
+
+function usageSegments(entries: UsageEntry[]): UsageEntry[][] {
+  const segments: UsageEntry[][] = [];
+  let current: UsageEntry[] = [];
+  for (const entry of entries) {
+    if (entry.point.boundary === "model-change" && current.length) {
       segments.push(current);
       current = [];
     }
-    current.push(point);
+    if (Number.isFinite(entry.point.contextTokens)) current.push(entry);
   }
   if (current.length) segments.push(current);
-  const markers = points.filter((point, index) => index === 0 || index === points.length - 1 || ["shrink", "model-change"].includes(point.boundary));
-  const promptMarkers = points.filter((point) => point.promptBoundary === true);
-  const turnRailY = plotBottom + 14;
-  const timed = points.filter((point) => formatUsageStamp(point.timestamp));
-  const timeRange = timed.length > 1
-    ? `${formatUsageStamp(timed[0].timestamp)} → ${formatUsageStamp(timed.at(-1)?.timestamp)} UTC · observed response time`
-    : timed.length === 1 ? `${formatUsageStamp(timed[0].timestamp)} UTC · one observed response time` : "Response timestamps unavailable";
-  return <div className="usage-context-chart">
-    <div className="chart-toolbar"><span className="chart-basis">Response order</span><span className="chart-range">{timeRange}</span></div>
-    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Context progression from ${formatTokenCount(Number(points[0].contextTokens))} to ${formatTokenCount(Number(points.at(-1)?.contextTokens))} tokens`}>
-      <title>Absolute prompt-context snapshots across unique model responses</title>
-      {[0, 0.5, 1].map((ratio) => { const lineY = padTop + ratio * (plotBottom - padTop); return <line className="usage-chart-grid" x1={padX} x2={width - padX} y1={lineY} y2={lineY} key={ratio} />; })}
-      {points.filter((point) => point.boundary === "model-change").map((point) => <line className="usage-chart-boundary" x1={x(point)} x2={x(point)} y1={padTop} y2={plotBottom} key={`boundary-${point.id}`} />)}
-      {segments.filter((segment) => segment.length > 1).map((segment, index) => <polyline className="usage-chart-line" points={segment.map((point) => `${x(point)},${y(point)}`).join(" ")} key={`segment-${index}`} />)}
-      {markers.map((point) => { const markerDetail = usagePointDetail(point); const pointX = x(point); const pointY = y(point); return <g className="usage-chart-key-marker" role="button" tabIndex={0} aria-label={`${markerDetail.primary}. ${markerDetail.secondary}`} onMouseEnter={() => setDetail(markerDetail)} onFocus={() => setDetail(markerDetail)} onClick={() => setDetail(markerDetail)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setDetail(markerDetail); } }} key={point.id}><rect className="usage-chart-point-hit" x={pointX - 8} y={pointY - 8} width="16" height="16" />{point.boundary === "shrink" ? <rect className="usage-chart-point boundary-shrink" x={pointX - 4} y={pointY - 4} width="8" height="8" transform={`rotate(45 ${pointX} ${pointY})`} /> : point.boundary === "model-change" ? <rect className="usage-chart-point boundary-model-change" x={pointX - 4} y={pointY - 4} width="8" height="8" /> : <circle className={`usage-chart-point boundary-${point.boundary}`} cx={pointX} cy={pointY} r="4" />}</g>; })}
-      {promptMarkers.map((point) => { const markerDetail = usagePointDetail(point); const pointX = x(point); return <g className="usage-chart-turn" role="button" tabIndex={0} aria-label={`${markerDetail.primary}. ${markerDetail.secondary}`} onMouseEnter={() => setDetail(markerDetail)} onFocus={() => setDetail(markerDetail)} onClick={() => setDetail(markerDetail)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setDetail(markerDetail); } }} key={`prompt-${point.id}`}><rect className="usage-chart-turn-hit" x={pointX - 7} y={turnRailY - 8} width="14" height="16" /><line className="usage-chart-turn-marker" x1={pointX} x2={pointX} y1={turnRailY - 6} y2={turnRailY + 6} /></g>; })}
-      <text x={padX} y="14">{formatTokenCount(max)}</text><text x={padX} y={height - 4}>{formatTokenCount(min)}</text>
-    </svg>
-    <div className="usage-chart-legend"><span><i className="growth" />Context snapshot</span><span><i className="prompt" />User turn boundary</span><span><i className="shrink" />Context shrink/reset</span><span><i className="boundary" />Model boundary</span></div>
-    <div className="usage-chart-inspector" aria-live="polite"><strong>{detail?.primary ?? "Focus, hover, or click a marker"}</strong><span>{detail?.secondary ?? "Turn boundaries and context events expose observed time, context change, and linked prompt evidence."}</span></div>
+  return segments;
+}
+
+function usageTurnEntries(entries: UsageEntry[]): UsageEntry[] {
+  const turns = new Set<number>();
+  return entries.filter((entry) => {
+    if (Number.isFinite(entry.point.turnIndex)) {
+      const turn = Number(entry.point.turnIndex);
+      if (turns.has(turn)) return false;
+      turns.add(turn);
+      return true;
+    }
+    return Boolean(entry.point.promptBoundary);
+  });
+}
+
+function usageStepPath(segment: UsageEntry[], x: (entry: UsageEntry) => number, y: (entry: UsageEntry) => number): string {
+  return segment.reduce((path, entry, index) => {
+    const pointX = x(entry);
+    const pointY = y(entry);
+    return index === 0 ? `M${pointX} ${pointY}` : `${path} H${pointX} V${pointY}`;
+  }, "");
+}
+
+function usageBoundaryLabel(point: UsageProgressionPoint): string {
+  if (point.boundary === "shrink") return "Context shrink/reset";
+  if (point.boundary === "model-change") return "Model boundary";
+  if (point.boundary === "baseline") return "Baseline";
+  return "Within context cycle";
+}
+
+function compactReuse(reuse: CacheReuse | undefined): string {
+  if (!reuse) return "—";
+  if (reuse.status === "observed" && Number.isFinite(reuse.reusePercent)) return `${reuse.reusePercent}% reused`;
+  return `${formatTokenCount(reuse.cacheReadTokens)} cached`;
+}
+
+function ResponseDetails({ point, prompt, onStep }: { point?: UsageProgressionPoint; prompt: string | null; onStep(delta: number): void }): React.JSX.Element {
+  if (!point) return <aside className="usage-response-detail" aria-live="polite"><strong>Response details</strong><p>Select a chart point or response row to inspect its bounded usage evidence.</p></aside>;
+  const facts = [
+    ["Context", Number.isFinite(point.contextTokens) ? formatTokenCount(Number(point.contextTokens)) : "not observed"],
+    ["Δ context", Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(Number(point.contextDeltaTokens)) : "not comparable"],
+    ["Output", Number.isFinite(point.outputTokens) ? formatTokenCount(Number(point.outputTokens)) : "not observed"],
+    ["Input reuse", compactReuse(point.cacheReuse)],
+    ["Boundary", usageBoundaryLabel(point)],
+  ];
+  return <aside className="usage-response-detail" aria-live="polite"><header><span>Response details</span><strong>Response {point.index}</strong><small>{formatUsageStamp(point.timestamp) ? `${formatUsageStamp(point.timestamp)} UTC` : "response time unavailable"}</small></header><dl>{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{prompt && <div className="usage-response-prompt"><span>Linked user prompt{Number.isFinite(point.turnIndex) ? ` · T${point.turnIndex}` : ""}</span><p title={prompt}>{prompt}</p></div>}<div className="usage-response-actions"><button type="button" onClick={() => onStep(-1)}>Previous</button><button type="button" onClick={() => onStep(1)}>Next</button></div></aside>;
+}
+
+function UsageExplorer({ session, report }: { session: Session; report: UsageReport }): React.JSX.Element {
+  const points = report.progression;
+  const defaultSize = Math.min(USAGE_WINDOW_SIZE, points.length);
+  const minSize = Math.min(USAGE_MIN_WINDOW_SIZE, points.length);
+  const lastCycleBoundary = points.reduce((latest, point, index) => ["shrink", "model-change"].includes(point.boundary) ? index : latest, -1);
+  const defaultStart = lastCycleBoundary >= 0 && points.length - lastCycleBoundary >= minSize ? lastCycleBoundary : Math.max(0, points.length - defaultSize);
+  const [windowRange, setWindowRange] = useState({ start: defaultStart, end: points.length });
+  const start = windowRange.start;
+  const end = windowRange.end;
+  const size = end - start;
+  const maxStart = Math.max(0, points.length - size);
+  const [selected, setSelected] = useState(points.length - 1);
+  const tableRef = useRef<HTMLDivElement>(null);
+  const selectedRowRef = useRef<HTMLLIElement>(null);
+  const brushDrag = useRef<{ edge: "start" | "end"; rect: DOMRect; pointerId: number } | null>(null);
+  useEffect(() => {
+    setWindowRange((current) => {
+      let nextStart = Math.max(0, Math.min(Math.max(0, points.length - minSize), current.start));
+      let nextEnd = Math.max(nextStart, Math.min(points.length, current.end));
+      if (nextEnd - nextStart < minSize) {
+        if (nextStart + minSize <= points.length) nextEnd = nextStart + minSize;
+        else nextStart = Math.max(0, nextEnd - minSize);
+      }
+      return { start: nextStart, end: nextEnd };
+    });
+    setSelected((current) => current >= -1 && current < points.length ? current : points.length - 1);
+  }, [minSize, points.length]);
+  useEffect(() => {
+    const table = tableRef.current;
+    const row = selectedRowRef.current;
+    if (!table || !row) return;
+    const rowRect = row.getBoundingClientRect();
+    const tableRect = table.getBoundingClientRect();
+    const tableBottom = tableRect.top + table.clientHeight;
+    const headerHeight = table.querySelector('.usage-response-head')?.getBoundingClientRect().height ?? 0;
+    if (rowRect.top < tableRect.top + headerHeight) table.scrollTop += rowRect.top - tableRect.top - headerHeight;
+    else if (rowRect.bottom > tableBottom) table.scrollTop += rowRect.bottom - tableBottom;
+  }, [selected, start, end]);
+  if (!points.length) return <p className="usage-report-unavailable">Per-response context snapshots were not retained.</p>;
+  const entries = points.map((point, position) => ({ point, position }));
+  const visible = entries.slice(start, end);
+  const numeric = entries.filter((entry) => Number.isFinite(entry.point.contextTokens));
+  const values = numeric.map((entry) => Number(entry.point.contextTokens));
+  const overviewMin = values.length ? Math.min(...values) : 0;
+  const overviewMax = values.length ? Math.max(...values) : 1;
+  const overviewRange = Math.max(1, overviewMax - overviewMin);
+  const focusValues = visible.map((entry) => Number(entry.point.contextTokens)).filter(Number.isFinite);
+  const focusMin = focusValues.length ? Math.min(...focusValues) : overviewMin;
+  const focusMax = focusValues.length ? Math.max(...focusValues) : overviewMax;
+  const focusRange = Math.max(1, focusMax - focusMin);
+  const width = 960;
+  const padX = 28;
+  const overviewTop = 34;
+  const overviewBottom = 78;
+  const focusTop = 30;
+  const focusBottom = 132;
+  const overviewX = (entry: UsageEntry): number => padX + (entry.position / Math.max(1, entries.length - 1)) * (width - padX * 2);
+  const focusX = (entry: UsageEntry): number => padX + ((entry.position - start) / Math.max(1, visible.length - 1)) * (width - padX * 2);
+  const overviewY = (entry: UsageEntry): number => overviewBottom - ((Number(entry.point.contextTokens) - overviewMin) / overviewRange) * (overviewBottom - overviewTop);
+  const focusY = (entry: UsageEntry): number => focusBottom - ((Number(entry.point.contextTokens) - focusMin) / focusRange) * (focusBottom - focusTop);
+  const selectedEntry = entries[selected];
+  const selectedVisible = selectedEntry && selectedEntry.position >= start && selectedEntry.position < end && Number.isFinite(selectedEntry.point.contextTokens);
+  const processedVisible = visible.some((entry) => Number.isFinite(entry.point.processedTokens));
+  const first = visible[0]?.point.index;
+  const last = visible.at(-1)?.point.index;
+  const timed = entries.filter((entry) => formatUsageStamp(entry.point.timestamp));
+  const timeRange = timed.length > 1 ? `${formatUsageStamp(timed[0].point.timestamp)} → ${formatUsageStamp(timed.at(-1)?.point.timestamp)} UTC` : "Response timestamps unavailable";
+  const brushX = overviewX(entries[start]);
+  const brushEnd = overviewX(entries[Math.min(entries.length - 1, end - 1)]);
+  const promptEntries = usageTurnEntries(entries);
+
+  function select(position: number, reveal = true): void {
+    const next = Math.max(0, Math.min(points.length - 1, position));
+    setSelected(next);
+    if (!reveal) return;
+    if (next < start) setWindowRange({ start: next, end: Math.min(points.length, next + size) });
+    else if (next >= end) {
+      const nextEnd = Math.min(points.length, next + 1);
+      setWindowRange({ start: Math.max(0, nextEnd - size), end: nextEnd });
+    }
+  }
+  function move(delta: number): void { select((selected >= 0 ? selected : start) + delta); }
+  function windowAt(next: number): void {
+    const clamped = Math.max(0, Math.min(maxStart, Math.round(next)));
+    const nextEnd = clamped + size;
+    setWindowRange({ start: clamped, end: nextEnd });
+    setSelected((current) => current < clamped ? clamped : current >= nextEnd ? nextEnd - 1 : current);
+  }
+  function windowEdgeAt(edge: "start" | "end", value: number): void {
+    const nextStart = edge === "start" ? Math.max(0, Math.min(end - minSize, Math.round(value))) : start;
+    const nextEnd = edge === "end" ? Math.min(points.length, Math.max(start + minSize, Math.round(value))) : end;
+    setWindowRange({ start: nextStart, end: nextEnd });
+    setSelected((current) => current < nextStart ? nextStart : current >= nextEnd ? nextEnd - 1 : current);
+  }
+  function beginBrushDrag(edge: "start" | "end", event: React.PointerEvent<SVGRectElement>): void {
+    const surface = event.currentTarget.ownerSVGElement?.querySelector<SVGRectElement>(".usage-overview-surface");
+    if (!surface) return;
+    brushDrag.current = { edge, rect: surface.getBoundingClientRect(), pointerId: event.pointerId };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  function moveBrushDrag(event: React.PointerEvent<SVGRectElement>): void {
+    const drag = brushDrag.current;
+    if (!drag) return;
+    const ratio = Math.max(0, Math.min(1, (event.clientX - drag.rect.left) / Math.max(1, drag.rect.width)));
+    const position = Math.round(ratio * Math.max(0, points.length - 1));
+    windowEdgeAt(drag.edge, drag.edge === "end" ? position + 1 : position);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  function endBrushDrag(event: React.PointerEvent<SVGRectElement>): void {
+    if (brushDrag.current?.pointerId === event.pointerId) brushDrag.current = null;
+    event.stopPropagation();
+  }
+  function positionAt(clientX: number, rect: DOMRect, focusWindow: boolean): number {
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+    return (focusWindow ? start : 0) + Math.round(ratio * Math.max(0, (focusWindow ? size : points.length) - 1));
+  }
+  function onExplorerKeyDown(event: React.KeyboardEvent): void {
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") move(-1);
+    else if (event.key === "ArrowRight" || event.key === "ArrowDown") move(1);
+    else if (event.key === "Escape") setSelected(-1);
+    else if (event.key === "Enter") select(selected >= 0 ? selected : start);
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  function onOverviewKeyDown(event: React.KeyboardEvent): void {
+    if (!promptEntries.length) return;
+    const selectedTurn = selectedEntry?.point.turnIndex;
+    let current = promptEntries.findIndex((entry) => entry.position === selected
+      || Number.isFinite(selectedTurn) && entry.point.turnIndex === selectedTurn);
+    if (current < 0) {
+      const next = promptEntries.findIndex((entry) => entry.position > selected);
+      current = next > 0 ? next - 1 : next === 0 ? 0 : promptEntries.length - 1;
+    }
+    let next = current;
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = Math.max(0, current - 1);
+    else if (event.key === "ArrowRight" || event.key === "ArrowDown") next = Math.min(promptEntries.length - 1, current + 1);
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = promptEntries.length - 1;
+    else if (event.key === "Escape") { setSelected(-1); event.preventDefault(); event.stopPropagation(); return; }
+    else if (event.key !== "Enter") return;
+    const position = promptEntries[next].position;
+    windowAt(position - Math.floor(size / 2));
+    setSelected(position);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  return <div className="usage-linked-explorer">
+    <div className="usage-overview"><div className="chart-toolbar"><span className="chart-basis">Overview · {entries.length} responses · {promptEntries.length} linked prompts</span><span className="chart-range">{timeRange}</span></div><svg data-usage-overview-chart tabIndex={0} viewBox={`0 0 ${width} 106`} role="img" aria-label="Complete retained context progression. Use Left and Right arrows to move between linked prompts." onKeyDown={onOverviewKeyDown} onClick={(event) => { const position = positionAt(event.clientX, event.currentTarget.getBoundingClientRect(), false); windowAt(position - Math.floor(size / 2)); select(position, false); }}><rect className="usage-overview-surface" x={padX} y="8" width={width - padX * 2} height="88" /><rect className="usage-overview-brush" x={brushX} y="8" width={Math.max(6, brushEnd - brushX)} height="88" />{usageSegments(entries).filter((segment) => segment.length > 1).map((segment, index) => <path className="usage-chart-line" d={usageStepPath(segment, overviewX, overviewY)} key={`overview-${index}`} />)}{promptEntries.map((entry) => { const markerX = overviewX(entry); const label = Number.isFinite(entry.point.turnIndex) ? `T${entry.point.turnIndex}` : "P"; const chipWidth = Math.max(18, 10 + label.length * 5); const halfWidth = chipWidth / 2; const chipX = Math.max(padX + halfWidth, Math.min(width - padX - halfWidth, markerX)); const tooltipWidth = 250; const tooltipX = Math.max(padX, Math.min(width - padX - tooltipWidth, markerX - tooltipWidth / 2)); const hitX = markerX - 7; const hitRight = markerX + 7; const detail = usagePointDetail(entry.point, retainedUsagePrompt(session, entry.point) ?? undefined); return <g className={`usage-overview-turn-marker${entry.position === selected || Number.isFinite(selectedEntry?.point.turnIndex) && entry.point.turnIndex === selectedEntry?.point.turnIndex ? " selected" : ""}`} data-usage-overview-turn-marker data-usage-response-position={entry.position} aria-label={`${detail.primary}. ${detail.secondary}`} onClick={(event) => { event.stopPropagation(); windowAt(entry.position - Math.floor(size / 2)); setSelected(entry.position); }} key={`overview-turn-${entry.point.turnIndex ?? entry.point.id}`}><title>{detail.primary}. {detail.secondary}</title><rect className="usage-overview-turn-hit" x={hitX} y="16" width={hitRight - hitX} height="34" /><line className="usage-overview-turn" x1={markerX} x2={markerX} y1="24" y2="78" /><rect className="usage-overview-turn-chip" x={chipX - halfWidth} y="17" width={chipWidth} height="12" rx="2" /><text className="usage-overview-turn-label" x={chipX} y="26" textAnchor="middle">{label}</text><foreignObject className="usage-overview-prompt-tooltip" x={tooltipX} y="12" width={tooltipWidth} height="38"><div role="tooltip"><strong>{detail.primary}</strong><span>{detail.secondary}</span></div></foreignObject></g>; })}{entries.filter((entry) => ["shrink", "model-change"].includes(entry.point.boundary)).map((entry) => <path className={`usage-overview-event boundary-${entry.point.boundary}`} d={`M${overviewX(entry)} 82 l4 4 -4 4 -4 -4z`} key={`overview-event-${entry.point.id}`} />)}<rect className="usage-overview-handle start" x={brushX - 4} y="52" width="8" height="44" onPointerDown={(event) => beginBrushDrag("start", event)} onPointerMove={moveBrushDrag} onPointerUp={endBrushDrag} onClick={(event) => event.stopPropagation()} /><rect className="usage-overview-handle end" x={brushEnd - 4} y="52" width="8" height="44" onPointerDown={(event) => beginBrushDrag("end", event)} onPointerMove={moveBrushDrag} onPointerUp={endBrushDrag} onClick={(event) => event.stopPropagation()} /><text x={padX} y="14">{formatTokenCount(overviewMax)}</text><text x={padX} y="102">{formatTokenCount(overviewMin)}</text></svg></div>
+    <div className="usage-window-toolbar"><div className="usage-window-summary"><strong>Responses {first}–{last}</strong><span>{visible.length} of {entries.length}</span></div><button type="button" disabled={start === 0} onClick={() => windowAt(start - size)}>Previous window</button><div className="usage-window-edge-controls"><label>Start<input type="range" min="0" max={Math.max(0, end - minSize)} value={start} aria-label="Visible response window start" onChange={(event) => windowEdgeAt("start", Number(event.target.value))} /></label><label>End<input type="range" min={Math.min(entries.length, start + minSize)} max={entries.length} value={end} aria-label="Visible response window end" onChange={(event) => windowEdgeAt("end", Number(event.target.value))} /></label></div><button type="button" disabled={end === entries.length} onClick={() => windowAt(start + size)}>Next window</button></div>
+    <div className="usage-focus-layout"><div className="usage-context-chart"><div className="chart-toolbar"><span className="chart-basis">Focus · Responses {first}–{last}</span><span className="chart-range">Arrow keys move · Enter selects · Esc clears</span></div><svg className="usage-focus-chart" tabIndex={0} viewBox={`0 0 ${width} 180`} role="img" aria-label={`Focused context progression for responses ${first} through ${last}`} onKeyDown={onExplorerKeyDown} onClick={(event) => select(positionAt(event.clientX, event.currentTarget.getBoundingClientRect(), true))}><rect className="usage-focus-surface" x={padX} y="8" width={width - padX * 2} height="158" />{[0, 0.5, 1].map((ratio) => { const lineY = focusTop + ratio * (focusBottom - focusTop); return <line className="usage-chart-grid" x1={padX} x2={width - padX} y1={lineY} y2={lineY} key={ratio} />; })}{usageSegments(visible).filter((segment) => segment.length > 1).map((segment, index) => <path className="usage-chart-line" d={usageStepPath(segment, focusX, focusY)} key={`focus-${index}`} />)}{selectedVisible && <><line className="usage-selection-line" x1={focusX(selectedEntry)} x2={focusX(selectedEntry)} y1={focusTop} y2="164" /><circle className="usage-selection-point" cx={focusX(selectedEntry)} cy={focusY(selectedEntry)} r="5" /></>}{visible.filter((entry) => ["shrink", "model-change"].includes(entry.point.boundary)).map((entry) => { const markerX = focusX(entry); const detail = usagePointDetail(entry.point, retainedUsagePrompt(session, entry.point) ?? undefined); return <g aria-label={`${detail.primary}. ${detail.secondary}`} onClick={(event) => { event.stopPropagation(); select(entry.position); }} key={`focus-event-${entry.point.id}`}><rect className="usage-chart-point-hit" x={markerX - 8} y="140" width="16" height="22" />{entry.point.boundary === "shrink" ? <path className="usage-focus-event boundary-shrink" d={`M${markerX} 147 l4 4 -4 4 -4 -4z`} /> : <rect className="usage-focus-event boundary-model-change" x={markerX - 4} y="147" width="8" height="8" />}</g>; })}<text x={padX} y={focusTop - 4}>{formatTokenCount(focusMax)}</text><text x={padX} y="172">{formatTokenCount(focusMin)}</text></svg><div className="usage-chart-legend"><span><i className="growth" />Context snapshot</span><span><i className="shrink" />Context shrink/reset</span><span><i className="boundary" />Model boundary</span></div></div><ResponseDetails point={selectedEntry?.point} prompt={selectedEntry ? retainedUsagePrompt(session, selectedEntry.point) : null} onStep={move} /></div>
+    <div className="usage-response-table" role="listbox" aria-label={`Responses ${first} through ${last}`} onKeyDown={onExplorerKeyDown} ref={tableRef}><div className={`usage-response-head${processedVisible ? " with-processed" : ""}`} aria-hidden="true"><span>Response</span><span>Time</span><span className="numeric-cell">Context</span><span className="numeric-cell">Δ context</span><span>Reuse</span>{processedVisible && <span className="numeric-cell">Processed</span>}<span className="numeric-cell">Output</span></div><ol>{visible.map((entry) => { const point = entry.point; const isSelected = entry.position === selected; return <li className={`usage-response-row${processedVisible ? " with-processed" : ""}${isSelected ? " selected" : ""}`} role="option" aria-selected={isSelected} tabIndex={isSelected || selected < 0 && entry === visible[0] ? 0 : -1} onClick={() => select(entry.position)} ref={isSelected ? selectedRowRef : undefined} key={point.id}><strong>Response {point.index}</strong><span>{formatUsageStamp(point.timestamp) ?? "—"}</span><strong className="numeric-cell">{Number.isFinite(point.contextTokens) ? formatTokenCount(Number(point.contextTokens)) : "—"}</strong><span className="numeric-cell usage-delta">{Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(Number(point.contextDeltaTokens)) : "—"}</span><em>{compactReuse(point.cacheReuse)}</em>{processedVisible && <span className="numeric-cell">{Number.isFinite(point.processedTokens) ? formatTokenCount(Number(point.processedTokens)) : "—"}</span>}<span className="numeric-cell">{Number.isFinite(point.outputTokens) ? formatTokenCount(Number(point.outputTokens)) : "—"}</span></li>; })}</ol></div>
   </div>;
 }
 
@@ -539,64 +724,6 @@ function CacheReuseSummary({ reuse }: { reuse: CacheReuse }): React.JSX.Element 
   return <div className="usage-summary-reuse"><div className="usage-context-meta"><strong>Input reuse</strong><span>{headline}</span></div><CacheReuseBar reuse={reuse} /><p>{detail}</p></div>;
 }
 
-function InputReuseSection({ reuse }: { reuse: CacheReuse | undefined }): React.JSX.Element | null {
-  if (!reuse) return null;
-  const observed = reuse.status === "observed" && Number.isFinite(reuse.promptInputTokens);
-  const cacheCreation = Number.isFinite(reuse.cacheCreationTokens) ? Number(reuse.cacheCreationTokens) : null;
-  const otherUncached = observed && Number(cacheCreation) > 0 ? Math.max(0, Number(reuse.uncachedInputTokens) - Number(cacheCreation)) : Number(reuse.uncachedInputTokens);
-  const facts = [
-    { label: "Cached input", value: reuse.cacheReadTokens, kind: "cached" },
-    ...(cacheCreation !== null ? [{ label: "Cache creation", value: cacheCreation, kind: "created" }] : []),
-    ...(observed ? [{ label: Number(cacheCreation) > 0 ? "Other uncached input" : "Uncached input", value: otherUncached, kind: "uncached" }] : []),
-  ];
-  const relation = reuse.accountingMode === "included-in-input" ? "Cache reads are included in the provider input total."
-    : reuse.accountingMode === "separate-input-lane" ? "Cache reads and cache creation are separate provider input lanes."
-      : "The provider relationship between input and cache counters was not observed.";
-  const status = observed ? `${reuse.reusePercent}% reused` : reuse.status === "inconsistent" ? "rate unavailable" : `${formatTokenCount(reuse.cacheReadTokens)} cached`;
-  return <section className="usage-report-section usage-reuse-section" data-cache-reuse-status={reuse.status}>
-    <header><div><h4>Input reuse</h4><p>Cached input still occupies context. Provider caching can reduce cost or latency, but this report does not estimate savings.</p></div><strong>{status}</strong></header>
-    <CacheReuseBar reuse={reuse} detailed />
-    <ul className="usage-reuse-list">{facts.map((fact) => <li key={fact.kind}><i className={`reuse-${fact.kind}`} /><span>{fact.label}</span><strong>{formatTokenCount(fact.value)}</strong>{observed && <small>{Math.round((fact.value / Number(reuse.promptInputTokens)) * 1000) / 10}%</small>}</li>)}</ul>
-    <p className="usage-reuse-note">{relation}{reuse.status === "inconsistent" ? " The observed values are retained, but no rate is derived." : ""}</p>
-  </section>;
-}
-
-function UsageProgressRows({ report }: { report: UsageReport }): React.JSX.Element {
-  if (!report.progression.length) return <p className="usage-report-unavailable">Per-response context snapshots were not retained.</p>;
-  const visible = report.progression.slice(-20);
-  const total = report.progressionTotalCount || report.actualModelCalls || report.progression.length;
-  const scope = report.progressionTruncated
-    ? `Latest ${visible.length} of ${report.progression.length} retained points, sampled from ${total} unique model responses`
-    : `Latest ${visible.length} of ${total} unique model responses`;
-  const seenTurns = new Set<number>();
-  return <details className="usage-progress-details" open>
-    <summary>{scope}</summary>
-    <div className="usage-progress-head" aria-hidden="true"><span>Response</span><span>Context</span><span>Δ context</span><span>Processed</span><span>Output</span></div>
-    <ol className="usage-progress-list">{visible.map((point) => {
-      const stamp = formatUsageStamp(point.timestamp);
-      const turnIndex = Number.isFinite(point.turnIndex) ? Number(point.turnIndex) : null;
-      const firstVisibleForTurn = turnIndex !== null && !seenTurns.has(turnIndex);
-      if (turnIndex !== null) seenTurns.add(turnIndex);
-      const prompt = point.promptBoundary === true ? point.userPrompt?.replace(/\s+/gu, " ").trim() : undefined;
-      const turnContext = firstVisibleForTurn
-        ? prompt ? `Turn ${turnIndex} · ${prompt}` : `Turn ${turnIndex} continued`
-        : undefined;
-      return <li className={`boundary-${point.boundary}`} title={point.model} key={point.id}>
-        <div>
-          <strong>Response {point.index}</strong>
-          <span>{stamp ? `${stamp} UTC` : "response time unavailable"}</span>
-          {turnContext && <small className={`usage-row-turn ${prompt ? "usage-row-turn-boundary" : "usage-row-turn-continuation"}`} title={turnContext}>{turnContext}</small>}
-          {point.cacheReuse && <em className="usage-row-reuse">{formatCacheReuse(point.cacheReuse)}</em>}
-        </div>
-        <strong>{Number.isFinite(point.contextTokens) ? formatTokenCount(Number(point.contextTokens)) : "—"}</strong>
-        <span className="usage-delta">{Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(Number(point.contextDeltaTokens)) : point.boundary === "model-change" ? "model boundary" : point.boundary}</span>
-        <span>{Number.isFinite(point.processedTokens) ? formatTokenCount(Number(point.processedTokens)) : "—"}</span>
-        <span>{Number.isFinite(point.outputTokens) ? formatTokenCount(Number(point.outputTokens)) : "—"}</span>
-      </li>;
-    })}</ol>
-  </details>;
-}
-
 function UsageContextSummary({ session, onViewReport }: { session: Session; onViewReport(): void }): React.JSX.Element {
   const usage = session.tokenUsage;
   const context = usageContextPresentation(session);
@@ -623,14 +750,74 @@ function UsageContextSummary({ session, onViewReport }: { session: Session; onVi
   </section>;
 }
 
+function UsageEvidenceDetails({ session, report }: { session: Session; report: UsageReport }): React.JSX.Element {
+  const usage = session.tokenUsage;
+  const runtime = session.runtime;
+  const provider = runtime?.modelProvider ?? session.platform ?? "not observed";
+  const contextBasis = session.contextManifest?.basis ?? "not observed";
+  const source = usage?.source ?? session.contextManifest?.source ?? "not observed";
+  const coverage = usage?.coverage ?? session.contextManifest?.status ?? "unobserved";
+  const groups: Array<{ label: string; facts: Array<[string, string | number]> }> = [
+    { label: "Observability", facts: [["Coverage", coverage], ["Time basis", session.timestampBasis ?? "unobserved"], ["Raw context", "omitted"]] },
+    { label: "Runtime", facts: [["Provider", provider], ["Effort", runtime?.effort ?? "not observed"], ["CLI", runtime?.cliVersion ?? "not observed"]] },
+    { label: "Accounting", facts: [["Context basis", contextBasis], ["Processed basis", report.processedTokensBasis ?? "not derived"], ...(report.processedCoverage ? [["Processed coverage", report.processedCoverage] as [string, string]] : [])] },
+    { label: "Provenance", facts: [["Evidence source", source], ...(report.duplicateRecordsCollapsed > 0 ? [["Duplicates collapsed", report.duplicateRecordsCollapsed] as [string, number], ["Conflicting duplicates", report.conflictingDuplicateRecords] as [string, number]] : [])] },
+  ];
+  return <section className="usage-report-evidence" aria-label="Evidence details">
+    <div className="usage-evidence-groups">{groups.map((group) => <div className="usage-evidence-group" key={group.label}><strong className="usage-evidence-group-title">{group.label}</strong><dl className="usage-report-facts">{group.facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></div>)}</div>
+  </section>;
+}
+
+function UsageReportOccupancyTile({ session, report, context }: { session: Session; report: UsageReport; context: ReturnType<typeof usageContextPresentation> }): React.JSX.Element {
+  const compactionCount = Number(session.contextManifest?.compactionCount) || 0;
+  const boundaryLabel = compactionCount > 0
+    ? `${compactionCount} compaction${compactionCount === 1 ? "" : "s"}`
+    : report.contextResetCount > 0 ? `${report.contextResetCount} reset${report.contextResetCount === 1 ? "" : "s"}` : null;
+  const boundaryTitle = compactionCount > 0
+    ? `Provider reported ${compactionCount} compaction boundar${compactionCount === 1 ? "y" : "ies"}`
+    : report.contextResetCount > 0 ? `${report.contextResetCount} observed context shrink/reset${report.contextResetCount === 1 ? "" : "s"}` : undefined;
+  const value = context.hasUsedTokens ? formatTokenCount(Number(report.currentContextTokens ?? context.usedTokens)) : context.hasPercentFull ? `${context.percentFull}%` : "—";
+  const label = context.hasUsedTokens ? "Latest context" : context.hasPercentFull ? "Latest occupancy" : "Occupancy unavailable";
+  const detail = context.hasContextWindow ? `${formatTokenCount(context.usedTokens)} / ${formatTokenCount(context.windowTokens)} · ${context.percentFull}% full`
+    : context.hasPercentFull ? "Window size not observed" : context.hasUsedTokens ? "Context window not observed" : "No observed context evidence";
+  return <div className="usage-report-occupancy"><strong>{value}</strong><div className="usage-summary-tile-heading"><span>{label}</span>{boundaryLabel && <em className="usage-summary-compactions" title={boundaryTitle}>{boundaryLabel}</em>}</div><small>{detail}</small>{context.hasContextWindow ? <ContextUsageBar segments={context.segments} unusedTokens={context.unusedTokens} label={`${context.percentFull}% of the observed context window is full`} /> : context.hasPercentFull ? <ContextOccupancyBar percentFull={context.percentFull} label={`${context.percentFull}% context occupancy observed; window size unavailable`} /> : null}</div>;
+}
+
+function UsageReportReuseTile({ reuse }: { reuse: CacheReuse | undefined }): React.JSX.Element {
+  const observed = reuse?.status === "observed" && Number.isFinite(reuse.promptInputTokens);
+  const value = !reuse ? "not observed" : observed ? `${reuse.reusePercent}%` : "rate unavailable";
+  const detail = !reuse ? "No observed cache evidence" : observed
+    ? `${formatTokenCount(reuse.cacheReadTokens)} cached · ${formatTokenCount(Number(reuse.uncachedInputTokens))} uncached`
+    : `${formatTokenCount(reuse.cacheReadTokens)} cached · rate unavailable`;
+  return <div className="usage-report-reuse-tile"><dt>Input reused</dt><dd><strong>{value}</strong>{reuse && <CacheReuseBar reuse={reuse} />}<small>{detail}</small></dd></div>;
+}
+
+function ContextStructure({ session }: { session: Session }): React.JSX.Element {
+  const layers = (session.contextManifest?.layers ?? []).filter((layer) => Number.isFinite(layer.itemCount) && layer.itemCount > 0);
+  const total = layers.reduce((sum, layer) => sum + layer.itemCount, 0);
+  return <section className="usage-report-section usage-structure-section">
+    <header><div><h4>Context structure</h4><p>Observed layer item counts. Per-layer token sizes were not retained, so K values cannot be derived. Prompt text remains omitted.</p></div>{layers.length > 0 && <strong>{total} items · token sizes unavailable</strong>}</header>
+    {layers.length > 0 ? <>
+      <div className="usage-structure-bar" role="img" aria-label={`Context structure by observed item count: ${total} items across ${layers.length} layers`}>
+        {layers.map((layer, index) => <i className={`category-${index % 8}`} style={{ flexGrow: layer.itemCount }} title={`${layer.kind}: ${layer.itemCount} item${layer.itemCount === 1 ? "" : "s"}`} key={`${layer.kind}-${index}`} />)}
+      </div>
+      <ul className="usage-structure-list">{layers.map((layer, index) => <li key={`${layer.kind}-${index}`}><i className={`category-${index % 8}`} /><span>{layer.kind}</span><strong>×{layer.itemCount}</strong></li>)}</ul>
+    </> : <p className="usage-report-unavailable">Context-layer counts were not observed.</p>}
+  </section>;
+}
+
 function SessionUsageReport({ session }: { session: Session }): React.JSX.Element {
   const usage = session.tokenUsage;
   const context = usageContextPresentation(session);
   const report: UsageReport = session.usageReport ?? EMPTY_USAGE_REPORT;
   const cacheReuse = session.cacheReuse;
-  const runtime = session.runtime;
   const compactionCount = Number(session.contextManifest?.compactionCount) || 0;
   const compactionNote = compactionCount > 0 ? ` Provider reported ${compactionCount} compaction boundar${compactionCount === 1 ? "y" : "ies"}.` : "";
+  const progressionContexts = report.progression.map((point) => point.contextTokens).filter(Number.isFinite).map(Number);
+  const peakContextTokens = progressionContexts.length > 0 ? Math.max(...progressionContexts) : null;
+  const processedOrPeak = Number.isFinite(report.processedTokens)
+    ? { label: "Session processed", value: formatTokenCount(Number(report.processedTokens)) }
+    : { label: "Peak context", value: Number.isFinite(peakContextTokens) ? formatTokenCount(Number(peakContextTokens)) : "not observed" };
   const inputLabel = usage?.cacheAccountingMode === "included-in-input" ? "Total input (includes cached)"
     : usage?.cacheAccountingMode === "separate-input-lane" ? "Uncached input" : "Input (cache relationship unknown)";
   const accounting = [
@@ -642,12 +829,10 @@ function SessionUsageReport({ session }: { session: Session }): React.JSX.Elemen
     ["Reasoning", formatObservedTokenCount(usage?.reasoningOutputTokens)],
   ];
   return <section className="session-mode-panel usage-report" aria-label="Usage report">
-    <header className="usage-report-lead"><div><span className="usage-report-kicker">Read-only evidence</span><h3>Usage and Context Report</h3><p>Unique model responses, absolute context progression, and explicitly sourced token accounting for this Session.</p></div><div className="usage-report-occupancy">{context.hasContextWindow ? <><strong>{formatTokenCount(Number(report.currentContextTokens ?? context.usedTokens))}</strong><span>Current context</span><small>{formatTokenCount(context.usedTokens)} / {formatTokenCount(context.windowTokens)} · {context.percentFull}% full</small></> : context.hasPercentFull ? <><strong>{context.percentFull}%</strong><span>Full</span><small>Window size not observed</small></> : context.hasUsedTokens ? <><strong>{formatTokenCount(Number(report.currentContextTokens ?? context.usedTokens))}</strong><span>Current context</span><small>Context window not observed</small></> : <><strong>—</strong><span>Occupancy unavailable</span><small>No observed context evidence</small></>}</div><dl className="usage-report-lead-facts">{cacheReuse && <div><dt>Input reused</dt><dd>{cacheReuse.status === "observed" ? `${cacheReuse.reusePercent}%` : "rate unavailable"}</dd></div>}<div><dt>Baseline context</dt><dd>{Number.isFinite(report.baselineContextTokens) ? formatTokenCount(Number(report.baselineContextTokens)) : "not observed"}</dd></div><div><dt>Net context growth</dt><dd>{Number.isFinite(report.netContextDeltaTokens) ? formatSignedTokenCount(Number(report.netContextDeltaTokens)) : "not comparable"}</dd></div><div><dt>Session processed</dt><dd>{Number.isFinite(report.processedTokens) ? formatTokenCount(Number(report.processedTokens)) : "not derived"}</dd></div><div><dt>Model calls</dt><dd>{report.actualModelCalls || "not observed"}</dd></div><div><dt>Coverage</dt><dd>{usage?.coverage ?? session.contextManifest?.status ?? "unobserved"}</dd></div></dl></header>
-    <InputReuseSection reuse={cacheReuse} />
-    <section className="usage-report-section"><header><div><h4>Context progression</h4><p>Absolute prompt snapshots across unique model responses. Deltas are net context change, not consumption.{progressionBoundaryNote(report)}{compactionNote}</p></div><strong>{report.actualModelCalls} unique calls</strong></header><ContextProgressChart report={report} /><UsageProgressRows report={report} /></section>
+    <header className="usage-report-lead"><h3 className="visually-hidden">Usage report</h3><UsageEvidenceDetails session={session} report={report} /><aside className="usage-report-summary" aria-label="Session usage summary"><UsageReportOccupancyTile session={session} report={report} context={context} /><dl className="usage-report-lead-facts"><UsageReportReuseTile reuse={cacheReuse} /><div><dt>Baseline context</dt><dd>{Number.isFinite(report.baselineContextTokens) ? formatTokenCount(Number(report.baselineContextTokens)) : "not observed"}</dd></div><div><dt>Net vs baseline</dt><dd>{Number.isFinite(report.netContextDeltaTokens) ? formatSignedTokenCount(Number(report.netContextDeltaTokens)) : "not comparable"}</dd></div><div><dt>{processedOrPeak.label}</dt><dd>{processedOrPeak.value}</dd></div><div><dt>Model calls</dt><dd>{report.actualModelCalls || "not observed"}</dd></div></dl></aside></header>
+    <section className="usage-report-section"><header><div><h4>Context progression</h4><p>Absolute prompt snapshots across unique model responses. Deltas are net context change, not consumption.{progressionBoundaryNote(report)}{compactionNote}</p></div><strong>{report.actualModelCalls} unique calls</strong></header><UsageExplorer session={session} report={report} /></section>
     <ProcessingBreakdown session={session} report={report} />
-    <section className="usage-report-section"><header><div><h4>Current context composition</h4><p>Token-weighted categories within the current observed context, when the host retained them.</p></div>{context.hasPercentFull && <strong>{context.percentFull}% full</strong>}</header>{context.hasContextWindow ? <><ContextUsageBar segments={context.segments} unusedTokens={context.unusedTokens} label={`${context.percentFull}% of the observed context window is full`} />{context.hasCategoryBreakdown ? <ul className="usage-composition-list">{context.segments.map((segment, index) => <li key={`${segment.kind}-${segment.label}-${index}`}><i className={`category-${segment.colorIndex % 8}`} /><span>{segment.label}</span><strong>{formatTokenCount(segment.tokens)}</strong></li>)}<li className="usage-composition-unused"><i /><span>Unused context window</span><strong>{formatTokenCount(context.unusedTokens)}</strong></li></ul> : <p className="usage-report-unavailable">Category breakdown unavailable; only aggregate used and window totals were retained.</p>}</> : context.hasPercentFull ? <><ContextOccupancyBar percentFull={context.percentFull} label={`${context.percentFull}% context occupancy observed; window size unavailable`} /><p className="usage-report-unavailable">Absolute window and token-weighted categories were not retained.</p></> : context.hasUsedTokens ? <p className="usage-report-unavailable">{formatTokenCount(context.usedTokens)} prompt tokens were observed; the context window and token-weighted categories were not retained.</p> : <p className="usage-report-unavailable">Context-window occupancy and composition were not observed.</p>}</section>
-    <div className="usage-report-columns"><section className="usage-report-section"><header><div><h4>Provider accounting</h4><p>Observed provider counters. Labels preserve whether cached input is included or reported as a separate lane.</p></div></header><dl className="usage-report-facts">{accounting.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section><section className="usage-report-section"><header><div><h4>Context structure</h4><p>Counts only; prompt text remains omitted.</p></div></header><dl className="usage-report-facts">{session.contextManifest?.layers?.length ? session.contextManifest.layers.map((layer) => <div key={layer.kind}><dt>{layer.kind}</dt><dd>×{layer.itemCount}</dd></div>) : <div><dt>Layers</dt><dd>not observed</dd></div>}<div><dt>Compactions</dt><dd>{session.contextManifest ? session.contextManifest.compactionCount ?? 0 : "not observed"}</dd></div></dl></section><section className="usage-report-section"><header><div><h4>Evidence details</h4><p>Runtime, provenance, and normalization diagnostics retained with this Session.</p></div></header><dl className="usage-report-facts"><div><dt>Provider</dt><dd>{runtime?.modelProvider ?? session.platform ?? "not observed"}</dd></div><div><dt>Effort</dt><dd>{runtime?.effort ?? "not observed"}</dd></div><div><dt>CLI</dt><dd>{runtime?.cliVersion ?? "not observed"}</dd></div><div><dt>Time basis</dt><dd>{session.timestampBasis ?? "unobserved"}</dd></div><div><dt>Context basis</dt><dd>{session.contextManifest?.basis ?? "not observed"}</dd></div><div><dt>Processed basis</dt><dd>{report.processedTokensBasis ?? "not derived"}</dd></div>{report.processedCoverage ? <div><dt>Processed coverage</dt><dd>{report.processedCoverage}</dd></div> : null}<div><dt>Evidence source</dt><dd>{usage?.source ?? session.contextManifest?.source ?? "not observed"}</dd></div>{report.duplicateRecordsCollapsed > 0 && <><div><dt>Duplicates collapsed</dt><dd>{report.duplicateRecordsCollapsed}</dd></div><div><dt>Conflicting duplicates</dt><dd>{report.conflictingDuplicateRecords}</dd></div></>}<div><dt>Raw context</dt><dd>omitted</dd></div></dl></section></div>
+    <div className="usage-report-columns"><section className="usage-report-section"><header><div><h4>Provider accounting</h4><p>Observed provider counters. Labels preserve whether cached input is included or reported as a separate lane.</p></div></header><dl className="usage-report-facts">{accounting.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section><ContextStructure session={session} /></div>
   </section>;
 }
 
