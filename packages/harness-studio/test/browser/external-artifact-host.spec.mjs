@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { activateArtifactContribution } from "../../dist/server/artifacts/registry/artifact-provider-activation.js";
+import { canonicalArtifactInteractionJson } from "../../dist/contracts/artifact.js";
 import { startHarnessStudioServer } from "../../dist/server/server.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -137,6 +138,56 @@ test("mounts every provider-defined external renderer through the generic hosted
   expect(failures).toEqual([]);
 });
 
+test("carries an explicitly adopted Canvas draft through Provider proposal and Host receipt", async ({ page }) => {
+  const failures = [];
+  const mutationRequests = [];
+  page.on("console", (message) => { if (message.type() === "error") failures.push(message.text()); });
+  page.on("pageerror", (error) => failures.push(error.message));
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "POST" && (path.includes("/interaction/proposals") || path.includes("/decisions") || path.includes("/agent-runs"))) {
+      mutationRequests.push({ path, body: request.postDataJSON() });
+    }
+  });
+  const beforeCanvas = await readFile(join(root, "artifacts", "artifact-manifest-demo.canvas.tsx"), "utf8");
+  const beforeNative = await readFile(join(root, "artifacts", nativeDestinationFixture.label), "utf8");
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${server.url}/#/artifacts`);
+  const artifactsPane = page.getByRole("tab", { name: "Artifacts", exact: true });
+  if (await artifactsPane.isVisible() && await artifactsPane.getAttribute("aria-selected") !== "true") await artifactsPane.click();
+  await page.locator(".artifact-list-pane").getByRole("button", { name: /artifact-manifest-demo\.canvas\.tsx/u }).click();
+  const frame = page.frameLocator('iframe[title="Artifact preview: artifact-manifest-demo.canvas.tsx"]');
+  await frame.getByRole("button", { name: "Record steering draft" }).click();
+  const recordedPane = page.getByRole("complementary", { name: "Recorded Canvas intent" });
+  await expect(recordedPane).toContainText("Recorded, not executed");
+  await recordedPane.getByRole("button", { name: "Use draft in Collaboration" }).click();
+  const collaboration = page.getByRole("complementary", { name: "Artifact collaboration" });
+  await expect(collaboration.getByRole("textbox", { name: "Canvas steering" })).toHaveValue("Focus the order flow");
+  await collaboration.getByRole("button", { name: "Prepare with Provider" }).click();
+  await expect(collaboration.getByRole("heading", { name: "Provider proposal" })).toBeVisible();
+  await expect(collaboration).toContainText("Canvas origin");
+  await expect(collaboration).toContainText("Canvas source");
+  expect(mutationRequests).toHaveLength(1);
+  expect(mutationRequests[0]).toMatchObject({
+    path: expect.stringContaining("/interaction/proposals"),
+    body: {
+      targetAddress: "native://target/orders",
+      steering: { kind: "canvas-steering", message: "Focus the order flow" },
+      originRef: { kind: "HarnessStudioArtifactHostedIntentOriginRefV1", originId: expect.stringMatching(/^origin:/u) },
+    },
+  });
+  await collaboration.getByRole("button", { name: "Reject" }).click();
+  await expect(collaboration.getByRole("heading", { name: "Transition receipt" })).toBeVisible();
+  await expect(collaboration).toContainText("Provenance");
+  await expect(collaboration).toContainText("rejected");
+  expect(mutationRequests.filter((entry) => entry.path.includes("/interaction/proposals"))).toHaveLength(2);
+  expect(mutationRequests.filter((entry) => entry.path.includes("/decisions"))).toHaveLength(1);
+  expect(mutationRequests.filter((entry) => entry.path.includes("/agent-runs"))).toHaveLength(0);
+  expect(await readFile(join(root, "artifacts", "artifact-manifest-demo.canvas.tsx"), "utf8")).toBe(beforeCanvas);
+  expect(await readFile(join(root, "artifacts", nativeDestinationFixture.label), "utf8")).toBe(beforeNative);
+  expect(failures).toEqual([]);
+});
+
 function externalProvider() {
   const contributions = fixtures.map((fixture) => ({
     id: fixture.contributionId,
@@ -183,7 +234,7 @@ function externalProvider() {
             revision: context.descriptor.revision.id,
             bindingId: context.descriptor.renderer.bindingId,
           });
-          return `<!doctype html><html><body><main><span data-external-renderer="${fixture.rendererId}">${context.descriptor.label}</span><button type="button" id="provider-bridge">Run provider bridge</button><output data-provider-bridge-count>0</output><button type="button" id="record-selection">Record selection</button><button type="button" id="record-steering">Record steering draft</button><button type="button" id="race-intents">Race intents</button><button type="button" id="reject-late">Reject after navigation</button></main><script>const binding=${binding};let sequence=0;const emit=(action)=>parent.postMessage({...binding,intentId:"canvas-intent:"+(++sequence),intent:{action}},"*");document.getElementById("provider-bridge").addEventListener("click",()=>{const output=document.querySelector("[data-provider-bridge-count]");output.textContent=String(Number(output.textContent)+1);});document.getElementById("record-selection").addEventListener("click",()=>emit("select"));document.getElementById("record-steering").addEventListener("click",()=>emit("steer"));document.getElementById("race-intents").addEventListener("click",()=>{emit("race-delayed");emit("race-latest");});document.getElementById("reject-late").addEventListener("click",()=>emit("reject-delayed"));</script></body></html>`;
+          return `<!doctype html><html><body><main><span data-external-renderer="${fixture.rendererId}">${context.descriptor.label}</span><button type="button" id="provider-bridge">Run provider bridge</button><output data-provider-bridge-count>0</output><button type="button" id="record-selection">Record selection</button><button type="button" id="record-steering">Record steering draft</button><button type="button" id="race-intents">Race intents</button><button type="button" id="reject-late">Reject after navigation</button></main><script>const binding=${binding};const session=crypto.randomUUID();let sequence=0;const emit=(action)=>parent.postMessage({...binding,intentId:"canvas-intent:"+session+":"+(++sequence),intent:{action}},"*");document.getElementById("provider-bridge").addEventListener("click",()=>{const output=document.querySelector("[data-provider-bridge-count]");output.textContent=String(Number(output.textContent)+1);});document.getElementById("record-selection").addEventListener("click",()=>emit("select"));document.getElementById("record-steering").addEventListener("click",()=>emit("steer"));document.getElementById("race-intents").addEventListener("click",()=>{emit("race-delayed");emit("race-latest");});document.getElementById("reject-late").addEventListener("click",()=>emit("reject-delayed"));</script></body></html>`;
         },
         async readModule() { return "export {};\n"; },
         async readResource() { return undefined; },
@@ -260,8 +311,49 @@ function externalProvider() {
             steering: { kind: "canvas-steering", label: "Canvas steering", placeholder: "Describe the Canvas focus", maxLength: 200 },
           };
         },
-        async prepare() { throw new Error("intent flow must not prepare"); },
-        async decide() { throw new Error("intent flow must not decide"); },
+        async prepare(context, input) {
+          if (fixture.interactionOnly !== true || input.targetAddress !== "native://target/orders"
+            || input.steering.kind !== "canvas-steering") throw new Error("intent flow must not prepare");
+          const target = { address: "native://target/orders", kind: "native-node", label: "Native Orders" };
+          const content = {
+            kind: "HarnessStudioArtifactInteractionProposalV1",
+            proposalId: `proposal:${input.requestId.replace(/^request:/u, "")}`,
+            artifactId: context.descriptor.id,
+            expectedRevision: context.descriptor.revision.id,
+            target,
+            steering: input.steering,
+            summary: "Focus the native order flow.",
+            actions: [{ kind: "focus", summary: "Focus the native order flow.", target }],
+            verificationClaims: ["Native selection remains readable."],
+            proposedBy: input.requestedBy,
+            preparedAt: new Date().toISOString(),
+          };
+          const bytes = Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"><text>Native Orders</text></svg>", "utf8");
+          return {
+            proposal: { ...content, proposalDigest: digestCanonical(content) },
+            preview: { bytes, mediaType: "image/svg+xml", label: "Native Orders proposal", digest: digestBytes(bytes) },
+            continuation: null,
+          };
+        },
+        async decide(_context, input) {
+          if (fixture.interactionOnly !== true) throw new Error("intent flow must not decide");
+          return {
+            kind: "HarnessStudioArtifactInteractionTransitionReceiptV1",
+            transitionId: `transition:${input.decisionId}`,
+            proposalId: input.prepared.proposal.proposalId,
+            proposalDigest: input.prepared.proposal.proposalDigest,
+            decisionId: input.decisionId,
+            decision: input.decision,
+            status: "rejected",
+            beforeRevision: input.prepared.proposal.expectedRevision,
+            afterRevision: input.prepared.proposal.expectedRevision,
+            verification: { status: "not-run", summary: "Rejected without native mutation." },
+            affectedTargets: [input.prepared.proposal.target],
+            evidence: [],
+            diagnostics: [],
+            settledAt: new Date().toISOString(),
+          };
+        },
       },
     } : {}),
     support: "experimental-local",
@@ -288,6 +380,14 @@ function externalProvider() {
 
 function digest(value) {
   return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
+
+function digestCanonical(value) {
+  return `sha256:${createHash("sha256").update(canonicalArtifactInteractionJson(value)).digest("hex")}`;
+}
+
+function digestBytes(value) {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
 function digestText(value) {

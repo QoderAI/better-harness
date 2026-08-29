@@ -27,6 +27,7 @@ import {
   artifactSurfaceBindingId,
   digestHex,
 } from "./registry/artifact-catalog.js";
+import { artifactAuthorityId } from "./artifact-authority.js";
 import { assertArtifactInteractionWorkspace } from "./interaction-routes.js";
 import { respondArtifactJson, resolveArtifactRevisionPlugin } from "./routes.js";
 
@@ -249,7 +250,7 @@ async function admitAndRevalidate(
       target: admitted.effect.target,
       steering: admitted.effect.steering,
     } as const;
-  return {
+  const outcome = {
     kind: "HarnessStudioArtifactHostedIntentOutcomeV1",
     protocolVersion: ARTIFACT_HOSTED_INTENT_PROTOCOL_VERSION,
     artifactId,
@@ -261,9 +262,17 @@ async function admitAndRevalidate(
     status: "recorded",
     execution: "not-executed",
     effect: recordedEffect,
-    ...(admitted.sourceTarget === undefined ? {} : { sourceTarget: admitted.sourceTarget }),
-    ...(destination === undefined ? {} : { destination }),
     replayed: false,
+  } as const;
+  if (admitted.sourceTarget === undefined || destination === undefined) return outcome;
+  return {
+    ...outcome,
+    sourceTarget: admitted.sourceTarget,
+    destination,
+    originRef: {
+      kind: "HarnessStudioArtifactHostedIntentOriginRefV1",
+      originId: `origin:${randomUUID()}`,
+    },
   };
 }
 
@@ -497,16 +506,15 @@ function assertIntentAdmission(value: unknown, intentId: string): ArtifactHosted
   }
   if (effect.kind === "selection") {
     if (effect.steering !== undefined) throw invalid("A selection effect cannot contain steering.");
-    return {
+    const result = {
       intentId,
       effect: { kind: "selection", target },
-      ...(sourceTarget === undefined ? {} : { sourceTarget }),
-      ...(destination === undefined ? {} : { destination }),
-    };
+    } as const;
+    return sourceTarget === undefined ? result : { ...result, sourceTarget, destination: destination! };
   }
   if (effect.kind !== "steering") throw invalid("The Provider intent effect kind is unsupported.");
   const steering = exactObject(effect.steering, ["kind", "message"], "Provider intent steering");
-  return {
+  const result = {
     intentId,
     effect: {
       kind: "steering",
@@ -516,9 +524,8 @@ function assertIntentAdmission(value: unknown, intentId: string): ArtifactHosted
         message: boundedString(steering.message, "steering.message", 8_192),
       },
     },
-    ...(sourceTarget === undefined ? {} : { sourceTarget }),
-    ...(destination === undefined ? {} : { destination }),
-  };
+  } as const;
+  return sourceTarget === undefined ? result : { ...result, sourceTarget, destination: destination! };
 }
 
 function destinationClaim(value: unknown): ArtifactHostedIntentDestinationClaimV1 {
@@ -614,15 +621,6 @@ function boundedString(value: unknown, label: string, maxLength: number): string
     throw invalid(`${label} must be a non-empty string of at most ${maxLength} characters.`);
   }
   return value;
-}
-
-function artifactAuthorityId(state: HarnessStudioState): string {
-  return `sha256:${createHash("sha256").update(canonicalArtifactInteractionJson([
-    state.artifactDirectory ?? null,
-    state.artifactPaths ?? null,
-    state.activeProjectId ?? null,
-    state.projectRevision,
-  ])).digest("hex")}`;
 }
 
 function assertCurrentAuthority(state: HarnessStudioState, expected: string): void {

@@ -1,19 +1,25 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { decodeSseStream } from "@qoder-ai/harness-ui";
+import { canonicalArtifactInteractionJson } from "../src/contracts/artifact.js";
 import type {
   ArtifactHostedIntentAdmissionInputV1,
   ArtifactHostedIntentEnvelopeV1,
+  ArtifactInteractionRuntimeImplementation,
   ExternalArtifactProvider,
 } from "../src/contracts/artifact.js";
 import { activateArtifactContribution } from "../src/server/artifacts/registry/artifact-provider-activation.js";
 import { envelopeSnapshot } from "../src/server/artifacts/registry/artifact-plugin-registry.js";
 import { startHarnessStudioServer, type HarnessStudioServerHandle } from "../src/server/server.js";
+import { DEFAULT_LOCAL_ACP_HARNESS_SOURCE } from "../src/server/default-local-harness.js";
 
 const temporary: string[] = [];
 let server: HarnessStudioServerHandle | undefined;
+const ACP_AGENT_FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../harness/test/fixtures/acp-agent.mjs");
 
 afterEach(async () => {
   await server?.close();
@@ -217,6 +223,10 @@ describe("hosted Artifact intent admission", () => {
         revision: destination.revision.id,
         bindingId: destination.renderer.bindingId,
       },
+      originRef: {
+        kind: "HarnessStudioArtifactHostedIntentOriginRefV1",
+        originId: expect.stringMatching(/^origin:/u),
+      },
       effect: {
         kind: "steering",
         target: { address: "native://target/runtime", kind: "native-node", label: "Runtime" },
@@ -225,6 +235,192 @@ describe("hosted Artifact intent admission", () => {
       execution: "not-executed",
     });
     expect(fixture.calls).toEqual({ admit: 1, inspect: 1, prepare: 0, decide: 0 });
+  });
+
+  it("binds an explicitly adopted native draft through Provider proposal and decision replay", async () => {
+    const fixture = await createFixture();
+    enableNativeInteraction(fixture);
+    const descriptor = await startFixture(fixture);
+    const catalog = await (await fetch(`${server!.url}/api/artifacts`)).json() as { artifacts: any[] };
+    const destination = catalog.artifacts.find((artifact) => artifact.label === "native.target");
+    fixture.hooks.admit = nativeAdmission(fixture, destination, "Rename to Provenance Runtime");
+    const beforeSource = await readFile(fixture.sourcePath, "utf8");
+    const beforeDestination = await readFile(fixture.destinationPath, "utf8");
+
+    const admitted = await fetch(
+      `${server!.url}${descriptor.intent!.intentUri}`,
+      post(intentEnvelope(descriptor, "intent:provenance-direct", {})),
+    );
+    expect(admitted.status).toBe(201);
+    const outcome = await admitted.json() as any;
+    const preparedResponse = await fetch(`${server!.url}${destination.interaction.workspaceUri}/proposals`, post({
+      targetAddress: "native://target/runtime",
+      steering: { kind: "rename", message: "Rename to Provenance Runtime" },
+      requestedBy: { id: "human:test", kind: "human", label: "Test user" },
+      requestId: "request:provenance-direct",
+      originRef: outcome.originRef,
+    }));
+    expect(preparedResponse.status, await preparedResponse.clone().text()).toBe(201);
+    const prepared = await preparedResponse.json() as any;
+    expect(prepared).toMatchObject({
+      proposal: {
+        artifactId: destination.id,
+        target: { address: "native://target/runtime" },
+        proposedBy: { id: "human:test", kind: "human" },
+      },
+      provenance: {
+        kind: "HarnessStudioArtifactInteractionProvenanceV1",
+        protocolVersion: "1",
+        originId: outcome.originRef.originId,
+        adoptionId: expect.stringMatching(/^adoption:/u),
+        source: {
+          artifactId: descriptor.id,
+          revision: descriptor.revision.id,
+          bindingId: descriptor.renderer.bindingId,
+          intentId: "intent:provenance-direct",
+          target: { address: "json-canvas://node/plan" },
+        },
+        destination: {
+          artifactId: destination.id,
+          revision: destination.revision.id,
+          bindingId: destination.renderer.bindingId,
+        },
+        draft: {
+          selectionId: outcome.effect.selectionId,
+          steeringId: outcome.effect.steeringId,
+          target: { address: "native://target/runtime" },
+          steering: { kind: "rename", message: "Rename to Provenance Runtime" },
+        },
+        recordedBy: { id: "system:hosted-artifact-surface", kind: "system" },
+        adoptedBy: { id: "human:test", kind: "human" },
+        provenanceDigest: expect.stringMatching(/^sha256:/u),
+      },
+    });
+    const { provenanceDigest, ...provenanceContent } = prepared.provenance;
+    expect(provenanceDigest).toBe(digestCanonical(provenanceContent));
+
+    const decision = {
+      proposalDigest: prepared.proposal.proposalDigest,
+      expectedRevision: prepared.proposal.expectedRevision,
+      decision: "reject",
+      decisionId: "decision:provenance-direct",
+      decidedBy: { id: "human:test", kind: "human", label: "Test user" },
+    };
+    const decisionUri = `${server!.url}${destination.interaction.workspaceUri}/proposals/${encodeURIComponent(prepared.proposal.proposalId)}/decisions`;
+    const settled = await fetch(decisionUri, post(decision));
+    expect(settled.status).toBe(200);
+    const settlement = await settled.json() as any;
+    expect(settlement).toEqual({ receipt: expect.objectContaining({ status: "rejected" }), provenance: prepared.provenance, replayed: false });
+    const replayed = await (await fetch(decisionUri, post(decision))).json() as any;
+    expect(replayed).toEqual({ ...settlement, replayed: true });
+    expect(fixture.calls).toEqual({ admit: 1, inspect: 2, prepare: 1, decide: 1 });
+    expect(await readFile(fixture.sourcePath, "utf8")).toBe(beforeSource);
+    expect(await readFile(fixture.destinationPath, "utf8")).toBe(beforeDestination);
+  });
+
+  it("rejects forged, edited, and stale Canvas provenance before native mutation", async () => {
+    const fixture = await createFixture();
+    enableNativeInteraction(fixture);
+    const descriptor = await startFixture(fixture);
+    const catalog = await (await fetch(`${server!.url}/api/artifacts`)).json() as { artifacts: any[] };
+    const destination = catalog.artifacts.find((artifact) => artifact.label === "native.target");
+    fixture.hooks.admit = nativeAdmission(fixture, destination, "Rename to Guarded Runtime");
+    const outcome = await (await fetch(
+      `${server!.url}${descriptor.intent!.intentUri}`,
+      post(intentEnvelope(descriptor, "intent:provenance-stale", {})),
+    )).json() as any;
+    const proposalUri = `${server!.url}${destination.interaction.workspaceUri}/proposals`;
+    const request = {
+      targetAddress: "native://target/runtime",
+      steering: { kind: "rename", message: "Rename to Guarded Runtime" },
+      requestedBy: { id: "human:test", kind: "human", label: "Test user" },
+      requestId: "request:provenance-stale",
+      originRef: outcome.originRef,
+    };
+
+    const forged = await fetch(proposalUri, post({
+      ...request,
+      requestId: "request:provenance-forged",
+      originRef: { ...outcome.originRef, originId: "origin:ffffffff-ffff-4fff-8fff-ffffffffffff" },
+    }));
+    expect(forged.status).toBe(409);
+    await expect(forged.json()).resolves.toMatchObject({ error: expect.stringContaining("no longer retained") });
+    const edited = await fetch(proposalUri, post({
+      ...request,
+      requestId: "request:provenance-edited",
+      steering: { ...request.steering, message: "Rename to Edited Runtime" },
+    }));
+    expect(edited.status).toBe(409);
+    await expect(edited.json()).resolves.toMatchObject({ error: expect.stringContaining("draft changed") });
+    const changedGrammar = await fetch(proposalUri, post({
+      ...request,
+      requestId: "request:provenance-grammar",
+      steering: { ...request.steering, kind: "other-grammar" },
+    }));
+    expect(changedGrammar.status).toBe(409);
+    await expect(changedGrammar.json()).resolves.toMatchObject({ error: expect.stringContaining("grammar changed") });
+    expect(fixture.calls.prepare).toBe(0);
+
+    const preparedResponse = await fetch(proposalUri, post(request));
+    expect(preparedResponse.status, await preparedResponse.clone().text()).toBe(201);
+    const prepared = await preparedResponse.json() as any;
+    await writeFile(fixture.sourcePath, "changed Canvas source after proposal\n", "utf8");
+    const settled = await fetch(
+      `${server!.url}${destination.interaction.workspaceUri}/proposals/${encodeURIComponent(prepared.proposal.proposalId)}/decisions`,
+      post({
+        proposalDigest: prepared.proposal.proposalDigest,
+        expectedRevision: prepared.proposal.expectedRevision,
+        decision: "approve",
+        decisionId: "decision:provenance-stale",
+        decidedBy: { id: "human:test", kind: "human", label: "Test user" },
+      }),
+    );
+    expect(settled.status).toBe(409);
+    await expect(settled.json()).resolves.toMatchObject({ error: expect.stringContaining("Canvas source revision") });
+    expect(fixture.calls.prepare).toBe(1);
+    expect(fixture.calls.decide).toBe(0);
+    expect(await readFile(fixture.destinationPath, "utf8")).toBe("initial native target\n");
+  });
+
+  it("carries adopted Canvas provenance through a real ACP plan and retained Agent proposal", async () => {
+    const fixture = await createFixture();
+    enableNativeInteraction(fixture);
+    const descriptor = await startFixture(fixture, { agentArgs: [ACP_AGENT_FIXTURE, "--artifact-plan"] });
+    const catalog = await (await fetch(`${server!.url}/api/artifacts`)).json() as { artifacts: any[] };
+    const destination = catalog.artifacts.find((artifact) => artifact.label === "native.target");
+    fixture.hooks.admit = nativeAdmission(fixture, destination, "Give the adopted target a clearer name.", "instruction");
+    const outcome = await (await fetch(
+      `${server!.url}${descriptor.intent!.intentUri}`,
+      post(intentEnvelope(descriptor, "intent:provenance-agent", {})),
+    )).json() as any;
+
+    const response = await fetch(`${server!.url}${destination.interaction.workspaceUri}/agent-runs`, post({
+      targetAddress: "native://target/runtime",
+      message: "Give the adopted target a clearer name.",
+      requestedBy: { id: "human:test", kind: "human", label: "Test user" },
+      runId: "artifact-run:provenance-agent",
+      originRef: outcome.originRef,
+    }));
+    expect(response.status).toBe(200);
+    const events = decodeSseStream(await response.text());
+    const evidence = events.find((event) => event.type === "CUSTOM" && event.name === "artifact.agent.evidence") as any;
+    const proposal = events.find((event) => event.type === "CUSTOM" && event.name === "artifact.agent.proposal") as any;
+    expect(evidence, JSON.stringify(events)).toMatchObject({
+      value: {
+        kind: "HarnessStudioArtifactAgentRunEvidenceV1",
+        provenance: { originId: outcome.originRef.originId, adoptedBy: { id: "human:test" } },
+      },
+    });
+    expect(proposal).toMatchObject({
+      value: {
+        proposal: { proposedBy: { kind: "agent" }, steering: { kind: "rename", message: "Rename to Agent planned" } },
+        provenance: { originId: outcome.originRef.originId },
+      },
+    });
+    expect(evidence.value.provenance).toEqual(proposal.value.provenance);
+    expect(fixture.calls).toEqual({ admit: 1, inspect: 2, prepare: 1, decide: 0 });
+    expect(await readFile(fixture.sourcePath, "utf8")).toBe("initial intent canvas\n");
+    expect(await readFile(fixture.destinationPath, "utf8")).toBe("initial native target\n");
   });
 
   it("fails closed when a native target claim drifts from the destination revision or workspace", async () => {
@@ -383,6 +579,8 @@ describe("hosted Artifact intent admission", () => {
 
 interface FixtureHooks {
   admit: (input: ArtifactHostedIntentAdmissionInputV1) => Promise<any>;
+  prepare?: ArtifactInteractionRuntimeImplementation["prepare"];
+  decide?: ArtifactInteractionRuntimeImplementation["decide"];
 }
 
 interface Fixture {
@@ -422,7 +620,7 @@ async function createFixture(): Promise<Fixture> {
   return { root, appDir, artifactDirectory, sourcePath, destinationPath, stateRoot, provider, hooks, calls };
 }
 
-async function startFixture(fixture: Fixture): Promise<any> {
+async function startFixture(fixture: Fixture, input: { agentArgs?: string[] } = {}): Promise<any> {
   await activateArtifactContribution(
     fixture.provider,
     "intent-canvas",
@@ -443,6 +641,14 @@ async function startFixture(fixture: Fixture): Promise<any> {
     artifactProviderStateRoot: fixture.stateRoot,
     artifactProviders: [fixture.provider],
     walnutCacheRoot: join(fixture.root, "missing-walnut"),
+    ...(input.agentArgs === undefined ? {} : {
+      acpAgent: {
+        command: process.execPath,
+        args: input.agentArgs,
+        label: "Fixture Artifact Agent",
+        harnessSource: DEFAULT_LOCAL_ACP_HARNESS_SOURCE,
+      },
+    }),
   });
   const catalog = await (await fetch(`${server.url}/api/artifacts`)).json() as { artifacts: any[] };
   const descriptor = catalog.artifacts.find((artifact) => artifact.label === "flow.intentcanvas");
@@ -555,12 +761,82 @@ function intentProvider(
             steering: { kind: "rename", label: "Rename", placeholder: "Rename to <label>", maxLength: 256 },
           };
         },
-        prepare: async () => { calls.prepare += 1; throw new Error("prepare must not run"); },
-        decide: async () => { calls.decide += 1; throw new Error("decide must not run"); },
+        prepare: async (context, input) => {
+          calls.prepare += 1;
+          if (hooks.prepare === undefined) throw new Error("prepare must not run");
+          return await hooks.prepare(context, input);
+        },
+        decide: async (context, input) => {
+          calls.decide += 1;
+          if (hooks.decide === undefined) throw new Error("decide must not run");
+          return await hooks.decide(context, input);
+        },
       },
       support: "experimental-local",
       adapterExecutionProfile: "trusted-local-process",
     }],
+  };
+}
+
+function nativeAdmission(fixture: Fixture, destination: any, message: string, kind = "rename"): FixtureHooks["admit"] {
+  return async (input) => {
+    fixture.calls.admit += 1;
+    return {
+      intentId: input.intentId,
+      sourceTarget: { address: "json-canvas://node/plan", kind: "json-render:Card", label: "Plan" },
+      destination: { artifactLabel: destination.label, revision: destination.revision.id },
+      effect: {
+        kind: "steering",
+        target: { address: "native://target/runtime", kind: "native-node", label: "Runtime" },
+        steering: { kind, message },
+      },
+    };
+  };
+}
+
+function enableNativeInteraction(fixture: Fixture): void {
+  fixture.hooks.prepare = async (context, input) => {
+    if (input.targetAddress !== "native://target/runtime" || input.steering.kind !== "rename") {
+      throw new Error("Unsupported native target steering.");
+    }
+    const target = { address: "native://target/runtime", kind: "native-node", label: "Runtime" };
+    const content = {
+      kind: "HarnessStudioArtifactInteractionProposalV1" as const,
+      proposalId: `proposal:${input.requestId.replace(/^request:/u, "")}`,
+      artifactId: context.descriptor.id,
+      expectedRevision: context.descriptor.revision.id,
+      target,
+      steering: input.steering,
+      summary: input.steering.message,
+      actions: [{ kind: "rename", summary: input.steering.message, target }],
+      verificationClaims: ["Native readback must match."],
+      proposedBy: input.requestedBy,
+      preparedAt: new Date().toISOString(),
+    };
+    const bytes = Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"><text>Native proposal</text></svg>", "utf8");
+    return {
+      proposal: { ...content, proposalDigest: digestCanonical(content) },
+      preview: { bytes, mediaType: "image/svg+xml", label: "Native proposal", digest: digestBytes(bytes) },
+      continuation: null,
+    };
+  };
+  fixture.hooks.decide = async (_context, input) => {
+    return {
+      kind: "HarnessStudioArtifactInteractionTransitionReceiptV1",
+      transitionId: `transition:${input.decisionId}`,
+      proposalId: input.prepared.proposal.proposalId,
+      proposalDigest: input.prepared.proposal.proposalDigest,
+      decisionId: input.decisionId,
+      decision: input.decision,
+      status: "rejected",
+      beforeRevision: input.prepared.proposal.expectedRevision,
+      afterRevision: input.prepared.proposal.expectedRevision,
+      verification: { status: "not-run", summary: "Rejected without native mutation." },
+      affectedTargets: [input.prepared.proposal.target],
+      evidence: [],
+      diagnostics: [],
+      settledAt: new Date().toISOString(),
+    };
   };
 }
 
@@ -592,4 +868,12 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 
 function digestJson(value: unknown): `sha256:${string}` {
   return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
+
+function digestCanonical(value: unknown): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(canonicalArtifactInteractionJson(value)).digest("hex")}`;
+}
+
+function digestBytes(value: Uint8Array): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }

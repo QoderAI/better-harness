@@ -59,6 +59,16 @@ human adoption before opening the destination Collaboration workflow.
   starts no proposal, decision, Agent run, or mutation; a generic Canvas
   instruction may be compiled into native Provider grammar only by the existing
   configured Agent path.
+- **AC-10:** A native outcome atomically carries `sourceTarget`, `destination`,
+  and a Host-minted `originRef`. The reference is accepted only for the exact
+  retained outcome, current Artifact authority, destination binding, native
+  target, and unedited draft. It is correlation evidence, not execution
+  authority.
+- **AC-11:** Explicit adoption mints a digest-bound Host provenance record
+  outside Provider proposal IR. Direct Provider proposals, ACP evidence and
+  proposals, decision responses, and canonical decision replay carry the same
+  provenance. A stale source or destination blocks a new decision before the
+  Provider mutation gate.
 
 ## Non-goals
 
@@ -69,6 +79,9 @@ human adoption before opening the destination Collaboration workflow.
   steering.
 - Persisting steering drafts across Studio restarts, multi-user presence,
   arbitrary/model-authored cross-Artifact mappings, or a universal Artifact IR.
+- Providing atomic source/destination locking, treating `originRef` as a secret
+  capability, or inserting Studio provenance into Provider-native proposal
+  digests.
 
 ## Plan and Tasks
 
@@ -87,20 +100,26 @@ human adoption before opening the destination Collaboration workflow.
 6. Admit an optional Provider-owned native target claim, revalidate its exact
    destination workspace in the Host, and expose a separate trusted adoption
    gate that reuses the existing destination Collaboration workflow.
+7. Bind explicit adoption to a Host-owned, canonical provenance record retained
+   alongside the native proposal and returned unchanged through Agent evidence,
+   decision settlement, and replay.
 
 ## Test and Risk Evidence
 
-- **AC-1–AC-3:** Node 24.15.0 `npm test --workspace @qoder-ai/harness`
-  passed 20 files / 173 tests. `npm test --workspace
-  @qoder-ai/harness-studio` passed 63 files / 504 tests. The focused intent
-  server and strict client decoder passed 2 files / 36 tests, including
+- **AC-1–AC-3, AC-10–AC-11:** Node 24.15.0 `npm test --workspace
+  @qoder-ai/harness` passed 20 files / 173 tests. `npm test --workspace
+  @qoder-ai/harness-studio` passed 63 files / 507 tests. The focused intent,
+  registry, and interaction suites passed 3 files / 43 tests, including
   canonical replay, stale source/binding/authority, unsafe JSON, Provider
-  timeout/rejection, and forged native outcome fields.
-- **AC-4–AC-5, AC-9:** `external-artifact-host.spec.mjs` passed 1/1 and exercised
-  real iframe `postMessage` → Host `POST` → native-target record → explicit
-  `Use draft in Collaboration` → destination prefill. It asserted zero
-  proposal, decision, or Agent-run requests both before and after adoption,
-  while preserving latest-response-wins behavior for later Canvas selections.
+  timeout/rejection, atomic native outcome fields, forged origin references,
+  exact provenance digesting, and strict client decoding.
+- **AC-4–AC-5, AC-9–AC-11:** `external-artifact-host.spec.mjs` passed 2/2. The
+  original three-viewport flow exercised iframe `postMessage` → Host `POST` →
+  native-target record → explicit `Use draft in Collaboration` → destination
+  prefill and asserted zero proposal, decision, or Agent-run requests. The P3
+  flow then required a second explicit `Prepare with Provider`, forwarded the
+  exact `originRef`, displayed Canvas provenance on the proposal and rejected
+  receipt, and observed no Agent run or source/destination mutation.
 - **AC-6:** the canonical replay fixture observed `admit=1`, `inspect=0`,
   `prepare=0`, `decide=0` and identical source bytes before/after. The native
   path inspected only the exact destination workspace; escaped labels, missing
@@ -122,9 +141,22 @@ human adoption before opening the destination Collaboration workflow.
   approved once with authoritative readback `bb301843…e133031e →
   5fae91d3…cfdd26c`, verification `passed`, one evidence item, replay success,
   and catalog convergence.
+- **AC-10–AC-11:** direct Provider and real ACP fixtures carried one identical
+  Host provenance record through proposal, Agent evidence, decision, and
+  canonical replay. Forged origins and edited message/native grammar failed
+  before Provider preparation; source drift after preparation failed before
+  Provider decision. An independently recomputed canonical digest matched the
+  retained record, and proposal settlement remained governed by proposal TTL
+  rather than the shorter-lived intent lookup.
 - Focused `oxlint --deny-warnings` passed for every changed TypeScript, TSX,
   test, and browser file. Harness and Studio builds passed as part of their full
-  package test commands; both repositories' `git diff --check` passed.
+  package test commands. Dry-run packs were 150378/647711 B/143 entries for
+  `@qoder-ai/harness` and 7059704/38408933 B/1156 entries for Studio. Homology's
+  Provider suite passed 7 files / 46 tests; root build and 4-worker Vitest passed
+  266 files / 2327 tests with 1 skipped. Package naming reported 91 packages,
+  89 workspaces, 2 exceptions, 12 families, 107 scripts, 2863 tracked files,
+  239 allowlisted files, and zero machine-local path hits. Both repositories'
+  `git diff --check` passed.
 - Risk: an opaque iframe may race navigation while admission is pending. The
   client must compare Artifact id, revision, binding, and request generation
   again before applying the result; the server remains authoritative even when

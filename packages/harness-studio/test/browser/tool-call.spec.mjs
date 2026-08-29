@@ -46,14 +46,20 @@ const LAYOUTS = [
 ];
 
 async function openDestination(page, label) {
-  const quickAction = page.getByRole("button", { name: `Go to ${label}` });
+  const quickAction = page.getByRole("button", { name: new RegExp(`^(?:Go to|Open) ${label}\\b`) });
+  const destination = page.getByRole("navigation", { name: "Studio project and View navigation" }).getByRole("button", { name: new RegExp(`^${label}`) });
+  const toggle = page.getByRole("button", { name: "Open Studio navigation" });
+  await expect.poll(async () => (
+    await quickAction.isVisible().catch(() => false)
+      || await destination.isVisible().catch(() => false)
+      || await toggle.isVisible().catch(() => false)
+  )).toBe(true);
   if (await quickAction.isVisible().catch(() => false) && await quickAction.isEnabled()) {
     await quickAction.click();
     return;
   }
-  const destination = page.getByRole("navigation", { name: "Studio project and View navigation" }).getByRole("button", { name: new RegExp(`^${label}`) });
-  const toggle = page.getByRole("button", { name: "Open Studio navigation" });
   if (await toggle.isVisible() && await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+  await expect(destination).toBeVisible();
   await destination.click();
   if (await toggle.isVisible()) {
     await expect(toggle).toHaveAttribute("aria-expanded", "false");

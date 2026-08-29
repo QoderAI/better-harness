@@ -6,6 +6,7 @@ export const artifactViewers = {
   external: {
     noViewUri: "The hosted Artifact surface has no view URI.",
     previewTitle: "Artifact preview: {{label}}",
+    intentRejected: "The Host rejected this Canvas intent. No action was executed.",
   },
   zoom: {
     in: "Zoom in",

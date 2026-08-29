@@ -1,4 +1,4 @@
-import type { ArtifactDigest } from "./artifact.js";
+import type { ArtifactDigest, ArtifactInteractionProvenanceV1 } from "./artifact.js";
 
 export const ARTIFACT_AGENT_PLAN_KIND = "HarnessStudioArtifactAgentPlanV1" as const;
 export const ARTIFACT_AGENT_EVIDENCE_KIND = "HarnessStudioArtifactAgentRunEvidenceV1" as const;
@@ -24,6 +24,7 @@ export interface ArtifactAgentRunEvidenceV1 {
   executor: "acp";
   harnessRevisionId: string;
   permissionRequestsCancelled: number;
+  provenance?: ArtifactInteractionProvenanceV1;
   sessionId?: string;
   model?: string;
   stopReason?: string;

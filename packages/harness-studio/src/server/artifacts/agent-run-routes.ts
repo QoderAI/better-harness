@@ -9,7 +9,11 @@ import {
   type ArtifactAgentRunPhaseV1,
 } from "../../contracts/artifact-agent-run.js";
 import type {
+  ArtifactHostedIntentDestinationV1,
+  ArtifactHostedIntentOriginRefV1,
   ArtifactInteractionActorV1,
+  ArtifactInteractionProvenanceV1,
+  ArtifactInteractionTargetV1,
   ArtifactInteractionWorkspaceV1,
 } from "../../contracts/artifact.js";
 import {
@@ -26,6 +30,12 @@ import {
   prepareAndRetainArtifactInteractionProposal,
   type RetainedArtifactInteractionBinding,
 } from "./interaction-routes.js";
+import {
+  ArtifactInteractionProvenanceError,
+  assertArtifactInteractionProvenanceCurrent,
+  parseArtifactHostedIntentOriginRef,
+  resolveArtifactInteractionProvenance,
+} from "./interaction-provenance.js";
 import { discoverArtifactProviderRuntime } from "./registry/artifact-provider-discovery.js";
 import { respondArtifactJson, resolveArtifactRevisionPlugin, safeArtifactError } from "./routes.js";
 
@@ -39,6 +49,7 @@ interface ArtifactAgentRunRequest {
   message: string;
   requestedBy: ArtifactInteractionActorV1;
   runId: string;
+  originRef?: ArtifactHostedIntentOriginRefV1;
 }
 
 export async function streamArtifactAgentRun(
@@ -88,18 +99,45 @@ export async function streamArtifactAgentRun(
 
   const context = { entry: resolved.entry, descriptor: resolved.descriptor };
   let workspace: ArtifactInteractionWorkspaceV1;
+  let selectedTarget: ArtifactInteractionTargetV1;
   try {
     workspace = assertArtifactInteractionWorkspace(
       await interaction.inspect(context),
       artifactId,
       resolved.descriptor.revision.id,
     );
-    if (!workspace.targets.some((target) => target.address === input.targetAddress)) {
-      throw new Error("The selected Artifact target is not present in the exact interaction workspace.");
-    }
+    const target = workspace.targets.find((candidate) => candidate.address === input.targetAddress);
+    if (target === undefined) throw new Error("The selected Artifact target is not present in the exact interaction workspace.");
+    selectedTarget = target;
   } catch (error) {
     respondArtifactJson(response, 422, { error: safeArtifactError(error) });
     return;
+  }
+
+  let provenance: ArtifactInteractionProvenanceV1 | undefined;
+  if (input.originRef !== undefined) {
+    try {
+      const bindingId = resolved.descriptor.renderer.bindingId;
+      if (bindingId === undefined) throw new Error("The destination Artifact has no current interaction binding.");
+      const destination: ArtifactHostedIntentDestinationV1 = {
+        artifactId,
+        artifactLabel: resolved.descriptor.label,
+        revision: resolved.descriptor.revision.id,
+        bindingId,
+      };
+      provenance = await resolveArtifactInteractionProvenance(
+        state,
+        options,
+        input.originRef,
+        destination,
+        selectedTarget,
+        input.message,
+        input.requestedBy,
+      );
+    } catch (error) {
+      respondArtifactJson(response, error instanceof ArtifactInteractionProvenanceError ? error.status : 422, { error: safeArtifactError(error) });
+      return;
+    }
   }
 
   const profile = defaultAgentProfile(options);
@@ -145,13 +183,12 @@ export async function streamArtifactAgentRun(
   phase("observing", "Bound the exact Artifact revision and semantic target.");
 
   try {
-    const target = workspace.targets.find((candidate) => candidate.address === input.targetAddress)!;
     phase("planning", `${profile.label} is preparing a bounded Provider instruction.`);
     const run = await runHarnessAgui({
       source: profile.agent.harnessSource ?? DEFAULT_LOCAL_ACP_HARNESS_SOURCE,
       harnessId: profile.agent.harnessId ?? DEFAULT_LOCAL_HARNESS_ID,
       runtimeId: profile.agent.runtimeId ?? DEFAULT_LOCAL_ACP_RUNTIME_ID,
-      prompt: agentPrompt(workspace, target, input.message),
+      prompt: agentPrompt(workspace, selectedTarget, input.message),
       threadId: `artifact:${artifactId}`,
       runId: input.runId,
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -197,6 +234,9 @@ export async function streamArtifactAgentRun(
       context,
       runtime: interaction,
     };
+    if (provenance !== undefined) {
+      await assertArtifactInteractionProvenanceCurrent(state, options, provenance);
+    }
     if (!(await providerStillAuthorized(options, binding))) {
       throw new Error("The selected Artifact Provider changed while the Agent was planning.");
     }
@@ -206,7 +246,13 @@ export async function streamArtifactAgentRun(
       requestedBy: { id: `agent:${profile.id}`, kind: "agent", label: profile.label },
       selectedBy: input.requestedBy,
       requestId: `request:${input.runId}`,
-    }, { proposedByKind: "agent" });
+    }, {
+      proposedByKind: "agent",
+      provenance,
+      ...(provenance === undefined ? {} : {
+        revalidateProvenance: async () => await assertArtifactInteractionProvenanceCurrent(state, options, provenance),
+      }),
+    });
     if (abortController.signal.aborted) {
       state.artifactInteractionProposals.delete(proposal.proposal.proposalId);
       throw new ArtifactAgentRunCancelledError();
@@ -221,6 +267,7 @@ export async function streamArtifactAgentRun(
       executor: "acp",
       harnessRevisionId: run.result.revisionId,
       permissionRequestsCancelled,
+      ...(provenance === undefined ? {} : { provenance }),
       ...(typeof run.result.metrics?.sessionId === "string" ? { sessionId: run.result.metrics.sessionId } : {}),
       ...(typeof run.result.runtimeReceipt?.model === "string" ? { model: run.result.runtimeReceipt.model } : {}),
       ...(typeof run.result.metrics?.stopReason === "string" ? { stopReason: run.result.metrics.stopReason } : {}),
@@ -298,12 +345,18 @@ async function providerStillAuthorized(
 }
 
 function agentRunRequest(value: unknown): ArtifactAgentRunRequest {
-  const body = exactObject(value, ["targetAddress", "message", "requestedBy", "runId"], "Artifact Agent run");
+  const body = exactObject(
+    value,
+    ["targetAddress", "message", "requestedBy", "runId"],
+    "Artifact Agent run",
+    ["originRef"],
+  );
   return {
     targetAddress: boundedString(body.targetAddress, "targetAddress", 8_192),
     message: boundedString(body.message, "message", MAX_INSTRUCTION_LENGTH),
     requestedBy: actor(body.requestedBy),
     runId: boundedIdentifier(body.runId, "runId"),
+    ...(body.originRef === undefined ? {} : { originRef: parseArtifactHostedIntentOriginRef(body.originRef) }),
   };
 }
 
@@ -342,7 +395,7 @@ function agentPrompt(
   return [
     "Prepare one read-only Artifact change plan. Do not call tools, inspect files, mutate state, approve, or claim verification.",
     "Return exactly one JSON object and no Markdown, prose, or code fences.",
-    `The object must be {\"kind\":\"${ARTIFACT_AGENT_PLAN_KIND}\",\"summary\":string,\"plan\":[string,...],\"providerSteering\":{\"kind\":${JSON.stringify(workspace.steering.kind)},\"message\":string}}.`,
+    `The object must be {"kind":"${ARTIFACT_AGENT_PLAN_KIND}","summary":string,"plan":[string,...],"providerSteering":{"kind":${JSON.stringify(workspace.steering.kind)},"message":string}}.`,
     "The plan array must contain 1 to 8 short, user-visible action descriptions. It is an explicit plan, not hidden reasoning.",
     "providerSteering.message is a Provider-executable command, not a paraphrase of the human instruction. Follow the Provider instruction and placeholder grammar exactly, replacing only their example value.",
     `Artifact: ${JSON.stringify({ id: workspace.artifactId, revision: workspace.revision, summary: workspace.summary })}`,
@@ -362,10 +415,15 @@ function actor(value: unknown): ArtifactInteractionActorV1 {
   };
 }
 
-function exactObject(value: unknown, keys: readonly string[], path: string): Record<string, unknown> {
+function exactObject(
+  value: unknown,
+  keys: readonly string[],
+  path: string,
+  optionalKeys: readonly string[] = [],
+): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error(`${path} must be an object.`);
   const record = value as Record<string, unknown>;
-  const allowed = new Set(keys);
+  const allowed = new Set([...keys, ...optionalKeys]);
   const unknown = Object.keys(record).find((key) => !allowed.has(key));
   if (unknown !== undefined) throw new Error(`${path}.${unknown} is not supported.`);
   const missing = keys.find((key) => !(key in record));

@@ -254,6 +254,10 @@ describe("Artifact View surface registry", () => {
         revision: NEXT_DIGEST,
         bindingId: NEXT_DIGEST,
       },
+      originRef: {
+        kind: "HarnessStudioArtifactHostedIntentOriginRefV1",
+        originId: "origin:11111111-1111-4111-8111-111111111111",
+      },
       effect: {
         ...outcome.effect,
         target: { address: "drawio://diagram.drawio/page/main/cell/runtime", kind: "drawio-cell", label: "Runtime" },
@@ -261,6 +265,11 @@ describe("Artifact View surface registry", () => {
     } as const;
     expect(hostedArtifactIntentOutcome(nativeOutcome, artifact, intent.intentId)).toEqual(nativeOutcome);
     expect(hostedArtifactIntentOutcome({ ...nativeOutcome, destination: undefined }, artifact, intent.intentId)).toBeUndefined();
+    expect(hostedArtifactIntentOutcome({ ...nativeOutcome, originRef: undefined }, artifact, intent.intentId)).toBeUndefined();
+    expect(hostedArtifactIntentOutcome({
+      ...nativeOutcome,
+      originRef: { ...nativeOutcome.originRef, originId: "origin:forged" },
+    }, artifact, intent.intentId)).toBeUndefined();
     expect(hostedArtifactIntentOutcome({
       ...nativeOutcome,
       destination: { ...nativeOutcome.destination, bindingId: "forged" },

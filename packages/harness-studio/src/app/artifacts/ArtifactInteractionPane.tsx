@@ -5,6 +5,7 @@ import type {
   ArtifactDescriptor,
   ArtifactHostedIntentOutcomeV1,
   ArtifactInteractionProposalV1,
+  ArtifactInteractionProvenanceV1,
   ArtifactInteractionTransitionReceiptV1,
   ArtifactInteractionWorkspaceV1,
 } from "../../contracts/artifact.js";
@@ -20,6 +21,7 @@ import { createSseParser } from "../sse-client.js";
 interface PreparedProposalResponse {
   proposal: ArtifactInteractionProposalV1;
   preview: { uri: string; mediaType: string; label: string; digest: string };
+  provenance?: ArtifactInteractionProvenanceV1;
 }
 
 const HUMAN_ACTOR = { id: "human:studio", kind: "human" as const, label: "Studio user" };
@@ -106,11 +108,11 @@ export function ArtifactInteractionPane(props: {
       || !workspace.targets.some((target) => target.address === outcome.effect.target.address)) return;
     appliedSteeringDraft.current = outcome.effect.steeringId;
     if (!props.agentRunsEnabled && outcome.effect.steering.kind !== workspace.steering.kind) {
-      setFailure("This Canvas draft requires an Agent to compile its instruction into the Provider's bounded steering grammar.");
+      setFailure(tRef.current("collaboration.errors.canvasDraftRequiresAgent"));
       return;
     }
     if (outcome.effect.steering.message.length > workspace.steering.maxLength) {
-      setFailure("The recorded steering draft exceeds this interaction workspace's input limit and was not prefilled.");
+      setFailure(tRef.current("collaboration.errors.canvasDraftTooLong"));
       return;
     }
     setSelectedAddress(outcome.effect.target.address);
@@ -122,6 +124,7 @@ export function ArtifactInteractionPane(props: {
 
   const prepareProviderChange = async (): Promise<void> => {
     if (workspace === undefined || selectedAddress === "" || message.trim() === "") return;
+    const originRef = originRefForDraft(props.surfaceIntentOutcome, selectedAddress, message.trim());
     setBusy("preparing");
     setFailure(undefined);
     setPrepared(undefined);
@@ -138,11 +141,12 @@ export function ArtifactInteractionPane(props: {
           steering: { kind: workspace.steering.kind, message: message.trim() },
           requestedBy: HUMAN_ACTOR,
           requestId: `request:${crypto.randomUUID()}`,
+          ...(originRef === undefined ? {} : { originRef }),
         }),
       });
       if (!response.ok) throw new Error(await responseError(response, t("collaboration.errors.prepare")));
       const payload: unknown = await response.json();
-      if (!isPreparedResponse(payload, props.artifact)) throw new Error(t("collaboration.errors.proposalContract"));
+      if (!isPreparedResponse(payload, props.artifact, originRef?.originId)) throw new Error(t("collaboration.errors.proposalContract"));
       setPrepared(payload);
     } catch (error) {
       setFailure(error instanceof Error ? error.message : String(error));
@@ -153,6 +157,7 @@ export function ArtifactInteractionPane(props: {
 
   const runAgent = async (): Promise<void> => {
     if (workspace === undefined || selectedAddress === "" || message.trim() === "") return;
+    const originRef = originRefForDraft(props.surfaceIntentOutcome, selectedAddress, message.trim());
     const runId = `artifact-run:${crypto.randomUUID()}`;
     const controller = new AbortController();
     activeRun.current = { runId, controller };
@@ -170,7 +175,13 @@ export function ArtifactInteractionPane(props: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ targetAddress: selectedAddress, message: message.trim(), requestedBy: HUMAN_ACTOR, runId }),
+        body: JSON.stringify({
+          targetAddress: selectedAddress,
+          message: message.trim(),
+          requestedBy: HUMAN_ACTOR,
+          runId,
+          ...(originRef === undefined ? {} : { originRef }),
+        }),
       });
       if (!response.ok || response.body === null) {
         throw new Error(await responseError(response, t("collaboration.errors.startAgent")));
@@ -180,10 +191,10 @@ export function ArtifactInteractionPane(props: {
           setAgentPhase(event.value);
         } else if (event.type === "CUSTOM" && event.name === "artifact.agent.plan" && isAgentPlan(event.value, workspace)) {
           setAgentPlan(event.value);
-        } else if (event.type === "CUSTOM" && event.name === "artifact.agent.evidence" && isAgentEvidence(event.value, props.artifact, runId, selectedAddress)) {
+        } else if (event.type === "CUSTOM" && event.name === "artifact.agent.evidence" && isAgentEvidence(event.value, props.artifact, runId, selectedAddress, originRef?.originId)) {
           setAgentEvidence(event.value);
         } else if (event.type === "CUSTOM" && event.name === "artifact.agent.proposal") {
-          if (!isPreparedResponse(event.value, props.artifact)) throw new Error(t("collaboration.errors.agentProposalContract"));
+          if (!isPreparedResponse(event.value, props.artifact, originRef?.originId)) throw new Error(t("collaboration.errors.agentProposalContract"));
           receivedProposal = true;
           setPrepared(event.value);
         } else if (event.type === "RUN_ERROR") {
@@ -240,8 +251,11 @@ export function ArtifactInteractionPane(props: {
         }),
       });
       if (!response.ok) throw new Error(await responseError(response, t("collaboration.errors.settle")));
-      const payload = await response.json() as { receipt?: unknown };
-      if (!isReceipt(payload.receipt, prepared.proposal, decisionId, decision)) throw new Error(t("collaboration.errors.receiptContract"));
+      const payload: unknown = await response.json();
+      if (!isRecord(payload) || !isReceipt(payload.receipt, prepared.proposal, decisionId, decision)
+        || !sameProvenance(payload.provenance, prepared.provenance)) {
+        throw new Error(t("collaboration.errors.receiptContract"));
+      }
       setReceipt(payload.receipt);
       if (payload.receipt.status === "applied") props.onApplied();
     } catch (error) {
@@ -257,7 +271,7 @@ export function ArtifactInteractionPane(props: {
     <div className="artifact-collaboration-scroll">
       {busy === "loading" && <p className="artifact-collaboration-status" role="status">{t("collaboration.observingState")}</p>}
       {workspace !== undefined && <>
-        {props.surfaceIntentOutcome?.effect.kind === "steering" && <p className="artifact-intent-draft-status" role="status"><strong>Steering draft</strong><span>Recorded, not executed</span></p>}
+        {props.surfaceIntentOutcome?.effect.kind === "steering" && <p className="artifact-intent-draft-status" role="status"><strong>{t("collaboration.intent.steeringDraft")}</strong><span>{t("collaboration.intent.recordedNotExecuted")}</span></p>}
         {props.surfaceIntentFailure !== undefined && <p className="artifact-collaboration-error" role="alert">{props.surfaceIntentFailure}</p>}
         <section className="artifact-collaboration-section" aria-labelledby="artifact-selection-heading">
           <header><span>1</span><div><h3 id="artifact-selection-heading">{t("collaboration.selection.title")}</h3><p>{workspace.summary}</p></div></header>
@@ -277,21 +291,21 @@ export function ArtifactInteractionPane(props: {
           <header><span>3</span><div><h3 id="artifact-agent-run-heading">{t("collaboration.agentRun.title")}</h3><p>{agentPhase.summary}</p></div></header>
           <div className="artifact-agent-phase"><span className={`status-dot status-${busy === "running" || busy === "interrupting" ? "running" : prepared === undefined ? "error" : "finished"}`} aria-hidden="true" /><strong>{agentPhase.phase}</strong><span>{props.agentLabel ?? t("collaboration.agentRun.acpAgent")}</span></div>
           {agentPlan !== undefined && <><p className="artifact-agent-summary">{agentPlan.summary}</p><ol className="artifact-agent-plan">{agentPlan.plan.map((item, index) => <li key={`${index}:${item}`}><span>{index + 1}</span><p>{item}</p></li>)}</ol></>}
-          {agentEvidence !== undefined && <dl><div><dt>{t("collaboration.agentRun.executor")}</dt><dd>{agentEvidence.executor}</dd></div><div><dt>{t("collaboration.agentRun.session")}</dt><dd><code>{agentEvidence.sessionId ?? t("collaboration.notObserved")}</code></dd></div><div><dt>{t("collaboration.agentRun.model")}</dt><dd>{agentEvidence.model ?? t("collaboration.notObserved")}</dd></div><div><dt>{t("collaboration.agentRun.permissions")}</dt><dd>{t("collaboration.agentRun.cancelled", { count: agentEvidence.permissionRequestsCancelled })}</dd></div></dl>}
+          {agentEvidence !== undefined && <dl><div><dt>{t("collaboration.agentRun.executor")}</dt><dd>{agentEvidence.executor}</dd></div><div><dt>{t("collaboration.agentRun.session")}</dt><dd><code>{agentEvidence.sessionId ?? t("collaboration.notObserved")}</code></dd></div><div><dt>{t("collaboration.agentRun.model")}</dt><dd>{agentEvidence.model ?? t("collaboration.notObserved")}</dd></div><div><dt>{t("collaboration.agentRun.permissions")}</dt><dd>{t("collaboration.agentRun.cancelled", { count: agentEvidence.permissionRequestsCancelled })}</dd></div>{agentEvidence.provenance !== undefined && <div><dt>{t("collaboration.provenance.canvasOrigin")}</dt><dd><code>{shortDigest(agentEvidence.provenance.provenanceDigest)}</code></dd></div>}</dl>}
           {(busy === "running" || busy === "interrupting") && <button type="button" className="artifact-interrupt" disabled={busy === "interrupting"} onClick={() => { void interruptAgent(); }}>{busy === "interrupting" ? t("collaboration.agentRun.interrupting") : t("collaboration.agentRun.interrupt")}</button>}
         </section>}
 
         {prepared !== undefined && <section className="artifact-collaboration-section artifact-proposal" aria-labelledby="artifact-proposal-heading">
           <header><span>{props.agentRunsEnabled ? 4 : 3}</span><div><h3 id="artifact-proposal-heading">{agentPlan === undefined ? t("collaboration.proposal.provider") : t("collaboration.proposal.agent")}</h3><p>{prepared.proposal.summary}</p></div></header>
           <img src={prepared.preview.uri} alt={t("collaboration.proposal.previewAlt", { label: prepared.preview.label })} />
-          <dl><div><dt>{t("collaboration.proposal.expected")}</dt><dd><code>{shortDigest(prepared.proposal.expectedRevision)}</code></dd></div><div><dt>{t("collaboration.proposal.proposal")}</dt><dd><code>{shortDigest(prepared.proposal.proposalDigest)}</code></dd></div></dl>
+          <dl><div><dt>{t("collaboration.proposal.expected")}</dt><dd><code>{shortDigest(prepared.proposal.expectedRevision)}</code></dd></div><div><dt>{t("collaboration.proposal.proposal")}</dt><dd><code>{shortDigest(prepared.proposal.proposalDigest)}</code></dd></div>{prepared.provenance !== undefined && <><div><dt>{t("collaboration.provenance.canvasOrigin")}</dt><dd><code>{shortDigest(prepared.provenance.provenanceDigest)}</code></dd></div><div><dt>{t("collaboration.provenance.canvasSource")}</dt><dd><code>{shortDigest(prepared.provenance.source.revision)}</code></dd></div></>}</dl>
           <ol>{prepared.proposal.actions.map((action, index) => <li key={`${action.kind}-${index}`}><strong>{action.kind}</strong><span>{action.summary}</span></li>)}</ol>
           {receipt === undefined && <div className="artifact-decision-actions"><button className="primary" type="button" disabled={busy !== undefined} onClick={() => { void decide("approve"); }}>{busy === "deciding" ? t("collaboration.proposal.settling") : t("collaboration.proposal.approve")}</button><button type="button" disabled={busy !== undefined} onClick={() => { void decide("reject"); }}>{t("collaboration.proposal.reject")}</button></div>}
         </section>}
 
         {receipt !== undefined && <section className={`artifact-collaboration-section artifact-receipt status-${receipt.status}`} aria-labelledby="artifact-receipt-heading">
           <header><span>{props.agentRunsEnabled ? 5 : 4}</span><div><h3 id="artifact-receipt-heading">{t("collaboration.receipt.title")}</h3><p>{receipt.verification.summary}</p></div></header>
-          <dl><div><dt>{t("collaboration.receipt.status")}</dt><dd>{receipt.status}</dd></div><div><dt>{t("collaboration.receipt.revision")}</dt><dd><code>{shortDigest(receipt.beforeRevision)} → {shortDigest(receipt.afterRevision)}</code></dd></div></dl>
+          <dl><div><dt>{t("collaboration.receipt.status")}</dt><dd>{receipt.status}</dd></div><div><dt>{t("collaboration.receipt.revision")}</dt><dd><code>{shortDigest(receipt.beforeRevision)} → {shortDigest(receipt.afterRevision)}</code></dd></div>{prepared?.provenance !== undefined && <div><dt>{t("collaboration.provenance.provenance")}</dt><dd><code>{shortDigest(prepared.provenance.provenanceDigest)}</code></dd></div>}</dl>
           {receipt.evidence.length > 0 && <ul>{receipt.evidence.map((entry, index) => <li key={`${entry.kind}-${index}`}>{entry.label}</li>)}</ul>}
           <button type="button" onClick={() => { setPrepared(undefined); setAgentPlan(undefined); setAgentEvidence(undefined); setAgentPhase(undefined); setReceipt(undefined); setMessage(""); setFailure(undefined); }}>{t("collaboration.receipt.another")}</button>
         </section>}
@@ -311,14 +325,22 @@ function isWorkspace(value: unknown, artifact: ArtifactDescriptor): value is Art
       && typeof target.address === "string" && typeof target.kind === "string" && typeof target.label === "string");
 }
 
-function isPreparedResponse(value: unknown, artifact: ArtifactDescriptor): value is PreparedProposalResponse {
+function isPreparedResponse(
+  value: unknown,
+  artifact: ArtifactDescriptor,
+  expectedOriginId?: string,
+): value is PreparedProposalResponse {
   if (!isRecord(value) || !isRecord(value.proposal) || !isRecord(value.preview)) return false;
+  const provenance = value.provenance;
+  if (expectedOriginId === undefined ? provenance !== undefined : !isProvenance(provenance, artifact, expectedOriginId)) return false;
+  const acceptedProvenance = provenance as ArtifactInteractionProvenanceV1 | undefined;
   return value.proposal.kind === "HarnessStudioArtifactInteractionProposalV1"
     && value.proposal.artifactId === artifact.id && value.proposal.expectedRevision === artifact.revision.id
     && typeof value.proposal.proposalId === "string" && typeof value.proposal.proposalDigest === "string"
     && typeof value.proposal.summary === "string" && Array.isArray(value.proposal.actions)
     && typeof value.preview.uri === "string" && value.preview.uri.startsWith("/api/artifacts/")
-    && typeof value.preview.mediaType === "string" && typeof value.preview.label === "string" && typeof value.preview.digest === "string";
+    && typeof value.preview.mediaType === "string" && typeof value.preview.label === "string" && typeof value.preview.digest === "string"
+    && (acceptedProvenance === undefined || (isRecord(value.proposal.target) && sameTarget(acceptedProvenance.draft.target, value.proposal.target)));
 }
 
 function isAgentPhase(value: unknown): value is { phase: ArtifactAgentRunPhaseV1; summary: string } {
@@ -338,12 +360,97 @@ function isAgentEvidence(
   artifact: ArtifactDescriptor,
   runId: string,
   targetAddress: string,
+  expectedOriginId?: string,
 ): value is ArtifactAgentRunEvidenceV1 {
-  return isRecord(value) && value.kind === ARTIFACT_AGENT_EVIDENCE_KIND && value.runId === runId
+  if (!isRecord(value) || (expectedOriginId === undefined
+    ? value.provenance !== undefined
+    : !isProvenance(value.provenance, artifact, expectedOriginId))) return false;
+  return value.kind === ARTIFACT_AGENT_EVIDENCE_KIND && value.runId === runId
     && value.artifactId === artifact.id && value.revision === artifact.revision.id
     && value.targetAddress === targetAddress && value.executor === "acp"
     && isRecord(value.agent) && typeof value.agent.id === "string" && typeof value.agent.label === "string"
     && typeof value.harnessRevisionId === "string" && typeof value.permissionRequestsCancelled === "number";
+}
+
+function originRefForDraft(
+  outcome: ArtifactHostedIntentOutcomeV1 | undefined,
+  targetAddress: string,
+  message: string,
+): ArtifactHostedIntentOutcomeV1["originRef"] | undefined {
+  return outcome?.effect.kind === "steering" && outcome.originRef !== undefined
+    && outcome.destination !== undefined && outcome.sourceTarget !== undefined
+    && outcome.effect.target.address === targetAddress && outcome.effect.steering.message === message
+    ? outcome.originRef
+    : undefined;
+}
+
+function isProvenance(
+  value: unknown,
+  artifact: ArtifactDescriptor,
+  expectedOriginId: string,
+): value is ArtifactInteractionProvenanceV1 {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "kind", "protocolVersion", "originId", "adoptionId", "source", "destination", "draft", "recordedBy",
+    "recordedAt", "adoptedBy", "adoptedAt", "provenanceDigest",
+  ]) || value.kind !== "HarnessStudioArtifactInteractionProvenanceV1" || value.protocolVersion !== "1"
+    || value.originId !== expectedOriginId
+    || !/^origin:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value.originId)
+    || typeof value.adoptionId !== "string"
+    || !/^adoption:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value.adoptionId)
+    || !artifactDigest(value.provenanceDigest)
+    || !isRecord(value.source) || !hasExactKeys(value.source, ["artifactId", "revision", "bindingId", "intentId", "target"])
+    || !isRecord(value.destination) || !hasExactKeys(value.destination, ["artifactId", "artifactLabel", "revision", "bindingId"])
+    || !isRecord(value.draft) || !hasExactKeys(value.draft, ["selectionId", "steeringId", "target", "steering"])
+    || !isRecord(value.recordedBy) || !hasExactKeys(value.recordedBy, ["id", "kind", "label"])
+    || !isRecord(value.adoptedBy) || !hasExactKeys(value.adoptedBy, ["id", "kind", "label"])
+    || typeof value.recordedAt !== "string" || !validIsoTime(value.recordedAt)
+    || typeof value.adoptedAt !== "string" || !validIsoTime(value.adoptedAt)) return false;
+  return portableIdentifier(value.source.artifactId) && artifactDigest(value.source.revision)
+    && artifactDigest(value.source.bindingId) && portableIdentifier(value.source.intentId) && isTarget(value.source.target)
+    && value.destination.artifactId === artifact.id && value.destination.artifactLabel === artifact.label
+    && value.destination.revision === artifact.revision.id && value.destination.bindingId === artifact.renderer.bindingId
+    && portableIdentifier(value.draft.selectionId) && portableIdentifier(value.draft.steeringId)
+    && isTarget(value.draft.target) && isRecord(value.draft.steering) && hasExactKeys(value.draft.steering, ["kind", "message"])
+    && boundedText(value.draft.steering.kind, 128) && boundedText(value.draft.steering.message, 8_192)
+    && value.recordedBy.id === "system:hosted-artifact-surface" && value.recordedBy.kind === "system"
+    && value.recordedBy.label === "Hosted Artifact surface"
+    && value.adoptedBy.id === HUMAN_ACTOR.id && value.adoptedBy.kind === "human" && value.adoptedBy.label === HUMAN_ACTOR.label;
+}
+
+function sameProvenance(value: unknown, expected: ArtifactInteractionProvenanceV1 | undefined): boolean {
+  return expected === undefined ? value === undefined : JSON.stringify(value) === JSON.stringify(expected);
+}
+
+function sameTarget(left: ArtifactInteractionProvenanceV1["draft"]["target"], right: Record<string, unknown>): boolean {
+  return left.address === right.address && left.kind === right.kind && left.label === right.label
+    && left.description === right.description;
+}
+
+function isTarget(value: unknown): value is ArtifactInteractionProvenanceV1["draft"]["target"] {
+  return isRecord(value) && hasExactKeys(value, ["address", "kind", "label"], ["description"])
+    && boundedText(value.address, 8_192) && boundedText(value.kind, 128)
+    && boundedText(value.label, 1_024) && (value.description === undefined || boundedText(value.description, 2_048));
+}
+
+function artifactDigest(value: unknown): value is `sha256:${string}` {
+  return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
+}
+
+function validIsoTime(value: string): boolean {
+  return Number.isFinite(Date.parse(value));
+}
+
+function portableIdentifier(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(value);
+}
+
+function boundedText(value: unknown, maxLength: number): value is string {
+  return typeof value === "string" && value.trim() !== "" && value.length <= maxLength;
+}
+
+function hasExactKeys(value: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []): boolean {
+  const allowed = new Set([...required, ...optional]);
+  return required.every((key) => key in value) && Object.keys(value).every((key) => allowed.has(key));
 }
 
 function isReceipt(value: unknown, proposal: ArtifactInteractionProposalV1, decisionId: string, decision: "approve" | "reject"): value is ArtifactInteractionTransitionReceiptV1 {

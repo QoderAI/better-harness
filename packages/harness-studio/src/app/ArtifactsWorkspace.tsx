@@ -335,27 +335,28 @@ function ArtifactIntentPane(props: {
   destinationAvailable: boolean;
   onUseDraft: () => void;
 }): React.JSX.Element {
+  const { t } = useTranslation("artifacts");
   const steering = props.outcome?.effect.kind === "steering" ? props.outcome.effect.steering : undefined;
-  return <aside className="artifact-collaboration-pane artifact-intent-pane" aria-label="Recorded Canvas intent" aria-live="polite">
-    <header><div><small>Canvas intent</small><h2>{props.failure !== undefined ? "Rejected" : steering === undefined ? "Selection" : "Steering draft"}</h2></div><span>{props.failure !== undefined ? "closed" : "recorded"}</span></header>
+  return <aside className="artifact-collaboration-pane artifact-intent-pane" aria-label={t("intent.aria")} aria-live="polite">
+    <header><div><small>{t("intent.eyebrow")}</small><h2>{props.failure !== undefined ? t("intent.rejected") : steering === undefined ? t("intent.selection") : t("intent.steeringDraft")}</h2></div><span>{props.failure !== undefined ? t("intent.closed") : t("intent.recorded")}</span></header>
     <div className="artifact-collaboration-scroll">
       {props.failure !== undefined
         ? <p className="artifact-collaboration-error" role="alert">{props.failure}</p>
         : props.outcome !== undefined && <section className="artifact-collaboration-section artifact-intent-state">
-        <header><span aria-hidden="true">✓</span><div><h3>Recorded, not executed</h3><p>The Host updated shared UI state only. No proposal, decision, Agent run, or Artifact mutation was started.</p></div></header>
+        <header><span aria-hidden="true">✓</span><div><h3>{t("intent.recordedNotExecuted")}</h3><p>{t("intent.recordedDetail")}</p></div></header>
         <dl>
-          <div><dt>Target</dt><dd>{props.outcome.effect.target.label}</dd></div>
-          <div><dt>Address</dt><dd><code>{props.outcome.effect.target.address}</code></dd></div>
-          {props.outcome.destination !== undefined && <div><dt>Artifact</dt><dd>{props.outcome.destination.artifactLabel}</dd></div>}
-          {props.outcome.sourceTarget !== undefined && <div><dt>Canvas source</dt><dd><code>{props.outcome.sourceTarget.address}</code></dd></div>}
-          {steering !== undefined && <div><dt>Draft</dt><dd>{steering.message}</dd></div>}
+          <div><dt>{t("intent.target")}</dt><dd>{props.outcome.effect.target.label}</dd></div>
+          <div><dt>{t("intent.address")}</dt><dd><code>{props.outcome.effect.target.address}</code></dd></div>
+          {props.outcome.destination !== undefined && <div><dt>{t("intent.artifact")}</dt><dd>{props.outcome.destination.artifactLabel}</dd></div>}
+          {props.outcome.sourceTarget !== undefined && <div><dt>{t("intent.canvasSource")}</dt><dd><code>{props.outcome.sourceTarget.address}</code></dd></div>}
+          {steering !== undefined && <div><dt>{t("intent.draft")}</dt><dd>{steering.message}</dd></div>}
         </dl>
         {steering !== undefined && props.outcome.destination !== undefined && <button
           type="button"
           className="primary artifact-collaboration-primary"
           disabled={!props.destinationAvailable}
           onClick={props.onUseDraft}
-        >{props.destinationAvailable ? "Use draft in Collaboration" : "Destination changed"}</button>}
+        >{props.destinationAvailable ? t("intent.useDraft") : t("intent.destinationChanged")}</button>}
       </section>}
     </div>
   </aside>;

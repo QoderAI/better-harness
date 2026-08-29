@@ -76,6 +76,24 @@ export const artifacts: typeof enArtifacts = {
   row: {
     workspaceRoot: "工作区根目录",
   },
+  intent: {
+    aria: "已记录的 Canvas 意图",
+    eyebrow: "Canvas 意图",
+    rejected: "已拒绝",
+    selection: "选择",
+    steeringDraft: "引导草稿",
+    closed: "已关闭",
+    recorded: "已记录",
+    recordedNotExecuted: "已记录，未执行",
+    recordedDetail: "Host 只更新了共享界面状态，未启动提案、决策、Agent 运行或产物变更。",
+    target: "目标",
+    address: "地址",
+    artifact: "产物",
+    canvasSource: "Canvas 来源",
+    draft: "草稿",
+    useDraft: "在协作中使用草稿",
+    destinationChanged: "目标已变更",
+  },
   collaboration: {
     aria: "产物协作",
     humanAgent: "人工 + Agent",
@@ -100,6 +118,17 @@ export const artifacts: typeof enArtifacts = {
       interrupt: "Host 无法中断此次 Agent 运行。",
       settle: "Host 无法结算此提案。",
       receiptContract: "不支持此产物转换回执协议。",
+      canvasDraftRequiresAgent: "此 Canvas 草稿需要 Agent 将指令编译为 Provider 的有界引导语法。",
+      canvasDraftTooLong: "记录的引导草稿超出此交互工作区的输入限制，因此未自动填入。",
+    },
+    intent: {
+      steeringDraft: "引导草稿",
+      recordedNotExecuted: "已记录，未执行",
+    },
+    provenance: {
+      canvasOrigin: "Canvas 来源",
+      canvasSource: "Canvas 源版本",
+      provenance: "溯源",
     },
     selection: {
       title: "共享选择",

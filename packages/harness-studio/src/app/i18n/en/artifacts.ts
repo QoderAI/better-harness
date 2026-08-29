@@ -74,6 +74,24 @@ export const artifacts = {
   row: {
     workspaceRoot: "Workspace root",
   },
+  intent: {
+    aria: "Recorded Canvas intent",
+    eyebrow: "Canvas intent",
+    rejected: "Rejected",
+    selection: "Selection",
+    steeringDraft: "Steering draft",
+    closed: "closed",
+    recorded: "recorded",
+    recordedNotExecuted: "Recorded, not executed",
+    recordedDetail: "The Host updated shared UI state only. No proposal, decision, Agent run, or Artifact mutation was started.",
+    target: "Target",
+    address: "Address",
+    artifact: "Artifact",
+    canvasSource: "Canvas source",
+    draft: "Draft",
+    useDraft: "Use draft in Collaboration",
+    destinationChanged: "Destination changed",
+  },
   collaboration: {
     aria: "Artifact collaboration",
     humanAgent: "Human + Agent",
@@ -98,6 +116,17 @@ export const artifacts = {
       interrupt: "The Host could not interrupt this Agent run.",
       settle: "The Host could not settle this proposal.",
       receiptContract: "Artifact transition receipt contract is unsupported.",
+      canvasDraftRequiresAgent: "This Canvas draft requires an Agent to compile its instruction into the Provider's bounded steering grammar.",
+      canvasDraftTooLong: "The recorded steering draft exceeds this interaction workspace's input limit and was not prefilled.",
+    },
+    intent: {
+      steeringDraft: "Steering draft",
+      recordedNotExecuted: "Recorded, not executed",
+    },
+    provenance: {
+      canvasOrigin: "Canvas origin",
+      canvasSource: "Canvas source",
+      provenance: "Provenance",
     },
     selection: {
       title: "Shared selection",

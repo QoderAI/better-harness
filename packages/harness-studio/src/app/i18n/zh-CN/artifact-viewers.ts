@@ -8,6 +8,7 @@ export const artifactViewers: typeof enArtifactViewers = {
   external: {
     noViewUri: "托管的产物界面没有视图 URI。",
     previewTitle: "产物预览：{{label}}",
+    intentRejected: "Host 已拒绝此 Canvas 意图，未执行任何操作。",
   },
   zoom: {
     in: "放大",

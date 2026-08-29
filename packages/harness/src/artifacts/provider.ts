@@ -198,14 +198,22 @@ export type ArtifactHostedIntentEffectV1 =
     steering: { kind: string; message: string };
   };
 
-export interface ArtifactHostedIntentAdmissionV1 {
+interface ArtifactHostedIntentAdmissionBaseV1 {
   intentId: string;
   effect: ArtifactHostedIntentEffectV1;
-  /** Projection-local target that produced a domain-native target effect. */
-  sourceTarget?: ArtifactInteractionTargetV1;
-  /** Provider claim only; the Host must resolve and normalize it before use. */
-  destination?: ArtifactHostedIntentDestinationClaimV1;
 }
+
+export type ArtifactHostedIntentAdmissionV1 =
+  | ArtifactHostedIntentAdmissionBaseV1 & {
+    sourceTarget?: never;
+    destination?: never;
+  }
+  | ArtifactHostedIntentAdmissionBaseV1 & {
+    /** Projection-local target that produced a domain-native target effect. */
+    sourceTarget: ArtifactInteractionTargetV1;
+    /** Provider claim only; the Host must resolve and normalize it before use. */
+    destination: ArtifactHostedIntentDestinationClaimV1;
+  };
 
 export interface ArtifactHostedIntentAdmissionInputV1 extends Readonly<Pick<ArtifactHostedIntentEnvelopeV1, "intentId" | "intent">> {
   /** Host deadline; conforming Providers stop admission work when aborted. */
@@ -243,8 +251,13 @@ export type ArtifactHostedIntentRecordedEffectV1 =
     steering: { kind: string; message: string };
   };
 
-/** Host-recorded admission outcome for a selection or steering draft, never execution. */
-export interface ArtifactHostedIntentOutcomeV1 {
+/** Host-minted lookup identity for one retained intent outcome; never execution authority. */
+export interface ArtifactHostedIntentOriginRefV1 {
+  kind: "HarnessStudioArtifactHostedIntentOriginRefV1";
+  originId: string;
+}
+
+interface ArtifactHostedIntentOutcomeBaseV1 {
   kind: "HarnessStudioArtifactHostedIntentOutcomeV1";
   protocolVersion: typeof ARTIFACT_HOSTED_INTENT_PROTOCOL_VERSION;
   artifactId: string;
@@ -256,11 +269,54 @@ export interface ArtifactHostedIntentOutcomeV1 {
   status: "recorded";
   execution: "not-executed";
   effect: ArtifactHostedIntentRecordedEffectV1;
-  /** Present only for a Provider-resolved native target. */
-  sourceTarget?: ArtifactInteractionTargetV1;
-  /** Host-minted exact interaction binding for the native target Artifact. */
-  destination?: ArtifactHostedIntentDestinationV1;
   replayed: boolean;
+}
+
+/** Host-recorded admission outcome for a selection or steering draft, never execution. */
+export type ArtifactHostedIntentOutcomeV1 =
+  | ArtifactHostedIntentOutcomeBaseV1 & {
+    sourceTarget?: never;
+    destination?: never;
+    originRef?: never;
+  }
+  | ArtifactHostedIntentOutcomeBaseV1 & {
+    /** Projection-local target that produced a domain-native target effect. */
+    sourceTarget: ArtifactInteractionTargetV1;
+    /** Host-minted exact interaction binding for the native target Artifact. */
+    destination: ArtifactHostedIntentDestinationV1;
+    /** Correlates an explicit later adoption with this retained Host outcome. */
+    originRef: ArtifactHostedIntentOriginRefV1;
+  };
+
+/**
+ * Host-owned evidence that one trusted Collaboration request adopted a retained
+ * hosted-surface steering draft. It is deliberately outside Provider proposal
+ * content and digests, preserving native Provider IR and authority boundaries.
+ */
+export interface ArtifactInteractionProvenanceV1 {
+  kind: "HarnessStudioArtifactInteractionProvenanceV1";
+  protocolVersion: typeof ARTIFACT_INTERACTION_PROTOCOL_VERSION;
+  originId: string;
+  adoptionId: string;
+  source: {
+    artifactId: string;
+    revision: ArtifactDigest;
+    bindingId: ArtifactDigest;
+    intentId: string;
+    target: ArtifactInteractionTargetV1;
+  };
+  destination: ArtifactHostedIntentDestinationV1;
+  draft: {
+    selectionId: string;
+    steeringId: string;
+    target: ArtifactInteractionTargetV1;
+    steering: { kind: string; message: string };
+  };
+  recordedBy: ArtifactInteractionActorV1;
+  recordedAt: string;
+  adoptedBy: ArtifactInteractionActorV1;
+  adoptedAt: string;
+  provenanceDigest: ArtifactDigest;
 }
 
 export interface ArtifactInteractionSteeringControlV1 {

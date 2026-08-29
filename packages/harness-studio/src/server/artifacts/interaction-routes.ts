@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   canonicalArtifactInteractionJson,
+  type ArtifactHostedIntentDestinationV1,
   type ArtifactInteractionActorV1,
   type ArtifactInteractionPreparedProposalV1,
   type ArtifactInteractionPrepareInputV1,
   type ArtifactInteractionProposalV1,
+  type ArtifactInteractionProvenanceV1,
   type ArtifactInteractionTargetV1,
   type ArtifactInteractionTransitionReceiptV1,
   type ArtifactInteractionWorkspaceV1,
@@ -17,6 +19,12 @@ import type {
   HarnessStudioState,
 } from "../studio-types.js";
 import { discoverArtifactProviderRuntime } from "./registry/artifact-provider-discovery.js";
+import {
+  ArtifactInteractionProvenanceError,
+  assertArtifactInteractionProvenanceCurrent,
+  parseArtifactHostedIntentOriginRef,
+  resolveArtifactInteractionProvenance,
+} from "./interaction-provenance.js";
 import {
   respondArtifactJson,
   resolveArtifactRevisionPlugin,
@@ -43,6 +51,7 @@ export interface RetainedArtifactInteractionBinding {
 export interface ArtifactInteractionProposalResponse {
   proposal: ArtifactInteractionProposalV1;
   preview: { uri: string; mediaType: string; label: string; digest: string };
+  provenance?: ArtifactInteractionProvenanceV1;
 }
 
 class ArtifactInteractionAuthorizationError extends Error {}
@@ -99,18 +108,58 @@ export async function prepareArtifactInteractionProposal(
     return;
   }
   try {
-    const body = exactObject(await readJsonBody(request), ["targetAddress", "steering", "requestedBy", "requestId"], "proposal request");
+    const body = exactObject(
+      await readJsonBody(request),
+      ["targetAddress", "steering", "requestedBy", "requestId"],
+      "proposal request",
+      ["originRef"],
+    );
     const requestedBy = actor(body.requestedBy, "requestedBy", "human");
     const steering = exactObject(body.steering, ["kind", "message"], "steering");
-    const input = {
-      targetAddress: boundedString(body.targetAddress, "targetAddress", 8_192),
+    const targetAddress = boundedString(body.targetAddress, "targetAddress", 8_192);
+    const parsedSteering = {
+      kind: boundedString(steering.kind, "steering.kind", 128),
+      message: boundedString(steering.message, "steering.message", 8_192),
+    } as const;
+    const originRef = body.originRef === undefined ? undefined : parseArtifactHostedIntentOriginRef(body.originRef);
+    let provenance: ArtifactInteractionProvenanceV1 | undefined;
+    if (originRef !== undefined) {
+      const bindingId = resolved.descriptor.renderer.bindingId;
+      if (bindingId === undefined) throw new Error("The destination Artifact has no current interaction binding.");
+      const workspace = assertArtifactInteractionWorkspace(
+        await interaction.inspect({ entry: resolved.entry, descriptor: resolved.descriptor }),
+        id,
+        resolved.descriptor.revision.id,
+      );
+      const selectedTarget = workspace.targets.find((target) => target.address === targetAddress);
+      if (selectedTarget === undefined) throw new Error("The selected Artifact target is not present in the exact interaction workspace.");
+      const destination: ArtifactHostedIntentDestinationV1 = {
+        artifactId: id,
+        artifactLabel: resolved.descriptor.label,
+        revision: resolved.descriptor.revision.id,
+        bindingId,
+      };
+      provenance = await resolveArtifactInteractionProvenance(
+        state,
+        options,
+        originRef,
+        destination,
+        selectedTarget,
+        parsedSteering.message,
+        requestedBy,
+        parsedSteering.kind,
+      );
+    }
+    const input: ArtifactInteractionPrepareInputV1 = {
+      targetAddress,
       steering: {
-        kind: boundedString(steering.kind, "steering.kind", 128),
-        message: boundedString(steering.message, "steering.message", 8_192),
+        kind: parsedSteering.kind,
+        message: parsedSteering.message,
       },
       requestedBy,
+      ...(provenance === undefined ? {} : { selectedBy: requestedBy }),
       requestId: boundedIdentifier(body.requestId, "requestId"),
-    } as const;
+    };
     const binding = {
       artifactId: id,
       revision: resolved.descriptor.revision.id,
@@ -120,10 +169,15 @@ export async function prepareArtifactInteractionProposal(
       context: { entry: resolved.entry, descriptor: resolved.descriptor },
       runtime: interaction,
     };
-    const result = await prepareAndRetainArtifactInteractionProposal(state, binding, input);
+    const result = await prepareAndRetainArtifactInteractionProposal(state, binding, input, {
+      provenance,
+      ...(provenance === undefined ? {} : {
+        revalidateProvenance: async () => await assertArtifactInteractionProvenanceCurrent(state, options, provenance),
+      }),
+    });
     respondArtifactJson(response, 201, result);
   } catch (error) {
-    respondArtifactJson(response, 422, { error: safeArtifactError(error) });
+    respondArtifactJson(response, error instanceof ArtifactInteractionProvenanceError ? error.status : 422, { error: safeArtifactError(error) });
   }
 }
 
@@ -137,7 +191,11 @@ export async function prepareAndRetainArtifactInteractionProposal(
   state: HarnessStudioState,
   binding: RetainedArtifactInteractionBinding,
   input: ArtifactInteractionPrepareInputV1,
-  constraints: { proposedByKind?: ArtifactInteractionActorV1["kind"] } = {},
+  constraints: {
+    proposedByKind?: ArtifactInteractionActorV1["kind"];
+    provenance?: ArtifactInteractionProvenanceV1;
+    revalidateProvenance?: () => Promise<void>;
+  } = {},
 ): Promise<ArtifactInteractionProposalResponse> {
   expireProposals(state);
   if (state.artifactInteractionProposals.size >= MAX_ACTIVE_PROPOSALS) {
@@ -156,6 +214,11 @@ export async function prepareAndRetainArtifactInteractionProposal(
   if (constraints.proposedByKind !== undefined && prepared.proposal.proposedBy.kind !== constraints.proposedByKind) {
     throw new Error(`The Provider proposal actor must be '${constraints.proposedByKind}'.`);
   }
+  if (constraints.provenance !== undefined
+    && canonicalArtifactInteractionJson(prepared.proposal.target) !== canonicalArtifactInteractionJson(constraints.provenance.draft.target)) {
+    throw new Error("The Provider proposal target does not match the adopted Canvas intent provenance.");
+  }
+  await constraints.revalidateProvenance?.();
   if (state.artifactInteractionProposals.has(prepared.proposal.proposalId)) {
     throw new Error("The Provider reused an active proposal id.");
   }
@@ -169,10 +232,11 @@ export async function prepareAndRetainArtifactInteractionProposal(
     context: binding.context,
     runtime: binding.runtime,
     prepared,
+    ...(constraints.provenance === undefined ? {} : { provenance: constraints.provenance }),
     createdAtMs: now,
     expiresAtMs: now + PROPOSAL_TTL_MS,
   });
-  return proposalResponse(binding.artifactId, binding.revision.slice("sha256:".length), prepared);
+  return proposalResponse(binding.artifactId, binding.revision.slice("sha256:".length), prepared, constraints.provenance);
 }
 
 export function serveArtifactInteractionPreview(
@@ -233,7 +297,11 @@ export async function decideArtifactInteractionProposal(
       if (record.terminal.decision === decision
         && record.terminal.decisionId === decisionId
         && record.terminal.actorId === decidedBy.id) {
-        respondArtifactJson(response, 200, { receipt: record.terminal.receipt, replayed: true });
+        respondArtifactJson(response, 200, {
+          receipt: record.terminal.receipt,
+          ...(record.provenance === undefined ? {} : { provenance: record.provenance }),
+          replayed: true,
+        });
         return;
       }
       respondArtifactJson(response, 409, { error: "The Artifact proposal was already settled by another decision." });
@@ -247,12 +315,19 @@ export async function decideArtifactInteractionProposal(
         return;
       }
       const receipt = await record.settling.promise;
-      respondArtifactJson(response, 200, { receipt, replayed: true });
+      respondArtifactJson(response, 200, {
+        receipt,
+        ...(record.provenance === undefined ? {} : { provenance: record.provenance }),
+        replayed: true,
+      });
       return;
     }
     const settlement = (async (): Promise<ArtifactInteractionTransitionReceiptV1> => {
       if (!(await providerStillAuthorized(options, record))) {
         throw new ArtifactInteractionAuthorizationError("The selected Artifact Provider is no longer active for this proposal.");
+      }
+      if (record.provenance !== undefined) {
+        await assertArtifactInteractionProvenanceCurrent(state, options, record.provenance);
       }
       const receipt = assertReceipt(await record.runtime.decide(record.context, {
         prepared: record.prepared,
@@ -267,12 +342,17 @@ export async function decideArtifactInteractionProposal(
     record.settling = { decision, decisionId, actorId: decidedBy.id, promise: settlement };
     try {
       const receipt = await settlement;
-      respondArtifactJson(response, 200, { receipt, replayed: false });
+      respondArtifactJson(response, 200, {
+        receipt,
+        ...(record.provenance === undefined ? {} : { provenance: record.provenance }),
+        replayed: false,
+      });
     } finally {
       if (record.settling?.promise === settlement) record.settling = undefined;
     }
   } catch (error) {
-    respondArtifactJson(response, error instanceof ArtifactInteractionAuthorizationError ? 409 : 422, { error: safeArtifactError(error) });
+    respondArtifactJson(response, error instanceof ArtifactInteractionAuthorizationError
+      || error instanceof ArtifactInteractionProvenanceError ? 409 : 422, { error: safeArtifactError(error) });
   }
 }
 
@@ -285,7 +365,12 @@ async function providerStillAuthorized(options: HarnessStudioServerOptions, reco
     && activation.fingerprint === record.providerFingerprint);
 }
 
-function proposalResponse(id: string, revision: string, prepared: ArtifactInteractionPreparedProposalV1): ArtifactInteractionProposalResponse {
+function proposalResponse(
+  id: string,
+  revision: string,
+  prepared: ArtifactInteractionPreparedProposalV1,
+  provenance?: ArtifactInteractionProvenanceV1,
+): ArtifactInteractionProposalResponse {
   return {
     proposal: prepared.proposal,
     preview: {
@@ -294,6 +379,7 @@ function proposalResponse(id: string, revision: string, prepared: ArtifactIntera
       label: prepared.preview.label,
       digest: prepared.preview.digest,
     },
+    ...(provenance === undefined ? {} : { provenance }),
   };
 }
 
@@ -420,10 +506,15 @@ function actor(value: unknown, path: string, requiredKind?: ArtifactInteractionA
   };
 }
 
-function exactObject(value: unknown, keys: readonly string[], path: string): Record<string, unknown> {
+function exactObject(
+  value: unknown,
+  keys: readonly string[],
+  path: string,
+  optionalKeys: readonly string[] = [],
+): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error(`${path} must be an object.`);
   const record = value as Record<string, unknown>;
-  const allowed = new Set(keys);
+  const allowed = new Set([...keys, ...optionalKeys]);
   const unknownKey = Object.keys(record).find((key) => !allowed.has(key));
   if (unknownKey !== undefined) throw new Error(`${path}.${unknownKey} is not supported.`);
   const missing = keys.find((key) => !(key in record));

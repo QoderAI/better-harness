@@ -45,7 +45,7 @@ export function ExternalHostedArtifactView({ artifact, onSelection, onIntentOutc
               bindingId: artifact.renderer.bindingId!,
               intentId: intent.intentId,
               requestSequence: request,
-              message: "The Host rejected this Canvas intent. No action was executed.",
+              message: t("external.intentRejected"),
             };
             onIntentFailure?.(failure);
           }
@@ -58,7 +58,7 @@ export function ExternalHostedArtifactView({ artifact, onSelection, onIntentOutc
       window.removeEventListener("message", receive);
       for (const controller of pending) controller.abort();
     };
-  }, [artifact, onIntentFailure, onIntentOutcome, onSelection]);
+  }, [artifact, onIntentFailure, onIntentOutcome, onSelection, t]);
   if (viewUri === undefined) {
     return <p className="artifact-status" role="alert">{t("external.noViewUri")}</p>;
   }
@@ -137,7 +137,7 @@ export function hostedArtifactIntentOutcome(
   if (artifact.renderer.bindingId === undefined || !isRecord(value) || !hasExactKeys(value, [
     "kind", "protocolVersion", "artifactId", "revision", "bindingId", "intentId", "actor", "recordedAt",
     "status", "execution", "effect", "replayed",
-  ], ["sourceTarget", "destination"]) || !isRecord(value.actor) || !hasExactKeys(value.actor, ["id", "kind", "label"]) || !isRecord(value.effect)
+  ], ["sourceTarget", "destination", "originRef"]) || !isRecord(value.actor) || !hasExactKeys(value.actor, ["id", "kind", "label"]) || !isRecord(value.effect)
     || value.kind !== "HarnessStudioArtifactHostedIntentOutcomeV1" || value.protocolVersion !== "1"
     || value.artifactId !== artifact.id || value.revision !== artifact.revision.id
     || value.bindingId !== artifact.renderer.bindingId || value.intentId !== intentId
@@ -149,9 +149,12 @@ export function hostedArtifactIntentOutcome(
   if (target === undefined) return undefined;
   const sourceTarget = value.sourceTarget === undefined ? undefined : intentTarget(value.sourceTarget);
   const destination = value.destination === undefined ? undefined : intentDestination(value.destination);
+  const originRef = value.originRef === undefined ? undefined : intentOriginRef(value.originRef);
   if ((sourceTarget === undefined) !== (destination === undefined)
+    || (sourceTarget === undefined) !== (originRef === undefined)
     || (value.sourceTarget !== undefined && sourceTarget === undefined)
-    || (value.destination !== undefined && destination === undefined)) return undefined;
+    || (value.destination !== undefined && destination === undefined)
+    || (value.originRef !== undefined && originRef === undefined)) return undefined;
   const common = {
     kind: value.kind,
     protocolVersion: value.protocolVersion,
@@ -163,27 +166,40 @@ export function hostedArtifactIntentOutcome(
     recordedAt: value.recordedAt,
     status: value.status,
     execution: value.execution,
-    ...(sourceTarget === undefined ? {} : { sourceTarget }),
-    ...(destination === undefined ? {} : { destination }),
     replayed: value.replayed,
   } as const;
   if (value.effect.kind === "selection" && hasExactKeys(value.effect, ["kind", "selectionId", "target"])) {
-    return { ...common, effect: { kind: "selection", selectionId: value.effect.selectionId, target } };
+    const effect = { kind: "selection", selectionId: value.effect.selectionId, target } as const;
+    return sourceTarget === undefined
+      ? { ...common, effect }
+      : { ...common, sourceTarget, destination: destination!, originRef: originRef!, effect };
   }
   if (value.effect.kind !== "steering" || !hasExactKeys(value.effect, ["kind", "selectionId", "steeringId", "target", "steering"])
     || !portableIdentifier(value.effect.steeringId) || !isRecord(value.effect.steering)
     || !hasExactKeys(value.effect.steering, ["kind", "message"])
     || !boundedText(value.effect.steering.kind, 128) || !boundedText(value.effect.steering.message, 8_192)) return undefined;
-  return {
+  const effect = {
+    kind: "steering",
+    selectionId: value.effect.selectionId,
+    steeringId: value.effect.steeringId,
+    target,
+    steering: { kind: value.effect.steering.kind, message: value.effect.steering.message },
+  } as const;
+  return sourceTarget === undefined ? { ...common, effect } : {
     ...common,
-    effect: {
-      kind: "steering",
-      selectionId: value.effect.selectionId,
-      steeringId: value.effect.steeringId,
-      target,
-      steering: { kind: value.effect.steering.kind, message: value.effect.steering.message },
-    },
+    sourceTarget,
+    destination: destination!,
+    originRef: originRef!,
+    effect,
   };
+}
+
+function intentOriginRef(value: unknown): ArtifactHostedIntentOutcomeV1["originRef"] | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["kind", "originId"])
+    || value.kind !== "HarnessStudioArtifactHostedIntentOriginRefV1"
+    || typeof value.originId !== "string"
+    || !/^origin:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value.originId)) return undefined;
+  return { kind: value.kind, originId: value.originId };
 }
 
 function intentDestination(value: unknown): ArtifactHostedIntentOutcomeV1["destination"] | undefined {

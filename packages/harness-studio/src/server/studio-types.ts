@@ -8,6 +8,7 @@ import {
   ArtifactAdaptContext,
   ArtifactHostedIntentOutcomeV1,
   ArtifactInteractionPreparedProposalV1,
+  ArtifactInteractionProvenanceV1,
   ArtifactInteractionRuntimeImplementation,
   ArtifactInteractionTransitionReceiptV1,
   ExternalArtifactProvider,
@@ -254,6 +255,7 @@ export interface ArtifactInteractionProposalState {
   context: ArtifactAdaptContext;
   runtime: ArtifactInteractionRuntimeImplementation;
   prepared: ArtifactInteractionPreparedProposalV1;
+  provenance?: ArtifactInteractionProvenanceV1;
   createdAtMs: number;
   expiresAtMs: number;
   settling?: {
