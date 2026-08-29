@@ -70,6 +70,14 @@ export const customize: typeof enCustomize = {
     unexposed: "未暴露",
     opaqueSource: "来源不明",
     unknownPackage: "未知包",
+    kinds: {
+      "agent-skill": "Agent Skill",
+      "agent-definition": "Agent 定义",
+      "mcp-server-definition": "MCP 服务器",
+      "prompt-command": "Prompt 命令",
+      hook: "Hook",
+      instruction: "说明",
+    },
   },
   hosts: {
     title: "Host",
@@ -77,6 +85,11 @@ export const customize: typeof enCustomize = {
     definitions: "定义",
     packages: "包",
     mcp: "MCP",
+    status: {
+      partial: "部分完成",
+      error: "错误",
+      unsupported: "不支持",
+    },
   },
   memory: {
     summaryAria: "记忆审计摘要",

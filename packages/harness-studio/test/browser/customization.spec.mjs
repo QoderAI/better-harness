@@ -131,6 +131,16 @@ test("analyzes Host customizations only after the explicit action across layouts
   await expect(installationRow).toContainText("Workspace/.codex/plugins/review-plugin/.codex-plugin/plugin.json");
   await definitionsTab.click();
 
+  await page.locator(".studio-language-toggle").click();
+  await expect(page.getByText("本地自定义目录", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "再次分析" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "定义" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "安装" })).toBeVisible();
+  await expect(hostFailure).toContainText("Claude customization collection failed");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await page.locator(".studio-language-toggle").click();
+  await expect(page.getByRole("button", { name: "Analyze again" })).toBeVisible();
+
   for (const layout of layouts) {
     await page.setViewportSize({ width: layout.width, height: layout.height });
     await expect(page.getByRole("button", { name: "Analyze again" })).toBeVisible();

@@ -399,6 +399,12 @@ test("runs explicit AgentReact end to end and commits only a verified staging bu
   await expect(live.locator("[data-agent-react-label]")).toHaveText("first verified build");
   await expect(live.locator("[data-artifact-node]").first()).toBeVisible();
   await expect(page.getByText("AgentReact build committed from isolated staging.")).toBeVisible();
+  await page.locator(".studio-language-toggle").click();
+  await expect(page.getByRole("tab", { name: "预览" })).toBeVisible();
+  await expect(page.getByText("AgentReact 构建已从隔离暂存环境提交。")).toBeVisible();
+  await expect(page.locator('iframe[title="实时 AgentReact 预览：orders.agent.canvas.tsx"]')).toBeVisible();
+  await page.locator(".studio-language-toggle").click();
+  await expect(page.getByText("AgentReact build committed from isolated staging.")).toBeVisible();
   await expect(liveFrame).toHaveAttribute("sandbox", "allow-scripts");
   await expect(liveFrame).toHaveAttribute("referrerpolicy", "no-referrer");
   const previewUri = await liveFrame.getAttribute("src");
