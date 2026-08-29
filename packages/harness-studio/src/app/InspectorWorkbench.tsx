@@ -9,6 +9,7 @@ import {
   replayIndexForFile,
   sessionTurns,
   type InspectorCommit as Commit,
+  type InspectorCacheReuse as CacheReuse,
   type InspectorReplayEvent as ReplayEvent,
   type InspectorSession as Session,
   type InspectorToolCall as ToolCall,
@@ -495,6 +496,57 @@ function ProcessingBreakdown({ session, report }: { session: Session; report: Us
   </section>;
 }
 
+function formatCacheReuse(reuse: CacheReuse | undefined): string {
+  if (!reuse) return "not observed";
+  if (reuse.status === "observed" && Number.isFinite(reuse.reusePercent)) return `${reuse.reusePercent}% input reused`;
+  if (reuse.status === "inconsistent") return `${formatTokenCount(reuse.cacheReadTokens)} cached · rate unavailable (inconsistent counters)`;
+  return `${formatTokenCount(reuse.cacheReadTokens)} cached · rate unavailable`;
+}
+
+function CacheReuseBar({ reuse, detailed = false }: { reuse: CacheReuse; detailed?: boolean }): React.JSX.Element | null {
+  if (reuse.status !== "observed" || !Number.isFinite(reuse.promptInputTokens) || Number(reuse.promptInputTokens) <= 0) return null;
+  const uncachedInput = Number(reuse.uncachedInputTokens);
+  const cacheCreation = Number.isFinite(reuse.cacheCreationTokens) ? Math.min(uncachedInput, Number(reuse.cacheCreationTokens)) : 0;
+  const buckets = [
+    { kind: "cached", label: "Cached input", value: reuse.cacheReadTokens },
+    ...(detailed ? [{ kind: "created", label: "Cache creation", value: cacheCreation }] : []),
+    { kind: "uncached", label: detailed ? "Other uncached input" : "Uncached input", value: detailed ? Math.max(0, uncachedInput - cacheCreation) : uncachedInput },
+  ].filter((bucket) => Number.isFinite(bucket.value) && bucket.value > 0);
+  const label = `${reuse.reusePercent}% of ${formatTokenCount(Number(reuse.promptInputTokens))} observed input was served from cache`;
+  return <div className="usage-reuse-bar" role="img" aria-label={label}>{buckets.map((bucket) => <i className={`reuse-${bucket.kind}`} style={{ flexGrow: bucket.value }} title={`${bucket.label}: ${formatTokenCount(bucket.value)}`} key={bucket.kind} />)}</div>;
+}
+
+function CacheReuseSummary({ reuse }: { reuse: CacheReuse }): React.JSX.Element {
+  const observed = reuse.status === "observed" && Number.isFinite(reuse.promptInputTokens);
+  const headline = observed ? `${reuse.reusePercent}% reused` : `${formatTokenCount(reuse.cacheReadTokens)} cached`;
+  const detail = observed
+    ? `${formatTokenCount(reuse.cacheReadTokens)} cached of ${formatTokenCount(Number(reuse.promptInputTokens))} observed input`
+    : reuse.status === "inconsistent" ? "Reuse rate unavailable because provider counters are inconsistent" : "Reuse rate unavailable because the cache relationship is unknown";
+  return <div className="usage-summary-reuse"><div className="usage-context-meta"><strong>Input reuse</strong><span>{headline}</span></div><CacheReuseBar reuse={reuse} /><p>{detail}</p></div>;
+}
+
+function InputReuseSection({ reuse }: { reuse: CacheReuse | undefined }): React.JSX.Element | null {
+  if (!reuse) return null;
+  const observed = reuse.status === "observed" && Number.isFinite(reuse.promptInputTokens);
+  const cacheCreation = Number.isFinite(reuse.cacheCreationTokens) ? Number(reuse.cacheCreationTokens) : null;
+  const otherUncached = observed && Number(cacheCreation) > 0 ? Math.max(0, Number(reuse.uncachedInputTokens) - Number(cacheCreation)) : Number(reuse.uncachedInputTokens);
+  const facts = [
+    { label: "Cached input", value: reuse.cacheReadTokens, kind: "cached" },
+    ...(cacheCreation !== null ? [{ label: "Cache creation", value: cacheCreation, kind: "created" }] : []),
+    ...(observed ? [{ label: Number(cacheCreation) > 0 ? "Other uncached input" : "Uncached input", value: otherUncached, kind: "uncached" }] : []),
+  ];
+  const relation = reuse.accountingMode === "included-in-input" ? "Cache reads are included in the provider input total."
+    : reuse.accountingMode === "separate-input-lane" ? "Cache reads and cache creation are separate provider input lanes."
+      : "The provider relationship between input and cache counters was not observed.";
+  const status = observed ? `${reuse.reusePercent}% reused` : reuse.status === "inconsistent" ? "rate unavailable" : `${formatTokenCount(reuse.cacheReadTokens)} cached`;
+  return <section className="usage-report-section usage-reuse-section" data-cache-reuse-status={reuse.status}>
+    <header><div><h4>Input reuse</h4><p>Cached input still occupies context. Provider caching can reduce cost or latency, but this report does not estimate savings.</p></div><strong>{status}</strong></header>
+    <CacheReuseBar reuse={reuse} detailed />
+    <ul className="usage-reuse-list">{facts.map((fact) => <li key={fact.kind}><i className={`reuse-${fact.kind}`} /><span>{fact.label}</span><strong>{formatTokenCount(fact.value)}</strong>{observed && <small>{Math.round((fact.value / Number(reuse.promptInputTokens)) * 1000) / 10}%</small>}</li>)}</ul>
+    <p className="usage-reuse-note">{relation}{reuse.status === "inconsistent" ? " The observed values are retained, but no rate is derived." : ""}</p>
+  </section>;
+}
+
 function UsageProgressRows({ report }: { report: UsageReport }): React.JSX.Element {
   if (!report.progression.length) return <p className="usage-report-unavailable">Per-response context snapshots were not retained.</p>;
   const visible = report.progression.slice(-20);
@@ -505,7 +557,7 @@ function UsageProgressRows({ report }: { report: UsageReport }): React.JSX.Eleme
   return <details className="usage-progress-details" open>
     <summary>{scope}</summary>
     <div className="usage-progress-head" aria-hidden="true"><span>Response</span><span>Context</span><span>Δ context</span><span>Processed</span><span>Output</span></div>
-    <ol className="usage-progress-list">{visible.map((point) => { const stamp = formatUsageStamp(point.timestamp); const meta = [stamp ? `${stamp} UTC` : null, Number.isFinite(point.turnIndex) ? `Turn ${point.turnIndex}` : null].filter(Boolean).join(" · "); const prompt = point.userPrompt?.replace(/\s+/gu, " ").trim() || point.model || "model unavailable"; return <li className={`boundary-${point.boundary}`} title={point.model ?? "model unavailable"} key={point.id}><div><strong>Response {point.index}</strong><span>{meta || "time and Turn unavailable"}</span><small title={prompt}>{prompt}</small></div><strong>{Number.isFinite(point.contextTokens) ? formatTokenCount(Number(point.contextTokens)) : "—"}</strong><span className="usage-delta">{Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(Number(point.contextDeltaTokens)) : point.boundary === "model-change" ? "model boundary" : point.boundary}</span><span>{Number.isFinite(point.processedTokens) ? formatTokenCount(Number(point.processedTokens)) : "—"}</span><span>{Number.isFinite(point.outputTokens) ? formatTokenCount(Number(point.outputTokens)) : "—"}</span></li>; })}</ol>
+    <ol className="usage-progress-list">{visible.map((point) => { const stamp = formatUsageStamp(point.timestamp); const meta = [stamp ? `${stamp} UTC` : null, Number.isFinite(point.turnIndex) ? `Turn ${point.turnIndex}` : null].filter(Boolean).join(" · "); const prompt = point.userPrompt?.replace(/\s+/gu, " ").trim() || point.model || "model unavailable"; return <li className={`boundary-${point.boundary}`} title={point.model ?? "model unavailable"} key={point.id}><div><strong>Response {point.index}</strong><span>{meta || "time and Turn unavailable"}</span><small title={prompt}>{prompt}</small>{point.cacheReuse && <em className="usage-row-reuse">{formatCacheReuse(point.cacheReuse)}</em>}</div><strong>{Number.isFinite(point.contextTokens) ? formatTokenCount(Number(point.contextTokens)) : "—"}</strong><span className="usage-delta">{Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(Number(point.contextDeltaTokens)) : point.boundary === "model-change" ? "model boundary" : point.boundary}</span><span>{Number.isFinite(point.processedTokens) ? formatTokenCount(Number(point.processedTokens)) : "—"}</span><span>{Number.isFinite(point.outputTokens) ? formatTokenCount(Number(point.outputTokens)) : "—"}</span></li>; })}</ol>
   </details>;
 }
 
@@ -513,14 +565,16 @@ function UsageContextSummary({ session, onViewReport }: { session: Session; onVi
   const usage = session.tokenUsage;
   const context = usageContextPresentation(session);
   const report = session.usageReport ?? EMPTY_USAGE_REPORT;
+  const cacheReuse = session.cacheReuse;
   const metrics: Array<{ label: string; value: string }> = [];
   if (Number.isFinite(report.currentContextTokens)) metrics.push({ label: "Current context", value: formatTokenCount(Number(report.currentContextTokens)) });
   else if (context.hasPercentFull) metrics.push({ label: "Current occupancy", value: `${context.percentFull}%` });
-  if (Number.isFinite(report.netContextDeltaTokens)) metrics.push({ label: "Net context growth", value: formatSignedTokenCount(Number(report.netContextDeltaTokens)) });
+  if (cacheReuse) metrics.push({ label: "Input reused", value: cacheReuse.status === "observed" ? `${cacheReuse.reusePercent}%` : formatTokenCount(cacheReuse.cacheReadTokens) });
   if (Number.isFinite(report.processedTokens)) metrics.push({ label: "Session processed", value: formatTokenCount(Number(report.processedTokens)) });
   else if (Number.isFinite(report.providerTotalTokens)) metrics.push({ label: "Provider total", value: formatTokenCount(Number(report.providerTotalTokens)) });
   if (report.actualModelCalls > 0) metrics.push({ label: "Model calls", value: String(report.actualModelCalls) });
-  const boundary = context.hasContextWindow ? `${formatTokenCount(context.usedTokens)} / ${formatTokenCount(context.windowTokens)} · ${context.percentFull}% full`
+  const net = Number.isFinite(report.netContextDeltaTokens) ? ` · ${formatSignedTokenCount(Number(report.netContextDeltaTokens))} net` : "";
+  const boundary = context.hasContextWindow ? `${formatTokenCount(context.usedTokens)} / ${formatTokenCount(context.windowTokens)} · ${context.percentFull}% full${net}`
     : context.hasPercentFull ? "Context window size unavailable"
       : context.hasUsedTokens ? "Context window and token categories unavailable" : "Context evidence unavailable";
   return <section className="session-usage-summary" aria-labelledby="session-usage-summary-title">
@@ -528,6 +582,7 @@ function UsageContextSummary({ session, onViewReport }: { session: Session; onVi
     <dl className="usage-summary-metrics">{metrics.map((metric) => <div key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}</dd></div>)}</dl>
     {context.hasContextWindow ? <ContextUsageBar segments={context.segments} unusedTokens={context.unusedTokens} label={`${context.percentFull}% of the observed context window is full`} /> : context.hasPercentFull ? <ContextOccupancyBar percentFull={context.percentFull} label={`${context.percentFull}% context occupancy observed; window size unavailable`} /> : null}
     <p className="usage-summary-boundary">{boundary}</p>
+    {cacheReuse && <CacheReuseSummary reuse={cacheReuse} />}
     {report.duplicateRecordsCollapsed > 0 && <p className="usage-summary-diagnostics">{report.duplicateRecordsCollapsed} duplicate record{report.duplicateRecordsCollapsed === 1 ? "" : "s"} collapsed{report.conflictingDuplicateRecords > 0 ? ` · ${report.conflictingDuplicateRecords} conflict${report.conflictingDuplicateRecords === 1 ? "" : "s"}` : ""}</p>}
   </section>;
 }
@@ -536,23 +591,27 @@ function SessionUsageReport({ session }: { session: Session }): React.JSX.Elemen
   const usage = session.tokenUsage;
   const context = usageContextPresentation(session);
   const report: UsageReport = session.usageReport ?? EMPTY_USAGE_REPORT;
+  const cacheReuse = session.cacheReuse;
   const runtime = session.runtime;
   const compactionCount = Number(session.contextManifest?.compactionCount) || 0;
   const compactionNote = compactionCount > 0 ? ` Provider reported ${compactionCount} compaction boundar${compactionCount === 1 ? "y" : "ies"}.` : "";
+  const inputLabel = usage?.cacheAccountingMode === "included-in-input" ? "Total input (includes cached)"
+    : usage?.cacheAccountingMode === "separate-input-lane" ? "Uncached input" : "Input (cache relationship unknown)";
   const accounting = [
     ["Provider total", formatObservedTokenCount(usage?.totalTokens)],
-    ["Input", formatObservedTokenCount(usage?.inputTokens)],
+    [inputLabel, formatObservedTokenCount(usage?.inputTokens)],
     ["Output", formatObservedTokenCount(usage?.outputTokens)],
-    ["Cache read", formatObservedTokenCount(usage?.cacheReadInputTokens)],
+    ["Cached input read", formatObservedTokenCount(usage?.cacheReadInputTokens)],
     ["Cache creation", formatObservedTokenCount(usage?.cacheCreationInputTokens)],
     ["Reasoning", formatObservedTokenCount(usage?.reasoningOutputTokens)],
   ];
   return <section className="session-mode-panel usage-report" aria-label="Usage report">
-    <header className="usage-report-lead"><div><span className="usage-report-kicker">Read-only evidence</span><h3>Usage and Context Report</h3><p>Unique model responses, absolute context progression, and explicitly sourced token accounting for this Session.</p></div><div className="usage-report-occupancy">{context.hasContextWindow ? <><strong>{formatTokenCount(Number(report.currentContextTokens ?? context.usedTokens))}</strong><span>Current context</span><small>{formatTokenCount(context.usedTokens)} / {formatTokenCount(context.windowTokens)} · {context.percentFull}% full</small></> : context.hasPercentFull ? <><strong>{context.percentFull}%</strong><span>Full</span><small>Window size not observed</small></> : context.hasUsedTokens ? <><strong>{formatTokenCount(Number(report.currentContextTokens ?? context.usedTokens))}</strong><span>Current context</span><small>Context window not observed</small></> : <><strong>—</strong><span>Occupancy unavailable</span><small>No observed context evidence</small></>}</div><dl className="usage-report-lead-facts"><div><dt>Baseline context</dt><dd>{Number.isFinite(report.baselineContextTokens) ? formatTokenCount(Number(report.baselineContextTokens)) : "not observed"}</dd></div><div><dt>Net context growth</dt><dd>{Number.isFinite(report.netContextDeltaTokens) ? formatSignedTokenCount(Number(report.netContextDeltaTokens)) : "not comparable"}</dd></div><div><dt>Session processed</dt><dd>{Number.isFinite(report.processedTokens) ? formatTokenCount(Number(report.processedTokens)) : "not derived"}</dd></div><div><dt>Model calls</dt><dd>{report.actualModelCalls || "not observed"}</dd></div><div><dt>Coverage</dt><dd>{usage?.coverage ?? session.contextManifest?.status ?? "unobserved"}</dd></div></dl></header>
+    <header className="usage-report-lead"><div><span className="usage-report-kicker">Read-only evidence</span><h3>Usage and Context Report</h3><p>Unique model responses, absolute context progression, and explicitly sourced token accounting for this Session.</p></div><div className="usage-report-occupancy">{context.hasContextWindow ? <><strong>{formatTokenCount(Number(report.currentContextTokens ?? context.usedTokens))}</strong><span>Current context</span><small>{formatTokenCount(context.usedTokens)} / {formatTokenCount(context.windowTokens)} · {context.percentFull}% full</small></> : context.hasPercentFull ? <><strong>{context.percentFull}%</strong><span>Full</span><small>Window size not observed</small></> : context.hasUsedTokens ? <><strong>{formatTokenCount(Number(report.currentContextTokens ?? context.usedTokens))}</strong><span>Current context</span><small>Context window not observed</small></> : <><strong>—</strong><span>Occupancy unavailable</span><small>No observed context evidence</small></>}</div><dl className="usage-report-lead-facts">{cacheReuse && <div><dt>Input reused</dt><dd>{cacheReuse.status === "observed" ? `${cacheReuse.reusePercent}%` : "rate unavailable"}</dd></div>}<div><dt>Baseline context</dt><dd>{Number.isFinite(report.baselineContextTokens) ? formatTokenCount(Number(report.baselineContextTokens)) : "not observed"}</dd></div><div><dt>Net context growth</dt><dd>{Number.isFinite(report.netContextDeltaTokens) ? formatSignedTokenCount(Number(report.netContextDeltaTokens)) : "not comparable"}</dd></div><div><dt>Session processed</dt><dd>{Number.isFinite(report.processedTokens) ? formatTokenCount(Number(report.processedTokens)) : "not derived"}</dd></div><div><dt>Model calls</dt><dd>{report.actualModelCalls || "not observed"}</dd></div><div><dt>Coverage</dt><dd>{usage?.coverage ?? session.contextManifest?.status ?? "unobserved"}</dd></div></dl></header>
+    <InputReuseSection reuse={cacheReuse} />
     <section className="usage-report-section"><header><div><h4>Context progression</h4><p>Absolute prompt snapshots across unique model responses. Deltas are net context change, not consumption.{progressionBoundaryNote(report)}{compactionNote}</p></div><strong>{report.actualModelCalls} unique calls</strong></header><ContextProgressChart report={report} /><UsageProgressRows report={report} /></section>
     <ProcessingBreakdown session={session} report={report} />
     <section className="usage-report-section"><header><div><h4>Current context composition</h4><p>Token-weighted categories within the current observed context, when the host retained them.</p></div>{context.hasPercentFull && <strong>{context.percentFull}% full</strong>}</header>{context.hasContextWindow ? <><ContextUsageBar segments={context.segments} unusedTokens={context.unusedTokens} label={`${context.percentFull}% of the observed context window is full`} />{context.hasCategoryBreakdown ? <ul className="usage-composition-list">{context.segments.map((segment, index) => <li key={`${segment.kind}-${segment.label}-${index}`}><i className={`category-${segment.colorIndex % 8}`} /><span>{segment.label}</span><strong>{formatTokenCount(segment.tokens)}</strong></li>)}<li className="usage-composition-unused"><i /><span>Unused context window</span><strong>{formatTokenCount(context.unusedTokens)}</strong></li></ul> : <p className="usage-report-unavailable">Category breakdown unavailable; only aggregate used and window totals were retained.</p>}</> : context.hasPercentFull ? <><ContextOccupancyBar percentFull={context.percentFull} label={`${context.percentFull}% context occupancy observed; window size unavailable`} /><p className="usage-report-unavailable">Absolute window and token-weighted categories were not retained.</p></> : context.hasUsedTokens ? <p className="usage-report-unavailable">{formatTokenCount(context.usedTokens)} prompt tokens were observed; the context window and token-weighted categories were not retained.</p> : <p className="usage-report-unavailable">Context-window occupancy and composition were not observed.</p>}</section>
-    <div className="usage-report-columns"><section className="usage-report-section"><header><div><h4>Provider accounting</h4><p>Observed provider counters. Provider total remains distinct from derived Session processed usage.</p></div></header><dl className="usage-report-facts">{accounting.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section><section className="usage-report-section"><header><div><h4>Context structure</h4><p>Counts only; prompt text remains omitted.</p></div></header><dl className="usage-report-facts">{session.contextManifest?.layers?.length ? session.contextManifest.layers.map((layer) => <div key={layer.kind}><dt>{layer.kind}</dt><dd>×{layer.itemCount}</dd></div>) : <div><dt>Layers</dt><dd>not observed</dd></div>}<div><dt>Compactions</dt><dd>{session.contextManifest ? session.contextManifest.compactionCount ?? 0 : "not observed"}</dd></div></dl></section><section className="usage-report-section"><header><div><h4>Evidence details</h4><p>Runtime, provenance, and normalization diagnostics retained with this Session.</p></div></header><dl className="usage-report-facts"><div><dt>Provider</dt><dd>{runtime?.modelProvider ?? session.platform ?? "not observed"}</dd></div><div><dt>Effort</dt><dd>{runtime?.effort ?? "not observed"}</dd></div><div><dt>CLI</dt><dd>{runtime?.cliVersion ?? "not observed"}</dd></div><div><dt>Time basis</dt><dd>{session.timestampBasis ?? "unobserved"}</dd></div><div><dt>Context basis</dt><dd>{session.contextManifest?.basis ?? "not observed"}</dd></div><div><dt>Processed basis</dt><dd>{report.processedTokensBasis ?? "not derived"}</dd></div>{report.processedCoverage ? <div><dt>Processed coverage</dt><dd>{report.processedCoverage}</dd></div> : null}<div><dt>Evidence source</dt><dd>{usage?.source ?? session.contextManifest?.source ?? "not observed"}</dd></div>{report.duplicateRecordsCollapsed > 0 && <><div><dt>Duplicates collapsed</dt><dd>{report.duplicateRecordsCollapsed}</dd></div><div><dt>Conflicting duplicates</dt><dd>{report.conflictingDuplicateRecords}</dd></div></>}<div><dt>Raw context</dt><dd>omitted</dd></div></dl></section></div>
+    <div className="usage-report-columns"><section className="usage-report-section"><header><div><h4>Provider accounting</h4><p>Observed provider counters. Labels preserve whether cached input is included or reported as a separate lane.</p></div></header><dl className="usage-report-facts">{accounting.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section><section className="usage-report-section"><header><div><h4>Context structure</h4><p>Counts only; prompt text remains omitted.</p></div></header><dl className="usage-report-facts">{session.contextManifest?.layers?.length ? session.contextManifest.layers.map((layer) => <div key={layer.kind}><dt>{layer.kind}</dt><dd>×{layer.itemCount}</dd></div>) : <div><dt>Layers</dt><dd>not observed</dd></div>}<div><dt>Compactions</dt><dd>{session.contextManifest ? session.contextManifest.compactionCount ?? 0 : "not observed"}</dd></div></dl></section><section className="usage-report-section"><header><div><h4>Evidence details</h4><p>Runtime, provenance, and normalization diagnostics retained with this Session.</p></div></header><dl className="usage-report-facts"><div><dt>Provider</dt><dd>{runtime?.modelProvider ?? session.platform ?? "not observed"}</dd></div><div><dt>Effort</dt><dd>{runtime?.effort ?? "not observed"}</dd></div><div><dt>CLI</dt><dd>{runtime?.cliVersion ?? "not observed"}</dd></div><div><dt>Time basis</dt><dd>{session.timestampBasis ?? "unobserved"}</dd></div><div><dt>Context basis</dt><dd>{session.contextManifest?.basis ?? "not observed"}</dd></div><div><dt>Processed basis</dt><dd>{report.processedTokensBasis ?? "not derived"}</dd></div>{report.processedCoverage ? <div><dt>Processed coverage</dt><dd>{report.processedCoverage}</dd></div> : null}<div><dt>Evidence source</dt><dd>{usage?.source ?? session.contextManifest?.source ?? "not observed"}</dd></div>{report.duplicateRecordsCollapsed > 0 && <><div><dt>Duplicates collapsed</dt><dd>{report.duplicateRecordsCollapsed}</dd></div><div><dt>Conflicting duplicates</dt><dd>{report.conflictingDuplicateRecords}</dd></div></>}<div><dt>Raw context</dt><dd>omitted</dd></div></dl></section></div>
   </section>;
 }
 
@@ -596,7 +655,7 @@ function ProcessStream({ turn, calls, showIntermediate, showUsage, showTools, en
 
 function UsageEvidence({ step, index }: { step: ToolCall; index: number }): React.JSX.Element {
   const source = step.source ?? "normalized model evidence";
-  return <article className="session-event usage" data-session-event="usage"><header><strong>Model response {index}</strong><span title={source}>{step.model ?? source}</span></header><dl><div><dt>Tokens</dt><dd>{formatInvocationUsage(step.tokenUsage)}</dd></div><div><dt>Context</dt><dd>{formatContextWindowUsage(step.contextUsage)}</dd></div></dl></article>;
+  return <article className="session-event usage" data-session-event="usage"><header><strong>Model response {index}</strong><span title={source}>{step.model ?? source}</span></header><dl><div><dt>Tokens</dt><dd>{formatInvocationUsage(step.tokenUsage)}</dd></div>{step.cacheReuse && <div><dt>Input reuse</dt><dd>{formatCacheReuse(step.cacheReuse)}</dd></div>}<div><dt>Context</dt><dd>{formatContextWindowUsage(step.contextUsage)}</dd></div></dl></article>;
 }
 
 function ToolList({ calls, showFiles }: { calls: ToolCall[]; showFiles: boolean }): React.JSX.Element {

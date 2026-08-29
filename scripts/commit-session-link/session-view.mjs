@@ -1,4 +1,9 @@
-import { observedContextUsage, observedProcessingAccounting, observedTokenUsage } from "../session-analysis/index.mjs";
+import {
+  deriveCacheReuse,
+  observedContextUsage,
+  observedProcessingAccounting,
+  observedTokenUsage,
+} from "../session-analysis/index.mjs";
 import { redactTranscriptText } from "./redaction.mjs";
 import { attributeSessionToolName } from "./tool-attribution.mjs";
 
@@ -94,12 +99,14 @@ function inferenceUsageStep(event) {
     ?? (event?.usageCumulative === true ? null : event?.modelUsage));
   const contextUsage = observedContextUsage(event?.currentContextUsage);
   const processing = observedProcessingAccounting(event);
+  const cacheReuse = deriveCacheReuse(tokenUsage, event?.cacheAccountingMode);
   if (!tokenUsage && !contextUsage && !processing.processedTokens) return null;
   const evidenceSource = event?.usageSource ?? event?.currentContextUsage?.source ?? null;
   return {
     kind: "usage",
     ...(tokenUsage ? { tokenUsage } : {}),
     ...(contextUsage ? { contextUsage } : {}),
+    ...(cacheReuse ? { cacheReuse } : {}),
     ...(event?.usageBasis ? { basis: String(event.usageBasis) } : {}),
     ...(evidenceSource ? { source: String(evidenceSource) } : {}),
     ...(event?.model ? { model: String(event.model) } : {}),

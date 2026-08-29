@@ -1,7 +1,15 @@
 import path from "node:path";
 
 import { redactTranscriptText } from "../commit-session-link/index.mjs";
-import { observedContextUsage, observedProcessingAccounting, observedTokenUsage, projectUsageReport } from "../session-analysis/index.mjs";
+import {
+  deriveCacheReuse,
+  observedCacheAccountingMode,
+  observedContextUsage,
+  observedProcessingAccounting,
+  observedTokenUsage,
+  projectCacheReuse,
+  projectUsageReport,
+} from "../session-analysis/index.mjs";
 import { emptyFeatureTree } from "./feature-tree.mjs";
 
 export const HARNESS_INSPECTOR_REPORT_KIND = "HarnessInspectorReportV1";
@@ -264,11 +272,13 @@ function projectDialogue(dialogue, toolActivity) {
         const tokenUsage = observedTokenUsage(step.tokenUsage);
         const contextUsage = projectContextWindowUsage(step.contextUsage);
         const processing = observedProcessingAccounting(step, { boundText: safeText });
+        const cacheReuse = projectCacheReuse(step.cacheReuse);
         if (!tokenUsage && !contextUsage && !processing.processedTokens) return null;
         return {
           kind: "usage",
           ...(tokenUsage ? { tokenUsage } : {}),
           ...(contextUsage ? { contextUsage } : {}),
+          ...(cacheReuse ? { cacheReuse } : {}),
           ...(step.basis ? { basis: safeText(step.basis, 40) } : {}),
           ...(step.source ? { source: safeText(step.source, 80) } : {}),
           ...(step.model ? { model: safeText(step.model, 80) } : {}),
@@ -433,12 +443,8 @@ function nonNegativeNumber(value) {
 
 function projectTokenUsage(usage) {
   if (!usage || typeof usage !== "object") return null;
-  const projected = {
-    inputTokens: nonNegativeNumber(usage.inputTokens),
-    outputTokens: nonNegativeNumber(usage.outputTokens),
-    cacheReadInputTokens: nonNegativeNumber(usage.cacheReadInputTokens),
-  };
-  for (const field of ["cacheCreationInputTokens", "reasoningOutputTokens", "totalTokens"]) {
+  const projected = {};
+  for (const field of ["inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens", "reasoningOutputTokens", "totalTokens"]) {
     if (Object.hasOwn(usage, field)) projected[field] = nonNegativeNumber(usage[field]);
   }
   projected.basis = safeText(usage.basis, 40, "model-inference");
@@ -446,6 +452,8 @@ function projectTokenUsage(usage) {
   projected.coverage = ["observed", "partial", "unobserved"].includes(usage.coverage)
     ? usage.coverage
     : "observed";
+  const cacheAccountingMode = observedCacheAccountingMode(usage.cacheAccountingMode);
+  if (cacheAccountingMode) projected.cacheAccountingMode = cacheAccountingMode;
   return projected;
 }
 
@@ -497,6 +505,7 @@ function projectSession(session) {
   });
   const dialogue = projectDialogue(session.dialogue, toolActivity);
   const tokenUsage = projectTokenUsage(session.tokenUsage);
+  const cacheReuse = deriveCacheReuse(tokenUsage, tokenUsage?.cacheAccountingMode);
   const prompts = bindPromptsToTurns((session.prompts ?? []).map((prompt, index) => ({
     id: `${sessionId}:prompt:${index + 1}`,
     text: safeText(prompt.text, 500, "Prompt unavailable after privacy filtering"),
@@ -527,6 +536,7 @@ function projectSession(session) {
     fileEditCount: Number(session.fileEditCount) || 0,
     models: (session.models ?? []).map((model) => safeText(model, 80)).filter(Boolean),
     tokenUsage,
+    ...(cacheReuse ? { cacheReuse } : {}),
     // Bounded projection only. The Session that produced this report already
     // counted every inference; recomputing here from the capped dialogue would
     // quote a display artefact under the same field names.

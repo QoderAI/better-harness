@@ -22,6 +22,7 @@ import { buildLongSessionFacet } from "../long-sessions.mjs";
 import { topLifecycleDemandSignals } from "../lifecycle-demand-signals.mjs";
 import { topPlanningSignals } from "../planning-signals.mjs";
 import { parseResultFacts } from "../result-facts.mjs";
+import { CACHE_ACCOUNTING_MODE } from "../usage-records.mjs";
 import { selectSessions, selectionSummary } from "../selection.mjs";
 import { collectSessionSelectionEntries, selectSessionEntriesWithPlan } from "../selection-plan.mjs";
 import {
@@ -928,6 +929,7 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
       const contextWindowTokens = Number(info.model_context_window);
       if (modelUsage) {
         event.modelUsage = modelUsage;
+        event.cacheAccountingMode = CACHE_ACCOUNTING_MODE.INCLUDED_IN_INPUT;
         event.usageFieldsObserved = true;
         event.usageCumulative = true;
         event.usageBasis = "model-inference";

@@ -9,7 +9,9 @@ import {
 } from "../../scripts/session-analysis/usage-progression.mjs";
 import {
   additiveUsageAccounting,
+  CACHE_ACCOUNTING_MODE,
   collapseDuplicateResponseRecords,
+  deriveCacheReuse,
   usageDeduplicationDiagnostics,
 } from "../../scripts/session-analysis/usage-records.mjs";
 
@@ -193,6 +195,77 @@ test("additiveUsageAccounting stays opt-in for hosts whose counters do not overl
   );
   assert.deepEqual(additiveUsageAccounting(null), {});
   assert.deepEqual(additiveUsageAccounting({ totalTokens: 40 }), {});
+});
+
+test("deriveCacheReuse respects included and separate provider input relationships", () => {
+  assert.deepEqual(
+    deriveCacheReuse(
+      { inputTokens: 800, cacheReadInputTokens: 600 },
+      CACHE_ACCOUNTING_MODE.INCLUDED_IN_INPUT,
+    ),
+    {
+      status: "observed",
+      accountingMode: "included-in-input",
+      cacheReadTokens: 600,
+      promptInputTokens: 800,
+      uncachedInputTokens: 200,
+      reusePercent: 75,
+    },
+  );
+  assert.deepEqual(
+    deriveCacheReuse(
+      { inputTokens: 200, cacheReadInputTokens: 600, cacheCreationInputTokens: 50 },
+      CACHE_ACCOUNTING_MODE.SEPARATE_INPUT_LANE,
+    ),
+    {
+      status: "observed",
+      accountingMode: "separate-input-lane",
+      cacheReadTokens: 600,
+      cacheCreationTokens: 50,
+      promptInputTokens: 850,
+      uncachedInputTokens: 250,
+      reusePercent: 70.6,
+    },
+  );
+});
+
+test("deriveCacheReuse keeps absolute evidence when a trustworthy rate is unavailable", () => {
+  assert.deepEqual(deriveCacheReuse({ inputTokens: 100, cacheReadInputTokens: 40 }), {
+    status: "partial",
+    accountingMode: "relationship-unknown",
+    cacheReadTokens: 40,
+  });
+  assert.deepEqual(
+    deriveCacheReuse(
+      { inputTokens: 100, cacheReadInputTokens: 140 },
+      CACHE_ACCOUNTING_MODE.INCLUDED_IN_INPUT,
+    ),
+    {
+      status: "inconsistent",
+      accountingMode: "included-in-input",
+      cacheReadTokens: 140,
+    },
+  );
+  assert.equal(deriveCacheReuse({ inputTokens: 100 }), null);
+  assert.equal(deriveCacheReuse({ inputTokens: 100, cacheReadInputTokens: 0 }, CACHE_ACCOUNTING_MODE.INCLUDED_IN_INPUT).reusePercent, 0);
+});
+
+test("usage progression carries per-response cache reuse through the bounded report", () => {
+  const observation = usageObservationFromEvent(responseRecord("cached", {
+    inputTokens: 100,
+    outputTokens: 5,
+    cacheReadInputTokens: 80,
+  }, { cacheAccountingMode: CACHE_ACCOUNTING_MODE.INCLUDED_IN_INPUT }));
+  const report = projectUsageReport(buildUsageReport([observation]));
+
+  assert.deepEqual(report.progression[0].cacheReuse, {
+    status: "observed",
+    accountingMode: "included-in-input",
+    cacheReadTokens: 80,
+    promptInputTokens: 100,
+    uncachedInputTokens: 20,
+    reusePercent: 80,
+  });
 });
 
 test("collapseDuplicateResponseRecords keeps the latest payload and the first chronology", () => {

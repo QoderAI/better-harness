@@ -161,6 +161,52 @@
     if (Number.isFinite(usage.reasoningOutputTokens)) parts.push(formatTokenCount(usage.reasoningOutputTokens) + ' reasoning');
     return parts.join(' · ') || 'not observed';
   };
+  const formatCacheReuse = reuse => {
+    if (!reuse) return 'not observed';
+    if (reuse.status === 'observed' && Number.isFinite(reuse.reusePercent)) return reuse.reusePercent + '% input reused';
+    if (reuse.status === 'inconsistent') return formatTokenCount(reuse.cacheReadTokens) + ' cached · rate unavailable (inconsistent counters)';
+    return formatTokenCount(reuse.cacheReadTokens) + ' cached · rate unavailable';
+  };
+  const cacheReuseBarMarkup = (reuse,detailed = false) => {
+    if (reuse?.status !== 'observed' || !Number.isFinite(reuse.promptInputTokens) || reuse.promptInputTokens <= 0) return '';
+    const cacheCreation = Number.isFinite(reuse.cacheCreationTokens) ? Math.min(reuse.uncachedInputTokens,reuse.cacheCreationTokens) : 0;
+    const otherUncached = Math.max(0,reuse.uncachedInputTokens - cacheCreation);
+    const buckets = [
+      ['cached','Cached input',reuse.cacheReadTokens],
+      ...(detailed ? [['created','Cache creation',cacheCreation]] : []),
+      ['uncached',detailed ? 'Other uncached input' : 'Uncached input',detailed ? otherUncached : reuse.uncachedInputTokens],
+    ].filter(([_kind,_label,value]) => Number.isFinite(value) && value > 0);
+    const label = reuse.reusePercent + '% of ' + formatTokenCount(reuse.promptInputTokens) + ' observed input was served from cache';
+    return '<div class="usage-reuse-bar" role="img" aria-label="' + escape(label) + '">' + buckets.map(([kind,bucketLabel,value]) => '<i class="reuse-' + kind + '" style="flex-grow:' + value + '" title="' + escape(bucketLabel + ': ' + formatTokenCount(value)) + '"></i>').join('') + '</div>';
+  };
+  const cacheReuseSummaryMarkup = reuse => {
+    if (!reuse) return '';
+    const observed = reuse.status === 'observed' && Number.isFinite(reuse.promptInputTokens);
+    const headline = observed ? reuse.reusePercent + '% reused' : formatTokenCount(reuse.cacheReadTokens) + ' cached';
+    const detail = observed
+      ? formatTokenCount(reuse.cacheReadTokens) + ' cached of ' + formatTokenCount(reuse.promptInputTokens) + ' observed input'
+      : reuse.status === 'inconsistent' ? 'Reuse rate unavailable because provider counters are inconsistent' : 'Reuse rate unavailable because the cache relationship is unknown';
+    return '<div class="usage-summary-reuse"><div class="usage-context-meta"><strong>Input reuse</strong><span>' + escape(headline) + '</span></div>' + cacheReuseBarMarkup(reuse) + '<p>' + escape(detail) + '</p></div>';
+  };
+  const cacheReuseSectionMarkup = reuse => {
+    if (!reuse) return '';
+    const observed = reuse.status === 'observed' && Number.isFinite(reuse.promptInputTokens);
+    const cacheCreation = Number.isFinite(reuse.cacheCreationTokens) ? reuse.cacheCreationTokens : null;
+    const otherUncached = observed && cacheCreation > 0 ? Math.max(0,reuse.uncachedInputTokens - cacheCreation) : reuse.uncachedInputTokens;
+    const facts = [
+      ['Cached input',reuse.cacheReadTokens,'reuse-cached'],
+      ...(cacheCreation !== null ? [['Cache creation',cacheCreation,'reuse-created']] : []),
+      ...(observed ? [[cacheCreation > 0 ? 'Other uncached input' : 'Uncached input',otherUncached,'reuse-uncached']] : []),
+    ];
+    const relation = reuse.accountingMode === 'included-in-input' ? 'Cache reads are included in the provider input total.'
+      : reuse.accountingMode === 'separate-input-lane' ? 'Cache reads and cache creation are separate provider input lanes.'
+        : 'The provider relationship between input and cache counters was not observed.';
+    const status = observed ? reuse.reusePercent + '% reused' : reuse.status === 'inconsistent' ? 'rate unavailable' : formatTokenCount(reuse.cacheReadTokens) + ' cached';
+    return '<section class="usage-report-section usage-reuse-section" data-cache-reuse-status="' + escape(reuse.status) + '"><header><div><h4>Input reuse</h4><p>Cached input still occupies context. Provider caching can reduce cost or latency, but this report does not estimate savings.</p></div><strong>' + escape(status) + '</strong></header>'
+      + cacheReuseBarMarkup(reuse,true)
+      + '<ul class="usage-reuse-list">' + facts.map(([label,value,kind]) => '<li><i class="' + kind + '"></i><span>' + escape(label) + '</span><strong>' + formatTokenCount(value) + '</strong>' + (observed ? '<small>' + (Math.round((value / reuse.promptInputTokens) * 1000) / 10) + '%</small>' : '') + '</li>').join('') + '</ul>'
+      + '<p class="usage-reuse-note">' + escape(relation + (reuse.status === 'inconsistent' ? ' The observed values are retained, but no rate is derived.' : '')) + '</p></section>';
+  };
   const formatContextWindowUsage = context => {
     if (!context) return 'not observed for this response';
     const hasUsed = Number.isFinite(context.usedTokens) && context.usedTokens >= 0;
@@ -178,6 +224,7 @@
     const source = step.source ?? 'normalized model evidence';
     return '<article class="session-event usage" data-session-event="usage"><header><strong>Model response ' + index + '</strong><span title="' + escape(source) + '">' + escape(step.model ?? source) + '</span></header><dl>'
       + '<div><dt>Tokens</dt><dd>' + escape(formatInvocationUsage(step.tokenUsage)) + '</dd></div>'
+      + (step.cacheReuse ? '<div><dt>Input reuse</dt><dd>' + escape(formatCacheReuse(step.cacheReuse)) + '</dd></div>' : '')
       + '<div><dt>Context</dt><dd>' + escape(formatContextWindowUsage(step.contextUsage)) + '</dd></div>'
       + '</dl></article>';
   };
@@ -304,7 +351,7 @@
       const stamp = formatStamp(point.timestamp);
       const meta = [stamp ? stamp + ' UTC' : null,Number.isFinite(point.turnIndex) ? 'Turn ' + point.turnIndex : null].filter(Boolean).join(' · ');
       const prompt = point.userPrompt ? String(point.userPrompt).replace(/\s+/gu,' ').trim() : point.model ?? 'model unavailable';
-      return '<li class="boundary-' + point.boundary + '" title="' + escape(point.model ?? 'model unavailable') + '"><div><strong>Response ' + point.index + '</strong><span>' + escape(meta || 'time and Turn unavailable') + '</span><small title="' + escape(prompt) + '">' + escape(prompt) + '</small></div><strong>' + (Number.isFinite(point.contextTokens) ? formatTokenCount(point.contextTokens) : '—') + '</strong><span class="usage-delta">' + (Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(point.contextDeltaTokens) : point.boundary === 'model-change' ? 'model boundary' : point.boundary) + '</span><span>' + (Number.isFinite(point.processedTokens) ? formatTokenCount(point.processedTokens) : '—') + '</span><span>' + (Number.isFinite(point.outputTokens) ? formatTokenCount(point.outputTokens) : '—') + '</span></li>';
+      return '<li class="boundary-' + point.boundary + '" title="' + escape(point.model ?? 'model unavailable') + '"><div><strong>Response ' + point.index + '</strong><span>' + escape(meta || 'time and Turn unavailable') + '</span><small title="' + escape(prompt) + '">' + escape(prompt) + '</small>' + (point.cacheReuse ? '<em class="usage-row-reuse">' + escape(formatCacheReuse(point.cacheReuse)) + '</em>' : '') + '</div><strong>' + (Number.isFinite(point.contextTokens) ? formatTokenCount(point.contextTokens) : '—') + '</strong><span class="usage-delta">' + (Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(point.contextDeltaTokens) : point.boundary === 'model-change' ? 'model boundary' : point.boundary) + '</span><span>' + (Number.isFinite(point.processedTokens) ? formatTokenCount(point.processedTokens) : '—') + '</span><span>' + (Number.isFinite(point.outputTokens) ? formatTokenCount(point.outputTokens) : '—') + '</span></li>';
     }).join('');
     return '<details class="usage-progress-details" open><summary>' + escape(scope) + '</summary><div class="usage-progress-head" aria-hidden="true"><span>Response</span><span>Context</span><span>Δ context</span><span>Processed</span><span>Output</span></div><ol class="usage-progress-list">' + rows + '</ol></details>';
   };
@@ -312,33 +359,38 @@
     const usage = session.tokenUsage;
     const context = usageContextPresentation(session);
     const usageReport = sessionUsageReport(session);
+    const cacheReuse = session.cacheReuse;
     const metrics = [];
     if (Number.isFinite(usageReport.currentContextTokens)) metrics.push([formatTokenCount(usageReport.currentContextTokens),'Current context']);
     else if (context.hasPercentFull) metrics.push([context.percentFull + '%','Current occupancy']);
-    if (Number.isFinite(usageReport.netContextDeltaTokens)) metrics.push([formatSignedTokenCount(usageReport.netContextDeltaTokens),'Net context growth']);
+    if (cacheReuse) metrics.push([cacheReuse.status === 'observed' ? cacheReuse.reusePercent + '%' : formatTokenCount(cacheReuse.cacheReadTokens),'Input reused']);
     if (Number.isFinite(usageReport.processedTokens)) metrics.push([formatTokenCount(usageReport.processedTokens),'Session processed']);
     else if (Number.isFinite(usageReport.providerTotalTokens)) metrics.push([formatTokenCount(usageReport.providerTotalTokens),'Provider total']);
     if (usageReport.actualModelCalls > 0) metrics.push([String(usageReport.actualModelCalls),'Model calls']);
     const contextMarkup = context.hasContextWindow ? contextBarMarkup(context,context.percentFull + '% of the observed context window is full')
       : context.hasPercentFull ? occupancyBarMarkup(context.percentFull,context.percentFull + '% context occupancy observed; window size unavailable') : '';
-    const boundary = context.hasContextWindow ? formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + context.percentFull + '% full'
+    const net = Number.isFinite(usageReport.netContextDeltaTokens) ? ' · ' + formatSignedTokenCount(usageReport.netContextDeltaTokens) + ' net' : '';
+    const boundary = context.hasContextWindow ? formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + context.percentFull + '% full' + net
       : context.hasPercentFull ? 'Context window size unavailable'
         : context.hasUsedTokens ? 'Context window and token categories unavailable' : 'Context evidence unavailable';
     const diagnostics = usageReport.duplicateRecordsCollapsed > 0 ? '<p class="usage-summary-diagnostics">' + usageReport.duplicateRecordsCollapsed + ' duplicate record' + (usageReport.duplicateRecordsCollapsed === 1 ? '' : 's') + ' collapsed' + (usageReport.conflictingDuplicateRecords > 0 ? ' · ' + usageReport.conflictingDuplicateRecords + ' conflict' + (usageReport.conflictingDuplicateRecords === 1 ? '' : 's') : '') + '</p>' : '';
     return '<section class="session-usage-summary" aria-labelledby="session-usage-summary-title"><header class="session-usage-head"><div><h3 id="session-usage-summary-title">Usage and context</h3><span>'
       + escape(usage?.coverage ?? session.contextManifest?.status ?? 'unobserved') + '</span></div><button class="usage-report-link" type="button" data-open-usage-report>View report</button></header>'
       + '<dl class="usage-summary-metrics">' + metrics.map(([value,label]) => '<div><dt>' + escape(label) + '</dt><dd>' + escape(value) + '</dd></div>').join('') + '</dl>'
-      + contextMarkup + '<p class="usage-summary-boundary">' + escape(boundary) + '</p>' + diagnostics + '</section>';
+      + contextMarkup + '<p class="usage-summary-boundary">' + escape(boundary) + '</p>' + cacheReuseSummaryMarkup(cacheReuse) + diagnostics + '</section>';
   };
   const usageReportMarkup = session => {
     const usage = session.tokenUsage;
     const context = usageContextPresentation(session);
     const usageReport = sessionUsageReport(session);
+    const cacheReuse = session.cacheReuse;
     const runtime = session.runtime;
     const compactionCount = Number(session.contextManifest?.compactionCount) || 0;
     const compactionNote = compactionCount > 0 ? ' Provider reported ' + compactionCount + ' compaction boundar' + (compactionCount === 1 ? 'y' : 'ies') + '.' : '';
     const fact = (label,value) => '<div><dt>' + escape(label) + '</dt><dd>' + escape(value) + '</dd></div>';
-    const accounting = [['Provider total',usage?.totalTokens],['Input',usage?.inputTokens],['Output',usage?.outputTokens],['Cache read',usage?.cacheReadInputTokens],['Cache creation',usage?.cacheCreationInputTokens],['Reasoning',usage?.reasoningOutputTokens]]
+    const inputLabel = usage?.cacheAccountingMode === 'included-in-input' ? 'Total input (includes cached)'
+      : usage?.cacheAccountingMode === 'separate-input-lane' ? 'Uncached input' : 'Input (cache relationship unknown)';
+    const accounting = [['Provider total',usage?.totalTokens],[inputLabel,usage?.inputTokens],['Output',usage?.outputTokens],['Cached input read',usage?.cacheReadInputTokens],['Cache creation',usage?.cacheCreationInputTokens],['Reasoning',usage?.reasoningOutputTokens]]
       .map(([label,value]) => fact(label,formatObservedTokenCount(value))).join('');
     const occupancy = context.hasContextWindow
       ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><span>Current context</span><small>' + formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + context.percentFull + '% full</small>'
@@ -364,11 +416,12 @@
       ? fact('Duplicates collapsed',String(usageReport.duplicateRecordsCollapsed)) + fact('Conflicting duplicates',String(usageReport.conflictingDuplicateRecords ?? 0))
       : '';
     return '<section class="session-mode-panel usage-report" aria-label="Usage report" data-session-mode-panel="usage" hidden>'
-      + '<header class="usage-report-lead"><div><span class="usage-report-kicker">Read-only evidence</span><h3>Usage and Context Report</h3><p>Unique model responses, absolute context progression, and explicitly sourced token accounting for this Session.</p></div><div class="usage-report-occupancy">' + occupancy + '</div><dl class="usage-report-lead-facts">' + fact('Baseline context',Number.isFinite(usageReport.baselineContextTokens) ? formatTokenCount(usageReport.baselineContextTokens) : 'not observed') + fact('Net context growth',Number.isFinite(usageReport.netContextDeltaTokens) ? formatSignedTokenCount(usageReport.netContextDeltaTokens) : 'not comparable') + fact('Session processed',Number.isFinite(usageReport.processedTokens) ? formatTokenCount(usageReport.processedTokens) : 'not derived') + fact('Model calls',usageReport.actualModelCalls ? String(usageReport.actualModelCalls) : 'not observed') + fact('Coverage',usage?.coverage ?? session.contextManifest?.status ?? 'unobserved') + '</dl></header>'
+      + '<header class="usage-report-lead"><div><span class="usage-report-kicker">Read-only evidence</span><h3>Usage and Context Report</h3><p>Unique model responses, absolute context progression, and explicitly sourced token accounting for this Session.</p></div><div class="usage-report-occupancy">' + occupancy + '</div><dl class="usage-report-lead-facts">' + (cacheReuse ? fact('Input reused',cacheReuse.status === 'observed' ? cacheReuse.reusePercent + '%' : 'rate unavailable') : '') + fact('Baseline context',Number.isFinite(usageReport.baselineContextTokens) ? formatTokenCount(usageReport.baselineContextTokens) : 'not observed') + fact('Net context growth',Number.isFinite(usageReport.netContextDeltaTokens) ? formatSignedTokenCount(usageReport.netContextDeltaTokens) : 'not comparable') + fact('Session processed',Number.isFinite(usageReport.processedTokens) ? formatTokenCount(usageReport.processedTokens) : 'not derived') + fact('Model calls',usageReport.actualModelCalls ? String(usageReport.actualModelCalls) : 'not observed') + fact('Coverage',usage?.coverage ?? session.contextManifest?.status ?? 'unobserved') + '</dl></header>'
+      + cacheReuseSectionMarkup(cacheReuse)
       + '<section class="usage-report-section"><header><div><h4>Context progression</h4><p>Absolute prompt snapshots across unique model responses. Deltas are net context change, not consumption.' + escape(progressionBoundaryNote(usageReport) + compactionNote) + '</p></div><strong>' + usageReport.actualModelCalls + ' unique calls</strong></header>' + usageProgressChartMarkup(usageReport) + usageProgressRowsMarkup(usageReport) + '</section>'
       + processingBreakdownMarkup(usage,usageReport)
       + '<section class="usage-report-section"><header><div><h4>Current context composition</h4><p>Token-weighted categories within the current observed context, when the host retained them.</p></div>' + (context.hasPercentFull ? '<strong>' + context.percentFull + '% full</strong>' : '') + '</header>' + composition + '</section>'
-      + '<div class="usage-report-columns"><section class="usage-report-section"><header><div><h4>Provider accounting</h4><p>Observed provider counters. Provider total remains distinct from derived Session processed usage.</p></div></header><dl class="usage-report-facts">' + accounting + '</dl></section>'
+      + '<div class="usage-report-columns"><section class="usage-report-section"><header><div><h4>Provider accounting</h4><p>Observed provider counters. Labels preserve whether cached input is included or reported as a separate lane.</p></div></header><dl class="usage-report-facts">' + accounting + '</dl></section>'
       + '<section class="usage-report-section"><header><div><h4>Context structure</h4><p>Counts only; prompt text remains omitted.</p></div></header><dl class="usage-report-facts">' + layers + fact('Compactions',session.contextManifest ? String(session.contextManifest.compactionCount ?? 0) : 'not observed') + '</dl></section>'
       + '<section class="usage-report-section"><header><div><h4>Evidence details</h4><p>Runtime, provenance, and normalization diagnostics retained with this Session.</p></div></header><dl class="usage-report-facts">' + fact('Provider',runtime?.modelProvider ?? session.platform ?? 'not observed') + fact('Effort',runtime?.effort ?? 'not observed') + fact('CLI',runtime?.cliVersion ?? 'not observed') + fact('Time basis',session.timestampBasis ?? 'unobserved') + fact('Context basis',session.contextManifest?.basis ?? 'not observed') + fact('Processed basis',usageReport.processedTokensBasis ?? 'not derived') + (usageReport.processedCoverage ? fact('Processed coverage',usageReport.processedCoverage) : '') + fact('Evidence source',usage?.source ?? session.contextManifest?.source ?? 'not observed') + duplicateEvidence + fact('Raw context','omitted') + '</dl></section></div></section>';
   };

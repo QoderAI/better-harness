@@ -20,6 +20,17 @@ export const USAGE_TOKEN_FIELDS = Object.freeze([
   "totalTokens",
 ]);
 
+// Cache counters do not share one provider-wide relationship. OpenAI/Codex
+// includes cache reads in its input counter; Claude reports cache reads and
+// cache creation as separate input lanes. Unknown hosts keep absolute counters
+// without inheriting either formula.
+export const CACHE_ACCOUNTING_MODE = Object.freeze({
+  INCLUDED_IN_INPUT: "included-in-input",
+  SEPARATE_INPUT_LANE: "separate-input-lane",
+  RELATIONSHIP_UNKNOWN: "relationship-unknown",
+});
+export const CACHE_ACCOUNTING_MODES = Object.freeze(Object.values(CACHE_ACCOUNTING_MODE));
+
 // Additive input lanes that make up the prompt a host actually sent.
 export const PROMPT_CONTEXT_USAGE_FIELDS = Object.freeze([
   "inputTokens",
@@ -74,6 +85,91 @@ export function observedTokenUsage(usage) {
     if (value !== null) retained[field] = value;
   }
   return Object.keys(retained).length > 0 ? retained : null;
+}
+
+export function observedCacheAccountingMode(value) {
+  return CACHE_ACCOUNTING_MODES.includes(value) ? value : null;
+}
+
+/**
+ * Derive an input-reuse presentation from provider-compatible counters.
+ *
+ * Absolute cache observations survive unknown or inconsistent relationships;
+ * percentages and uncached input exist only when the provider formula is
+ * explicit and internally consistent. This is deliberately not a savings
+ * estimate: cached input still occupies the model context window.
+ */
+export function deriveCacheReuse(usage, accountingMode = usage?.cacheAccountingMode) {
+  const retainedUsage = observedTokenUsage(usage);
+  if (!retainedUsage || !Object.hasOwn(retainedUsage, "cacheReadInputTokens")) return null;
+  const mode = observedCacheAccountingMode(accountingMode) ?? CACHE_ACCOUNTING_MODE.RELATIONSHIP_UNKNOWN;
+  const cacheReadTokens = retainedUsage.cacheReadInputTokens;
+  const cacheCreationTokens = Object.hasOwn(retainedUsage, "cacheCreationInputTokens")
+    ? retainedUsage.cacheCreationInputTokens
+    : null;
+  const absolute = {
+    status: "partial",
+    accountingMode: mode,
+    cacheReadTokens,
+    ...(cacheCreationTokens !== null ? { cacheCreationTokens } : {}),
+  };
+  if (!Object.hasOwn(retainedUsage, "inputTokens")) return absolute;
+
+  let promptInputTokens;
+  let uncachedInputTokens;
+  if (mode === CACHE_ACCOUNTING_MODE.INCLUDED_IN_INPUT) {
+    promptInputTokens = retainedUsage.inputTokens;
+    if (cacheReadTokens > promptInputTokens) return { ...absolute, status: "inconsistent" };
+    uncachedInputTokens = promptInputTokens - cacheReadTokens;
+  } else if (mode === CACHE_ACCOUNTING_MODE.SEPARATE_INPUT_LANE) {
+    uncachedInputTokens = retainedUsage.inputTokens + (cacheCreationTokens ?? 0);
+    promptInputTokens = uncachedInputTokens + cacheReadTokens;
+  } else {
+    return absolute;
+  }
+
+  return {
+    ...absolute,
+    status: "observed",
+    promptInputTokens,
+    uncachedInputTokens,
+    reusePercent: promptInputTokens > 0
+      ? Math.round((cacheReadTokens / promptInputTokens) * 1_000) / 10
+      : 0,
+  };
+}
+
+/** Validate an already-derived cache-reuse object at a report boundary. */
+export function projectCacheReuse(source) {
+  if (!source || typeof source !== "object") return null;
+  const cacheReadTokens = tokenValue(source.cacheReadTokens);
+  if (cacheReadTokens === null) return null;
+  const accountingMode = observedCacheAccountingMode(source.accountingMode)
+    ?? CACHE_ACCOUNTING_MODE.RELATIONSHIP_UNKNOWN;
+  const cacheCreationTokens = tokenValue(source.cacheCreationTokens);
+  const status = ["observed", "partial", "inconsistent"].includes(source.status)
+    ? source.status
+    : "partial";
+  const projected = {
+    status,
+    accountingMode,
+    cacheReadTokens,
+    ...(cacheCreationTokens !== null ? { cacheCreationTokens } : {}),
+  };
+  if (status !== "observed") return projected;
+  const promptInputTokens = tokenValue(source.promptInputTokens);
+  const uncachedInputTokens = tokenValue(source.uncachedInputTokens);
+  const reusePercentValue = Number(source.reusePercent);
+  if (promptInputTokens === null || uncachedInputTokens === null
+    || !Number.isFinite(reusePercentValue) || reusePercentValue < 0 || reusePercentValue > 100) {
+    return { ...projected, status: "inconsistent" };
+  }
+  return {
+    ...projected,
+    promptInputTokens,
+    uncachedInputTokens,
+    reusePercent: Math.round(reusePercentValue * 10) / 10,
+  };
 }
 
 /**

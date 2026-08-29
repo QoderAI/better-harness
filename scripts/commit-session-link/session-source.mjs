@@ -3,8 +3,10 @@ import path from "node:path";
 import {
   buildToolCallTrace,
   buildUsageReport,
+  CACHE_ACCOUNTING_MODE,
   createAnalyzer,
   observedContextUsage,
+  observedCacheAccountingMode,
   observedProcessingAccounting,
   observedTokenUsage,
   privacySafeUserInputText,
@@ -224,10 +226,11 @@ export function summarizeSessionEvents(session, events = [], {
   const distinctUserTurns = new Set();
   const seenToolInvocations = new Set();
   const tokenTotals = { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0 };
-  const observedTokenFields = new Set(["inputTokens", "outputTokens", "cacheReadInputTokens"]);
+  const observedTokenFields = new Set();
   const cumulativeUsageSnapshots = [];
   const usageSources = new Set();
   const usageBases = new Set();
+  const cacheAccountingModes = new Set();
   const runtimeMetadata = {};
   const contextLayers = new Map();
   const contextCategories = new Map();
@@ -284,6 +287,10 @@ export function summarizeSessionEvents(session, events = [], {
       if (event.usageSource) usageSources.add(String(event.usageSource));
       else if (event.sourceKind) usageSources.add(String(event.sourceKind));
       if (event.usageBasis) usageBases.add(String(event.usageBasis));
+      if (Object.hasOwn(event.modelUsage, "cacheReadInputTokens")) {
+        const cacheAccountingMode = observedCacheAccountingMode(event.cacheAccountingMode);
+        if (cacheAccountingMode) cacheAccountingModes.add(cacheAccountingMode);
+      }
     }
     if (event?.model && models.size < MAX_MODELS_PER_SESSION) models.add(String(event.model));
     if (event?.runtimeMetadata && typeof event.runtimeMetadata === "object") {
@@ -356,6 +363,9 @@ export function summarizeSessionEvents(session, events = [], {
     basis: usageBases.size === 1 ? [...usageBases][0] : usageBases.size > 1 ? "mixed" : "model-inference",
     source: usageSources.size === 1 ? [...usageSources][0] : usageSources.size > 1 ? "mixed-normalized-events" : "normalized-session-events",
     coverage: "observed",
+    ...(cacheAccountingModes.size === 1 ? { cacheAccountingMode: [...cacheAccountingModes][0] }
+      : cacheAccountingModes.size > 1 ? { cacheAccountingMode: CACHE_ACCOUNTING_MODE.RELATIONSHIP_UNKNOWN }
+        : {}),
   } : null;
   const contextManifest = contextManifestObserved ? {
     status: hasContextWindow || contextCategories.size > 0 ? "observed" : "partial",

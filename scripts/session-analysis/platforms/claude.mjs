@@ -19,7 +19,12 @@ import {
 } from "../provider-runner.mjs";
 import { parseResultFacts } from "../result-facts.mjs";
 import { mergeTimeRange, normalizeCliDate, normalizeTimestamp, timestampMillis, withinTimeRange } from "../time.mjs";
-import { additiveUsageAccounting, collapseDuplicateResponseRecords, promptContextTokens } from "../usage-records.mjs";
+import {
+  additiveUsageAccounting,
+  CACHE_ACCOUNTING_MODE,
+  collapseDuplicateResponseRecords,
+  promptContextTokens,
+} from "../usage-records.mjs";
 import { WORKSPACE_CWD_MATCH, classifyWorkspaceCwd } from "../workspace-match.mjs";
 
 function isWorkspaceMatch(candidate, workspace) {
@@ -206,6 +211,7 @@ function transcriptEvents(raw, sourceRef, options) {
         model: model ?? null,
         modelUsage: usage,
         modelInvocationUsage: usage,
+        cacheAccountingMode: CACHE_ACCOUNTING_MODE.SEPARATE_INPUT_LANE,
         usageFieldsObserved: true,
         usageBasis: "model-inference",
         usageSource: "claude-project-transcript",

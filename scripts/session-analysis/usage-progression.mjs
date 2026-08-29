@@ -9,10 +9,12 @@
 // that counts and `projectUsageReport` is the only place that bounds.
 
 import {
+  deriveCacheReuse,
   observedContextUsage,
   observedProcessingAccounting,
   observedTokenUsage,
   observedUsageRecord,
+  projectCacheReuse,
 } from "./usage-records.mjs";
 
 export const USAGE_BOUNDARY_KINDS = Object.freeze([
@@ -107,6 +109,7 @@ export function usageObservationFromEvent(event) {
   const tokenUsage = observedTokenUsage(usage);
   const contextUsage = observedContextUsage(event?.currentContextUsage, { boundText: truncateText });
   const processing = observedProcessingAccounting(event, { boundText: truncateText });
+  const cacheReuse = deriveCacheReuse(tokenUsage, event?.cacheAccountingMode);
   if (!tokenUsage && !contextUsage && processing.processedTokens === undefined) return null;
   return {
     timestamp: timestampValue(event?.timestamp),
@@ -117,6 +120,7 @@ export function usageObservationFromEvent(event) {
     processedTokens: processing.processedTokens ?? null,
     processedTokensBasis: processing.processedTokensBasis ?? null,
     outputTokens: tokenCount(tokenUsage?.outputTokens),
+    ...(cacheReuse ? { cacheReuse } : {}),
   };
 }
 
@@ -207,6 +211,7 @@ export function buildUsageReport(observations = [], {
       contextDeltaTokens,
       processedTokens: observationProcessedTokens,
       outputTokens: tokenCount(observation?.outputTokens),
+      cacheReuse: projectCacheReuse(observation?.cacheReuse),
       boundary,
     }));
   }
@@ -259,6 +264,7 @@ function projectProgressionPoint(point, offset, boundText) {
     contextDeltaTokens: deltaCount(point?.contextDeltaTokens),
     processedTokens: tokenCount(point?.processedTokens),
     outputTokens: tokenCount(point?.outputTokens),
+    cacheReuse: projectCacheReuse(point?.cacheReuse),
     boundary: USAGE_BOUNDARY_KINDS.includes(point?.boundary) ? point.boundary : "unobserved",
   });
 }

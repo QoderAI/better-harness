@@ -589,6 +589,15 @@ test("Inspector projects usage and context metadata without raw context text", (
           steps: [{
             kind: "usage",
             tokenUsage: { inputTokens: 90, outputTokens: 8, totalTokens: 98, raw: secret },
+            cacheReuse: {
+              status: "observed",
+              accountingMode: "included-in-input",
+              cacheReadTokens: 45,
+              promptInputTokens: 90,
+              uncachedInputTokens: 45,
+              reusePercent: 50,
+              raw: secret,
+            },
             contextUsage: { usedTokens: 25, windowTokens: 100, percentFull: 25, raw: secret },
             source: "fixture-response-usage",
             raw: secret,
@@ -611,6 +620,7 @@ test("Inspector projects usage and context metadata without raw context text", (
         basis: "model-inference",
         source: "codex-rollout-token-count",
         coverage: "observed",
+        cacheAccountingMode: "included-in-input",
         raw: secret,
       },
       runtime: { modelProvider: "openai", cliVersion: "fixture-cli", effort: "high", raw: secret },
@@ -641,6 +651,16 @@ test("Inspector projects usage and context metadata without raw context text", (
     basis: "model-inference",
     source: "codex-rollout-token-count",
     coverage: "observed",
+    cacheAccountingMode: "included-in-input",
+  });
+  assert.deepEqual(session.cacheReuse, {
+    status: "observed",
+    accountingMode: "included-in-input",
+    cacheReadTokens: 90,
+    cacheCreationTokens: 5,
+    promptInputTokens: 180,
+    uncachedInputTokens: 90,
+    reusePercent: 50,
   });
   assert.deepEqual(session.runtime, { modelProvider: "openai", cliVersion: "fixture-cli", effort: "high" });
   assert.deepEqual(session.contextManifest, {
@@ -657,6 +677,14 @@ test("Inspector projects usage and context metadata without raw context text", (
   assert.deepEqual(session.dialogue.turns[0].steps[0], {
     kind: "usage",
     tokenUsage: { inputTokens: 90, outputTokens: 8, totalTokens: 98 },
+    cacheReuse: {
+      status: "observed",
+      accountingMode: "included-in-input",
+      cacheReadTokens: 45,
+      promptInputTokens: 90,
+      uncachedInputTokens: 45,
+      reusePercent: 50,
+    },
     contextUsage: { usedTokens: 25, windowTokens: 100, percentFull: 25 },
     source: "fixture-response-usage",
     timestamp: null,
@@ -665,6 +693,9 @@ test("Inspector projects usage and context metadata without raw context text", (
   assert.match(html, /Usage and context/u);
   assert.match(html, /View report/u);
   assert.match(html, /Usage and Context Report/u);
+  assert.match(html, /Input reuse/u);
+  assert.match(html, /Total input \(includes cached\)/u);
+  assert.match(html, /Cached input still occupies context/u);
   assert.match(html, /Raw context/u);
   assert.match(html, /data-session-mode-panel="usage"/u);
   assert.match(html, /Model response/u);

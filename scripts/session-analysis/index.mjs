@@ -46,10 +46,15 @@ export {
 } from "./usage-progression.mjs";
 export {
   additiveUsageAccounting,
+  CACHE_ACCOUNTING_MODE,
+  CACHE_ACCOUNTING_MODES,
   collapseDuplicateResponseRecords,
+  deriveCacheReuse,
+  observedCacheAccountingMode,
   observedContextUsage,
   observedProcessingAccounting,
   observedTokenUsage,
+  projectCacheReuse,
   promptContextTokens,
   usageDeduplicationDiagnostics,
   USAGE_TOKEN_FIELDS,

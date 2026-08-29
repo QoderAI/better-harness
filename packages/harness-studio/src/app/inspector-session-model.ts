@@ -8,6 +8,19 @@ export interface InspectorTokenUsage {
   basis?: string;
   source?: string;
   coverage?: "observed" | "partial" | "unobserved";
+  cacheAccountingMode?: InspectorCacheAccountingMode;
+}
+
+export type InspectorCacheAccountingMode = "included-in-input" | "separate-input-lane" | "relationship-unknown";
+
+export interface InspectorCacheReuse {
+  status: "observed" | "partial" | "inconsistent";
+  accountingMode: InspectorCacheAccountingMode;
+  cacheReadTokens: number;
+  cacheCreationTokens?: number;
+  promptInputTokens?: number;
+  uncachedInputTokens?: number;
+  reusePercent?: number;
 }
 
 export interface InspectorContextWindowUsage {
@@ -35,6 +48,7 @@ export interface InspectorToolCall {
   filePath?: string | null;
   filePaths?: string[];
   tokenUsage?: InspectorTokenUsage;
+  cacheReuse?: InspectorCacheReuse;
   contextUsage?: InspectorContextWindowUsage;
   basis?: string;
   source?: string;
@@ -55,6 +69,7 @@ export interface InspectorUsageProgressionPoint {
   contextDeltaTokens?: number;
   processedTokens?: number;
   outputTokens?: number;
+  cacheReuse?: InspectorCacheReuse;
   turnIndex?: number;
   userPrompt?: string;
   promptBoundary?: boolean;
@@ -160,6 +175,7 @@ export interface InspectorSession {
   prompts?: Array<{ text: string; timestamp?: string | null; turnIndex?: number | null }>;
   models?: string[];
   tokenUsage?: InspectorTokenUsage;
+  cacheReuse?: InspectorCacheReuse;
   usageReport?: InspectorUsageReport;
   runtime?: { modelProvider?: string; cliVersion?: string; effort?: string } | null;
   contextManifest?: {
