@@ -1208,8 +1208,13 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await promptMarker.click();
   await expect(usageReport.locator(".usage-chart-turn[tabindex='0']")).toHaveCount(1);
   await expect(usageReport.locator(".usage-chart-key-marker[tabindex='0']")).toHaveCount(2);
-  await expect(usageReport.locator(".usage-progress-list")).toContainText(/(10|11):00:02 UTC · Turn 1/u);
-  await expect(usageReport.locator(".usage-progress-list")).toContainText(/Repair (parser|renderer)/u);
+  await expect(usageReport.locator(".usage-chart-turn-line")).toHaveCount(0);
+  expect(await usageReport.locator(".usage-chart-turn-marker").evaluate((marker) => (
+    Math.abs(Number(marker.getAttribute("y2")) - Number(marker.getAttribute("y1")))
+  ))).toBe(12);
+  await expect(usageReport.locator(".usage-progress-list")).toContainText(/(10|11):00:02 UTC/u);
+  await expect(usageReport.locator(".usage-progress-list .usage-row-turn")).toHaveCount(1);
+  await expect(usageReport.locator(".usage-progress-list .usage-row-turn-boundary")).toContainText(/Turn 1 · Repair (parser|renderer)/u);
   await expect(usageReport).toContainText(/Rules\s*10/u);
   await expect(usageReport).toContainText(/Other\s*30/u);
   await expect(usageReport).toContainText(/Raw context\s*omitted/u);

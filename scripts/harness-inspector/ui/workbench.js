@@ -282,15 +282,17 @@
     const points = (usageReport?.progression ?? []).filter(point => Number.isFinite(point.contextTokens));
     if (points.length < 2) return '<p class="usage-report-unavailable">At least two comparable context snapshots are required for a progression chart.</p>';
     const width = 960;
-    const height = 190;
+    const height = 204;
     const padX = 28;
-    const padY = 22;
+    const padTop = 22;
+    const padBottom = 36;
+    const plotBottom = height - padBottom;
     const values = points.map(point => point.contextTokens);
     const min = Math.min(...values);
     const max = Math.max(...values);
     const range = Math.max(1,max - min);
     const x = point => padX + ((point.index - 1) / Math.max(1,usageReport.actualModelCalls - 1)) * (width - padX * 2);
-    const y = point => height - padY - ((point.contextTokens - min) / range) * (height - padY * 2);
+    const y = point => plotBottom - ((point.contextTokens - min) / range) * (plotBottom - padTop);
     const segments = [];
     let current = [];
     points.forEach(point => {
@@ -302,14 +304,15 @@
     });
     if (current.length) segments.push(current);
     const lines = [0,.5,1].map(ratio => {
-      const lineY = padY + ratio * (height - padY * 2);
+      const lineY = padTop + ratio * (plotBottom - padTop);
       return '<line class="usage-chart-grid" x1="' + padX + '" x2="' + (width - padX) + '" y1="' + lineY + '" y2="' + lineY + '"></line>';
     }).join('');
     const paths = segments.filter(segment => segment.length > 1).map(segment => '<polyline class="usage-chart-line" points="' + segment.map(point => x(point) + ',' + y(point)).join(' ') + '"></polyline>').join('');
-    const boundaries = points.filter(point => point.boundary === 'model-change').map(point => '<line class="usage-chart-boundary" x1="' + x(point) + '" x2="' + x(point) + '" y1="' + padY + '" y2="' + (height - padY) + '"></line>').join('');
+    const boundaries = points.filter(point => point.boundary === 'model-change').map(point => '<line class="usage-chart-boundary" x1="' + x(point) + '" x2="' + x(point) + '" y1="' + padTop + '" y2="' + plotBottom + '"></line>').join('');
+    const turnRailY = plotBottom + 14;
     const promptMarkers = points.filter(point => point.promptBoundary === true).map(point => {
       const pointX = x(point);
-      return '<g class="usage-chart-turn"' + usagePointAttributes(point) + '><rect class="usage-chart-turn-hit" x="' + (pointX - 6) + '" y="' + (padY - 2) + '" width="12" height="' + (height - padY * 2 + 4) + '"></rect><line class="usage-chart-turn-line" x1="' + pointX + '" x2="' + pointX + '" y1="' + (padY + 7) + '" y2="' + (height - padY) + '"></line><path class="usage-chart-turn-marker" d="M ' + pointX + ' ' + padY + ' l -5 8 h 10 z"></path></g>';
+      return '<g class="usage-chart-turn"' + usagePointAttributes(point) + '><rect class="usage-chart-turn-hit" x="' + (pointX - 7) + '" y="' + (turnRailY - 8) + '" width="14" height="16"></rect><line class="usage-chart-turn-marker" x1="' + pointX + '" x2="' + pointX + '" y1="' + (turnRailY - 6) + '" y2="' + (turnRailY + 6) + '"></line></g>';
     }).join('');
     const markers = points.filter((point,index) => index === 0 || index === points.length - 1 || ['shrink','model-change'].includes(point.boundary)).map(point => {
       const pointX = x(point);
@@ -325,7 +328,7 @@
     const timeRange = timed.length > 1
       ? formatStamp(timed[0].timestamp) + ' → ' + formatStamp(timed.at(-1).timestamp) + ' UTC · observed response time'
       : timed.length === 1 ? formatStamp(timed[0].timestamp) + ' UTC · one observed response time' : 'Response timestamps unavailable';
-    return '<div class="usage-context-chart"><div class="chart-toolbar"><span class="chart-basis">Response order</span><span class="chart-range">' + escape(timeRange) + '</span></div><svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Context progression from ' + escape(formatTokenCount(points[0].contextTokens)) + ' to ' + escape(formatTokenCount(points.at(-1).contextTokens)) + ' tokens"><title>Absolute prompt-context snapshots across unique model responses</title>' + lines + boundaries + promptMarkers + paths + markers + '<text x="' + padX + '" y="14">' + escape(formatTokenCount(max)) + '</text><text x="' + padX + '" y="' + (height - 4) + '">' + escape(formatTokenCount(min)) + '</text></svg><div class="usage-chart-legend"><span><i class="growth"></i>Context snapshot</span><span><i class="prompt"></i>User prompt</span><span><i class="shrink"></i>Context shrink/reset</span><span><i class="boundary"></i>Model boundary</span></div><div class="usage-chart-inspector" data-usage-chart-inspector aria-live="polite"><strong>Focus, hover, or click a marker</strong><span>Key responses expose observed time, context change, and linked user prompt.</span></div></div>';
+    return '<div class="usage-context-chart"><div class="chart-toolbar"><span class="chart-basis">Response order</span><span class="chart-range">' + escape(timeRange) + '</span></div><svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Context progression from ' + escape(formatTokenCount(points[0].contextTokens)) + ' to ' + escape(formatTokenCount(points.at(-1).contextTokens)) + ' tokens"><title>Absolute prompt-context snapshots across unique model responses</title>' + lines + boundaries + paths + markers + promptMarkers + '<text x="' + padX + '" y="14">' + escape(formatTokenCount(max)) + '</text><text x="' + padX + '" y="' + (height - 4) + '">' + escape(formatTokenCount(min)) + '</text></svg><div class="usage-chart-legend"><span><i class="growth"></i>Context snapshot</span><span><i class="prompt"></i>User turn boundary</span><span><i class="shrink"></i>Context shrink/reset</span><span><i class="boundary"></i>Model boundary</span></div><div class="usage-chart-inspector" data-usage-chart-inspector aria-live="polite"><strong>Focus, hover, or click a marker</strong><span>Turn boundaries and context events expose observed time, context change, and linked prompt evidence.</span></div></div>';
   };
   const processingBreakdownMarkup = (usage,usageReport) => {
     if (!Number.isFinite(usageReport?.processedTokens)) return '';
@@ -347,11 +350,20 @@
     const scope = usageReport.progressionTruncated
       ? 'Latest ' + visible.length + ' of ' + points.length + ' retained points, sampled from ' + total + ' unique model responses'
       : 'Latest ' + visible.length + ' of ' + total + ' unique model responses';
+    const seenTurns = new Set();
     const rows = visible.map(point => {
       const stamp = formatStamp(point.timestamp);
-      const meta = [stamp ? stamp + ' UTC' : null,Number.isFinite(point.turnIndex) ? 'Turn ' + point.turnIndex : null].filter(Boolean).join(' · ');
-      const prompt = point.userPrompt ? String(point.userPrompt).replace(/\s+/gu,' ').trim() : point.model ?? 'model unavailable';
-      return '<li class="boundary-' + point.boundary + '" title="' + escape(point.model ?? 'model unavailable') + '"><div><strong>Response ' + point.index + '</strong><span>' + escape(meta || 'time and Turn unavailable') + '</span><small title="' + escape(prompt) + '">' + escape(prompt) + '</small>' + (point.cacheReuse ? '<em class="usage-row-reuse">' + escape(formatCacheReuse(point.cacheReuse)) + '</em>' : '') + '</div><strong>' + (Number.isFinite(point.contextTokens) ? formatTokenCount(point.contextTokens) : '—') + '</strong><span class="usage-delta">' + (Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(point.contextDeltaTokens) : point.boundary === 'model-change' ? 'model boundary' : point.boundary) + '</span><span>' + (Number.isFinite(point.processedTokens) ? formatTokenCount(point.processedTokens) : '—') + '</span><span>' + (Number.isFinite(point.outputTokens) ? formatTokenCount(point.outputTokens) : '—') + '</span></li>';
+      const turnIndex = Number.isFinite(point.turnIndex) ? point.turnIndex : null;
+      const firstVisibleForTurn = turnIndex !== null && !seenTurns.has(turnIndex);
+      if (turnIndex !== null) seenTurns.add(turnIndex);
+      const prompt = point.promptBoundary === true && point.userPrompt ? String(point.userPrompt).replace(/\s+/gu,' ').trim() : '';
+      const turnContext = firstVisibleForTurn
+        ? prompt ? 'Turn ' + turnIndex + ' · ' + prompt : 'Turn ' + turnIndex + ' continued'
+        : '';
+      const modelTitle = point.model ? ' title="' + escape(point.model) + '"' : '';
+      const turnClass = prompt ? ' usage-row-turn-boundary' : ' usage-row-turn-continuation';
+      const turnMarkup = turnContext ? '<small class="usage-row-turn' + turnClass + '" title="' + escape(turnContext) + '">' + escape(turnContext) + '</small>' : '';
+      return '<li class="boundary-' + point.boundary + '"' + modelTitle + '><div><strong>Response ' + point.index + '</strong><span>' + escape(stamp ? stamp + ' UTC' : 'response time unavailable') + '</span>' + turnMarkup + (point.cacheReuse ? '<em class="usage-row-reuse">' + escape(formatCacheReuse(point.cacheReuse)) + '</em>' : '') + '</div><strong>' + (Number.isFinite(point.contextTokens) ? formatTokenCount(point.contextTokens) : '—') + '</strong><span class="usage-delta">' + (Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(point.contextDeltaTokens) : point.boundary === 'model-change' ? 'model boundary' : point.boundary) + '</span><span>' + (Number.isFinite(point.processedTokens) ? formatTokenCount(point.processedTokens) : '—') + '</span><span>' + (Number.isFinite(point.outputTokens) ? formatTokenCount(point.outputTokens) : '—') + '</span></li>';
     }).join('');
     return '<details class="usage-progress-details" open><summary>' + escape(scope) + '</summary><div class="usage-progress-head" aria-hidden="true"><span>Response</span><span>Context</span><span>Δ context</span><span>Processed</span><span>Output</span></div><ol class="usage-progress-list">' + rows + '</ol></details>';
   };

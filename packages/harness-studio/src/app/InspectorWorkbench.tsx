@@ -437,15 +437,17 @@ function ContextProgressChart({ report }: { report: UsageReport }): React.JSX.El
   const points = report.progression.filter((point) => Number.isFinite(point.contextTokens));
   if (points.length < 2) return <p className="usage-report-unavailable">At least two comparable context snapshots are required for a progression chart.</p>;
   const width = 960;
-  const height = 190;
+  const height = 204;
   const padX = 28;
-  const padY = 22;
+  const padTop = 22;
+  const padBottom = 36;
+  const plotBottom = height - padBottom;
   const values = points.map((point) => Number(point.contextTokens));
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = Math.max(1, max - min);
   const x = (point: UsageProgressionPoint): number => padX + ((point.index - 1) / Math.max(1, report.actualModelCalls - 1)) * (width - padX * 2);
-  const y = (point: UsageProgressionPoint): number => height - padY - ((Number(point.contextTokens) - min) / range) * (height - padY * 2);
+  const y = (point: UsageProgressionPoint): number => plotBottom - ((Number(point.contextTokens) - min) / range) * (plotBottom - padTop);
   const segments: UsageProgressionPoint[][] = [];
   let current: UsageProgressionPoint[] = [];
   for (const point of points) {
@@ -458,6 +460,7 @@ function ContextProgressChart({ report }: { report: UsageReport }): React.JSX.El
   if (current.length) segments.push(current);
   const markers = points.filter((point, index) => index === 0 || index === points.length - 1 || ["shrink", "model-change"].includes(point.boundary));
   const promptMarkers = points.filter((point) => point.promptBoundary === true);
+  const turnRailY = plotBottom + 14;
   const timed = points.filter((point) => formatUsageStamp(point.timestamp));
   const timeRange = timed.length > 1
     ? `${formatUsageStamp(timed[0].timestamp)} → ${formatUsageStamp(timed.at(-1)?.timestamp)} UTC · observed response time`
@@ -466,15 +469,15 @@ function ContextProgressChart({ report }: { report: UsageReport }): React.JSX.El
     <div className="chart-toolbar"><span className="chart-basis">Response order</span><span className="chart-range">{timeRange}</span></div>
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Context progression from ${formatTokenCount(Number(points[0].contextTokens))} to ${formatTokenCount(Number(points.at(-1)?.contextTokens))} tokens`}>
       <title>Absolute prompt-context snapshots across unique model responses</title>
-      {[0, 0.5, 1].map((ratio) => { const lineY = padY + ratio * (height - padY * 2); return <line className="usage-chart-grid" x1={padX} x2={width - padX} y1={lineY} y2={lineY} key={ratio} />; })}
-      {points.filter((point) => point.boundary === "model-change").map((point) => <line className="usage-chart-boundary" x1={x(point)} x2={x(point)} y1={padY} y2={height - padY} key={`boundary-${point.id}`} />)}
-      {promptMarkers.map((point) => { const markerDetail = usagePointDetail(point); const pointX = x(point); return <g className="usage-chart-turn" role="button" tabIndex={0} aria-label={`${markerDetail.primary}. ${markerDetail.secondary}`} onMouseEnter={() => setDetail(markerDetail)} onFocus={() => setDetail(markerDetail)} onClick={() => setDetail(markerDetail)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setDetail(markerDetail); } }} key={`prompt-${point.id}`}><rect className="usage-chart-turn-hit" x={pointX - 6} y={padY - 2} width="12" height={height - padY * 2 + 4} /><line className="usage-chart-turn-line" x1={pointX} x2={pointX} y1={padY + 7} y2={height - padY} /><path className="usage-chart-turn-marker" d={`M ${pointX} ${padY} l -5 8 h 10 z`} /></g>; })}
+      {[0, 0.5, 1].map((ratio) => { const lineY = padTop + ratio * (plotBottom - padTop); return <line className="usage-chart-grid" x1={padX} x2={width - padX} y1={lineY} y2={lineY} key={ratio} />; })}
+      {points.filter((point) => point.boundary === "model-change").map((point) => <line className="usage-chart-boundary" x1={x(point)} x2={x(point)} y1={padTop} y2={plotBottom} key={`boundary-${point.id}`} />)}
       {segments.filter((segment) => segment.length > 1).map((segment, index) => <polyline className="usage-chart-line" points={segment.map((point) => `${x(point)},${y(point)}`).join(" ")} key={`segment-${index}`} />)}
       {markers.map((point) => { const markerDetail = usagePointDetail(point); const pointX = x(point); const pointY = y(point); return <g className="usage-chart-key-marker" role="button" tabIndex={0} aria-label={`${markerDetail.primary}. ${markerDetail.secondary}`} onMouseEnter={() => setDetail(markerDetail)} onFocus={() => setDetail(markerDetail)} onClick={() => setDetail(markerDetail)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setDetail(markerDetail); } }} key={point.id}><rect className="usage-chart-point-hit" x={pointX - 8} y={pointY - 8} width="16" height="16" />{point.boundary === "shrink" ? <rect className="usage-chart-point boundary-shrink" x={pointX - 4} y={pointY - 4} width="8" height="8" transform={`rotate(45 ${pointX} ${pointY})`} /> : point.boundary === "model-change" ? <rect className="usage-chart-point boundary-model-change" x={pointX - 4} y={pointY - 4} width="8" height="8" /> : <circle className={`usage-chart-point boundary-${point.boundary}`} cx={pointX} cy={pointY} r="4" />}</g>; })}
+      {promptMarkers.map((point) => { const markerDetail = usagePointDetail(point); const pointX = x(point); return <g className="usage-chart-turn" role="button" tabIndex={0} aria-label={`${markerDetail.primary}. ${markerDetail.secondary}`} onMouseEnter={() => setDetail(markerDetail)} onFocus={() => setDetail(markerDetail)} onClick={() => setDetail(markerDetail)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setDetail(markerDetail); } }} key={`prompt-${point.id}`}><rect className="usage-chart-turn-hit" x={pointX - 7} y={turnRailY - 8} width="14" height="16" /><line className="usage-chart-turn-marker" x1={pointX} x2={pointX} y1={turnRailY - 6} y2={turnRailY + 6} /></g>; })}
       <text x={padX} y="14">{formatTokenCount(max)}</text><text x={padX} y={height - 4}>{formatTokenCount(min)}</text>
     </svg>
-    <div className="usage-chart-legend"><span><i className="growth" />Context snapshot</span><span><i className="prompt" />User prompt</span><span><i className="shrink" />Context shrink/reset</span><span><i className="boundary" />Model boundary</span></div>
-    <div className="usage-chart-inspector" aria-live="polite"><strong>{detail?.primary ?? "Focus, hover, or click a marker"}</strong><span>{detail?.secondary ?? "Key responses expose observed time, context change, and linked user prompt."}</span></div>
+    <div className="usage-chart-legend"><span><i className="growth" />Context snapshot</span><span><i className="prompt" />User turn boundary</span><span><i className="shrink" />Context shrink/reset</span><span><i className="boundary" />Model boundary</span></div>
+    <div className="usage-chart-inspector" aria-live="polite"><strong>{detail?.primary ?? "Focus, hover, or click a marker"}</strong><span>{detail?.secondary ?? "Turn boundaries and context events expose observed time, context change, and linked prompt evidence."}</span></div>
   </div>;
 }
 
@@ -554,10 +557,32 @@ function UsageProgressRows({ report }: { report: UsageReport }): React.JSX.Eleme
   const scope = report.progressionTruncated
     ? `Latest ${visible.length} of ${report.progression.length} retained points, sampled from ${total} unique model responses`
     : `Latest ${visible.length} of ${total} unique model responses`;
+  const seenTurns = new Set<number>();
   return <details className="usage-progress-details" open>
     <summary>{scope}</summary>
     <div className="usage-progress-head" aria-hidden="true"><span>Response</span><span>Context</span><span>Δ context</span><span>Processed</span><span>Output</span></div>
-    <ol className="usage-progress-list">{visible.map((point) => { const stamp = formatUsageStamp(point.timestamp); const meta = [stamp ? `${stamp} UTC` : null, Number.isFinite(point.turnIndex) ? `Turn ${point.turnIndex}` : null].filter(Boolean).join(" · "); const prompt = point.userPrompt?.replace(/\s+/gu, " ").trim() || point.model || "model unavailable"; return <li className={`boundary-${point.boundary}`} title={point.model ?? "model unavailable"} key={point.id}><div><strong>Response {point.index}</strong><span>{meta || "time and Turn unavailable"}</span><small title={prompt}>{prompt}</small>{point.cacheReuse && <em className="usage-row-reuse">{formatCacheReuse(point.cacheReuse)}</em>}</div><strong>{Number.isFinite(point.contextTokens) ? formatTokenCount(Number(point.contextTokens)) : "—"}</strong><span className="usage-delta">{Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(Number(point.contextDeltaTokens)) : point.boundary === "model-change" ? "model boundary" : point.boundary}</span><span>{Number.isFinite(point.processedTokens) ? formatTokenCount(Number(point.processedTokens)) : "—"}</span><span>{Number.isFinite(point.outputTokens) ? formatTokenCount(Number(point.outputTokens)) : "—"}</span></li>; })}</ol>
+    <ol className="usage-progress-list">{visible.map((point) => {
+      const stamp = formatUsageStamp(point.timestamp);
+      const turnIndex = Number.isFinite(point.turnIndex) ? Number(point.turnIndex) : null;
+      const firstVisibleForTurn = turnIndex !== null && !seenTurns.has(turnIndex);
+      if (turnIndex !== null) seenTurns.add(turnIndex);
+      const prompt = point.promptBoundary === true ? point.userPrompt?.replace(/\s+/gu, " ").trim() : undefined;
+      const turnContext = firstVisibleForTurn
+        ? prompt ? `Turn ${turnIndex} · ${prompt}` : `Turn ${turnIndex} continued`
+        : undefined;
+      return <li className={`boundary-${point.boundary}`} title={point.model} key={point.id}>
+        <div>
+          <strong>Response {point.index}</strong>
+          <span>{stamp ? `${stamp} UTC` : "response time unavailable"}</span>
+          {turnContext && <small className={`usage-row-turn ${prompt ? "usage-row-turn-boundary" : "usage-row-turn-continuation"}`} title={turnContext}>{turnContext}</small>}
+          {point.cacheReuse && <em className="usage-row-reuse">{formatCacheReuse(point.cacheReuse)}</em>}
+        </div>
+        <strong>{Number.isFinite(point.contextTokens) ? formatTokenCount(Number(point.contextTokens)) : "—"}</strong>
+        <span className="usage-delta">{Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(Number(point.contextDeltaTokens)) : point.boundary === "model-change" ? "model boundary" : point.boundary}</span>
+        <span>{Number.isFinite(point.processedTokens) ? formatTokenCount(Number(point.processedTokens)) : "—"}</span>
+        <span>{Number.isFinite(point.outputTokens) ? formatTokenCount(Number(point.outputTokens)) : "—"}</span>
+      </li>;
+    })}</ol>
   </details>;
 }
 

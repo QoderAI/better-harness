@@ -412,7 +412,7 @@ function bindUsageProgressionToTurns(usageReport, dialogue) {
     return {
       ...point,
       turnIndex: window.turn.index,
-      ...(prompt ? { userPrompt: prompt } : {}),
+      ...(promptBoundary && prompt ? { userPrompt: prompt } : {}),
       ...(promptBoundary ? { promptBoundary: true } : {}),
     };
   });

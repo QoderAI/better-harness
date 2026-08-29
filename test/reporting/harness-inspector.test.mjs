@@ -843,7 +843,7 @@ test("Inspector links Usage points to prompts only through observed Turn time wi
       { index: 1, timestamp: "2026-08-12T08:02:00.000Z", turnIndex: 1, userPrompt: "Inspect context pressure", promptBoundary: true },
       { index: 2, timestamp: "2026-08-12T08:07:00.000Z", turnIndex: undefined, userPrompt: undefined, promptBoundary: undefined },
       { index: 3, timestamp: "2026-08-12T08:12:00.000Z", turnIndex: 2, userPrompt: "Confirm whether compaction occurred", promptBoundary: true },
-      { index: 4, timestamp: "2026-08-12T08:14:00.000Z", turnIndex: 2, userPrompt: "Confirm whether compaction occurred", promptBoundary: undefined },
+      { index: 4, timestamp: "2026-08-12T08:14:00.000Z", turnIndex: 2, userPrompt: undefined, promptBoundary: undefined },
     ],
   );
 });
