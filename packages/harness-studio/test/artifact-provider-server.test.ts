@@ -186,7 +186,9 @@ describe("generic external hosted Artifact routes", () => {
 
     const viewerResponse = await fetch(`${server.url}${descriptor.renderer.viewUri}`);
     expect(viewerResponse.status).toBe(200);
-    expect(viewerResponse.headers.get("content-security-policy")).toContain("connect-src 'none'");
+    const hostedCsp = viewerResponse.headers.get("content-security-policy");
+    expect(hostedCsp).toContain("connect-src 'self'");
+    expect(hostedCsp).not.toMatch(/connect-src[^;]*https?:/u);
     expect(await viewerResponse.text()).toContain("runtime-module.js");
     const base = descriptor.renderer.viewUri!;
     expect((await fetch(`${server.url}${base}runtime-module.js`)).headers.get("content-type")).toContain("javascript");
