@@ -1,5 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { I18nextProvider, initReactI18next } from "react-i18next";
+import { createInstance } from "i18next";
 import { describe, expect, it } from "vitest";
 import type { ArtifactDescriptor, ArtifactRendererReference } from "../src/contracts/artifact.js";
 import {
@@ -13,6 +15,21 @@ import {
   hostedArtifactSelection,
   hostedArtifactSelectionFromFrame,
 } from "../src/app/artifacts/ExternalHostedArtifactView.js";
+import { namespaces as enNamespaces } from "../src/app/i18n/en/index.js";
+
+const testI18n = createInstance();
+testI18n.use(initReactI18next).init({
+  resources: { en: enNamespaces },
+  lng: "en",
+  fallbackLng: "en",
+  defaultNS: "common",
+  interpolation: { escapeValue: false },
+  react: { useSuspense: false },
+});
+
+function renderView(props: Parameters<typeof ArtifactView>[0]): string {
+  return renderToStaticMarkup(createElement(I18nextProvider, { i18n: testI18n }, createElement(ArtifactView, props)));
+}
 
 describe("Artifact View surface registry", () => {
   it("keeps one stable ordered composition boundary for every view family", () => {
@@ -58,7 +75,7 @@ describe("Artifact View surface registry", () => {
   it("does not reclassify an unknown renderer from a familiar extension", () => {
     const artifact = descriptor({ id: "future.deck-renderer" }, { label: "deck.pptx", format: "pptx" });
     expect(resolveArtifactSurfaceMount(artifact)).toBeUndefined();
-    expect(renderToStaticMarkup(createElement(ArtifactView, { authorityId: "catalog-a", artifact, liveGeneration: 0 })))
+    expect(renderView({ authorityId: "catalog-a", artifact, liveGeneration: 0 }))
       .toContain("No renderer is available for this artifact (future.deck-renderer).");
     expect(resolveArtifactSurfaceMount(descriptor({ id: "studio.pptx-dom", type: "future-native" }, { format: "pptx" }))).toBeUndefined();
   });
@@ -74,7 +91,7 @@ describe("Artifact View surface registry", () => {
       status: "unavailable",
       reason: "No approved renderer matches this revision.",
     });
-    const markup = renderToStaticMarkup(createElement(ArtifactView, { authorityId: "catalog-a", artifact: unavailable, liveGeneration: 0 }));
+    const markup = renderView({ authorityId: "catalog-a", artifact: unavailable, liveGeneration: 0 });
     expect(markup).toContain('role="status"');
     expect(markup).toContain("No approved renderer matches this revision.");
   });

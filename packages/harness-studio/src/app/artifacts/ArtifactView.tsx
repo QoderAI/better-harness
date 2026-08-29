@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   ARTIFACT_SURFACE_MOUNTS,
   resolveArtifactSurfaceMount,
@@ -35,6 +36,7 @@ export interface ArtifactViewHostProps extends ArtifactSurfaceMountContext {
 
 /** Host-owned dispatch; the server-selected renderer remains authoritative. */
 export function ArtifactView(props: ArtifactViewHostProps): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   if (props.artifact.renderer.status === "ready") {
     const mount = resolveArtifactSurfaceMount(props.artifact);
     if (mount !== undefined) {
@@ -43,7 +45,7 @@ export function ArtifactView(props: ArtifactViewHostProps): React.JSX.Element {
       return <Component key={key} artifact={props.artifact} liveGeneration={props.liveGeneration} onSelection={props.onSelection} />;
     }
   }
-  return <p className="artifact-status" role="status">{props.artifact.renderer.reason ?? `No renderer is available for this artifact (${props.artifact.renderer.id}).`}</p>;
+  return <p className="artifact-status" role="status">{props.artifact.renderer.reason ?? t("noRenderer", { id: props.artifact.renderer.id })}</p>;
 }
 
 /** Retain content revisions only while the selecting authority and binding agree. */

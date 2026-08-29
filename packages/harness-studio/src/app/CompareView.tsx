@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { parseVerdict, summarizeVerdict, type CompareSummary } from "./compare-model.js";
 
 type LoadState =
@@ -7,6 +8,7 @@ type LoadState =
   | { phase: "ready"; summary: CompareSummary };
 
 export function CompareView(): React.JSX.Element {
+  const { t } = useTranslation("compare");
   const [state, setState] = useState<LoadState>({ phase: "loading" });
 
   useEffect(() => {
@@ -34,16 +36,16 @@ export function CompareView(): React.JSX.Element {
   }, []);
 
   if (state.phase === "loading") {
-    return <p className="evidence-loading" role="status">Loading compare evidence…</p>;
+    return <p className="evidence-loading" role="status">{t("evidence.loading")}</p>;
   }
   if (state.phase === "missing") {
     return (
       <section className="evidence-empty" role="alert">
-        <h1>No compare evidence is loaded</h1>
+        <h1>{t("evidence.emptyTitle")}</h1>
         <p className="evidence-empty-reason">{state.detail}</p>
         <p>
-          Produce a verdict with <code>harness-compare run &lt;experiment.json&gt; --out &lt;dir&gt;</code>,
-          then start the studio with <code>--evidence &lt;dir&gt;</code>.
+          {t("evidence.emptyHintBefore")} <code>harness-compare run &lt;experiment.json&gt; --out &lt;dir&gt;</code>
+          {t("evidence.emptyHintAfter")} <code>--evidence &lt;dir&gt;</code>.
         </p>
       </section>
     );
@@ -54,28 +56,28 @@ export function CompareView(): React.JSX.Element {
   return (
     <section className="evidence-report">
       <section className="decision-summary" aria-labelledby="decision-summary-title">
-        <header><div><small>Decision</small><h2 id="decision-summary-title">{summary.reason}</h2></div><strong className={`verdict-${summary.status}`}>{summary.status.replaceAll("_", " ")}</strong></header>
+        <header><div><small>{t("evidence.decision")}</small><h2 id="decision-summary-title">{summary.reason}</h2></div><strong className={`verdict-${summary.status}`}>{summary.status.replaceAll("_", " ")}</strong></header>
         <dl>
-          <div><dt>Evidence</dt><dd className={sufficient ? "status-success" : "status-warning"}>{sufficient ? "Sufficient" : "More pairs required"}</dd><small>{summary.evidence.pairs} matched · minimum {summary.evidence.minimumMatchedPairs}</small></div>
-          <div><dt>Quality delta</dt><dd>{summary.evidence.meanScoreDelta >= 0 ? "+" : ""}{summary.evidence.meanScoreDelta}</dd><small>{summary.evidence.candidateWins} candidate · {summary.evidence.baselineWins} baseline · {summary.evidence.ties} tied</small></div>
-          <div><dt>Cost guardrail</dt><dd className={withinGuardrail ? "status-success" : "status-danger"}>{summary.evidence.costRatio === null ? (withinGuardrail ? "No spend" : "Unavailable") : `${summary.evidence.costRatio.toFixed(2)}×`}</dd><small>Maximum {summary.evidence.maxCostRatio.toFixed(2)}× per completed trial</small></div>
-          <div><dt>Treatment</dt><dd>{summary.treatmentAxis}</dd><small>Single declared comparison axis</small></div>
+          <div><dt>{t("evidence.evidence")}</dt><dd className={sufficient ? "status-success" : "status-warning"}>{sufficient ? t("evidence.sufficient") : t("evidence.morePairsRequired")}</dd><small>{t("evidence.matchedSummary", { pairs: summary.evidence.pairs, minimum: summary.evidence.minimumMatchedPairs })}</small></div>
+          <div><dt>{t("evidence.qualityDelta")}</dt><dd>{summary.evidence.meanScoreDelta >= 0 ? "+" : ""}{summary.evidence.meanScoreDelta}</dd><small>{t("evidence.tieSummary", { candidates: summary.evidence.candidateWins, baseline: summary.evidence.baselineWins, ties: summary.evidence.ties })}</small></div>
+          <div><dt>{t("evidence.costGuardrail")}</dt><dd className={withinGuardrail ? "status-success" : "status-danger"}>{summary.evidence.costRatio === null ? (withinGuardrail ? t("evidence.noSpend") : t("evidence.unavailable")) : `${summary.evidence.costRatio.toFixed(2)}×`}</dd><small>{t("evidence.maxCost", { ratio: summary.evidence.maxCostRatio.toFixed(2) })}</small></div>
+          <div><dt>{t("evidence.treatment")}</dt><dd>{summary.treatmentAxis}</dd><small>{t("evidence.singleAxis")}</small></div>
         </dl>
       </section>
       <section className="evidence-table-pane" aria-labelledby="variant-table-title">
-      <header><h2 id="variant-table-title">Variant aggregates</h2><span>Supporting evidence</span></header>
-      <div className="table-scroll" role="region" aria-label="Variant comparison" tabIndex={0}>
+      <header><h2 id="variant-table-title">{t("evidence.variantAggregates")}</h2><span>{t("evidence.supportingEvidence")}</span></header>
+      <div className="table-scroll" role="region" aria-label={t("evidence.variantAria")} tabIndex={0}>
         <table>
           <thead>
             <tr>
-              <th>Variant</th>
-              <th className="numeric">Passed</th>
-              <th className="numeric">Pass rate</th>
-              <th className="numeric">Mean score</th>
-              <th className="numeric">Infra errors</th>
-              <th className="numeric">Cost (USD)</th>
-              <th className="numeric">Cost / trial</th>
-              <th className="numeric">Credits</th>
+              <th>{t("evidence.cols.variant")}</th>
+              <th className="numeric">{t("evidence.cols.passed")}</th>
+              <th className="numeric">{t("evidence.cols.passRate")}</th>
+              <th className="numeric">{t("evidence.cols.meanScore")}</th>
+              <th className="numeric">{t("evidence.cols.infraErrors")}</th>
+              <th className="numeric">{t("evidence.cols.costUsd")}</th>
+              <th className="numeric">{t("evidence.cols.costPerTrial")}</th>
+              <th className="numeric">{t("evidence.cols.credits")}</th>
             </tr>
           </thead>
           <tbody>
@@ -96,18 +98,18 @@ export function CompareView(): React.JSX.Element {
       </div>
       </section>
       <section className="evidence-table-pane" aria-labelledby="trial-table-title">
-      <header><h2 id="trial-table-title">Trials</h2><span>{summary.trials.length} recorded rows</span></header>
-      <div className="table-scroll" role="region" aria-label="Trial details" tabIndex={0}>
+      <header><h2 id="trial-table-title">{t("evidence.trials")}</h2><span>{t("evidence.recordedRows", { count: summary.trials.length })}</span></header>
+      <div className="table-scroll" role="region" aria-label={t("evidence.trialAria")} tabIndex={0}>
         <table>
           <thead>
             <tr>
-              <th>Variant</th>
-              <th className="numeric">#</th>
-              <th>Harness</th>
-              <th>Profile</th>
-              <th>Outcome</th>
-              <th className="numeric">Duration</th>
-              <th>Changed files</th>
+              <th>{t("evidence.trialCols.variant")}</th>
+              <th className="numeric">{t("evidence.trialCols.index")}</th>
+              <th>{t("evidence.trialCols.harness")}</th>
+              <th>{t("evidence.trialCols.profile")}</th>
+              <th>{t("evidence.trialCols.outcome")}</th>
+              <th className="numeric">{t("evidence.trialCols.duration")}</th>
+              <th>{t("evidence.trialCols.changedFiles")}</th>
             </tr>
           </thead>
           <tbody>
@@ -126,7 +128,7 @@ export function CompareView(): React.JSX.Element {
         </table>
       </div>
       </section>
-      <p className="evidence-manifest"><span>Manifest</span><code>{summary.manifestHash}</code></p>
+      <p className="evidence-manifest"><span>{t("evidence.manifest")}</span><code>{summary.manifestHash}</code></p>
     </section>
   );
 }

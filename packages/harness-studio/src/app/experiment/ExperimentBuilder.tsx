@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   canLockCompare,
   isExperimentRunnable,
@@ -7,6 +8,7 @@ import {
   type ResolvedHistoryDraftPreview,
 } from "../../contracts/experiment-setup.js";
 import { deriveTreatmentSummary, shortDigest } from "./experiment-comparison-model.js";
+import { studioLocale } from "../i18n/index.js";
 import type { ExperimentPreview, LaneDefinition } from "./experiment-view-types.js";
 
 export type HistoryLoadState =
@@ -31,6 +33,7 @@ export function ExperimentBuilder(props: {
   onSelectHistory: (id: string) => void;
   onLock: () => void;
 }): React.JSX.Element {
+  const { t } = useTranslation("experiment");
   const setup = props.historyDraft?.setup ?? props.preview.setup;
   const source = setup.checkpointSource;
   const historyRequiresDraft = props.history.phase === "ready";
@@ -57,38 +60,38 @@ export function ExperimentBuilder(props: {
   const busy = props.historyAction.phase === "locking" || props.historyAction.phase === "resolving";
   const actionEnabled = (lockable || canOpenWorkbench) && !busy;
   const actionLabel = props.historyAction.phase === "locking"
-    ? "Locking…"
+    ? t("builder.locking")
     : !runnable
-      ? "Checkpoint unavailable"
-    : canOpenWorkbench
-      ? "Open workbench"
-      : "Lock and compare";
-  const status = builderStatus(props.history, props.historyAction, lockable, canOpenWorkbench, runnable, source.limitation);
+      ? t("builder.checkpointUnavailable")
+      : canOpenWorkbench
+        ? t("builder.openWorkbench")
+        : t("builder.lockAndCompare");
+  const status = builderStatus(props.history, props.historyAction, lockable, canOpenWorkbench, runnable, source.limitation, t);
 
   return <section className="builder-shell">
     <header className="builder-topbar">
-      <div className="builder-brand"><strong>Harness Bench</strong><span>Design</span></div>
+      <div className="builder-brand"><strong>Harness Bench</strong><span>{t("builder.design")}</span></div>
       {props.navigation}
       <div className="builder-state">
-        <span>{props.preview.lock ? "Locked" : "Draft"}</span>
+        <span>{props.preview.lock ? t("builder.locked") : t("builder.draft")}</span>
         <code>{shortDigest(props.historyDraft?.checkpoint.digest ?? props.preview.checkpoint.digest)}</code>
       </div>
     </header>
     <main className="builder-main">
       <header className="builder-title"><div>
-        <small>{historical ? "Historical comparison" : "New request comparison"}</small>
-        <h1>{historical ? "Compare a past agent run" : "Compare agents on one request"}</h1>
+        <small>{historical ? t("builder.titleHistorical") : t("builder.titleNew")}</small>
+        <h1>{historical ? t("builder.h1Historical") : t("builder.h1New")}</h1>
         <p>{historical
-          ? "Choose a recorded request, confirm what changes, then compare the fresh runs."
-          : "Confirm the shared request and treatment before opening the workbench."}</p>
+          ? t("builder.detailHistorical")
+          : t("builder.detailNew")}</p>
       </div></header>
 
       <section className="builder-primary" aria-labelledby="history-title">
         <header className="flow-section-header"><div>
-          <h2 id="history-title">{historical ? "Past request" : "Request"}</h2>
+          <h2 id="history-title">{historical ? t("builder.pastRequest") : t("builder.request")}</h2>
           <p>{historical
-            ? "The recorded trajectory stays visible as the Reference run."
-            : "Every fresh run receives this same request."}</p>
+            ? t("builder.historyDetailHistorical")
+            : t("builder.historyDetailNew")}</p>
         </div></header>
         <HistoryPicker
           history={props.history}
@@ -102,29 +105,29 @@ export function ExperimentBuilder(props: {
           <code>{shortDigest(setup.request.promptHash)}</code>
         </div><p>{setup.request.prompt}</p></div>
         {historyLimitation
-          ? <details className="provenance-details"><summary>Reference identity incomplete</summary><p>{historyLimitation}</p></details>
+          ? <details className="provenance-details"><summary>{t("builder.referenceIncomplete")}</summary><p>{historyLimitation}</p></details>
           : null}
       </section>
 
       <section className="builder-setup" aria-labelledby="setup-title">
         <header className="flow-section-header"><div>
-          <h2 id="setup-title">Comparison</h2>
-          <p>One checkpoint, one Reference, and {executeRuns.length} fresh runs.</p>
-        </div><span className={`source-status status-${source.status}`}>{source.status === "ready" ? "Ready" : "Blocked"}</span></header>
+          <h2 id="setup-title">{t("builder.compareTitle")}</h2>
+          <p>{t("builder.compareDetail", { count: executeRuns.length })}</p>
+        </div><span className={`source-status status-${source.status}`}>{source.status === "ready" ? t("builder.ready") : t("builder.blocked")}</span></header>
         <div className="setup-summary">
-          <article><small>Starting point</small><strong title={`${source.resource.value} · ${source.revision.value}`}>{source.resource.value} · {shortDigest(source.revision.value)}</strong><span>Shared by every fresh run</span></article>
-          <article className={treatment.controlled ? "treatment-controlled" : "treatment-uncontrolled"}><small>{treatment.label}</small><strong>{treatment.value}</strong><span>{treatment.controlled ? "Only this setting changes" : "Comparison is descriptive"}</span></article>
-          <article><small>Fresh runs</small><strong>{executeRuns.length} isolated copies</strong><span>Created only when Run starts</span></article>
+          <article><small>{t("builder.startingPoint")}</small><strong title={`${source.resource.value} · ${source.revision.value}`}>{source.resource.value} · {shortDigest(source.revision.value)}</strong><span>{t("builder.sharedByRuns")}</span></article>
+          <article className={treatment.controlled ? "treatment-controlled" : "treatment-uncontrolled"}><small>{treatment.label}</small><strong>{treatment.value}</strong><span>{treatment.controlled ? t("builder.onlySetting") : t("builder.descriptive")}</span></article>
+          <article><small>{t("builder.freshRuns")}</small><strong>{t("builder.isolatedCopies", { count: executeRuns.length })}</strong><span>{t("builder.createdOnRun")}</span></article>
         </div>
         <details className="setup-details">
-          <summary>Technical details</summary>
-          <div className="checkpoint-facts">{facts.map((fact) => <article key={`${fact.label}:${fact.value}`}><small>{fact.label}</small><strong title={fact.value}>{fact.value}</strong><p>{fact.detail ?? "Checkpoint fact"}</p></article>)}</div>
-          <p className="adapter-detail">Checkpoint adapter: <strong>{source.adapter.label}</strong> <code>{source.adapter.id}</code></p>
-          <div className="variant-table" role="table" aria-label="Comparison runs">
-            <div className="variant-row variant-head" role="row"><span>Role</span><span>Run</span><span>Source</span><span>Harness</span><span>Model / profile</span><span>Trials</span></div>
-            {props.preview.manifest.lanes.map((lane, index) => <div className="variant-row" role="row" key={lane.id}><strong>{builderRole(lane, index, props.preview.manifest.lanes)}</strong><code>{lane.id}</code><span>{lane.origin === "observed" ? "recorded" : "fresh"}</span><span>{laneHarness(lane)}</span><span>{laneRuntime(lane)}</span><span>{lane.trials ?? "recorded"}</span></div>)}
+          <summary>{t("builder.technicalDetails")}</summary>
+          <div className="checkpoint-facts">{facts.map((fact) => <article key={`${fact.label}:${fact.value}`}><small>{fact.label}</small><strong title={fact.value}>{fact.value}</strong><p>{fact.detail ?? t("builder.checkpointFact")}</p></article>)}</div>
+          <p className="adapter-detail">{t("builder.adapter", { label: source.adapter.label })} <code>{source.adapter.id}</code></p>
+          <div className="variant-table" role="table" aria-label={t("builder.runsAria")}>
+            <div className="variant-row variant-head" role="row"><span>{t("builder.cols.role")}</span><span>{t("builder.cols.run")}</span><span>{t("builder.cols.source")}</span><span>{t("builder.cols.harness")}</span><span>{t("builder.cols.model")}</span><span>{t("builder.cols.trials")}</span></div>
+            {props.preview.manifest.lanes.map((lane, index) => <div className="variant-row" role="row" key={lane.id}><strong>{builderRole(lane, index, props.preview.manifest.lanes, t)}</strong><code>{lane.id}</code><span>{lane.origin === "observed" ? t("builder.recorded") : t("builder.fresh")}</span><span>{laneHarness(lane, t)}</span><span>{laneRuntime(lane, t)}</span><span>{lane.trials ?? t("builder.recorded")}</span></div>)}
           </div>
-          {source.limitation ? <p className="builder-warning"><strong>Starting point unavailable:</strong> {source.limitation}</p> : null}
+          {source.limitation ? <p className="builder-warning"><strong>{t("builder.startUnavailable")}</strong> {source.limitation}</p> : null}
         </details>
       </section>
     </main>
@@ -142,21 +145,22 @@ function HistoryPicker(props: {
   action: HistoryActionState;
   onSelect: (id: string) => void;
 }): React.JSX.Element | null {
+  const { t } = useTranslation("experiment");
   if (props.history.phase === "disabled") return null;
   if (props.history.phase === "loading") {
-    return <div className="history-picker history-loading" role="status"><strong>Project history</strong><span>Finding comparable requests…</span></div>;
+    return <div className="history-picker history-loading" role="status"><strong>{t("builder.history.loading")}</strong><span>{t("builder.history.loadingDetail")}</span></div>;
   }
   if (props.history.phase === "error") {
-    return <div className="history-picker history-error" role="alert"><strong>Project history unavailable</strong><span>{props.history.detail}</span></div>;
+    return <div className="history-picker history-error" role="alert"><strong>{t("builder.history.unavailable")}</strong><span>{props.history.detail}</span></div>;
   }
   if (props.history.preview.items.length === 0) {
-    return <div className="history-picker history-empty"><strong>Project history</strong><span>No comparable requests were found.</span></div>;
+    return <div className="history-picker history-empty"><strong>{t("builder.history.emptyTitle")}</strong><span>{t("builder.history.emptyDetail")}</span></div>;
   }
   const selected = props.history.preview.items.find((item) => item.id === props.selectedId)
     ?? props.history.preview.items[0]!;
   return <div className="history-picker">
-    <label><span>Historical request</span><select aria-label="History checkpoint" value={selected.id} onChange={(event) => props.onSelect(event.target.value)}>{props.history.preview.items.map((item) => <option key={item.id} value={item.id}>{item.title} · {item.requestPreview}</option>)}</select></label>
-    <div className="history-picker-meta"><span>{selected.occurredAt ? new Date(selected.occurredAt).toLocaleString() : "Timestamp unavailable"}</span><strong>{props.action.phase === "resolving" ? "Checking…" : props.draft?.selection.id === selected.id ? "Ready" : "Select to check"}</strong></div>
+    <label><span>{t("builder.history.requestLabel")}</span><select aria-label={t("builder.history.checkpointAria")} value={selected.id} onChange={(event) => props.onSelect(event.target.value)}>{props.history.preview.items.map((item) => <option key={item.id} value={item.id}>{item.title} · {item.requestPreview}</option>)}</select></label>
+    <div className="history-picker-meta"><span>{selected.occurredAt ? new Date(selected.occurredAt).toLocaleString(studioLocale()) : t("builder.history.noTimestamp")}</span><strong>{props.action.phase === "resolving" ? t("builder.history.checking") : props.draft?.selection.id === selected.id ? t("builder.history.ready") : t("builder.history.selectToCheck")}</strong></div>
   </div>;
 }
 
@@ -166,37 +170,38 @@ function builderStatus(
   lockable: boolean,
   canOpenWorkbench: boolean,
   runnable: boolean,
-  limitation?: string,
+  limitation: string | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string,
 ): { title: string; detail: string } {
-  if (action.phase === "locking") return { title: "Locking comparison…", detail: "Writing the immutable request and checkpoint definition." };
-  if (action.phase === "error") return { title: "Comparison not ready", detail: action.detail };
-  if (history.phase === "loading") return { title: "Checking project history", detail: "The lock action will appear after history is ready." };
-  if (history.phase === "error") return { title: "Project history unavailable", detail: history.detail };
-  if (!runnable) return { title: "Comparison blocked", detail: limitation ?? "The checkpoint source cannot create isolated fresh runs." };
-  if (canOpenWorkbench) return { title: "Comparison ready", detail: "Isolated copies are created only when Run starts." };
-  if (lockable) return { title: "Ready to compare", detail: "Lock the selected request and checkpoint before opening the workbench." };
-  return { title: "Choose a valid request", detail: "Resolve a request with a valid checkpoint and at least one fresh run." };
+  if (action.phase === "locking") return { title: t("builder.status.locking"), detail: t("builder.status.lockingDetail") };
+  if (action.phase === "error") return { title: t("builder.status.notReady"), detail: t("builder.status.notReadyDetail", { detail: action.detail }) };
+  if (history.phase === "loading") return { title: t("builder.status.checking"), detail: t("builder.status.checkingDetail") };
+  if (history.phase === "error") return { title: t("builder.status.historyUnavailable"), detail: t("builder.status.historyUnavailableDetail", { detail: history.detail }) };
+  if (!runnable) return { title: t("builder.status.blocked"), detail: limitation ?? t("builder.status.blockedDetail") };
+  if (canOpenWorkbench) return { title: t("builder.status.ready"), detail: t("builder.status.readyDetail") };
+  if (lockable) return { title: t("builder.status.readyToCompare"), detail: t("builder.status.readyToCompareDetail") };
+  return { title: t("builder.status.chooseValid"), detail: t("builder.status.chooseValidDetail") };
 }
 
-function builderRole(lane: LaneDefinition, index: number, lanes: LaneDefinition[]): string {
-  if (lane.origin === "observed") return "Reference";
+function builderRole(lane: LaneDefinition, index: number, lanes: LaneDefinition[], t: (key: string) => string): string {
+  if (lane.origin === "observed") return t("builder.role.reference");
   const freshIndex = lanes.slice(0, index).filter((item) => item.origin === "execute").length;
-  return freshIndex === 0 ? "Baseline" : "Candidate";
+  return freshIndex === 0 ? t("builder.role.baseline") : t("builder.role.candidate");
 }
 
-function laneHarness(lane: LaneDefinition): string {
-  return lane.origin === "observed" ? lane.identity?.harnessId ?? "unverified" : lane.harnessId ?? "unknown";
+function laneHarness(lane: LaneDefinition, t: (key: string) => string): string {
+  return lane.origin === "observed" ? lane.identity?.harnessId ?? t("builder.unverified") : lane.harnessId ?? "unknown";
 }
 
-function laneRuntime(lane: LaneDefinition): string {
+function laneRuntime(lane: LaneDefinition, t: (key: string) => string): string {
   const identity = lane.origin === "observed" ? lane.identity : lane.runtime;
-  return [identity?.model, identity?.profile].filter(Boolean).join(" · ") || "unverified";
+  return [identity?.model, identity?.profile].filter(Boolean).join(" · ") || t("builder.unverified");
 }
 
-export function requestProvenanceLabel(provenance: ExperimentSetupPreview["request"]["provenance"]): string {
-  if (provenance === "verified-history") return "Verified history";
-  if (provenance === "unverified-history") return "Reference unverified";
-  return "New request";
+export function requestProvenanceLabel(provenance: ExperimentSetupPreview["request"]["provenance"], t: (key: string) => string): string {
+  if (provenance === "verified-history") return t("provenance.verifiedHistory");
+  if (provenance === "unverified-history") return t("provenance.unverifiedHistory");
+  return t("provenance.newRequest");
 }
 
 export function compactPrompt(prompt: string): string {

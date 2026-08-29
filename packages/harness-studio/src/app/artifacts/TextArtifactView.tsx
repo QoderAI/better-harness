@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ArtifactCodeView } from "../code/ArtifactCodeView.js";
 import type { ArtifactSurfaceMountContext } from "./ArtifactSurface.js";
 
 export function TextArtifactView({ artifact }: ArtifactSurfaceMountContext): React.JSX.Element {
+  const { t } = useTranslation("artifactViewers");
   const [content, setContent] = useState<string>();
   const [failure, setFailure] = useState<string>();
 
@@ -25,9 +27,9 @@ export function TextArtifactView({ artifact }: ArtifactSurfaceMountContext): Rea
   }, [artifact.id, artifact.revision.content.uri, artifact.revision.id]);
 
   if (failure !== undefined) return <p className="artifact-status" role="alert">{failure}</p>;
-  if (content === undefined) return <p className="artifact-status" role="status">Loading preview…</p>;
+  if (content === undefined) return <p className="artifact-status" role="status">{t("loadingPreview")}</p>;
   if (artifact.renderer.id === "studio.diff") {
-    return <ArtifactCodeView mode="diff" patch={content} label={`Artifact patch: ${artifact.label}`} />;
+    return <ArtifactCodeView mode="diff" patch={content} label={t("patchLabel", { label: artifact.label })} />;
   }
-  return <ArtifactCodeView mode="source" content={content} sourceHint={artifact.label} className="artifact-code-preview" label={`Artifact source: ${artifact.label}`} />;
+  return <ArtifactCodeView mode="source" content={content} sourceHint={artifact.label} className="artifact-code-preview" label={t("sourceLabel", { label: artifact.label })} />;
 }

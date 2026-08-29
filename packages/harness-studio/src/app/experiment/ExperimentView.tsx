@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { isExperimentRunnable, type CheckpointHistoryPreview, type ResolvedHistoryDraftPreview } from "../../contracts/experiment-setup.js";
 import { applyLaneEvent, emptyLane, globalStreamFailure, mergeCallPage } from "./experiment-comparison-model.js";
 import { ExperimentBuilder, type HistoryActionState, type HistoryLoadState } from "./ExperimentBuilder.js";
@@ -21,6 +22,7 @@ type LoadState =
   | { phase: "ready"; preview: ExperimentPreview };
 
 export function ExperimentView(props: { historyEnabled?: boolean; navigation?: ReactNode } = {}): React.JSX.Element {
+  const { t } = useTranslation("experiment");
   const [load, setLoad] = useState<LoadState>({ phase: "loading" });
   const [lanes, setLanes] = useState<Record<string, LaneTrace>>({});
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -339,8 +341,8 @@ export function ExperimentView(props: { historyEnabled?: boolean; navigation?: R
     }
   }
 
-  if (load.phase === "loading") return <p>Loading comparison…</p>;
-  if (load.phase === "error") return <p className="warning">Cannot load comparison: {load.detail}</p>;
+  if (load.phase === "loading") return <p>{t("view.loading")}</p>;
+  if (load.phase === "error") return <p className="warning">{t("view.cannotLoad", { detail: load.detail })}</p>;
   const { preview } = load;
   const fresh = preview.manifest.lanes.filter((lane) => lane.origin === "execute");
   const focusedBaselineId = baselineId ?? fresh[0]?.id ?? "";
