@@ -82,15 +82,11 @@ selection in a local detail pane without losing the Session evidence boundary.
 
 ## Test and Review Evidence
 
-- AC-1–AC-5: `npx vitest run
-  test/reporting/harness-inspector-usage-explorer.test.mjs
-  test/reporting/harness-inspector.test.mjs` passed 39 tests. The focused
-  standalone test covers both independently draggable Overview handles, the
-  minimum window, linked selection, keyboard movement, conditional Processed
-  visibility, 15 interactive Overview prompt markers, one selected compact `Tn`
-  label, prompt preview text, separate prompt/brush-handle hit zones, and
-  keyboard recentering from the last marker to its linked response. It also
-  verifies that the Focus chart contains no duplicate prompt markers.
+- AC-1–AC-5: The focused Studio Playwright scenario covers Overview prompt
+  hover and linked selection, response-row and Focus-chart keyboard selection,
+  one composite Overview keyboard stop, and the absence of duplicate Focus
+  prompt markers. The standalone visual contract repeats the prompt hover and
+  linked-selection checks against real reports at all three layout widths.
 - AC-6: Studio `npm run typecheck` and `npm run build` passed. The focused Studio
   Playwright comparison passed 1 test and covers the Overview `T1` label,
   retained prompt preview, composite keyboard interaction, absence of duplicate

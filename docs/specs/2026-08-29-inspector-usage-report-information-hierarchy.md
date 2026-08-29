@@ -119,8 +119,8 @@ distinction between observed item counts and token-weighted context composition.
 
 ## Validation
 
-- `npx vitest run test/reporting/harness-inspector.test.mjs test/reporting/harness-inspector-usage-explorer.test.mjs`
-  passed 39 focused reporting tests.
+- `npx vitest run test/reporting/harness-inspector.test.mjs` passed 38 focused
+  reporting tests.
 - `npm run typecheck` and `npm run build` passed in
   `packages/harness-studio`.
 - The focused Studio Playwright Inspector scenario passed and asserts six KPI
