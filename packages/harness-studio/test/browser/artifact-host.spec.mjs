@@ -1147,6 +1147,11 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspector).toBeVisible();
   await expect(inspector).toHaveAttribute("data-react-inspector-workbench", "true");
   await expect(inspector.getByRole("tab", { name: "Date" })).toHaveAttribute("aria-selected", "true");
+  const inspectorCalendar = inspector.getByRole("group", { name: /evidence calendar/u });
+  await expect(inspectorCalendar).toBeVisible();
+  expect(await inspectorCalendar.locator(".date-cell").count()).toBeGreaterThanOrEqual(35);
+  expect(await inspectorCalendar.locator(".date-cell").count() % 7).toBe(0);
+  await expect(inspector.getByRole("button", { name: "Next month" })).toBeDisabled();
   await expect(inspector.getByRole("button", { name: "Open session" }).first()).toBeVisible();
   expect(requestedUrls.some((url) => url.endsWith("/assets/inspector-workbench.js"))).toBe(false);
   const openSessionButton = inspector.getByRole("button", { name: "Open session" }).first();

@@ -17,6 +17,7 @@
   const initialStory = [...eligibleStories].sort((left,right) => storyLastSeen(right) - storyLastSeen(left) || storyScore(right) - storyScore(left))[0] ?? report.stories[0];
   const initialFeature = initialStory?.id ?? report.featureTree.roots[0] ?? null;
   const latestDay = report.days.at(-1)?.date ?? null;
+  const calendarMonths = [...new Set(report.days.map(day => day.date.slice(0,7)))].sort();
   const initialParams = new URLSearchParams(location.search);
   const requestedMode = initialParams.get('mode');
   const hasFeatureEvidence = report.stories.some(story => story.sessionLinks.length || story.commitHashes.length);
@@ -31,6 +32,7 @@
   const state = {
     mode:initialMode,
     scope:validScope ? requestedScope : initialMode === 'feature' ? initialFeature : latestDay,
+    calendarMonth:(validScope && initialMode === 'date' ? requestedScope : latestDay)?.slice(0,7) ?? calendarMonths.at(-1) ?? null,
     sessionTrigger:null,
     sessionItem:null,
     sessionOpen:false,
@@ -1663,6 +1665,20 @@
     }).join('') || '<p class="picker-empty">No Sessions were observed on this date.</p>';
   }
 
+  function renderCalendarMonth() {
+    const monthIndex = calendarMonths.indexOf(state.calendarMonth);
+    document.querySelectorAll('[data-calendar-month]').forEach(grid => {
+      grid.hidden = grid.dataset.calendarMonth !== state.calendarMonth;
+    });
+    const grid = document.querySelector('[data-calendar-month="' + state.calendarMonth + '"]');
+    const label = document.querySelector('[data-calendar-label]');
+    if (label && grid) label.textContent = grid.dataset.calendarLabel;
+    const previous = document.querySelector('[data-calendar-step="-1"]');
+    const next = document.querySelector('[data-calendar-step="1"]');
+    if (previous) previous.disabled = monthIndex <= 0;
+    if (next) next.disabled = monthIndex < 0 || monthIndex >= calendarMonths.length - 1;
+  }
+
   function renderScope() {
     const items = scopedItems();
     const sessions = [...new Map(items.map(item => item.session).filter(Boolean).map(session => [session.sessionId,session])).values()];
@@ -1692,6 +1708,7 @@
     document.getElementById('workbench-list').innerHTML = items.map(workbench).join('') || '<div class="empty-state">No provenance workbench exists in this scope.</div>';
     renderScopeIndex(items);
     renderDateSessionNavigator(items);
+    renderCalendarMonth();
     document.querySelectorAll('[data-feature-id]').forEach(button => button.classList.toggle('active', state.mode === 'feature' && button.dataset.featureId === state.scope));
     document.querySelectorAll('[data-date]').forEach(button => {
       const active = state.mode === 'date' && button.dataset.date === state.scope;
@@ -1714,6 +1731,7 @@
     state.mode = mode;
     if (mode === 'feature' && !byNode.has(state.scope)) state.scope = initialFeature;
     if (mode === 'date' && !report.days.some(day => day.date === state.scope)) state.scope = latestDay;
+    if (mode === 'date' && state.scope) state.calendarMonth = state.scope.slice(0,7);
     state.collapsedCards.clear();
     document.querySelectorAll('[data-mode]').forEach(button => {
       const active = button.dataset.mode === mode;
@@ -1807,7 +1825,14 @@
       return;
     }
     const date = event.target.closest('[data-date]');
-    if (date) { state.scope = date.dataset.date; setMode('date'); return; }
+    if (date) { state.scope = date.dataset.date; state.calendarMonth = state.scope.slice(0,7); setMode('date'); return; }
+    const calendarStep = event.target.closest('[data-calendar-step]');
+    if (calendarStep) {
+      const index = calendarMonths.indexOf(state.calendarMonth);
+      const nextMonth = calendarMonths[index + Number(calendarStep.dataset.calendarStep)];
+      if (nextMonth) { state.calendarMonth = nextMonth; renderCalendarMonth(); }
+      return;
+    }
     const sessionTarget = event.target.closest('[data-date-session-target]');
     if (sessionTarget) {
       const target = document.getElementById(sessionTarget.dataset.dateSessionTarget);

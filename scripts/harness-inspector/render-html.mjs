@@ -67,33 +67,39 @@ function featurePicker(tree) {
 function datePicker(days) {
   if (days.length === 0) return '<p class="picker-empty">No timestamped sessions or commits in this window.</p>';
   const byDate = new Map(days.map((day) => [day.date, day]));
-  const first = new Date(`${days[0].date}T00:00:00.000Z`);
-  const last = new Date(`${days.at(-1).date}T00:00:00.000Z`);
-  const gridStart = new Date(first);
-  gridStart.setUTCDate(gridStart.getUTCDate() - ((gridStart.getUTCDay() + 6) % 7));
-  const gridEnd = new Date(last);
-  gridEnd.setUTCDate(gridEnd.getUTCDate() + ((7 - gridEnd.getUTCDay()) % 7));
-  const sameMonth = first.getUTCFullYear() === last.getUTCFullYear() && first.getUTCMonth() === last.getUTCMonth();
-  const calendarLabel = sameMonth
-    ? new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(first)
-    : `${new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(first)}–${new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(last)}`;
-  const cells = [];
-  for (const cursor = new Date(gridStart); cursor <= gridEnd; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
-    const date = cursor.toISOString().slice(0, 10);
-    const day = byDate.get(date);
-    const number = cursor.getUTCDate();
-    if (!day) {
-      cells.push(`<span class="date-cell empty" aria-hidden="true"><time datetime="${date}">${number}</time></span>`);
-      continue;
+  const months = [...new Set(days.map((day) => day.date.slice(0, 7)))].sort();
+  const latestMonth = months.at(-1);
+  const monthLabel = (month) => new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(`${month}-01T00:00:00.000Z`));
+  const monthGrid = (month) => {
+    const [year, monthNumber] = month.split("-").map(Number);
+    const first = new Date(Date.UTC(year, monthNumber - 1, 1));
+    const last = new Date(Date.UTC(year, monthNumber, 0));
+    const gridStart = new Date(first);
+    gridStart.setUTCDate(gridStart.getUTCDate() - ((gridStart.getUTCDay() + 6) % 7));
+    const gridEnd = new Date(last);
+    gridEnd.setUTCDate(gridEnd.getUTCDate() + ((7 - gridEnd.getUTCDay()) % 7));
+    const cells = [];
+    for (const cursor = new Date(gridStart); cursor <= gridEnd; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      const date = cursor.toISOString().slice(0, 10);
+      const inMonth = cursor.getUTCFullYear() === year && cursor.getUTCMonth() === monthNumber - 1;
+      const day = inMonth ? byDate.get(date) : undefined;
+      const number = cursor.getUTCDate();
+      if (!day) {
+        cells.push(`<span class="date-cell empty${inMonth ? "" : " outside"}" aria-hidden="true"><time datetime="${date}">${number}</time></span>`);
+        continue;
+      }
+      const sessions = day.sessionIds.length;
+      const commits = day.commitHashes.length;
+      const label = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(cursor)
+        + `, ${sessions} session${sessions === 1 ? "" : "s"}, ${commits} commit${commits === 1 ? "" : "s"}`;
+      cells.push(`<button class="date-cell" type="button" data-date="${date}" data-session-count="${sessions}" data-commit-count="${commits}" aria-label="${escapeHtml(label)}"><time datetime="${date}">${number}</time><span class="date-activity" aria-hidden="true"></span></button>`);
     }
-    const sessions = day.sessionIds.length;
-    const commits = day.commitHashes.length;
-    const label = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(cursor)
-      + `, ${sessions} session${sessions === 1 ? "" : "s"}, ${commits} commit${commits === 1 ? "" : "s"}`;
-    cells.push(`<button class="date-cell" type="button" data-date="${date}" data-session-count="${sessions}" data-commit-count="${commits}" aria-label="${escapeHtml(label)}"><time datetime="${date}">${number}</time><span class="date-activity" aria-hidden="true"></span></button>`);
-  }
+    const label = monthLabel(month);
+    return `<div class="date-grid" role="group" aria-label="${escapeHtml(label)} evidence calendar" data-calendar-month="${month}" data-calendar-label="${escapeHtml(label)}"${month === latestMonth ? "" : " hidden"}>${cells.join("")}</div>`;
+  };
   const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => `<span>${day}</span>`).join("");
-  return `<div class="date-calendar"><header><strong>${escapeHtml(calendarLabel)}</strong><span>UTC</span></header><div class="date-weekdays" aria-hidden="true">${weekdays}</div><div class="date-grid">${cells.join("")}</div><div class="date-selection-summary" aria-live="polite"><strong data-date-summary-label>Select a date</strong><span data-date-summary-meta></span></div></div><nav class="date-session-navigator" aria-label="Sessions on selected date"><div class="date-session-heading"><strong>Sessions</strong><span data-date-session-count>0</span></div><div class="date-session-list" data-date-session-list><p class="picker-empty">Select a date to browse its Sessions.</p></div></nav>`;
+  return `<div class="date-calendar"><header><div class="date-calendar-nav"><button type="button" data-calendar-step="-1" aria-label="Previous month"${months.length === 1 ? " disabled" : ""}><span aria-hidden="true">‹</span></button><strong data-calendar-label>${escapeHtml(monthLabel(latestMonth))}</strong><button type="button" data-calendar-step="1" aria-label="Next month" disabled><span aria-hidden="true">›</span></button></div><span class="date-calendar-zone">UTC</span></header><div class="date-weekdays" aria-hidden="true">${weekdays}</div>${months.map(monthGrid).join("")}<div class="date-selection-summary" aria-live="polite"><strong data-date-summary-label>Select a date</strong><span data-date-summary-meta></span></div></div><nav class="date-session-navigator" aria-label="Sessions on selected date"><div class="date-session-heading"><strong>Sessions</strong><span data-date-session-count>0</span></div><div class="date-session-list" data-date-session-list><p class="picker-empty">Select a date to browse its Sessions.</p></div></nav>`;
 }
 
 // Badge names the providers that contributed sessions; the requested filter

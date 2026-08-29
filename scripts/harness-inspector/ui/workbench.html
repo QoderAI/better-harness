@@ -14,7 +14,7 @@
     <div class="brand"><div class="brand-copy"><strong>Harness Inspector</strong><span>{{BH_WORKSPACE_CONTEXT}}</span></div><button class="picker-toggle" data-toggle-picker aria-expanded="true" aria-label="Collapse capability tree"><span class="collapse-label">Hide</span><span class="expand-label">Show tree</span></button></div>
     <div class="mode-tabs" role="tablist" aria-label="Picker mode"><button id="mode-feature" role="tab" aria-controls="panel-feature" aria-selected="{{BH_FEATURE_TAB_SELECTED}}" data-mode="feature" class="{{BH_FEATURE_TAB_CLASS}}">Capability</button><button id="mode-date" role="tab" aria-controls="panel-date" aria-selected="{{BH_DATE_TAB_SELECTED}}" data-mode="date" class="{{BH_DATE_TAB_CLASS}}">Date</button></div>
     <section id="panel-feature" class="picker-panel {{BH_FEATURE_PANEL_CLASS}}" role="tabpanel" aria-labelledby="mode-feature" data-panel="feature"><div class="picker-heading"><strong>Capability tree</strong><span>{{BH_FEATURE_NODE_COUNT}} nodes</span></div>{{BH_FEATURE_PICKER}}</section>
-    <section id="panel-date" class="picker-panel {{BH_DATE_PANEL_CLASS}}" role="tabpanel" aria-labelledby="mode-date" data-panel="date">{{BH_DATE_PICKER}}</section>
+    <section id="panel-date" class="picker-panel date-picker-panel {{BH_DATE_PANEL_CLASS}}" role="tabpanel" aria-labelledby="mode-date" data-panel="date">{{BH_DATE_PICKER}}</section>
   </aside>
   <main class="workspace">
     <header class="workspace-header">

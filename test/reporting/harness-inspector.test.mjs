@@ -203,6 +203,19 @@ function scriptBody(html, openingTag) {
   return html.slice(contentStart, closing);
 }
 
+function calendarGridMarkup(html, month) {
+  const marker = `data-calendar-month="${month}"`;
+  const markerIndex = html.indexOf(marker);
+  assert.notEqual(markerIndex, -1, `missing calendar month ${month}`);
+  const opening = html.lastIndexOf('<div class="date-grid"', markerIndex);
+  const contentStart = html.indexOf(">", markerIndex) + 1;
+  const closing = html.indexOf("</div>", contentStart);
+  return {
+    openingTag: html.slice(opening, contentStart),
+    body: html.slice(contentStart, closing),
+  };
+}
+
 test("feature-tree parser builds typed hierarchy and refs (AC-1)", () => {
   const tree = parseFeatureTreeMarkdown(FEATURE_TREE, { source: "fixture.md" });
   assert.equal(tree.kind, "FeatureTreeV1");
@@ -443,6 +456,51 @@ test("Inspector serializes one self-contained executable report document (AC-2, 
   assert.doesNotThrow(() => new Function(clientScript));
 });
 
+test("Inspector Date picker renders the latest evidence month as a complete UTC month (AC-3)", () => {
+  const report = buildHarnessInspectorReport({
+    repoRoot: "/workspace/repo",
+    featureTree: parseFeatureTreeMarkdown(FEATURE_TREE),
+    sessions: [fixtureSession()],
+    correlation: fixtureCorrelation(),
+    filters: { platform: "codex" },
+  });
+  const html = renderHarnessInspectorHtml(report);
+  const august = calendarGridMarkup(html, "2026-08");
+
+  assert.doesNotMatch(august.openingTag, /\shidden(?:\s|>)/u);
+  assert.equal([...august.body.matchAll(/class="date-cell/gu)].length, 42);
+  assert.match(august.body, /^<span class="date-cell empty outside"[^>]*><time datetime="2026-07-27">27<\/time>/u);
+  assert.match(august.body, /<span class="date-cell empty outside"[^>]*><time datetime="2026-09-06">6<\/time><\/span>$/u);
+  assert.match(august.body, /<span class="date-cell empty"[^>]*><time datetime="2026-08-13">13<\/time>/u);
+  assert.match(html, /aria-label="Previous month" disabled/u);
+  assert.match(html, /aria-label="Next month" disabled/u);
+});
+
+test("Inspector Date picker keeps cross-year evidence reachable one month at a time (AC-3)", () => {
+  const report = buildHarnessInspectorReport({
+    repoRoot: "/workspace/repo",
+    featureTree: parseFeatureTreeMarkdown(FEATURE_TREE),
+    sessions: [fixtureSession()],
+    correlation: fixtureCorrelation(),
+    filters: { platform: "codex" },
+  });
+  report.days = [
+    { date: "2026-12-31", sessionIds: ["session-a"], commitHashes: [], promptCount: 1, toolCallCount: 0 },
+    { date: "2027-01-01", sessionIds: ["session-a"], commitHashes: [], promptCount: 0, toolCallCount: 1 },
+  ];
+  const html = renderHarnessInspectorHtml(report);
+  const december = calendarGridMarkup(html, "2026-12");
+  const january = calendarGridMarkup(html, "2027-01");
+
+  assert.match(december.openingTag, /\shidden>/u);
+  assert.doesNotMatch(january.openingTag, /\shidden(?:\s|>)/u);
+  assert.match(html, /data-calendar-label>January 2027<\/strong>/u);
+  assert.match(html, /aria-label="Previous month">/u);
+  assert.match(html, /aria-label="Next month" disabled/u);
+  assert.equal([...december.body.matchAll(/class="date-cell/gu)].length % 7, 0);
+  assert.equal([...january.body.matchAll(/class="date-cell/gu)].length % 7, 0);
+});
+
 // Chrome copy is asserted through the elements that own it: the sidebar owns
 // workspace identity, the breadcrumb owns the selected scope, and the tablist
 // names what a reader browses by.
@@ -633,7 +691,10 @@ test("Inspector projects usage and context metadata without raw context text", (
         windowTokens: 100,
         percentFull: 25,
         compactionCount: 1,
-        layers: [{ kind: "developer-message", itemCount: 2, text: secret }],
+        layers: [
+          { kind: "developer-message", itemCount: 2, text: secret },
+          { kind: "skills", itemCount: 1, text: secret },
+        ],
         categories: [{ kind: "rules", label: "Rules", estimatedTokens: 10, text: secret }],
         rawText: secret,
       },
@@ -668,7 +729,10 @@ test("Inspector projects usage and context metadata without raw context text", (
     source: "codex-rollout-token-count",
     rawTextOmitted: true,
     compactionCount: 1,
-    layers: [{ kind: "developer-message", itemCount: 2 }],
+    layers: [
+      { kind: "developer-message", itemCount: 2 },
+      { kind: "skills", itemCount: 1 },
+    ],
     categories: [{ kind: "rules", label: "Rules", estimatedTokens: 10 }],
     usedTokens: 25,
     windowTokens: 100,
@@ -693,6 +757,11 @@ test("Inspector projects usage and context metadata without raw context text", (
   assert.match(html, /Usage and context/u);
   assert.match(html, /View report/u);
   assert.match(html, /Usage and Context Report/u);
+  assert.match(html, /class="usage-report-intro"[^]*class="usage-report-evidence"[^]*Context progression/u);
+  assert.match(html, /Context structure by observed item count: 3 items across 2 layers/u);
+  assert.match(html, /developer-message: 2 items/u);
+  assert.match(html, /skills: 1 item/u);
+  assert.match(html, /this is structure, not token usage/u);
   assert.match(html, /Input reuse/u);
   assert.match(html, /Total input \(includes cached\)/u);
   assert.match(html, /Cached input still occupies context/u);
