@@ -3,6 +3,45 @@
 This file records notable public changes to Better Harness. Entries describe
 observable behavior and compatibility, not every internal refactor.
 
+## 0.6.5 - 2026-08-29
+
+### Added
+
+- Harness Studio now provides a project-scoped workbench for local Sessions and
+  revision-bound artifacts, including code, Markdown, diagrams, PDFs,
+  workbooks, compiled TSX, external providers, and ACP-backed Agent runs.
+
+- Harness Inspector now includes a provider-aware Usage and Context report with
+  unique model calls, cache reuse, absolute context progression, compaction
+  boundaries, and linked retained prompts for supported Sessions.
+
+- DeepSeek Harness integration now covers configured assets, verified Skill
+  discovery, shared analysis, and portable report rendering alongside its
+  Session evidence.
+
+### Changed
+
+- Studio uses the React Inspector workbench as its primary Sessions surface and
+  unifies retained Session review, artifact browsing, Git history, comparison,
+  and live Agent collaboration around explicit evidence boundaries.
+
+- Inspector report navigation, date selection, context structure, prompt
+  inspection, and startup output are denser and easier to scan without
+  reconstructing omitted evidence.
+
+### Fixed
+
+- DeepSeek Harness session analysis preserves lifecycle order, repeated tool
+  invocations, crash-tail evidence, permission origins, and discovery/privacy
+  boundaries across audited schema variants.
+
+- Plugin and package delivery now handles hyphenated Pi package names, aligned
+  workspace versions, npm registry metadata, and the Studio CLI entrypoint.
+
+- Studio and Inspector keep artifact paths, graph lanes, source highlighting,
+  context selection, calendar bounds, and browser-test ownership consistent
+  across supported platforms.
+
 ## 0.6.4 - 2026-08-19
 
 ### Added

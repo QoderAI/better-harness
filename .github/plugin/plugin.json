@@ -1,7 +1,7 @@
 {
   "name": "better-harness",
   "description": "Build an AI-ready engineering system for safe coding-agent delivery and continuous software improvement.",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "author": {
     "name": "Qoder",
     "email": "dev@qoder.com",

@@ -6,13 +6,13 @@
   },
   "metadata": {
     "description": "Better Harness plugins for AI delivery readiness.",
-    "version": "0.6.4"
+    "version": "0.6.5"
   },
   "plugins": [
     {
       "name": "better-harness",
       "description": "Build an AI-ready engineering system for safe coding-agent delivery and continuous software improvement.",
-      "version": "0.6.4",
+      "version": "0.6.5",
       "source": "./",
       "author": {
         "name": "Qoder",
