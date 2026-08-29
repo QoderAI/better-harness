@@ -592,7 +592,7 @@ function buildCursorSourceCoverage({ scope, roots, sessions, inWindowSessions, t
   const unknownTimeIds = new Set(sessions
     .filter((session) => session.timestampBasis === "source-file-mtime" || (!session.firstSeen && !session.lastSeen))
     .map((session) => session.sessionId));
-  const requestedWindow = scope.sinceTime !== null || scope.untilTime !== null;
+  const requestedWindow = scope._requestedTimeWindow;
   const relevantIds = requestedWindow
     ? inWindowIds.size > 0
       ? inWindowIds
@@ -684,6 +684,8 @@ export class CursorSessionAnalyzer extends SessionAnalyzer {
       sinceTime: since.time,
       until: until.label,
       untilTime: until.time,
+      _requestedTimeWindow: since.time !== null
+        || (until.time !== null && options._factsImplicitUntil !== true),
       sessionId: options["session-id"] ?? options.sessionId ?? options._?.[0] ?? null,
       stateDbPath: explicitStateDbPath
         ? resolveCursorStateDbPath({ stateDbPath: explicitStateDbPath })

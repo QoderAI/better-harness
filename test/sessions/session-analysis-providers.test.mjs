@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "vitest";
@@ -616,11 +616,27 @@ test("Cursor facts distinguish absent, terminal-only, and unreadable transcripts
   await mkdir(path.dirname(invalidPath), { recursive: true });
   await writeFile(invalidPath, "not-json\n");
 
+  // Facts freeze discovery at their start time. Straddle that internal boundary
+  // deterministically so it cannot be mistaken for a caller-supplied window on
+  // filesystems whose freshly written mtimes may round into the future.
+  const factsStartedAt = Date.parse("2026-08-29T02:00:00.001Z");
+  const terminalPath = path.join(
+    home,
+    "projects",
+    slug,
+    "agent-transcripts",
+    terminalId,
+    `${terminalId}.jsonl`,
+  );
+  await utimes(terminalPath, factsStartedAt / 1000 - 1, factsStartedAt / 1000 - 1);
+  await utimes(invalidPath, factsStartedAt / 1000 + 1, factsStartedAt / 1000 + 1);
+
   const incomplete = await new CursorSessionAnalyzer().analyze({
     command: "facts",
     workspace,
     home,
     selection: "all-eligible",
+    _factsStartedAt: factsStartedAt,
   });
   assert.equal(incomplete.sourceCoverage.status, "unobserved");
   assert.equal(incomplete.sourceCoverage.transcript.workspaceSessions, 2);

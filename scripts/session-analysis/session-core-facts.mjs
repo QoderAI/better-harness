@@ -41,6 +41,7 @@ export function createFactsRunContext(options = {}, platform = "unknown", provid
       ...options,
       until: suppliedUntil ? options.until : new Date(startedAt).toISOString(),
       _factsStartedAt: startedAt,
+      _factsImplicitUntil: !suppliedUntil,
     },
     startedAt,
     suppliedUntil,

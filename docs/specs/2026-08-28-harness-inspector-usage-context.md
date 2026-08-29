@@ -415,9 +415,15 @@ from the default Inspector window.
 ## Validation Evidence
 
 - The first follow-up Windows Node 22 PR run exposed AC-10 by reporting one
-  relevant Cursor transcript where the fixture contained two. After the
-  denominator fix, the focused Cursor/provider suite passed all 53 tests; the
-  refreshed Windows PR job remains the authoritative platform receipt.
+  relevant Cursor transcript where the fixture contained two. The initial
+  denominator fix passed locally but exact-main run `33227758857` showed that
+  the internal facts freeze was still being mistaken for a caller-supplied
+  `until` on Windows. The repair now labels that injected boundary explicitly,
+  and the fixture deterministically places transcript mtimes on both sides of
+  it. The focused facts/provider suite passed 93 tests and `npm run check`
+  passed with 1,594 root tests, 173 Harness tests, 31 Harness UI tests, 494
+  Studio tests, generated-source verification, and package/archive verification.
+  A refreshed Windows job remains the authoritative platform receipt.
 - `npm run check` passed on supported Node 24.19.0: root Vitest reported
   1,549 passed and 2 skipped; Harness reported 172 passed; Harness UI reported
   31 passed; Studio reported 293 passed; generated-source and package/archive
