@@ -21,6 +21,36 @@ afterEach(async () => {
 });
 
 describe("generic external hosted Artifact routes", () => {
+  it("marks a malformed injected hosted intent runtime unavailable instead of invoking it", async () => {
+    const root = await temp("artifact-invalid-intent-provider-");
+    const appDir = join(root, "app");
+    const artifactDirectory = join(root, "artifacts");
+    await Promise.all([mkdir(appDir), mkdir(artifactDirectory)]);
+    await writeFile(join(appDir, "index.html"), "<!doctype html><title>fixture</title>", "utf8");
+    await writeFile(join(artifactDirectory, "diagram.dsl"), "workspace {}", "utf8");
+    const provider = injectedProvider();
+    (provider.contributions[0] as unknown as { intent: unknown }).intent = {
+      id: 42,
+      version: "1",
+      protocolVersion: "1",
+      admit: "not-a-function",
+    };
+    server = await startHarnessStudioServer({
+      appDir,
+      artifactDirectory,
+      artifactProviders: [provider],
+      walnutCacheRoot: join(root, "walnut-cache"),
+    });
+
+    const status = await (await fetch(`${server.url}/api/artifact-providers`)).json() as {
+      providers: Array<{ id: string; status: string; reason?: string }>;
+    };
+    expect(status.providers.find((candidate) => candidate.id === provider.id)).toMatchObject({
+      status: "unavailable",
+      reason: expect.stringMatching(/unsupported hosted intent runtime/u),
+    });
+  });
+
   it("accepts an explicitly injected fingerprint-bound Provider", async () => {
     const root = await temp("artifact-injected-provider-");
     const appDir = join(root, "app");

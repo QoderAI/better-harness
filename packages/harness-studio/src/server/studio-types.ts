@@ -6,6 +6,7 @@ import { StudioProjectDescriptor, StudioProjectKind } from "../contracts/studio-
 import { ArtifactCompileLimits } from "./artifacts/registry/artifact-compile-runtime.js";
 import {
   ArtifactAdaptContext,
+  ArtifactHostedIntentOutcomeV1,
   ArtifactInteractionPreparedProposalV1,
   ArtifactInteractionRuntimeImplementation,
   ArtifactInteractionTransitionReceiptV1,
@@ -210,6 +211,7 @@ export interface HarnessStudioState {
   artifactImports: Map<string, ArtifactImportSession>;
   artifactEventStreams: number;
   artifactAgentRuns: Map<string, ArtifactAgentRunControl>;
+  artifactIntentAdmissions: Map<string, ArtifactHostedIntentAdmissionState>;
   artifactInteractionProposals: Map<string, ArtifactInteractionProposalState>;
   workspace?: StudioWorkspace;
   projects: Map<string, StoredStudioProject>;
@@ -229,6 +231,19 @@ export interface ArtifactAgentRunControl {
   revision: string;
   abortController: AbortController;
   startedAtMs: number;
+}
+export interface ArtifactHostedIntentAdmissionState {
+  authorityId: string;
+  artifactId: string;
+  revision: string;
+  bindingId: string;
+  intentId: string;
+  requestDigest: string;
+  promise: Promise<ArtifactHostedIntentOutcomeV1>;
+  outcome?: ArtifactHostedIntentOutcomeV1;
+  failure?: { code: string; status: number; message: string };
+  createdAtMs: number;
+  expiresAtMs: number;
 }
 export interface ArtifactInteractionProposalState {
   artifactId: string;

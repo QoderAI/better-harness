@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { AguiEvent } from "@qoder-ai/harness-ui";
 import type {
   ArtifactDescriptor,
+  ArtifactHostedIntentOutcomeV1,
   ArtifactInteractionProposalV1,
   ArtifactInteractionTransitionReceiptV1,
   ArtifactInteractionWorkspaceV1,
@@ -28,6 +29,8 @@ export function ArtifactInteractionPane(props: {
   agentRunsEnabled: boolean;
   agentLabel?: string;
   surfaceSelectedAddress?: string;
+  surfaceIntentOutcome?: ArtifactHostedIntentOutcomeV1;
+  surfaceIntentFailure?: string;
   onSelectedAddressChange: (address: string) => void;
   onApplied: () => void;
 }): React.JSX.Element | null {
@@ -45,13 +48,15 @@ export function ArtifactInteractionPane(props: {
   const [receipt, setReceipt] = useState<ArtifactInteractionTransitionReceiptV1>();
   const [failure, setFailure] = useState<string>();
   const [busy, setBusy] = useState<"loading" | "preparing" | "running" | "interrupting" | "deciding">();
-  const artifactId = useRef(props.artifact.id);
+  const artifactIdentity = useRef(intentArtifactIdentity(props.artifact));
   const activeRun = useRef<{ runId: string; controller: AbortController } | undefined>(undefined);
+  const appliedSteeringDraft = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (workspaceUri === undefined) return;
-    const changedArtifact = artifactId.current !== props.artifact.id;
-    artifactId.current = props.artifact.id;
+    const nextIdentity = intentArtifactIdentity(props.artifact);
+    const changedArtifact = artifactIdentity.current !== nextIdentity;
+    artifactIdentity.current = nextIdentity;
     const controller = new AbortController();
     setWorkspace(undefined);
     if (changedArtifact) {
@@ -63,6 +68,7 @@ export function ArtifactInteractionPane(props: {
       setAgentPhase(undefined);
       setReceipt(undefined);
       setMessage("");
+      appliedSteeringDraft.current = undefined;
     }
     setFailure(undefined);
     setBusy("loading");
@@ -92,6 +98,22 @@ export function ArtifactInteractionPane(props: {
       setSelectedAddress(props.surfaceSelectedAddress);
     }
   }, [prepared, props.surfaceSelectedAddress, receipt, workspace]);
+
+  useEffect(() => {
+    const outcome = props.surfaceIntentOutcome;
+    if (workspace === undefined || outcome?.effect.kind !== "steering" || prepared !== undefined || receipt !== undefined
+      || busy !== undefined || appliedSteeringDraft.current === outcome.effect.steeringId
+      || !workspace.targets.some((target) => target.address === outcome.effect.target.address)
+      || outcome.effect.steering.kind !== workspace.steering.kind) return;
+    appliedSteeringDraft.current = outcome.effect.steeringId;
+    if (outcome.effect.steering.message.length > workspace.steering.maxLength) {
+      setFailure("The recorded steering draft exceeds this interaction workspace's input limit and was not prefilled.");
+      return;
+    }
+    setSelectedAddress(outcome.effect.target.address);
+    setMessage(outcome.effect.steering.message);
+    setFailure(undefined);
+  }, [busy, prepared, props.surfaceIntentOutcome, receipt, workspace]);
 
   if (workspaceUri === undefined) return null;
 
@@ -232,6 +254,8 @@ export function ArtifactInteractionPane(props: {
     <div className="artifact-collaboration-scroll">
       {busy === "loading" && <p className="artifact-collaboration-status" role="status">{t("collaboration.observingState")}</p>}
       {workspace !== undefined && <>
+        {props.surfaceIntentOutcome?.effect.kind === "steering" && <p className="artifact-intent-draft-status" role="status"><strong>Steering draft</strong><span>Recorded, not executed</span></p>}
+        {props.surfaceIntentFailure !== undefined && <p className="artifact-collaboration-error" role="alert">{props.surfaceIntentFailure}</p>}
         <section className="artifact-collaboration-section" aria-labelledby="artifact-selection-heading">
           <header><span>1</span><div><h3 id="artifact-selection-heading">{t("collaboration.selection.title")}</h3><p>{workspace.summary}</p></div></header>
           <label>{t("collaboration.selection.target")}<select value={selectedAddress} disabled={busy !== undefined || prepared !== undefined || receipt !== undefined} onChange={(event) => { setSelectedAddress(event.currentTarget.value); props.onSelectedAddressChange(event.currentTarget.value); setPrepared(undefined); setAgentPlan(undefined); setAgentEvidence(undefined); setAgentPhase(undefined); setReceipt(undefined); setFailure(undefined); }}>
@@ -343,4 +367,8 @@ function shortDigest(value: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function intentArtifactIdentity(artifact: ArtifactDescriptor): string {
+  return [artifact.id, artifact.revision.id, artifact.renderer.bindingId ?? "unbound"].join(":");
 }

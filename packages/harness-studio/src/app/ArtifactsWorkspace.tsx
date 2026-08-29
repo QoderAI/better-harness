@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarBlank } from "@phosphor-icons/react/CalendarBlank";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
@@ -17,6 +17,7 @@ import { TreeStructure } from "@phosphor-icons/react/TreeStructure";
 import {
   isArtifactCatalogResponse,
   type ArtifactDescriptor,
+  type ArtifactHostedIntentOutcomeV1,
   type ArtifactSurfaceSelectionV1,
 } from "../contracts/artifact.js";
 import {
@@ -27,6 +28,7 @@ import {
 } from "../contracts/workspace-artifact.js";
 import { ArtifactView } from "./artifacts/ArtifactView.js";
 import { ArtifactInteractionPane } from "./artifacts/ArtifactInteractionPane.js";
+import type { ArtifactHostedIntentFailure } from "./artifacts/ArtifactSurface.js";
 import { studioLocale } from "./i18n/index.js";
 import { useRovingFocus } from "./roving-tablist.js";
 import type { StudioConfig } from "./studio-shell-model.js";
@@ -68,6 +70,14 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
   const [liveUpdates, setLiveUpdates] = useState(true);
   const [catalogRefresh, setCatalogRefresh] = useState(0);
   const [surfaceSelection, setSurfaceSelection] = useState<ArtifactSurfaceSelectionV1>();
+  const [surfaceIntentOutcome, setSurfaceIntentOutcome] = useState<ArtifactHostedIntentOutcomeV1>();
+  const [surfaceIntentFailure, setSurfaceIntentFailure] = useState<ArtifactHostedIntentFailure>();
+
+  useEffect(() => {
+    setSurfaceSelection(undefined);
+    setSurfaceIntentOutcome(undefined);
+    setSurfaceIntentFailure(undefined);
+  }, [catalog?.snapshot.catalogId]);
 
   useEffect(() => {
     if (!props.config.artifactsEnabled) return;
@@ -127,6 +137,31 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
     setSelected(scopedArtifacts[0]?.id ?? catalog.artifacts[0]?.id);
   }, [catalog, days, scope, scopedArtifacts, selected]);
 
+  const active = catalog?.artifacts.find((artifact) => artifact.id === selected);
+  const activeArtifactId = active?.id;
+  const activeRevision = active?.revision.id;
+  const activeBindingId = active?.renderer.bindingId;
+  const receiveIntentOutcome = useCallback((outcome: ArtifactHostedIntentOutcomeV1): void => {
+    if (activeArtifactId === undefined || activeRevision === undefined || activeBindingId === undefined
+      || outcome.artifactId !== activeArtifactId || outcome.revision !== activeRevision
+      || outcome.bindingId !== activeBindingId) return;
+    setSurfaceIntentFailure(undefined);
+    setSurfaceIntentOutcome(outcome);
+    setSurfaceSelection({
+      artifactId: outcome.artifactId,
+      revision: outcome.revision,
+      bindingId: outcome.bindingId,
+      address: outcome.effect.target.address,
+    });
+  }, [activeArtifactId, activeBindingId, activeRevision]);
+
+  const receiveIntentFailure = useCallback((intentFailure: ArtifactHostedIntentFailure): void => {
+    if (activeArtifactId === undefined || activeRevision === undefined || activeBindingId === undefined
+      || intentFailure.artifactId !== activeArtifactId || intentFailure.revision !== activeRevision
+      || intentFailure.bindingId !== activeBindingId) return;
+    setSurfaceIntentFailure(intentFailure);
+  }, [activeArtifactId, activeBindingId, activeRevision]);
+
   const narrowTabs = useRovingFocus<ArtifactNarrowPane>({
     ids: ["scope", "artifacts", "preview"],
     active: narrowPane,
@@ -144,13 +179,24 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; openProjectAct
     return <ArtifactEmpty title={t("empty.noChangedTitle")} detail={t("empty.noChangedDetail")} action={props.openProjectAction} />;
   }
 
-  const active = catalog.artifacts.find((artifact) => artifact.id === selected);
   const activeObservations = active === undefined ? [] : observationsForArtifact(catalog.navigation, active.id);
   const activeSurfaceSelection = active !== undefined
     && surfaceSelection?.artifactId === active.id
     && surfaceSelection.revision === active.revision.id
     && surfaceSelection.bindingId === active.renderer.bindingId
     ? surfaceSelection
+    : undefined;
+  const activeIntentOutcome = active !== undefined
+    && surfaceIntentOutcome?.artifactId === active.id
+    && surfaceIntentOutcome.revision === active.revision.id
+    && surfaceIntentOutcome.bindingId === active.renderer.bindingId
+    ? surfaceIntentOutcome
+    : undefined;
+  const activeIntentFailure = active !== undefined
+    && surfaceIntentFailure?.artifactId === active.id
+    && surfaceIntentFailure.revision === active.revision.id
+    && surfaceIntentFailure.bindingId === active.renderer.bindingId
+    ? surfaceIntentFailure.message
     : undefined;
   const selectScope = (next: ArtifactScope): void => {
     setScope(next);
@@ -210,13 +256,24 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
             <div><strong title={active.label}>{basename(active.label)}</strong><small>{formatLabel(active.format)} · {formatBytes(active.size)} · {active.adapter.id} · {t("currentRevision")} {shortRevision(active.revision.id)}</small></div>
             <span title={active.label}>{activeObservations[0] === undefined ? dirname(active.label) : `${activeObservations[0].provider ?? t("common:localAgent")} · ${formatObservedTime(activeObservations[0].savedAt, studioLocale())}`}</span>
           </header>
-          <div className={`artifact-shared-workspace${active.interaction === undefined ? " solo" : ""}`}>
-            <div className="artifact-surface-slot"><ArtifactView authorityId={catalog.snapshot.catalogId} artifact={active} liveGeneration={liveGeneration} onSelection={setSurfaceSelection} /></div>
+          <div className={`artifact-shared-workspace${active.interaction === undefined && activeIntentOutcome === undefined && activeIntentFailure === undefined ? " solo" : ""}`}>
+            <div className="artifact-surface-slot"><ArtifactView
+              authorityId={catalog.snapshot.catalogId}
+              artifact={active}
+              liveGeneration={liveGeneration}
+              onSelection={setSurfaceSelection}
+              onIntentOutcome={receiveIntentOutcome}
+              onIntentFailure={receiveIntentFailure}
+            /></div>
+            {active.interaction === undefined && (activeIntentOutcome !== undefined || activeIntentFailure !== undefined)
+              && <ArtifactIntentPane outcome={activeIntentOutcome} failure={activeIntentFailure} />}
             <ArtifactInteractionPane
               artifact={active}
               agentRunsEnabled={props.config.acpEnabled}
               agentLabel={props.config.acpAgentLabel}
               surfaceSelectedAddress={activeSurfaceSelection?.address}
+              surfaceIntentOutcome={activeIntentOutcome}
+              surfaceIntentFailure={activeIntentFailure}
               onSelectedAddressChange={(address) => {
                 if (active.renderer.bindingId === undefined) return;
                 setSurfaceSelection({
@@ -232,6 +289,25 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
         </>}
     </main>
   </section>;
+}
+
+function ArtifactIntentPane(props: { outcome?: ArtifactHostedIntentOutcomeV1; failure?: string }): React.JSX.Element {
+  const steering = props.outcome?.effect.kind === "steering" ? props.outcome.effect.steering : undefined;
+  return <aside className="artifact-collaboration-pane artifact-intent-pane" aria-label="Recorded Canvas intent" aria-live="polite">
+    <header><div><small>Canvas intent</small><h2>{props.failure !== undefined ? "Rejected" : steering === undefined ? "Selection" : "Steering draft"}</h2></div><span>{props.failure !== undefined ? "closed" : "recorded"}</span></header>
+    <div className="artifact-collaboration-scroll">
+      {props.failure !== undefined
+        ? <p className="artifact-collaboration-error" role="alert">{props.failure}</p>
+        : props.outcome !== undefined && <section className="artifact-collaboration-section artifact-intent-state">
+        <header><span aria-hidden="true">✓</span><div><h3>Recorded, not executed</h3><p>The Host updated shared UI state only. No proposal, decision, Agent run, or Artifact mutation was started.</p></div></header>
+        <dl>
+          <div><dt>Target</dt><dd>{props.outcome.effect.target.label}</dd></div>
+          <div><dt>Address</dt><dd><code>{props.outcome.effect.target.address}</code></dd></div>
+          {steering !== undefined && <div><dt>Draft</dt><dd>{steering.message}</dd></div>}
+        </dl>
+      </section>}
+    </div>
+  </aside>;
 }
 
 function ArtifactDateNavigator(props: { days: ArtifactDayGroup[]; scope: ArtifactScope; onSelect: (scope: ArtifactScope) => void }): React.JSX.Element {

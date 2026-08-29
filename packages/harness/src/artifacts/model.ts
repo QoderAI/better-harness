@@ -30,6 +30,7 @@ export type KnownArtifactCapability =
   | "outline"
   | "search"
   | "select"
+  | "steer"
   | "thumbnail"
   | "validate"
   | "zoom";
@@ -86,6 +87,11 @@ export interface ArtifactInteractionReference {
   workspaceUri: string;
 }
 
+export interface ArtifactIntentReference {
+  /** Host-minted admission endpoint for this exact Artifact surface binding. */
+  intentUri: string;
+}
+
 export interface ArtifactDescriptor {
   id: string;
   /**
@@ -103,6 +109,7 @@ export interface ArtifactDescriptor {
   revision: ArtifactRevisionReference;
   adapter: ArtifactAdapterReference;
   build?: ArtifactBuildReference;
+  intent?: ArtifactIntentReference;
   interaction?: ArtifactInteractionReference;
   renderer: ArtifactRendererReference;
   capabilities: ArtifactCapability[];
@@ -934,6 +941,7 @@ function isArtifactDescriptor(value: unknown): value is ArtifactDescriptor {
     && isRevision(value.revision)
     && isAdapter(value.adapter)
     && (value.build === undefined || (isRecord(value.build) && isStudioArtifactPath(value.build.snapshotUri)))
+    && (value.intent === undefined || (isRecord(value.intent) && isStudioArtifactPath(value.intent.intentUri)))
     && (value.interaction === undefined || (isRecord(value.interaction) && isStudioArtifactPath(value.interaction.workspaceUri)))
     && (value.backing !== "code" || value.build !== undefined)
     && isRenderer(value.renderer)

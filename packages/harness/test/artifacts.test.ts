@@ -84,6 +84,9 @@ describe("Artifact provider SDK", () => {
         interaction: {
           workspaceUri: `/api/artifacts/notes/revisions/${"a".repeat(64)}/interaction`,
         },
+        intent: {
+          intentUri: `/api/artifacts/notes/revisions/${"a".repeat(64)}/intents`,
+        },
         renderer: {
           id: "studio.markdown",
           label: "Studio Markdown",
@@ -96,6 +99,10 @@ describe("Artifact provider SDK", () => {
       omitted: [],
     };
 
+    expect(isArtifactCatalogResponse(catalog)).toBe(true);
+    catalog.artifacts[0]!.intent.intentUri = "https://untrusted.invalid/intents";
+    expect(isArtifactCatalogResponse(catalog)).toBe(false);
+    catalog.artifacts[0]!.intent.intentUri = `/api/artifacts/notes/revisions/${"a".repeat(64)}/intents`;
     expect(isArtifactCatalogResponse(catalog)).toBe(true);
     catalog.artifacts[0]!.interaction.workspaceUri = "https://untrusted.invalid/interaction";
     expect(isArtifactCatalogResponse(catalog)).toBe(false);

@@ -116,6 +116,7 @@ export interface ArtifactHostedRuntimeImplementation {
 
 export const ARTIFACT_INTERACTION_PROTOCOL_VERSION = "1" as const;
 export const ARTIFACT_HOSTED_EVENT_PROTOCOL_VERSION = "1" as const;
+export const ARTIFACT_HOSTED_INTENT_PROTOCOL_VERSION = "1" as const;
 
 /** Host-normalized selection shared by direct Artifact interaction and controls. */
 export interface ArtifactSurfaceSelectionV1 {
@@ -135,6 +136,25 @@ export interface ArtifactHostedSelectionEventV1 extends ArtifactSurfaceSelection
   protocolVersion: typeof ARTIFACT_HOSTED_EVENT_PROTOCOL_VERSION;
 }
 
+export type ArtifactHostedIntentJsonV1 = null | boolean | number | string
+  | readonly ArtifactHostedIntentJsonV1[]
+  | { readonly [key: string]: ArtifactHostedIntentJsonV1 };
+
+/**
+ * Untrusted browser envelope forwarded from the currently mounted hosted
+ * surface. It carries no actor, clock, selection, or steering identity: those
+ * fields are minted only after the Host admits the intent.
+ */
+export interface ArtifactHostedIntentEnvelopeV1 {
+  kind: "HarnessStudioArtifactHostedIntentV1";
+  protocolVersion: typeof ARTIFACT_HOSTED_INTENT_PROTOCOL_VERSION;
+  artifactId: string;
+  revision: ArtifactDigest;
+  bindingId: ArtifactDigest;
+  intentId: string;
+  intent: { readonly [key: string]: ArtifactHostedIntentJsonV1 };
+}
+
 export interface ArtifactInteractionActorV1 {
   id: string;
   kind: "human" | "agent" | "system";
@@ -146,6 +166,74 @@ export interface ArtifactInteractionTargetV1 {
   kind: string;
   label: string;
   description?: string;
+}
+
+export type ArtifactHostedIntentEffectV1 =
+  | {
+    kind: "selection";
+    target: ArtifactInteractionTargetV1;
+  }
+  | {
+    kind: "steering";
+    target: ArtifactInteractionTargetV1;
+    steering: { kind: string; message: string };
+  };
+
+export interface ArtifactHostedIntentAdmissionV1 {
+  intentId: string;
+  effect: ArtifactHostedIntentEffectV1;
+}
+
+export interface ArtifactHostedIntentAdmissionInputV1 extends Readonly<Pick<ArtifactHostedIntentEnvelopeV1, "intentId" | "intent">> {
+  /** Host deadline; conforming Providers stop admission work when aborted. */
+  signal: AbortSignal;
+}
+
+/**
+ * Optional, intent-only Provider seam for a hosted surface.
+ *
+ * `admit` may fresh-resolve a Provider-native address into a bounded Host
+ * selection or steering draft. It must not mutate the Artifact, prepare an
+ * interaction proposal, make a decision, or start an Agent run.
+ */
+export interface ArtifactHostedIntentRuntimeImplementation {
+  id: string;
+  version: string;
+  protocolVersion: typeof ARTIFACT_HOSTED_INTENT_PROTOCOL_VERSION;
+  admit(
+    context: ArtifactAdaptContext,
+    input: ArtifactHostedIntentAdmissionInputV1,
+  ): Promise<ArtifactHostedIntentAdmissionV1>;
+}
+
+export type ArtifactHostedIntentRecordedEffectV1 =
+  | {
+    kind: "selection";
+    selectionId: string;
+    target: ArtifactInteractionTargetV1;
+  }
+  | {
+    kind: "steering";
+    selectionId: string;
+    steeringId: string;
+    target: ArtifactInteractionTargetV1;
+    steering: { kind: string; message: string };
+  };
+
+/** Host-recorded admission outcome for a selection or steering draft, never execution. */
+export interface ArtifactHostedIntentOutcomeV1 {
+  kind: "HarnessStudioArtifactHostedIntentOutcomeV1";
+  protocolVersion: typeof ARTIFACT_HOSTED_INTENT_PROTOCOL_VERSION;
+  artifactId: string;
+  revision: ArtifactDigest;
+  bindingId: ArtifactDigest;
+  intentId: string;
+  actor: ArtifactInteractionActorV1;
+  recordedAt: string;
+  status: "recorded";
+  execution: "not-executed";
+  effect: ArtifactHostedIntentRecordedEffectV1;
+  replayed: boolean;
 }
 
 export interface ArtifactInteractionSteeringControlV1 {
@@ -299,6 +387,7 @@ export interface ArtifactPluginBinding {
   renderer: ArtifactRendererReference;
   surface: ArtifactSurfaceBinding;
   capabilities: readonly ArtifactCapability[];
+  intent?: ArtifactHostedIntentRuntimeImplementation;
   interaction?: ArtifactInteractionRuntimeImplementation;
   provider?: ArtifactProviderBinding;
 }
@@ -311,6 +400,8 @@ export interface ExternalAdapterContribution {
   surface: ArtifactSurfaceBinding;
   renderer: ArtifactRendererReference;
   capabilities: readonly ArtifactCapability[];
+  /** Optional admission-only bridge from a hosted surface into Host state. */
+  intent?: ArtifactHostedIntentRuntimeImplementation;
   /** Optional Host-gated shared-work interaction; absent means review-only. */
   interaction?: ArtifactInteractionRuntimeImplementation;
   support: ArtifactContributionSupport;

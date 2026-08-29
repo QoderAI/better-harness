@@ -12,6 +12,10 @@ import {
   resolveArtifactSurfaceMount,
 } from "../src/app/artifacts/ArtifactView.js";
 import {
+  forwardHostedArtifactIntent,
+  hostedArtifactIntent,
+  hostedArtifactIntentFromFrame,
+  hostedArtifactIntentOutcome,
   hostedArtifactSelection,
   hostedArtifactSelectionFromFrame,
 } from "../src/app/artifacts/ExternalHostedArtifactView.js";
@@ -159,6 +163,98 @@ describe("Artifact View surface registry", () => {
     expect(hostedArtifactSelectionFromFrame({ source: frameWindow, data: event }, frameWindow, artifact)).toEqual(event);
     expect(hostedArtifactSelectionFromFrame({ source: {} as Window, data: event }, frameWindow, artifact)).toBeUndefined();
     expect(hostedArtifactSelectionFromFrame({ source: null, data: event }, null, artifact)).toBeUndefined();
+  });
+
+  it("forwards hosted intents only from the current frame and exact Artifact binding", async () => {
+    const artifact = {
+      ...descriptor({
+        id: "provider.json-canvas",
+        provider: "provider-a",
+        type: "provider-json-canvas",
+        bindingId: BINDING_DIGEST,
+        viewUri: "/api/artifacts/example/revisions/111/viewer/",
+      }),
+      intent: { intentUri: "/api/artifacts/example/revisions/111/intents" },
+    };
+    const intent = {
+      kind: "HarnessStudioArtifactHostedIntentV1",
+      protocolVersion: "1",
+      artifactId: artifact.id,
+      revision: artifact.revision.id,
+      bindingId: BINDING_DIGEST,
+      intentId: "intent:select-orders",
+      intent: { action: "select", address: "json-canvas://node/orders" },
+    } as const;
+    const frameWindow = {} as Window;
+
+    expect(hostedArtifactIntent(intent, artifact)).toEqual(intent);
+    expect(hostedArtifactIntent({ ...intent, actor: { id: "forged" } }, artifact)).toBeUndefined();
+    expect(hostedArtifactIntent({ ...intent, revision: NEXT_DIGEST }, artifact)).toBeUndefined();
+    expect(hostedArtifactIntent(intent, { ...artifact, intent: undefined })).toBeUndefined();
+    expect(hostedArtifactIntentFromFrame({ source: frameWindow, data: intent }, frameWindow, artifact)).toEqual(intent);
+    expect(hostedArtifactIntentFromFrame({ source: {} as Window, data: intent }, frameWindow, artifact)).toBeUndefined();
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    let deep: Record<string, unknown> = {};
+    const deepRoot = deep;
+    for (let index = 0; index < 18; index += 1) {
+      const child: Record<string, unknown> = {};
+      deep.child = child;
+      deep = child;
+    }
+    const invalidIntent = (payload: unknown): unknown => hostedArtifactIntent({ ...intent, intent: payload }, artifact);
+    expect(invalidIntent(cyclic)).toBeUndefined();
+    expect(invalidIntent({ value: 1n })).toBeUndefined();
+    expect(invalidIntent(deepRoot)).toBeUndefined();
+    expect(invalidIntent({ values: Array.from({ length: 2_049 }, () => null) })).toBeUndefined();
+    expect(invalidIntent({ message: "x".repeat(8_193) })).toBeUndefined();
+    expect(invalidIntent(JSON.parse('{"__proto__":{"admin":true}}') as unknown)).toBeUndefined();
+    expect(invalidIntent({ value: Number.NaN })).toBeUndefined();
+    expect(invalidIntent(new Map([["action", "select"]]))).toBeUndefined();
+    expect(invalidIntent({ ["k".repeat(257)]: "value" })).toBeUndefined();
+    expect(invalidIntent({ values: Array.from({ length: 100 }, () => "x".repeat(400)) })).toBeUndefined();
+
+    const outcome = {
+      kind: "HarnessStudioArtifactHostedIntentOutcomeV1",
+      protocolVersion: "1",
+      artifactId: artifact.id,
+      revision: artifact.revision.id,
+      bindingId: BINDING_DIGEST,
+      intentId: intent.intentId,
+      actor: { id: "system:hosted-artifact-surface", kind: "system", label: "Hosted Artifact surface" },
+      recordedAt: "2026-08-29T08:00:00.000Z",
+      status: "recorded",
+      execution: "not-executed",
+      effect: {
+        kind: "selection",
+        selectionId: "selection:host-owned",
+        target: { address: "json-canvas://node/orders", kind: "node", label: "Orders" },
+      },
+      replayed: false,
+    } as const;
+    expect(hostedArtifactIntentOutcome(outcome, artifact, intent.intentId)).toEqual(outcome);
+    expect(hostedArtifactIntentOutcome({ ...outcome, extra: true }, artifact, intent.intentId)).toBeUndefined();
+    expect(hostedArtifactIntentOutcome({
+      ...outcome,
+      effect: { ...outcome.effect, steering: { kind: "forged", message: "run" } },
+    }, artifact, intent.intentId)).toBeUndefined();
+    expect(hostedArtifactIntentOutcome({
+      ...outcome,
+      effect: { ...outcome.effect, target: { ...outcome.effect.target, label: "x".repeat(513) } },
+    }, artifact, intent.intentId)).toBeUndefined();
+    expect(hostedArtifactIntentOutcome({ ...outcome, recordedAt: "not-a-time" }, artifact, intent.intentId)).toBeUndefined();
+
+    let request: { url: string; body: unknown } | undefined;
+    const acceptedFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      request = { url: String(input), body: JSON.parse(String(init?.body)) as unknown };
+      return new Response(JSON.stringify(outcome), { status: 201, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+    await expect(forwardHostedArtifactIntent(intent, artifact, undefined, acceptedFetch)).resolves.toEqual(outcome);
+    expect(request).toEqual({ url: artifact.intent.intentUri, body: intent });
+
+    const staleFetch = (async () => new Response(JSON.stringify({ ...outcome, bindingId: NEXT_DIGEST }), { status: 201 })) as typeof fetch;
+    await expect(forwardHostedArtifactIntent(intent, artifact, undefined, staleFetch)).rejects.toThrow(/stale or invalid outcome/u);
   });
 
   it("remounts when authority or binding changes and conservatively remounts old V2 responses", () => {

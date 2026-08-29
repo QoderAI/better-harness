@@ -81,6 +81,7 @@ import {
   serveArtifactInteraction,
   serveArtifactInteractionPreview,
 } from "./artifacts/interaction-routes.js";
+import { admitArtifactHostedIntent } from "./artifacts/intent-routes.js";
 import {
   cancelAllArtifactAgentRuns,
   cancelArtifactAgentRun,
@@ -150,6 +151,7 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
     artifactImports: new Map(),
     artifactEventStreams: 0,
     artifactAgentRuns: new Map(),
+    artifactIntentAdmissions: new Map(),
     artifactInteractionProposals: new Map(),
     projects: new Map(),
     projectRevision: 0,
@@ -172,6 +174,7 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
   server.once("close", () => {
     cancelAllAcpRuns(state);
     cancelAllArtifactAgentRuns(state);
+    state.artifactIntentAdmissions.clear();
     state.artifactInteractionProposals.clear();
     void Promise.all([cleanupArtifactImports(state), cleanupWorkspaceImports(state)]);
   });
@@ -517,6 +520,10 @@ async function route(
     }
     if (request.method === "GET" && tail === "interaction") {
       await serveArtifactInteraction(response, scoped, id, revision);
+      return;
+    }
+    if (request.method === "POST" && tail === "intents") {
+      await admitArtifactHostedIntent(request, response, state, scoped, id, revision);
       return;
     }
     if (request.method === "POST" && tail === "interaction/agent-runs") {

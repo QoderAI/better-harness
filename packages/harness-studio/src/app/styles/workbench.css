@@ -1510,6 +1510,9 @@
 .artifact-collaboration-status,
 .artifact-collaboration-error { margin: 0; padding: var(--space-md); color: var(--color-text-muted); }
 .artifact-collaboration-error { color: var(--color-danger); background: var(--color-danger-surface); }
+.artifact-intent-draft-status { margin: 0; padding: var(--space-sm) var(--space-md); display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); background: var(--color-surface-subtle); font-size: var(--type-meta-size); }
+.artifact-intent-draft-status strong { color: var(--color-text); }
+.artifact-intent-state dd { white-space: normal; overflow-wrap: anywhere; }
 .artifact-collaboration-section { padding: var(--space-md); display: grid; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); }
 .artifact-collaboration-section > header { min-width: 0; display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: var(--space-sm); }
 .artifact-collaboration-section > header > span { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); color: var(--color-primary); font-size: var(--type-meta-size); font-weight: var(--weight-semibold); }

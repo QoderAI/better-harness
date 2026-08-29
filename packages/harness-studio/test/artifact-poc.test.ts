@@ -310,6 +310,12 @@ describe("indexArtifactDirectory", () => {
       readModule: async () => "export default {};",
       readResource: async () => undefined,
     };
+    const intent = {
+      id: "provider.hosted-intent",
+      version: "1",
+      protocolVersion: "1",
+      admit: async (_context: never, input: never) => input,
+    } as unknown as NonNullable<ArtifactPluginResolution["intent"]>;
     const base = {
       backing: "code",
       adapter,
@@ -329,6 +335,7 @@ describe("indexArtifactDirectory", () => {
         runtime,
       },
       capabilities: ["navigate", "select"],
+      intent,
       provider: {
         providerId: "fixture",
         contributionId: "diagram",
@@ -356,6 +363,12 @@ describe("indexArtifactDirectory", () => {
       surfaceRuntime: { ...base, surface: { ...base.surface, runtimeId: "provider.viewer-v2" } },
       hostedRuntimeId: { ...base, surface: { ...base.surface, runtime: { ...runtime, id: "provider.hosted-runtime-v2" } } },
       hostedRuntimeVersion: { ...base, surface: { ...base.surface, runtime: { ...runtime, version: "2" } } },
+      intentRuntimeId: { ...base, intent: { ...intent, id: "provider.hosted-intent-v2" } },
+      intentRuntimeVersion: { ...base, intent: { ...intent, version: "2" } },
+      intentProtocolVersion: {
+        ...base,
+        intent: { ...intent, protocolVersion: "2" } as unknown as NonNullable<ArtifactPluginResolution["intent"]>,
+      },
       capabilities: { ...base, capabilities: ["navigate", "zoom"] },
       providerId: { ...base, provider: { ...base.provider, providerId: "fixture-v2" } },
       contributionId: { ...base, provider: { ...base.provider, contributionId: "diagram-v2" } },

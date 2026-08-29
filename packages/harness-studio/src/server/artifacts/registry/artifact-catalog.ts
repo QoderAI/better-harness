@@ -133,6 +133,7 @@ export interface ArtifactSurfaceBindingIdentityV1 {
     }
     | { kind: "unavailable"; reason: string };
   capabilities: string[];
+  intent?: { id: string; version: string; protocolVersion: string };
   interaction?: { id: string; version: string; protocolVersion: string };
   provider?: {
     providerId: string;
@@ -191,6 +192,13 @@ export function artifactSurfaceBindingIdentity(
     },
     surface,
     capabilities: [...new Set(binding.capabilities)].sort(),
+    ...(binding.intent === undefined ? {} : {
+      intent: {
+        id: binding.intent.id,
+        version: binding.intent.version,
+        protocolVersion: binding.intent.protocolVersion,
+      },
+    }),
     ...(binding.interaction === undefined ? {} : {
       interaction: {
         id: binding.interaction.id,
@@ -375,6 +383,10 @@ export function describeArtifactCatalog(
     delete renderer.bindingId;
     const digest = entry.digest!;
     const base = artifactRevisionBase(entry.id, digest);
+    const intentEnabled = selected.intent !== undefined
+      && selected.surface.kind === "external-hosted"
+      && selected.renderer.status === "ready"
+      && selected.capabilities.includes("select");
     const snapshotId = `sha256:${createHash("sha256")
       .update(JSON.stringify([
         digest,
@@ -412,6 +424,7 @@ export function describeArtifactCatalog(
         snapshotUri: `${base}/snapshot`,
       },
       ...(selected.backing === "code" ? { build: { snapshotUri: `${base}/build` } } : {}),
+      ...(intentEnabled ? { intent: { intentUri: `${base}/intents` } } : {}),
       ...(selected.interaction === undefined ? {} : { interaction: { workspaceUri: `${base}/interaction` } }),
       renderer: {
         ...renderer,

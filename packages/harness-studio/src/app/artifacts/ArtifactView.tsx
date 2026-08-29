@@ -42,7 +42,14 @@ export function ArtifactView(props: ArtifactViewHostProps): React.JSX.Element {
     if (mount !== undefined) {
       const Component = mount.Component;
       const key = artifactSurfaceInstanceKey(mount, props.authorityId, props.artifact);
-      return <Component key={key} artifact={props.artifact} liveGeneration={props.liveGeneration} onSelection={props.onSelection} />;
+      return <Component
+        key={key}
+        artifact={props.artifact}
+        liveGeneration={props.liveGeneration}
+        onSelection={props.onSelection}
+        onIntentOutcome={props.onIntentOutcome}
+        onIntentFailure={props.onIntentFailure}
+      />;
     }
   }
   return <p className="artifact-status" role="status">{props.artifact.renderer.reason ?? t("noRenderer", { id: props.artifact.renderer.id })}</p>;
