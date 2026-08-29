@@ -1290,6 +1290,7 @@ test("Harness Inspector help is workspace-independent and sanitizes bad argv (AC
   assert.match(help.stdout, /Feature Tree and Date scope pickers/u);
   assert.match(help.stdout, /inspector\s+Render and open the current workspace with activity/u);
   assert.match(help.stdout, /latest 30 UTC days.*200 commits/u);
+  assert.match(help.stdout, /--json\s+Emit the complete machine-readable render result/u);
   assert.equal(help.stderr, "");
 
   const privateValue = path.join(os.tmpdir(), "private-feature-tree");
@@ -1300,6 +1301,7 @@ test("Harness Inspector help is workspace-independent and sanitizes bad argv (AC
 
 test("--open is parsed as a valueless flag without consuming the next argument", () => {
   assert.deepEqual(parseRenderOptions(["--open"]), { "--open": true });
+  assert.deepEqual(parseRenderOptions(["--json"]), { "--json": true });
   assert.deepEqual(parseRenderOptions(["--open", "--out", "report.html"]), {
     "--open": true,
     "--out": "report.html",
@@ -1313,7 +1315,13 @@ test("--open is parsed as a valueless flag without consuming the next argument",
   // accepted argument, and value options still require their value.
   assert.throws(() => parseRenderOptions(["--open", "true"]), (error) => error.exitCode === 64);
   assert.throws(() => parseRenderOptions(["--open", "--open"]), /duplicate option: --open/u);
+  assert.throws(() => parseRenderOptions(["--json", "--json"]), /duplicate option: --json/u);
   assert.throws(() => parseRenderOptions(["--out"]), /missing option value: --out/u);
+});
+
+test("the package Inspector script uses the zero-argument startup workflow", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
+  assert.equal(packageJson.scripts.inspector, "node scripts/harness-inspector/cli.mjs");
 });
 
 test("opening a report launches an absolute file URL and reports launch failure", () => {
@@ -1344,7 +1352,7 @@ test("render writes the report before opening it and reports the launch in its s
   };
   let exitCode;
   try {
-    exitCode = await main(["render", "--workspace", workspace, "--out", outputPath, "--open"], {
+    exitCode = await main(["render", "--workspace", workspace, "--out", outputPath, "--open", "--json"], {
       open: (target) => {
         // The file must already exist when the viewer is launched.
         openedPaths.push({ target, exists: existsSync(target) });
@@ -1377,7 +1385,7 @@ test("zero arguments render the current workspace and open the written report", 
     return true;
   };
   let exitCode;
-  let summary;
+  let humanOutput;
   let embeddedReport;
   try {
     exitCode = await main([], {
@@ -1388,8 +1396,11 @@ test("zero arguments render the current workspace and open the written report", 
         return true;
       },
     });
-    summary = JSON.parse(written.join(""));
-    const html = await readFile(summary.outputPath, "utf8");
+    humanOutput = written.join("");
+    const html = await readFile(
+      path.join(canonicalWorkspace, ".qoder", "better-harness-runs", "harness-inspector", "inspector.html"),
+      "utf8",
+    );
     embeddedReport = JSON.parse(scriptBody(
       html,
       "<script type=\"application/json\" id=\"inspector-data\">",
@@ -1400,12 +1411,20 @@ test("zero arguments render the current workspace and open the written report", 
   }
 
   assert.equal(exitCode, 0);
-  assert.equal(
-    summary.outputPath,
-    path.join(canonicalWorkspace, ".qoder", "better-harness-runs", "harness-inspector", "inspector.html"),
+  const expectedOutputPath = path.join(
+    canonicalWorkspace,
+    ".qoder",
+    "better-harness-runs",
+    "harness-inspector",
+    "inspector.html",
   );
-  assert.deepEqual(openedPaths, [{ target: summary.outputPath, exists: true }]);
-  assert.equal(summary.opened, true);
+  assert.deepEqual(openedPaths, [{ target: expectedOutputPath, exists: true }]);
+  assert.equal(humanOutput.startsWith("Harness Inspector report ready\n\n"), true);
+  assert.equal(humanOutput.includes(`Report: ${expectedOutputPath}\n`), true);
+  assert.match(humanOutput, /Scope: \d+ days?, \d+ commits?, \d+ sessions?/u);
+  assert.match(humanOutput, /Coverage: \d+ feature nodes?, \d+ stor(?:y|ies), \d+ tool calls?/u);
+  assert.match(humanOutput, /Sessions by provider:/u);
+  assert.match(humanOutput, /Browser: opened/u);
   assert.equal(embeddedReport.filters.since, "2026-07-16T00:00:00.000Z");
   assert.equal(embeddedReport.filters.until, "2026-08-14T23:59:59.999Z");
   assert.equal(embeddedReport.filters.commitLimit, 200);
@@ -1467,7 +1486,7 @@ test("render leaves the browser alone when --open is absent", async () => {
   };
   let exitCode;
   try {
-    exitCode = await main(["render", "--workspace", workspace, "--out", outputPath], {
+    exitCode = await main(["render", "--workspace", workspace, "--out", outputPath, "--json"], {
       open: () => {
         openCalls += 1;
         return true;
@@ -1503,6 +1522,10 @@ test("a report that could not be opened still succeeds and says so", async () =>
 
   assert.equal(exitCode, 0);
   assert.equal(existsSync(outputPath), true);
-  assert.equal(JSON.parse(written.join("")).opened, false);
+  const humanOutput = written.join("");
+  assert.equal(humanOutput.includes(`Report: ${outputPath}\n`), true);
+  assert.match(humanOutput, /Scope: \d+ days?, 1 commit, \d+ sessions?/u);
+  assert.doesNotMatch(humanOutput, /1 commits/u);
+  assert.match(humanOutput, /Browser: could not open automatically; open the report path above/u);
   await rm(workspace, { recursive: true, force: true });
 });

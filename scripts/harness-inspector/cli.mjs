@@ -28,7 +28,7 @@ Feature Tree and Date scope pickers.
 
 Usage:
   npx @qoder-ai/better-harness inspector
-  node scripts/harness-inspector/cli.mjs render [--workspace <dir>] [--platform <hosts>] [--feature-tree <file>] [--since <date>] [--until <date>] [--stage <name>] [--commits <n>] [--max-sessions <n>] [--out <file>] [--open]
+  node scripts/harness-inspector/cli.mjs render [--workspace <dir>] [--platform <hosts>] [--feature-tree <file>] [--since <date>] [--until <date>] [--stage <name>] [--commits <n>] [--max-sessions <n>] [--out <file>] [--open] [--json]
 
 Default:
   inspector             Render and open the current workspace with activity
@@ -48,6 +48,7 @@ Options:
   --max-sessions <n>     Bound hydrated sessions (default: ${DEFAULT_MAX_SESSIONS})
   --out <file>           Output HTML path
   --open                 Open the written report in the default browser
+  --json                 Emit the complete machine-readable render result
   -h, --help             Print help without reading the workspace
 
 The report is self-contained and does not write Git metadata or native session state.
@@ -64,12 +65,13 @@ const ALLOWED_OPTIONS = new Set([
   "--max-sessions",
   "--out",
   "--open",
+  "--json",
 ]);
 
 // Boolean flags take no value, so a following token stays a flag position and an
 // explicit "--open true" fails as an unrecognized option instead of silently
 // swallowing the next argument.
-const BOOLEAN_OPTIONS = new Set(["--open"]);
+const BOOLEAN_OPTIONS = new Set(["--open", "--json"]);
 const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_WINDOW_COMMIT_LIMIT = 200;
 const DEFAULT_WINDOW_SESSION_LIMIT = 100;
@@ -162,6 +164,40 @@ async function loadFeatureTree(repoRoot, requestedPath) {
   return parseFeatureTreeMarkdown(markdown, { source: filePath });
 }
 
+function terminalText(value) {
+  return String(value ?? "").replace(/[\u0000-\u001f\u007f]/gu, (character) =>
+    `\\u${character.codePointAt(0).toString(16).padStart(4, "0")}`);
+}
+
+function countLabel(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function formatHumanRenderSummary(summary) {
+  const contributingProviders = summary.providers
+    .filter((provider) => provider.sessionCount > 0)
+    .map((provider) => `${provider.platform} ${provider.sessionCount}`);
+  const failedProviders = summary.providers
+    .filter((provider) => provider.status === "error")
+    .map((provider) => provider.platform);
+  const lines = [
+    "Harness Inspector report ready",
+    "",
+    `Report: ${terminalText(summary.outputPath)}`,
+    `Scope: ${countLabel(summary.days, "day")}, ${countLabel(summary.commits, "commit")}, ${countLabel(summary.sessions, "session")}`,
+    `Coverage: ${countLabel(summary.featureNodes, "feature node")}, ${countLabel(summary.stories, "story", "stories")}, ${countLabel(summary.toolCalls, "tool call")}`,
+    `Sessions by provider: ${contributingProviders.join(", ") || "none"}`,
+  ];
+  if (failedProviders.length > 0) {
+    lines.push(`Provider warnings: ${failedProviders.join(", ")} (open the report for details)`);
+  }
+  if (summary.opened === true) lines.push("Browser: opened");
+  if (summary.opened === false) {
+    lines.push("Browser: could not open automatically; open the report path above");
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 // Resolve "all", one host, or a comma list into a validated platform list
 // without echoing unrecognized values into error output.
 function parsePlatforms(value) {
@@ -244,7 +280,7 @@ async function runRender(options, { open = openRenderedReport, cwd = process.cwd
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, html, "utf8");
   const opened = options["--open"] === true ? open(outputPath) : null;
-  process.stdout.write(`${JSON.stringify({
+  const summary = {
     outputPath,
     ...(opened === null ? {} : { opened }),
     featureNodes: report.featureTree.nodes.length,
@@ -254,7 +290,10 @@ async function runRender(options, { open = openRenderedReport, cwd = process.cwd
     commits: report.commits.length,
     toolCalls: report.sessions.reduce((sum, session) => sum + session.toolTrace.totalCalls, 0),
     providers: report.providers,
-  }, null, 2)}\n`);
+  };
+  process.stdout.write(options["--json"] === true
+    ? `${JSON.stringify(summary, null, 2)}\n`
+    : formatHumanRenderSummary(summary));
 }
 
 export async function main(argv = process.argv.slice(2), runtime = {}) {
