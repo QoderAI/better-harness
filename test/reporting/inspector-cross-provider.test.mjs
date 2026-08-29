@@ -249,7 +249,7 @@ test("Inspector renders workspace-qualified Augment usage and dialogue from the 
     ], {
       cwd: workspace,
       encoding: "utf8",
-      env: { ...process.env, HOME: fixture },
+      env: { ...process.env, HOME: fixture, USERPROFILE: fixture },
     });
     assert.equal(result.status, 0, result.stderr);
     const html = await readFile(output, "utf8");
