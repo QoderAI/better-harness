@@ -769,11 +769,15 @@ test("Inspector projects usage and context metadata without raw context text", (
   assert.match(html, /Usage and context/u);
   assert.match(html, /View report/u);
   assert.doesNotMatch(html, /<h3>Usage and Context Report<\/h3>/u);
-  assert.match(html, /<h3 class="visually-hidden">Usage report<\/h3>/u);
+  assert.match(html, /<div class="usage-report-heading"><h3>Usage report<\/h3>/u);
   assert.doesNotMatch(html, /<span class="usage-report-kicker">/u);
   assert.doesNotMatch(html, /<p>Unique model responses, absolute context progression/u);
   assert.match(html, /Input reuse/u);
   assert.match(html, /usage-report-reuse-tile/u);
+  assert.match(html, /Cached input still occupies context/u);
+  assert.match(html, /<details class="usage-report-evidence">/u);
+  assert.doesNotMatch(html, /Peak context/u);
+  assert.doesNotMatch(html, /usage-structure-bar/u);
   assert.doesNotMatch(html, /<h4>Current context composition<\/h4>/u);
   assert.match(html, /Total input \(includes cached\)/u);
   assert.match(html, /Raw context/u);

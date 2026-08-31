@@ -752,26 +752,29 @@
   .session-outline-facts dd { min-width:0; flex:1; margin:0; overflow:hidden; color:var(--color-text); text-align:right; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600; }
 
   .usage-report { min-height:calc(100vh - 138px); background:var(--color-surface); }
-  .usage-report-lead { min-width:0; padding:14px 28px 16px; border-bottom:1px solid var(--color-border); background:var(--color-surface-subtle); }
-  .usage-report-summary { min-width:0; margin-top:10px; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; }
-  .usage-report-occupancy, .usage-report-lead-facts > div { min-width:0; min-height:82px; padding:11px 14px; display:grid; align-content:center; gap:2px; border:1px solid var(--color-border); border-top:2px solid var(--color-primary); border-radius:var(--radius-lg); background:var(--color-surface); }
-  .usage-report-lead-facts { display:contents; }
-  .usage-report-lead-facts > div:nth-child(1) { border-top-color:var(--color-categorical-4); }
-  .usage-report-lead-facts > div:nth-child(2) { border-top-color:var(--color-categorical-1); }
-  .usage-report-lead-facts > div:nth-child(3) { border-top-color:var(--color-categorical-2); }
-  .usage-report-lead-facts > div:nth-child(4) { border-top-color:var(--color-categorical-3); }
-  .usage-report-lead-facts > div:nth-child(5) { border-top-color:var(--color-categorical-5); }
-  .usage-report-evidence { min-width:0; }
+  .usage-report-lead { min-width:0; padding:16px 28px 18px; border-bottom:1px solid var(--color-border); background:var(--color-surface-subtle); }
+  .usage-report-heading { min-width:0; display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 12px; }
+  .usage-report-heading h3 { margin:0; color:var(--color-text); font-size:16px; }
+  .usage-report-heading p { margin:0; color:var(--color-text-muted); font-size:12px; }
+  .usage-report-summary { min-width:0; margin-top:12px; display:grid; grid-template-columns:minmax(260px,1.45fr) minmax(0,4fr); overflow:hidden; border:1px solid var(--color-border); background:var(--color-surface); }
+  .usage-report-occupancy, .usage-report-lead-facts > div { min-width:0; min-height:104px; padding:12px 14px; display:grid; align-content:center; gap:3px; background:var(--color-surface); }
+  .usage-report-occupancy { border-right:1px solid var(--color-border); }
+  .usage-report-evidence { min-width:0; padding:0 28px; border-bottom:1px solid var(--color-border); background:var(--color-surface); }
+  .usage-report-evidence > summary { min-height:46px; display:flex; align-items:center; flex-wrap:wrap; gap:3px 10px; color:var(--color-text); cursor:pointer; font-size:12px; font-weight:700; }
+  .usage-report-evidence > summary small { color:var(--color-text-muted); font-size:12px; font-weight:400; }
+  .usage-report-evidence[open] > summary { border-bottom:1px solid var(--color-border); }
+  .usage-report-evidence[open] .usage-evidence-groups { margin:14px 0 18px; }
   .usage-evidence-groups { min-width:0; overflow:hidden; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border:1px solid var(--color-border); border-radius:var(--radius-lg); background:var(--color-surface); }
   .usage-evidence-group { min-width:0; padding:8px 12px 9px; border-right:1px solid var(--color-border); }
   .usage-evidence-group:last-child { border-right:0; }
   .usage-evidence-group-title { display:block; margin:0 0 5px; color:var(--color-text-subtle); font-size:12px; font-weight:750; text-transform:uppercase; letter-spacing:.04em; }
   .usage-evidence-group .usage-report-facts { gap:3px; }
   .usage-evidence-group .usage-report-facts div { gap:8px; }
-  .usage-evidence-group .usage-report-facts dd { text-align:right; }
+  .usage-evidence-group .usage-report-facts dd { overflow:visible; text-align:right; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; }
   .usage-report-occupancy strong { color:var(--color-text); font-size:25px; line-height:1; letter-spacing:-.04em; }
   .usage-report-occupancy span { color:var(--color-text); font-size:12px; font-weight:700; }
-  .usage-report-occupancy small { overflow:hidden; color:var(--color-text-muted); text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+  .usage-report-occupancy small { color:var(--color-text-muted); font-size:12px; }
+  .usage-report-freshness { margin:2px 0 0; color:var(--color-text-muted); font-size:12px; line-height:16px; overflow-wrap:anywhere; }
   .usage-summary-tile-heading { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:6px; }
   .usage-summary-compactions { flex:none; color:var(--color-candidate); font-size:12px; font-style:normal; font-weight:750; white-space:nowrap; }
   .usage-report-occupancy .usage-context-bar, .usage-report-occupancy .usage-occupancy-bar { height:6px; margin-top:4px; }
@@ -780,13 +783,16 @@
   .usage-report-lead-facts div, .usage-report-evidence > .usage-report-facts div { display:grid; align-items:initial; justify-content:initial; gap:2px; }
   .usage-report-lead-facts dt, .usage-report-facts dt { color:var(--color-text-muted); font-size:12px; }
   .usage-report-lead-facts dd, .usage-report-facts dd { min-width:0; margin:0; overflow:hidden; color:var(--color-text); text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:700; }
-  .usage-report-lead-facts { display:contents; }
+  .usage-report-lead-facts { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:0; }
   .usage-report-lead-facts div { display:grid; align-content:center; align-items:initial; justify-content:initial; gap:5px; }
+  .usage-report-lead-facts > div { border-right:1px solid var(--color-border); }
+  .usage-report-lead-facts > div:last-child { border-right:0; }
   .usage-report-lead-facts dd { font-size:18px; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
   .usage-report-reuse-tile dd { overflow:visible; display:grid; gap:4px; white-space:normal; }
   .usage-report-reuse-tile dd > strong { color:var(--color-text); font-size:18px; line-height:1.1; }
   .usage-report-reuse-tile .usage-reuse-bar { height:6px; margin-top:1px; }
-  .usage-report-reuse-tile small { overflow:hidden; color:var(--color-text-muted); text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:400; letter-spacing:0; }
+  .usage-report-reuse-tile small { color:var(--color-text-muted); font-size:12px; font-weight:400; letter-spacing:0; line-height:15px; }
+  .usage-report-context-note { margin:8px 0 0; color:var(--color-text-subtle); font-size:12px; line-height:16px; }
   .usage-report-section { padding:22px 28px 24px; border-bottom:1px solid var(--color-border); }
   .usage-report-section > header { margin-bottom:15px; display:flex; align-items:flex-start; justify-content:space-between; gap:18px; }
   .usage-report-section h4 { margin:0; color:var(--color-text); font-size:14px; }
@@ -797,14 +803,13 @@
   .usage-composition-list li { grid-template-columns:12px minmax(0,1fr) auto; }
   .usage-composition-list i { width:11px; height:11px; }
   .usage-composition-unused i { background:var(--color-border); }
-  .usage-structure-bar { width:100%; height:12px; overflow:hidden; display:flex; gap:2px; background:var(--color-surface-hover); }
-  .usage-structure-bar > i { min-width:2px; height:100%; }
   .usage-structure-list { margin:14px 0 0; padding:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 28px; list-style:none; }
-  .usage-structure-list li { min-width:0; display:grid; grid-template-columns:10px minmax(0,1fr) auto; align-items:center; gap:8px; color:var(--color-text-muted); font-size:12px; }
+  .usage-structure-list li { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px; color:var(--color-text-muted); font-size:12px; }
   .usage-structure-list li > i { width:9px; height:9px; border-radius:var(--radius-xs); }
   .usage-structure-list span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .usage-structure-list strong { color:var(--color-text); font-size:12px; font-variant-numeric:tabular-nums; }
   .usage-structure-list small { color:var(--color-text-subtle); text-align:right; font-size:12px; font-variant-numeric:tabular-nums; }
+  .usage-structure-list.count-only small { display:none; }
   .usage-structure-meta { margin-top:14px; padding-top:12px; border-top:1px solid var(--color-border); }
   .usage-context-chart { min-width:0; padding:10px 12px 8px; border:1px solid var(--color-border); background:var(--color-surface-subtle); }
   .usage-context-chart svg { width:100%; min-height:170px; display:block; overflow:visible; }
@@ -814,7 +819,7 @@
   .usage-chart-boundary { stroke:var(--color-candidate); stroke-width:1; stroke-dasharray:5 4; vector-effect:non-scaling-stroke; }
   .usage-chart-turn, .usage-chart-key-marker { cursor:pointer; }
   .usage-chart-turn:focus, .usage-chart-key-marker:focus { outline:none; }
-  .usage-chart-turn-hit, .usage-chart-point-hit { fill:transparent; }
+  .usage-chart-turn-hit, .usage-chart-point-hit { fill:transparent; pointer-events:all; }
   .usage-chart-turn-marker { stroke:var(--color-categorical-4); stroke-width:2.5; vector-effect:non-scaling-stroke; pointer-events:none; }
   .usage-chart-point { fill:var(--color-primary); stroke:var(--color-surface); stroke-width:2; vector-effect:non-scaling-stroke; }
   .usage-chart-point.boundary-shrink { fill:var(--color-warning); }
@@ -873,9 +878,11 @@
   .usage-linked-explorer { min-width:0; overflow:hidden; border:1px solid var(--color-border); background:var(--color-surface); }
   .usage-overview { min-width:0; padding:8px 12px 4px; border-bottom:1px solid var(--color-border); background:var(--color-surface-subtle); }
   .usage-overview svg { width:100%; min-height:94px; display:block; overflow:visible; }
+  .usage-overview-prompt-actions { display:none; }
   .usage-overview text, .usage-focus-chart text { fill:var(--color-text-subtle); font-size:12px; font-family:var(--font-code); }
   .usage-overview-brush { fill:var(--color-primary-soft); stroke:var(--color-primary); stroke-width:1; vector-effect:non-scaling-stroke; pointer-events:none; }
-  .usage-overview-handle { fill:var(--color-surface); stroke:var(--color-primary); stroke-width:1.5; vector-effect:non-scaling-stroke; cursor:ew-resize; touch-action:none; }
+  .usage-overview-handle { fill:var(--color-surface); stroke:var(--color-primary); stroke-width:1.5; vector-effect:non-scaling-stroke; pointer-events:none; }
+  .usage-overview-handle-hit { fill:transparent; cursor:ew-resize; pointer-events:all; touch-action:none; }
   .usage-overview-turn-marker { cursor:pointer; }
   .usage-overview-turn-hit { fill:transparent; pointer-events:all; }
   .usage-overview-turn { stroke:var(--color-categorical-4); stroke-width:1; opacity:.55; vector-effect:non-scaling-stroke; pointer-events:none; }
@@ -902,7 +909,7 @@
   .usage-window-toolbar strong { color:var(--color-text); font-size:12px; }
   .usage-window-toolbar span { color:var(--color-text-muted); font-size:12px; }
   .usage-window-toolbar label { min-width:0; display:flex; align-items:center; gap:6px; color:var(--color-text-muted); font-size:12px; }
-  .usage-window-toolbar input { min-width:80px; width:100%; accent-color:var(--color-primary); }
+  .usage-window-toolbar input { min-width:80px; width:100%; min-height:30px; accent-color:var(--color-primary); }
   .usage-window-toolbar button, .usage-response-actions button { min-height:30px; border:1px solid var(--color-border-strong); border-radius:var(--radius-md); padding:4px 9px; color:var(--color-text); background:var(--color-surface); cursor:pointer; font-size:12px; }
   .usage-window-toolbar button:hover, .usage-response-actions button:hover { background:var(--color-surface-hover); }
   .usage-window-toolbar button:disabled, .usage-response-actions button:disabled { color:var(--color-text-subtle); cursor:default; background:var(--color-surface-subtle); }
@@ -948,7 +955,8 @@
     .session-titlebar { padding-right:82px; grid-template-columns:auto minmax(180px,1fr) auto; gap:12px; }
     .session-layout { grid-template-columns:minmax(0,1fr) 292px; }
     .session-notebook-main { padding-left:18px; }
-    .usage-report-summary { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .usage-report-summary { grid-template-columns:1fr; }
+    .usage-report-occupancy { border-right:0; border-bottom:1px solid var(--color-border); }
     .usage-focus-layout { grid-template-columns:1fr; }
     .usage-focus-layout .usage-context-chart { border-right:0; border-bottom:1px solid var(--color-border); }
     .usage-response-detail { grid-template-columns:minmax(150px,.8fr) minmax(0,2fr) auto; align-items:start; }
@@ -990,7 +998,12 @@
     .session-overall-activity { margin-left:59px; }
     .usage-report { min-height:calc(100vh - 146px); }
     .usage-report-lead { padding:14px 18px 16px; }
-    .usage-report-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .usage-report-lead-facts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .usage-report-lead-facts > div { min-height:82px; border-right:1px solid var(--color-border); border-bottom:1px solid var(--color-border); }
+    .usage-report-lead-facts > div:nth-child(2n) { border-right:0; }
+    .usage-report-lead-facts > div:last-child { border-bottom:0; }
+    .usage-report-reuse-tile { grid-column:1 / -1; }
+    .usage-report-evidence { padding:0 18px; }
     .usage-evidence-groups { grid-template-columns:repeat(2,minmax(0,1fr)); }
     .usage-evidence-group:nth-child(2) { border-right:0; }
     .usage-evidence-group:nth-child(-n+2) { border-bottom:1px solid var(--color-border); }
@@ -1006,23 +1019,35 @@
   @media (max-width:520px) {
     .usage-report-link, .usage-report-return { min-height:44px; }
     .usage-report-lead { padding:12px 12px 14px; }
-    .usage-report-summary { margin-top:9px; gap:8px; }
+    .usage-report-summary { margin-top:9px; }
     .usage-report-occupancy, .usage-report-lead-facts > div { min-height:78px; padding:10px 11px; }
     .usage-report-occupancy strong { font-size:23px; }
     .usage-report-lead-facts dd { font-size:16px; }
     .usage-evidence-group { padding:7px 9px 8px; }
+    .usage-evidence-groups { grid-template-columns:1fr; }
+    .usage-evidence-group, .usage-evidence-group:nth-child(2) { border-right:0; border-bottom:1px solid var(--color-border); }
+    .usage-evidence-group:last-child { border-bottom:0; }
     .usage-progress-head { display:none; }
     .usage-progress-list li { grid-template-columns:minmax(0,1fr) auto; gap:5px 12px; padding:9px 4px; }
     .usage-progress-list li > div:first-child { grid-column:1 / -1; }
     .usage-context-chart { padding:8px 4px 6px; }
     .usage-context-chart svg { min-height:130px; }
+    .usage-overview text, .usage-focus-chart text { font-size:30px; }
     .usage-overview { padding-inline:4px; }
+    .usage-overview-handle, .usage-overview-handle-hit, .usage-overview-turn-chip, .usage-overview-turn-label, .usage-overview-prompt-tooltip { display:none; }
+    .usage-overview-turn-hit { pointer-events:none; }
+    .usage-overview-prompt-actions { padding:4px 0; display:flex; gap:6px; overflow-x:auto; }
+    .usage-overview-prompt-actions button { min-width:44px; min-height:44px; flex:none; border:1px solid var(--color-border-strong); border-radius:var(--radius-md); color:var(--color-primary); background:var(--color-surface); font-size:12px; font-weight:700; }
+    .usage-overview-prompt-actions button[aria-pressed="true"] { border-color:var(--color-primary); color:var(--color-text-primary); background:var(--color-surface-selected); }
+    .usage-overview-prompt-actions button:focus-visible { outline:2px solid var(--color-focus); outline-offset:1px; }
     .usage-window-toolbar { min-height:0; padding:8px; display:grid; grid-template-columns:1fr 1fr; }
     .usage-window-summary, .usage-window-edge-controls { min-width:0; grid-column:1 / -1; }
     .usage-window-toolbar label { grid-column:1 / -1; }
+    .usage-window-toolbar input { min-height:44px; }
     .usage-window-toolbar button { min-height:44px; }
     .usage-response-detail { grid-template-columns:1fr; }
     .usage-response-detail dl { grid-template-columns:1fr; }
     .usage-response-actions { min-width:0; }
     .usage-response-actions button { min-height:44px; }
+    .usage-response-row { min-height:44px; }
   }

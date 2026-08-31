@@ -165,15 +165,21 @@ async function surfacesFor(page) {
         const panel = page.locator("[data-session-mode-panel=usage]");
         await panel.waitFor({ state: "visible" });
         const kpis = panel.locator(".usage-report-summary > .usage-report-occupancy, .usage-report-summary > .usage-report-lead-facts > div");
-        if ((await kpis.count()) !== 6) throw new Error("Usage report dashboard must render exactly six KPI tiles.");
+        if ((await kpis.count()) !== 6) throw new Error("Usage report summary must render one context decision and five stable supporting facts.");
         const leadText = await panel.locator(".usage-report-lead").innerText();
-        if (leadText.includes("READ-ONLY EVIDENCE") || leadText.includes("Usage and Context Report") || leadText.includes("Evidence details") || leadText.includes("Unique model responses, absolute context progression")) {
-          throw new Error("Usage report lead must omit repeated titles, eyebrow, and explanatory copy.");
+        if (!/^Usage report\b/u.test(leadText) || leadText.includes("READ-ONLY EVIDENCE") || leadText.includes("Usage and Context Report") || leadText.includes("Unique model responses, absolute context progression")) {
+          throw new Error("Usage report lead must visibly identify the report without legacy eyebrow or duplicate explanatory copy.");
         }
-        const evidence = panel.locator(".usage-report-lead > .usage-report-evidence");
-        if ((await evidence.count()) !== 1) throw new Error("Usage report must place one always-visible Evidence details section in the lead.");
-        if ((await evidence.locator("summary").count()) !== 0) throw new Error("Evidence details must not use a disclosure control.");
-        if (!(await evidence.locator(".usage-evidence-groups").isVisible())) throw new Error("Evidence details groups must be visible by default.");
+        const primaryFreshness = await panel.locator(".usage-report-occupancy .usage-report-freshness").innerText();
+        if (!/^Static snapshot · (?:observed through|generated) \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC$|^Static snapshot · freshness unavailable$/u.test(primaryFreshness)) {
+          throw new Error("Usage report must place complete static-snapshot freshness beside the latest context decision.");
+        }
+        const evidence = panel.locator(":scope > .usage-report-evidence");
+        if ((await evidence.count()) !== 1) throw new Error("Usage report must place one Evidence & methodology disclosure after the lead.");
+        if ((await evidence.locator("summary").count()) !== 1) throw new Error("Evidence & methodology must use one disclosure control.");
+        if (await evidence.locator(".usage-evidence-groups").isVisible()) throw new Error("Evidence & methodology must be collapsed by default.");
+        await evidence.locator("summary").click();
+        if (!(await evidence.locator(".usage-evidence-groups").isVisible())) throw new Error("Evidence & methodology groups must open on request.");
         if ((await evidence.locator(".usage-evidence-group").count()) !== 4) throw new Error("Evidence details must group facts into four diagnostic categories.");
         if (!/Coverage\s+(observed|partial|unobserved)/u.test(await evidence.innerText())) throw new Error("Coverage must remain an Observability fact rather than a KPI tile.");
         if (!/Snapshot\s+(?:(?:observed through|generated) \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC|freshness unavailable)/u.test(await evidence.innerText())) throw new Error("Evidence details must disclose static-snapshot freshness.");
@@ -188,7 +194,25 @@ async function surfacesFor(page) {
         if (!structureText.includes("token sizes unavailable") && !structureText.includes("Context-layer counts were not observed")) throw new Error("Context structure must disclose unavailable layer-token evidence.");
         const structureList = structure.locator(".usage-structure-list");
         if ((await structureList.count()) > 0 && (await structureList.innerText()).includes("%")) throw new Error("Context structure must not imply token shares from item-count evidence.");
-        if ((await structure.locator(".usage-structure-bar, .usage-report-unavailable").count()) !== 1) throw new Error("Context structure must render a count chart or an unavailable state.");
+        if ((await structure.locator(".usage-structure-bar").count()) !== 0) throw new Error("Context structure item counts must not render as a proportional composition bar.");
+        if ((await structure.locator(".usage-structure-list, .usage-report-unavailable").count()) !== 1) throw new Error("Context structure must render a count inventory or an unavailable state.");
+        const explorer = panel.locator("[data-usage-explorer]");
+        if (await explorer.evaluate((element) => element.classList.contains("short-session"))) {
+          if ((await panel.locator(".usage-overview, .usage-window-toolbar").count()) !== 0) throw new Error("Short Sessions must omit duplicate Overview and window controls.");
+        } else {
+          if ((await panel.locator(".usage-overview, .usage-window-toolbar").count()) !== 2) throw new Error("Long Sessions must retain Overview and window controls.");
+          const startRange = panel.locator('[data-usage-window-edge="start"]');
+          const beforeStart = Number(await startRange.inputValue());
+          const minStart = Number(await startRange.getAttribute("min"));
+          const selectedBefore = await panel.locator(".usage-response-row[aria-selected=true]").getAttribute("data-usage-response-position");
+          await startRange.focus();
+          await page.keyboard.press(beforeStart > minStart ? "ArrowLeft" : "ArrowRight");
+          await page.waitForTimeout(100);
+          const afterStart = Number(await panel.locator('[data-usage-window-edge="start"]').inputValue());
+          const selectedAfter = await panel.locator(".usage-response-row[aria-selected=true]").getAttribute("data-usage-response-position");
+          if (afterStart === beforeStart) throw new Error("Start range must preserve native Arrow-key adjustment.");
+          if (selectedAfter !== selectedBefore) throw new Error("Range Arrow keys must not change the selected Response.");
+        }
         const overviewTurns = panel.locator("[data-usage-overview-turn-marker]");
         const overviewTurnCount = await overviewTurns.count();
         if (overviewTurnCount > 0) {
@@ -205,11 +229,28 @@ async function surfacesFor(page) {
           if ((await overviewChart.getAttribute("tabindex")) !== "0") throw new Error("Overview must expose one composite keyboard stop for linked prompts.");
           const firstPromptMarker = overviewTurns.first();
           const responsePosition = await firstPromptMarker.getAttribute("data-usage-response-position");
-          await firstPromptMarker.locator(".usage-overview-turn-hit").hover();
-          if ((await firstPromptMarker.locator(".usage-overview-prompt-tooltip").evaluate((tooltip) => getComputedStyle(tooltip).opacity)) !== "1") {
-            throw new Error("Overview prompt tooltip must be visible on hover.");
+          if ((page.viewportSize()?.width ?? 0) <= 520) {
+            const promptActions = panel.locator(".usage-overview-prompt-actions button");
+            if ((await promptActions.count()) !== overviewTurnCount) throw new Error("Narrow Overview must expose one touch action per linked prompt.");
+            if ((await panel.locator('.usage-overview-prompt-actions button[tabindex="0"]').count()) !== 0) throw new Error("Narrow prompt actions must not duplicate the Overview keyboard stop.");
+            if ((await panel.locator('.usage-overview-prompt-actions button[aria-pressed="true"]').count()) !== 1) throw new Error("Narrow prompt actions must expose the linked turn's selected state.");
+            const undersized = await promptActions.evaluateAll((buttons) => buttons.filter((button) => {
+              const rect = button.getBoundingClientRect();
+              return rect.width < 44 || rect.height < 44;
+            }).length);
+            if (undersized > 0) throw new Error("Narrow linked-prompt actions must be at least 44px in both dimensions.");
+            await promptActions.first().click();
+            if ((await panel.locator(".usage-overview-prompt-actions button").first().getAttribute("aria-pressed")) !== "true") {
+              throw new Error("Narrow prompt actions must update the selected turn after activation.");
+            }
+          } else {
+            await firstPromptMarker.locator(".usage-overview-turn-hit").hover();
+            await page.waitForTimeout(150);
+            if ((await firstPromptMarker.locator(".usage-overview-prompt-tooltip").evaluate((tooltip) => getComputedStyle(tooltip).opacity)) !== "1") {
+              throw new Error("Overview prompt tooltip must be visible on hover.");
+            }
+            await firstPromptMarker.locator(".usage-overview-turn-hit").click();
           }
-          await firstPromptMarker.locator(".usage-overview-turn-hit").click();
           if (responsePosition !== await panel.locator(".usage-response-row[aria-selected=true]").getAttribute("data-usage-response-position")) {
             throw new Error("Overview prompt markers must select their linked response.");
           }
@@ -227,10 +268,14 @@ async function surfacesFor(page) {
         if ((await back.count()) > 0 && await back.isVisible()) {
           await back.click();
           await page.waitForFunction(() => !new URLSearchParams(location.search).has("session-mode"));
+          await page.waitForFunction(() => document.querySelector('[data-session-mode-panel="trace"]') === document.activeElement);
         }
         const replay = page.locator(".session-mode-tabs button", { hasText: "Replay" }).first();
         if ((await replay.count()) === 0) return "skip";
-        await replay.click();
+        const trace = page.locator(".session-mode-tabs button", { hasText: "Trace" }).first();
+        await trace.focus();
+        await page.keyboard.press("ArrowRight");
+        await page.waitForFunction(() => new URLSearchParams(location.search).get("session-mode") === "replay");
         await page.waitForTimeout(500);
         return undefined;
       },

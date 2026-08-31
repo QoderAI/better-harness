@@ -315,7 +315,8 @@
     const minSize = Math.min(USAGE_MIN_WINDOW_SIZE,points.length);
     const previous = state.usageExplorer.get(session.sessionId);
     const lastCycleBoundary = points.reduce((latest,point,index) => ['shrink','model-change'].includes(point.boundary) ? index : latest,-1);
-    const defaultStart = lastCycleBoundary >= 0 && points.length - lastCycleBoundary >= minSize ? lastCycleBoundary : points.length - defaultSize;
+    const lastCycleLength = lastCycleBoundary >= 0 ? points.length - lastCycleBoundary : 0;
+    const defaultStart = lastCycleBoundary >= 0 && lastCycleLength >= minSize && lastCycleLength <= defaultSize ? lastCycleBoundary : points.length - defaultSize;
     let start = Math.max(0,Math.min(Math.max(0,points.length - minSize),Number.isInteger(previous?.start) ? previous.start : defaultStart));
     let end = Math.max(start,Math.min(points.length,Number.isInteger(previous?.end) ? previous.end : start + defaultSize));
     if (end - start < minSize) {
@@ -411,6 +412,7 @@
     const brushX = overviewX(entries[explorer.start]);
     const brushEnd = overviewX(entries[Math.min(entries.length - 1,explorer.end - 1)]);
     const promptEntries = usageTurnEntries(entries);
+    const activePromptPosition = explorer.selected < 0 ? undefined : promptEntries.reduce((active,entry) => entry.position <= explorer.selected ? entry.position : active,undefined);
     const overviewTurns = promptEntries.map(entry => {
       const markerX = overviewX(entry);
       const label = Number.isFinite(entry.point.turnIndex) ? 'T' + entry.point.turnIndex : 'P';
@@ -419,12 +421,11 @@
       const chipX = Math.max(padX + halfWidth,Math.min(width - padX - halfWidth,markerX));
       const tooltipWidth = 250;
       const tooltipX = Math.max(padX,Math.min(width - padX - tooltipWidth,markerX - tooltipWidth / 2));
-      const hitX = markerX - 7;
-      const hitRight = markerX + 7;
+      const hitX = markerX - 11;
+      const hitRight = markerX + 11;
       const detail = usagePointDetail(entry.point,usagePromptFor(session,entry.point));
-      const selectedTurn = explorer.points[explorer.selected]?.turnIndex;
-      const selected = entry.position === explorer.selected || Number.isFinite(selectedTurn) && entry.point.turnIndex === selectedTurn;
-      return '<g class="usage-overview-turn-marker' + (selected ? ' selected' : '') + '" data-usage-overview-turn-marker data-usage-response-position="' + entry.position + '"><title>' + escape(detail.primary + '. ' + detail.secondary) + '</title><rect class="usage-overview-turn-hit" x="' + hitX + '" y="16" width="' + (hitRight - hitX) + '" height="34"></rect><line class="usage-overview-turn" x1="' + markerX + '" x2="' + markerX + '" y1="24" y2="78"></line><rect class="usage-overview-turn-chip" x="' + (chipX - halfWidth) + '" y="17" width="' + chipWidth + '" height="12" rx="2"></rect><text class="usage-overview-turn-label" x="' + chipX + '" y="26" text-anchor="middle">' + escape(label) + '</text><foreignObject class="usage-overview-prompt-tooltip" x="' + tooltipX + '" y="12" width="' + tooltipWidth + '" height="38"><div role="tooltip"><strong>' + escape(detail.primary) + '</strong><span>' + escape(detail.secondary) + '</span></div></foreignObject></g>';
+      const selected = entry.position === activePromptPosition;
+      return '<g class="usage-overview-turn-marker' + (selected ? ' selected' : '') + '" data-usage-overview-turn-marker data-usage-response-position="' + entry.position + '"><title>' + escape(detail.primary + '. ' + detail.secondary) + '</title><rect class="usage-overview-turn-hit" x="' + hitX + '" y="8" width="' + (hitRight - hitX) + '" height="44"></rect><line class="usage-overview-turn" x1="' + markerX + '" x2="' + markerX + '" y1="24" y2="78"></line><rect class="usage-overview-turn-chip" x="' + (chipX - halfWidth) + '" y="17" width="' + chipWidth + '" height="12" rx="2"></rect><text class="usage-overview-turn-label" x="' + chipX + '" y="26" text-anchor="middle">' + escape(label) + '</text><foreignObject class="usage-overview-prompt-tooltip" x="' + tooltipX + '" y="12" width="' + tooltipWidth + '" height="38"><div role="tooltip"><strong>' + escape(detail.primary) + '</strong><span>' + escape(detail.secondary) + '</span></div></foreignObject></g>';
     }).join('');
     const overviewEvents = entries.filter(entry => ['shrink','model-change'].includes(entry.point.boundary)).map(entry => '<path class="usage-overview-event boundary-' + entry.point.boundary + '" d="M' + overviewX(entry) + ' 82 l4 4 -4 4 -4 -4z"></path>').join('');
     const selectedEntry = entries[explorer.selected] ?? null;
@@ -436,7 +437,7 @@
       const detail = usagePointDetail(entry.point,usagePromptFor(session,entry.point));
       const marker = entry.point.boundary === 'shrink' ? '<path class="usage-focus-event boundary-shrink" d="M' + markerX + ' 147 l4 4 -4 4 -4 -4z"></path>'
         : '<rect class="usage-focus-event boundary-model-change" x="' + (markerX - 4) + '" y="147" width="8" height="8"></rect>';
-      return '<g data-usage-response-position="' + entry.position + '"><title>' + escape(detail.primary + '. ' + detail.secondary) + '</title><rect class="usage-chart-point-hit" x="' + (markerX - 8) + '" y="140" width="16" height="22"></rect>' + marker + '</g>';
+      return '<g data-usage-response-position="' + entry.position + '"><title>' + escape(detail.primary + '. ' + detail.secondary) + '</title><rect class="usage-chart-point-hit" x="' + (markerX - 12) + '" y="128" width="24" height="44"></rect>' + marker + '</g>';
     }).join('');
     const processedVisible = visible.some(entry => Number.isFinite(entry.point.processedTokens));
     const columns = processedVisible ? ' with-processed' : '';
@@ -450,9 +451,20 @@
     const last = visible.at(-1)?.point.index;
     const timed = entries.filter(entry => formatStamp(entry.point.timestamp));
     const timeRange = timed.length > 1 ? formatStamp(timed[0].point.timestamp) + ' → ' + formatStamp(timed.at(-1).point.timestamp) + ' UTC' : 'Response timestamps unavailable';
-    return '<div class="usage-linked-explorer" data-usage-explorer="' + escape(session.sessionId) + '"><div class="usage-overview"><div class="chart-toolbar"><span class="chart-basis">Overview · ' + entries.length + ' responses · ' + promptEntries.length + ' linked prompts</span><span class="chart-range">' + escape(timeRange) + '</span></div><svg data-usage-overview-chart tabindex="0" viewBox="0 0 ' + width + ' ' + overviewHeight + '" role="img" aria-label="Complete retained context progression. Use Left and Right arrows to move between linked prompts."><rect class="usage-overview-surface" data-usage-overview-surface x="' + padX + '" y="8" width="' + (width - padX * 2) + '" height="88"></rect><rect class="usage-overview-brush" x="' + brushX + '" y="8" width="' + Math.max(6,brushEnd - brushX) + '" height="88"></rect>' + overviewPaths + overviewTurns + overviewEvents + '<rect class="usage-overview-handle start" data-usage-window-handle="start" x="' + (brushX - 4) + '" y="52" width="8" height="44"></rect><rect class="usage-overview-handle end" data-usage-window-handle="end" x="' + (brushEnd - 4) + '" y="52" width="8" height="44"></rect><text x="' + padX + '" y="14">' + escape(formatTokenCount(overviewMax)) + '</text><text x="' + padX + '" y="102">' + escape(formatTokenCount(overviewMin)) + '</text></svg></div>'
-      + '<div class="usage-window-toolbar"><div class="usage-window-summary"><strong>Responses ' + first + '–' + last + '</strong><span>' + visible.length + ' of ' + entries.length + '</span></div><button type="button" data-usage-window-step="-1"' + (explorer.start === 0 ? ' disabled' : '') + '>Previous window</button><div class="usage-window-edge-controls"><label>Start<input type="range" min="0" max="' + Math.max(0,explorer.end - explorer.minSize) + '" value="' + explorer.start + '" data-usage-window-edge="start" aria-label="Visible response window start"></label><label>End<input type="range" min="' + Math.min(entries.length,explorer.start + explorer.minSize) + '" max="' + entries.length + '" value="' + explorer.end + '" data-usage-window-edge="end" aria-label="Visible response window end"></label></div><button type="button" data-usage-window-step="1"' + (explorer.end === entries.length ? ' disabled' : '') + '>Next window</button></div>'
-      + '<div class="usage-focus-layout"><div class="usage-context-chart"><div class="chart-toolbar"><span class="chart-basis">Focus · Responses ' + first + '–' + last + '</span><span class="chart-range">Arrow keys move · Enter selects · Esc clears</span></div><svg class="usage-focus-chart" data-usage-focus-surface tabindex="0" viewBox="0 0 ' + width + ' ' + focusHeight + '" role="img" aria-label="Focused context progression for responses ' + first + ' through ' + last + '"><rect class="usage-focus-surface" x="' + padX + '" y="8" width="' + (width - padX * 2) + '" height="158"></rect>' + [0,.5,1].map(ratio => { const lineY = focusTop + ratio * (focusBottom - focusTop); return '<line class="usage-chart-grid" x1="' + padX + '" x2="' + (width - padX) + '" y1="' + lineY + '" y2="' + lineY + '"></line>'; }).join('') + focusPaths + crosshair + focusEvents + '<text x="' + padX + '" y="' + (focusTop - 4) + '">' + escape(formatTokenCount(focusMax)) + '</text><text x="' + padX + '" y="172">' + escape(formatTokenCount(focusMin)) + '</text></svg><div class="usage-chart-legend"><span><i class="growth"></i>Context snapshot</span><span><i class="shrink"></i>Context shrink/reset</span><span><i class="boundary"></i>Model boundary</span></div></div>' + usageResponseDetailMarkup(session,selectedEntry?.point) + '</div>'
+    const hasWindowControls = entries.length > USAGE_WINDOW_SIZE;
+    const promptLabel = promptEntries.length === 1 ? 'linked prompt' : 'linked prompts';
+    const promptActions = '<div class="usage-overview-prompt-actions" aria-label="Linked prompt navigation">' + promptEntries.map(entry => {
+      const label = Number.isFinite(entry.point.turnIndex) ? 'T' + entry.point.turnIndex : 'P';
+      const detail = usagePointDetail(entry.point,usagePromptFor(session,entry.point));
+      const selected = entry.position === activePromptPosition;
+      return '<button' + (selected ? ' class="selected"' : '') + ' type="button" tabindex="-1" aria-pressed="' + selected + '" data-usage-response-position="' + entry.position + '" aria-label="' + escape(detail.primary + '. ' + detail.secondary) + '">' + escape(label) + '</button>';
+    }).join('') + '</div>';
+    const overviewMarkup = hasWindowControls
+      ? '<div class="usage-overview"><div class="chart-toolbar"><span class="chart-basis">Overview · ' + entries.length + ' responses · ' + promptEntries.length + ' ' + promptLabel + '</span><span class="chart-range">' + escape(timeRange) + '</span></div><svg data-usage-overview-chart tabindex="' + (promptEntries.length ? '0' : '-1') + '" data-usage-prompt-count="' + promptEntries.length + '" viewBox="0 0 ' + width + ' ' + overviewHeight + '" role="group" aria-roledescription="Interactive context chart" aria-label="' + (promptEntries.length ? 'Complete retained context progression. Arrow keys select linked prompts.' : 'Complete retained context progression. No linked prompts were retained for keyboard navigation.') + '"><rect class="usage-overview-surface" data-usage-overview-surface x="' + padX + '" y="8" width="' + (width - padX * 2) + '" height="88"></rect><rect class="usage-overview-brush" x="' + brushX + '" y="8" width="' + Math.max(6,brushEnd - brushX) + '" height="88"></rect>' + overviewPaths + overviewTurns + overviewEvents + '<rect class="usage-overview-handle-hit start" data-usage-window-handle="start" x="' + (brushX - 11) + '" y="48" width="22" height="48"></rect><rect class="usage-overview-handle start" x="' + (brushX - 4) + '" y="52" width="8" height="44"></rect><rect class="usage-overview-handle-hit end" data-usage-window-handle="end" x="' + (brushEnd - 11) + '" y="48" width="22" height="48"></rect><rect class="usage-overview-handle end" x="' + (brushEnd - 4) + '" y="52" width="8" height="44"></rect><text x="' + padX + '" y="14">' + escape(formatTokenCount(overviewMax)) + '</text><text x="' + padX + '" y="102">' + escape(formatTokenCount(overviewMin)) + '</text></svg>' + promptActions + '</div>'
+      + '<div class="usage-window-toolbar"><div class="usage-window-summary"><strong>Responses ' + first + '–' + last + '</strong><span>' + visible.length + ' of ' + entries.length + '</span></div><button type="button" data-usage-window-step="-1"' + (explorer.start === 0 ? ' disabled' : '') + '>Previous window</button><div class="usage-window-edge-controls"><label>Start<input type="range" min="0" max="' + Math.max(0,explorer.end - explorer.minSize) + '" value="' + explorer.start + '" data-usage-window-edge="start" aria-label="Visible response window start" aria-valuetext="Response ' + first + '"></label><label>End<input type="range" min="' + Math.min(entries.length,explorer.start + explorer.minSize) + '" max="' + entries.length + '" value="' + explorer.end + '" data-usage-window-edge="end" aria-label="Visible response window end" aria-valuetext="Response ' + last + '"></label></div><button type="button" data-usage-window-step="1"' + (explorer.end === entries.length ? ' disabled' : '') + '>Next window</button></div>'
+      : '';
+    return '<div class="usage-linked-explorer ' + (hasWindowControls ? 'has-window-controls' : 'short-session') + '" data-usage-explorer="' + escape(session.sessionId) + '">' + overviewMarkup
+      + '<div class="usage-focus-layout"><div class="usage-context-chart"><div class="chart-toolbar"><span class="chart-basis">' + (hasWindowControls ? 'Focus · ' : '') + 'Responses ' + first + '–' + last + '</span><span class="chart-range">Arrow keys select · Esc clears</span></div><svg class="usage-focus-chart" data-usage-focus-surface tabindex="0" viewBox="0 0 ' + width + ' ' + focusHeight + '" role="group" aria-roledescription="Interactive context chart" aria-label="Context progression for responses ' + first + ' through ' + last + '"><rect class="usage-focus-surface" x="' + padX + '" y="8" width="' + (width - padX * 2) + '" height="158"></rect>' + [0,.5,1].map(ratio => { const lineY = focusTop + ratio * (focusBottom - focusTop); return '<line class="usage-chart-grid" x1="' + padX + '" x2="' + (width - padX) + '" y1="' + lineY + '" y2="' + lineY + '"></line>'; }).join('') + focusPaths + crosshair + focusEvents + '<text x="' + padX + '" y="' + (focusTop - 4) + '">' + escape(formatTokenCount(focusMax)) + '</text><text x="' + padX + '" y="172">' + escape(formatTokenCount(focusMin)) + '</text></svg><div class="usage-chart-legend"><span><i class="growth"></i>Context snapshot</span><span><i class="shrink"></i>Context shrink/reset</span><span><i class="boundary"></i>Model boundary</span></div></div>' + usageResponseDetailMarkup(session,selectedEntry?.point) + '</div>'
       + '<div class="usage-response-table" role="listbox" aria-label="Responses ' + first + ' through ' + last + '">' + header + '<ol>' + rows + '</ol></div></div>';
   };
   const processingBreakdownMarkup = (usage,usageReport) => {
@@ -477,8 +489,7 @@
     if (Number.isFinite(usageReport.currentContextTokens)) metrics.push([formatTokenCount(usageReport.currentContextTokens),'Latest observed context']);
     else if (context.hasPercentFull) metrics.push([context.percentFull + '%','Latest observed occupancy']);
     if (cacheReuse) metrics.push([cacheReuse.status === 'observed' ? cacheReuse.reusePercent + '%' : formatTokenCount(cacheReuse.cacheReadTokens),'Input reused']);
-    if (Number.isFinite(usageReport.processedTokens)) metrics.push([formatTokenCount(usageReport.processedTokens),'Session processed']);
-    else if (Number.isFinite(usageReport.providerTotalTokens)) metrics.push([formatTokenCount(usageReport.providerTotalTokens),'Provider total']);
+    metrics.push([Number.isFinite(usageReport.processedTokens) ? formatTokenCount(usageReport.processedTokens) : 'not derived','Session processed']);
     if (usageReport.actualModelCalls > 0) metrics.push([String(usageReport.actualModelCalls),'Model calls']);
     const contextMarkup = context.hasContextWindow ? contextBarMarkup(context,context.percentFull + '% of the observed context window is full')
       : context.hasPercentFull ? occupancyBarMarkup(context.percentFull,context.percentFull + '% context occupancy observed; window size unavailable') : '';
@@ -502,8 +513,6 @@
     const runtime = session.runtime;
     const compactionCount = Number(session.contextManifest?.compactionCount) || 0;
     const compactionNote = compactionCount > 0 ? ' Provider reported ' + compactionCount + ' compaction boundar' + (compactionCount === 1 ? 'y' : 'ies') + '.' : '';
-    const progressionContexts = (usageReport.progression ?? []).map(point => point.contextTokens).filter(Number.isFinite);
-    const peakContextTokens = progressionContexts.length ? Math.max(...progressionContexts) : null;
     const contextBoundaryBadge = compactionCount > 0
       ? compactionCount + ' compaction' + (compactionCount === 1 ? '' : 's')
       : usageReport.contextResetCount > 0 ? usageReport.contextResetCount + ' reset' + (usageReport.contextResetCount === 1 ? '' : 's') : '';
@@ -519,21 +528,18 @@
       : context.hasPercentFull ? occupancyBarMarkup(context.percentFull,context.percentFull + '% context occupancy observed; window size unavailable') : '';
     const occupancyHeading = '<span>Latest observed context</span>' + (contextBoundaryBadge ? '<em class="usage-summary-compactions" title="' + escape(contextBoundaryTitle) + '">' + escape(contextBoundaryBadge) + '</em>' : '');
     const occupancy = context.hasContextWindow
-      ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>' + formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + context.percentFull + '% full</small>' + occupancyBar
+      ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>' + formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + context.percentFull + '% full</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>' + occupancyBar
       : context.hasPercentFull
-        ? '<strong>' + context.percentFull + '%</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>Window size not observed</small>' + occupancyBar
+        ? '<strong>' + context.percentFull + '%</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>Window size not observed</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>' + occupancyBar
         : context.hasUsedTokens
-          ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>Context window not observed</small>'
-          : '<strong>—</strong><div class="usage-summary-tile-heading"><span>Occupancy unavailable</span></div><small>No observed context evidence</small>';
+          ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>Context window not observed</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>'
+          : '<strong>—</strong><div class="usage-summary-tile-heading"><span>Occupancy unavailable</span></div><small>No observed context evidence</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>';
     const reuseDetail = cacheReuse?.status === 'observed' && Number.isFinite(cacheReuse.promptInputTokens)
       ? formatTokenCount(cacheReuse.cacheReadTokens) + ' cached · ' + formatTokenCount(cacheReuse.uncachedInputTokens) + ' uncached'
       : cacheReuse ? formatTokenCount(cacheReuse.cacheReadTokens) + ' cached · rate unavailable' : 'No observed cache evidence';
     const reuseTile = '<div class="usage-report-reuse-tile"><dt>Input reused</dt><dd><strong>'
       + escape(cacheReuse ? (cacheReuse.status === 'observed' ? cacheReuse.reusePercent + '%' : 'rate unavailable') : 'not observed')
       + '</strong>' + (cacheReuse ? cacheReuseBarMarkup(cacheReuse) : '') + '<small>' + escape(reuseDetail) + '</small></dd></div>';
-    const processedOrPeak = Number.isFinite(usageReport.processedTokens)
-      ? fact('Session processed',formatTokenCount(usageReport.processedTokens))
-      : fact('Peak context',Number.isFinite(peakContextTokens) ? formatTokenCount(peakContextTokens) : 'not observed');
     const duplicateEvidence = usageReport.duplicateRecordsCollapsed > 0
       ? fact('Duplicates collapsed',String(usageReport.duplicateRecordsCollapsed)) + fact('Conflicting duplicates',String(usageReport.conflictingDuplicateRecords ?? 0))
       : '';
@@ -542,20 +548,20 @@
     const evidenceSource = usage?.source ?? session.contextManifest?.source ?? 'not observed';
     const evidenceGroup = (label,facts) => '<div class="usage-evidence-group"><strong class="usage-evidence-group-title">' + escape(label) + '</strong><dl class="usage-report-facts">' + facts + '</dl></div>';
     const evidenceCoverage = usage?.coverage ?? session.contextManifest?.status ?? 'unobserved';
-    const evidenceDetails = '<section class="usage-report-evidence" aria-label="Evidence details"><div class="usage-evidence-groups">'
+    const evidenceDetails = '<details class="usage-report-evidence"><summary><span>Evidence &amp; methodology</span><small>Runtime, provenance, accounting basis, and static-snapshot boundaries</small></summary><div class="usage-evidence-groups">'
       + evidenceGroup('Observability',fact('Coverage',evidenceCoverage) + fact('Snapshot',freshness.evidence) + fact('Time basis',session.timestampBasis ?? 'unobserved') + fact('Raw context','omitted'))
       + evidenceGroup('Runtime',fact('Provider',evidenceProvider) + fact('Effort',runtime?.effort ?? 'not observed') + fact('CLI',runtime?.cliVersion ?? 'not observed'))
       + evidenceGroup('Accounting',fact('Context basis',evidenceContextBasis) + fact('Processed basis',usageReport.processedTokensBasis ?? 'not derived') + (usageReport.processedCoverage ? fact('Processed coverage',usageReport.processedCoverage) : ''))
       + evidenceGroup('Provenance',fact('Evidence source',evidenceSource) + duplicateEvidence)
-      + '</div></section>';
+      + '</div></details>';
     const structureLayers = (session.contextManifest?.layers ?? []).filter(layer => Number.isFinite(layer.itemCount) && layer.itemCount > 0);
     const structureTotal = structureLayers.reduce((sum,layer) => sum + layer.itemCount,0);
     const structure = structureLayers.length
-      ? '<div class="usage-structure-bar" role="img" aria-label="Context structure by observed item count: ' + structureTotal + ' items across ' + structureLayers.length + ' layers">' + structureLayers.map((layer,index) => '<i class="category-' + (index % 8) + '" style="flex-grow:' + layer.itemCount + '" title="' + escape(layer.kind + ': ' + layer.itemCount + ' item' + (layer.itemCount === 1 ? '' : 's')) + '"></i>').join('') + '</div>'
-        + '<ul class="usage-structure-list">' + structureLayers.map((layer,index) => '<li><i class="category-' + (index % 8) + '"></i><span>' + escape(layer.kind) + '</span><strong>×' + layer.itemCount + '</strong></li>').join('') + '</ul>'
+      ? '<ul class="usage-structure-list count-only" aria-label="Context structure by observed item count: ' + structureTotal + ' items across ' + structureLayers.length + ' layers">' + structureLayers.map(layer => '<li><span>' + escape(layer.kind) + '</span><strong>×' + layer.itemCount + '</strong><small>' + escape(layer.kind + ': ' + layer.itemCount + ' item' + (layer.itemCount === 1 ? '' : 's')) + '</small></li>').join('') + '</ul>'
       : '<p class="usage-report-unavailable">Context-layer counts were not observed.</p>';
     return '<section class="session-mode-panel usage-report" aria-label="Usage report" data-session-mode-panel="usage" hidden>'
-      + '<header class="usage-report-lead"><h3 class="visually-hidden">Usage report</h3>' + evidenceDetails + '<aside class="usage-report-summary" aria-label="Session usage summary"><div class="usage-report-occupancy">' + occupancy + '</div><dl class="usage-report-lead-facts">' + reuseTile + fact('Baseline context',Number.isFinite(usageReport.baselineContextTokens) ? formatTokenCount(usageReport.baselineContextTokens) : 'not observed') + fact('Net vs baseline',Number.isFinite(usageReport.netContextDeltaTokens) ? formatSignedTokenCount(usageReport.netContextDeltaTokens) : 'not comparable') + processedOrPeak + fact('Model calls',usageReport.actualModelCalls ? String(usageReport.actualModelCalls) : 'not observed') + '</dl></aside></header>'
+      + '<header class="usage-report-lead"><div class="usage-report-heading"><h3>Usage report</h3><p>Latest observed Context Window, freshness, and progression for this retained Session.</p></div><aside class="usage-report-summary" aria-label="Session usage summary"><div class="usage-report-occupancy">' + occupancy + '</div><dl class="usage-report-lead-facts">' + reuseTile + fact('Baseline context',Number.isFinite(usageReport.baselineContextTokens) ? formatTokenCount(usageReport.baselineContextTokens) : 'not observed') + fact('Net vs baseline',Number.isFinite(usageReport.netContextDeltaTokens) ? formatSignedTokenCount(usageReport.netContextDeltaTokens) : 'not comparable') + fact('Session processed',Number.isFinite(usageReport.processedTokens) ? formatTokenCount(usageReport.processedTokens) : 'not derived') + fact('Model calls',usageReport.actualModelCalls ? String(usageReport.actualModelCalls) : 'not observed') + '</dl></aside><p class="usage-report-context-note">Cached input still occupies context. Provider caching can reduce cost or latency, but this report does not estimate savings.</p></header>'
+      + evidenceDetails
       + '<section class="usage-report-section"><header><div><h4>Context progression</h4><p>Absolute prompt snapshots across unique model responses. Deltas are net context change, not consumption.' + escape(progressionBoundaryNote(usageReport) + compactionNote) + '</p></div><strong>' + usageReport.actualModelCalls + ' unique calls</strong></header>' + usageExplorerMarkup(session) + '</section>'
       + processingBreakdownMarkup(usage,usageReport)
       + '<div class="usage-report-columns"><section class="usage-report-section"><header><div><h4>Provider accounting</h4><p>Observed provider counters. Labels preserve whether cached input is included or reported as a separate lane.</p></div></header><dl class="usage-report-facts">' + accounting + '</dl></section>'
@@ -1166,6 +1172,7 @@
     }
     const next = step === 'first' ? 0 : step === 'last' ? prompts.length - 1
       : Math.max(0,Math.min(prompts.length - 1,current + Number(step || 0)));
+    if (next === current) return;
     centerUsageSelection(session,prompts[next].position,{ focus:'overview' });
   }
 
@@ -1459,7 +1466,7 @@
       + projectionFact;
     const sessionOutline = '<aside class="session-sidebar" aria-label="Session outline"><header><div><strong>Session outline</strong><span>Read-only</span></div></header><section><h3>Cells</h3><select class="jump-select" data-session-jump>' + jumpOptions + '</select><div class="session-bulk"><button type="button" data-expand-tools="open">Expand process</button><button type="button" data-expand-tools="close">Collapse process</button></div></section><details class="session-filter-disclosure"><summary><span>Evidence filters</span><em>' + session.toolActivity.totalCalls + ' calls</em></summary><div class="session-filter-list"><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="prompts"><span>Prompts</span><em>' + turns.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="responses"><span>Results</span><em>' + responseCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="intermediate"><span>Intermediate</span><em>' + noteCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="usage"><span>Model usage</span><em>' + usageCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="commits"><span>Commits</span><em>' + commits.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="tools"><span>Tool calls</span><em>' + session.toolActivity.totalCalls + '</em></label>' + filters + '<label class="session-filter subtype"><input type="checkbox" checked data-session-file-filter><span>File paths</span><em>' + session.toolActivity.files.length + '</em></label></div></details><section class="session-outline-facts"><h3>Session</h3><dl>' + sessionFacts + '</dl></section>' + usageContextMarkup(session) + '</aside>';
     const overallActivity = session.toolActivity.totalCalls ? '<section class="session-overall-activity"><details class="session-axis-panel" data-session-axis><summary><span>Overall session activity <em>' + session.toolActivity.totalCalls + ' calls</em></span><small>All retained Turns and unplaced calls</small></summary><div class="session-axis" data-activity-chart="' + escape(session.sessionId) + '"></div></details></section>' : '';
-    const tracePanel = '<section class="session-mode-panel" id="session-panel-trace" role="tabpanel" aria-labelledby="session-tab-trace" data-session-mode-panel="trace">'
+    const tracePanel = '<section class="session-mode-panel" id="session-panel-trace" role="tabpanel" aria-labelledby="session-tab-trace" data-session-mode-panel="trace" tabindex="-1">'
       + '<div class="session-layout"><main class="session-notebook-main"><div class="session-timeline" aria-label="Session run cells">' + timeline + overallActivity + '</div></main>' + sessionOutline + '</div></section>';
     const replayPanel = '<section class="session-mode-panel replay-shell" id="session-panel-replay" role="tabpanel" aria-labelledby="session-tab-replay" data-session-mode-panel="replay" hidden>'
       + '<div class="replay-boundary"><strong>Read-only evidence playback</strong><span>Replay advances through retained evidence. It never reruns tools, resumes the host session, or invents missing time.</span></div>'
@@ -1675,7 +1682,7 @@
     if (state.replayPlaying && next === replay.events.length - 1) stopReplay();
   }
 
-  function setSessionMode(mode,{ updateHistory = true } = {}) {
+  function setSessionMode(mode,{ updateHistory = true, restoreFocus = false } = {}) {
     const next = mode === 'replay' || mode === 'usage' ? mode : 'trace';
     state.sessionMode = next;
     if (next !== 'replay') stopReplay();
@@ -1691,6 +1698,7 @@
     document.querySelectorAll('[data-session-mode-panel]').forEach(panel => { panel.hidden = panel.dataset.sessionModePanel !== next; });
     if (next === 'replay') renderReplay();
     if (next === 'usage') requestAnimationFrame(() => keepUsageSelectedRowVisible(document.querySelector('[data-usage-explorer]')));
+    if (next === 'trace' && restoreFocus) requestAnimationFrame(() => document.querySelector('[data-session-mode-panel="trace"]')?.focus({ preventScroll:true }));
     if (updateHistory) updateUrl();
   }
 
@@ -2163,6 +2171,8 @@
     }
     const openUsageReport = event.target.closest('[data-open-usage-report]');
     if (openUsageReport) { setSessionMode('usage'); return; }
+    const returnToTrace = event.target.closest('.usage-report-return');
+    if (returnToTrace) { setSessionMode('trace',{ restoreFocus:true }); return; }
     const sessionMode = event.target.closest('[data-session-mode]');
     if (sessionMode) { setSessionMode(sessionMode.dataset.sessionMode); return; }
     const replayIndexTab = event.target.closest('[data-replay-index-tab]');
@@ -2360,7 +2370,7 @@
 
   document.addEventListener('keydown', event => {
     const usageOverviewChart = event.target.closest?.('[data-usage-overview-chart]');
-    if (usageOverviewChart && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','Enter','Escape'].includes(event.key)) {
+    if (usageOverviewChart && Number(usageOverviewChart.dataset.usagePromptCount) > 0 && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','Escape'].includes(event.key)) {
       const session = usageSessionFor(usageOverviewChart);
       if (!session) return;
       if (event.key === 'Escape') {
@@ -2371,28 +2381,31 @@
       else if (event.key === 'End') moveUsagePromptSelection(session,'last');
       else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') moveUsagePromptSelection(session,-1);
       else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') moveUsagePromptSelection(session,1);
-      else moveUsagePromptSelection(session,0);
       event.preventDefault();
       event.stopPropagation();
       return;
     }
     const usageExplorer = event.target.closest?.('[data-usage-explorer]');
-    if (usageExplorer && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter','Escape'].includes(event.key)) {
+    const usageResponseRow = event.target.closest?.('.usage-response-row');
+    const usageNativeControl = event.target.closest?.('input, select, textarea, button');
+    if (usageExplorer && !usageNativeControl && (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','Escape'].includes(event.key) || usageResponseRow && event.key === 'Enter')) {
       const session = usageSessionFor(event.target);
       if (!session) return;
       if (event.key === 'Escape') {
         const explorer = usageExplorerState(session);
         state.usageExplorer.set(session.sessionId,{ start:explorer.start,end:explorer.end,selected:-1 });
-        refreshUsageExplorer(session,{ focus:event.target.closest('.usage-response-row') ? 'row' : 'chart' });
+        refreshUsageExplorer(session,{ focus:usageResponseRow ? 'row' : 'chart' });
       } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-        stepUsageSelection(session,-1,{ focus:event.target.closest('.usage-response-row') ? 'row' : 'chart' });
+        stepUsageSelection(session,-1,{ focus:usageResponseRow ? 'row' : 'chart' });
       } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-        stepUsageSelection(session,1,{ focus:event.target.closest('.usage-response-row') ? 'row' : 'chart' });
+        stepUsageSelection(session,1,{ focus:usageResponseRow ? 'row' : 'chart' });
+      } else if (event.key === 'Home' || event.key === 'End') {
+        const explorer = usageExplorerState(session);
+        setUsageSelection(session,event.key === 'Home' ? explorer.start : explorer.end - 1,{ focus:usageResponseRow ? 'row' : 'chart' });
       } else if (event.key === 'Enter') {
         const position = Number(event.target.closest('[data-usage-response-position]')?.dataset.usageResponsePosition);
         const explorer = usageExplorerState(session);
-        if (event.target.closest('[data-usage-overview-turn-marker]') && Number.isInteger(position)) centerUsageSelection(session,position);
-        else setUsageSelection(session,Number.isInteger(position) ? position : explorer.selected >= 0 ? explorer.selected : explorer.start,{ focus:event.target.closest('.usage-response-row') ? 'row' : 'chart' });
+        setUsageSelection(session,Number.isInteger(position) ? position : explorer.selected >= 0 ? explorer.selected : explorer.start,{ focus:usageResponseRow ? 'row' : 'chart' });
       }
       event.preventDefault();
       return;
