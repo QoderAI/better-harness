@@ -97,6 +97,37 @@ function insertBeforeTurnEnd(rows, events) {
   return output;
 }
 
+function makeAlpha1PackedRangeRows() {
+  const header = makeDshHeader({ parentSession: undefined, seedLength: undefined, origin: undefined,
+    delegationDepth: 0, agentPreset: undefined });
+  const storage = makePackedDshStorageRows().map((row) => ({ ...row, seq0: row.seq0 + 2 }));
+  const assistant = structuredClone(makeSupportedDshSessionRows()
+    .find((row) => row.type === "assistant/message"));
+  assistant.seq = 11;
+  assistant.time = header.createdAt + 2_000;
+  assistant.sourceEventSeqs = [[2, 10]];
+  return [
+    header,
+    makeDshEvent("turn/start", { turn: 1 }, { seq: 0, time: header.createdAt + 900 }),
+    makeDshEvent("step/start", { turn: 1, step: 1 }, { seq: 1, time: header.createdAt + 950 }),
+    ...storage,
+    assistant,
+    makeDshEvent("step/end", { turn: 1, step: 1 }, { seq: 12, time: header.createdAt + 2_010 }),
+    makeDshEvent("turn/end", { turn: 1, reason: { kind: "completed" } }, {
+      seq: 13, time: header.createdAt + 2_020,
+    }),
+  ];
+}
+
+function makeAlpha1MetadataEvent(type, header, seq, time) {
+  const data = type === "model/selection"
+    ? { provider: "fixture-provider", model: "fixture-model", reasoningEffort: "high" }
+    : type === "session-log-deepseek/delivery-accepted"
+      ? { sessionId: header.id, throughSeq: seq - 1 }
+      : { allowedModels: [{ provider: "fixture-provider", model: "fixture-model" }] };
+  return makeDshEvent(type, data, { seq, time });
+}
+
 function requestHeaderEvent({
   reason = "initial",
   config = { provider: "fixture-provider", model: "fixture-model" },
@@ -128,9 +159,10 @@ const PINNED_KNOWN_EVENT_TYPES = [
   "approval/policy", "assistant/chunk", "assistant/message", "command/done", "command/run",
   "compaction/end", "compaction/prune", "compaction/start", "compaction/summary",
   "feedback/record", "goal/change", "hook/invoked", "hook/result", "llm/retry",
-  "llm/retry-started", "permission/preset", "plan/mode", "request/context", "request/header",
+  "llm/retry-started", "model/selection", "permission/preset", "plan/mode", "request/context", "request/header",
   "sandbox/mode", "schedule/change", "session/end-seed", "session/title",
-  "session/title-llm-request", "step/end", "step/start", "subagent/descriptor", "todo/write",
+  "session/title-llm-request", "session-log-deepseek/delivery-accepted", "step/end", "step/start",
+  "subagent/descriptor", "subagent/model-selection-policy", "todo/write",
   "team/member", "team/message/delivered", "team/message/queued", "team/task",
   "tool-workflow/agent-end", "tool-workflow/agent-start", "tool-workflow/run-end",
   "tool-workflow/run-start", "tool/call", "tool/code-dispatch", "tool/code-dispatch-start",
@@ -372,6 +404,49 @@ test("all three pinned packed rows expand losslessly and malformed packed shapes
     const committedBoundary = makeDshEvent("turn/end", { turn: 1, reason: { kind: "completed" } }, { seq: 0 });
     assert.throws(() => decodeDshJsonl(encodeDshRawJsonl([header, row, committedBoundary])),
       (error) => ["DSH_MALFORMED_PACKED_ROW", "DSH_UNSUPPORTED_PACKED_ROW"].includes(error?.code));
+  }
+});
+
+test("alpha.1 storage provenance ranges expand before raw and zstd Session validation", () => {
+  const rows = makeAlpha1PackedRangeRows();
+  const raw = decodeDshJsonl(encodeDshRawJsonl(rows));
+  assert.deepEqual(raw.events[11].sourceEventSeqs, [2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(raw.events.map((event) => event.seq), raw.events.map((_, index) => index));
+
+  if (typeof zlib.zstdCompressSync !== "function" || typeof zlib.zstdDecompressSync !== "function"
+    || !Number.isSafeInteger(zlib.constants?.ZSTD_c_checksumFlag)) return;
+  const compressed = makeDshZstdArtifact([[rows[0]], rows.slice(1)]);
+  const zstd = decodeDshArtifact(compressed.artifact, { compressed: true });
+  assert.deepEqual(zstd.events, raw.events);
+});
+
+test("alpha.1 storage provenance accepts native mixed form while preserving scalar rc.2 order", () => {
+  const ranged = makeSupportedDshSessionRows();
+  ranged[5].sourceEventSeqs = [0, [1, 2]];
+  assert.deepEqual(decodeDshJsonl(encodeDshRawJsonl(ranged)).events[4].sourceEventSeqs, [0, 1, 2]);
+
+  const scalar = makeSupportedDshSessionRows();
+  scalar[5].sourceEventSeqs = [2, 0];
+  assert.deepEqual(decodeDshJsonl(encodeDshRawJsonl(scalar)).events[4].sourceEventSeqs, [2, 0]);
+});
+
+test("alpha.1 storage provenance ranges reject malformed or unsafe expansion", () => {
+  const invalid = [
+    [[2, 1]],
+    [[1]],
+    [[0, 1, 2]],
+    [["0", 2]],
+    [[0.5, 2]],
+    [[[0, 1], 2]],
+    [[0, 2], [2, 3]],
+    [[2, 3], 0],
+    [[0, 4]],
+    [[0, Number.MAX_SAFE_INTEGER]],
+  ];
+  for (const sourceEventSeqs of invalid) {
+    const rows = makeSupportedDshSessionRows();
+    rows[5].sourceEventSeqs = sourceEventSeqs;
+    assert.throws(() => decodeDshJsonl(encodeDshRawJsonl(rows)), stableError("DSH_EVENT_SHAPE_DRIFT"));
   }
 });
 
@@ -836,6 +911,84 @@ test("known unsupported and unknown ignorable events are accounted, while open t
   assert.equal(result.sessions[0].diagnostics.incompleteReason, "open-turn");
   assert.equal(result.warnings.some((warning) => warning.code === "dsh-incomplete-session"), true);
   assert.deepEqual(await readFile(written.filePath), before);
+});
+
+test.each([
+  "model/selection",
+  "session-log-deepseek/delivery-accepted",
+  "subagent/model-selection-policy",
+])("alpha.1 required metadata event %s is validated and accounted without normalization", async (type) => {
+  const base = makeSupportedDshSessionRows();
+  const turnEnd = base.at(-1);
+  const event = makeAlpha1MetadataEvent(type, base[0], turnEnd.seq, turnEnd.time - 1);
+  const rows = appendEvent(base, event);
+  const decoded = decodeDshJsonl(encodeDshRawJsonl(rows));
+  assert.equal(decoded.events.some((candidate) => candidate.type === type), true);
+  assert.equal(decoded.diagnostics.knownUnsupportedTypes.includes(type), true);
+
+  const root = await tempRoot("dsh-alpha1-metadata-");
+  const home = path.join(root, "home");
+  const workspace = path.join(root, "workspace");
+  rows[0].cwd = workspace;
+  await writeNestedDshArtifact({ dshHome: home, rows });
+  const { analyzer, scope, sessions } = await inventory(home, workspace);
+  const normalized = await analyzer.readSession(sessions[0], scope);
+  assert.equal(normalized.some((candidate) => candidate.nativeType === type), false);
+});
+
+test.each([
+  ["model/selection", { provider: "fixture-provider" }],
+  ["session-log-deepseek/delivery-accepted", { sessionId: "", throughSeq: 0 }],
+  ["subagent/model-selection-policy", { allowedModels: [] }],
+])("alpha.1 required metadata event %s rejects malformed payloads", (type, data) => {
+  const base = makeSupportedDshSessionRows();
+  const turnEnd = base.at(-1);
+  const rows = appendEvent(base, makeDshEvent(type, data, { seq: turnEnd.seq, time: turnEnd.time - 1 }));
+  assert.throws(() => decodeDshJsonl(encodeDshRawJsonl(rows)), stableError("DSH_EVENT_SHAPE_DRIFT"));
+});
+
+test.each([
+  ["foreign non-inherited session", (header, seq) => ({ sessionId: `${header.id}-foreign`, throughSeq: seq - 1 })],
+  ["equal watermark", (header, seq) => ({ sessionId: header.id, throughSeq: seq })],
+  ["future watermark", (header, seq) => ({ sessionId: header.id, throughSeq: seq + 1 })],
+])("alpha.1 delivery marker rejects %s", (_case, makeData) => {
+  const base = makeSupportedDshSessionRows({ parentSession: undefined, seedLength: undefined,
+    origin: undefined, delegationDepth: 0 });
+  const turnEnd = base.at(-1);
+  const event = makeDshEvent("session-log-deepseek/delivery-accepted", makeData(base[0], turnEnd.seq), {
+    seq: turnEnd.seq, time: turnEnd.time - 1,
+  });
+  assert.throws(() => decodeDshJsonl(encodeDshRawJsonl(appendEvent(base, event))),
+    stableError("DSH_EVENT_RELATIONSHIP_INVALID"));
+});
+
+test("alpha.1 delivery marker accepts inherited parent identity before seedLength", () => {
+  const rows = makeSupportedDshSessionRows({ sessionId: "fixture-child", parentSession: "fixture-parent",
+    seedLength: 2, origin: "subagent", delegationDepth: 1 });
+  rows.splice(2, 0, makeDshEvent("session-log-deepseek/delivery-accepted", {
+    sessionId: rows[0].parentSession,
+    throughSeq: 0,
+  }, { seq: 1, time: rows[1].time + 1 }));
+  rows.slice(1).forEach((event, index) => { event.seq = index; });
+  assert.doesNotThrow(() => decodeDshJsonl(encodeDshRawJsonl(rows)));
+});
+
+test("alpha.1 model-selection policy rejects duplicate provider and model routes", () => {
+  const base = makeSupportedDshSessionRows();
+  const turnEnd = base.at(-1);
+  const route = { provider: "fixture-provider", model: "fixture-model" };
+  const event = makeDshEvent("subagent/model-selection-policy", {
+    allowedModels: [route, { ...route }],
+  }, { seq: turnEnd.seq, time: turnEnd.time - 1 });
+  assert.throws(() => decodeDshJsonl(encodeDshRawJsonl(appendEvent(base, event))),
+    stableError("DSH_EVENT_SHAPE_DRIFT"));
+});
+
+test("alpha.1 compatibility keeps truly unknown required events fail closed", () => {
+  const base = makeSupportedDshSessionRows();
+  const turnEnd = base.at(-1);
+  const rows = appendEvent(base, makeUnknownRequiredDshEvent({ seq: turnEnd.seq, time: turnEnd.time - 1 }));
+  assert.throws(() => decodeDshJsonl(encodeDshRawJsonl(rows)), stableError("DSH_UNKNOWN_REQUIRED_EVENT"));
 });
 
 test("unknown ignorable events accept every JSON data class without projecting their payloads", async () => {
