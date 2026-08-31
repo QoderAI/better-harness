@@ -720,6 +720,7 @@
   .usage-summary-metrics div { min-width:0; display:grid; gap:2px; }
   .usage-summary-metrics dt { color:var(--color-text-subtle); font-size:12px; }
   .usage-summary-metrics dd { margin:0; overflow:hidden; color:var(--color-text); text-overflow:ellipsis; white-space:nowrap; font-size:17px; font-weight:750; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .usage-summary-freshness { margin:10px 0 0; color:var(--color-text-subtle); font-size:12px; line-height:16px; overflow-wrap:anywhere; }
   .usage-summary-boundary, .usage-summary-diagnostics { margin:8px 0 0; color:var(--color-text-muted); font-size:12px; line-height:17px; }
   .usage-summary-diagnostics { padding:6px 8px; color:var(--color-warning); background:var(--color-warning-surface); }
   .usage-summary-reuse { margin-top:14px; padding-top:12px; border-top:1px solid var(--color-border); }

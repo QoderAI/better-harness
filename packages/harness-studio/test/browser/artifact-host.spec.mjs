@@ -1183,7 +1183,8 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspector.getByRole("checkbox", { name: /Tool calls/u })).toBeChecked();
   const usageSummary = inspector.locator(".session-usage-summary");
   await expect(usageSummary).toContainText(/Provider total\s*198/u);
-  await expect(usageSummary).toContainText(/Current context\s*40/u);
+  await expect(usageSummary).toContainText(/Latest observed context\s*40/u);
+  await expect(usageSummary.locator(".usage-summary-freshness")).toHaveText(/Static snapshot · observed through 2026-08-20 (10|11):00:02 UTC/u);
   await expect(usageSummary).toContainText("40 / 100");
   const modelValue = inspector.locator(".session-outline-facts dd[title]");
   await expect(modelValue).toHaveAttribute("title", "claude-4.5-sonnet, claude-fable-5, claude-fable-5-thinking-high, composer-2.5-fast");
@@ -1214,6 +1215,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(usageReport).toContainText(/Model calls\s*2/u);
   await expect(usageReport).toContainText(/Provider reported 1 compaction boundary\./u);
   await expect(usageReport.locator(".usage-report-occupancy .usage-summary-compactions")).toHaveText("1 compaction");
+  await expect(usageReport.locator(".usage-report-occupancy")).toContainText("Latest observed context");
   await expect(usageReport.locator(".usage-report-occupancy .usage-context-bar")).toBeVisible();
   await expect(usageReport.locator(".usage-report-reuse-tile")).toContainText(/Input reused\s*rate unavailable\s*90 cached/u);
   await expect(usageReport.locator(".usage-reuse-section")).toHaveCount(0);
@@ -1264,6 +1266,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(evidenceDetails.locator(".usage-evidence-groups")).toBeVisible();
   await expect(evidenceDetails.locator(".usage-evidence-group")).toHaveCount(4);
   await expect(evidenceDetails).toContainText(/Coverage\s*observed/u);
+  await expect(evidenceDetails).toContainText(/Snapshot\s*observed through 2026-08-20 (10|11):00:02 UTC/u);
   await expect(evidenceDetails).toContainText(/Observability[\s\S]*Runtime[\s\S]*Accounting[\s\S]*Provenance/u);
   await expect(evidenceDetails).toContainText(/Raw context\s*omitted/u);
   await expect(usageReport.getByRole("img", { name: "Context structure by observed item count: 3 items across 2 layers" })).toBeVisible();

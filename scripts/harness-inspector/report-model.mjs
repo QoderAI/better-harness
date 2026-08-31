@@ -379,6 +379,14 @@ function timestampMs(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function projectUsageSnapshot(usageReport, generatedAt) {
+  const progression = Array.isArray(usageReport?.progression) ? usageReport.progression : [];
+  const observedAt = [...progression].reverse().find((point) => timestampMs(point?.timestamp) !== null)?.timestamp;
+  if (observedAt) return { status: "observed-through", timestamp: new Date(observedAt).toISOString() };
+  if (timestampMs(generatedAt) !== null) return { status: "generated-at", timestamp: new Date(generatedAt).toISOString() };
+  return { status: "unavailable" };
+}
+
 // Usage points and Turns are independent projections of the same transcript.
 // Join them only through observed time containment; response ordinal and array
 // position are intentionally not fallbacks because compaction and sampling can
@@ -1025,20 +1033,24 @@ export function buildHarnessInspectorReport({
   providers = [],
   filters = {},
   diagnostics = [],
+  generatedAt = new Date().toISOString(),
 } = {}) {
   const tree = safeTree(featureTree, repoRoot);
   const projectedSessions = sessions.map(projectSession).filter(Boolean);
   const commits = (correlation?.commits ?? []).map(projectCommit);
   const reportDiagnostics = diagnostics.map((item) => safeText(item, 240)).filter(Boolean);
   const stories = buildStoryLinks(tree, projectedSessions, commits, reportDiagnostics);
-  for (const session of projectedSessions) session.replay = buildSessionReplay(session, commits);
+  for (const session of projectedSessions) {
+    session.usageSnapshot = projectUsageSnapshot(session.usageReport, generatedAt);
+    session.replay = buildSessionReplay(session, commits);
+  }
   const stages = [...new Set(tree.nodes.map((node) => node.stage).filter(Boolean))].sort();
   const unmappedSessionIds = projectedSessions.filter((session) => session.storyLinks.length === 0).map((session) => session.sessionId);
 
   return {
     kind: HARNESS_INSPECTOR_REPORT_KIND,
     schemaVersion: HARNESS_INSPECTOR_REPORT_SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     workspace: { name: path.basename(repoRoot ?? "workspace") },
     presentation: {
       defaultCompactCommitEvidenceKinds: [...DEFAULT_COMPACT_COMMIT_EVIDENCE_KINDS],
