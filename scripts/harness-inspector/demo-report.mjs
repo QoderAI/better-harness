@@ -489,8 +489,8 @@ export function buildHarnessInspectorDemoReport() {
       sessionLimit: 3,
     },
     diagnostics: ["This deterministic public sample uses fictional English data and does not read a local workspace."],
+    generatedAt: HARNESS_INSPECTOR_DEMO_GENERATED_AT,
   });
-  report.generatedAt = HARNESS_INSPECTOR_DEMO_GENERATED_AT;
   return report;
 }
 

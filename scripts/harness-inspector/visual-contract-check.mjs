@@ -143,6 +143,15 @@ async function surfacesFor(page) {
         if ((await opener.count()) === 0) return "skip";
         await opener.click();
         await page.waitForTimeout(400);
+        const usageSummary = page.locator(".session-usage-summary");
+        if ((await usageSummary.count()) > 0) {
+          const freshness = await usageSummary.locator(".usage-summary-freshness").innerText();
+          if (!/^Static snapshot · (?:observed through|generated) \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC$|^Static snapshot · freshness unavailable$/u.test(freshness)) {
+            throw new Error("Session usage summary must disclose static-snapshot freshness.");
+          }
+          const metrics = await usageSummary.locator(".usage-summary-metrics").innerText();
+          if (/Current (?:context|occupancy)/u.test(metrics)) throw new Error("Session usage summary must label context as latest observed evidence.");
+        }
         return undefined;
       },
     },
@@ -167,6 +176,7 @@ async function surfacesFor(page) {
         if (!(await evidence.locator(".usage-evidence-groups").isVisible())) throw new Error("Evidence details groups must be visible by default.");
         if ((await evidence.locator(".usage-evidence-group").count()) !== 4) throw new Error("Evidence details must group facts into four diagnostic categories.");
         if (!/Coverage\s+(observed|partial|unobserved)/u.test(await evidence.innerText())) throw new Error("Coverage must remain an Observability fact rather than a KPI tile.");
+        if (!/Snapshot\s+(?:(?:observed through|generated) \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC|freshness unavailable)/u.test(await evidence.innerText())) throw new Error("Evidence details must disclose static-snapshot freshness.");
         if ((await panel.locator(".usage-reuse-section").count()) !== 0) throw new Error("Input reuse must be integrated into the KPI dashboard, not repeated as a full-width section.");
         if ((await panel.getByRole("heading", { name: "Current context composition" }).count()) !== 0) throw new Error("Current context composition must be integrated into the Current context tile.");
         const occupancy = panel.locator(".usage-report-occupancy");

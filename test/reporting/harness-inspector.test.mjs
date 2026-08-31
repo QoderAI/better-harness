@@ -683,6 +683,14 @@ test("Inspector projects usage and context metadata without raw context text", (
       },
       runtime: { modelProvider: "openai", cliVersion: "fixture-cli", effort: "high", raw: secret },
       timestampBasis: "native-event",
+      usageReport: buildUsageReport([{
+        model: "fixture-model",
+        contextTokens: 25,
+        windowTokens: 100,
+        percentFull: 25,
+        outputTokens: 8,
+        timestamp: "2026-08-12T08:42:17.000Z",
+      }]),
       contextManifest: {
         status: "observed",
         source: "codex-rollout-token-count",
@@ -724,6 +732,10 @@ test("Inspector projects usage and context metadata without raw context text", (
     reusePercent: 50,
   });
   assert.deepEqual(session.runtime, { modelProvider: "openai", cliVersion: "fixture-cli", effort: "high" });
+  assert.deepEqual(session.usageSnapshot, {
+    status: "observed-through",
+    timestamp: "2026-08-12T08:42:17.000Z",
+  });
   assert.deepEqual(session.contextManifest, {
     status: "observed",
     source: "codex-rollout-token-count",
@@ -865,6 +877,24 @@ test("Inspector projects the derived Usage report instead of recounting the boun
   assert.equal(Object.hasOwn(report.sessions[0].usageReport, "netContextDeltaTokens"), false);
   assert.equal(Object.hasOwn(report.sessions[0].usageReport, "providerTotalTokens"), false);
   assert.equal(Object.hasOwn(report.sessions[0], "usageDiagnostics"), false);
+  assert.deepEqual(report.sessions[0].usageSnapshot, {
+    status: "generated-at",
+    timestamp: report.generatedAt,
+  });
+});
+
+test("Inspector keeps Usage snapshot freshness explicitly unavailable without valid timestamps", () => {
+  const report = buildHarnessInspectorReport({
+    repoRoot: "/workspace/repo",
+    featureTree: parseFeatureTreeMarkdown(FEATURE_TREE),
+    sessions: [fixtureSession({
+      usageReport: buildUsageReport([{ model: "fixture-model", contextTokens: 25 }]),
+    })],
+    correlation: fixtureCorrelation(),
+    generatedAt: "not-a-timestamp",
+  });
+
+  assert.deepEqual(report.sessions[0].usageSnapshot, { status: "unavailable" });
 });
 
 test("Inspector links Usage points to prompts only through observed Turn time windows (AC-30)", () => {

@@ -148,6 +148,22 @@
   // so this renderer never invents a second "nothing observed" shape.
   const EMPTY_USAGE_REPORT = { actualModelCalls:0,duplicateRecordsCollapsed:0,conflictingDuplicateRecords:0,contextResetCount:0,modelBoundaryCount:0,progressionTotalCount:0,progressionTruncated:false,progression:[] };
   const sessionUsageReport = session => session?.usageReport ?? EMPTY_USAGE_REPORT;
+  const formatUsageSnapshotTime = value => {
+    const time = new Date(value ?? NaN);
+    return Number.isNaN(time.getTime()) ? null : time.toISOString().slice(0,19).replace('T',' ') + ' UTC';
+  };
+  const usageSnapshotFreshness = session => {
+    const projectedAt = formatUsageSnapshotTime(session?.usageSnapshot?.timestamp);
+    if (session?.usageSnapshot?.status === 'observed-through' && projectedAt) return { note:'Static snapshot · observed through ' + projectedAt,evidence:'observed through ' + projectedAt };
+    if (session?.usageSnapshot?.status === 'generated-at' && projectedAt) return { note:'Static snapshot · generated ' + projectedAt,evidence:'generated ' + projectedAt };
+    if (session?.usageSnapshot?.status === 'unavailable') return { note:'Static snapshot · freshness unavailable',evidence:'freshness unavailable' };
+    const progression = sessionUsageReport(session).progression ?? [];
+    const observedAt = [...progression].reverse().map(point => formatUsageSnapshotTime(point.timestamp)).find(Boolean);
+    if (observedAt) return { note:'Static snapshot · observed through ' + observedAt,evidence:'observed through ' + observedAt };
+    const generatedAt = formatUsageSnapshotTime(report.generatedAt);
+    if (generatedAt) return { note:'Static snapshot · generated ' + generatedAt,evidence:'generated ' + generatedAt };
+    return { note:'Static snapshot · freshness unavailable',evidence:'freshness unavailable' };
+  };
   const formatTokens = usage => {
     if (!usage) return 'token usage unavailable';
     if (Number.isFinite(usage.totalTokens)) return formatTokenCount(usage.totalTokens) + ' total tokens';
@@ -455,10 +471,11 @@
     const usage = session.tokenUsage;
     const context = usageContextPresentation(session);
     const usageReport = sessionUsageReport(session);
+    const freshness = usageSnapshotFreshness(session);
     const cacheReuse = session.cacheReuse;
     const metrics = [];
-    if (Number.isFinite(usageReport.currentContextTokens)) metrics.push([formatTokenCount(usageReport.currentContextTokens),'Current context']);
-    else if (context.hasPercentFull) metrics.push([context.percentFull + '%','Current occupancy']);
+    if (Number.isFinite(usageReport.currentContextTokens)) metrics.push([formatTokenCount(usageReport.currentContextTokens),'Latest observed context']);
+    else if (context.hasPercentFull) metrics.push([context.percentFull + '%','Latest observed occupancy']);
     if (cacheReuse) metrics.push([cacheReuse.status === 'observed' ? cacheReuse.reusePercent + '%' : formatTokenCount(cacheReuse.cacheReadTokens),'Input reused']);
     if (Number.isFinite(usageReport.processedTokens)) metrics.push([formatTokenCount(usageReport.processedTokens),'Session processed']);
     else if (Number.isFinite(usageReport.providerTotalTokens)) metrics.push([formatTokenCount(usageReport.providerTotalTokens),'Provider total']);
@@ -472,6 +489,7 @@
     const diagnostics = usageReport.duplicateRecordsCollapsed > 0 ? '<p class="usage-summary-diagnostics">' + usageReport.duplicateRecordsCollapsed + ' duplicate record' + (usageReport.duplicateRecordsCollapsed === 1 ? '' : 's') + ' collapsed' + (usageReport.conflictingDuplicateRecords > 0 ? ' · ' + usageReport.conflictingDuplicateRecords + ' conflict' + (usageReport.conflictingDuplicateRecords === 1 ? '' : 's') : '') + '</p>' : '';
     return '<section class="session-usage-summary" aria-labelledby="session-usage-summary-title"><header class="session-usage-head"><div><h3 id="session-usage-summary-title">Usage and context</h3><span>'
       + escape(usage?.coverage ?? session.contextManifest?.status ?? 'unobserved') + '</span></div><button class="usage-report-link" type="button" data-open-usage-report>View report</button></header>'
+      + '<p class="usage-summary-freshness">' + escape(freshness.note) + '</p>'
       + '<dl class="usage-summary-metrics">' + metrics.map(([value,label]) => '<div><dt>' + escape(label) + '</dt><dd>' + escape(value) + '</dd></div>').join('') + '</dl>'
       + contextMarkup + '<p class="usage-summary-boundary">' + escape(boundary) + '</p>' + cacheReuseSummaryMarkup(cacheReuse) + diagnostics + '</section>';
   };
@@ -479,6 +497,7 @@
     const usage = session.tokenUsage;
     const context = usageContextPresentation(session);
     const usageReport = sessionUsageReport(session);
+    const freshness = usageSnapshotFreshness(session);
     const cacheReuse = session.cacheReuse;
     const runtime = session.runtime;
     const compactionCount = Number(session.contextManifest?.compactionCount) || 0;
@@ -498,7 +517,7 @@
       .map(([label,value]) => fact(label,formatObservedTokenCount(value))).join('');
     const occupancyBar = context.hasContextWindow ? contextBarMarkup(context,context.percentFull + '% of the observed context window is full')
       : context.hasPercentFull ? occupancyBarMarkup(context.percentFull,context.percentFull + '% context occupancy observed; window size unavailable') : '';
-    const occupancyHeading = '<span>Latest context</span>' + (contextBoundaryBadge ? '<em class="usage-summary-compactions" title="' + escape(contextBoundaryTitle) + '">' + escape(contextBoundaryBadge) + '</em>' : '');
+    const occupancyHeading = '<span>Latest observed context</span>' + (contextBoundaryBadge ? '<em class="usage-summary-compactions" title="' + escape(contextBoundaryTitle) + '">' + escape(contextBoundaryBadge) + '</em>' : '');
     const occupancy = context.hasContextWindow
       ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>' + formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + context.percentFull + '% full</small>' + occupancyBar
       : context.hasPercentFull
@@ -524,7 +543,7 @@
     const evidenceGroup = (label,facts) => '<div class="usage-evidence-group"><strong class="usage-evidence-group-title">' + escape(label) + '</strong><dl class="usage-report-facts">' + facts + '</dl></div>';
     const evidenceCoverage = usage?.coverage ?? session.contextManifest?.status ?? 'unobserved';
     const evidenceDetails = '<section class="usage-report-evidence" aria-label="Evidence details"><div class="usage-evidence-groups">'
-      + evidenceGroup('Observability',fact('Coverage',evidenceCoverage) + fact('Time basis',session.timestampBasis ?? 'unobserved') + fact('Raw context','omitted'))
+      + evidenceGroup('Observability',fact('Coverage',evidenceCoverage) + fact('Snapshot',freshness.evidence) + fact('Time basis',session.timestampBasis ?? 'unobserved') + fact('Raw context','omitted'))
       + evidenceGroup('Runtime',fact('Provider',evidenceProvider) + fact('Effort',runtime?.effort ?? 'not observed') + fact('CLI',runtime?.cliVersion ?? 'not observed'))
       + evidenceGroup('Accounting',fact('Context basis',evidenceContextBasis) + fact('Processed basis',usageReport.processedTokensBasis ?? 'not derived') + (usageReport.processedCoverage ? fact('Processed coverage',usageReport.processedCoverage) : ''))
       + evidenceGroup('Provenance',fact('Evidence source',evidenceSource) + duplicateEvidence)

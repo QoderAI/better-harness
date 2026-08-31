@@ -177,6 +177,10 @@ export interface InspectorSession {
   tokenUsage?: InspectorTokenUsage;
   cacheReuse?: InspectorCacheReuse;
   usageReport?: InspectorUsageReport;
+  usageSnapshot?: {
+    status: "observed-through" | "generated-at" | "unavailable";
+    timestamp?: string;
+  };
   runtime?: { modelProvider?: string; cliVersion?: string; effort?: string } | null;
   contextManifest?: {
     status?: "observed" | "partial" | "unobserved";
