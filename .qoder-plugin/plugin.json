@@ -1,7 +1,7 @@
 {
   "name": "better-harness",
   "displayName": "Better Harness",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "Build an AI-ready engineering system for safe coding-agent delivery and continuous software improvement.",
   "descriptionZh": "构建面向 AI 的工程体系，让编码智能体安全地理解、变更、评审、报告并持续改进软件。",
   "author": {

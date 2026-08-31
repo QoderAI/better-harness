@@ -3,6 +3,44 @@
 This file records notable public changes to Better Harness. Entries describe
 observable behavior and compatibility, not every internal refactor.
 
+## 0.6.6 - 2026-08-31
+
+### Added
+
+- Harness Studio now provides a bilingual English and Simplified Chinese
+  workbench across Sessions, artifacts, experiments, comparisons, Git history,
+  customization, and Agent runs.
+
+- Studio can admit provider-native Canvas targets and hosted artifact intents,
+  read governed external resources, and retain adoption and interaction
+  provenance across revision-bound surfaces.
+
+- Harness Inspector deepens Session evidence with commit and file browsing,
+  prompt-cache gap cues, compact process outlines, and an overall activity
+  disclosure before individual events.
+
+### Changed
+
+- Usage and Context reporting leads with decision-relevant totals, separates
+  observed-through from report-generation time, and explains cache reuse and
+  unavailable evidence without presenting missing values as zero.
+
+- MCP review guidance distinguishes full and compact context-access patterns
+  and keeps pressure and evidence claims bounded to observed host behavior.
+
+### Fixed
+
+- DeepSeek Harness analysis accepts audited alpha.1 persistence variants while
+  preserving lifecycle, privacy, workspace-matching, and capability evidence
+  boundaries.
+
+- Native DeepSeek Harness smoke installs pin the Cordis peer floor required by
+  current sibling plugins, preventing dependency resolution failures before
+  smoke assertions run.
+
+- Inspector Session outlines, date summaries, cache cues, and linked usage
+  views remain readable and explicit across compact and wide layouts.
+
 ## 0.6.5 - 2026-08-29
 
 ### Added
