@@ -103,6 +103,8 @@ export const inspector: typeof enInspector = {
     jumpAria: "跳转到会话单元格",
     expandProcess: "展开过程",
     collapseProcess: "折叠过程",
+    expandShort: "展开",
+    collapseShort: "折叠",
     filtersSummary: "证据筛选",
     filterCalls: "{{count}} 次调用",
     filterLabels: {

@@ -1173,6 +1173,19 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(page).toHaveURL(/inspector-session=/u);
   await expect(inspector.locator(".session-cell[data-session-cell=run]")).toHaveCount(1);
   await expect(inspector.locator("details.session-process")).not.toHaveAttribute("open", "");
+  const sessionOutline = inspector.locator(".session-sidebar");
+  const sessionFacts = sessionOutline.locator("details.session-facts-disclosure");
+  await expect(sessionOutline.getByRole("heading", { name: "Cells" })).toHaveCount(0);
+  await expect(sessionFacts).not.toHaveAttribute("open", "");
+  await expect(sessionFacts.locator("summary")).toContainText("claude-4.5-sonnet +3");
+  const usageSummary = sessionOutline.locator(".session-usage-summary");
+  const outlineDensity = await Promise.all([
+    sessionOutline.boundingBox(),
+    usageSummary.boundingBox(),
+  ]);
+  expect(outlineDensity[0]).not.toBeNull();
+  expect(outlineDensity[1]).not.toBeNull();
+  expect(outlineDensity[1].y - outlineDensity[0].y, "Usage summary offset in compact Session outline").toBeLessThanOrEqual(210);
   await expect(inspector.getByRole("region", { name: "Turn 1 outcome" })).toContainText("Outcome");
   await inspector.getByRole("button", { name: "Expand process" }).click();
   await expect(inspector.locator("details.session-process")).toHaveAttribute("open", "");
@@ -1181,13 +1194,17 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspector.locator(".session-event.usage").first()).toContainText("25 / 100 · 25% full");
   await inspector.locator("details.session-filter-disclosure > summary").click();
   await expect(inspector.getByRole("checkbox", { name: /Tool calls/u })).toBeChecked();
-  const usageSummary = inspector.locator(".session-usage-summary");
   await expect(usageSummary).toContainText(/Session processed\s*not derived/u);
   await expect(usageSummary).toContainText(/Latest observed context\s*40/u);
   await expect(usageSummary.locator(".usage-summary-freshness")).toHaveText(/Static snapshot · observed through 2026-08-20 (10|11):00:02 UTC/u);
   await expect(usageSummary).toContainText("40 / 100");
   const modelValue = inspector.locator(".session-outline-facts dd[title]");
+  await sessionFacts.locator("summary").click();
+  await expect(sessionFacts).toHaveAttribute("open", "");
+  await expect(modelValue).toBeVisible();
   await expect(modelValue).toHaveAttribute("title", "claude-4.5-sonnet, claude-fable-5, claude-fable-5-thinking-high, composer-2.5-fast");
+  await sessionFacts.locator("summary").click();
+  await expect(sessionFacts).not.toHaveAttribute("open", "");
   for (const layout of [
     { name: "wide", width: 1440, height: 900 },
     { name: "compact", width: 1024, height: 768 },
@@ -1198,10 +1215,12 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
       documentOverflow: await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
       outlineOverflow: await inspector.locator(".session-sidebar").evaluate((outline) => outline.scrollWidth - outline.clientWidth),
       primaryRatio: await inspector.locator(".session-notebook-main").evaluate((primary) => primary.getBoundingClientRect().width / window.innerWidth),
+      outlineTargetMinHeight: await sessionOutline.locator(".session-outline-controls select, .session-outline-controls button, .session-filter-disclosure > summary, .session-facts-disclosure > summary").evaluateAll((elements) => Math.min(...elements.map((element) => element.getBoundingClientRect().height))),
     };
     expect(measurement.documentOverflow, `${layout.name} Session detail document overflow`).toBeLessThanOrEqual(1);
     expect(measurement.outlineOverflow, `${layout.name} Session outline overflow`).toBeLessThanOrEqual(1);
     if (layout.name === "wide") expect(measurement.primaryRatio).toBeGreaterThanOrEqual(0.5);
+    if (layout.name === "narrow") expect(measurement.outlineTargetMinHeight, "narrow Session outline target height").toBeGreaterThanOrEqual(44);
     await page.screenshot({ path: `test-results/session-detail-trace-${layout.name}.png`, fullPage: true });
   }
   await page.setViewportSize({ width: 1440, height: 900 });

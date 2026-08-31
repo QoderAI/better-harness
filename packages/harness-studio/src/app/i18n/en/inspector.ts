@@ -101,6 +101,8 @@ export const inspector = {
     jumpAria: "Jump to Session cell",
     expandProcess: "Expand process",
     collapseProcess: "Collapse process",
+    expandShort: "Expand",
+    collapseShort: "Collapse",
     filtersSummary: "Evidence filters",
     filterCalls: "{{count}} calls",
     filterLabels: {

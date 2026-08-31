@@ -96,6 +96,17 @@ function measureContract(minFontPx) {
   const outlineOverflow = outline && outlineRect && outlineRect.width > 0
     ? outline.scrollWidth - outline.clientWidth
     : 0;
+  const usageSummary = outline?.querySelector(".session-usage-summary");
+  const usageSummaryRect = usageSummary?.getBoundingClientRect();
+  const outlineUsageOffset = outlineRect && usageSummaryRect && usageSummaryRect.height > 0
+    ? usageSummaryRect.top - outlineRect.top
+    : null;
+  const outlineTargetHeights = outline
+    ? [...outline.querySelectorAll(".session-outline-controls select, .session-outline-controls button, .session-filter-disclosure > summary, .session-facts-disclosure > summary")]
+      .map(element => element.getBoundingClientRect())
+      .filter(rect => rect.width > 0 && rect.height > 0)
+      .map(rect => rect.height)
+    : [];
   const primary = document.querySelector(".session-mode-panel:not([hidden]) .session-notebook-main");
   const primaryRect = primary?.getBoundingClientRect();
   const primaryWidthRatio = primaryRect && primaryRect.width > 0
@@ -106,6 +117,8 @@ function measureContract(minFontPx) {
     clipped,
     documentOverflow: root.scrollWidth - root.clientWidth,
     outlineOverflow,
+    outlineUsageOffset,
+    outlineTargetMinHeight: outlineTargetHeights.length ? Math.min(...outlineTargetHeights) : null,
     primaryWidthRatio,
   };
 }
@@ -152,6 +165,15 @@ async function surfacesFor(page) {
           const metrics = await usageSummary.locator(".usage-summary-metrics").innerText();
           if (/Current (?:context|occupancy)/u.test(metrics)) throw new Error("Session usage summary must label context as latest observed evidence.");
         }
+        const sessionFacts = page.locator(".session-facts-disclosure");
+        if ((await sessionFacts.count()) !== 1 || await sessionFacts.evaluate(element => element.open)) {
+          throw new Error("Session facts must use one disclosure that is collapsed by default.");
+        }
+        await sessionFacts.locator("summary").click();
+        if (!(await sessionFacts.locator(".session-outline-facts").isVisible())) {
+          throw new Error("Session facts must remain available on disclosure.");
+        }
+        await sessionFacts.locator("summary").click();
         return undefined;
       },
     },
@@ -331,6 +353,12 @@ async function main() {
       }
       if (mode.name === "wide" && measured.primaryWidthRatio !== null && measured.primaryWidthRatio < 0.5) {
         problems.push(`primary Session evidence uses only ${Math.round(measured.primaryWidthRatio * 100)}% of the viewport`);
+      }
+      if (mode.name === "wide" && surface.label === "session-trace" && measured.outlineUsageOffset !== null && measured.outlineUsageOffset > 210) {
+        problems.push(`Usage decision begins ${Math.round(measured.outlineUsageOffset)}px below the Session outline top`);
+      }
+      if (mode.name === "narrow" && surface.label === "session-trace" && measured.outlineTargetMinHeight !== null && measured.outlineTargetMinHeight < 44) {
+        problems.push(`Session outline target height falls to ${Math.round(measured.outlineTargetMinHeight)}px`);
       }
       if (pageProblems.length > 0) problems.push(`${pageProblems.length} page/console error(s)`);
 
