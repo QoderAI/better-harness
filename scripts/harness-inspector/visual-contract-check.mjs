@@ -344,6 +344,15 @@ async function surfacesFor(page) {
         if ((await opener.count()) === 0) return "skip";
         await opener.click();
         await page.waitForTimeout(400);
+        const sessionTimeline = page.locator(".session-timeline");
+        const overallActivity = sessionTimeline.locator(":scope > .session-overall-activity");
+        if ((await overallActivity.count()) !== 1
+          || !(await overallActivity.evaluate((element) => element.parentElement?.firstElementChild === element))) {
+          throw new Error("Overall Session activity must be the first item in the Session timeline.");
+        }
+        if (await overallActivity.locator(":scope > details").evaluate((element) => element.open)) {
+          throw new Error("Overall Session activity must remain collapsed by default.");
+        }
         const usageSummary = page.locator(".session-usage-summary");
         if ((await usageSummary.count()) > 0) {
           const freshness = await usageSummary.locator(".usage-summary-freshness").innerText();

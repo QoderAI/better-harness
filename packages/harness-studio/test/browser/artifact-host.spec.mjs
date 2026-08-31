@@ -1182,6 +1182,10 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspector.locator("[data-harness-inspector]")).toHaveAttribute("aria-hidden", "true");
   await expect(page).toHaveURL(/inspector-session=/u);
   await expect(inspector.locator(".session-cell[data-session-cell=run]")).toHaveCount(1);
+  const overallActivity = inspector.locator(".session-timeline > .session-overall-activity");
+  await expect(overallActivity).toHaveCount(1);
+  expect(await overallActivity.evaluate((element) => element.parentElement?.firstElementChild === element)).toBe(true);
+  await expect(overallActivity.locator(":scope > details")).not.toHaveAttribute("open", "");
   await expect(inspector.locator("details.session-process")).not.toHaveAttribute("open", "");
   const sessionOutline = inspector.locator(".session-sidebar");
   await expect(sessionOutline.getByRole("heading", { name: "Cells" })).toHaveCount(0);

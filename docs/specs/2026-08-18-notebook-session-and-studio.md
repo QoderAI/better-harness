@@ -25,7 +25,8 @@ actions must continue to describe facts the product actually owns.
 - AC-1: Inspector Session Detail renders every retained Turn as a numbered Run
   Cell with a visible input prompt, a collapsible Process section, and a result
   area. Each Process contains a timeline scoped to that Turn's retained calls,
-  and the final notebook section contains one overall Session timeline.
+  and one collapsed-by-default overall Session timeline appears before the first
+  Turn so long Sessions retain an immediately discoverable global overview.
   Retained responses, commits, tool calls, and unplaced evidence keep their
   existing selection descriptors and evidence limitations.
 - AC-2: Inspector does not label a Turn as a checkpoint, resumable state, code
@@ -59,8 +60,8 @@ actions must continue to describe facts the product actually owns.
   framing do not dominate the above-the-fold notebook surface.
 - AC-8: Inspector does not repeat a Session-level Context card above the Cell
   stream. Stable Session metadata stays in the notebook bar and outline; Turn
-  activity stays inside its Process, and overall activity appears once after
-  the Cell stream.
+  activity stays inside its Process, and overall activity appears once before
+  the first Cell as a collapsed disclosure.
 - AC-9: Inspector preserves the observed order of intermediate assistant
   messages and tool calls through session parsing, report projection, Trace,
   and Replay. Presentation may collapse only adjacent tool-call runs. Counts
@@ -114,9 +115,18 @@ actions must continue to describe facts the product actually owns.
    add safe Markdown rendering, and keep notebook navigation available on
    narrow screens as specified by
    [ADR-0006](../adrs/session-notebook-evidence-projection.md).
+9. Keep the overall Session activity disclosure before the first Turn and
+   collapsed by default in both standalone Inspector and Studio Session Detail.
 
 ## Test and Review Evidence
 
+- AC-1/AC-8 follow-up: standalone Inspector and Studio now render the overall
+  Session activity disclosure before the first Turn and keep it closed on
+  initial render. `npx vitest run test/reporting/harness-inspector.test.mjs`
+  passed 39 tests; `npm run harness-studio:test` passed 65 files / 512 tests;
+  the Studio browser suite passed 56 tests; and `npm run
+  inspector:visual-check` passed all Trace, Usage, and Replay states at 1440 by
+  900, 1024 by 768, and 390 by 844 with no overflow or browser errors.
 - AC-1/AC-2/AC-8: `npx vitest run
   test/reporting/harness-inspector.test.mjs` passed 28 tests. A real five-Turn,
   230-call report rendered five scoped Process timelines and one overall
