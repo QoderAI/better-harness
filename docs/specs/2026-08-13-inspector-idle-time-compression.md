@@ -22,16 +22,20 @@ activity before and after it remains observable.
 
 - AC-1: On an observed-time axis, a gap longer than both five minutes and 12%
   of the visible raw span is compressed to a bounded visual segment.
-- AC-2: A compressed gap remains shaded and is labelled with its real duration
-  and the word `compressed`; its tooltip retains the real UTC boundaries.
+- AC-2: A compressed gap remains shaded, keeps its real idle duration label and
+  break mark, and retains the real UTC boundaries in its tooltip.
 - AC-3: Calls, duration bars, bins, commit markers, grid ticks, and idle shading
   share the same piecewise mapping, so no mark drifts away from its timestamp.
 - AC-4: Drag zoom and counted-bin zoom invert the piecewise scale back to real
   wall-clock bounds; Reset zoom restores the full raw session window.
 - AC-5: Short gaps, call-sequence fallback charts, and a zoomed range without a
   dominant idle window keep the existing linear layout.
-- AC-6: The accessible chart description and legend state that long idle
-  windows are visually compressed and remain unobserved time, not user wait.
+- AC-6: The accessible chart description states that long idle windows use
+  visual scale breaks and remain unobserved time, not user wait.
+- AC-7: The visible axis and idle labels do not expose the internal
+  `compressed` implementation term. A compressed gap keeps its ordinary idle
+  duration label plus the existing break mark, while tooltip and accessible
+  copy describe the visual scale break without implying Session context state.
 
 ## Non-goals
 
@@ -46,7 +50,10 @@ activity before and after it remains observable.
 - Embed that tested scale function into the self-contained workbench script.
 - Route marks, bins, durations, ticks, gaps, commits, and brush inversion through
   the same scale.
-- Give compressed gaps explicit visual and accessible treatment.
+- Give compressed gaps explicit break-mark and accessible treatment.
+- Remove `compressed` from visible axis and gap copy while retaining it as an
+  internal scale implementation detail. Keep the break mark and use explicit
+  visual-scale language only where an explanation is required.
 
 ## Test and Review Evidence
 
@@ -56,13 +63,21 @@ activity before and after it remains observable.
   verification drags or clicks a compressed chart and checks its real range.
 - AC-2/AC-6: browser verification inspects the generated SVG label, tooltip,
   description, legend, and a saved real-report screenshot.
+- AC-7: focused report tests assert the generated toolbar, SVG label, tooltip,
+  and accessible description distinguish the visual scale break from Session
+  context and prompt-cache state.
 - Regression: run the focused Inspector tests, `npm test`, and
   `git diff --check`.
+- AC-7: the focused summary/report suites passed 146 tests, the standalone
+  visual contract passed all 21 demo surfaces across wide, compact, and narrow
+  layouts, and the real 492-call Session activity surface rendered idle labels
+  without `compressed` while retaining break marks and explanatory tooltips.
 
 ## Risks
 
-- Misreading: compressed segments are explicitly labelled and use break marks;
-  UTC ticks continue to show real timestamps rather than a fake shorter session.
+- Misreading: compressed segments use break marks and explanatory tooltip and
+  accessible copy; UTC ticks continue to show real timestamps rather than a
+  fake shorter session.
 - Interaction drift: one forward/inverse scale owns every mark and zoom path.
 - Dense gaps: the 12% threshold bounds how many dominant gaps can qualify in one
   view, while each compressed gap receives a small but selectable width.

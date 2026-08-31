@@ -1,12 +1,18 @@
 import { readFileSync } from "node:fs";
 
+import { buildPromptCacheGapCue } from "./cache-gap-cue.mjs";
+import {
+  PROMPT_CACHE_POLICY_NOTICE,
+  PROMPT_CACHE_PROFILES,
+  resolvePromptCacheProfile,
+} from "./prompt-cache-profiles.mjs";
 import { buildCompressedTimelineScale } from "./timeline-scale.mjs";
 
 const UI_ASSET_ROOT = new URL("./ui/", import.meta.url);
 const HTML_TEMPLATE = readFileSync(new URL("workbench.html", UI_ASSET_ROOT), "utf8");
 const STYLES = readFileSync(new URL("workbench.css", UI_ASSET_ROOT), "utf8");
 const SCRIPT = readFileSync(new URL("workbench.js", UI_ASSET_ROOT), "utf8");
-const CLIENT_SCRIPT = `const buildCompressedTimelineScale = ${buildCompressedTimelineScale.toString()};\n${SCRIPT}`;
+const CLIENT_SCRIPT = `const PROMPT_CACHE_POLICY_NOTICE = ${JSON.stringify(PROMPT_CACHE_POLICY_NOTICE)};\nconst PROMPT_CACHE_PROFILES = Object.freeze(${JSON.stringify(PROMPT_CACHE_PROFILES)});\nconst resolvePromptCacheProfile = ${resolvePromptCacheProfile.toString()};\nconst buildCompressedTimelineScale = ${buildCompressedTimelineScale.toString()};\nconst buildPromptCacheGapCue = ${buildPromptCacheGapCue.toString()};\n${SCRIPT}`;
 const TEMPLATE_TOKEN_PATTERN = /\{\{BH_[A-Z_]+\}\}/gu;
 
 function fillHtmlTemplate(replacements) {
@@ -99,7 +105,7 @@ function datePicker(days) {
     return `<div class="date-grid" role="group" aria-label="${escapeHtml(label)} evidence calendar" data-calendar-month="${month}" data-calendar-label="${escapeHtml(label)}"${month === latestMonth ? "" : " hidden"}>${cells.join("")}</div>`;
   };
   const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => `<span>${day}</span>`).join("");
-  return `<div class="date-calendar"><header><div class="date-calendar-nav"><button type="button" data-calendar-step="-1" aria-label="Previous month"${months.length === 1 ? " disabled" : ""}><span aria-hidden="true">‹</span></button><strong data-calendar-label>${escapeHtml(monthLabel(latestMonth))}</strong><button type="button" data-calendar-step="1" aria-label="Next month" disabled><span aria-hidden="true">›</span></button></div><span class="date-calendar-zone">UTC</span></header><div class="date-weekdays" aria-hidden="true">${weekdays}</div>${months.map(monthGrid).join("")}<div class="date-selection-summary" aria-live="polite"><strong data-date-summary-label>Select a date</strong><span data-date-summary-meta></span></div></div><nav class="date-session-navigator" aria-label="Sessions on selected date"><div class="date-session-heading"><strong>Sessions</strong><span data-date-session-count>0</span></div><div class="date-session-list" data-date-session-list><p class="picker-empty">Select a date to browse its Sessions.</p></div></nav>`;
+  return `<div class="date-calendar"><header><div class="date-calendar-nav"><button type="button" data-calendar-step="-1" aria-label="Previous month"${months.length === 1 ? " disabled" : ""}><span aria-hidden="true">‹</span></button><strong data-calendar-label>${escapeHtml(monthLabel(latestMonth))}</strong><button type="button" data-calendar-step="1" aria-label="Next month" disabled><span aria-hidden="true">›</span></button></div><span class="date-calendar-zone">UTC</span></header><div class="date-weekdays" aria-hidden="true">${weekdays}</div>${months.map(monthGrid).join("")}<div class="date-selection-summary" aria-live="polite"><strong data-date-summary-label>Select a date</strong><span data-date-summary-meta></span></div><div class="date-context-summary" data-date-context-summary hidden><strong data-date-context-total></strong><span data-date-context-meta></span></div></div><nav class="date-session-navigator" aria-label="Sessions on selected date"><div class="date-session-heading"><strong>Sessions</strong><span data-date-session-count>0</span></div><div class="date-session-list" data-date-session-list><p class="picker-empty">Select a date to browse its Sessions.</p></div></nav>`;
 }
 
 // Badge names the providers that contributed sessions; the requested filter

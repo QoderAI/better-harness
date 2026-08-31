@@ -1070,6 +1070,14 @@ test("Inspector preserves Cursor, Codex, Qoder, and Claude context capabilities"
           percentFull: 60,
           basis: "prompt-tokens",
           compactionCount: 2,
+          compactionEvents: [
+            {
+              timestamp: "2026-08-12T08:30:00.000Z",
+              contextTokens: 175_000,
+              contextSnapshotTimestamp: "2026-08-12T08:29:58.000Z",
+            },
+            { timestamp: "not-a-timestamp" },
+          ],
           layers: [{ kind: "developer-message", itemCount: 1 }],
           categories: [],
         },
@@ -1130,6 +1138,11 @@ test("Inspector preserves Cursor, Codex, Qoder, and Claude context capabilities"
     source: "codex-rollout-token-count",
     rawTextOmitted: true,
     compactionCount: 2,
+    compactionEvents: [{
+      timestamp: "2026-08-12T08:30:00.000Z",
+      contextTokens: 175_000,
+      contextSnapshotTimestamp: "2026-08-12T08:29:58.000Z",
+    }],
     layers: [{ kind: "developer-message", itemCount: 1 }],
     categories: [],
     usedTokens: 120_000,

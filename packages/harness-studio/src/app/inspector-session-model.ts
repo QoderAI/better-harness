@@ -191,6 +191,11 @@ export interface InspectorSession {
     percentFull?: number;
     basis?: string;
     compactionCount?: number;
+    compactionEvents?: Array<{
+      timestamp: string;
+      contextTokens?: number;
+      contextSnapshotTimestamp?: string;
+    }>;
     layers?: Array<{ kind: string; itemCount: number }>;
     categories?: Array<{ kind: string; label: string; estimatedTokens: number }>;
   } | null;

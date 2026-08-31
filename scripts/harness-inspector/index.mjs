@@ -14,6 +14,12 @@ export {
   HARNESS_INSPECTOR_REPORT_SCHEMA_VERSION,
 } from "./report-model.mjs";
 export { renderHarnessInspectorHtml } from "./render-html.mjs";
+export { buildPromptCacheGapCue } from "./cache-gap-cue.mjs";
+export {
+  PROMPT_CACHE_POLICY_NOTICE,
+  PROMPT_CACHE_PROFILES,
+  resolvePromptCacheProfile,
+} from "./prompt-cache-profiles.mjs";
 export {
   buildCompressedTimelineScale,
   DOMINANT_IDLE_MIN_MS,

@@ -168,6 +168,11 @@ test.beforeAll(async () => {
         windowTokens: 100,
         percentFull: 40,
         compactionCount: 1,
+        compactionEvents: [{
+          timestamp: new Date(Date.parse(record.savedAt) + 1_500).toISOString(),
+          contextTokens: 25,
+          contextSnapshotTimestamp: new Date(Date.parse(record.savedAt) + 1_000).toISOString(),
+        }],
         layers: [
           { kind: "developer-message", itemCount: 2 },
           { kind: "skills", itemCount: 1 },
@@ -192,7 +197,7 @@ test.beforeAll(async () => {
         anchorId: "turn-1",
         prompt: { text: record.prompt, timestamp: record.savedAt },
         steps: [
-          ...record.timeline.filter((event) => event.kind === "tool-call").map((event) => ({ kind: "tool", callId: event.id, toolName: event.name })),
+          ...record.timeline.filter((event) => event.kind === "tool-call").map((event, index) => ({ kind: "tool", callStep: index + 1, callId: event.id, toolName: event.name })),
           {
             kind: "usage",
             tokenUsage: { inputTokens: 90, outputTokens: 8, cacheReadInputTokens: 45, totalTokens: 98 },
@@ -1161,6 +1166,11 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   expect(await inspectorCalendar.locator(".date-cell").count()).toBeGreaterThanOrEqual(35);
   expect(await inspectorCalendar.locator(".date-cell").count() % 7).toBe(0);
   await expect(inspector.getByRole("button", { name: "Next month" })).toBeDisabled();
+  await expect(inspector.locator(".date-context-summary")).toContainText(/130 snapshot-token sum/u);
+  await expect(inspector.locator(".date-context-summary")).toContainText(/2\/2 Sessions observed · 2 compactions/u);
+  await expect(inspector.locator(".date-session-token-summary")).toHaveCount(2);
+  await expect(inspector.locator(".date-session-token-summary").first()).toHaveText(/40 current · 1\/1 comp snapshots · 25/u);
+  await expect(inspector.locator(".workbench-token-summary").first()).toHaveText(/40 current · 1\/1 comp snapshots · 25/u);
   await expect(inspector.getByRole("button", { name: "Open session" }).first()).toBeVisible();
   expect(requestedUrls.some((url) => url.endsWith("/assets/inspector-workbench.js"))).toBe(false);
   const openSessionButton = inspector.getByRole("button", { name: "Open session" }).first();
@@ -1174,10 +1184,35 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspector.locator(".session-cell[data-session-cell=run]")).toHaveCount(1);
   await expect(inspector.locator("details.session-process")).not.toHaveAttribute("open", "");
   const sessionOutline = inspector.locator(".session-sidebar");
-  const sessionFacts = sessionOutline.locator("details.session-facts-disclosure");
   await expect(sessionOutline.getByRole("heading", { name: "Cells" })).toHaveCount(0);
-  await expect(sessionFacts).not.toHaveAttribute("open", "");
-  await expect(sessionFacts.locator("summary")).toContainText("claude-4.5-sonnet +3");
+  await expect(sessionOutline).not.toContainText("Read-only");
+  await expect(sessionOutline.locator(".session-bulk, .session-facts-disclosure")).toHaveCount(0);
+  await expect(sessionOutline.locator(".session-outline-controls")).toHaveCount(1);
+  await expect(sessionOutline.locator(".session-outline-controls > .jump-select")).toHaveCount(1);
+  const filterDisclosure = sessionOutline.locator("details.session-filter-disclosure");
+  const filterSummary = filterDisclosure.locator("summary");
+  await expect(filterDisclosure).not.toHaveAttribute("open", "");
+  await expect(filterSummary).toContainText("Evidence filters");
+  await expect(filterSummary.locator("em")).toHaveText("3 calls");
+  await expect(filterDisclosure.locator(".session-filter-list")).not.toBeVisible();
+  await expect(filterDisclosure.locator('input[type="checkbox"]')).toHaveCount(10);
+  await expect(filterDisclosure.locator(".session-filter span")).toHaveText(["Prompts", "Results", "Intermediate", "Model usage", "Commits", "Tool calls", "Read", "Edit", "Bash", "File paths"]);
+  await expect(filterDisclosure.locator(".session-filter-list em")).toHaveText(["1", "1", "0", "2", "0", "3", "1", "1", "1", "1"]);
+  await expect(filterDisclosure.locator(".session-filter.subtype")).toHaveCount(4);
+  await filterSummary.click();
+  await expect(filterDisclosure).toHaveAttribute("open", "");
+  await expect(filterDisclosure.locator(".session-filter-list")).toBeVisible();
+  await expect(filterDisclosure.getByRole("checkbox")).toHaveCount(10);
+  await filterSummary.click();
+  await expect(filterDisclosure).not.toHaveAttribute("open", "");
+  await filterSummary.focus();
+  await page.keyboard.press("Enter");
+  await expect(filterDisclosure).toHaveAttribute("open", "");
+  await page.keyboard.press("Enter");
+  await expect(filterDisclosure).not.toHaveAttribute("open", "");
+  const compactFacts = sessionOutline.locator(".session-facts-compact");
+  await expect(compactFacts.getByRole("heading", { name: "Session facts" })).toBeVisible();
+  await expect(compactFacts.locator("dt")).toHaveText(["Runtime", "Model", "Duration"]);
   const usageSummary = sessionOutline.locator(".session-usage-summary");
   const outlineDensity = await Promise.all([
     sessionOutline.boundingBox(),
@@ -1185,26 +1220,52 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   ]);
   expect(outlineDensity[0]).not.toBeNull();
   expect(outlineDensity[1]).not.toBeNull();
-  expect(outlineDensity[1].y - outlineDensity[0].y, "Usage summary offset in compact Session outline").toBeLessThanOrEqual(210);
+  expect(outlineDensity[1].y - outlineDensity[0].y, "Usage summary offset in reduced Session outline").toBeLessThanOrEqual(230);
   await expect(inspector.getByRole("region", { name: "Turn 1 outcome" })).toContainText("Outcome");
-  await inspector.getByRole("button", { name: "Expand process" }).click();
+  await inspector.locator("details.session-process > summary").click();
   await expect(inspector.locator("details.session-process")).toHaveAttribute("open", "");
-  await expect(inspector.locator(".session-event.usage")).toHaveCount(2);
-  await expect(inspector.locator(".session-event.usage").first()).toContainText("98 total");
-  await expect(inspector.locator(".session-event.usage").first()).toContainText("25 / 100 · 25% full");
-  await inspector.locator("details.session-filter-disclosure > summary").click();
-  await expect(inspector.getByRole("checkbox", { name: /Tool calls/u })).toBeChecked();
+  const combinedProcess = inspector.locator("details.session-process-combined.with-usage");
+  await expect(combinedProcess).toHaveCount(1);
+  await expect(combinedProcess.locator(":scope > summary")).toContainText(/3 tool calls.*Read · Edit · Bash.*Model response 1.*98 tokens · 25 \/ 100 · 25% full/u);
+  expect(await combinedProcess.locator(":scope > summary").evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(40);
+  const standaloneUsage = inspector.locator(".session-event.session-usage-compact");
+  await expect(standaloneUsage).toHaveCount(1);
+  await expect(standaloneUsage).toContainText(/Model response 2.*100 tokens · 40 \/ 100 · 40% full/u);
+  await expect(inspector.locator(".session-event.usage dl, .session-event.usage > header")).toHaveCount(0);
+  await filterSummary.click();
+  await expect(filterDisclosure).toHaveAttribute("open", "");
+  await filterDisclosure.getByRole("checkbox", { name: "Model usage" }).uncheck();
+  await expect(inspector.locator('[data-session-event="usage"]')).toHaveCount(0);
+  await expect(inspector.locator("details.session-process-combined")).toHaveCount(1);
+  await filterDisclosure.getByRole("checkbox", { name: "Model usage" }).check();
+  await filterDisclosure.getByRole("checkbox", { name: "Read" }).uncheck();
+  await expect(inspector.locator("details.session-process-combined > summary")).toContainText(/2 tool calls.*Edit · Bash.*Model response 1/u);
+  await filterDisclosure.getByRole("checkbox", { name: "Read" }).check();
+  await filterDisclosure.getByRole("checkbox", { name: "Tool calls" }).uncheck();
+  await expect(inspector.locator(".session-event.tools")).toHaveCount(0);
+  await expect(inspector.locator(".session-event.session-usage-compact")).toHaveCount(2);
+  await expect(inspector.locator(".session-event.prompt, .session-event.response, .session-event.usage")).not.toHaveCount(0);
+  await filterDisclosure.getByRole("checkbox", { name: "Tool calls" }).check();
+  await filterDisclosure.getByRole("checkbox", { name: "Prompts" }).uncheck();
+  await expect(inspector.locator(".session-event.prompt")).toHaveCount(0);
+  await expect(inspector.locator(".session-input-marker")).toHaveCount(0);
+  const promptHiddenLayout = await inspector.locator(".session-turn").first().evaluate((turn) => {
+    const process = turn.querySelector(".session-process").getBoundingClientRect();
+    const outcome = turn.querySelector(".session-cell-output").getBoundingClientRect();
+    return { processWidth: process.width, outcomeWidth: outcome.width, turnWidth: turn.getBoundingClientRect().width };
+  });
+  expect(promptHiddenLayout.processWidth).toBeGreaterThan(promptHiddenLayout.turnWidth * 0.75);
+  expect(promptHiddenLayout.outcomeWidth).toBeGreaterThan(promptHiddenLayout.turnWidth * 0.75);
+  await filterDisclosure.getByRole("checkbox", { name: "Prompts" }).check();
+  await filterDisclosure.getByRole("checkbox", { name: "File paths" }).uncheck();
+  await expect(inspector.locator(".session-view .session-tool-file, .session-view .session-outcome-paths, .session-view .session-event.files")).toHaveCount(0);
+  await filterDisclosure.getByRole("checkbox", { name: "File paths" }).check();
   await expect(usageSummary).toContainText(/Session processed\s*not derived/u);
   await expect(usageSummary).toContainText(/Latest observed context\s*40/u);
   await expect(usageSummary.locator(".usage-summary-freshness")).toHaveText(/Static snapshot · observed through 2026-08-20 (10|11):00:02 UTC/u);
   await expect(usageSummary).toContainText("40 / 100");
-  const modelValue = inspector.locator(".session-outline-facts dd[title]");
-  await sessionFacts.locator("summary").click();
-  await expect(sessionFacts).toHaveAttribute("open", "");
-  await expect(modelValue).toBeVisible();
-  await expect(modelValue).toHaveAttribute("title", "claude-4.5-sonnet, claude-fable-5, claude-fable-5-thinking-high, composer-2.5-fast");
-  await sessionFacts.locator("summary").click();
-  await expect(sessionFacts).not.toHaveAttribute("open", "");
+  await filterSummary.click();
+  await expect(filterDisclosure).not.toHaveAttribute("open", "");
   for (const layout of [
     { name: "wide", width: 1440, height: 900 },
     { name: "compact", width: 1024, height: 768 },
@@ -1215,12 +1276,23 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
       documentOverflow: await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
       outlineOverflow: await inspector.locator(".session-sidebar").evaluate((outline) => outline.scrollWidth - outline.clientWidth),
       primaryRatio: await inspector.locator(".session-notebook-main").evaluate((primary) => primary.getBoundingClientRect().width / window.innerWidth),
-      outlineTargetMinHeight: await sessionOutline.locator(".session-outline-controls select, .session-outline-controls button, .session-filter-disclosure > summary, .session-facts-disclosure > summary").evaluateAll((elements) => Math.min(...elements.map((element) => element.getBoundingClientRect().height))),
+      outlineTargetMinHeight: await sessionOutline.locator(".session-outline-controls select, .session-filter-disclosure > summary").evaluateAll((elements) => Math.min(...elements.map((element) => element.getBoundingClientRect().height))),
     };
     expect(measurement.documentOverflow, `${layout.name} Session detail document overflow`).toBeLessThanOrEqual(1);
     expect(measurement.outlineOverflow, `${layout.name} Session outline overflow`).toBeLessThanOrEqual(1);
     if (layout.name === "wide") expect(measurement.primaryRatio).toBeGreaterThanOrEqual(0.5);
-    if (layout.name === "narrow") expect(measurement.outlineTargetMinHeight, "narrow Session outline target height").toBeGreaterThanOrEqual(44);
+    if (layout.name === "narrow") {
+      expect(measurement.outlineTargetMinHeight, "narrow Session outline target height").toBeGreaterThanOrEqual(44);
+      await filterSummary.click();
+      const filterTargetMinHeight = await filterDisclosure.locator(".session-filter").evaluateAll((elements) => Math.min(...elements.map((element) => element.getBoundingClientRect().height)));
+      expect(filterTargetMinHeight, "narrow expanded Evidence filter target height").toBeGreaterThanOrEqual(44);
+      const filterListBox = await filterDisclosure.locator(".session-filter-list").boundingBox();
+      expect(filterListBox).not.toBeNull();
+      expect(filterListBox.x, "narrow Evidence filter popover left bound").toBeGreaterThanOrEqual(0);
+      expect(filterListBox.x + filterListBox.width, "narrow Evidence filter popover right bound").toBeLessThanOrEqual(layout.width);
+      await page.screenshot({ path: "test-results/session-detail-filters-narrow.png", fullPage: true });
+      await filterSummary.click();
+    }
     await page.screenshot({ path: `test-results/session-detail-trace-${layout.name}.png`, fullPage: true });
   }
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -1234,7 +1306,9 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(usageReport).toContainText(/Model calls\s*2/u);
   await expect(usageReport).toContainText(/Provider reported 1 compaction boundary\./u);
   await expect(usageReport.locator(".usage-report-occupancy .usage-summary-compactions")).toHaveText("1 compaction");
-  await expect(usageReport.locator(".usage-report-occupancy")).toContainText("Latest observed context");
+  await expect(usageReport.locator(".usage-report-occupancy")).toContainText("Current + historical compaction snapshots");
+  await expect(usageReport.locator(".usage-report-occupancy .usage-context-current")).toHaveText("40");
+  await expect(usageReport.locator(".usage-report-occupancy .usage-context-history")).toHaveText("25");
   await expect(usageReport.getByRole("heading", { name: "Usage report" })).toBeVisible();
   await expect(usageReport.locator(".usage-report-occupancy .usage-report-freshness")).toHaveText(/Static snapshot · observed through 2026-08-20 (10|11):00:02 UTC/u);
   await expect(usageReport.locator(".usage-report-occupancy .usage-context-bar")).toBeVisible();
@@ -1246,24 +1320,36 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(focusChart).toBeVisible();
   await expect(usageReport.locator(".usage-linked-explorer")).toHaveClass(/short-session/u);
   await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 2/u);
-  await usageReport.locator(".usage-response-row").first().click();
+  const inspectStrip = usageReport.locator("[data-usage-inspect-strip]");
+  const focusPoints = usageReport.locator("[data-usage-focus-point]");
+  await expect(inspectStrip).toHaveAttribute("data-usage-inspect-mode", "selected");
+  await expect(inspectStrip).toContainText(/Selected\s*Response 2/u);
+  await expect(inspectStrip).toContainText(/Time\s*(10|11):00:02 UTC/u);
+  await expect(focusPoints).toHaveCount(2);
+  await focusPoints.first().hover();
+  await expect(inspectStrip).toHaveAttribute("data-usage-inspect-mode", "hover");
+  await expect(inspectStrip).toContainText(/Hover\s*Response 1/u);
+  await expect(inspectStrip).toContainText(/Context\s*25/u);
+  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 2/u);
+  await focusPoints.first().click();
+  await page.mouse.move(0, 0);
   await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 1/u);
   await expect(usageReport.locator(".usage-response-detail")).toContainText(/Context\s*25/u);
-  await expect(usageReport.locator(".usage-response-row[aria-selected='true']")).toContainText(/Response 1/u);
-  await expect(usageReport.locator(".usage-response-head")).not.toContainText("Turn");
+  await expect(inspectStrip).toHaveAttribute("data-usage-inspect-mode", "selected");
+  await expect(inspectStrip).toContainText(/Selected\s*Response 1/u);
+  await expect(usageReport.locator(".usage-response-table, .usage-response-head, .usage-response-row")).toHaveCount(0);
   await expect(usageReport.locator(".usage-chart-legend")).not.toContainText("User turn");
-  const selectedRow = usageReport.locator(".usage-response-row[aria-selected='true']");
-  await selectedRow.focus();
-  await selectedRow.press("ArrowDown");
+  await focusChart.focus();
+  await focusChart.press("ArrowDown");
   await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 2/u);
   await expect(usageReport.locator(".usage-response-prompt")).toContainText(/Linked user prompt · T1\s*Repair (parser|renderer)/u);
-  await expect(usageReport.locator(".usage-response-row[aria-selected='true']")).toContainText(/Response 2/u);
-  await focusChart.focus();
+  await expect(inspectStrip).toContainText(/Selected\s*Response 2/u);
   await focusChart.press("Escape");
-  await expect(usageReport.locator(".usage-response-row[aria-selected='true']")).toHaveCount(0);
+  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Select a chart point/u);
+  await expect(inspectStrip).not.toHaveAttribute("data-usage-inspect-position");
   await focusChart.press("ArrowLeft");
   await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 1/u);
-  await expect(usageReport.locator(".usage-response-table")).toContainText(/(10|11):00:02/u);
+  await expect(inspectStrip).toContainText(/Selected\s*Response 1/u);
   await expect(usageReport.locator(".usage-report-occupancy .usage-context-bar i")).toHaveCount(3);
   await expect(usageReport.locator(".usage-report-summary > .usage-report-occupancy")).toHaveCount(1);
   await expect(usageReport.locator(".usage-report-summary > .usage-report-lead-facts > div")).toHaveCount(5);

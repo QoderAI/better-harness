@@ -199,6 +199,18 @@ from the default Inspector window.
   progression point. The next observed post-compaction prompt snapshot carries
   the shrink/reset delta, while the report separately states the
   provider-observed compaction count.
+- AC-33: Every normalized event with an explicit provider compaction boundary
+  and an observed timestamp contributes one bounded, privacy-safe Context
+  compaction event to the Session manifest. The standalone activity timeline
+  renders those exact events as distinct `Context compressed` markers and a
+  text legend. Token-only context shrink/reset points never become compaction
+  markers without explicit provider evidence.
+- AC-34: When an explicit provider compaction boundary has a preceding observed
+  absolute Context token snapshot, its bounded manifest event retains that
+  token count and the snapshot timestamp. The Usage report presents the latest
+  Context and each retained historical compaction snapshot in the primary
+  decision tile, keeps supporting facts visually subordinate, and never labels
+  the snapshot sum as Session consumption or total processed tokens.
 
 ## Provider evidence matrix
 
@@ -308,6 +320,12 @@ from the default Inspector window.
 26. Exclude Codex all-zero invocation bookkeeping snapshots from current
     context and model-call progression, then surface explicit provider
     compactions alongside observed post-compaction shrink/reset markers.
+27. Preserve bounded timestamps for explicit provider compaction boundaries in
+    the Session manifest and project them onto the standalone activity timeline
+    without deriving event times from context-token shrink/reset observations.
+28. Retain the latest absolute Context snapshot observed at or before each
+    explicit compaction boundary, then expose those per-boundary token values in
+    the standalone and Studio Usage report hierarchy.
 
 ## Test and Review Evidence
 
@@ -542,6 +560,30 @@ from the default Inspector window.
   all-zero bookkeeping snapshots contributed zero chart/model-call points; the
   first reset resolved to 35.6K context and a -204.5K delta instead of a false
   zero-token prompt.
+- AC-33: focused summary and report-projection tests retain explicit compaction
+  timestamps, while the standalone browser gate checks visible timeline
+  markers, legend copy, and the absence of false markers for shrink-only data.
+- AC-33 replayed the real 492-call Codex Session with four explicit compaction
+  timestamps at 07:17, 08:56, 09:46, and 11:29 UTC. The browser activity gate
+  rendered four focusable `Context compressed` markers and the text legend;
+  each corresponding context shrink/reset snapshot remained a separate usage
+  point several seconds later.
+- Final AC-33 regression evidence: `npm run check` passed 1,604 root tests with
+  2 skipped, Harness/Harness UI/Studio passed 173/31/512 tests, and package
+  verification passed for 625 npm and 895 runtime entries. Preview health and
+  `/canvas-module.js` both returned HTTP 200.
+- AC-34 replayed the retained 81.1K-context Codex Session and preserved 236.2K
+  and 223.0K snapshots immediately before its two explicit compaction
+  boundaries. The standalone Usage report rendered `81.1K + 236.2K + 223K`
+  with a descending current/history/supporting-fact type hierarchy and retained
+  exact snapshot times in hover text. The visual contract passed wide, compact,
+  and narrow layouts with zero overflow, clipping, below-floor text, or browser
+  errors. Focused source/report tests passed 89 cases, Studio typecheck passed,
+  and the final `npm run check` passed 1,604 root tests with 2 skipped,
+  Harness/Harness UI/Studio at 173/31/512 tests, and package verification at
+  625 npm and 895 runtime entries. The focused Studio browser scenario was
+  blocked before Usage by a pre-existing fixture assertion expecting 5 calls
+  while the current dirty-worktree fixture exposes 3.
 - The focused provider/progression/report suites passed 98 tests. Native Studio
   TypeScript/build and the focused interactive Playwright scenario passed,
   including marker focus, click, time/Turn/prompt detail, and wide/compact/narrow

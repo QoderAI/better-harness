@@ -7,11 +7,11 @@
 
 ## Intent
 
-Turn Context progression from a tall overview followed by loosely related,
-multi-line response rows into a compact investigation workspace. Reviewers
-should be able to move from the full Session pattern to a bounded response
-window, select one response from either the chart or table, and read the same
-selection in a local detail pane without losing the Session evidence boundary.
+Turn Context progression into a compact, chart-led investigation workspace.
+Reviewers should be able to move from the full Session pattern to a bounded
+response window, inspect any response without covering the stepped series, and
+lock one response into a local detail pane without spending viewport height on
+a second tabular rendering of the same points.
 
 ## Acceptance Scenarios
 
@@ -19,10 +19,10 @@ selection in a local detail pane without losing the Session evidence boundary.
   overview and a bounded focus window. The Overview brush exposes independently
   draggable left and right handles so reviewers can widen or narrow either edge
   while preserving a minimum useful range. Moving either edge updates the focus
-  chart and response rows together while preserving response order and honest
-  missing evidence.
-- AC-2: Selecting a response from a focus-chart marker or response row updates
-  one local Response details pane, the chart crosshair, and the selected row.
+  chart and docked Inspect values together while preserving response order and
+  honest missing evidence.
+- AC-2: Selecting a response from the focus chart updates one local Response
+  details pane and the chart crosshair.
   The detail pane includes the already-retained, privacy-filtered User prompt
   linked by Turn, including continued responses whose progression point does
   not repeat the prompt. The selection does not create a global evidence state.
@@ -35,15 +35,15 @@ selection in a local detail pane without losing the Session evidence boundary.
   response. The Focus chart does not repeat the same prompt markers. Reset and
   model-boundary symbols remain visually distinct, and only decision-relevant
   controls enter the tab order.
-- AC-4: Response rows are single-line dense data rows in a bounded local scroll
-  surface, matching the Tool-call list pattern instead of extending the report
-  page. Time, reuse, boundary, and right-aligned numeric columns remain
-  scannable; the redundant Turn column is omitted because the selected linked
-  prompt is shown in Response details. A Processed column is omitted when the
-  visible window contains no observed values. Linked selection scrolls the
-  active row into the local viewport without moving the surrounding report.
+- AC-4: The focus chart exposes one hover target per visible response. Hover
+  draws a point and guide, then updates one compact docked Inspect strip below
+  the chart with response index, timestamp, context, net context delta, input
+  reuse, output, and processed tokens when observed. The strip never covers the
+  stepped series, returns to the locked response when hover leaves, and does not
+  update the locked Response details pane until click or keyboard selection.
+  The redundant response table is not rendered.
 - AC-5: Window and selection controls are keyboard reachable. Arrow keys move
-  the active response, Enter selects it, and Escape clears the local selection.
+  and select the active response, while Escape clears the local selection.
   Focus remains visible and selection is conveyed with text/ARIA state as well
   as color.
 - AC-6: Standalone Harness Inspector and Studio Session Detail use the same
@@ -70,42 +70,41 @@ selection in a local detail pane without losing the Session evidence boundary.
 1. Introduce a bounded usage-window model and one local selected-response state
    in both Inspector renderers.
 2. Render a compact full overview, stepped focus chart, aligned event rails,
-   response details, and dense response table from the same projected points.
+   per-response hover targets, a docked Inspect strip, and response details from
+   the same projected points.
 3. Bind double-ended Overview brush, range, pointer, and keyboard actions to the
    shared local state; replace passive Overview Turn lines with one interactive
    prompt event rug, retain a compact `Tn` only for the selected Turn, and keep
    the Focus chart free of duplicate prompt markers.
-4. Add behavior coverage for window clamping, linked selection, keyboard
-   movement, and conditional Processed-column visibility.
+4. Add behavior coverage for window clamping, hover-only strip updates, linked
+   selection, keyboard movement, conditional processed values, and the absence
+   of the redundant table.
 5. Run focused report/Studio tests, generate a real Inspector report, and run
    the responsive visual contract with screenshots and error inspection.
 
 ## Test and Review Evidence
 
-- AC-1–AC-5: The focused Studio Playwright scenario covers Overview prompt
-  hover and linked selection, response-row and Focus-chart keyboard selection,
-  one composite Overview keyboard stop, and the absence of duplicate Focus
-  prompt markers. The standalone visual contract repeats the prompt hover and
-  linked-selection checks against real reports at all three layout widths.
-- AC-6: Studio `npm run typecheck` and `npm run build` passed. The focused Studio
-  Playwright comparison passed 1 test and covers the Overview `T1` label,
-  retained prompt preview, composite keyboard interaction, absence of duplicate
-  Focus markers, and linked Response details selection.
-  The regenerated report for Session
-  `01a04647-16fa-7123-87d6-b216f77cdf1e` retained 899 responses and 17 observed
-  prompt boundaries across 18 User Turns; prompt text is shown only for the 8
-  Turns whose privacy-filtered prompt evidence was retained.
+- AC-1–AC-5: The focused Studio Playwright scenario passed 1 test and covers
+  one hover target per response, hover-only Inspect updates, locked Response
+  details, click and keyboard selection, Escape clearing, and absence of the
+  redundant response table. The standalone visual contract repeats hover,
+  restore, click-lock, prompt, and keyboard checks against a regenerated real
+  report.
+- AC-6: Studio `npm run typecheck` and `npm run build` passed. The regenerated
+  standalone report and Studio Session Detail use the same docked Inspect
+  fields, selection contract, and chart-led hierarchy. `npm run preview` found
+  the existing preview healthy: `/health` returned `ok` and
+  `/canvas-module.js` returned JavaScript with HTTP 200.
 - AC-7: `node scripts/harness-inspector/visual-contract-check.mjs --report
-  .qoder/better-harness-runs/harness-inspector/inspector.html` passed all 15
+  .qoder/better-harness-runs/harness-inspector/inspector.html` passed all 21
   real-report surfaces at 1440x900, 1024x768, and 390x844 with zero document
   overflow, clipped nodes, sub-12px meaningful text, console errors, or page
-  errors. The gate also asserts the sole Overview prompt rug, retained prompt
-  previews, composite keyboard interaction, absence of duplicate markers, and
-  keyboard-linked detail selection.
-- Regression: `npx vitest run test/reporting/harness-inspector.test.mjs` passed
-  its 38 tests, and `npx vitest run
-  test/skills-docs/doc-link-graph.test.mjs` passed 8 tests. `npm run preview`
-  served both `/health` and `/canvas-module.js` successfully.
+  errors. Manual in-app browser inspection also confirmed the strip remains a
+  single row at wide and compact widths, becomes two columns at narrow width,
+  and reports zero console errors.
+- Regression: `npx vitest run test/reporting/harness-inspector.test.mjs
+  test/reporting/harness-inspector-demo.test.mjs` passed 41 tests, and `npx
+  vitest run test/skills-docs/doc-link-graph.test.mjs` passed 8 tests.
 - Risk: hundreds of progression points can make the DOM heavy. The overview may
-  draw the retained series, but response rows and focus markers stay bounded to
-  the active window.
+  draw the retained series, but per-response hover targets stay bounded to the
+  active focus window.

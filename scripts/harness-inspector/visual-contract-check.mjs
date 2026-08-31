@@ -39,10 +39,29 @@ function parseArgs(argv) {
 
 async function resolveReportPath(requested) {
   if (requested) return requested;
-  const { renderHarnessInspectorDemoHtml } = await import("./demo-report.mjs");
+  const { buildHarnessInspectorDemoReport } = await import("./demo-report.mjs");
+  const { renderHarnessInspectorHtml } = await import("./render-html.mjs");
   const directory = await mkdtemp(join(tmpdir(), "harness-inspector-visual-"));
   const path = join(directory, "report.html");
-  await writeFile(path, renderHarnessInspectorDemoHtml(), "utf8");
+  const report = buildHarnessInspectorDemoReport();
+  // The public demo stays compact. This browser-only fixture adds a realistic
+  // large, deeply nested commit so the pane boundary and File Tree interaction
+  // are exercised on every visual gate run.
+  const stressCommit = report.commits.find(commit => commit.files.length > 0);
+  if (stressCommit) {
+    stressCommit.files.push(...Array.from({ length: 36 }, (_, index) => ({
+      path: `packages/checkout/src/generated/flows/flow-${String(index + 1).padStart(2,"0")}.ts`,
+      added: 12 + index,
+      removed: index % 5,
+    })));
+    stressCommit.fileCount = stressCommit.files.length;
+    stressCommit.linesAdded = stressCommit.files.reduce((sum,file) => sum + (Number.isFinite(file.added) ? file.added : 0),0);
+    stressCommit.linesRemoved = stressCommit.files.reduce((sum,file) => sum + (Number.isFinite(file.removed) ? file.removed : 0),0);
+  }
+  await writeFile(path, renderHarnessInspectorHtml(report, {
+    contextLabel: "Visual contract fixture · no live workspace access",
+    robots: "noindex, follow",
+  }), "utf8");
   return path;
 }
 
@@ -102,7 +121,7 @@ function measureContract(minFontPx) {
     ? usageSummaryRect.top - outlineRect.top
     : null;
   const outlineTargetHeights = outline
-    ? [...outline.querySelectorAll(".session-outline-controls select, .session-outline-controls button, .session-filter-disclosure > summary, .session-facts-disclosure > summary")]
+    ? [...outline.querySelectorAll(".session-outline-controls select, .session-filter-disclosure > summary")]
       .map(element => element.getBoundingClientRect())
       .filter(rect => rect.width > 0 && rect.height > 0)
       .map(rect => rect.height)
@@ -131,6 +150,175 @@ async function surfacesFor(page) {
       enter: async () => {
         await page.click("#mode-date");
         await page.waitForTimeout(300);
+        const dailyContext = page.locator("[data-date-context-summary]:visible");
+        if ((await dailyContext.count()) > 0) {
+          if (!(await dailyContext.innerText()).includes("observed context snapshots")) {
+            throw new Error("Selected-date Context summary must name observed snapshots without implying provider usage.");
+          }
+          const rows = page.locator(".date-session-token-summary");
+          if ((await rows.count()) === 0) throw new Error("Date Session rows must expose their retained Context-token summary.");
+          if ((await page.locator(".workbench-token-summary").count()) === 0) throw new Error("Date workbench headers must expose their matching Session Context-token summary.");
+        }
+      },
+    },
+    {
+      label: "commit-files",
+      enter: async () => {
+        await page.click("#mode-feature");
+        await page.waitForTimeout(300);
+        let cards = page.locator(".commit-card");
+        // A real workspace can retain date-scoped Git evidence that is not
+        // declared by the currently selected Feature Tree branch.
+        if ((await cards.count()) === 0) {
+          await page.click("#mode-date");
+          await page.waitForTimeout(300);
+          cards = page.locator(".commit-card");
+        }
+        if ((await cards.count()) === 0) return "skip";
+        const cardIndex = await cards.evaluateAll(elements => {
+          const counts = elements.map(element => element.querySelectorAll('[data-file-view-panel="list"] .file-row').length);
+          return counts.indexOf(Math.max(...counts));
+        });
+        const card = cards.nth(cardIndex);
+        if (!(await card.evaluate(element => element.open))) await card.locator(":scope > summary").click();
+        const lane = card.locator("xpath=ancestor::section[contains(@class,'delivery-lane')]");
+        const fileRows = card.locator('[data-file-view-panel="list"] .file-row');
+        if ((await fileRows.count()) === 0) throw new Error("Commit file List view must render changed paths.");
+        if ((await fileRows.locator(".evidence").count()) !== 0) {
+          throw new Error("File rows must not repeat commit/session evidence labels.");
+        }
+        const firstRow = fileRows.first();
+        if ((await firstRow.locator(".diff-add").count()) !== 1 || (await firstRow.locator(".diff-remove").count()) !== 1) {
+          throw new Error("Each text-file row must expose separate addition and removal diff stats.");
+        }
+        const [addColor,removeColor] = await Promise.all([
+          firstRow.locator(".diff-add").evaluate(element => getComputedStyle(element).color),
+          firstRow.locator(".diff-remove").evaluate(element => getComputedStyle(element).color),
+        ]);
+        if (addColor === removeColor) throw new Error("Addition and removal stats must use distinct semantic colors.");
+
+        const deliveryContent = lane.locator(".delivery-content");
+        const boundary = await deliveryContent.evaluate(element => ({ clientHeight:element.clientHeight, scrollHeight:element.scrollHeight }));
+        if ((await fileRows.count()) > 20 && boundary.scrollHeight <= boundary.clientHeight) {
+          throw new Error("A large commit must scroll inside the Commits / files pane.");
+        }
+
+        const treeButton = lane.locator('[data-commit-file-view="tree"]');
+        await treeButton.focus();
+        await page.keyboard.press("Enter");
+        if ((await treeButton.getAttribute("aria-pressed")) !== "true" || !(await card.locator('[data-file-view-panel="tree"]').isVisible())) {
+          throw new Error("Tree control must select and reveal the directory view from the keyboard.");
+        }
+        const nestedDirectory = card.locator(".file-tree-node .file-tree-node").first();
+        if ((await nestedDirectory.count()) === 0) throw new Error("Tree view must retain nested directory levels.");
+        await nestedDirectory.locator(":scope > summary").click();
+        if (await nestedDirectory.locator(":scope > .file-tree-children").isVisible()) {
+          throw new Error("Directory branches must collapse independently.");
+        }
+        const listButton = lane.locator('[data-commit-file-view="list"]');
+        await listButton.click();
+        if ((await listButton.getAttribute("aria-pressed")) !== "true") throw new Error("List control must restore the flat path view.");
+        return undefined;
+      },
+    },
+    {
+      label: "activity-focus",
+      enter: async () => {
+        let candidates = page.locator("[data-activity-session]");
+        if ((await candidates.count()) === 0) {
+          await page.click("#mode-feature");
+          await page.waitForTimeout(300);
+          candidates = page.locator("[data-activity-session]");
+        }
+        if ((await candidates.count()) === 0) return "skip";
+        const candidateIndex = await candidates.evaluateAll((elements) => {
+          const counts = elements.map((element) => Number.parseInt(element.querySelector("summary")?.textContent?.match(/\d+/u)?.[0] ?? "0", 10));
+          return counts.indexOf(Math.max(...counts));
+        });
+        const details = candidates.nth(candidateIndex);
+        if (!(await details.evaluate((element) => element.open))) await details.locator("summary").click();
+        const activityAction = details.locator(".activity-disclosure-actions [data-open-session-for]");
+        const focusLabel = details.locator("summary small");
+        const [activityActionBox, focusLabelBox] = await Promise.all([
+          activityAction.boundingBox(),
+          focusLabel.boundingBox(),
+        ]);
+        if (!activityActionBox || !focusLabelBox
+          || Math.abs((activityActionBox.y + activityActionBox.height / 2) - (focusLabelBox.y + focusLabelBox.height / 2)) > 2) {
+          throw new Error("Open session and focus view must share one activity disclosure row.");
+        }
+        const chart = details.locator(".chart-card:not(.chart-compact)");
+        await chart.waitFor({ state: "visible" });
+        if ((await chart.locator(".chart-basis").innerText()).trim() !== "TIME AXIS") {
+          throw new Error("The activity toolbar must not expose idle-axis compression as Session state.");
+        }
+        const brokenGaps = chart.locator(".chart-gap.compressed");
+        if ((await brokenGaps.count()) === 0) throw new Error("The activity fixture must exercise a long idle scale break.");
+        const brokenGapLabels = await brokenGaps.locator(".chart-gap-label").allTextContents();
+        if (brokenGapLabels.some((label) => /compressed/iu.test(label))) {
+          throw new Error("Long idle labels must show duration without internal compression terminology.");
+        }
+        const gapTooltip = await brokenGaps.first().locator("title").textContent();
+        if (!gapTooltip?.includes("visual scale break") || /visually compressed/iu.test(gapTooltip)) {
+          throw new Error("Long idle tooltips must explain the axis break without implying Context compression.");
+        }
+        const compactionMarkers = chart.locator(".chart-context-compaction-marker");
+        if ((await compactionMarkers.count()) < 1) {
+          throw new Error("Explicit Context compaction boundaries must render on the activity timeline.");
+        }
+        if (!(await chart.locator(".chart-status-legends").innerText()).includes("context compressed")) {
+          throw new Error("The activity legend must name explicit Context compression evidence.");
+        }
+        await compactionMarkers.first().focus();
+        if (!((await chart.locator("[data-chart-inspector]").innerText()).includes("Context compressed"))) {
+          throw new Error("A focused Context compaction marker must expose its timestamped evidence detail.");
+        }
+        if (await chart.locator("[data-chart-locate]").isEnabled()) {
+          throw new Error("A Context compaction marker without a retained call id must not enable call location.");
+        }
+        const policy = chart.locator("[data-cache-policy-panel]");
+        if ((await policy.count()) !== 1) throw new Error("Expanded activity must render one docked prompt-cache policy pane.");
+        if ((await policy.getByText("Models and pricing change. Use the latest official documentation.", { exact: true }).count()) !== 1) {
+          throw new Error("Prompt-cache policy must tell readers to use the latest official documentation.");
+        }
+        if ((await policy.locator('.cache-policy-row a[href^="https://"]').count()) !== 7) {
+          throw new Error("Every prompt-cache model profile must retain its official documentation link.");
+        }
+        const defaultVisibleRows = await policy.locator(".cache-policy-row:visible").count();
+        if (defaultVisibleRows !== 3) {
+          throw new Error(`Prompt-cache policy must show three model rows by default; observed ${defaultVisibleRows}.`);
+        }
+        const toggle = policy.locator("[data-cache-policy-toggle]");
+        await toggle.click();
+        if ((await policy.locator(".cache-policy-row:visible").count()) !== 7) {
+          throw new Error("View all model profiles must disclose every configured row.");
+        }
+        await toggle.click();
+        const select = policy.locator("[data-cache-profile-select]");
+        const initialProfile = await select.inputValue();
+        await select.selectOption("anthropic-claude");
+        await page.waitForTimeout(100);
+        if ((await details.locator('[data-cache-profile-select]').inputValue()) !== "anthropic-claude"
+          || (await details.locator('.cache-policy-row.selected').innerText()).includes("Anthropic") === false) {
+          throw new Error("Selecting another prompt-cache reference must update the policy row and chart model together.");
+        }
+        await details.locator("[data-cache-profile-select]").selectOption(initialProfile);
+        await page.waitForTimeout(100);
+        const statusbar = details.locator(".chart-statusbar");
+        if ((await statusbar.count()) !== 1) throw new Error("Expanded activity must render one compact status row.");
+        if ((await statusbar.locator("[data-chart-inspector]").textContent())?.trim()) {
+          throw new Error("The idle activity status row must not reserve space for instructional placeholder copy.");
+        }
+        const statusHeight = await statusbar.evaluate((element) => element.getBoundingClientRect().height);
+        if (statusHeight > 45) throw new Error("Activity status detail and legends must stay within one compact row.");
+        const mark = details.locator(".chart-mark, .chart-ribbon-block, [data-chart-bin]").first();
+        if ((await mark.count()) > 0) {
+          await mark.evaluate((element) => element.focus());
+          if (!(await statusbar.locator("[data-chart-locate]").isEnabled())) {
+            throw new Error("Inspecting a chart event must enable the Session View locate action.");
+          }
+        }
+        return undefined;
       },
     },
     {
@@ -165,15 +353,54 @@ async function surfacesFor(page) {
           const metrics = await usageSummary.locator(".usage-summary-metrics").innerText();
           if (/Current (?:context|occupancy)/u.test(metrics)) throw new Error("Session usage summary must label context as latest observed evidence.");
         }
-        const sessionFacts = page.locator(".session-facts-disclosure");
-        if ((await sessionFacts.count()) !== 1 || await sessionFacts.evaluate(element => element.open)) {
-          throw new Error("Session facts must use one disclosure that is collapsed by default.");
+        const outline = page.locator(".session-sidebar");
+        if ((await outline.locator(".session-bulk, .session-facts-disclosure").count()) !== 0) {
+          throw new Error("Session outline must remove bulk Process actions and the legacy facts disclosure.");
         }
-        await sessionFacts.locator("summary").click();
-        if (!(await sessionFacts.locator(".session-outline-facts").isVisible())) {
-          throw new Error("Session facts must remain available on disclosure.");
+        if ((await outline.innerText()).includes("Read-only")) {
+          throw new Error("Session outline must not repeat the read-only status.");
         }
-        await sessionFacts.locator("summary").click();
+        if ((await outline.locator(".session-outline-controls > .jump-select").count()) !== 1) {
+          throw new Error("Session outline must retain one Cell jump control before Usage and context.");
+        }
+        const filters = outline.locator("details.session-filter-disclosure");
+        if ((await filters.count()) !== 1 || await filters.evaluate((element) => element.open)) {
+          throw new Error("Evidence filters must use the original disclosure and remain collapsed by default.");
+        }
+        const filterLabels = await filters.locator(".session-filter span").allTextContents();
+        const requiredFilters = ["Prompts", "Results", "Intermediate", "Model usage", "Commits", "Tool calls", "File paths"];
+        if (requiredFilters.some((label) => !filterLabels.includes(label)) || filterLabels.length < requiredFilters.length) {
+          throw new Error("Evidence filters must restore the complete historical evidence controls.");
+        }
+        if (!/^\d+ calls$/u.test((await filters.locator(":scope > summary em").innerText()).trim())) {
+          throw new Error("Evidence filters must retain the original total-call summary.");
+        }
+        if ((await filters.locator(".session-filter-list em").count()) !== filterLabels.length) {
+          throw new Error("Evidence filters must retain per-option counts.");
+        }
+        if ((await filters.locator(".session-filter.subtype").count()) === 0) {
+          throw new Error("Evidence filters must retain tool-name subtype controls and File paths.");
+        }
+        await filters.locator("summary").click();
+        const legacyUsageCards = page.locator(".session-process-stream .session-event.usage dl, .session-process-stream .session-event.usage > header");
+        if ((await legacyUsageCards.count()) !== 0) {
+          throw new Error("Process trace Model responses must use compact one-line summaries.");
+        }
+        const combinedUsage = page.locator(".session-process-stream .session-process-combined.with-usage");
+        if ((await combinedUsage.count()) > 0) {
+          const firstHeight = await combinedUsage.first().locator(":scope > summary").evaluate((element) => element.getBoundingClientRect().height);
+          if ((page.viewportSize()?.width ?? 0) > 1080 && firstHeight > 40) {
+            throw new Error("Combined tool and Model response summary must stay on one wide row.");
+          }
+        }
+        if (!(await filters.evaluate((element) => element.open)) || !(await filters.locator(".session-filter-list").isVisible())) {
+          throw new Error("Evidence filters summary must reveal the retained filters.");
+        }
+        await filters.locator("summary").click();
+        const factLabels = await outline.locator(".session-facts-compact dt").allTextContents();
+        if (factLabels.join("|") !== "Runtime|Model|Duration") {
+          throw new Error("Session facts must retain exactly Runtime, Model, and Duration.");
+        }
         return undefined;
       },
     },
@@ -209,6 +436,20 @@ async function surfacesFor(page) {
         if ((await panel.getByRole("heading", { name: "Current context composition" }).count()) !== 0) throw new Error("Current context composition must be integrated into the Current context tile.");
         const occupancy = panel.locator(".usage-report-occupancy");
         if ((await occupancy.locator(".usage-context-bar, .usage-occupancy-bar").count()) > 1) throw new Error("Current context must render at most one integrated occupancy/composition bar.");
+        const compactionHistory = occupancy.locator(".usage-context-history");
+        if ((await compactionHistory.count()) > 0) {
+          if ((await compactionHistory.count()) !== 1 || !(await occupancy.innerText()).includes("Current + historical compaction snapshots")) {
+            throw new Error("The primary Context tile must expose retained tokens as one bounded compaction-snapshot group.");
+          }
+          const [currentSize, historySize, supportingSize] = await Promise.all([
+            occupancy.locator(".usage-context-current").evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+            compactionHistory.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+            panel.locator(".usage-report-lead-facts dd").first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+          ]);
+          if (!(currentSize > historySize && historySize > supportingSize)) {
+            throw new Error("Current Context, compaction snapshots, and supporting facts must retain a descending visual hierarchy.");
+          }
+        }
         const reuse = panel.locator(".usage-report-reuse-tile");
         if ((await reuse.count()) !== 1) throw new Error("Usage report must render one integrated Input reuse KPI tile.");
         const structure = panel.locator(".usage-structure-section");
@@ -226,12 +467,12 @@ async function surfacesFor(page) {
           const startRange = panel.locator('[data-usage-window-edge="start"]');
           const beforeStart = Number(await startRange.inputValue());
           const minStart = Number(await startRange.getAttribute("min"));
-          const selectedBefore = await panel.locator(".usage-response-row[aria-selected=true]").getAttribute("data-usage-response-position");
+          const selectedBefore = await panel.locator("[data-usage-inspect-strip]").getAttribute("data-usage-inspect-position");
           await startRange.focus();
           await page.keyboard.press(beforeStart > minStart ? "ArrowLeft" : "ArrowRight");
           await page.waitForTimeout(100);
           const afterStart = Number(await panel.locator('[data-usage-window-edge="start"]').inputValue());
-          const selectedAfter = await panel.locator(".usage-response-row[aria-selected=true]").getAttribute("data-usage-response-position");
+          const selectedAfter = await panel.locator("[data-usage-inspect-strip]").getAttribute("data-usage-inspect-position");
           if (afterStart === beforeStart) throw new Error("Start range must preserve native Arrow-key adjustment.");
           if (selectedAfter !== selectedBefore) throw new Error("Range Arrow keys must not change the selected Response.");
         }
@@ -273,12 +514,46 @@ async function surfacesFor(page) {
             }
             await firstPromptMarker.locator(".usage-overview-turn-hit").click();
           }
-          if (responsePosition !== await panel.locator(".usage-response-row[aria-selected=true]").getAttribute("data-usage-response-position")) {
+          if (responsePosition !== await panel.locator("[data-usage-inspect-strip]").getAttribute("data-usage-inspect-position")) {
             throw new Error("Overview prompt markers must select their linked response.");
           }
         }
-        const responseHead = panel.locator(".usage-response-head");
-        if ((await responseHead.count()) > 0 && (await responseHead.innerText()).includes("Turn")) throw new Error("Response rows must not repeat the internal Turn number.");
+        if ((await panel.locator(".usage-response-table, .usage-response-head, .usage-response-row").count()) !== 0) {
+          throw new Error("Context progression must not repeat chart responses in a table.");
+        }
+        const inspectStrip = panel.locator("[data-usage-inspect-strip]");
+        const focusPoints = panel.locator("[data-usage-focus-point]");
+        if ((await inspectStrip.count()) !== 1 || (await focusPoints.count()) === 0) {
+          throw new Error("Context progression must expose one Inspect strip and one hover target per visible response.");
+        }
+        const lockedPosition = await inspectStrip.getAttribute("data-usage-inspect-position");
+        const lockedDetail = await panel.locator(".usage-response-detail header strong").innerText();
+        const target = lockedPosition === await focusPoints.first().getAttribute("data-usage-response-position") && (await focusPoints.count()) > 1
+          ? focusPoints.nth(1)
+          : focusPoints.first();
+        const targetPosition = await target.getAttribute("data-usage-response-position");
+        await target.locator(".usage-focus-point-hit").hover();
+        await page.waitForTimeout(100);
+        if ((await inspectStrip.getAttribute("data-usage-inspect-mode")) !== "hover"
+          || (await inspectStrip.getAttribute("data-usage-inspect-position")) !== targetPosition) {
+          throw new Error("Hovering a context response must update the docked Inspect strip.");
+        }
+        if ((await panel.locator(".usage-response-detail header strong").innerText()) !== lockedDetail) {
+          throw new Error("Hover must not replace the locked Response details selection.");
+        }
+        if ((await target.locator(".usage-hover-point").evaluate((point) => getComputedStyle(point).opacity)) !== "1") {
+          throw new Error("The hovered response must expose its point and guide without covering the chart.");
+        }
+        await panel.locator(".usage-context-chart .chart-toolbar").hover();
+        await page.waitForTimeout(50);
+        if ((await inspectStrip.getAttribute("data-usage-inspect-mode")) !== "selected"
+          || (await inspectStrip.getAttribute("data-usage-inspect-position")) !== lockedPosition) {
+          throw new Error("Leaving a hovered response must restore the locked Inspect strip values.");
+        }
+        await target.locator(".usage-focus-point-hit").click();
+        if ((await panel.locator("[data-usage-inspect-strip]").getAttribute("data-usage-inspect-position")) !== targetPosition) {
+          throw new Error("Clicking a hovered response must lock the same response in the Inspect strip and detail pane.");
+        }
         await page.waitForTimeout(300);
         return undefined;
       },
@@ -354,7 +629,7 @@ async function main() {
       if (mode.name === "wide" && measured.primaryWidthRatio !== null && measured.primaryWidthRatio < 0.5) {
         problems.push(`primary Session evidence uses only ${Math.round(measured.primaryWidthRatio * 100)}% of the viewport`);
       }
-      if (mode.name === "wide" && surface.label === "session-trace" && measured.outlineUsageOffset !== null && measured.outlineUsageOffset > 210) {
+      if (mode.name === "wide" && surface.label === "session-trace" && measured.outlineUsageOffset !== null && measured.outlineUsageOffset > 230) {
         problems.push(`Usage decision begins ${Math.round(measured.outlineUsageOffset)}px below the Session outline top`);
       }
       if (mode.name === "narrow" && surface.label === "session-trace" && measured.outlineTargetMinHeight !== null && measured.outlineTargetMinHeight < 44) {

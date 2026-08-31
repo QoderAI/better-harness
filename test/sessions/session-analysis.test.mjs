@@ -2562,6 +2562,13 @@ test("Codex keeps child rollout usage out of the parent while retaining real par
     assert.equal(summary.tokenUsage.totalTokens, 400);
     assert.equal(summary.contextManifest.usedTokens, 120);
     assert.equal(summary.contextManifest.compactionCount, 1);
+    assert.deepEqual(summary.contextManifest.compactionEvents, [
+      {
+        timestamp: "2026-08-28T10:00:07.000Z",
+        contextTokens: 240,
+        contextSnapshotTimestamp: "2026-08-28T10:00:04.000Z",
+      },
+    ]);
     assert.equal(summary.usageReport.actualModelCalls, 3);
     assert.equal(summary.usageReport.currentContextTokens, 120);
     assert.equal(summary.usageReport.netContextDeltaTokens, 90);

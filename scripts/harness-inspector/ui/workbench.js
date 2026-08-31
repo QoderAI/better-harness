@@ -46,8 +46,14 @@
     replayTimer:null,
     // Chart zoom is a per-session view concern and stays out of the deep link.
     zoom:new Map(),
+    // Prompt-cache policy is mutable reference data, not Session evidence. A
+    // reader may compare another profile without changing the report model.
+    promptCacheProfileBySession:new Map(),
     // Usage range and response selection are local to an open Session report.
     usageExplorer:new Map(),
+    // Commit file layout is presentation-only, scoped to each visible delivery
+    // pane, and survives workbench rerenders within this generated report.
+    commitFileViews:new Map(),
     collapsedCards:new Set(),
     items:[],
   };
@@ -144,6 +150,41 @@
   const formatObservedTokenCount = value => Number.isFinite(value) ? formatTokenCount(value) : 'not reported';
   const formatSignedTokenCount = value => !Number.isFinite(value) ? 'not comparable'
     : value > 0 ? '+' + formatTokenCount(value) : value < 0 ? '−' + formatTokenCount(Math.abs(value)) : '0';
+  const sessionContextSnapshotPresentation = session => {
+    const reportedCurrent = session?.usageReport?.currentContextTokens;
+    const manifestCurrent = session?.contextManifest?.usedTokens;
+    const hasReportedCurrent = reportedCurrent !== null && reportedCurrent !== undefined && Number.isFinite(Number(reportedCurrent)) && Number(reportedCurrent) >= 0;
+    const hasManifestCurrent = manifestCurrent !== null && manifestCurrent !== undefined && Number.isFinite(Number(manifestCurrent)) && Number(manifestCurrent) >= 0;
+    const currentTokens = hasReportedCurrent
+      ? Math.round(Number(reportedCurrent))
+      : hasManifestCurrent ? Math.round(Number(manifestCurrent)) : null;
+    const compactionSnapshots = (session?.contextManifest?.compactionEvents ?? [])
+      .map(event => event?.contextTokens)
+      .filter(value => value !== null && value !== undefined && Number.isFinite(Number(value)) && Number(value) >= 0)
+      .map(Number)
+      .map(Math.round);
+    const compactionCount = Math.max(0,Math.round(Number(session?.contextManifest?.compactionCount) || 0));
+    const compactionTokens = compactionSnapshots.reduce((sum,value) => sum + value,0);
+    const observedTokens = (currentTokens ?? 0) + compactionTokens;
+    const observedSnapshotCount = (currentTokens === null ? 0 : 1) + compactionSnapshots.length;
+    const parts = [];
+    if (currentTokens !== null) parts.push(formatTokenCount(currentTokens) + ' current');
+    if (compactionSnapshots.length > 0) parts.push(compactionSnapshots.length + ' comp · ' + formatTokenCount(compactionTokens));
+    else if (compactionCount > 0) parts.push(compactionCount + ' compaction' + (compactionCount === 1 ? '' : 's') + ' · tokens unobserved');
+    const titleParts = [];
+    if (currentTokens !== null) titleParts.push('Current Context: ' + formatTokenCount(currentTokens));
+    compactionSnapshots.forEach((value,index) => titleParts.push('Compaction ' + (index + 1) + ': ' + formatTokenCount(value)));
+    if (compactionCount > compactionSnapshots.length) titleParts.push((compactionCount - compactionSnapshots.length) + ' compaction token snapshot' + (compactionCount - compactionSnapshots.length === 1 ? '' : 's') + ' unavailable');
+    return { currentTokens, compactionCount, compactionTokens, observedTokens, observedSnapshotCount, compact:parts.join(' · '), title:titleParts.join('\n') };
+  };
+  const dayContextSnapshotPresentation = sessions => {
+    const summaries = sessions.map(sessionContextSnapshotPresentation);
+    return {
+      observedTokens: summaries.reduce((sum,summary) => sum + summary.observedTokens,0),
+      observedSessions: summaries.filter(summary => summary.observedSnapshotCount > 0).length,
+      compactionCount: summaries.reduce((sum,summary) => sum + summary.compactionCount,0),
+    };
+  };
   // Mirrors EMPTY_USAGE_REPORT in scripts/session-analysis/usage-progression.mjs
   // so this renderer never invents a second "nothing observed" shape.
   const EMPTY_USAGE_REPORT = { actualModelCalls:0,duplicateRecordsCollapsed:0,conflictingDuplicateRecords:0,contextResetCount:0,modelBoundaryCount:0,progressionTotalCount:0,progressionTruncated:false,progression:[] };
@@ -240,13 +281,18 @@
     if (hasUsed) return formatTokenCount(context.usedTokens) + (context.basis === 'prompt-tokens' ? ' observed prompt tokens' : ' used tokens') + ' · context window not observed';
     return 'not observed for this response';
   };
-  const usageStepMarkup = (step,index) => {
+  const usageStepMarkup = (step,index,inline = false) => {
     const source = step.source ?? 'normalized model evidence';
-    return '<article class="session-event usage" data-session-event="usage"><header><strong>Model response ' + index + '</strong><span title="' + escape(source) + '">' + escape(step.model ?? source) + '</span></header><dl>'
-      + '<div><dt>Tokens</dt><dd>' + escape(formatInvocationUsage(step.tokenUsage)) + '</dd></div>'
-      + (step.cacheReuse ? '<div><dt>Input reuse</dt><dd>' + escape(formatCacheReuse(step.cacheReuse)) + '</dd></div>' : '')
-      + '<div><dt>Context</dt><dd>' + escape(formatContextWindowUsage(step.contextUsage)) + '</dd></div>'
-      + '</dl></article>';
+    const total = Number.isFinite(step.tokenUsage?.totalTokens)
+      ? step.tokenUsage.totalTokens
+      : Number(step.tokenUsage?.inputTokens ?? 0) + Number(step.tokenUsage?.outputTokens ?? 0);
+    const compactTokens = total > 0 ? formatTokenCount(total) + ' tokens' : 'usage observed';
+    const context = formatContextWindowUsage(step.contextUsage);
+    const detail = formatInvocationUsage(step.tokenUsage) + ' · ' + (step.cacheReuse ? formatCacheReuse(step.cacheReuse) + ' · ' : '') + context;
+    const content = '<strong>Model response ' + index + '</strong><span>' + escape(compactTokens + ' · ' + context) + '</span>';
+    return inline
+      ? '<span class="session-usage-inline" data-session-event="usage" title="' + escape((step.model ?? source) + ' · ' + detail) + '">' + content + '</span>'
+      : '<article class="session-event usage session-usage-compact" data-session-event="usage" title="' + escape((step.model ?? source) + ' · ' + detail) + '">' + content + '</article>';
   };
   const usageContextPresentation = session => {
     const context = session.contextManifest;
@@ -369,7 +415,7 @@
     : reuse.status === 'observed' && Number.isFinite(reuse.reusePercent) ? reuse.reusePercent + '% reused'
       : formatTokenCount(reuse.cacheReadTokens) + ' cached';
   const usageResponseDetailMarkup = (session,point) => {
-    if (!point) return '<aside class="usage-response-detail" aria-live="polite"><strong>Response details</strong><p>Select a chart point or response row to inspect its bounded usage evidence.</p></aside>';
+    if (!point) return '<aside class="usage-response-detail" aria-live="polite"><strong>Response details</strong><p>Select a chart point to lock its bounded usage evidence.</p></aside>';
     const fact = (label,value) => '<div><dt>' + escape(label) + '</dt><dd>' + escape(value) + '</dd></div>';
     const prompt = usagePromptFor(session,point);
     return '<aside class="usage-response-detail" aria-live="polite"><header><span>Response details</span><strong>Response ' + point.index + '</strong><small>' + escape(formatStamp(point.timestamp) ? formatStamp(point.timestamp) + ' UTC' : 'response time unavailable') + '</small></header><dl>'
@@ -379,6 +425,20 @@
       + fact('Input reuse',usageReuseCompact(point.cacheReuse))
       + fact('Boundary',usageBoundaryLabel(point))
       + '</dl>' + (prompt ? '<div class="usage-response-prompt"><span>Linked user prompt' + (Number.isFinite(point.turnIndex) ? ' · T' + point.turnIndex : '') + '</span><p title="' + escape(prompt) + '">' + escape(prompt) + '</p></div>' : '') + '<div class="usage-response-actions"><button type="button" data-usage-step="-1">Previous</button><button type="button" data-usage-step="1">Next</button></div></aside>';
+  };
+  const usageInspectStripMarkup = (entry,{ hovered = false,processedVisible = false } = {}) => {
+    if (!entry) return '<div class="usage-inspect-strip empty" data-usage-inspect-strip aria-label="Hovered or selected response values"><p>Hover a response or use the arrow keys to inspect its values.</p></div>';
+    const point = entry.point;
+    const fact = (label,value) => '<span><small>' + escape(label) + '</small><strong>' + escape(value) + '</strong></span>';
+    return '<div class="usage-inspect-strip' + (processedVisible ? ' with-processed' : '') + '" data-usage-inspect-strip data-usage-inspect-mode="' + (hovered ? 'hover' : 'selected') + '" data-usage-inspect-position="' + entry.position + '" aria-label="Hovered or selected response values">'
+      + '<div class="usage-inspect-identity"><small>' + (hovered ? 'Hover' : 'Selected') + '</small><strong>Response ' + point.index + '</strong></div>'
+      + fact('Time',formatStamp(point.timestamp) ? formatStamp(point.timestamp) + ' UTC' : '—')
+      + fact('Context',Number.isFinite(point.contextTokens) ? formatTokenCount(point.contextTokens) : '—')
+      + fact('Δ context',Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(point.contextDeltaTokens) : '—')
+      + fact('Reuse',usageReuseCompact(point.cacheReuse))
+      + (processedVisible ? fact('Processed',Number.isFinite(point.processedTokens) ? formatTokenCount(point.processedTokens) : '—') : '')
+      + fact('Output',Number.isFinite(point.outputTokens) ? formatTokenCount(point.outputTokens) : '—')
+      + '</div>';
   };
   const usageExplorerMarkup = session => {
     const usageReport = sessionUsageReport(session);
@@ -432,21 +492,22 @@
     const selectedVisible = selectedEntry && selectedEntry.position >= explorer.start && selectedEntry.position < explorer.end;
     const crosshair = selectedVisible && Number.isFinite(selectedEntry.point.contextTokens)
       ? '<line class="usage-selection-line" x1="' + focusX(selectedEntry) + '" x2="' + focusX(selectedEntry) + '" y1="' + focusTop + '" y2="164"></line><circle class="usage-selection-point" cx="' + focusX(selectedEntry) + '" cy="' + focusY(selectedEntry) + '" r="5"></circle>' : '';
+    const focusPoints = visible.map((entry,index) => {
+      const markerX = focusX(entry);
+      const markerY = Number.isFinite(entry.point.contextTokens) ? focusY(entry) : focusBottom;
+      const previousX = index > 0 ? focusX(visible[index - 1]) : padX;
+      const nextX = index < visible.length - 1 ? focusX(visible[index + 1]) : width - padX;
+      const hitLeft = index > 0 ? (previousX + markerX) / 2 : padX;
+      const hitRight = index < visible.length - 1 ? (markerX + nextX) / 2 : width - padX;
+      return '<g class="usage-focus-point' + (entry.position === explorer.selected ? ' selected' : '') + '" data-usage-focus-point data-usage-response-position="' + entry.position + '" aria-hidden="true"><rect class="usage-focus-point-hit" x="' + hitLeft + '" y="8" width="' + Math.max(1,hitRight - hitLeft) + '" height="158"></rect><line class="usage-hover-line" x1="' + markerX + '" x2="' + markerX + '" y1="' + focusTop + '" y2="164"></line><circle class="usage-hover-point" cx="' + markerX + '" cy="' + markerY + '" r="5"></circle></g>';
+    }).join('');
     const focusEvents = visible.filter(entry => ['shrink','model-change'].includes(entry.point.boundary)).map(entry => {
       const markerX = focusX(entry);
-      const detail = usagePointDetail(entry.point,usagePromptFor(session,entry.point));
       const marker = entry.point.boundary === 'shrink' ? '<path class="usage-focus-event boundary-shrink" d="M' + markerX + ' 147 l4 4 -4 4 -4 -4z"></path>'
         : '<rect class="usage-focus-event boundary-model-change" x="' + (markerX - 4) + '" y="147" width="8" height="8"></rect>';
-      return '<g data-usage-response-position="' + entry.position + '"><title>' + escape(detail.primary + '. ' + detail.secondary) + '</title><rect class="usage-chart-point-hit" x="' + (markerX - 12) + '" y="128" width="24" height="44"></rect>' + marker + '</g>';
+      return '<g aria-hidden="true">' + marker + '</g>';
     }).join('');
     const processedVisible = visible.some(entry => Number.isFinite(entry.point.processedTokens));
-    const columns = processedVisible ? ' with-processed' : '';
-    const header = '<div class="usage-response-head' + columns + '" aria-hidden="true"><span>Response</span><span>Time</span><span class="numeric-cell">Context</span><span class="numeric-cell">Δ context</span><span>Reuse</span>' + (processedVisible ? '<span class="numeric-cell">Processed</span>' : '') + '<span class="numeric-cell">Output</span></div>';
-    const rows = visible.map(entry => {
-      const point = entry.point;
-      const selected = entry.position === explorer.selected;
-      return '<li class="usage-response-row' + columns + (selected ? ' selected' : '') + '" role="option" aria-selected="' + selected + '" tabindex="' + (selected || explorer.selected < 0 && entry === visible[0] ? '0' : '-1') + '" data-usage-response-position="' + entry.position + '"><strong>Response ' + point.index + '</strong><span>' + escape(formatStamp(point.timestamp) ?? '—') + '</span><strong class="numeric-cell">' + (Number.isFinite(point.contextTokens) ? formatTokenCount(point.contextTokens) : '—') + '</strong><span class="numeric-cell usage-delta">' + (Number.isFinite(point.contextDeltaTokens) ? formatSignedTokenCount(point.contextDeltaTokens) : '—') + '</span><em>' + escape(usageReuseCompact(point.cacheReuse)) + '</em>' + (processedVisible ? '<span class="numeric-cell">' + (Number.isFinite(point.processedTokens) ? formatTokenCount(point.processedTokens) : '—') + '</span>' : '') + '<span class="numeric-cell">' + (Number.isFinite(point.outputTokens) ? formatTokenCount(point.outputTokens) : '—') + '</span></li>';
-    }).join('');
     const first = visible[0]?.point.index;
     const last = visible.at(-1)?.point.index;
     const timed = entries.filter(entry => formatStamp(entry.point.timestamp));
@@ -464,8 +525,7 @@
       + '<div class="usage-window-toolbar"><div class="usage-window-summary"><strong>Responses ' + first + '–' + last + '</strong><span>' + visible.length + ' of ' + entries.length + '</span></div><button type="button" data-usage-window-step="-1"' + (explorer.start === 0 ? ' disabled' : '') + '>Previous window</button><div class="usage-window-edge-controls"><label>Start<input type="range" min="0" max="' + Math.max(0,explorer.end - explorer.minSize) + '" value="' + explorer.start + '" data-usage-window-edge="start" aria-label="Visible response window start" aria-valuetext="Response ' + first + '"></label><label>End<input type="range" min="' + Math.min(entries.length,explorer.start + explorer.minSize) + '" max="' + entries.length + '" value="' + explorer.end + '" data-usage-window-edge="end" aria-label="Visible response window end" aria-valuetext="Response ' + last + '"></label></div><button type="button" data-usage-window-step="1"' + (explorer.end === entries.length ? ' disabled' : '') + '>Next window</button></div>'
       : '';
     return '<div class="usage-linked-explorer ' + (hasWindowControls ? 'has-window-controls' : 'short-session') + '" data-usage-explorer="' + escape(session.sessionId) + '">' + overviewMarkup
-      + '<div class="usage-focus-layout"><div class="usage-context-chart"><div class="chart-toolbar"><span class="chart-basis">' + (hasWindowControls ? 'Focus · ' : '') + 'Responses ' + first + '–' + last + '</span><span class="chart-range">Arrow keys select · Esc clears</span></div><svg class="usage-focus-chart" data-usage-focus-surface tabindex="0" viewBox="0 0 ' + width + ' ' + focusHeight + '" role="group" aria-roledescription="Interactive context chart" aria-label="Context progression for responses ' + first + ' through ' + last + '"><rect class="usage-focus-surface" x="' + padX + '" y="8" width="' + (width - padX * 2) + '" height="158"></rect>' + [0,.5,1].map(ratio => { const lineY = focusTop + ratio * (focusBottom - focusTop); return '<line class="usage-chart-grid" x1="' + padX + '" x2="' + (width - padX) + '" y1="' + lineY + '" y2="' + lineY + '"></line>'; }).join('') + focusPaths + crosshair + focusEvents + '<text x="' + padX + '" y="' + (focusTop - 4) + '">' + escape(formatTokenCount(focusMax)) + '</text><text x="' + padX + '" y="172">' + escape(formatTokenCount(focusMin)) + '</text></svg><div class="usage-chart-legend"><span><i class="growth"></i>Context snapshot</span><span><i class="shrink"></i>Context shrink/reset</span><span><i class="boundary"></i>Model boundary</span></div></div>' + usageResponseDetailMarkup(session,selectedEntry?.point) + '</div>'
-      + '<div class="usage-response-table" role="listbox" aria-label="Responses ' + first + ' through ' + last + '">' + header + '<ol>' + rows + '</ol></div></div>';
+      + '<div class="usage-focus-layout"><div class="usage-context-chart"><div class="chart-toolbar"><span class="chart-basis">' + (hasWindowControls ? 'Focus · ' : '') + 'Responses ' + first + '–' + last + '</span><span class="chart-range">Hover for details · Arrow keys select · Esc clears</span></div><svg class="usage-focus-chart" data-usage-focus-surface tabindex="0" viewBox="0 0 ' + width + ' ' + focusHeight + '" role="group" aria-roledescription="Interactive context chart" aria-label="Context progression for responses ' + first + ' through ' + last + '"><rect class="usage-focus-surface" x="' + padX + '" y="8" width="' + (width - padX * 2) + '" height="158"></rect>' + [0,.5,1].map(ratio => { const lineY = focusTop + ratio * (focusBottom - focusTop); return '<line class="usage-chart-grid" x1="' + padX + '" x2="' + (width - padX) + '" y1="' + lineY + '" y2="' + lineY + '"></line>'; }).join('') + focusPaths + focusPoints + crosshair + focusEvents + '<text x="' + padX + '" y="' + (focusTop - 4) + '">' + escape(formatTokenCount(focusMax)) + '</text><text x="' + padX + '" y="172">' + escape(formatTokenCount(focusMin)) + '</text></svg><div class="usage-chart-legend"><span><i class="growth"></i>Context snapshot</span><span><i class="shrink"></i>Context shrink/reset</span><span><i class="boundary"></i>Model boundary</span></div>' + usageInspectStripMarkup(selectedEntry,{ processedVisible }) + '</div>' + usageResponseDetailMarkup(session,selectedEntry?.point) + '</div></div>';
   };
   const processingBreakdownMarkup = (usage,usageReport) => {
     if (!Number.isFinite(usageReport?.processedTokens)) return '';
@@ -512,6 +572,14 @@
     const cacheReuse = session.cacheReuse;
     const runtime = session.runtime;
     const compactionCount = Number(session.contextManifest?.compactionCount) || 0;
+    const compactionSnapshots = (session.contextManifest?.compactionEvents ?? [])
+      .filter(event => Number.isFinite(Number(event?.contextTokens)))
+      .map(event => ({
+        timestamp: event.timestamp,
+        contextTokens: Math.max(0,Math.round(Number(event.contextTokens))),
+        contextSnapshotTimestamp: event.contextSnapshotTimestamp,
+      }));
+    const showCompactionSnapshots = compactionSnapshots.length > 0 && context.hasUsedTokens;
     const compactionNote = compactionCount > 0 ? ' Provider reported ' + compactionCount + ' compaction boundar' + (compactionCount === 1 ? 'y' : 'ies') + '.' : '';
     const contextBoundaryBadge = compactionCount > 0
       ? compactionCount + ' compaction' + (compactionCount === 1 ? '' : 's')
@@ -519,6 +587,10 @@
     const contextBoundaryTitle = compactionCount > 0
       ? 'Provider reported ' + compactionCount + ' compaction boundar' + (compactionCount === 1 ? 'y' : 'ies')
       : usageReport.contextResetCount > 0 ? usageReport.contextResetCount + ' observed context shrink/reset' + (usageReport.contextResetCount === 1 ? '' : 's') : '';
+    const compactionSnapshotTitle = compactionSnapshots.length > 0
+      ? compactionSnapshots.map(event => formatShortClock(event.timestamp) + ' UTC · ' + formatTokenCount(event.contextTokens) + ' context at latest observed snapshot' + (event.contextSnapshotTimestamp ? ' (' + formatShortClock(event.contextSnapshotTimestamp) + ' UTC)' : '')).join('\n')
+      : contextBoundaryTitle;
+    const compactionHistoryValue = compactionSnapshots.map(event => formatTokenCount(event.contextTokens)).join(' + ');
     const fact = (label,value) => '<div><dt>' + escape(label) + '</dt><dd>' + escape(value) + '</dd></div>';
     const inputLabel = usage?.cacheAccountingMode === 'included-in-input' ? 'Total input (includes cached)'
       : usage?.cacheAccountingMode === 'separate-input-lane' ? 'Uncached input' : 'Input (cache relationship unknown)';
@@ -526,14 +598,15 @@
       .map(([label,value]) => fact(label,formatObservedTokenCount(value))).join('');
     const occupancyBar = context.hasContextWindow ? contextBarMarkup(context,context.percentFull + '% of the observed context window is full')
       : context.hasPercentFull ? occupancyBarMarkup(context.percentFull,context.percentFull + '% context occupancy observed; window size unavailable') : '';
-    const occupancyHeading = '<span>Latest observed context</span>' + (contextBoundaryBadge ? '<em class="usage-summary-compactions" title="' + escape(contextBoundaryTitle) + '">' + escape(contextBoundaryBadge) + '</em>' : '');
+    const occupancyHeading = '<span>' + (showCompactionSnapshots ? 'Current + historical compaction snapshots' : 'Latest observed context') + '</span>' + (contextBoundaryBadge ? '<em class="usage-summary-compactions" title="' + escape(compactionSnapshotTitle) + '">' + escape(contextBoundaryBadge) + '</em>' : '');
+    const occupancyValue = value => '<div class="usage-context-values"><strong class="usage-context-current">' + escape(value) + '</strong>' + (showCompactionSnapshots ? '<span class="usage-context-plus" aria-hidden="true">+</span><strong class="usage-context-history" title="' + escape(compactionSnapshotTitle) + '">' + escape(compactionHistoryValue) + '</strong>' : '') + '</div>';
     const occupancy = context.hasContextWindow
-      ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>' + formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + context.percentFull + '% full</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>' + occupancyBar
+      ? occupancyValue(formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens)) + '<div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>' + formatTokenCount(context.usedTokens) + ' / ' + formatTokenCount(context.windowTokens) + ' · ' + context.percentFull + '% full</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>' + occupancyBar
       : context.hasPercentFull
-        ? '<strong>' + context.percentFull + '%</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>Window size not observed</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>' + occupancyBar
+        ? occupancyValue(context.percentFull + '%') + '<div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>Window size not observed</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>' + occupancyBar
         : context.hasUsedTokens
-          ? '<strong>' + formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens) + '</strong><div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>Context window not observed</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>'
-          : '<strong>—</strong><div class="usage-summary-tile-heading"><span>Occupancy unavailable</span></div><small>No observed context evidence</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>';
+          ? occupancyValue(formatTokenCount(usageReport.currentContextTokens ?? context.usedTokens)) + '<div class="usage-summary-tile-heading">' + occupancyHeading + '</div><small>Context window not observed</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>'
+          : occupancyValue('—') + '<div class="usage-summary-tile-heading"><span>Occupancy unavailable</span></div><small>No observed context evidence</small><p class="usage-report-freshness">' + escape(freshness.note) + '</p>';
     const reuseDetail = cacheReuse?.status === 'observed' && Number.isFinite(cacheReuse.promptInputTokens)
       ? formatTokenCount(cacheReuse.cacheReadTokens) + ' cached · ' + formatTokenCount(cacheReuse.uncachedInputTokens) + ' uncached'
       : cacheReuse ? formatTokenCount(cacheReuse.cacheReadTokens) + ' cached · rate unavailable' : 'No observed cache evidence';
@@ -693,26 +766,64 @@
       : directCommits.length
         ? '<p class="commit-bridge">' + directCommits.length + ' commit' + (directCommits.length === 1 ? ' was' : 's were') + ' created in this session, but no Edit/Write path was observed before the commit. The files may have entered the session as existing workspace changes.</p>'
         : '';
-    return '<section class="lane activity-lane"><div class="lane-title"><strong>Checkpoint activity</strong><span>' + pathSummary + '</span></div><div class="activity-summary"><div class="activity-total"><strong>' + activity.totalCalls + '</strong><span>calls · ' + activity.failedCalls + ' failed' + escape(spanCopy) + '</span></div><div class="family-bars">' + bars + '</div></div>' + commitBridge + '<details class="activity-details" data-activity-session="' + escape(session.sessionId) + '"><summary><span>Expand ' + activity.totalCalls + ' normalized actions</span><small>focus view</small></summary><div class="activity-actions"><button type="button" class="activity-action primary" data-open-session-for="' + escape(session.sessionId) + '">Open session</button></div><div class="trace-target" data-activity-chart="' + escape(session.sessionId) + '"></div></details></section>';
+    return '<section class="lane activity-lane"><div class="lane-title"><strong>Checkpoint activity</strong><span>' + pathSummary + '</span></div><div class="activity-summary"><div class="activity-total"><strong>' + activity.totalCalls + '</strong><span>calls · ' + activity.failedCalls + ' failed' + escape(spanCopy) + '</span></div><div class="family-bars">' + bars + '</div></div>' + commitBridge + '<details class="activity-details" data-activity-session="' + escape(session.sessionId) + '"><summary><span>Expand ' + activity.totalCalls + ' normalized actions</span><span class="activity-disclosure-actions"><button type="button" class="activity-action primary" data-open-session-for="' + escape(session.sessionId) + '">Open session</button><small>focus view</small></span></summary><div class="trace-target" data-activity-chart="' + escape(session.sessionId) + '"></div></details></section>';
   }
 
-  function fileTree(commit, link) {
-    const overlap = new Set(link?.overlappingFiles ?? []);
-    const linkedEdits = new Set(link?.linkedEditFiles ?? []);
-    const groups = new Map();
-    for (const file of commit.files) {
+  function diffStats(change, label = 'File') {
+    const added = Number.isFinite(change.added) ? '<span class="diff-add" aria-label="' + escape(label) + ': ' + change.added + ' lines added">+' + change.added + '</span>' : '';
+    const removed = Number.isFinite(change.removed) ? '<span class="diff-remove" aria-label="' + escape(label) + ': ' + change.removed + ' lines removed">-' + change.removed + '</span>' : '';
+    return '<span class="diff-stat">' + (added || removed ? added + removed : '<span class="diff-binary">binary</span>') + '</span>';
+  }
+
+  function fileRow(file, display = file.path) {
+    return '<div class="file-row" title="' + escape(file.path) + '"><code>' + escape(display) + '</code>' + diffStats(file,file.path) + '</div>';
+  }
+
+  function flatFileList(commit) {
+    return commit.files.map(file => fileRow(file)).join('');
+  }
+
+  function buildDirectoryTree(files) {
+    const root = { path:'', directories:new Map(), files:[], fileCount:0 };
+    for (const file of files) {
       const parts = file.path.split('/');
-      const folder = parts.length > 1 ? parts.shift() : '(root)';
-      if (!groups.has(folder)) groups.set(folder,[]);
-      groups.get(folder).push({ ...file, display:parts.join('/') || file.path });
+      const name = parts.pop() || file.path;
+      let directory = root;
+      directory.fileCount += 1;
+      for (const segment of parts) {
+        if (!directory.directories.has(segment)) {
+          const path = directory.path ? directory.path + '/' + segment : segment;
+          directory.directories.set(segment,{ name:segment, path, directories:new Map(), files:[], fileCount:0 });
+        }
+        directory = directory.directories.get(segment);
+        directory.fileCount += 1;
+      }
+      directory.files.push({ ...file, name });
     }
-    return [...groups.entries()].map(([folder,files]) => '<div class="folder">' + escape(folder) + '</div>' + files.map(file => {
-      const editedBeforeCommit = linkedEdits.has(file.path);
-      const shared = overlap.has(file.path);
-      const sharedKind = editedBeforeCommit ? 'observed-commit' : link?.evidenceKind === 'file-context' ? 'file-context' : 'observed-overlap';
-      const sharedLabel = editedBeforeCommit ? 'edited before commit' : link?.evidenceKind === 'file-context' ? 'same path' : 'observed same-path';
-      return '<div class="file-row"><code title="' + escape(file.path) + '">' + escape(file.display) + '</code><span class="delta">' + (Number.isFinite(file.added) ? '+' + file.added : 'bin') + ' / ' + (Number.isFinite(file.removed) ? '-' + file.removed : 'bin') + ' ' + evidence(editedBeforeCommit || shared ? sharedKind : 'commit-change', editedBeforeCommit || shared ? sharedLabel : 'commit') + '</span></div>';
-    }).join('')).join('');
+    return root;
+  }
+
+  function directoryTreeMarkup(directory) {
+    const childDirectories = [...directory.directories.values()]
+      .sort((left,right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
+      .map(child => '<details class="file-tree-node" open><summary><span class="file-tree-chevron" aria-hidden="true">›</span><span class="file-tree-folder" title="' + escape(child.path) + '">' + escape(child.name) + '</span><small>' + child.fileCount + '</small></summary><div class="file-tree-children">' + directoryTreeMarkup(child) + '</div></details>')
+      .join('');
+    const childFiles = [...directory.files]
+      .sort((left,right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
+      .map(file => fileRow(file,file.name))
+      .join('');
+    return childDirectories + childFiles;
+  }
+
+  function commitFileViewMarkup(commit, view) {
+    if (!commit.files.length) return '<div class="empty-state">No changed paths retained.</div>';
+    return view === 'tree'
+      ? '<div class="commit-file-view file-tree-view" data-file-view-panel="tree">' + directoryTreeMarkup(buildDirectoryTree(commit.files)) + '</div>'
+      : '<div class="commit-file-view file-list-view" data-file-view-panel="list">' + flatFileList(commit) + '</div>';
+  }
+
+  function commitFileViewKey(item) {
+    return [state.mode,state.scope,item.story?.id ?? '',item.session?.sessionId ?? '',item.date ?? ''].join(':');
   }
 
   function commitLaneContext(item, commit) {
@@ -722,23 +833,27 @@
   }
 
   function deliveryLane(item, commits) {
+    const fileViewKey = commitFileViewKey(item);
+    const fileView = state.commitFileViews.get(fileViewKey) ?? 'list';
     const commitContexts = commits.map(commit => ({ commit, ...commitLaneContext(item,commit) }));
     const compactCount = commitContexts.filter(context => context.compact).length;
     const cards = commitContexts.map(({ commit, link, kind, compact }) => {
       const label = kind === 'file-context' ? 'same-file history' : kind === 'observed-overlap' ? 'observed same-path' : kind === 'observed-commit' ? 'created in session' : kind;
       const relation = link ? (link.evidenceKind === 'file-context' ? ' · same-file context' : link.evidenceKind === 'observed-commit' ? ' · observed commit action' : ' · ' + escape(link.confidence) + ' correlation') : '';
-      const contextSessionId = item.session?.sessionId ?? null;
-      const linked = link ? { ...link, sessionId:contextSessionId } : null;
-      const stats = commit.fileCount + ' files · +' + commit.linesAdded + ' / -' + commit.linesRemoved + relation;
-      const files = '<div class="file-tree">' + (fileTree(commit,linked) || '<div class="empty-state">No changed paths retained.</div>') + '</div>';
+      const stats = commit.fileCount + ' files · ' + diffStats({ added:commit.linesAdded, removed:commit.linesRemoved },'Commit') + relation;
+      const files = '<div class="commit-files">' + commitFileViewMarkup(commit,fileView) + '</div>';
       if (compact) {
-        return '<details class="commit-card commit-card-compact"><summary class="commit-head"><div class="commit-head-line compact"><span class="commit-chevron" aria-hidden="true">›</span><code>' + escape(commit.shortHash) + '</code><span class="commit-subject" title="' + escape(commit.subject) + '">' + escape(commit.subject) + '</span><span class="commit-stats">' + stats + '</span>' + evidence(kind,label) + '</div></summary>' + files + '</details>';
+        return '<details class="commit-card commit-card-compact" data-commit-hash="' + escape(commit.hash) + '"><summary class="commit-head"><div class="commit-head-line compact"><span class="commit-chevron" aria-hidden="true">›</span><code>' + escape(commit.shortHash) + '</code><span class="commit-subject" title="' + escape(commit.subject) + '">' + escape(commit.subject) + '</span><span class="commit-stats">' + stats + '</span>' + evidence(kind,label) + '</div></summary>' + files + '</details>';
       }
-      return '<details class="commit-card commit-card-expanded" open><summary class="commit-head"><div class="commit-head-line"><span class="commit-id"><span class="commit-chevron" aria-hidden="true">›</span><code>' + escape(commit.shortHash) + '</code></span>' + evidence(kind,label) + '</div><p>' + escape(commit.subject) + '</p><div class="commit-stats">' + stats + '</div></summary>' + files + '</details>';
+      return '<details class="commit-card commit-card-expanded" data-commit-hash="' + escape(commit.hash) + '" open><summary class="commit-head"><div class="commit-head-line"><span class="commit-id"><span class="commit-chevron" aria-hidden="true">›</span><code>' + escape(commit.shortHash) + '</code></span>' + evidence(kind,label) + '</div><p>' + escape(commit.subject) + '</p><div class="commit-stats">' + stats + '</div></summary>' + files + '</details>';
     }).join('');
     if (!commits.length) return '<section class="lane delivery-lane lane-empty"><div class="lane-title"><div class="delivery-title-copy"><strong>Commits / files</strong><span>0 commits</span></div></div><div class="empty-state">No commit is linked to this session or Story.</div></section>';
     const compactLabel = compactCount ? ' · ' + compactCount + ' compact' : '';
-    return '<section class="lane delivery-lane"><div class="lane-title"><div class="delivery-title-copy"><strong>Commits / files</strong><span>' + commits.length + ' commits' + compactLabel + '</span></div><button class="delivery-toggle" data-toggle-delivery aria-expanded="true" aria-label="Collapse commits and files"><span class="open-label">Hide</span><span class="closed-label">Show files</span></button></div><div class="delivery-content">' + cards + '</div></section>';
+    const viewSwitch = '<div class="file-view-switch" role="group" aria-label="Commit file view">'
+      + '<button type="button" data-commit-file-view="list" aria-pressed="' + String(fileView === 'list') + '">List</button>'
+      + '<button type="button" data-commit-file-view="tree" aria-pressed="' + String(fileView === 'tree') + '">Tree</button>'
+      + '</div>';
+    return '<section class="lane delivery-lane" data-file-view="' + fileView + '" data-file-view-key="' + escape(fileViewKey) + '"><div class="lane-title"><div class="delivery-title-copy"><strong>Commits / files</strong><span>' + commits.length + ' commits' + compactLabel + '</span></div><div class="delivery-actions">' + viewSwitch + '<button class="delivery-toggle" data-toggle-delivery aria-expanded="true" aria-label="Collapse commits and files"><span class="open-label">Hide</span><span class="closed-label">Show files</span></button></div></div><div class="delivery-content" tabindex="0" aria-label="Changed files">' + cards + '</div></section>';
   }
 
   function setDeliveryCollapsed(workbench, collapsed) {
@@ -754,8 +869,10 @@
     const commits = commitsFor(item);
     const session = item.session;
     const title = itemTitle(item);
+    const contextSummary = session ? sessionContextSnapshotPresentation(session) : null;
+    const contextMeta = contextSummary?.compact ? '<span class="workbench-token-summary" title="' + escape(contextSummary.title) + '">' + escape(contextSummary.compact) + '</span>' : '';
     const sessionMeta = session
-      ? '<span class="workbench-provider">' + escape(session.platform) + '</span><span>' + escape(formatClock(session.firstSeen)) + '</span><span>' + escape(formatDuration(session.durationMs)) + '</span>'
+      ? '<span class="workbench-provider">' + escape(session.platform) + '</span><span>' + escape(formatClock(session.firstSeen)) + '</span><span class="workbench-duration">' + escape(formatDuration(session.durationMs)) + '</span>' + contextMeta
       : '<span>' + (item.date ? 'Unlinked commits' : 'No linked session') + '</span>';
     const sessionAction = session ? '<button class="prepare-button" data-open-session="' + escape(session.sessionId) + '">Open session</button>' : '';
     // The title identifies the session; explicit commands own all navigation.
@@ -813,6 +930,43 @@
     ? (Number.isFinite(call.startedAt) ? call.startedAt : null)
     : call.step;
 
+  function promptCacheProfileForSession(session) {
+    const selectedId = state.promptCacheProfileBySession.get(session.sessionId);
+    if (selectedId === '') return null;
+    if (selectedId) return PROMPT_CACHE_PROFILES.find(profile => profile.id === selectedId) ?? null;
+    return resolvePromptCacheProfile(PROMPT_CACHE_PROFILES,{
+      provider:session.runtime?.modelProvider ?? session.platform,
+      models:session.models,
+    });
+  }
+
+  function promptCachePolicyMarkup(session, selectedProfile) {
+    const orderedProfiles = selectedProfile
+      ? [selectedProfile,...PROMPT_CACHE_PROFILES.filter(profile => profile.id !== selectedProfile.id)]
+      : [...PROMPT_CACHE_PROFILES];
+    const selectOptions = [
+      '<option value=""' + (selectedProfile ? '' : ' selected') + '>Not observed</option>',
+      ...PROMPT_CACHE_PROFILES.map(profile => '<option value="' + escape(profile.id) + '"' + (profile.id === selectedProfile?.id ? ' selected' : '') + '>' + escape(profile.provider + ' · ' + profile.modelLabel) + '</option>'),
+    ].join('');
+    const rows = orderedProfiles.map((profile,index) => {
+      const selected = profile.id === selectedProfile?.id;
+      return '<div class="cache-policy-row' + (selected ? ' selected' : '') + '" role="row"' + (index >= 3 ? ' data-cache-policy-extra hidden' : '') + '>'
+        + '<span role="cell"><strong>' + escape(profile.provider) + '</strong> · ' + escape(profile.modelLabel) + '</span>'
+        + '<span role="cell">' + escape(profile.cacheModeLabel) + '</span>'
+        + '<span role="cell">' + escape(profile.ttlLabel) + '</span>'
+        + '<span role="cell">' + escape(profile.priceBasis) + '</span>'
+        + '<span role="cell"><a href="' + escape(profile.officialUrl) + '" target="_blank" rel="noreferrer">Official docs ↗</a></span>'
+        + '</div>';
+    }).join('');
+    return '<section class="cache-policy-panel" data-cache-policy-panel="' + escape(session.sessionId) + '" aria-label="Prompt cache policy reference">'
+      + '<header class="cache-policy-header"><strong>Prompt cache policy</strong><label>Current: <select data-cache-profile-select="' + escape(session.sessionId) + '" aria-label="Prompt cache reference profile">' + selectOptions + '</select></label><span>' + escape(PROMPT_CACHE_POLICY_NOTICE) + '</span></header>'
+      + '<div class="cache-policy-table" role="table" aria-label="Prompt cache model profiles">'
+      + '<div class="cache-policy-head" role="row"><span role="columnheader">Provider / model</span><span role="columnheader">Cache mode</span><span role="columnheader">TTL / retention</span><span role="columnheader">Price basis</span><span role="columnheader">Source</span></div>'
+      + rows + '</div>'
+      + '<button type="button" class="cache-policy-toggle" data-cache-policy-toggle aria-expanded="false">View all ' + PROMPT_CACHE_PROFILES.length + ' model profiles</button>'
+      + '</section>';
+  }
+
   function activityChartMarkup(session, availableWidth, { compact = false, calls = null } = {}) {
     const retainedCalls = calls ?? session.toolActivity.calls;
     const timedCalls = retainedCalls.filter(call => Number.isFinite(call.startedAt));
@@ -843,6 +997,19 @@
       .map(item => ({ ...item, position:new Date(item.commit?.committedAt ?? item.commit?.authoredAt ?? NaN).getTime() }))
       .filter(item => item.commit && Number.isFinite(item.position) && item.position >= domain.min && item.position <= domain.max)
       .sort((left,right) => left.position - right.position) : [];
+    const contextCompactionEvents = domain.timeBasis
+      ? [...new Set((session.contextManifest?.compactionEvents ?? [])
+        .map(event => new Date(event?.timestamp ?? NaN).getTime())
+        .filter(position => Number.isFinite(position) && position >= domain.min && position <= domain.max))]
+        .sort((left,right) => left - right)
+      : [];
+    const cacheProfile = promptCacheProfileForSession(session);
+    const responsePositions = [...new Set([
+      ...(session.usageReport?.progression ?? []).map(point => new Date(point.timestamp ?? NaN).getTime()),
+      ...(session.dialogue?.turns ?? []).flatMap(turn => (turn.steps ?? [])
+        .filter(step => step.kind === 'usage')
+        .map(step => new Date(step.timestamp ?? NaN).getTime())),
+    ].filter(Number.isFinite))].sort((left,right) => left - right);
 
     const labelWidth = compact ? 88 : 132;
     const rowHeight = compact ? 18 : 26;
@@ -909,6 +1076,7 @@
     // qualify — keyed off the span alone, a busy session reported no idle at all.
     let gapMarkup = '';
     let longestGap = null;
+    const cacheCues = [];
     if (domain.timeBasis && inDomain.length > 1) {
       const positions = inDomain.map(call => callPosition(call,true)).sort((left,right) => left - right);
       const threshold = Math.max(45000,domainWidth / 120);
@@ -921,16 +1089,27 @@
         const compressed = timelineScale.gaps.some(candidate => candidate.from === gapStart && candidate.to === gapEnd);
         const left = xFor(gapStart);
         const right = Math.max(xFor(positions[index]),left + 3);
-        const caption = 'No observed call for ' + formatSpan(gap) + ' (' + formatShortClock(gapStart) + ' → ' + formatShortClock(gapEnd) + ' UTC)' + (compressed ? '. This idle window is visually compressed.' : '');
+        const cacheCue = buildPromptCacheGapCue({ profile:cacheProfile, gapStartMs:gapStart, gapEndMs:gapEnd, responsePositions, responsePositionsSorted:true });
+        if (cacheCue) cacheCues.push(cacheCue);
+        const caption = 'No observed call for ' + formatSpan(gap) + ' (' + formatShortClock(gapStart) + ' → ' + formatShortClock(gapEnd) + ' UTC)'
+          + (compressed ? '. This long idle gap uses a visual scale break; its UTC duration is unchanged.' : '')
+          + (cacheCue ? ' Longest interval without an observed model response: ' + formatSpan(cacheCue.silenceMs) + '. ' + cacheCue.detail : '');
+        const idleLabel = 'idle ' + formatSpan(gap);
         const label = compressed
-          ? '<text class="chart-gap-label" x="0" y="0" transform="translate(' + ((left + right) / 2) + ' ' + (laneArea - 9) + ') rotate(-90)" text-anchor="start">idle ' + escape(formatSpan(gap)) + ' · compressed</text>'
+          ? '<text class="chart-gap-label" x="0" y="0" transform="translate(' + ((left + right) / 2) + ' ' + (laneArea - 9) + ') rotate(-90)" text-anchor="start">' + escape(idleLabel) + '</text>'
           : right - left > 46
-            ? '<text class="chart-gap-label" x="' + ((left + right) / 2) + '" y="' + (topPad + 10) + '" text-anchor="middle">idle ' + escape(formatSpan(gap)) + '</text>'
+            ? '<text class="chart-gap-label" x="' + ((left + right) / 2) + '" y="' + (topPad + 10) + '" text-anchor="middle">' + escape(idleLabel) + '</text>'
             : '';
         const breakMark = compressed
           ? '<path class="chart-gap-break" d="M ' + (((left + right) / 2) - 7) + ' ' + (laneArea - 4) + ' l 4 -4 l 4 4 l 4 -4 l 4 4"></path>'
           : '';
-        gapMarkup += '<g class="chart-gap' + (compressed ? ' compressed' : '') + '"><rect x="' + left + '" y="' + topPad + '" width="' + (right - left) + '" height="' + (laneArea - topPad) + '"><title>' + escape(caption) + '</title></rect>' + label + breakMark + '</g>';
+        const cacheEdge = cacheCue
+          ? '<line class="chart-gap-cache-edge" x1="' + left + '" x2="' + right + '" y1="' + topPad + '" y2="' + topPad + '"></line>'
+          : '';
+        const cacheAttributes = cacheCue
+          ? ' data-cache-gap-profile="' + escape(cacheCue.profileId) + '" data-cache-gap-provider="' + escape(cacheCue.providerLabel) + '" data-cache-gap-threshold-ms="' + cacheCue.thresholdMs + '" data-cache-gap-silence-ms="' + cacheCue.silenceMs + '"'
+          : '';
+        gapMarkup += '<g class="chart-gap' + (compressed ? ' compressed' : '') + (cacheCue ? ' cache-ttl-crossed' : '') + '"' + cacheAttributes + '><rect x="' + left + '" y="' + topPad + '" width="' + (right - left) + '" height="' + (laneArea - topPad) + '"><title>' + escape(caption) + '</title></rect>' + cacheEdge + label + breakMark + '</g>';
       }
     }
 
@@ -1024,6 +1203,15 @@
         + ' tabindex="0" role="button" aria-label="' + escape(label) + '"><title>' + escape(label) + '</title></path>';
     }).join('');
 
+    const contextCompactionMarkup = contextCompactionEvents.map(position => {
+      const x = xFor(position);
+      const markerY = topPad + 7;
+      const label = 'Context compressed · ' + formatShortClock(position) + ' UTC · explicit provider compaction boundary';
+      return '<g class="chart-context-compaction"><line class="chart-context-compaction-line" x1="' + x + '" x2="' + x + '" y1="' + (markerY + 5) + '" y2="' + laneArea + '"></line>'
+        + '<path class="chart-context-compaction-marker" data-session-id="' + escape(session.sessionId) + '" data-chart-detail="' + escape(label) + '" d="M ' + x + ' ' + (markerY - 5) + ' L ' + (x + 5) + ' ' + markerY + ' L ' + x + ' ' + (markerY + 5) + ' L ' + (x - 5) + ' ' + markerY + ' Z"'
+        + ' tabindex="0" role="button" aria-label="' + escape(label) + '"><title>' + escape(label) + '</title></path></g>';
+    }).join('');
+
     const tickCount = Math.max(2,Math.min(7,Math.floor(plotWidth / 92)));
     const ticks = Array.from({ length:tickCount },(_,index) => plotLeft + (plotWidth * index) / (tickCount - 1));
     const tickMarkup = ticks.map(x => {
@@ -1032,30 +1220,43 @@
     }).join('');
 
     const basisNote = domain.timeBasis
-      ? (timelineScale.compressed ? 'Wall-clock timestamps; long idle windows are visually compressed and bar height counts calls in that slice.' : 'Wall-clock time; bar height counts calls in that slice.')
+      ? (timelineScale.compressed ? 'Wall-clock timestamps; long idle gaps use visual scale breaks and bar height counts calls in that slice.' : 'Wall-clock time; bar height counts calls in that slice.')
       : 'No observed call timing in this session; the axis falls back to call order.';
     const aria = activity.totalCalls + ' normalized tool calls by action over ' + (domain.timeBasis ? 'observed time, with ' + commitEvents.length + ' commit events in view' : 'call sequence');
+    const cacheCueDescription = cacheCues.length
+      ? ' ' + cacheCues.length + ' idle window' + (cacheCues.length === 1 ? '' : 's') + ' cross prompt-cache TTL references. These are pricing-risk cues, not observed cache expiry, cache misses, or billed cost.'
+      : '';
+    const cacheCueKey = cacheCues.length
+      ? '<div class="chart-cache-key"><i aria-hidden="true"></i><span>cache TTL exceeded</span><span class="visually-hidden"> for ' + escape(cacheCues[0].providerLabel + ' ' + cacheCues[0].modelLabel) + '; pricing-risk reference only</span></div>'
+      : '';
+    const policyPane = !compact && !calls ? promptCachePolicyMarkup(session,cacheProfile) : '';
+    const statusSummary = inDomain.length + ' / ' + activity.totalCalls + ' calls'
+      + (longestGap ? ' · longest idle ' + formatSpan(longestGap.gap) + ' at ' + formatShortClock(longestGap.at) + ' UTC' : '')
+      + (untimed ? ' · ' + untimed + ' without observed timing' : '');
 
     return '<section class="chart-card' + (compact ? ' chart-compact' : '') + '" aria-label="NormalizedToolActivityV1 provider-neutral actions">'
-      + '<div class="chart-toolbar"><span class="chart-basis' + (domain.timeBasis ? '' : ' fallback') + '">' + escape(domain.timeBasis ? (timelineScale.compressed ? 'Time axis · idle compressed' : 'Time axis') : 'Sequence axis (no observed timing)') + '</span>'
+      + '<div class="chart-toolbar"><span class="chart-basis' + (domain.timeBasis ? '' : ' fallback') + '">' + escape(domain.timeBasis ? 'Time axis' : 'Sequence axis (no observed timing)') + '</span>'
       + '<span class="chart-range">' + escape(domain.timeBasis ? formatShortClock(domain.min) + ' → ' + formatShortClock(domain.max) + ' UTC · ' + formatSpan(domain.max - domain.min) : 'calls ' + Math.round(domain.min) + '–' + Math.round(domain.max)) + '</span>'
       + '<button type="button" class="chart-reset" data-chart-reset="' + escape(session.sessionId) + '"' + (zoom ? '' : ' disabled') + '>Reset zoom</button></div>'
       + '<svg class="activity-chart" data-activity-svg="' + escape(session.sessionId) + '" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="' + escape(aria) + '">'
-      + '<title>' + escape(aria) + '</title><desc>' + escape(basisNote + ' Shaded columns are windows with no observed call. Compressed idle windows retain their real UTC duration and use a broken scale. Red marks are failed calls. Green diamonds mark directly linked commit times. Drag across the plot to zoom.') + '</desc>'
+      + '<title>' + escape(aria) + '</title><desc>' + escape(basisNote + ' Shaded columns are windows with no observed call. Idle gaps with scale breaks retain their real UTC duration.' + cacheCueDescription + (contextCompactionEvents.length ? ' ' + contextCompactionEvents.length + ' explicit provider context compaction event' + (contextCompactionEvents.length === 1 ? ' is' : 's are') + ' marked.' : '') + ' Red marks are failed calls. Green diamonds mark directly linked commit times. Drag across the plot to zoom.') + '</desc>'
       + '<rect class="chart-surface" data-chart-surface x="' + plotLeft + '" y="' + topPad + '" width="' + plotWidth + '" height="' + (laneArea - topPad) + '" data-plot-left="' + plotLeft + '" data-plot-width="' + plotWidth + '" data-domain-min="' + domain.min + '" data-domain-max="' + domain.max + '" data-full-min="' + domain.fullMin + '" data-full-max="' + domain.fullMax + '" data-axis-segments="' + escape(JSON.stringify(timelineScale.segments)) + '" data-session-id="' + escape(session.sessionId) + '"></rect>'
-      + laneMarkup + gapMarkup + tickMarkup + ribbonMarkup + marksMarkup + commitMarkup
+      + laneMarkup + gapMarkup + tickMarkup + ribbonMarkup + marksMarkup + commitMarkup + contextCompactionMarkup
       + '<rect class="chart-brush" data-chart-brush x="0" y="' + topPad + '" width="0" height="' + (laneArea - topPad) + '" hidden></rect>'
       + '<line class="chart-axis-line" x1="' + labelWidth + '" x2="' + (plotRight + 6) + '" y1="' + laneArea + '" y2="' + laneArea + '"></line>'
       + '<text class="chart-axis-label" x="' + (labelWidth - 10) + '" y="' + (laneArea + (compact ? 14 : 17)) + '" text-anchor="end">' + escape(domain.timeBasis ? 'UTC' : 'Call') + '</text>'
       + '</svg>'
-      + '<div class="chart-inspector" data-chart-inspector aria-live="polite"><strong>Hover, focus, or click an event</strong><span>' + escape((detailMode ? 'Each action mark is one call; its width is the observed latency.' : 'Each action bar counts calls in a time slice — click to zoom in until individual calls appear.') + (commitEvents.length ? ' Green diamonds open Commit evidence.' : '')) + '</span></div>'
-      + '<footer class="chart-legend"><span>' + inDomain.length + ' of ' + activity.totalCalls + ' calls in view</span>'
-      + (longestGap ? '<span>longest idle ' + escape(formatSpan(longestGap.gap)) + ' at ' + escape(formatShortClock(longestGap.at)) + ' UTC</span>' : '')
-      + (untimed ? '<span class="chart-warning">' + untimed + ' without observed timing</span>' : '')
-      + (showRibbon ? '<span><i class="legend-dot between"></i>between calls (unattributed — model work or wait)</span>' : '')
-      + '<span><i class="legend-dot failed"></i>failed</span><span><i class="legend-dot gap"></i>idle window (no observed call, not user wait)</span>'
-      + (domain.timeBasis ? '<span><i class="legend-dot commit"></i>directly linked commit</span>' : '')
-      + '<span>' + escape(basisNote) + '</span></footer></section>';
+      + cacheCueKey + policyPane
+      + '<footer class="chart-statusbar">'
+      + '<div class="chart-inspector" data-chart-inspector aria-live="polite"></div>'
+      + '<button type="button" class="chart-status-link" data-chart-locate data-open-session-for="' + escape(session.sessionId) + '" disabled>Locate in Session View ↗</button>'
+      + '<span class="chart-status-summary' + (untimed ? ' chart-warning' : '') + '">' + escape(statusSummary) + '</span>'
+      + '<span class="chart-status-legends">'
+      + (showRibbon ? '<span><i class="legend-dot between"></i>between calls</span>' : '')
+      + '<span><i class="legend-dot failed"></i>failed</span><span><i class="legend-dot gap"></i>idle window</span>'
+      + (contextCompactionEvents.length ? '<span><i class="legend-dot context-compaction"></i>context compressed</span>' : '')
+      + (domain.timeBasis ? '<span><i class="legend-dot commit"></i>linked commit</span>' : '')
+      + '</span></footer></section>';
   }
 
   function renderActivityChart(container) {
@@ -1075,10 +1276,17 @@
     : null;
 
   function showChartDetail(element) {
-    const inspector = element.closest('.chart-card')?.querySelector('[data-chart-inspector]');
+    const card = element.closest('.chart-card');
+    const inspector = card?.querySelector('[data-chart-inspector]');
     if (!inspector || !element.dataset.chartDetail) return;
-    const hint = element.hasAttribute('data-chart-bin') ? 'Click to zoom into this slice.' : 'Click to locate this event in Session View.';
-    inspector.innerHTML = '<strong>' + escape(element.dataset.chartDetail) + '</strong><span>' + escape(hint) + '</span>';
+    inspector.innerHTML = '<strong>' + escape(element.dataset.chartDetail) + '</strong>';
+    const locate = card.querySelector('[data-chart-locate]');
+    if (!locate) return;
+    delete locate.dataset.callId;
+    delete locate.dataset.commitHash;
+    if (element.dataset.callId) locate.dataset.callId = element.dataset.callId;
+    if (element.dataset.commitHash) locate.dataset.commitHash = element.dataset.commitHash;
+    locate.disabled = !element.dataset.callId && !element.dataset.commitHash;
   }
 
   function showUsageChartDetail(element) {
@@ -1092,17 +1300,22 @@
     return sessionId ? bySession.get(sessionId) : null;
   }
 
-  function keepUsageSelectedRowVisible(explorer) {
-    const selectedRow = explorer?.querySelector('[data-usage-response-position][aria-selected="true"]');
-    const table = explorer?.querySelector('.usage-response-table');
-    if (!selectedRow || !table) return null;
-    const rowRect = selectedRow.getBoundingClientRect();
-    const tableRect = table.getBoundingClientRect();
-    const tableBottom = tableRect.top + table.clientHeight;
-    const headerHeight = table.querySelector('.usage-response-head')?.getBoundingClientRect().height ?? 0;
-    if (rowRect.top < tableRect.top + headerHeight) table.scrollTop += rowRect.top - tableRect.top - headerHeight;
-    else if (rowRect.bottom > tableBottom) table.scrollTop += rowRect.bottom - tableBottom;
-    return selectedRow;
+  function updateUsageInspectStrip(element,position,{ hovered = false } = {}) {
+    const session = usageSessionFor(element);
+    const strip = element?.closest?.('[data-usage-explorer]')?.querySelector('[data-usage-inspect-strip]');
+    if (!session || !strip) return;
+    const explorer = usageExplorerState(session);
+    const entry = Number.isInteger(position) && position >= 0 && position < explorer.points.length
+      ? { point:explorer.points[position],position }
+      : null;
+    const processedVisible = explorer.points.slice(explorer.start,explorer.end).some(point => Number.isFinite(point.processedTokens));
+    strip.outerHTML = usageInspectStripMarkup(entry,{ hovered,processedVisible });
+  }
+
+  function restoreUsageInspectStrip(element) {
+    const session = usageSessionFor(element);
+    if (!session) return;
+    updateUsageInspectStrip(element,usageExplorerState(session).selected);
   }
 
   function refreshUsageExplorer(session,{ focus = null } = {}) {
@@ -1110,11 +1323,9 @@
     if (!current) return;
     current.outerHTML = usageExplorerMarkup(session);
     const next = document.querySelector('[data-usage-explorer="' + CSS.escape(session.sessionId) + '"]');
-    const selectedRow = keepUsageSelectedRowVisible(next);
     const focusTarget = focus === 'start' || focus === 'end' ? next?.querySelector('[data-usage-window-edge="' + focus + '"]')
       : focus === 'chart' ? next?.querySelector('[data-usage-focus-surface]')
-        : focus === 'overview' ? next?.querySelector('[data-usage-overview-chart]')
-          : focus === 'row' ? selectedRow : null;
+        : focus === 'overview' ? next?.querySelector('[data-usage-overview-chart]') : null;
     focusTarget?.focus({ preventScroll:true });
   }
 
@@ -1134,7 +1345,7 @@
     refreshUsageExplorer(session,{ focus });
   }
 
-  function stepUsageSelection(session,delta,{ focus = 'row' } = {}) {
+  function stepUsageSelection(session,delta,{ focus = 'chart' } = {}) {
     const explorer = usageExplorerState(session);
     const selected = explorer.selected >= 0 ? explorer.selected : explorer.start;
     setUsageSelection(session,Math.max(0,Math.min(explorer.points.length - 1,selected + delta)),{ focus });
@@ -1307,12 +1518,16 @@
     let pendingCalls = [];
     let noteIndex = 0;
     let usageIndex = 0;
-    const flushCalls = () => {
-      if (!pendingCalls.length) return;
+    const flushCalls = usage => {
+      if (!pendingCalls.length) {
+        if (usage) rows.push(usageStepMarkup(usage.step,usage.index));
+        return;
+      }
       const calls = pendingCalls;
       pendingCalls = [];
       const names = [...new Set(calls.map(call => call.toolName))];
-      rows.push('<details class="session-event tools session-process-tool-run" data-session-event="tools"><summary class="session-event-head"><strong>' + calls.length + ' tool call' + (calls.length === 1 ? '' : 's') + '</strong><span>' + escape(names.slice(0,3).join(' · ')) + (names.length > 3 ? ' +' + (names.length - 3) : '') + '</span></summary>' + toolListMarkup(session,calls) + '</details>');
+      const nameMarkup = names.slice(0,3).map(name => '<span class="session-process-tool-name" data-tool="' + escape(name) + '">' + escape(name) + '</span>').join('<i aria-hidden="true"> · </i>') + (names.length > 3 ? '<i> +' + (names.length - 3) + '</i>' : '');
+      rows.push('<details class="session-event tools session-process-tool-run session-process-combined' + (usage ? ' with-usage' : '') + '" data-session-process-group data-tools-visible="true"><summary class="session-event-head session-process-combined-summary"><span class="session-process-tool-summary" data-session-event="tools"><strong>' + calls.length + ' tool call' + (calls.length === 1 ? '' : 's') + '</strong><span class="session-process-tool-names">' + nameMarkup + '</span></span>' + (usage ? usageStepMarkup(usage.step,usage.index,true) : '') + '</summary><div class="session-process-tool-body" data-session-event="tools">' + toolListMarkup(session,calls) + '</div></details>');
     };
     (turn.steps ?? []).forEach(step => {
       if (step.kind === 'tool') {
@@ -1324,13 +1539,13 @@
         }
         return;
       }
-      flushCalls();
       if (step.kind === 'note') {
+        flushCalls();
         noteIndex += 1;
         rows.push('<article class="session-event intermediate" data-session-event="intermediate"><div class="session-note-label">Intermediate ' + noteIndex + '</div><div class="session-markdown">' + renderSessionMarkdown(step.text) + '</div></article>');
       } else if (step.kind === 'usage') {
         usageIndex += 1;
-        rows.push(usageStepMarkup(step,usageIndex));
+        flushCalls({ step, index:usageIndex });
       }
     });
     flushCalls();
@@ -1445,29 +1660,17 @@
       ? '<section class="session-cell session-outside" id="session-outside-commits" data-session-cell="outside"><header class="session-turn-head"><strong>Commits outside turn windows</strong><span>' + placement.outside.length + ' commit' + (placement.outside.length === 1 ? '' : 's') + '</span></header><div class="session-cell-marker"><span>[ ]</span></div><section class="session-turn"><div class="session-outside-note">Timestamps fall outside every observed Turn window.</div>' + placement.outside.map(entry => commitEventMarkup(session,entry.commit,entry.relation)).join('') + '</section></section>'
       : '';
 
-    const filters = rankedTools.slice(0,8).map(([toolName,count]) => '<label class="session-filter subtype"><input type="checkbox" checked data-session-tool-filter="' + escape(toolName) + '"><span>' + escape(toolName) + '</span><em>' + count + '</em></label>').join('');
-    const sourceLabel = session.source === 'entire-checkpoint' ? 'Entire checkpoint' : 'Native session';
-    const coverage = turnCoverageOf(session);
-    const responseCount = session.dialogue?.responseCount ?? turns.filter(turn => turn.response).length;
-    const noteCount = session.dialogue?.noteCount ?? turns.reduce((sum,turn) => sum + turn.steps.filter(step => step.kind === 'note').length,0);
-    const usageCount = turns.reduce((sum,turn) => sum + (turn.usageEventCount ?? turn.steps.filter(step => step.kind === 'usage').length),0);
-    const projectionFact = session.dialogue?.truncated ? '<div><dt>Projection</dt><dd>Truncated</dd></div>' : '';
     const jumpOptions = turns.map(turn => '<option value="session-' + escape(turn.anchorId ?? ('turn-' + turn.index)) + '">In [' + turn.index + ']' + (Number.isFinite(turn.startMs) ? ' · ' + formatShortClock(turn.startMs) : '') + '</option>').join('')
       + (unplacedMarkup ? '<option value="session-unplaced">Unplaced evidence</option>' : '')
       + (outsideMarkup ? '<option value="session-outside-commits">Commits outside turn windows</option>' : '');
     const timeline = turnEvents + unplacedMarkup + outsideMarkup || '<div class="empty-state">No retained dialogue or observed evidence exists for this session.</div>';
-    const sessionFacts = '<div><dt>Source</dt><dd>' + escape(sourceLabel) + '</dd></div>'
-      + '<div><dt>Runtime</dt><dd>' + escape(session.platform) + '</dd></div>'
-      + '<div><dt>Model</dt><dd title="' + escape(session.models.join(', ') || 'unavailable') + '">' + escape(session.models.join(', ') || 'unavailable') + '</dd></div>'
-      + '<div><dt>Duration</dt><dd>' + escape(formatDuration(session.durationMs)) + '</dd></div>'
-      + '<div><dt>Turns</dt><dd title="' + escape(coverageTitle(session)) + '">' + coverage.turnCount + '</dd></div>'
-      + '<div><dt>Tool calls</dt><dd>' + session.toolActivity.totalCalls + '</dd></div>'
-      + '<div><dt>File edits</dt><dd>' + session.fileEditCount + '</dd></div>'
-      + projectionFact;
-    const primaryModel = session.models[0] ?? 'model unavailable';
-    const modelRemainder = session.models.length > 1 ? ' +' + (session.models.length - 1) : '';
-    const sessionFactSummary = session.platform + ' · ' + primaryModel + modelRemainder;
-    const sessionOutline = '<aside class="session-sidebar" aria-label="Session outline"><header><strong>Session outline</strong><span>Read-only</span></header><section class="session-outline-controls"><select class="jump-select" aria-label="Jump to Session cell" data-session-jump>' + jumpOptions + '</select><div class="session-bulk"><button type="button" aria-label="Expand process" data-expand-tools="open">Expand</button><button type="button" aria-label="Collapse process" data-expand-tools="close">Collapse</button></div></section><details class="session-filter-disclosure"><summary><span>Evidence filters</span><em>' + session.toolActivity.totalCalls + ' calls</em></summary><div class="session-filter-list"><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="prompts"><span>Prompts</span><em>' + turns.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="responses"><span>Results</span><em>' + responseCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="intermediate"><span>Intermediate</span><em>' + noteCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="usage"><span>Model usage</span><em>' + usageCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="commits"><span>Commits</span><em>' + commits.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="tools"><span>Tool calls</span><em>' + session.toolActivity.totalCalls + '</em></label>' + filters + '<label class="session-filter subtype"><input type="checkbox" checked data-session-file-filter><span>File paths</span><em>' + session.toolActivity.files.length + '</em></label></div></details><details class="session-facts-disclosure"><summary><span>Session</span><em title="' + escape(session.platform + ' · ' + (session.models.join(', ') || 'model unavailable')) + '">' + escape(sessionFactSummary) + '</em></summary><section class="session-outline-facts"><h3 class="visually-hidden">Session facts</h3><dl>' + sessionFacts + '</dl></section></details>' + usageContextMarkup(session) + '</aside>';
+    const toolFilters = rankedTools.slice(0,8).map(([toolName,count]) => '<label class="session-filter subtype"><input type="checkbox" checked data-session-tool-filter="' + escape(toolName) + '"><span>' + escape(toolName) + '</span><em>' + count + '</em></label>').join('');
+    const responseCount = session.dialogue?.responseCount ?? turns.filter(turn => turn.response).length;
+    const noteCount = session.dialogue?.noteCount ?? turns.reduce((sum,turn) => sum + turn.steps.filter(step => step.kind === 'note').length,0);
+    const usageCount = turns.reduce((sum,turn) => sum + (turn.usageEventCount ?? turn.steps.filter(step => step.kind === 'usage').length),0);
+    const compactFilters = '<details class="session-filter-disclosure"><summary><span>Evidence filters</span><em>' + session.toolActivity.totalCalls + ' calls</em></summary><div class="session-filter-list"><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="prompts"><span>Prompts</span><em>' + turns.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="responses"><span>Results</span><em>' + responseCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="intermediate"><span>Intermediate</span><em>' + noteCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="usage"><span>Model usage</span><em>' + usageCount + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="commits"><span>Commits</span><em>' + commits.length + '</em></label><label class="session-filter"><input type="checkbox" checked data-session-kind-filter="tools"><span>Tool calls</span><em>' + session.toolActivity.totalCalls + '</em></label>' + toolFilters + '<label class="session-filter subtype"><input type="checkbox" checked data-session-file-filter><span>File paths</span><em>' + session.toolActivity.files.length + '</em></label></div></details>';
+    const compactFacts = '<section class="session-facts-compact session-outline-facts" aria-labelledby="session-facts-title"><h3 id="session-facts-title">Session facts</h3><dl><div><dt>Runtime</dt><dd>' + escape(session.platform) + '</dd></div><div><dt>Model</dt><dd title="' + escape(session.models.join(', ') || 'unavailable') + '">' + escape(session.models.join(', ') || 'unavailable') + '</dd></div><div><dt>Duration</dt><dd>' + escape(formatDuration(session.durationMs)) + '</dd></div></dl></section>';
+    const sessionOutline = '<aside class="session-sidebar" aria-label="Session outline"><header><strong>Session outline</strong></header><section class="session-outline-controls"><select class="jump-select" aria-label="Jump to Session cell" data-session-jump>' + jumpOptions + '</select></section>' + compactFilters + compactFacts + usageContextMarkup(session) + '</aside>';
     const overallActivity = session.toolActivity.totalCalls ? '<section class="session-overall-activity"><details class="session-axis-panel" data-session-axis><summary><span>Overall session activity <em>' + session.toolActivity.totalCalls + ' calls</em></span><small>All retained Turns and unplaced calls</small></summary><div class="session-axis" data-activity-chart="' + escape(session.sessionId) + '"></div></details></section>' : '';
     const tracePanel = '<section class="session-mode-panel" id="session-panel-trace" role="tabpanel" aria-labelledby="session-tab-trace" data-session-mode-panel="trace" tabindex="-1">'
       + '<div class="session-layout"><main class="session-notebook-main"><div class="session-timeline" aria-label="Session run cells">' + timeline + overallActivity + '</div></main>' + sessionOutline + '</div></section>';
@@ -1700,38 +1903,58 @@
     if (usageReturn) usageReturn.hidden = next !== 'usage';
     document.querySelectorAll('[data-session-mode-panel]').forEach(panel => { panel.hidden = panel.dataset.sessionModePanel !== next; });
     if (next === 'replay') renderReplay();
-    if (next === 'usage') requestAnimationFrame(() => keepUsageSelectedRowVisible(document.querySelector('[data-usage-explorer]')));
     if (next === 'trace' && restoreFocus) requestAnimationFrame(() => document.querySelector('[data-session-mode-panel="trace"]')?.focus({ preventScroll:true }));
     if (updateHistory) updateUrl();
   }
 
   function applySessionFilters() {
     document.querySelectorAll('[data-session-kind-filter]').forEach(input => {
-      document.querySelectorAll('[data-session-event="' + CSS.escape(input.dataset.sessionKindFilter) + '"]').forEach(event => event.classList.toggle('session-hidden',!input.checked));
+      document.querySelectorAll('[data-session-event="' + CSS.escape(input.dataset.sessionKindFilter) + '"]').forEach(element => {
+        element.classList.toggle('session-hidden',!input.checked);
+      });
+      if (input.dataset.sessionKindFilter === 'prompts') {
+        document.querySelectorAll('.session-input-marker').forEach(element => {
+          element.classList.toggle('session-hidden',!input.checked);
+        });
+      }
     });
     document.querySelectorAll('[data-session-tool-filter]').forEach(input => {
       const selector = '[data-tool="' + CSS.escape(input.dataset.sessionToolFilter) + '"]';
-      // A collapsed run stands in for its own tool, so hide the run summary with
-      // the rows it represents; otherwise unchecking a tool leaves the run band
-      // visible and the filter contradicts what is on screen.
-      document.querySelectorAll('.session-tool-row' + selector + ', details.session-tool-run' + selector).forEach(row => row.classList.toggle('session-hidden',!input.checked));
+      document.querySelectorAll('.session-tool-row' + selector + ', details.session-tool-run' + selector + ', .session-process-tool-name' + selector).forEach(row => {
+        row.classList.toggle('session-hidden',!input.checked);
+      });
     });
-    const fileFilter = document.querySelector('[data-session-file-filter]');
-    document.querySelectorAll('.session-tool-file').forEach(file => file.classList.toggle('session-hidden',fileFilter && !fileFilter.checked));
-    // Report how many calls survive the current filters, counting a collapsed
-    // run once per grouped call, so the sidebar total tracks what is shown.
+    const showFiles = document.querySelector('[data-session-file-filter]')?.checked !== false;
+    document.querySelectorAll('.session-tool-file, .session-outcome-paths, .session-event.files').forEach(element => {
+      element.classList.toggle('session-hidden',!showFiles);
+    });
+    document.querySelectorAll('[data-session-process-group]').forEach(group => {
+      const toolSummary = group.querySelector(':scope > summary > [data-session-event="tools"]');
+      const usageSummary = group.querySelector(':scope > summary > [data-session-event="usage"]');
+      const visibleToolRows = [...group.querySelectorAll('.session-tool-row')].filter(row => !row.closest('.session-hidden'));
+      const toolsVisible = toolSummary && !toolSummary.classList.contains('session-hidden') && visibleToolRows.length > 0;
+      const usageVisible = usageSummary && !usageSummary.classList.contains('session-hidden');
+      toolSummary?.classList.toggle('session-hidden',!toolsVisible);
+      group.querySelector(':scope > .session-process-tool-body')?.classList.toggle('session-hidden',!toolsVisible);
+      const toolCount = toolSummary?.querySelector('strong');
+      if (toolCount && toolsVisible) toolCount.textContent = visibleToolRows.length + ' tool call' + (visibleToolRows.length === 1 ? '' : 's');
+      const toolNames = toolSummary?.querySelector('.session-process-tool-names');
+      if (toolNames && toolsVisible) toolNames.textContent = [...new Set(visibleToolRows.map(row => row.dataset.tool))].slice(0,3).join(' · ');
+      group.classList.toggle('session-hidden',!toolsVisible && !usageVisible);
+      group.dataset.toolsVisible = String(Boolean(toolsVisible));
+      group.dataset.usageVisible = String(Boolean(usageVisible));
+      if (!toolsVisible) group.open = false;
+    });
     const toolsEm = document.querySelector('[data-session-kind-filter="tools"]')?.closest('.session-filter')?.querySelector('em');
     if (toolsEm) {
       let visible = 0;
-      // Standalone rows count once; a run's inner rows are represented by the
-      // run's own callCount, so they are excluded here to avoid double counting.
-      // Disclosure state (closed details, "show more" overflow) is deliberately
-      // ignored — the total tracks the filters, not what is expanded.
       document.querySelectorAll('#session-view .session-tool-row').forEach(row => {
         if (row.closest('.session-tool-run')) return;
         if (!row.closest('.session-hidden')) visible += 1;
       });
-      document.querySelectorAll('#session-view details.session-tool-run').forEach(run => { if (!run.closest('.session-hidden')) visible += Number(run.dataset.callCount) || 0; });
+      document.querySelectorAll('#session-view details.session-tool-run').forEach(run => {
+        if (!run.closest('.session-hidden')) visible += Number(run.dataset.callCount) || 0;
+      });
       toolsEm.textContent = String(visible);
     }
   }
@@ -1900,8 +2123,10 @@
       const session = item.session;
       const title = itemTitle(item);
       const calls = session.toolActivity.totalCalls;
+      const contextSummary = sessionContextSnapshotPresentation(session);
+      const tokenSummary = contextSummary.compact ? '<span class="date-session-token-summary" title="' + escape(contextSummary.title) + '">' + escape(contextSummary.compact) + '</span>' : '';
       const label = 'Locate ' + session.platform + ' Session at ' + formatClock(session.firstSeen) + ': ' + title;
-      return '<button class="date-session-row" type="button" data-date-session-target="workbench-card-' + index + '" aria-label="' + escape(label) + '"><span class="date-session-row-top"><span class="date-session-row-meta"><strong>' + escape(session.platform) + '</strong><time>' + escape(formatClock(session.firstSeen)) + '</time><span>' + escape(formatDuration(session.durationMs)) + '</span></span><span class="date-session-row-stat">' + calls + ' call' + (calls === 1 ? '' : 's') + '</span></span><span class="date-session-title" title="' + escape(title) + '">' + escape(title) + '</span></button>';
+      return '<button class="date-session-row" type="button" data-date-session-target="workbench-card-' + index + '" aria-label="' + escape(label) + '"><span class="date-session-row-top"><span class="date-session-row-meta"><strong>' + escape(session.platform) + '</strong><time>' + escape(formatClock(session.firstSeen)) + '</time><span>' + escape(formatDuration(session.durationMs)) + '</span></span><span class="date-session-row-stat">' + calls + ' call' + (calls === 1 ? '' : 's') + '</span></span><span class="date-session-title" title="' + escape(title) + '">' + escape(title) + '</span>' + tokenSummary + '</button>';
     }).join('') || '<p class="picker-empty">No Sessions were observed on this date.</p>';
   }
 
@@ -1958,12 +2183,21 @@
     const activeDate = state.mode === 'date' ? document.querySelector('[data-date="' + state.scope + '"]') : null;
     const dateSummaryLabel = document.querySelector('[data-date-summary-label]');
     const dateSummaryMeta = document.querySelector('[data-date-summary-meta]');
+    const dateContextSummary = document.querySelector('[data-date-context-summary]');
+    const dateContextTotal = document.querySelector('[data-date-context-total]');
+    const dateContextMeta = document.querySelector('[data-date-context-meta]');
     if (activeDate && dateSummaryLabel && dateSummaryMeta) {
       const selectedDate = new Date(activeDate.dataset.date + 'T00:00:00.000Z');
       dateSummaryLabel.textContent = new Intl.DateTimeFormat('en',{ weekday:'short', month:'short', day:'numeric', timeZone:'UTC' }).format(selectedDate);
-      const sessions = Number(activeDate.dataset.sessionCount) || 0;
-      const commits = Number(activeDate.dataset.commitCount) || 0;
-      dateSummaryMeta.textContent = sessions + ' session' + (sessions === 1 ? '' : 's') + ' · ' + commits + ' commit' + (commits === 1 ? '' : 's');
+      const sessionCount = Number(activeDate.dataset.sessionCount) || 0;
+      const commitCount = Number(activeDate.dataset.commitCount) || 0;
+      dateSummaryMeta.textContent = sessionCount + ' session' + (sessionCount === 1 ? '' : 's') + ' · ' + commitCount + ' commit' + (commitCount === 1 ? '' : 's');
+      const context = dayContextSnapshotPresentation(sessions);
+      if (dateContextSummary && dateContextTotal && dateContextMeta) {
+        dateContextSummary.hidden = context.observedSessions === 0 && context.compactionCount === 0;
+        dateContextTotal.textContent = context.observedSessions > 0 ? formatTokenCount(context.observedTokens) + ' observed context snapshots' : 'Context tokens unobserved';
+        dateContextMeta.textContent = context.observedSessions + '/' + sessionCount + ' Sessions observed · ' + context.compactionCount + ' compaction' + (context.compactionCount === 1 ? '' : 's');
+      }
     }
   }
 
@@ -2006,6 +2240,20 @@
   }
 
   document.addEventListener('click', event => {
+    const usageOnlyProcessSummary = event.target.closest('[data-session-process-group][data-tools-visible="false"] > summary');
+    if (usageOnlyProcessSummary) {
+      event.preventDefault();
+      return;
+    }
+    const cachePolicyToggle = event.target.closest('[data-cache-policy-toggle]');
+    if (cachePolicyToggle) {
+      const panel = cachePolicyToggle.closest('[data-cache-policy-panel]');
+      const expanded = cachePolicyToggle.getAttribute('aria-expanded') !== 'true';
+      panel?.querySelectorAll('[data-cache-policy-extra]').forEach(row => { row.hidden = !expanded; });
+      cachePolicyToggle.setAttribute('aria-expanded',String(expanded));
+      cachePolicyToggle.textContent = expanded ? 'Show fewer model profiles' : 'View all ' + PROMPT_CACHE_PROFILES.length + ' model profiles';
+      return;
+    }
     const usageOverviewTurn = event.target.closest('[data-usage-overview-turn-marker]');
     if (usageOverviewTurn) {
       const session = usageSessionFor(usageOverviewTurn);
@@ -2016,7 +2264,7 @@
     const usageResponse = event.target.closest('[data-usage-response-position]');
     if (usageResponse) {
       const session = usageSessionFor(usageResponse);
-      if (session) setUsageSelection(session,Number(usageResponse.dataset.usageResponsePosition),{ focus:usageResponse.closest('.usage-response-row') ? 'row' : 'chart' });
+      if (session) setUsageSelection(session,Number(usageResponse.dataset.usageResponsePosition),{ focus:'chart' });
       return;
     }
     const usageOverview = event.target.closest('[data-usage-overview-surface]');
@@ -2049,7 +2297,7 @@
     const usageStep = event.target.closest('[data-usage-step]');
     if (usageStep) {
       const session = usageSessionFor(usageStep);
-      if (session) stepUsageSelection(session,Number(usageStep.dataset.usageStep),{ focus:'row' });
+      if (session) stepUsageSelection(session,Number(usageStep.dataset.usageStep),{ focus:'chart' });
       return;
     }
     const usageMarker = event.target.closest('[data-usage-chart-detail]');
@@ -2148,8 +2396,17 @@
     }
     const openSessionFor = event.target.closest('[data-open-session-for]');
     if (openSessionFor) {
+      if (openSessionFor.closest('summary')) event.preventDefault();
       const item = itemForSession(bySession.get(openSessionFor.dataset.openSessionFor));
-      if (item) openSessionView(item,openSessionFor);
+      if (item) {
+        openSessionView(item,openSessionFor);
+        const callId = openSessionFor.dataset.callId;
+        const commit = byCommit.get(openSessionFor.dataset.commitHash);
+        const target = callId ? document.getElementById('session-call-' + callId)
+          : commit ? document.getElementById('session-commit-' + commit.shortHash)
+            : null;
+        if (target) revealSessionTarget(target);
+      }
       return;
     }
     const deliveryToggle = event.target.closest('[data-toggle-delivery]');
@@ -2158,18 +2415,27 @@
       setDeliveryCollapsed(workbench,!workbench.classList.contains('delivery-collapsed'));
       return;
     }
+    const commitFileView = event.target.closest('[data-commit-file-view]');
+    if (commitFileView) {
+      const delivery = commitFileView.closest('.delivery-lane');
+      const view = commitFileView.dataset.commitFileView;
+      if (!delivery || !['list','tree'].includes(view)) return;
+      state.commitFileViews.set(delivery.dataset.fileViewKey,view);
+      delivery.dataset.fileView = view;
+      delivery.querySelectorAll('[data-commit-hash]').forEach(card => {
+        const commit = byCommit.get(card.dataset.commitHash);
+        const files = card.querySelector('.commit-files');
+        if (commit && files) files.innerHTML = commitFileViewMarkup(commit,view);
+      });
+      delivery.querySelectorAll('[data-commit-file-view]').forEach(button => {
+        button.setAttribute('aria-pressed',String(button.dataset.commitFileView === view));
+      });
+      return;
+    }
     const revealCalls = event.target.closest('[data-reveal-calls]');
     if (revealCalls) {
       revealCalls.parentElement.querySelector('[data-call-overflow]')?.removeAttribute('hidden');
       revealCalls.remove();
-      return;
-    }
-    const bulk = event.target.closest('[data-expand-tools]');
-    if (bulk) {
-      const open = bulk.dataset.expandTools === 'open';
-      document.querySelectorAll('#session-view details.session-process').forEach(details => { details.open = open; });
-      document.querySelectorAll('#session-view details.session-event.tools').forEach(details => { details.open = open; });
-      if (!open) document.querySelectorAll('#session-view details.session-tool-run').forEach(details => { details.open = false; });
       return;
     }
     const openUsageReport = event.target.closest('[data-open-usage-report]');
@@ -2207,16 +2473,27 @@
   });
 
   document.addEventListener('mouseover', event => {
+    const usageFocusPoint = event.target.closest?.('[data-usage-focus-point]');
+    if (usageFocusPoint) {
+      updateUsageInspectStrip(usageFocusPoint,Number(usageFocusPoint.dataset.usageResponsePosition),{ hovered:true });
+      return;
+    }
     const usageMarker = event.target.closest?.('[data-usage-chart-detail]');
     if (usageMarker) { showUsageChartDetail(usageMarker); return; }
-    const mark = event.target.closest?.('.chart-mark, .chart-ribbon-block, .chart-commit, [data-chart-bin]');
+    const mark = event.target.closest?.('.chart-mark, .chart-ribbon-block, .chart-commit, .chart-context-compaction-marker, [data-chart-bin]');
     if (mark) showChartDetail(mark);
+  });
+
+  document.addEventListener('mouseout', event => {
+    const usageFocusPoint = event.target.closest?.('[data-usage-focus-point]');
+    if (!usageFocusPoint || event.relatedTarget?.closest?.('[data-usage-focus-point]') === usageFocusPoint) return;
+    restoreUsageInspectStrip(usageFocusPoint);
   });
 
   document.addEventListener('focusin', event => {
     const usageMarker = event.target.closest?.('[data-usage-chart-detail]');
     if (usageMarker) { showUsageChartDetail(usageMarker); return; }
-    const mark = event.target.closest?.('.chart-mark, .chart-ribbon-block, .chart-commit, [data-chart-bin]');
+    const mark = event.target.closest?.('.chart-mark, .chart-ribbon-block, .chart-commit, .chart-context-compaction-marker, [data-chart-bin]');
     if (mark) showChartDetail(mark);
   });
 
@@ -2260,6 +2537,13 @@
   }, true);
 
   document.addEventListener('change', event => {
+    if (event.target.matches('[data-cache-profile-select]')) {
+      const sessionId = event.target.dataset.cacheProfileSelect;
+      state.promptCacheProfileBySession.set(sessionId,event.target.value);
+      document.querySelectorAll('[data-activity-chart="' + CSS.escape(sessionId) + '"]').forEach(renderActivityChart);
+      document.querySelector('[data-cache-profile-select="' + CSS.escape(sessionId) + '"]')?.focus({ preventScroll:true });
+      return;
+    }
     if (event.target.matches('[data-usage-window-edge]')) {
       const session = usageSessionFor(event.target);
       if (session) setUsageWindowEdge(session,event.target.dataset.usageWindowEdge,Number(event.target.value));
@@ -2389,26 +2673,21 @@
       return;
     }
     const usageExplorer = event.target.closest?.('[data-usage-explorer]');
-    const usageResponseRow = event.target.closest?.('.usage-response-row');
     const usageNativeControl = event.target.closest?.('input, select, textarea, button');
-    if (usageExplorer && !usageNativeControl && (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','Escape'].includes(event.key) || usageResponseRow && event.key === 'Enter')) {
+    if (usageExplorer && !usageNativeControl && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','Escape'].includes(event.key)) {
       const session = usageSessionFor(event.target);
       if (!session) return;
       if (event.key === 'Escape') {
         const explorer = usageExplorerState(session);
         state.usageExplorer.set(session.sessionId,{ start:explorer.start,end:explorer.end,selected:-1 });
-        refreshUsageExplorer(session,{ focus:usageResponseRow ? 'row' : 'chart' });
+        refreshUsageExplorer(session,{ focus:'chart' });
       } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-        stepUsageSelection(session,-1,{ focus:usageResponseRow ? 'row' : 'chart' });
+        stepUsageSelection(session,-1,{ focus:'chart' });
       } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-        stepUsageSelection(session,1,{ focus:usageResponseRow ? 'row' : 'chart' });
+        stepUsageSelection(session,1,{ focus:'chart' });
       } else if (event.key === 'Home' || event.key === 'End') {
         const explorer = usageExplorerState(session);
-        setUsageSelection(session,event.key === 'Home' ? explorer.start : explorer.end - 1,{ focus:usageResponseRow ? 'row' : 'chart' });
-      } else if (event.key === 'Enter') {
-        const position = Number(event.target.closest('[data-usage-response-position]')?.dataset.usageResponsePosition);
-        const explorer = usageExplorerState(session);
-        setUsageSelection(session,Number.isInteger(position) ? position : explorer.selected >= 0 ? explorer.selected : explorer.start,{ focus:usageResponseRow ? 'row' : 'chart' });
+        setUsageSelection(session,event.key === 'Home' ? explorer.start : explorer.end - 1,{ focus:'chart' });
       }
       event.preventDefault();
       return;

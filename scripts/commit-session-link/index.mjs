@@ -47,6 +47,7 @@ export {
   collectSessionDetail,
   collectSessionSummaries,
   DEFAULT_MAX_SESSIONS,
+  MAX_COMPACTION_EVENTS_PER_SESSION,
   normalizeEntireCheckpointSession,
   summarizeSessionEvents,
 } from "./session-source.mjs";

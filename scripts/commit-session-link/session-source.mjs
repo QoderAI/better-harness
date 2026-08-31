@@ -20,6 +20,7 @@ import { attributeSessionToolName } from "./tool-attribution.mjs";
 import { normalizeToolActivity } from "./tool-activity.mjs";
 
 export const DEFAULT_MAX_SESSIONS = 20;
+export const MAX_COMPACTION_EVENTS_PER_SESSION = 64;
 const MAX_PROMPTS_PER_SESSION = 8;
 const MAX_FILES_PER_SESSION = 400;
 const MAX_MODELS_PER_SESSION = 4;
@@ -235,7 +236,9 @@ export function summarizeSessionEvents(session, events = [], {
   const contextLayers = new Map();
   const contextCategories = new Map();
   let currentContextUsage = null;
+  let latestContextSnapshot = null;
   let compactionCount = 0;
+  const compactionEvents = [];
   let usageObserved = false;
 
   for (const event of attributedEvents) {
@@ -317,8 +320,27 @@ export function summarizeSessionEvents(session, events = [], {
     }
     if (event?.currentContextUsage && typeof event.currentContextUsage === "object") {
       currentContextUsage = { ...(currentContextUsage ?? {}), ...event.currentContextUsage };
+      const observedContextTokens = Number(event.currentContextUsage.usedTokens);
+      if (eventTime !== null && Number.isFinite(observedContextTokens) && observedContextTokens >= 0) {
+        latestContextSnapshot = {
+          contextTokens: Math.round(observedContextTokens),
+          timestampMs: eventTime,
+        };
+      }
     }
-    if (event?.compactionBoundary === true) compactionCount += 1;
+    if (event?.compactionBoundary === true) {
+      compactionCount += 1;
+      if (eventTime !== null && compactionEvents.length < MAX_COMPACTION_EVENTS_PER_SESSION) {
+        const snapshot = latestContextSnapshot?.timestampMs <= eventTime ? latestContextSnapshot : null;
+        compactionEvents.push({
+          timestamp: new Date(eventTime).toISOString(),
+          ...(snapshot ? {
+            contextTokens: snapshot.contextTokens,
+            contextSnapshotTimestamp: new Date(snapshot.timestampMs).toISOString(),
+          } : {}),
+        });
+      }
+    }
   }
 
   if (cumulativeUsageSnapshots.length > 0) {
@@ -379,6 +401,7 @@ export function summarizeSessionEvents(session, events = [], {
         : {}),
     ...(currentContextUsage?.basis ? { basis: String(currentContextUsage.basis).slice(0, 40) } : {}),
     compactionCount,
+    ...(compactionEvents.length > 0 ? { compactionEvents } : {}),
     layers: [...contextLayers.entries()]
       .map(([kind, itemCount]) => ({ kind, itemCount: Math.round(itemCount) }))
       .sort((left, right) => left.kind.localeCompare(right.kind)),

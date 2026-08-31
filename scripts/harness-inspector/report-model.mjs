@@ -1,6 +1,9 @@
 import path from "node:path";
 
-import { redactTranscriptText } from "../commit-session-link/index.mjs";
+import {
+  MAX_COMPACTION_EVENTS_PER_SESSION,
+  redactTranscriptText,
+} from "../commit-session-link/index.mjs";
 import {
   deriveCacheReuse,
   observedCacheAccountingMode,
@@ -480,11 +483,35 @@ function projectRuntime(runtime) {
 
 function projectContextManifest(manifest) {
   if (!manifest || typeof manifest !== "object") return null;
+  const sourceEvents = Array.isArray(manifest.compactionEvents) ? manifest.compactionEvents : [];
+  const compactionCount = Math.max(
+    Math.round(nonNegativeNumber(manifest.compactionCount)),
+    sourceEvents.length,
+  );
+  const compactionEvents = [];
+  for (const event of sourceEvents.slice(0, MAX_COMPACTION_EVENTS_PER_SESSION)) {
+    const timestamp = new Date(event?.timestamp ?? "");
+    if (Number.isNaN(timestamp.getTime())) continue;
+    const contextTokens = Number(event?.contextTokens);
+    const contextSnapshotTimestamp = new Date(event?.contextSnapshotTimestamp ?? "");
+    const hasContextSnapshot = Number.isFinite(contextTokens)
+      && contextTokens >= 0
+      && !Number.isNaN(contextSnapshotTimestamp.getTime())
+      && contextSnapshotTimestamp.getTime() <= timestamp.getTime();
+    compactionEvents.push({
+      timestamp: timestamp.toISOString(),
+      ...(hasContextSnapshot ? {
+        contextTokens: Math.round(contextTokens),
+        contextSnapshotTimestamp: contextSnapshotTimestamp.toISOString(),
+      } : {}),
+    });
+  }
   const projected = {
     status: ["observed", "partial", "unobserved"].includes(manifest.status) ? manifest.status : "partial",
     source: safeText(manifest.source, 80, "normalized-context-events"),
     rawTextOmitted: true,
-    compactionCount: Math.round(nonNegativeNumber(manifest.compactionCount)),
+    compactionCount,
+    ...(compactionEvents.length > 0 ? { compactionEvents } : {}),
     layers: (Array.isArray(manifest.layers) ? manifest.layers : []).slice(0, 16).map((layer) => ({
       kind: safeText(layer?.kind, 80, "other"),
       itemCount: Math.round(nonNegativeNumber(layer?.itemCount)),

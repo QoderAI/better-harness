@@ -162,6 +162,11 @@ function session({
       windowTokens: 16_000,
       percentFull: 15,
       compactionCount: 1,
+      compactionEvents: [{
+        timestamp: new Date((at(firstSeen) + at(lastSeen)) / 2).toISOString(),
+        contextTokens: 9_800,
+        contextSnapshotTimestamp: new Date((at(firstSeen) + at(lastSeen)) / 2 - 1_000).toISOString(),
+      }],
       layers: [{ kind: "project-instructions", itemCount: 1 }],
       categories: [{ kind: "conversation", label: "Conversation", estimatedTokens: 1_600 }],
     },
