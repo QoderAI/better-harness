@@ -34,8 +34,9 @@ const VALIDATED_KNOWN_UNSUPPORTED_TYPES = new Set([
   "approval/policy", "command/done", "command/run", "compaction/end", "compaction/prune",
   "compaction/start", "compaction/summary", "feedback/record", "goal/change", "hook/invoked",
   "hook/result", "llm/retry", "llm/retry-started", "permission/preset", "plan/mode",
-  "request/context", "request/header", "sandbox/mode", "session/end-seed", "session/title",
-  "session/title-llm-request", "subagent/descriptor", "todo/write", "tool-workflow/agent-end",
+  "model/selection", "request/context", "request/header", "sandbox/mode", "session/end-seed",
+  "session/title", "session/title-llm-request", "session-log-deepseek/delivery-accepted",
+  "subagent/descriptor", "subagent/model-selection-policy", "todo/write", "tool-workflow/agent-end",
   "team/member", "team/message/delivered", "team/message/queued", "team/task",
   "tool-workflow/agent-start", "tool-workflow/run-end", "tool-workflow/run-start",
   "tool/code-dispatch", "tool/code-dispatch-start", "schedule/change", "web/deepseek-search-llm-request",
@@ -46,9 +47,10 @@ const KNOWN_EVENT_TYPES = new Set([
   "approval/policy", "assistant/chunk", "assistant/message", "command/done", "command/run",
   "compaction/end", "compaction/prune", "compaction/start", "compaction/summary",
   "feedback/record", "goal/change", "hook/invoked", "hook/result", "llm/retry",
-  "llm/retry-started", "permission/preset", "plan/mode", "request/context", "request/header",
-  "sandbox/mode", "schedule/change", "session/end-seed", "session/title",
-  "session/title-llm-request", "step/end", "step/start", "subagent/descriptor", "todo/write",
+  "llm/retry-started", "model/selection", "permission/preset", "plan/mode", "request/context",
+  "request/header", "sandbox/mode", "schedule/change", "session/end-seed", "session/title",
+  "session/title-llm-request", "session-log-deepseek/delivery-accepted", "step/end", "step/start",
+  "subagent/descriptor", "subagent/model-selection-policy", "todo/write",
   "team/member", "team/message/delivered", "team/message/queued", "team/task",
   "tool-workflow/agent-end", "tool-workflow/agent-start", "tool-workflow/run-end",
   "tool-workflow/run-start", "tool/call", "tool/code-dispatch", "tool/code-dispatch-start",
@@ -698,10 +700,35 @@ function validateSupportedEvent(event) {
   }
 }
 
+function validateProviderModelRoute(route) {
+  return exactKeys(route, ["provider", "model"])
+    && nonemptyString(route.provider) && nonemptyString(route.model);
+}
+
 // Pinned core payloads that are required for replay but intentionally omitted from BH normalization.
 function validateKnownUnsupportedEvent(event) {
   const data = event.data;
   switch (event.type) {
+    case "model/selection":
+      if (!exactKeys(data, ["provider", "model"], ["reasoningEffort"])
+        || !nonemptyString(data.provider) || !nonemptyString(data.model)
+        || (Object.hasOwn(data, "reasoningEffort") && !nonemptyString(data.reasoningEffort))) {
+        fail("DSH_EVENT_SHAPE_DRIFT");
+      }
+      break;
+    case "session-log-deepseek/delivery-accepted":
+      if (!exactKeys(data, ["sessionId", "throughSeq"]) || !nonemptyString(data.sessionId)
+        || !safeNonnegative(data.throughSeq)) fail("DSH_EVENT_SHAPE_DRIFT");
+      break;
+    case "subagent/model-selection-policy": {
+      if (!exactKeys(data, ["allowedModels"]) || !Array.isArray(data.allowedModels)
+        || data.allowedModels.length === 0 || data.allowedModels.some((route) => !validateProviderModelRoute(route))) {
+        fail("DSH_EVENT_SHAPE_DRIFT");
+      }
+      const routes = data.allowedModels.map((route) => `${route.provider}\0${route.model}`);
+      if (new Set(routes).size !== routes.length) fail("DSH_EVENT_SHAPE_DRIFT");
+      break;
+    }
     case "permission/preset":
       if (!exactKeys(data, ["preset"], ["origin"]) || typeof data.preset !== "string"
         || (Object.hasOwn(data, "origin")
@@ -1606,6 +1633,13 @@ function validateSequence(events, header) {
     applyCompactionFold(compaction, event, openTurn, durableSuffixStart);
     applySurfaceEvent(event, surfaceNodes, events);
     const data = event.data;
+    if (event.type === "session-log-deepseek/delivery-accepted") {
+      const inherited = header.parentSession !== undefined && header.seedLength !== undefined
+        && event.seq < header.seedLength;
+      if ((!inherited && data.sessionId !== header.id) || data.throughSeq >= event.seq) {
+        fail("DSH_EVENT_RELATIONSHIP_INVALID");
+      }
+    }
     if (event.type === "agent/inbox/spliced" && index >= durableSuffixStart) applyInboxSplice(data, queues);
     if (event.type === "schedule/change" && index >= durableSuffixStart) applyScheduleChange(data, schedules);
     applyGoalFold(goal, event);
@@ -1790,11 +1824,37 @@ function parseDshJsonlLine(input) {
   }
 }
 
-function expandDshStorageRecord(record) {
-  const expanded = packedRow(record);
+function expandDshSourceEventSeqs(record, expectedSeq) {
+  if (!Object.hasOwn(record, "sourceEventSeqs")) return record;
+  if (record.seq !== expectedSeq || !safeNonnegative(record.seq)
+    || !Array.isArray(record.sourceEventSeqs)) fail("DSH_EVENT_SHAPE_DRIFT");
+  const decoded = [];
+  let hasRange = false;
+  for (const entry of record.sourceEventSeqs) {
+    if (typeof entry === "number") {
+      if (!safeNonnegative(entry) || decoded.length >= expectedSeq) fail("DSH_EVENT_SHAPE_DRIFT");
+      decoded.push(entry);
+      continue;
+    }
+    if (!Array.isArray(entry) || entry.length !== 2) fail("DSH_EVENT_SHAPE_DRIFT");
+    const [start, end] = entry;
+    if (!safeNonnegative(start) || !safeNonnegative(end) || end < start
+      || end - start + 1 > expectedSeq - decoded.length) fail("DSH_EVENT_SHAPE_DRIFT");
+    for (let seq = start; seq <= end; seq += 1) decoded.push(seq);
+    hasRange = true;
+  }
+  if (hasRange && !strictlyIncreasing(decoded)) fail("DSH_EVENT_SHAPE_DRIFT");
+  return { ...record, sourceEventSeqs: decoded };
+}
+
+function expandDshStorageRecord(record, expectedSeq) {
+  const semanticRecord = expandDshSourceEventSeqs(record, expectedSeq);
+  const expanded = packedRow(semanticRecord);
   if (expanded) return expanded;
-  if (typeof record.type === "string" && record.type.endsWith("-chunks")) fail("DSH_UNSUPPORTED_PACKED_ROW");
-  return [record];
+  if (typeof semanticRecord.type === "string" && semanticRecord.type.endsWith("-chunks")) {
+    fail("DSH_UNSUPPORTED_PACKED_ROW");
+  }
+  return [semanticRecord];
 }
 
 function scanDshJsonlPrefix(input, { requireComplete = false } = {}) {
@@ -1811,7 +1871,7 @@ function scanDshJsonlPrefix(input, { requireComplete = false } = {}) {
     newline = buffer.indexOf(0x0A, lineStart)) {
     let expanded;
     try {
-      expanded = expandDshStorageRecord(parseDshJsonlLine(buffer.subarray(lineStart, newline)));
+      expanded = expandDshStorageRecord(parseDshJsonlLine(buffer.subarray(lineStart, newline)), events.length);
     } catch (error) {
       issue ??= error;
       lineStart = newline + 1;
