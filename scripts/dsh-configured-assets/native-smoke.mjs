@@ -39,9 +39,14 @@ const DSH_PACKAGES = [
   "@deepseek-ai/dsh-tools",
 ];
 
+// The DSH owners peer-depend on the whole cordis family, and the sibling
+// `cordis-plugin-*` packages are not pinned here, so npm re-resolves them on
+// every run. This pin must stay at or above the highest cordis floor those
+// siblings declare, otherwise an upstream sibling release fails the install
+// with ERESOLVE before any assertion runs.
 async function installNativeOwners(prefix) {
   const specs = [
-    "@deepseek-ai/cordis@4.0.1",
+    "@deepseek-ai/cordis@4.0.2",
     ...DSH_PACKAGES.map((packageName) => `${packageName}@${DSH_NATIVE_VERSION}`),
   ];
   const args = [
