@@ -14,6 +14,14 @@ import { resolveWorkspace } from "./workspace.mjs";
 // Dashboard never silently omits a host the developer actually works in.
 const DEFAULT_PROVIDERS = SUPPORTED_SESSION_PLATFORMS;
 
+export function normalizeSessionLimit(value) {
+  const limit = Number(value);
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new Error("The session limit must be a positive safe integer.");
+  }
+  return limit;
+}
+
 function count(value) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) && number >= 0 ? number : 0;
@@ -271,7 +279,7 @@ function parseArgs(argv) {
     const value = argv[index];
     if (value === "--workspace") options.workspace = argv[++index];
     else if (value === "--providers") options.providers = String(argv[++index]).split(",").map((item) => item.trim()).filter(Boolean);
-    else if (value === "--limit") options.limit = Number(argv[++index]);
+    else if (value === "--limit") options.limit = normalizeSessionLimit(argv[++index]);
     else if (value === "--uploads") options.uploadsDirectory = argv[++index];
   }
   return options;

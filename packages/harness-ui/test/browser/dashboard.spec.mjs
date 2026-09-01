@@ -3,9 +3,16 @@ import { expect, test } from "@playwright/test";
 test("keeps script-backed metrics clear across wide, compact, and narrow layouts", async ({ page }) => {
   const errors = [];
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
+    if (message.type() === "error") {
+      const location = message.location().url;
+      errors.push(`${message.text()}${location ? ` (${location})` : ""}`);
+    }
   });
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("requestfailed", (request) => errors.push(`request failed: ${request.url()} (${request.failure()?.errorText ?? "unknown"})`));
+  page.on("response", (response) => {
+    if (response.status() >= 400) errors.push(`${response.status()} ${new URL(response.url()).pathname}`);
+  });
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");

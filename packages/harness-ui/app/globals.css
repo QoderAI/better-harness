@@ -295,6 +295,7 @@ select:focus-visible {
   padding: 20px;
 }
 
+.empty-state h1,
 .empty-state h2 {
   font-size: 15px;
   margin: 0 0 5px;

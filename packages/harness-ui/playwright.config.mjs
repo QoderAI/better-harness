@@ -22,7 +22,9 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       BETTER_HARNESS_UPLOADS: uploads,
-      BETTER_HARNESS_REFRESH_MS: "60000",
+      // The readiness probe loads the page before globalSetup applies its
+      // fixture. Disable reuse so the browser observes that accepted evidence.
+      BETTER_HARNESS_REFRESH_MS: "0",
     },
   },
 });

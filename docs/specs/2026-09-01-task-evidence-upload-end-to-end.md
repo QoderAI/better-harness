@@ -32,12 +32,14 @@ rather than a side effect of preparing one.
   or organization does not match the applied plan, and reports a rejected or
   unreachable destination as a failure with no receipt.
 - **AC-3 — Idempotent acceptance:** the packet digest is the storage key and the
-  idempotency key. Re-applying the same plan reports `duplicate`, preserves the
-  first acceptance time, and leaves exactly one stored record.
+  idempotency key. Sequential or concurrent re-application of the same plan
+  reports one `accepted` result and `duplicate` thereafter, preserves the first
+  acceptance time, and leaves exactly one stored record.
 - **AC-4 — The destination validates before it stores:** the local `/api/upload`
-  route rejects non-JSON, an invalid or tampered plan, an oversized body, and an
-  organization outside `BETTER_HARNESS_UPLOAD_ORGANIZATIONS` when that is
-  configured. A rejected request stores nothing.
+  route requires JSON and rejects an invalid or tampered plan, a plan addressed
+  to another endpoint, an oversized body, and an organization outside
+  `BETTER_HARNESS_UPLOAD_ORGANIZATIONS` when that is configured. A rejected
+  request stores nothing.
 - **AC-5 — Accepted evidence reaches the Dashboard:** the collector reads stored
   records from the uploads directory and projects their packets into
   `evidencePackets`. A record that cannot be parsed or validated is reported as
@@ -112,9 +114,11 @@ directory is `BETTER_HARNESS_UPLOADS`, or `<workspace>/.better-harness/uploads`.
   covers plan-directed posting, idempotency-key headers, receipt mismatch,
   rejected and unreachable destinations, tampered plans, and receipt tampering.
 - **AC-3, AC-4, AC-5:** `npm test -w @qoder-ai/harness-ui` runs the upload store
-  tests and an end-to-end test that drives the real CLI against the real route
-  handler over a loopback port, then projects the stored packet into the
-  Dashboard model.
+  tests, including concurrent applies, and an end-to-end test that drives the
+  real CLI against the real route handler over a loopback port, then projects
+  the stored packet into the Dashboard model. Wrong media types, endpoint
+  mismatches, tampering, and disallowed organizations are rejected before
+  storage.
 - **AC-6, AC-7, AC-8:** focused cache, collector-argument, refresh-window, and
   workspace-resolution tests in `packages/harness-ui/test/local-data.test.mjs`.
 - **AC-5, AC-9:** `npm run harness-ui:test:browser` applies fixture evidence

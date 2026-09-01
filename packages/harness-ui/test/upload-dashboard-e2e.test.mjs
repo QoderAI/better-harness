@@ -23,7 +23,7 @@ async function startDestination() {
     request.on("end", async () => {
       try {
         const body = Buffer.concat(chunks);
-        const result = await POST(new Request("http://127.0.0.1/api/upload", {
+        const result = await POST(new Request(`http://${request.headers.host}${request.url}`, {
           method: request.method,
           headers: {
             "content-type": request.headers["content-type"] ?? "application/json",
@@ -190,6 +190,42 @@ test("the destination refuses an organization it does not serve", async () => {
     if (previous === undefined) delete process.env.BETTER_HARNESS_UPLOAD_ORGANIZATIONS;
     else process.env.BETTER_HARNESS_UPLOAD_ORGANIZATIONS = previous;
   }
+
+  const collected = await collectLocalDashboardData({
+    workspace: root,
+    providers: [],
+    uploadsDirectory: uploads,
+  });
+  assert.deepEqual(collected.evidencePackets, []);
+});
+
+test("the destination rejects the wrong media type and a plan addressed elsewhere", async () => {
+  const planPath = path.join(work, "plan.json");
+  await runCli([
+    "upload", "plan",
+    "--input", input,
+    "--workspace", root,
+    "--destination", destination.endpoint,
+    "--organization", "acme-engineering",
+    "--out", planPath,
+  ]);
+  const plan = JSON.parse(await readFile(planPath, "utf8"));
+
+  const wrongMediaType = await POST(new Request(destination.endpoint, {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: JSON.stringify(plan),
+  }));
+  assert.equal(wrongMediaType.status, 415);
+  assert.equal((await wrongMediaType.json()).error.code, "JSON_REQUIRED");
+
+  const wrongDestination = await POST(new Request("http://127.0.0.1:65530/api/upload", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(plan),
+  }));
+  assert.equal(wrongDestination.status, 400);
+  assert.equal((await wrongDestination.json()).error.code, "DESTINATION_MISMATCH");
 
   const collected = await collectLocalDashboardData({
     workspace: root,

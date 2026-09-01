@@ -8,6 +8,13 @@ function ratio(numerator: number, denominator: number) {
   return denominator > 0 ? numerator / denominator : 0;
 }
 
+function selectionNote(strategy: string) {
+  if (strategy === "all-eligible") return "all-eligible selection";
+  if (strategy === "latest-n") return "latest-n bounded selection";
+  if (strategy === "mixed") return "mixed host selection";
+  return `${strategy} selection`;
+}
+
 export function buildDashboardModel(input: DashboardInput) {
   const { usageSummary: summary, usageActivity: activity } = input;
   const coverage = summary.usageEfficiency.coverage;
@@ -30,6 +37,8 @@ export function buildDashboardModel(input: DashboardInput) {
     overview: {
       analyzedSessions: summary.selection.analyzedCount,
       eligibleSessions: summary.selection.eligibleCount,
+      selectionStrategy: summary.selection.strategy,
+      selectionNote: selectionNote(summary.selection.strategy),
       activeMinutes: Number(sum(activity.sessions.activeMinutes).toFixed(1)),
       modelResponses: coverage.responseCount,
       skillInvocations: sum(activity.skills.map((skill) => skill.total)),
@@ -79,6 +88,7 @@ export function buildDashboardModel(input: DashboardInput) {
       truncated: contextUsage.coverage.truncated,
     } : null,
     assets: {
+      observed: input.assetInventories.length > 0,
       totals: assetTotals,
       inventoryReports: input.assetInventories.length,
       providers: [...new Set(input.assetInventories.map((report) => report.assetInventory.provider))],

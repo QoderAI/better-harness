@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { link, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -69,21 +69,21 @@ export async function storeUploadPlan(plan, {
   const absoluteDirectory = path.resolve(directory);
   const target = recordPath(absoluteDirectory, plan.packetDigest);
 
-  // A missing file means a first apply; an unreadable or invalid one is replaced
-  // by this apply rather than blocking it, because the packet digest is the name.
-  const existing = await readRecordFile(target).catch(() => null);
-  if (existing) {
-    return {
+  const duplicate = (existing) => ({
+    state: "duplicate",
+    receipt: createUploadReceipt({
+      plan,
+      receiptId: existing.receipt.receiptId,
       state: "duplicate",
-      receipt: createUploadReceipt({
-        plan,
-        receiptId: existing.receipt.receiptId,
-        state: "duplicate",
-        now: existing.receipt.acceptedAt,
-      }),
-      path: target,
-    };
-  }
+      now: existing.receipt.acceptedAt,
+    }),
+    path: target,
+  });
+
+  // A valid existing record is the first acceptance. An unreadable record is not
+  // overwritten silently: the collector must keep reporting it as unavailable.
+  const existing = await readRecordFile(target).catch(() => null);
+  if (existing) return duplicate(existing);
 
   const receipt = createUploadReceipt({
     plan,
@@ -105,13 +105,18 @@ export async function storeUploadPlan(plan, {
       flag: "wx",
       mode: 0o600,
     });
-    // Two applies of the same packet race to the same content-addressed name.
-    // Renaming last-writer-wins keeps one record whose plan is byte-identical.
-    await rename(temporaryPath, target);
+    // Publish the fully written temporary file without replacing an existing
+    // digest. A hard link is atomic on the same filesystem, so concurrent
+    // applies produce exactly one acceptance and one duplicate response.
+    await link(temporaryPath, target);
   } catch (error) {
     await unlink(temporaryPath).catch(() => {});
+    if (error?.code === "EEXIST") {
+      return duplicate(await readRecordFile(target));
+    }
     throw error;
   }
+  await unlink(temporaryPath).catch(() => {});
   return { state: "accepted", receipt, path: target };
 }
 

@@ -479,6 +479,7 @@ test("upload apply reports a rejected or unreachable destination without a recei
   assert.equal(rejectedPayload.diagnostics[0].code, "UPLOAD_REJECTED");
   assert.match(rejectedPayload.diagnostics[0].hint, /ORGANIZATION_NOT_ALLOWED/u);
   assert.equal(rejectedPayload.meta.network, "request");
+  assert.equal(rejectedPayload.meta.sideEffects, "remote-write-unknown");
 
   const unreachable = captureStreams();
   const unreachableStatus = await main(["apply", "--plan", "plan.json", "--json"], {
@@ -562,5 +563,7 @@ test("upload apply refuses an oversized destination response", async () => {
   });
 
   assert.equal(status, 1);
-  assert.equal(JSON.parse(streams.stdoutText()).diagnostics[0].code, "UPLOAD_RESPONSE_TOO_LARGE");
+  const payload = JSON.parse(streams.stdoutText());
+  assert.equal(payload.diagnostics[0].code, "UPLOAD_RESPONSE_TOO_LARGE");
+  assert.deepEqual(payload.meta, { sideEffects: "remote-write-unknown", network: "request" });
 });

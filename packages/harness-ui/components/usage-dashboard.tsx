@@ -114,7 +114,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
   return (
     <div className="site-shell">
       <main className="dashboard">
-        <section className="card asset-overview" aria-labelledby="asset-title">
+        {model.assets.observed ? <section className="card asset-overview" aria-labelledby="asset-title">
           <div className="card-header asset-header">
             <div>
               <p className="eyebrow">Inventory</p>
@@ -153,14 +153,17 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
               </div>
             ))}
           </div>
-        </section>
+        </section> : <section className="card empty-state asset-empty-state">
+          <h1>No local asset inventory observed</h1>
+          <p>Run agent asset analysis for a supported host in this workspace, then reload this page.</p>
+        </section>}
 
         {hasUsage ? <section className="stat-grid" aria-label="Observed usage summary">
           <StatCard
             icon={<Activity />}
             label="Analyzed sessions"
             value={`${model.overview.analyzedSessions}/${model.overview.eligibleSessions}`}
-            note="all-eligible selection"
+            note={model.overview.selectionNote}
           />
           <StatCard
             icon={<Clock3 />}

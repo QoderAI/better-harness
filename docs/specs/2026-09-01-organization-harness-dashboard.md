@@ -142,8 +142,8 @@ execution.
 ## Test and Review Evidence
 
 - **AC-1, AC-2, AC-2a, AC-4, AC-4a, AC-4b, AC-5, AC-7, AC-8:**
-  `npm test -w @qoder-ai/harness-ui` passes six projection, local aggregation,
-  and upload-chain tests. The primary
+  `npm test -w @qoder-ai/harness-ui` passes 22 projection, local aggregation,
+  upload-store, and upload-chain tests. The primary
   test builds its inputs with `buildUsageSummary`, `buildDailyUsageActivity`,
   `runAgentLint`, and `createTaskEvidencePacket`, then verifies the displayed
   totals, daily token accounting lanes, observed context-window occupancy,
@@ -159,8 +159,9 @@ execution.
   `npm run test:browser -w @qoder-ai/harness-ui` passes one interaction at
   1440x900, 1024x768, and 390x844. It checks the usage area chart, Skill bar
   chart, four Token area charts, Model metric chart, metric/range controls,
-  visible chart focus, removed Data quality heading, bounded horizontal
-  overflow, three screenshots, and no console or page errors.
+  visible chart focus, accepted evidence loaded through the real CLI, removed
+  Data quality heading, bounded horizontal overflow, three screenshots, and no
+  failed resources, console errors, or page errors.
 
 The remaining product boundary is explicit: asset totals are configured
 instances summed across supplied inventory reports, active time is an estimate,

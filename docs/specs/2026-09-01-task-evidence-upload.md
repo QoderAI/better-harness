@@ -51,9 +51,9 @@ receipt already exists.
   local write. Human output and `--json` output both state that no network
   request was made.
 - **AC-7 — Root CLI ownership:** The root CLI discovers `upload` as a workflow
-  command and delegates `plan` to a business-named capability owner. `apply` and
-  other unknown subcommands fail closed rather than performing a best-effort
-  action.
+  command and delegates `plan` to a business-named capability owner. The later
+  end-to-end extension registers `apply` explicitly; every other unknown
+  subcommand fails closed rather than performing a best-effort action.
 - **AC-8 — Portable behavior:** Path handling, output creation, and command
   invocation use Node APIs and behave consistently for Windows, macOS, and Linux
   path semantics covered by focused tests.

@@ -351,7 +351,31 @@ function networkError(code, message, hint) {
   const error = new TaskEvidenceUploadError(code, message, { exitCode: 1, hint });
   error.command = APPLY_COMMAND;
   error.network = "request";
+  error.sideEffects = "remote-write-unknown";
   return error;
+}
+
+async function readBoundedResponse(response) {
+  const declaredLength = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
+    throw networkError("UPLOAD_RESPONSE_TOO_LARGE", "The destination returned an oversized response.");
+  }
+  if (response.body === null) return "";
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > MAX_RESPONSE_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw networkError("UPLOAD_RESPONSE_TOO_LARGE", "The destination returned an oversized response.");
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 export async function applyUploadPlan(plan, {
@@ -386,13 +410,7 @@ export async function applyUploadPlan(plan, {
     clearTimeout(timer);
   }
 
-  if (Number(response.headers.get("content-length") ?? 0) > MAX_RESPONSE_BYTES) {
-    throw networkError("UPLOAD_RESPONSE_TOO_LARGE", "The destination returned an oversized response.");
-  }
-  const body = await response.text().catch(() => "");
-  if (Buffer.byteLength(body, "utf8") > MAX_RESPONSE_BYTES) {
-    throw networkError("UPLOAD_RESPONSE_TOO_LARGE", "The destination returned an oversized response.");
-  }
+  const body = await readBoundedResponse(response);
   if (!response.ok) {
     throw networkError(
       "UPLOAD_REJECTED",
@@ -412,7 +430,7 @@ export async function applyUploadPlan(plan, {
   } catch (error) {
     error.command = APPLY_COMMAND;
     error.network = "request";
-    error.sideEffects = "remote-write";
+    error.sideEffects = "remote-write-unknown";
     error.exitCode = 1;
     throw error;
   }

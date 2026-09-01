@@ -4,7 +4,7 @@ import { test } from "vitest";
 
 import { buildUsageSummary } from "../../../scripts/session-analysis/usage-summary.mjs";
 import { collectorArgs, createTimedCache, refreshMs } from "../lib/local-data.server.ts";
-import { aggregateUsageActivity, aggregateUsageSummaries } from "../scripts/collect-local-data.mjs";
+import { aggregateUsageActivity, aggregateUsageSummaries, normalizeSessionLimit } from "../scripts/collect-local-data.mjs";
 import { resolveWorkspace } from "../scripts/workspace.mjs";
 
 function sourceResult({ eligible, analyzed, inputTokens, model }) {
@@ -175,6 +175,15 @@ test("collector arguments carry the configured providers and session limit", () 
     }),
     [collector, "--workspace", path.resolve(workspace), "--providers", "claude,codex", "--limit", "25"],
   );
+  assert.equal(normalizeSessionLimit("25"), 25);
+  assert.throws(
+    () => collectorArgs(collector, {
+      BETTER_HARNESS_WORKSPACE: workspace,
+      BETTER_HARNESS_SESSION_LIMIT: "0",
+    }),
+    /positive safe integer/u,
+  );
+  assert.throws(() => normalizeSessionLimit("later"), /positive safe integer/u);
 });
 
 test("the refresh window falls back to its default for an unusable value", () => {

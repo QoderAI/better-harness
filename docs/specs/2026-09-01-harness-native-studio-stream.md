@@ -14,8 +14,10 @@ second protocol that has no independent Studio consumer.
 
 The obsolete `@qoder-ai/harness-ui` AG-UI adapter is removed rather than kept as
 a compatibility branch. Git history remains the recovery path; the application
-and repository no longer carry a second run protocol, server, CLI, or release
-practice for a consumer that the product does not support.
+and repository no longer carry its second run protocol, server, CLI, or release
+practice. The package name was subsequently reused by the private organization
+Dashboard defined in `2026-09-01-organization-harness-dashboard`; that
+application does not restore AG-UI or Agent execution.
 
 ## Acceptance Scenarios
 
@@ -39,10 +41,11 @@ practice for a consumer that the product does not support.
 - **AC-6 — Retained evidence compatibility:** previously saved Debugger run
   JSON remains readable because its persisted timeline shape is unchanged; new
   retained Sessions identify their protocol as Harness run evidence.
-- **AC-7 — Adapter removal:** `packages/harness-ui`, its npm workspace and
-  release choice, root scripts, CI steps, package-lock entry, and current
-  product documentation are removed. Historical specs may retain factual
-  references to the superseded implementation.
+- **AC-7 — Adapter removal:** the legacy `packages/harness-ui` adapter source,
+  release choice, root scripts, CI steps, package-lock dependency entry, and
+  current product documentation are removed. Historical specs may retain
+  factual references to the superseded implementation. A later private
+  Dashboard may reuse the workspace name without restoring the adapter.
 - **AC-8 — Product verification:** focused unit/server tests, Studio typecheck,
   the full Studio suite, and changed-surface Playwright checks pass without
   browser console or page errors at wide, compact, and narrow layouts.
@@ -80,7 +83,7 @@ to Studio. No package remains solely for AG-UI interoperability.
 ## Test and Review Evidence
 
 - **AC-1/AC-2/AC-7:** focused `@qoder-ai/harness` run and protocol tests plus
-  workspace, CI, release, lockfile, and dependency inspection.
+  legacy adapter source, CI, release, lockfile, and dependency inspection.
 - **AC-3/AC-5/AC-6:** focused Studio run-store, Artifact Agent, AgentReact,
   run-log, and server tests using parsed event objects rather than source-text
   matching.

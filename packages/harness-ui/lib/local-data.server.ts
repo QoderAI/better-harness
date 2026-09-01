@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { resolveWorkspace } from "@/scripts/workspace.mjs";
+import { normalizeSessionLimit } from "@/scripts/collect-local-data.mjs";
 
 import type { DashboardInput } from "./contracts";
 
@@ -81,7 +82,7 @@ export function collectorArgs(collector: string, env: NodeJS.ProcessEnv = proces
   // An unset limit means every eligible session. A configured limit bounds the
   // work with `latest-n`, which the collector reports as an incomplete selection.
   const limit = env.BETTER_HARNESS_SESSION_LIMIT?.trim();
-  if (limit) args.push("--limit", limit);
+  if (limit) args.push("--limit", String(normalizeSessionLimit(limit)));
   return args;
 }
 

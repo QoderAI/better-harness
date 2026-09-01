@@ -93,6 +93,19 @@ test("a stored plan is content-addressed and a repeat apply reports the first ac
   assert.deepEqual(stored, [path.basename(first.path)]);
 });
 
+test("concurrent applies publish one acceptance and one duplicate", async () => {
+  const plan = planFor("TASK-RACE", directory);
+  const [left, right] = await Promise.all([
+    storeUploadPlan(plan, { directory, now: new Date("2026-09-01T11:00:00.000Z") }),
+    storeUploadPlan(plan, { directory, now: new Date("2026-09-01T12:00:00.000Z") }),
+  ]);
+
+  assert.deepEqual([left.state, right.state].sort(), ["accepted", "duplicate"]);
+  assert.equal(left.receipt.receiptId, right.receipt.receiptId);
+  assert.equal(left.receipt.acceptedAt, right.receipt.acceptedAt);
+  assert.deepEqual(await readdir(directory), [`${plan.packetDigest.slice("sha256:".length)}.json`]);
+});
+
 test("stored records read back newest first as Dashboard packets", async () => {
   await storeUploadPlan(planFor("TASK-7", directory), { directory, now: new Date("2026-09-01T11:00:00.000Z") });
   await storeUploadPlan(planFor("TASK-8", directory), { directory, now: new Date("2026-09-01T13:00:00.000Z") });

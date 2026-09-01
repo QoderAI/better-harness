@@ -126,6 +126,8 @@ test("dashboard projects values built by the real scripts", async () => {
     assert.deepEqual(model.overview, {
       analyzedSessions: 2,
       eligibleSessions: 2,
+      selectionStrategy: "all-eligible",
+      selectionNote: "all-eligible selection",
       activeMinutes: 2.5,
       modelResponses: 3,
       skillInvocations: 2,
@@ -133,6 +135,7 @@ test("dashboard projects values built by the real scripts", async () => {
     assert.equal(model.assets.totals.skills, 1);
     assert.equal(model.assets.totals.mcps, 1);
     assert.equal(model.assets.totals.hooks, 1);
+    assert.equal(model.assets.observed, true);
     assert.equal(model.evidencePackets[0].acceptance.unobserved, 1);
     assert.equal(model.evidence.accountingMode, "effort-proxy");
     assert.deepEqual(model.tokenActivity?.totals, {
@@ -175,6 +178,27 @@ test("asset totals remain configured instances across inventory reports", () => 
   assert.deepEqual(model.assets.providers, ["qoder", "codex"]);
 });
 
+test("a bounded session selection stays visible in the Dashboard model", () => {
+  const bounded = usageResult();
+  bounded.selection = { strategy: "latest-n", eligibleCount: 20, analyzedCount: 5 };
+  const model = buildDashboardModel({
+    generatedAt: "2026-09-01T12:10:00.000Z",
+    sources: { sessionProviders: ["qoder"], assetProviders: [], tokenProviders: [], errors: [] },
+    usageSummary: buildUsageSummary(bounded),
+    usageActivity: buildDailyUsageActivity(
+      [{ sessionId: "bounded", firstSeen: "2026-09-01T10:00:00.000Z" }],
+      [{ id: "bounded", firstSeen: "2026-09-01T10:00:00.000Z", activeMs: 0 }],
+      [],
+      [],
+    ),
+    assetInventories: [],
+    evidencePackets: [],
+  });
+
+  assert.equal(model.overview.selectionStrategy, "latest-n");
+  assert.equal(model.overview.selectionNote, "latest-n bounded selection");
+});
+
 test("the aggregated Other Skill bucket stays after named Skills", () => {
   const usageActivity = buildDailyUsageActivity(
     [{ sessionId: "a", firstSeen: "2026-09-01T10:00:00.000Z" }],
@@ -198,4 +222,5 @@ test("the aggregated Other Skill bucket stays after named Skills", () => {
   });
 
   assert.deepEqual(model.skills.map((skill) => skill.name), ["named-skill", "Other"]);
+  assert.equal(model.assets.observed, false);
 });
