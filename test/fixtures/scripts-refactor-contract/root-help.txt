@@ -20,6 +20,8 @@ Commands:
                              selection-profile, source, source-review, task-loop-report, render,
                              preview-canvas, report-quality, repair-findings, record-fix-output,
                              validate-canvas
+    upload                   Prepare a redacted, reviewable task evidence upload plan, then
+                             apply it to the destination it names
 
   Project Evidence
     session-analysis         Collect and normalize Qoder, Codex, Claude, Augment, Cursor, Qwen,
@@ -57,6 +59,7 @@ Examples:
   better-harness doctor --platform all --json
   better-harness harness analyze --workspace . --language en --format json
   better-harness harness checkup --phase scan --provider qoder --workspace . --json
+  better-harness upload plan --input task-evidence.json --workspace . --destination https://harness.example.com/evidence --organization <id>
   better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json
   better-harness harness report-quality --report <run>/report.md
   better-harness harness validate-canvas --canvas <run>/report.canvas.tsx

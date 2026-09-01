@@ -46,6 +46,7 @@ export { createActionGateway, type ActionGateway, type ActionHandler } from "./a
 export {
   createObservationBridge,
   HARNESS_ARTIFACT_OBSERVATION_EVENT,
+  type ArtifactObservationEnvelope,
   type ArtifactObservationPayload,
   type ObservationBridge,
 } from "./observation-bridge.js";

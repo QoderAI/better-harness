@@ -25,7 +25,7 @@ export function sessionFromRetainedRun(record: RetainedRunRecord): DebuggerSessi
     id: sessionId,
     name: record.prompt,
     agent: "local harness",
-    protocol: "AG-UI retained evidence",
+    protocol: "Harness run evidence",
     connection: record.status,
     mode: "Retained run",
     startedAt,

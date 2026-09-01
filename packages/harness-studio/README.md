@@ -11,9 +11,9 @@ live runs, and comparisons.
 - **Inspector workspace** — embeds an explicitly supplied, self-contained
   Harness Inspector report behind a sandboxed, read-only document boundary.
 
-- **Run view** — drives a live harness run over the AG-UI protocol served by
-  [`@qoder-ai/harness-ui`](../harness-ui/README.md) (embedded under `/agui`),
-  rendering streamed assistant messages, warnings, and workbench-style
+- **Run view** — drives a live harness run over the native, sequenced
+  `HarnessRunEvent` stream served by Studio under `/api/runs/stream`, rendering
+  streamed assistant messages, warnings, and workbench-style
   expandable tool cards with arguments, retained results, execution state,
   failed/result-unavailable states, bounded-result truncation evidence, and the
   final run result.
@@ -59,9 +59,9 @@ Linux. Native directory selection depends on the operating system's picker;
 Studio reports an actionable error when no supported picker is installed. The
 server binds to loopback; live runs execute through the same v0.2 executors and
 redaction rules as the core package. The embedded run endpoint accepts
-same-origin JSON browser requests only; use the standalone
-`@qoder-ai/harness-ui` server with an explicit `--allow-origin` when the
-frontend is hosted on another origin.
+same-origin JSON browser requests only. Studio does not expose a remotely
+hosted run gateway; remote authentication and tenancy belong to a separate
+service boundary.
 
 A `source`-backed skill is locked and read from `--source-root`, which
 defaults to the directory containing `--harness`. Pass it explicitly when the
@@ -173,7 +173,8 @@ src/contracts/      types and wire formats shared by app and server
                      input-trace, intent-correlation, workspace-artifact)
 src/app/            shell (App.tsx, studio-shell-model.ts, studio-theme.ts)
                      plus feature areas, each a components+state pair:
-                       run/          live run view, AG-UI reducer, Debugger
+                       run/          live run view, native event reducer,
+                                     Debugger
                                      cursor navigation, recorded sample
                        experiment/   three-lane experiment trace view
                        artifacts/    per-format Artifact Surface views and
@@ -183,8 +184,8 @@ src/app/            shell (App.tsx, studio-shell-model.ts, studio-theme.ts)
                      and single-view areas at the top level (Compare,
                      Customizations, GitHistory, InputTrace, Inspector,
                      ArtifactsWorkspace)
-src/server/          static host + /api/config + /api/evidence + embedded
-                     /agui, grouped by domain:
+src/server/          static host + /api/config + /api/evidence + native
+                     /api/runs/stream, grouped by domain:
                        artifacts/registry/   catalog, compile runtime,
                                              Provider activation/discovery
                        artifacts/adapters/   built-in docx/markdown/pdf/
@@ -226,6 +227,6 @@ Publication is repository-owned: select `harness-studio` in the protected
 GitHub Actions `Publish npm` workflow. Local commands only build, test, pack,
 or dry-run; do not publish this workspace from a developer machine.
 
-See the spec:
-[Harness UI and Studio](https://github.com/QoderAI/better-harness/blob/main/docs/specs/2026-08-15-harness-ui-studio.md)
+See the specs:
+[Native Harness run streams in Studio](../../docs/specs/2026-09-01-harness-native-studio-stream.md)
 and [Harness Studio information architecture](../../docs/specs/2026-08-18-harness-studio-information-architecture.md).

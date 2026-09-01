@@ -3,7 +3,11 @@
 ## Traceability
 
 - Spec ID: `2026-08-15-harness-ui-studio`
-- Status: Implemented
+- Status: Superseded
+
+This historical implementation was superseded by
+[Native Harness run streams in Studio](2026-09-01-harness-native-studio-stream.md).
+The AG-UI adapter and its package are no longer current product surfaces.
 
 ## Intent
 

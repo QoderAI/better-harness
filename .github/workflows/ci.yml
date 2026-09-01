@@ -48,20 +48,23 @@ jobs:
         run: npm run harness:build
       - name: Test Harness DSL package
         run: npm run harness:test
-      - name: Build Harness UI package
-        run: npm run harness-ui:build
-      - name: Test Harness UI package
-        run: npm run harness-ui:test
       - name: Build Harness Studio package
         run: npm run harness-studio:build
       - name: Test Harness Studio package
         run: npm run harness-studio:test
+      - name: Build Harness organization Dashboard
+        run: npm run harness-ui:build
+      - name: Test Harness organization Dashboard
+        run: npm run harness-ui:test
       - name: Install Chromium for Harness Studio browser test
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.20.0' }}
         run: npx playwright install --with-deps chromium
       - name: Test Harness Studio browser interaction
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.20.0' }}
         run: npm run harness-studio:test:browser
+      - name: Test Harness organization Dashboard interaction
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.20.0' }}
+        run: npm run harness-ui:test:browser
       - name: Upload JUnit test results
         if: ${{ always() }}
         uses: actions/upload-artifact@v7

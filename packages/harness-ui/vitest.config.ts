@@ -1,10 +1,14 @@
+import path from "node:path";
+
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@": path.resolve(import.meta.dirname),
+    },
+  },
   test: {
-    environment: "node",
-    include: ["test/**/*.test.ts"],
-    pool: "forks",
-    testTimeout: 60_000,
+    include: ["test/**/*.test.{js,mjs,ts}"],
   },
 });

@@ -1,57 +1,32 @@
 {
   "name": "@qoder-ai/harness-ui",
-  "version": "0.1.1",
-  "description": "AG-UI protocol adapter for @qoder-ai/harness: stream harness runs to any AG-UI-compatible frontend over SSE.",
-  "license": "MIT",
+  "version": "0.2.0",
+  "private": true,
   "type": "module",
-  "sideEffects": false,
-  "engines": {
-    "node": ">=22.20.0 <25.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/QoderAI/better-harness.git",
-    "directory": "packages/harness-ui"
-  },
-  "homepage": "https://github.com/QoderAI/better-harness/tree/main/packages/harness-ui#readme",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "bin": {
-    "harness-ui": "./dist/cli.js"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./protocol": {
-      "types": "./dist/protocol.d.ts",
-      "import": "./dist/protocol.js"
-    }
-  },
-  "files": [
-    "dist/",
-    "README.md",
-    "LICENSE"
-  ],
   "scripts": {
-    "build": "npm run clean && tsc",
-    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "prepack": "npm test",
-    "pretest": "npm run build",
+    "build": "next build",
+    "dev": "next dev --hostname 127.0.0.1 --port 3410",
+    "start": "next start --hostname 127.0.0.1 --port 3410",
+    "typecheck": "tsc --noEmit",
+    "pretest": "npm run typecheck",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "test:upload-e2e": "vitest run test/upload-dashboard-e2e.test.mjs",
+    "pretest:browser": "npm run build",
+    "test:browser": "playwright test"
   },
   "dependencies": {
-    "@qoder-ai/harness": "0.2.0"
+    "lucide-react": "0.544.0",
+    "next": "16.3.4",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "recharts": "3.10.1"
   },
   "devDependencies": {
-    "@types/node": "26.4.0",
-    "es-module-lexer": "2.3.2",
-    "typescript": "7.0.2",
+    "@playwright/test": "1.55.0",
+    "@types/node": "24.3.0",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "typescript": "5.9.2",
     "vitest": "4.1.11"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

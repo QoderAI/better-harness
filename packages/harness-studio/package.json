@@ -1,7 +1,7 @@
 {
   "name": "@qoder-ai/harness-studio",
   "version": "0.1.1",
-  "description": "React studio for @qoder-ai/harness: live AG-UI run view plus harness-compare evidence explorer.",
+  "description": "React studio for @qoder-ai/harness: native live runs plus harness-compare evidence explorer.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -47,7 +47,6 @@
     "@phosphor-icons/react": "^2.1.10",
     "@pierre/diffs": "^1.3.5",
     "@qoder-ai/harness": "0.2.0",
-    "@qoder-ai/harness-ui": "0.1.1",
     "@shikijs/core": "^4.4.3",
     "@shikijs/engine-javascript": "^4.4.3",
     "@shikijs/langs": "^4.4.3",

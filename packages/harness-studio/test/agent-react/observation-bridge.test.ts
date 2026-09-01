@@ -19,7 +19,7 @@ describe("ObservationBridge (AR-AC-10)", () => {
     expect(bridge.recorded().map((event) => event.sequence)).toEqual([1, 2]);
   });
 
-  it("encodes an observation as a namespaced AG-UI CUSTOM event", () => {
+  it("encodes an observation in its domain envelope", () => {
     const bridge = createObservationBridge();
     const event = bridge.record({
       kind: "renderFailed",
@@ -28,10 +28,9 @@ describe("ObservationBridge (AR-AC-10)", () => {
       detail: { reason: "component threw" },
     });
 
-    expect(bridge.encodeHarnessEvent(event)).toEqual({
-      type: "CUSTOM",
-      name: HARNESS_ARTIFACT_OBSERVATION_EVENT,
-      value: {
+    expect(bridge.encodeObservation(event)).toEqual({
+      type: HARNESS_ARTIFACT_OBSERVATION_EVENT,
+      payload: {
         kind: "renderFailed",
         sequence: 1,
         artifactDigest: ARTIFACT,
@@ -43,20 +42,20 @@ describe("ObservationBridge (AR-AC-10)", () => {
 
   it("omits digests and detail that were never recorded", () => {
     const bridge = createObservationBridge();
-    const encoded = bridge.encodeHarnessEvent(bridge.record({ kind: "nodeSelected" }));
+    const encoded = bridge.encodeObservation(bridge.record({ kind: "nodeSelected" }));
 
-    expect(encoded.value).toEqual({ kind: "nodeSelected", sequence: 1 });
+    expect(encoded.payload).toEqual({ kind: "nodeSelected", sequence: 1 });
   });
 
   it("encodes every observation kind the runtime can report", () => {
     const bridge = createObservationBridge();
     for (const kind of OBSERVATION_KINDS) bridge.record({ kind, artifactDigest: ARTIFACT });
 
-    const encoded = bridge.drainToAgent();
+    const encoded = bridge.drainEnvelopes();
 
     expect(encoded).toHaveLength(OBSERVATION_KINDS.length);
-    expect(encoded.every((event) => event.name === HARNESS_ARTIFACT_OBSERVATION_EVENT)).toBe(true);
-    expect(encoded.map((event) => (event.value as { kind: string }).kind)).toEqual([...OBSERVATION_KINDS]);
+    expect(encoded.every((event) => event.type === HARNESS_ARTIFACT_OBSERVATION_EVENT)).toBe(true);
+    expect(encoded.map((event) => event.payload.kind)).toEqual([...OBSERVATION_KINDS]);
   });
 
   it("owns and deeply freezes each recorded observation", () => {

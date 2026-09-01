@@ -204,7 +204,7 @@ async function compileAndResolveVariants(
     throw new Error(`Harness compilation failed:\n${diagnostics}`);
   }
   // A skill source belongs to the `.harness` document that declares it, so use
-  // the same document-relative convention as harness-ui and harness-studio.
+  // the same document-relative convention as Harness Studio.
   // Locking is a no-op for a harness with only inline `description` skills.
   const sourceRoot = dirname(loaded.resolved.harness);
   const sourceLocks = await lockCapabilitySources(compiled.bundle, { root: sourceRoot });

@@ -61,7 +61,7 @@ Options:
   --source-root <dir> Root a 'source' skill's path locks and delivers against
                       (default: the directory containing --harness)
   --unsafe-allow-remote
-                      Permit a non-loopback --host. The studio's /agui endpoint is
+                      Permit a non-loopback --host. The studio's /api/runs/stream endpoint is
                       unauthenticated and runs a coding agent in --cwd.
   -h, --help          Print help without reading any file or opening a port
   -v, --version       Print the package version without opening a port

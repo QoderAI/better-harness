@@ -62,7 +62,7 @@ export async function serveInspectorReportJson(response: ServerResponse, reportP
     });
   }
 }
-/** Saved Debugger runs: retained browser-observed AG-UI evidence, one JSON file per run. */
+/** Saved Debugger runs: retained browser-observed Harness evidence, one JSON file per run. */
 export async function routeRuns(
   request: IncomingMessage,
   response: ServerResponse,

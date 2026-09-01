@@ -1,5 +1,3 @@
-import type { AguiEvent } from "@qoder-ai/harness-ui";
-
 export interface SseParser {
   /** Feed one decoded chunk; complete frames fire the callback in order. */
   push(chunk: string): void;
@@ -8,13 +6,13 @@ export interface SseParser {
 }
 
 /**
- * Incremental Server-Sent Events parser for AG-UI streams.
+ * Incremental Server-Sent Events parser for JSON streams.
  *
  * `fetch` delivers arbitrary chunk boundaries, so frames are reassembled on
- * the blank-line delimiter and each `data:` payload is parsed as one AG-UI
- * event.
+ * the blank-line delimiter and each `data:` payload is parsed as one JSON
+ * value.
  */
-export function createSseParser<T = AguiEvent>(onEvent: (event: T) => void): SseParser {
+export function createSseParser<T = unknown>(onEvent: (event: T) => void): SseParser {
   let buffer = "";
   const emitFrame = (frame: string): void => {
     const data = frame

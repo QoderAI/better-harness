@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { encodeSseEvent, runHarnessAgui, type AguiEvent } from "@qoder-ai/harness-ui";
-import { AcpSdkExecutor } from "@qoder-ai/harness/exec";
+import { AcpSdkExecutor, runHarness } from "@qoder-ai/harness/exec";
 import {
   ARTIFACT_AGENT_EVIDENCE_KIND,
   ARTIFACT_AGENT_PLAN_KIND,
   type ArtifactAgentPlanV1,
   type ArtifactAgentRunEvidenceV1,
   type ArtifactAgentRunPhaseV1,
+  type ArtifactAgentStreamEventV1,
 } from "../../contracts/artifact-agent-run.js";
 import type {
   ArtifactHostedIntentDestinationV1,
@@ -23,7 +23,7 @@ import {
 } from "../default-local-harness.js";
 import { acpAgentEnabled } from "../acp-runs.js";
 import { effectiveAcpAgentProfiles } from "../acp-agent-catalog.js";
-import { readJsonBody, respondJson, sameOriginRequest } from "../http-utils.js";
+import { encodeSseData, readJsonBody, respondJson, sameOriginRequest } from "../http-utils.js";
 import type { HarnessStudioServerOptions, HarnessStudioState } from "../studio-types.js";
 import {
   assertArtifactInteractionWorkspace,
@@ -169,22 +169,22 @@ export async function streamArtifactAgentRun(
   let terminal = false;
   let permissionRequestsCancelled = 0;
   let observedRunError: string | undefined;
-  const emit = (event: AguiEvent): void => {
-    if (!response.destroyed && !response.writableEnded) response.write(encodeSseEvent(event));
+  const emit = (event: ArtifactAgentStreamEventV1): void => {
+    if (!response.destroyed && !response.writableEnded) response.write(encodeSseData(event));
   };
   const phase = (value: ArtifactAgentRunPhaseV1, summary: string): void => {
-    emit({ type: "CUSTOM", name: "artifact.agent.phase", value: { phase: value, summary } });
+    emit({ type: "phase", phase: value, summary });
   };
   const disconnect = (): void => {
     if (!terminal) abortController.abort(new Error("Artifact Agent stream disconnected."));
   };
   response.once("close", disconnect);
-  emit({ type: "RUN_STARTED", threadId: `artifact:${artifactId}`, runId: input.runId });
+  emit({ type: "run-started", runId: input.runId });
   phase("observing", "Bound the exact Artifact revision and semantic target.");
 
   try {
     phase("planning", `${profile.label} is preparing a bounded Provider instruction.`);
-    const run = await runHarnessAgui({
+    const run = await runHarness({
       source: profile.agent.harnessSource ?? DEFAULT_LOCAL_ACP_HARNESS_SOURCE,
       harnessId: profile.agent.harnessId ?? DEFAULT_LOCAL_HARNESS_ID,
       runtimeId: profile.agent.runtimeId ?? DEFAULT_LOCAL_ACP_RUNTIME_ID,
@@ -194,14 +194,14 @@ export async function streamArtifactAgentRun(
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       ...(options.sourceRoot === undefined ? {} : { sourceRoot: options.sourceRoot }),
       abortSignal: abortController.signal,
-      onEvent: (event) => {
-        if (event.type === "TOOL_CALL_START") {
+      onRunEvent: (event) => {
+        if (event.type === "tool-call-started") {
           emit({
-            type: "CUSTOM",
-            name: "artifact.agent.action",
-            value: { kind: "permission-cancelled", summary: "Denied one planning-time tool request." },
+            type: "action",
+            action: "permission-cancelled",
+            summary: "Denied one planning-time tool request.",
           });
-        } else if (event.type === "RUN_ERROR") {
+        } else if (event.type === "run-error") {
           observedRunError = publicExecutorError(event.message);
         }
       },
@@ -223,7 +223,7 @@ export async function streamArtifactAgentRun(
     }
 
     const plan = parseAgentPlan(run.result.output, workspace);
-    emit({ type: "CUSTOM", name: "artifact.agent.plan", value: plan });
+    emit({ type: "plan", plan });
     phase("validating", "Validating the Agent plan through the selected Artifact Provider.");
     const binding: RetainedArtifactInteractionBinding = {
       artifactId,
@@ -272,17 +272,17 @@ export async function streamArtifactAgentRun(
       ...(typeof run.result.runtimeReceipt?.model === "string" ? { model: run.result.runtimeReceipt.model } : {}),
       ...(typeof run.result.metrics?.stopReason === "string" ? { stopReason: run.result.metrics.stopReason } : {}),
     };
-    emit({ type: "CUSTOM", name: "artifact.agent.evidence", value: evidence });
+    emit({ type: "evidence", evidence });
     phase("proposal", "The Provider prepared a read-only proposal for human review.");
-    emit({ type: "CUSTOM", name: "artifact.agent.proposal", value: proposal });
+    emit({ type: "proposal", proposal });
     terminal = true;
-    emit({ type: "RUN_FINISHED", threadId: `artifact:${artifactId}`, runId: input.runId, result: { proposalId: proposal.proposal.proposalId } });
+    emit({ type: "run-finished", proposalId: proposal.proposal.proposalId });
   } catch (error) {
     const message = error instanceof ArtifactAgentRunCancelledError || abortController.signal.aborted
       ? "Artifact Agent run was interrupted before a proposal was retained."
       : safeArtifactError(error);
     terminal = true;
-    emit({ type: "RUN_ERROR", message });
+    emit({ type: "run-error", message });
   } finally {
     response.removeListener("close", disconnect);
     const active = state.artifactAgentRuns.get(input.runId);

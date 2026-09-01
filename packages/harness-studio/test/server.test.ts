@@ -4,8 +4,8 @@ import { request as httpRequest } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { HarnessRunEmitter, loadSkillDeliveries, type HarnessExecutor } from "@qoder-ai/harness/exec";
-import { decodeSseStream, type HarnessUiExecutorFactory } from "@qoder-ai/harness-ui";
+import { HarnessRunEmitter, loadSkillDeliveries, type HarnessExecutor, type HarnessExecutorFactory } from "@qoder-ai/harness/exec";
+import { HARNESS_RUN_REQUEST_KIND, type HarnessRunStreamEventV1 } from "@qoder-ai/harness/protocol";
 import { isArtifactCatalogResponse } from "../src/contracts/artifact.js";
 import { parseHarnessStudioArgs, resolveHarnessStudioSourceRoot, runHarnessStudioCli, discoverDefaultInspectorReport } from "../src/server/cli.js";
 import { parseSourceCatalog } from "../src/server/workspace/source-catalog.js";
@@ -16,6 +16,7 @@ import { DEFAULT_LOCAL_ACP_RUNTIME_ID, DEFAULT_LOCAL_HARNESS_ID, DEFAULT_LOCAL_R
 import type { IntentCorrelationPacketV1 } from "../src/contracts/intent-correlation.js";
 import type { CheckpointHistoryAdapter } from "../src/server/query/checkpoint-history.js";
 import { FIXTURE_VERDICT } from "./compare-model.test.js";
+import { decodeSseStream } from "./sse-test-utils.js";
 
 const EXPERIMENT_MANIFEST = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -25,6 +26,10 @@ const ACP_AGENT_FIXTURE = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../harness/test/fixtures/acp-agent.mjs",
 );
+
+function runRequest(threadId: string, runId: string, prompt: string): string {
+  return JSON.stringify({ kind: HARNESS_RUN_REQUEST_KIND, threadId, runId, prompt });
+}
 
 const READY_CHECKPOINT_SOURCE = {
   status: "ready" as const,
@@ -81,7 +86,7 @@ const SOURCE_SKILL_HARNESS = `
   }
 `;
 
-const scriptedExecutorFactory: HarnessUiExecutorFactory = (context) => {
+const scriptedExecutorFactory: HarnessExecutorFactory = (context) => {
   const executor: HarnessExecutor = {
     host: "qoder",
     async execute(revision, _bundle, task) {
@@ -239,7 +244,7 @@ describe("harness-studio server", () => {
     expect(config).toEqual({
       acpAgentLabel: "ACP Agent",
       acpEnabled: false,
-      aguiEnabled: false,
+      runEnabled: false,
       artifactsEnabled: false,
       evidenceEnabled: true,
       experimentEnabled: false,
@@ -594,67 +599,51 @@ describe("harness-studio server", () => {
     });
 
     expect(await (await fetch(`${started.url}/api/config`)).json()).toMatchObject({
-      aguiEnabled: true,
+      runEnabled: true,
       harnessMode: "workspace-default",
       workspaceDiscoveryEnabled: true,
     });
-    const beforeProject = await fetch(`${started.url}/agui`, {
+    const beforeProject = await fetch(`${started.url}/api/runs/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        threadId: "before-project-thread",
-        runId: "before-project-run",
-        messages: [{ role: "user", content: "must not start" }],
-      }),
+      body: runRequest("before-project-thread", "before-project-run", "must not start"),
     });
     expect(beforeProject.status).toBe(409);
     expect(await beforeProject.json()).toEqual({ error: "Open a Project before starting a Project-scoped run." });
     expect(await (await fetch(`${started.url}/api/workspace/open`, { method: "POST" })).json()).toMatchObject({ opened: true });
 
     const projectCatalog = await (await fetch(`${started.url}/api/projects`)).json() as { activeProjectId: string; revision: number };
-    const missingBinding = await fetch(`${started.url}/agui`, {
+    const missingBinding = await fetch(`${started.url}/api/runs/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        threadId: "missing-thread",
-        runId: "missing-run",
-        messages: [{ role: "user", content: "must not start" }],
-      }),
+      body: runRequest("missing-thread", "missing-run", "must not start"),
     });
     expect(missingBinding.status).toBe(409);
     expect(await missingBinding.json()).toEqual({ error: "A Project id and revision are required to start a Project-scoped run." });
-    const staleBinding = await fetch(`${started.url}/agui`, {
+    const staleBinding = await fetch(`${started.url}/api/runs/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Harness-Project-Id": projectCatalog.activeProjectId,
         "X-Harness-Project-Revision": String(projectCatalog.revision - 1),
       },
-      body: JSON.stringify({
-        threadId: "stale-thread",
-        runId: "stale-run",
-        messages: [{ role: "user", content: "must not start" }],
-      }),
+      body: runRequest("stale-thread", "stale-run", "must not start"),
     });
     expect(staleBinding.status).toBe(409);
     expect(observedTask).toBeUndefined();
 
-    const response = await fetch(`${started.url}/agui`, {
+    const response = await fetch(`${started.url}/api/runs/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Harness-Project-Id": projectCatalog.activeProjectId,
         "X-Harness-Project-Revision": String(projectCatalog.revision),
       },
-      body: JSON.stringify({
-        threadId: "default-thread",
-        runId: "default-run",
-        messages: [{ role: "user", content: "inspect this workspace" }],
-      }),
+      body: runRequest("default-thread", "default-run", "inspect this workspace"),
     });
-    const events = decodeSseStream(await response.text());
+    const events = decodeSseStream<HarnessRunStreamEventV1>(await response.text());
 
-    expect(events).toContainEqual(expect.objectContaining({ type: "TEXT_MESSAGE_CONTENT", delta: "workspace: inspect this workspace" }));
+    expect(events).toContainEqual(expect.objectContaining({ event: { type: "text-delta", messageId: expect.any(String), text: "workspace: inspect this workspace" } }));
     const canonicalWorkspace = await realpath(workspace);
     expect(observedTask).toMatchObject({ cwd: canonicalWorkspace, sourceRoot: canonicalWorkspace });
     expect(observedRevision).toEqual({ harnessId: DEFAULT_LOCAL_HARNESS_ID, runtimeId: DEFAULT_LOCAL_RUNTIME_ID });
@@ -677,18 +666,14 @@ describe("harness-studio server", () => {
     const projectCatalog = await (await fetch(`${started.url}/api/projects`)).json() as { activeProjectId: string; revision: number };
 
     const runId = "acp-run";
-    const response = await fetch(`${started.url}/agui/acp`, {
+    const response = await fetch(`${started.url}/api/acp/runs/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Harness-Project-Id": projectCatalog.activeProjectId,
         "X-Harness-Project-Revision": String(projectCatalog.revision),
       },
-      body: JSON.stringify({
-        threadId: "acp-thread",
-        runId,
-        messages: [{ role: "user", content: "prove the ACP bridge" }],
-      }),
+      body: runRequest("acp-thread", runId, "prove the ACP bridge"),
     });
     expect(response.status).toBe(200);
     const reader = response.body!.getReader();
@@ -699,12 +684,9 @@ describe("harness-studio server", () => {
       const chunk = await reader.read();
       expect(chunk.done).toBe(false);
       body += decoder.decode(chunk.value, { stream: true });
-      const permission = decodeSseStream(body).find((event) => event.type === "CUSTOM"
-        && event.name === "harness.protocol-event"
-        && (event.value as { method?: string }).method === "session/request_permission");
-      if (permission?.type === "CUSTOM") {
-        permissionRequestId = (permission.value as { rpcId?: string }).rpcId;
-      }
+      const permission = decodeSseStream<HarnessRunStreamEventV1>(body).find((entry) =>
+        entry.event.type === "protocol-event" && entry.event.method === "session/request_permission");
+      if (permission?.event.type === "protocol-event") permissionRequestId = permission.event.rpcId;
     }
     const decision = await fetch(`${started.url}/api/acp/runs/${runId}/permissions/${permissionRequestId}`, {
       method: "POST",
@@ -718,15 +700,13 @@ describe("harness-studio server", () => {
       body += decoder.decode(chunk.value, { stream: true });
     }
     body += decoder.decode();
-    const events = decodeSseStream(body);
-    expect(events).toContainEqual(expect.objectContaining({ type: "TEXT_MESSAGE_CONTENT", delta: "fixture:allow-once" }));
-    expect(events).toContainEqual(expect.objectContaining({ type: "RUN_FINISHED" }));
+    const events = decodeSseStream<HarnessRunStreamEventV1>(body);
+    expect(events).toContainEqual(expect.objectContaining({ event: expect.objectContaining({ type: "text-delta", text: "fixture:allow-once" }) }));
+    expect(events).toContainEqual(expect.objectContaining({ event: expect.objectContaining({ type: "run-finished" }) }));
     expect(events).toContainEqual(expect.objectContaining({
-      type: "CUSTOM",
-      name: "harness.protocol-event",
-      value: expect.objectContaining({ protocol: "acp", method: "session/prompt" }),
+      event: expect.objectContaining({ type: "protocol-event", protocol: "acp", method: "session/prompt" }),
     }));
-    expect(events.find((event) => event.type === "RUN_STARTED")).toBeDefined();
+    expect(events.find((entry) => entry.event.type === "run-started")).toBeDefined();
     expect(DEFAULT_LOCAL_ACP_RUNTIME_ID).toBe("acp");
   });
 
@@ -755,10 +735,10 @@ describe("harness-studio server", () => {
 
     expect(await (await fetch(`${started.url}/api/config`)).json()).toMatchObject({ harnessMode: "configured" });
     await fetch(`${started.url}/api/workspace/open`, { method: "POST" });
-    await fetch(`${started.url}/agui`, {
+    await fetch(`${started.url}/api/runs/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ threadId: "configured-thread", runId: "configured-run", messages: [{ role: "user", content: "run configured" }] }),
+      body: runRequest("configured-thread", "configured-run", "run configured"),
     });
 
     expect(observed).toEqual({ cwd: configuredCwd, harnessId: "my-agent" });
@@ -824,14 +804,14 @@ describe("harness-studio server", () => {
     const config = await (await fetch(`${started.url}/api/config`)).json() as { workspaceConnected: boolean; projectExecutionEnabled: boolean; sessionCount: number };
     expect(config).toMatchObject({ workspaceConnected: true, projectExecutionEnabled: false, sessionCount: 2 });
     const activeProject = await (await fetch(`${started.url}/api/projects`)).json() as { activeProjectId: string; revision: number };
-    const runAttempt = await fetch(`${started.url}/agui`, {
+    const runAttempt = await fetch(`${started.url}/api/runs/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Harness-Project-Id": activeProject.activeProjectId,
         "X-Harness-Project-Revision": String(activeProject.revision),
       },
-      body: JSON.stringify({ threadId: "imported-thread", runId: "imported-run", messages: [{ role: "user", content: "must not execute" }] }),
+      body: runRequest("imported-thread", "imported-run", "must not execute"),
     });
     expect(runAttempt.status).toBe(422);
     expect(await runAttempt.json()).toEqual({ error: "The selected Project is read-only evidence and cannot host a live run." });
@@ -1480,7 +1460,7 @@ describe("harness-studio server", () => {
     expect([403, 404]).toContain(escape.status);
   });
 
-  it("mounts the embedded AG-UI endpoint when a harness is loaded", async () => {
+  it("mounts the native Harness run endpoint when a harness is loaded", async () => {
     const appDir = await makeAppDir();
     started = await startHarnessStudioServer({
       appDir,
@@ -1488,45 +1468,36 @@ describe("harness-studio server", () => {
       executorFactory: scriptedExecutorFactory,
     });
 
-    const response = await fetch(`${started.url}/agui`, {
+    const response = await fetch(`${started.url}/api/runs/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        threadId: "t1",
-        runId: "r1",
-        messages: [{ role: "user", content: "hello studio" }],
-      }),
+      body: runRequest("t1", "r1", "hello studio"),
     });
 
-    const events = decodeSseStream(await response.text());
-    expect(events.map((event) => event.type)).toEqual([
-      "RUN_STARTED",
-      "TEXT_MESSAGE_START",
-      "TEXT_MESSAGE_CONTENT",
-      "TEXT_MESSAGE_END",
-      "TOOL_CALL_START",
-      "TOOL_CALL_ARGS",
-      "TOOL_CALL_END",
-      "TOOL_CALL_RESULT",
-      "RUN_FINISHED",
+    const events = decodeSseStream<HarnessRunStreamEventV1>(await response.text());
+    expect(events.map((entry) => entry.event.type)).toEqual([
+      "run-started",
+      "message-started",
+      "text-delta",
+      "message-finished",
+      "tool-call-started",
+      "tool-call-finished",
+      "tool-call-result",
+      "run-finished",
     ]);
     expect(events).toContainEqual(
-      expect.objectContaining({ type: "TEXT_MESSAGE_CONTENT", delta: "echo: hello studio" }),
+      expect.objectContaining({ event: expect.objectContaining({ type: "text-delta", text: "echo: hello studio" }) }),
     );
 
-    const hostile = await fetch(`${started.url}/agui`, {
+    const hostile = await fetch(`${started.url}/api/runs/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Origin: "https://hostile.example" },
-      body: JSON.stringify({
-        threadId: "t1",
-        runId: "r2",
-        messages: [{ role: "user", content: "must not run" }],
-      }),
+      body: runRequest("t1", "r2", "must not run"),
     });
     expect(hostile.status).toBe(403);
   });
 
-  it("delivers a source-backed skill through the embedded AG-UI endpoint", async () => {
+  it("delivers a source-backed skill through the native run endpoint", async () => {
     const appDir = await makeAppDir();
     const sourceRoot = await makeTempDir("studio-source-");
     await mkdir(join(sourceRoot, "skills", "deep-guide"), { recursive: true });
@@ -1564,29 +1535,25 @@ describe("harness-studio server", () => {
       }),
     });
 
-    const response = await fetch(`${started.url}/agui`, {
+    const response = await fetch(`${started.url}/api/runs/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        threadId: "t1",
-        runId: "r-source",
-        messages: [{ role: "user", content: "run" }],
-      }),
+      body: runRequest("t1", "r-source", "run"),
     });
 
-    expect(decodeSseStream(await response.text()).map((event) => event.type)).toEqual([
-      "RUN_STARTED",
-      "RUN_FINISHED",
+    expect(decodeSseStream<HarnessRunStreamEventV1>(await response.text()).map((entry) => entry.event.type)).toEqual([
+      "run-started",
+      "run-finished",
     ]);
     expect(seenSourceRoot).toBe(sourceRoot);
     expect(deliveredBody).toBe("Never touch generated files.\n");
   });
 
-  it("keeps /agui closed when no harness is loaded", async () => {
+  it("keeps /api/runs/stream closed when no harness is loaded", async () => {
     const appDir = await makeAppDir();
     started = await startHarnessStudioServer({ appDir });
 
-    const response = await fetch(`${started.url}/agui`, { method: "POST", body: "{}" });
+    const response = await fetch(`${started.url}/api/runs/stream`, { method: "POST", body: "{}" });
 
     expect(response.status).toBe(404);
     expect((await response.json()).error).toMatch(/--harness/);
@@ -1652,7 +1619,7 @@ describe("harness-studio server", () => {
       id: "r_catalog",
       name: "Verify saved run catalog",
       mode: "Retained run",
-      protocol: "AG-UI retained evidence",
+      protocol: "Harness run evidence",
     });
     expect(session.events.map((event: { kind: string }) => event.kind)).toEqual(["prompt", "response", "explore", "verify"]);
     expect(session.events.find((event: { phase: string }) => event.phase === "Verify")).toMatchObject({

@@ -67,7 +67,7 @@ interface StudioSourceOption {
 }
 
 const EMPTY_CONFIG: StudioConfig = {
-  aguiEnabled: false,
+  runEnabled: false,
   acpEnabled: false,
   artifactsEnabled: false,
   evidenceEnabled: false,
@@ -864,13 +864,13 @@ function formatSessionTime(value: string, locale: string): string {
 
 function DebuggerWorkspace(props: { config: StudioConfig; openProjectAction?: { label: string; onClick: () => void }; project?: { id: string; label: string; revision: number } }): React.JSX.Element {
   const { t } = useTranslation("common");
-  if (!props.config.aguiEnabled) {
+  if (!props.config.runEnabled) {
     return <EmptyWorkspace eyebrow={t("debugger.eyebrow")} title={t("debugger.title")} detail={t("debugger.detail")} command="--harness ./my-agent.harness" />;
   }
   if (props.config.harnessMode === "workspace-default" && !props.config.projectExecutionEnabled) {
     return <EmptyWorkspace eyebrow={t("debugger.projectScopedEyebrow")} title={props.project === undefined ? t("debugger.openProjectTitle") : t("debugger.readOnlyTitle")} detail={props.project === undefined ? (props.config.workspaceDiscoveryEnabled ? t("debugger.openProjectDetail") : t("debugger.noDiscoveryDetail")) : t("debugger.readOnlyDetail")} action={props.openProjectAction} />;
   }
-  return <div className="debugger-mode"><RunView aguiEndpoint="agui" acpEndpoint={props.config.acpEnabled ? "/agui/acp" : undefined} acpAgentLabel={props.config.acpAgentLabel} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? t("debugger.workspaceDefaultQoder") : t("debugger.liveTrial")} project={props.project} /></div>;
+  return <div className="debugger-mode"><RunView runEndpoint="/api/runs/stream" acpEndpoint={props.config.acpEnabled ? "/api/acp/runs/stream" : undefined} acpAgentLabel={props.config.acpAgentLabel} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? t("debugger.workspaceDefaultQoder") : t("debugger.liveTrial")} project={props.project} /></div>;
 }
 
 function CompareWorkspace(props: {

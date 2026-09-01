@@ -3470,7 +3470,7 @@ export function validateTaskLoopFindings(data) {
     const activity = summary.usageActivity;
     if (!isObject(activity)) errors.push("summary.usageActivity must be an object when supplied");
     else {
-      errors.push(...unsupportedFields(activity, ["schemaVersion", "dateBasis", "measurementBasis", "truncated", "dates", "sessions", "models", "skills"], "summary.usageActivity"));
+      errors.push(...unsupportedFields(activity, ["schemaVersion", "dateBasis", "measurementBasis", "truncated", "dates", "sessions", "models", "skills", "tokens"], "summary.usageActivity"));
       if (activity.schemaVersion !== undefined && (!Number.isInteger(activity.schemaVersion) || activity.schemaVersion < 1)) {
         errors.push("summary.usageActivity.schemaVersion must be positive integer metadata when supplied");
       }
@@ -3498,6 +3498,32 @@ export function validateTaskLoopFindings(data) {
             || !Array.isArray(series.daily) || series.daily.length !== length
             || series.daily.some((value) => !Number.isInteger(value) || value < 0)) {
             errors.push(`${prefix} must contain a bounded name, non-negative total, and date-aligned daily counts`);
+          }
+        }
+      }
+      if (activity.tokens !== undefined) {
+        const tokenFields = ["inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens"];
+        const tokens = activity.tokens;
+        if (!isObject(tokens)
+          || !Number.isInteger(tokens.observedResponseCount)
+          || tokens.observedResponseCount < 1
+          || !isObject(tokens.totals)
+          || !isObject(tokens.daily)) {
+          errors.push("summary.usageActivity.tokens must describe observed responses, totals, and date-aligned daily values");
+        } else {
+          errors.push(...unsupportedFields(tokens, ["observedResponseCount", "totals", "daily"], "summary.usageActivity.tokens"));
+          errors.push(...unsupportedFields(tokens.totals, tokenFields, "summary.usageActivity.tokens.totals"));
+          errors.push(...unsupportedFields(tokens.daily, tokenFields, "summary.usageActivity.tokens.daily"));
+          for (const field of tokenFields) {
+            const total = tokens.totals[field];
+            const daily = tokens.daily[field];
+            if (!Number.isInteger(total) || total < 0
+              || !Array.isArray(daily)
+              || daily.length !== length
+              || daily.some((value) => !Number.isInteger(value) || value < 0)
+              || daily.reduce((sum, value) => sum + value, 0) !== total) {
+              errors.push(`summary.usageActivity.tokens.${field} must contain a non-negative total equal to its date-aligned daily values`);
+            }
           }
         }
       }

@@ -95,7 +95,7 @@ export const common: typeof enCommon = {
   debugger: {
     eyebrow: "实时运行",
     title: "加载 Harness 以进行实时运行",
-    detail: "调试器通过内嵌的 AG-UI 端点驱动实时 Harness 运行，并保存已完成的运行以供回放。",
+    detail: "调试器通过原生 Harness 事件流驱动实时运行，并保存已完成的运行以供回放。",
     liveTrial: "实时试验",
     workspaceDefaultQoder: "项目默认 · Qoder",
     projectScopedEyebrow: "项目级实时运行",

@@ -1,0 +1,123 @@
+{
+  "kind": "better-harness.task-evidence-upload-plan",
+  "schemaVersion": 1,
+  "createdAt": "2026-09-01T12:32:18.380Z",
+  "state": "prepared",
+  "effects": {
+    "localWrite": true,
+    "network": "none",
+    "remoteMutation": false
+  },
+  "destination": {
+    "endpoint": "http://127.0.0.1:3410/api/upload",
+    "organization": "acme-engineering"
+  },
+  "packetDigest": "sha256:8228d74d50a5a261682bdca1677574388be2c24b468c7bab9bca894ad6bff804",
+  "packetBytes": 1633,
+  "packet": {
+    "kind": "better-harness.task-evidence-packet",
+    "schemaVersion": 1,
+    "generatedAt": "2026-09-01T12:32:18.380Z",
+    "workspace": {
+      "label": "better-harness"
+    },
+    "task": {
+      "id": "TASK-42",
+      "title": "Prepare Skill feedback",
+      "intent": "Preserve task evidence from <absolute-path> with token=<redacted> for the organization Dashboard.",
+      "scope": [
+        "scripts/task-evidence-upload",
+        "packages/harness-ui"
+      ],
+      "nonGoals": [
+        "Upload raw prompts or transcripts"
+      ],
+      "acceptance": [
+        {
+          "id": "AC-1",
+          "status": "passed",
+          "summary": "The upload plan validates."
+        },
+        {
+          "id": "AC-2",
+          "status": "unobserved",
+          "summary": "A remote receipt is not available in the current plan-only slice."
+        }
+      ]
+    },
+    "assets": [
+      {
+        "kind": "skill",
+        "id": "better-harness",
+        "publisher": "qoder-ai",
+        "revision": "sha256:preview",
+        "match": "exact",
+        "stage": "validated",
+        "outcome": "succeeded",
+        "attribution": "not-applicable"
+      },
+      {
+        "kind": "mcp",
+        "id": "docs",
+        "match": "exact",
+        "stage": "executed",
+        "outcome": "unobserved",
+        "attribution": "not-applicable"
+      }
+    ],
+    "observations": [
+      {
+        "kind": "validation",
+        "status": "passed",
+        "summary": "Focused Dashboard tests passed.",
+        "evidenceRef": "validation:harness-ui"
+      },
+      {
+        "kind": "human-review",
+        "status": "unobserved",
+        "summary": "No remote organization review was recorded."
+      }
+    ],
+    "coverage": {
+      "acceptance": {
+        "total": 2,
+        "passed": 1,
+        "failed": 0,
+        "unobserved": 1
+      },
+      "assetMatches": {
+        "total": 2,
+        "exact": 2,
+        "ambiguous": 0,
+        "unresolved": 0
+      },
+      "assetOutcomes": {
+        "total": 2,
+        "succeeded": 1,
+        "failed": 0,
+        "unobserved": 1
+      },
+      "observations": {
+        "total": 2,
+        "passed": 1,
+        "failed": 0,
+        "observed": 0,
+        "unobserved": 1
+      }
+    },
+    "privacy": {
+      "profile": "task-evidence-minimal",
+      "redactions": 2,
+      "excludedEvidence": [
+        "sourceBodies",
+        "prompts",
+        "transcripts",
+        "toolInputs",
+        "toolOutputs",
+        "credentials",
+        "absolutePaths"
+      ]
+    }
+  },
+  "planDigest": "sha256:699a554daad4c5443b6c6bfc91a01ea85164d415c4c104e8e26f1bd15d9a8160"
+}

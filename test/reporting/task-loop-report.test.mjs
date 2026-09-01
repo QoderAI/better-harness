@@ -1603,6 +1603,16 @@ test("task-loop projection carries one optional date-aligned usage activity fiel
     sessions: { total: 2, starts: [1, 1], activeMinutes: [12, 18.5] },
     models: [{ name: "ultimate", total: 3, daily: [1, 2] }],
     skills: [{ name: "skill-creator", total: 2, daily: [0, 2] }],
+    tokens: {
+      observedResponseCount: 3,
+      totals: { inputTokens: 300, outputTokens: 30, cacheReadInputTokens: 120, cacheCreationInputTokens: 0 },
+      daily: {
+        inputTokens: [100, 200],
+        outputTokens: [10, 20],
+        cacheReadInputTokens: [40, 80],
+        cacheCreationInputTokens: [0, 0],
+      },
+    },
   };
   const findings = projectTaskLoopFindings(reportSource({ sessionEvents: { usageActivity } }));
 
@@ -1611,6 +1621,10 @@ test("task-loop projection carries one optional date-aligned usage activity fiel
 
   findings.summary.usageActivity.models[0].daily = [3];
   assert.ok(validateTaskLoopFindings(findings).some((error) => /date-aligned daily counts/.test(error)));
+
+  findings.summary.usageActivity.models[0].daily = [1, 2];
+  findings.summary.usageActivity.tokens.daily.inputTokens = [299, 0];
+  assert.ok(validateTaskLoopFindings(findings).some((error) => /non-negative total equal to its date-aligned daily values/.test(error)));
 });
 
 test("task-loop projection preserves the all-eligible usage evidence boundary", () => {

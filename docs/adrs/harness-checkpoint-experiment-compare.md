@@ -7,7 +7,7 @@
 - Decision date: 2026-08-17
 - Related specs: [Harness Coding Compare](../specs/2026-08-15-harness-coding-compare.md),
   [Session Checkpoint Executor PoC](../specs/2026-08-16-session-checkpoint-executor-poc.md),
-  [Harness UI Studio](../specs/2026-08-15-harness-ui-studio.md)
+  [Native Harness run streams in Studio](../specs/2026-09-01-harness-native-studio-stream.md)
 - Implementation spec: [Checkpoint-anchored multi-lane harness
   experiments](../specs/2026-08-17-harness-studio-checkpoint-compare.md)
 - Source abstraction: [Checkpoint-backed Compare Sources and
@@ -98,7 +98,7 @@ fabricates attribution.
   patch, and grade. Results stay on namespaced refs; adopting a result is a
   later explicit action.
 - **Studio hosts experiments, not one global verdict.** The stateless
-  run-per-request `/agui` endpoint is insufficient. Studio gains a
+  run-per-request `/api/runs/stream` endpoint is insufficient. Studio gains a
   server-side experiment registry (create an experiment, subscribe to
   per-lane event streams, cancel), persists evidence per experiment
   directory, previews which axes a configuration moves before running, and

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { decodeSseStream } from "@qoder-ai/harness-ui";
+import type { ArtifactAgentStreamEventV1 } from "../src/contracts/artifact-agent-run.js";
+import { decodeSseStream } from "./sse-test-utils.js";
 import { canonicalArtifactInteractionJson } from "../src/contracts/artifact.js";
 import type {
   ArtifactHostedIntentAdmissionInputV1,
@@ -402,22 +403,22 @@ describe("hosted Artifact intent admission", () => {
       originRef: outcome.originRef,
     }));
     expect(response.status).toBe(200);
-    const events = decodeSseStream(await response.text());
-    const evidence = events.find((event) => event.type === "CUSTOM" && event.name === "artifact.agent.evidence") as any;
-    const proposal = events.find((event) => event.type === "CUSTOM" && event.name === "artifact.agent.proposal") as any;
+    const events = decodeSseStream<ArtifactAgentStreamEventV1>(await response.text());
+    const evidence = events.find((event) => event.type === "evidence") as Extract<ArtifactAgentStreamEventV1, { type: "evidence" }>;
+    const proposal = events.find((event) => event.type === "proposal") as Extract<ArtifactAgentStreamEventV1, { type: "proposal" }>;
     expect(evidence, JSON.stringify(events)).toMatchObject({
-      value: {
+      evidence: {
         kind: "HarnessStudioArtifactAgentRunEvidenceV1",
         provenance: { originId: outcome.originRef.originId, adoptedBy: { id: "human:test" } },
       },
     });
     expect(proposal).toMatchObject({
-      value: {
+      proposal: {
         proposal: { proposedBy: { kind: "agent" }, steering: { kind: "rename", message: "Rename to Agent planned" } },
         provenance: { originId: outcome.originRef.originId },
       },
     });
-    expect(evidence.value.provenance).toEqual(proposal.value.provenance);
+    expect(evidence.evidence.provenance).toEqual((proposal.proposal as { provenance?: unknown }).provenance);
     expect(fixture.calls).toEqual({ admit: 1, inspect: 2, prepare: 1, decide: 0 });
     expect(await readFile(fixture.sourcePath, "utf8")).toBe("initial intent canvas\n");
     expect(await readFile(fixture.destinationPath, "utf8")).toBe("initial native target\n");

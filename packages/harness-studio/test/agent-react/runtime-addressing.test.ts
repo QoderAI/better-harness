@@ -364,10 +364,9 @@ describe("AgentReact original POC end-to-end flow (AR-AC-1, AR-AC-4, AR-AC-5, AR
       expect.objectContaining({ kind: "renderFailed", buildDigest: brokenSnapshot.buildDigest }),
       expect.objectContaining({ kind: "renderCompleted", detail: expect.objectContaining({ phase: "rolled-back" }) }),
     ]));
-    expect(observations.drainToAgent()).toEqual(events.map((event) => expect.objectContaining({
-      type: "CUSTOM",
-      name: "harness.artifact-observation",
-      value: expect.objectContaining({ kind: event.kind, sequence: event.sequence }),
+    expect(observations.drainEnvelopes()).toEqual(events.map((event) => expect.objectContaining({
+      type: "harness.artifact-observation",
+      payload: expect.objectContaining({ kind: event.kind, sequence: event.sequence }),
     })));
 
     broker.revokeFrameToken(controller.current!.frameToken.token);

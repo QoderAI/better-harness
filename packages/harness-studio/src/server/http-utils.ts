@@ -61,3 +61,7 @@ export function respondJson(response: ServerResponse, status: number, payload: u
   response.writeHead(status, { "Content-Type": "application/json", ...headers });
   response.end(`${JSON.stringify(payload)}\n`);
 }
+
+export function encodeSseData(payload: unknown): string {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}

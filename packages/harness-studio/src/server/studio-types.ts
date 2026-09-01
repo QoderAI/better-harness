@@ -21,9 +21,8 @@ import { ObservedCallIndex } from "./query/observed-call-index.js";
 import { SavedRunRecord } from "./run-log.js";
 import { StudioSourceCandidate, StudioSourceKind } from "./workspace/source-catalog.js";
 import { WorkspaceArtifactSourceObservation } from "./workspace/workspace-artifacts.js";
-import { HarnessUiExecutorFactory } from "@qoder-ai/harness-ui";
 import { CustomizationAnalysisResponseV1 } from "@qoder-ai/harness/customization";
-import { AcpPermissionHandler } from "@qoder-ai/harness/exec";
+import { AcpPermissionHandler, HarnessExecutorFactory } from "@qoder-ai/harness/exec";
 import { HarnessExperimentCompareSet, RunHarnessExperimentOptions } from "@qoder-ai/harness/experiment";
 
 export interface StudioWorkspaceSessionSummary {
@@ -64,7 +63,7 @@ export interface HarnessStudioServerOptions {
   inspectorReportPath?: string;
   /** harness-compare evidence directory containing verdict.json. */
   evidenceDir?: string;
-  /** `.harness` source text; enables the embedded AG-UI endpoint. */
+  /** `.harness` source text; enables the native Harness run endpoint. */
   harnessSource?: string;
   /** Presentation provenance for the active harness. */
   harnessMode?: "configured" | "workspace-default";
@@ -95,7 +94,7 @@ export interface HarnessStudioServerOptions {
   walnutCacheRoot?: string;
   /** Additional bounded source candidates selectable from inside Studio. */
   sourceCatalog?: StudioSourceCandidate[];
-  executorFactory?: HarnessUiExecutorFactory;
+  executorFactory?: HarnessExecutorFactory;
   /** Explicit local ACP Agent. The browser can select it but cannot alter its command or argv. */
   acpAgent?: StudioAcpAgentOptions;
   /** Server-owned selectable ACP Agent catalog, including unavailable known presets. */

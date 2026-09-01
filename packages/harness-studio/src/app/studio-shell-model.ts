@@ -14,7 +14,7 @@ export type StudioCompareSurface = "sessions" | "bench" | "results";
 export type StudioInspectorSurface = "workbench";
 
 export interface StudioConfig {
-  aguiEnabled: boolean;
+  runEnabled: boolean;
   acpEnabled: boolean;
   acpAgentLabel?: string;
   artifactsEnabled: boolean;
@@ -300,7 +300,7 @@ export function studioOverview(config: StudioConfig, t: TFunction<"overview">): 
 }
 
 function isDebuggerReady(config: StudioConfig): boolean {
-  return config.aguiEnabled && (config.harnessMode !== "workspace-default" || config.projectExecutionEnabled);
+  return config.runEnabled && (config.harnessMode !== "workspace-default" || config.projectExecutionEnabled);
 }
 
 function hasUsableArtifacts(config: StudioConfig): boolean {

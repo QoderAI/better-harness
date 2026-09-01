@@ -1,4 +1,4 @@
-import type { TimelineItem } from "./agui-store.js";
+import type { TimelineItem } from "./run-store.js";
 import type { DebuggerEventKind } from "../../contracts/debugger-session.js";
 
 export interface TimelineBin<Kind extends string> {
