@@ -1874,7 +1874,7 @@ test("Qoder usage efficiency counts request lifecycles and joins completion usag
       cacheCreationInputTokens: 5,
     });
     assert.equal(usage.modelUsage.find((row) => row.model === "ultimate")?.responseCount, 2);
-    assert.equal(usage.activity.schemaVersion, 2);
+    assert.equal(usage.activity.schemaVersion, 3);
     assert.equal(usage.activity.models.find((row) => row.name === "ultimate")?.total, 1);
     assert.equal(usage.activity.models.find((row) => row.name === "performance")?.total, 1);
     assert.equal(usage.activity.models.reduce((sum, row) => sum + row.total, 0), 2);

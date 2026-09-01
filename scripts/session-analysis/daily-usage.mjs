@@ -1,10 +1,16 @@
 import { timestampMillis } from "./time.mjs";
 
-export const DAILY_USAGE_SCHEMA_VERSION = 2;
+export const DAILY_USAGE_SCHEMA_VERSION = 3;
 
 const DEFAULT_MAX_DAYS = 365;
 const DEFAULT_MODEL_LIMIT = 6;
 const DEFAULT_SKILL_LIMIT = 8;
+const TOKEN_FIELDS = Object.freeze([
+  "inputTokens",
+  "outputTokens",
+  "cacheReadInputTokens",
+  "cacheCreationInputTokens",
+]);
 
 function dateKey(value) {
   const millis = timestampMillis(value);
@@ -33,6 +39,18 @@ function dateRange(first, last, maxDays) {
 function increment(map, key, amount = 1) {
   if (!key) return;
   map.set(key, (map.get(key) ?? 0) + amount);
+}
+
+function tokenCount(value) {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
+}
+
+function tokenUsageObservation(event) {
+  const date = dateKey(event?.timestamp);
+  if (!date) return null;
+  const values = Object.fromEntries(TOKEN_FIELDS.map((field) => [field, tokenCount(event?.modelUsage?.[field])]));
+  return TOKEN_FIELDS.some((field) => values[field] > 0) ? { date, ...values } : null;
 }
 
 function activatedSkillNames(event) {
@@ -124,10 +142,12 @@ export function buildDailyUsageActivity(sessions = [], durationRows = [], respon
     activeMinutes: Math.max(0, Number(row.activeMs ?? 0) / 60_000),
   })).filter((row) => row.date);
   const modelObservations = collectModelSessionObservations(responses);
+  const tokenObservations = responses.map(tokenUsageObservation).filter(Boolean);
   const skillObservations = collectSkillUsageObservations(events).filter((row) => row.date);
   const observedDates = [
     ...sessionRows.map((row) => row.date),
     ...modelObservations.map((row) => row.date),
+    ...tokenObservations.map((row) => row.date),
     ...skillObservations.map((row) => row.date),
   ].sort();
   if (observedDates.length === 0) return null;
@@ -137,15 +157,26 @@ export function buildDailyUsageActivity(sessions = [], durationRows = [], respon
   const dateSet = new Set(dates);
   const sessionStarts = new Map();
   const activeMinutes = new Map();
+  const visibleTokenObservations = tokenObservations.filter((row) => dateSet.has(row.date));
   for (const row of sessionRows) {
     if (!dateSet.has(row.date)) continue;
     increment(sessionStarts, row.date);
     increment(activeMinutes, row.date, row.activeMinutes);
   }
+  const tokenDaily = Object.fromEntries(TOKEN_FIELDS.map((field) => [
+    field,
+    dates.map((date) => visibleTokenObservations
+      .filter((row) => row.date === date)
+      .reduce((total, row) => total + row[field], 0)),
+  ]));
+  const tokenTotals = Object.fromEntries(TOKEN_FIELDS.map((field) => [
+    field,
+    tokenDaily[field].reduce((total, value) => total + value, 0),
+  ]));
   return {
     schemaVersion: DAILY_USAGE_SCHEMA_VERSION,
     dateBasis: "UTC",
-    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-and-loads",
+    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-and-observed-token-usage",
     truncated,
     dates,
     sessions: {
@@ -157,5 +188,12 @@ export function buildDailyUsageActivity(sessions = [], durationRows = [], respon
     },
     models: buildSeries(modelObservations, dates, Number(options.modelLimit ?? DEFAULT_MODEL_LIMIT), "Unknown model"),
     skills: buildSeries(skillObservations, dates, Number(options.skillLimit ?? DEFAULT_SKILL_LIMIT), "Unknown Skill"),
+    ...(visibleTokenObservations.length > 0 ? {
+      tokens: {
+        observedResponseCount: visibleTokenObservations.length,
+        totals: tokenTotals,
+        daily: tokenDaily,
+      },
+    } : {}),
   };
 }

@@ -28,13 +28,51 @@ test("daily usage aggregates session, model, and Skill observations without ids"
   );
 
   assert.deepEqual(activity.dates, ["2026-07-09", "2026-07-10", "2026-07-11"]);
-  assert.equal(activity.schemaVersion, 2);
-  assert.equal(activity.measurementBasis, "session-starts-active-estimate-model-active-session-days-skill-invocations-and-loads");
+  assert.equal(activity.schemaVersion, 3);
+  assert.equal(activity.measurementBasis, "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-and-observed-token-usage");
   assert.deepEqual(activity.sessions, { total: 2, starts: [1, 0, 1], activeMinutes: [2, 0, 0.5] });
   assert.deepEqual(activity.models.find((row) => row.name === "ultimate")?.daily, [1, 0, 1]);
   assert.equal(activity.models.find((row) => row.name === "performance")?.total, 1);
   assert.equal(activity.skills.find((row) => row.name === "browser")?.total, 1);
   assert.equal(JSON.stringify(activity).includes("private-a"), false);
+});
+
+test("daily usage keeps real token lanes aligned to response dates", () => {
+  const activity = buildDailyUsageActivity(
+    [{ sessionId: "a", firstSeen: "2026-07-09T10:00:00.000Z" }],
+    [{ id: "a", firstSeen: "2026-07-09T10:00:00.000Z", activeMs: 60_000 }],
+    [
+      {
+        sessionId: "a",
+        timestamp: "2026-07-09T10:01:00.000Z",
+        model: "observed",
+        modelUsage: { inputTokens: 100, outputTokens: 10, cacheReadInputTokens: 40, cacheCreationInputTokens: 2 },
+      },
+      {
+        sessionId: "a",
+        timestamp: "2026-07-11T10:01:00.000Z",
+        model: "observed",
+        modelUsage: { inputTokens: 50, outputTokens: 5, cacheReadInputTokens: 20, cacheCreationInputTokens: 0 },
+      },
+      {
+        sessionId: "a",
+        timestamp: "2026-07-11T10:02:00.000Z",
+        model: "zero-filled",
+        modelUsage: { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+      },
+    ],
+    [],
+  );
+
+  assert.equal(activity.tokens.observedResponseCount, 2);
+  assert.deepEqual(activity.tokens.totals, {
+    inputTokens: 150,
+    outputTokens: 15,
+    cacheReadInputTokens: 60,
+    cacheCreationInputTokens: 2,
+  });
+  assert.deepEqual(activity.tokens.daily.inputTokens, [100, 0, 50]);
+  assert.deepEqual(activity.tokens.daily.outputTokens, [10, 0, 5]);
 });
 
 test("Skill reads stay apparent without entering activation usage", () => {

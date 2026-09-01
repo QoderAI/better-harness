@@ -28,7 +28,8 @@
   "type": "module",
   "workspaces": [
     "packages/harness",
-    "packages/harness-studio"
+    "packages/harness-studio",
+    "packages/harness-ui"
   ],
   "pi": {
     "skills": [
@@ -82,7 +83,7 @@
     "bundle:zip": "node scripts/npm-package/create-bundle.mjs",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
     "changelog:unreleased": "conventional-changelog -p angular -u",
-    "check": "npm test && npm run harness:generated && npm run harness:test && npm run harness-studio:test && npm run pack:verify",
+    "check": "npm test && npm run harness:generated && npm run harness:test && npm run harness-studio:test && npm run harness-ui:test && npm run pack:verify",
     "harness:build": "npm run build -w @qoder-ai/harness",
     "harness:generated": "npm run check:generated -w @qoder-ai/harness",
     "harness:test": "npm test -w @qoder-ai/harness",
@@ -90,6 +91,11 @@
     "harness-studio:dev": "npm run dev -w @qoder-ai/harness-studio --",
     "harness-studio:test": "npm test -w @qoder-ai/harness-studio",
     "harness-studio:test:browser": "npm run test:browser -w @qoder-ai/harness-studio",
+    "harness-ui:build": "npm run build -w @qoder-ai/harness-ui",
+    "harness-ui:dev": "npm run dev -w @qoder-ai/harness-ui --",
+    "harness-ui:test": "npm test -w @qoder-ai/harness-ui",
+    "harness-ui:test:browser": "npm run test:browser -w @qoder-ai/harness-ui",
+    "harness-ui:test:upload-e2e": "npm run test:upload-e2e -w @qoder-ai/harness-ui",
     "inspector": "node scripts/harness-inspector/cli.mjs",
     "inspector:open": "node scripts/harness-inspector/cli.mjs render --open",
     "inspector:visual-check": "node scripts/harness-inspector/visual-contract-check.mjs",

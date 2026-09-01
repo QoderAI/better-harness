@@ -1,0 +1,59 @@
+{
+  "kind": "better-harness.task-evidence-input",
+  "schemaVersion": 1,
+  "task": {
+    "id": "TASK-42",
+    "title": "Prepare Skill feedback",
+    "intent": "Preserve task evidence from /Users/example/private-project with token=fixture-secret-value-123 for the organization Dashboard.",
+    "scope": [
+      "scripts/task-evidence-upload",
+      "packages/harness-ui"
+    ],
+    "nonGoals": [
+      "Upload raw prompts or transcripts"
+    ],
+    "acceptance": [
+      {
+        "id": "AC-1",
+        "status": "passed",
+        "summary": "The upload plan validates."
+      },
+      {
+        "id": "AC-2",
+        "status": "unobserved",
+        "summary": "A remote receipt is not available in the current plan-only slice."
+      }
+    ]
+  },
+  "assets": [
+    {
+      "kind": "skill",
+      "id": "better-harness",
+      "publisher": "qoder-ai",
+      "revision": "sha256:preview",
+      "match": "exact",
+      "stage": "validated",
+      "outcome": "succeeded"
+    },
+    {
+      "kind": "mcp",
+      "id": "docs",
+      "match": "exact",
+      "stage": "executed",
+      "outcome": "unobserved"
+    }
+  ],
+  "observations": [
+    {
+      "kind": "validation",
+      "status": "passed",
+      "summary": "Focused Dashboard tests passed.",
+      "evidenceRef": "validation:harness-ui"
+    },
+    {
+      "kind": "human-review",
+      "status": "unobserved",
+      "summary": "No remote organization review was recorded."
+    }
+  ]
+}

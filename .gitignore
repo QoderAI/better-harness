@@ -25,6 +25,8 @@ design-qa.md
 
 # Linked AgentReact bundles written by the Artifact Runtime tests.
 packages/harness-studio/test/.artifacts/
+packages/harness-ui/.next/
+packages/harness-ui/*.tsbuildinfo
 
 # Local Artifact View scratch decks and their inspection dumps.
 /*.pptx
