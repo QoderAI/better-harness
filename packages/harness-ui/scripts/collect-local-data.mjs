@@ -4,11 +4,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runAgentLint } from "../../../scripts/agent-lint/index.mjs";
-import { createAnalyzer } from "../../../scripts/session-analysis/analyzer.mjs";
+import { SUPPORTED_CUSTOMIZE_PROVIDERS } from "../../../scripts/agent-customize/providers/index.mjs";
+import { createAnalyzer, SUPPORTED_SESSION_PLATFORMS } from "../../../scripts/session-analysis/analyzer.mjs";
 import { buildUsageSummary } from "../../../scripts/session-analysis/usage-summary.mjs";
+import { readUploadPackets, resolveUploadsDirectory } from "./upload-store.mjs";
+import { resolveWorkspace } from "./workspace.mjs";
 
-const DEFAULT_PROVIDERS = Object.freeze(["codex", "qoder"]);
-const DEFAULT_SESSION_LIMIT = 200;
+// Every host adapter the workspace can analyze is collected by default, so a
+// Dashboard never silently omits a host the developer actually works in.
+const DEFAULT_PROVIDERS = SUPPORTED_SESSION_PLATFORMS;
 
 function count(value) {
   const number = Number(value ?? 0);
@@ -58,6 +62,7 @@ function aggregateModelUsage(rows) {
 
 export function aggregateUsageSummaries(rows) {
   const modes = [...new Set(rows.map((row) => row.summary.usageEfficiency.accountingMode))];
+  const strategies = [...new Set(rows.map((row) => row.summary.selection.strategy))];
   const observedTokenRows = rows.filter((row) => row.summary.usageEfficiency.tokenTotals);
   const totals = observedTokenRows.length > 0 ? tokenTotals({}) : null;
   if (totals) {
@@ -68,7 +73,9 @@ export function aggregateUsageSummaries(rows) {
     kind: "better-harness.session-usage-summary",
     schemaVersion: 1,
     selection: {
-      strategy: rows.every((row) => row.summary.selection.strategy === "all-eligible") ? "all-eligible" : "mixed",
+      // One host analyzed with `latest-n` is reported as `latest-n`, not as a
+      // mix; only hosts that disagree produce `mixed`.
+      strategy: strategies.length > 1 ? "mixed" : strategies[0] ?? "all-eligible",
       eligibleCount: rows.reduce((total, row) => total + count(row.summary.selection.eligibleCount), 0),
       analyzedCount: rows.reduce((total, row) => total + count(row.summary.selection.analyzedCount), 0),
       complete: rows.length > 0 && rows.every((row) => row.summary.selection.complete),
@@ -183,18 +190,20 @@ function emptySummary() {
   return aggregateUsageSummaries([]);
 }
 
+// `all-eligible` analyzes the whole population and ignores any limit, so an
+// explicit limit has to switch the strategy for it to bound the work at all.
 async function collectSessionProvider(provider, workspace, limit) {
   const analyzer = await createAnalyzer(provider);
   const result = await analyzer.analyze({
     workspace,
     command: "insights",
-    selection: "all-eligible",
-    limit,
+    ...(limit ? { selection: "latest-n", limit } : { selection: "all-eligible" }),
   });
   return {
     provider,
     summary: buildUsageSummary(result),
     activity: result.insights?.keySignals?.usageEfficiency?.activity ?? null,
+    contextUsage: result.contextUsage ?? null,
   };
 }
 
@@ -202,24 +211,44 @@ async function collectAssetProvider(provider, workspace) {
   return runAgentLint({ workspace, profile: "agent-assets-review", provider });
 }
 
-export async function collectLocalDashboardData({ workspace, providers = DEFAULT_PROVIDERS, limit = DEFAULT_SESSION_LIMIT } = {}) {
-  const resolvedWorkspace = path.resolve(workspace ?? process.cwd());
+// Context-window occupancy is native host evidence rather than an aggregate, so
+// one observed host is reported as itself instead of being summed across hosts.
+export function selectContextUsage(rows) {
+  return rows.find((row) => row.contextUsage?.status === "observed")?.contextUsage ?? null;
+}
+
+export async function collectLocalDashboardData({
+  workspace,
+  providers = DEFAULT_PROVIDERS,
+  limit,
+  uploadsDirectory,
+} = {}) {
+  const resolvedWorkspace = path.resolve(workspace ?? resolveWorkspace());
   const sessionRows = [];
   const assetInventories = [];
   const errors = [];
+  // Asset inventory covers a narrower host set than session analysis, so a host
+  // without an inventory adapter is skipped instead of reported as a failure.
+  const assetProviders = providers.filter((provider) => SUPPORTED_CUSTOMIZE_PROVIDERS.includes(provider));
 
-  await Promise.all(providers.flatMap((provider) => [
-    collectSessionProvider(provider, resolvedWorkspace, limit)
+  const uploads = await readUploadPackets({
+    directory: resolveUploadsDirectory({ workspace: resolvedWorkspace, uploadsDirectory }),
+  }).catch((error) => ({ packets: [], errors: [{ source: "uploads", message: error?.message ?? String(error) }] }));
+  errors.push(...uploads.errors);
+
+  await Promise.all([
+    ...providers.map((provider) => collectSessionProvider(provider, resolvedWorkspace, limit)
       .then((row) => sessionRows.push(row))
-      .catch((error) => errors.push({ source: `${provider}:sessions`, message: error?.message ?? String(error) })),
-    collectAssetProvider(provider, resolvedWorkspace)
+      .catch((error) => errors.push({ source: `${provider}:sessions`, message: error?.message ?? String(error) }))),
+    ...assetProviders.map((provider) => collectAssetProvider(provider, resolvedWorkspace)
       .then((report) => assetInventories.push(report))
-      .catch((error) => errors.push({ source: `${provider}:assets`, message: error?.message ?? String(error) })),
-  ]));
+      .catch((error) => errors.push({ source: `${provider}:assets`, message: error?.message ?? String(error) }))),
+  ]);
 
   sessionRows.sort((left, right) => providers.indexOf(left.provider) - providers.indexOf(right.provider));
   assetInventories.sort((left, right) => providers.indexOf(left.assetInventory.provider) - providers.indexOf(right.assetInventory.provider));
   const usageSummary = sessionRows.length > 0 ? aggregateUsageSummaries(sessionRows) : emptySummary();
+  const contextUsage = selectContextUsage(sessionRows);
   return {
     generatedAt: new Date().toISOString(),
     sources: {
@@ -230,8 +259,9 @@ export async function collectLocalDashboardData({ workspace, providers = DEFAULT
     },
     usageSummary,
     usageActivity: aggregateUsageActivity(sessionRows.map((row) => row.activity)),
+    ...(contextUsage ? { contextUsage } : {}),
     assetInventories,
-    evidencePackets: [],
+    evidencePackets: uploads.packets,
   };
 }
 
@@ -242,6 +272,7 @@ function parseArgs(argv) {
     if (value === "--workspace") options.workspace = argv[++index];
     else if (value === "--providers") options.providers = String(argv[++index]).split(",").map((item) => item.trim()).filter(Boolean);
     else if (value === "--limit") options.limit = Number(argv[++index]);
+    else if (value === "--uploads") options.uploadsDirectory = argv[++index];
   }
   return options;
 }

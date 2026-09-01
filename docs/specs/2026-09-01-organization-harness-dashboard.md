@@ -4,6 +4,9 @@
 
 - Spec ID: `2026-09-01-organization-harness-dashboard`
 - Status: Implemented
+- Extended by: `2026-09-01-task-evidence-upload-end-to-end`, which supplies the
+  stored evidence AC-8 projects, replaces the process-lifetime data cache with a
+  bounded refresh window, and widens the collected host set.
 
 ## Intent
 
@@ -128,9 +131,13 @@ Keep `better-harness upload` as the producer of task evidence semantics. A
 future Buf module should encode the existing packet rather than redesign it.
 The ingestion service validates organization identity, idempotency, digest, and
 schema version, then stores packet metadata in PostgreSQL and optional large
-evidence blobs in object storage. Next.js reads organization-scoped projections
-through a server-only query boundary; it is neither the upload endpoint nor the
-Agent execution authority.
+evidence blobs in object storage.
+
+`2026-09-01-task-evidence-upload-end-to-end` implements that validation shape
+locally: the bundled `/api/upload` route checks schema, digest, and organization
+before storing one record per packet digest. It is a local destination for the
+local Dashboard, not a deployed control plane, and Next.js remains outside Agent
+execution.
 
 ## Test and Review Evidence
 

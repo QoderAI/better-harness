@@ -381,9 +381,9 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
           <div className="card-header">
             <div>
               <p className="eyebrow">Upload</p>
-              <h2 id="packet-title">Recent upload plans</h2>
+              <h2 id="packet-title">Accepted task evidence</h2>
             </div>
-            <span className="upload-count"><UploadCloud size={14} /> {model.evidencePackets.length} prepared</span>
+            <span className="upload-count"><UploadCloud size={14} /> {model.evidencePackets.length} accepted</span>
           </div>
           <div className="packet-list">
             {model.evidencePackets.map((packet) => (

@@ -4,6 +4,10 @@
 
 - Spec ID: task-evidence-upload
 - Status: Implemented
+- Extended by: `2026-09-01-task-evidence-upload-end-to-end`, which adds
+  `upload apply`, a verifiable receipt, and a local destination. The input,
+  packet, and plan contracts below are unchanged, and preparing a plan still
+  performs no network request.
 
 ## Intent
 
@@ -81,6 +85,9 @@ receipt and must not be interpreted as evidence that an organization service
 accepted the packet.
 
 ## Non-goals
+
+Scoped to this slice. The first item was lifted by
+`2026-09-01-task-evidence-upload-end-to-end`; the rest still hold.
 
 - Sending network requests, implementing `upload apply`, or issuing remote
   receipts.

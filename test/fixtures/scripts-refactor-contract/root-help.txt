@@ -20,8 +20,8 @@ Commands:
                              selection-profile, source, source-review, task-loop-report, render,
                              preview-canvas, report-quality, repair-findings, record-fix-output,
                              validate-canvas
-    upload                   Prepare a redacted, reviewable task evidence upload plan without
-                             using the network
+    upload                   Prepare a redacted, reviewable task evidence upload plan, then
+                             apply it to the destination it names
 
   Project Evidence
     session-analysis         Collect and normalize Qoder, Codex, Claude, Augment, Cursor, Qwen,

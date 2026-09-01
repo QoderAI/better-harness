@@ -28,6 +28,9 @@ packages/harness-studio/test/.artifacts/
 packages/harness-ui/.next/
 packages/harness-ui/*.tsbuildinfo
 
+# Task evidence accepted by a local upload destination.
+.better-harness/uploads/
+
 # Local Artifact View scratch decks and their inspection dumps.
 /*.pptx
 /*.pptx.inspect.ndjson

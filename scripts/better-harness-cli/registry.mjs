@@ -54,7 +54,7 @@ const COMMANDS = [
     kind: "direct",
     audience: "workflow",
     script: "task-evidence-upload/cli.mjs",
-    summary: "Prepare a redacted, reviewable task evidence upload plan without using the network.",
+    summary: "Prepare a redacted, reviewable task evidence upload plan, then apply it to the destination it names.",
     subcommands: [
       {
         name: "plan",
@@ -62,6 +62,13 @@ const COMMANDS = [
         script: "task-evidence-upload/cli.mjs",
         summary: "Build, validate, preview, and optionally save a local task evidence upload plan.",
         description: "Project strict task, acceptance, validation, and Skill/MCP usage observations into a digest-bound local plan while excluding raw high-risk evidence and making no network request.",
+      },
+      {
+        name: "apply",
+        audience: "workflow",
+        script: "task-evidence-upload/cli.mjs",
+        summary: "Send a reviewed upload plan to its recorded destination and store the returned receipt.",
+        description: "Post a prepared plan to the endpoint recorded inside it, reject a receipt whose digests or destination do not match the applied plan, and optionally write that receipt locally.",
       },
     ],
   },

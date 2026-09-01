@@ -5,7 +5,10 @@ import path from "node:path";
 export const INPUT_KIND = "better-harness.task-evidence-input";
 export const PACKET_KIND = "better-harness.task-evidence-packet";
 export const PLAN_KIND = "better-harness.task-evidence-upload-plan";
+export const RECEIPT_KIND = "better-harness.task-evidence-upload-receipt";
 export const SCHEMA_VERSION = 1;
+
+export const RECEIPT_STATES = Object.freeze(["accepted", "duplicate"]);
 
 export const ASSET_KINDS = Object.freeze(["skill", "mcp", "tool", "hook", "plugin", "agent"]);
 export const ASSET_MATCH_STATES = Object.freeze(["exact", "ambiguous", "unresolved"]);
@@ -599,4 +602,98 @@ export function validateUploadPlan(plan) {
     fail("PLAN_INTEGRITY_FAILED", "plan.planDigest does not match the plan body.");
   }
   return plan;
+}
+
+export function normalizeReceiptId(value) {
+  const receiptId = stringAt(value, "receipt.receiptId", { maximum: 128 });
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(receiptId)) {
+    fail(
+      "INVALID_RECEIPT",
+      "receipt.receiptId must start with an alphanumeric character and use only letters, numbers, ., _, :, or -.",
+    );
+  }
+  return receiptId;
+}
+
+function digestAt(value, pointer) {
+  const digest = stringAt(value, pointer, { maximum: 128 });
+  if (!/^sha256:[0-9a-f]{64}$/u.test(digest)) {
+    fail("INVALID_RECEIPT", `${pointer} must be a lowercase sha256 digest.`);
+  }
+  return digest;
+}
+
+export function createUploadReceipt({ plan, receiptId, state = "accepted", now = new Date() }) {
+  validateUploadPlan(plan);
+  const body = {
+    kind: RECEIPT_KIND,
+    schemaVersion: SCHEMA_VERSION,
+    acceptedAt: normalizeTimestamp(now, "receipt.acceptedAt"),
+    state: enumAt(state, "receipt.state", RECEIPT_STATES),
+    destination: {
+      endpoint: plan.destination.endpoint,
+      organization: plan.destination.organization,
+    },
+    receiptId: normalizeReceiptId(receiptId),
+    packetDigest: plan.packetDigest,
+    planDigest: plan.planDigest,
+  };
+  return { ...body, receiptDigest: sha256Digest(body) };
+}
+
+export function validateUploadReceipt(receipt, { plan } = {}) {
+  const object = exactKeys(receipt, "receipt", {
+    required: [
+      "kind",
+      "schemaVersion",
+      "acceptedAt",
+      "state",
+      "destination",
+      "receiptId",
+      "packetDigest",
+      "planDigest",
+      "receiptDigest",
+    ],
+  });
+  if (object.kind !== RECEIPT_KIND) fail("INVALID_RECEIPT", `receipt.kind must be ${RECEIPT_KIND}.`);
+  if (object.schemaVersion !== SCHEMA_VERSION) {
+    fail("INVALID_RECEIPT", `receipt.schemaVersion must be ${SCHEMA_VERSION}.`);
+  }
+  normalizeTimestamp(object.acceptedAt, "receipt.acceptedAt");
+  enumAt(object.state, "receipt.state", RECEIPT_STATES);
+  const destination = exactKeys(object.destination, "receipt.destination", {
+    required: ["endpoint", "organization"],
+  });
+  if (normalizeDestination(destination.endpoint) !== destination.endpoint) {
+    fail("INVALID_RECEIPT", "receipt.destination.endpoint must use its normalized URL form.");
+  }
+  normalizeOrganization(destination.organization);
+  normalizeReceiptId(object.receiptId);
+  digestAt(object.packetDigest, "receipt.packetDigest");
+  digestAt(object.planDigest, "receipt.planDigest");
+  const { receiptDigest, ...body } = object;
+  if (receiptDigest !== sha256Digest(body)) {
+    fail("RECEIPT_INTEGRITY_FAILED", "receipt.receiptDigest does not match the receipt body.");
+  }
+  if (plan) {
+    if (object.packetDigest !== plan.packetDigest) {
+      fail("RECEIPT_MISMATCH", "receipt.packetDigest does not match the applied plan.");
+    }
+    if (object.planDigest !== plan.planDigest) {
+      fail("RECEIPT_MISMATCH", "receipt.planDigest does not match the applied plan.");
+    }
+    if (object.destination.endpoint !== plan.destination.endpoint) {
+      fail("RECEIPT_MISMATCH", "receipt.destination.endpoint does not match the applied plan.");
+    }
+    if (object.destination.organization !== plan.destination.organization) {
+      fail("RECEIPT_MISMATCH", "receipt.destination.organization does not match the applied plan.");
+    }
+  }
+  return receipt;
+}
+
+// A packet digest is content-addressed, so it doubles as the storage key and
+// the idempotency key for a repeated apply of the same prepared plan.
+export function packetStorageKey(packetDigest) {
+  return digestAt(packetDigest, "plan.packetDigest").slice("sha256:".length);
 }

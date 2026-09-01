@@ -9,9 +9,11 @@ import {
   canonicalJson,
   createEvidenceSanitizer,
   createUploadPlan,
+  createUploadReceipt,
   normalizeDestination,
   sha256Digest,
   validateUploadPlan,
+  validateUploadReceipt,
 } from "../../scripts/task-evidence-upload/index.mjs";
 import { main } from "../../scripts/task-evidence-upload/cli.mjs";
 
@@ -214,8 +216,24 @@ test("upload help returns before any input read or local write", async () => {
   assert.equal(status, 0);
   assert.equal(touched, false);
   assert.equal(streams.stderrText(), "");
-  assert.match(streams.stdoutText(), /This slice performs no network request/u);
+  assert.match(streams.stdoutText(), /This step performs no network request/u);
   assert.doesNotMatch(streams.stdoutText(), /private-input/u);
+});
+
+test("upload apply help returns before any plan read or network use", async () => {
+  const streams = captureStreams();
+  let touched = false;
+  const status = await main(["apply", "--plan", "private-plan.json", "--help"], {
+    ...streams,
+    read: async () => { touched = true; throw new Error("read called"); },
+    fetchImpl: async () => { touched = true; throw new Error("fetch called"); },
+  });
+
+  assert.equal(status, 0);
+  assert.equal(touched, false);
+  assert.equal(streams.stderrText(), "");
+  assert.match(streams.stdoutText(), /upload apply/u);
+  assert.doesNotMatch(streams.stdoutText(), /private-plan/u);
 });
 
 test("upload plan JSON preview emits one document and performs no local write", async () => {
@@ -293,10 +311,10 @@ test("upload plan writes one validated artifact only when out is explicit", asyn
   }
 });
 
-test("upload apply fails closed with a parser-safe diagnostic", async () => {
+test("an unknown upload subcommand fails closed with a parser-safe diagnostic", async () => {
   const streams = captureStreams();
   let readCount = 0;
-  const status = await main(["apply", "--json"], {
+  const status = await main(["publish", "--json"], {
     ...streams,
     read: async () => { readCount += 1; },
   });
@@ -311,13 +329,32 @@ test("upload apply fails closed with a parser-safe diagnostic", async () => {
   assert.equal(payload.diagnostics[0].code, "UNKNOWN_SUBCOMMAND");
 });
 
-test("root CLI discovers and dispatches upload plan while rejecting upload apply", () => {
-  const dispatch = resolveDispatch(["upload", "plan", "--json"]);
-  assert.equal(dispatch.kind, "dispatch");
-  assert.equal(path.basename(path.dirname(dispatch.script)), "task-evidence-upload");
-  assert.deepEqual(dispatch.args, ["plan", "--json"]);
+test("upload apply requires a plan before it will use the network", async () => {
+  const streams = captureStreams();
+  let requests = 0;
+  const status = await main(["apply", "--json"], {
+    ...streams,
+    fetchImpl: async () => { requests += 1; },
+  });
 
-  for (const args of [["upload", "--help"], ["upload", "plan", "--help"]]) {
+  assert.equal(status, 64);
+  assert.equal(requests, 0);
+  const payload = JSON.parse(streams.stdoutText());
+  assert.equal(payload.command, "better-harness upload apply");
+  assert.equal(payload.status, "failed");
+  assert.equal(payload.meta.network, "none");
+  assert.equal(payload.diagnostics[0].code, "MISSING_REQUIRED_OPTION");
+});
+
+test("root CLI discovers and dispatches both upload subcommands", () => {
+  for (const subcommand of ["plan", "apply"]) {
+    const dispatch = resolveDispatch(["upload", subcommand, "--json"]);
+    assert.equal(dispatch.kind, "dispatch");
+    assert.equal(path.basename(path.dirname(dispatch.script)), "task-evidence-upload");
+    assert.deepEqual(dispatch.args, [subcommand, "--json"]);
+  }
+
+  for (const args of [["upload", "--help"], ["upload", "plan", "--help"], ["upload", "apply", "--help"]]) {
     const result = spawnSync(process.execPath, [rootCli, ...args], {
       cwd: process.cwd(),
       encoding: "utf8",
@@ -327,13 +364,13 @@ test("root CLI discovers and dispatches upload plan while rejecting upload apply
     assert.match(result.stdout, /task evidence upload/iu);
   }
 
-  const apply = spawnSync(process.execPath, [rootCli, "upload", "apply", "--json"], {
+  const unknown = spawnSync(process.execPath, [rootCli, "upload", "publish", "--json"], {
     cwd: process.cwd(),
     encoding: "utf8",
   });
-  assert.equal(apply.status, 64, apply.stderr);
-  assert.equal(apply.stderr, "");
-  assert.equal(JSON.parse(apply.stdout).diagnostics[0].code, "UNKNOWN_SUBCOMMAND");
+  assert.equal(unknown.status, 64, unknown.stderr);
+  assert.equal(unknown.stderr, "");
+  assert.equal(JSON.parse(unknown.stdout).diagnostics[0].code, "UNKNOWN_SUBCOMMAND");
 });
 
 test("evidence sanitizer covers POSIX, Windows drive, and UNC absolute paths", () => {
@@ -365,4 +402,165 @@ test("destination contract requires HTTPS except for loopback planning", () => {
     () => normalizeDestination("https://harness.example.test/evidence?token=secret"),
     (error) => error.code === "INVALID_DESTINATION",
   );
+});
+
+function planFor(taskId = "TASK-42") {
+  const input = validInput();
+  return createUploadPlan({
+    input: { ...input, task: { ...input.task, id: taskId } },
+    destination: "https://harness.example.test/evidence",
+    organization: "org-1",
+    workspace: process.cwd(),
+    now: fixedNow,
+  });
+}
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+test("upload apply posts to the endpoint recorded in the plan and keeps the receipt", async () => {
+  const plan = planFor();
+  const receipt = createUploadReceipt({ plan, receiptId: "receipt-1", now: fixedNow });
+  const streams = captureStreams();
+  const requests = [];
+
+  const status = await main(["apply", "--plan", "plan.json", "--json"], {
+    ...streams,
+    read: async () => Buffer.from(JSON.stringify(plan)),
+    fetchImpl: async (url, init) => {
+      requests.push({ url, init });
+      return jsonResponse(receipt);
+    },
+  });
+
+  assert.equal(status, 0, streams.stderrText());
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, plan.destination.endpoint);
+  assert.equal(requests[0].init.method, "POST");
+  assert.equal(requests[0].init.headers["idempotency-key"], plan.packetDigest);
+  assert.deepEqual(JSON.parse(requests[0].init.body), plan);
+
+  const payload = JSON.parse(streams.stdoutText());
+  assert.equal(payload.command, "better-harness upload apply");
+  assert.deepEqual(payload.meta, { sideEffects: "remote-write", network: "request" });
+  assert.equal(payload.data.artifact, null);
+  validateUploadReceipt(payload.data.receipt, { plan });
+});
+
+test("upload apply refuses a receipt issued for a different plan", async () => {
+  const plan = planFor("TASK-42");
+  const otherReceipt = createUploadReceipt({ plan: planFor("TASK-43"), receiptId: "receipt-2", now: fixedNow });
+  const streams = captureStreams();
+
+  const status = await main(["apply", "--plan", "plan.json", "--json"], {
+    ...streams,
+    read: async () => Buffer.from(JSON.stringify(plan)),
+    fetchImpl: async () => jsonResponse(otherReceipt),
+  });
+
+  assert.equal(status, 1);
+  const payload = JSON.parse(streams.stdoutText());
+  assert.equal(payload.status, "failed");
+  assert.equal(payload.diagnostics[0].code, "RECEIPT_MISMATCH");
+});
+
+test("upload apply reports a rejected or unreachable destination without a receipt", async () => {
+  const plan = planFor();
+
+  const rejected = captureStreams();
+  const rejectedStatus = await main(["apply", "--plan", "plan.json", "--json"], {
+    ...rejected,
+    read: async () => Buffer.from(JSON.stringify(plan)),
+    fetchImpl: async () => jsonResponse({ error: { code: "ORGANIZATION_NOT_ALLOWED" } }, 403),
+  });
+  assert.equal(rejectedStatus, 1);
+  const rejectedPayload = JSON.parse(rejected.stdoutText());
+  assert.equal(rejectedPayload.diagnostics[0].code, "UPLOAD_REJECTED");
+  assert.match(rejectedPayload.diagnostics[0].hint, /ORGANIZATION_NOT_ALLOWED/u);
+  assert.equal(rejectedPayload.meta.network, "request");
+
+  const unreachable = captureStreams();
+  const unreachableStatus = await main(["apply", "--plan", "plan.json", "--json"], {
+    ...unreachable,
+    read: async () => Buffer.from(JSON.stringify(plan)),
+    fetchImpl: async () => { throw new Error("ECONNREFUSED"); },
+  });
+  assert.equal(unreachableStatus, 1);
+  assert.equal(JSON.parse(unreachable.stdoutText()).diagnostics[0].code, "UPLOAD_REQUEST_FAILED");
+});
+
+test("upload apply rejects a tampered plan before using the network", async () => {
+  const plan = planFor();
+  const tampered = structuredClone(plan);
+  tampered.packet.task.title = "Rewritten after preparation";
+  const streams = captureStreams();
+  let requests = 0;
+
+  const status = await main(["apply", "--plan", "plan.json", "--json"], {
+    ...streams,
+    read: async () => Buffer.from(JSON.stringify(tampered)),
+    fetchImpl: async () => { requests += 1; },
+  });
+
+  assert.equal(status, 64);
+  assert.equal(requests, 0);
+  const payload = JSON.parse(streams.stdoutText());
+  assert.equal(payload.diagnostics[0].code, "PLAN_INTEGRITY_FAILED");
+  assert.equal(payload.meta.network, "none");
+});
+
+test("a receipt is verifiable on its own and detects state or digest tampering", () => {
+  const plan = planFor();
+  const receipt = createUploadReceipt({ plan, receiptId: "receipt-1", now: fixedNow });
+  assert.equal(validateUploadReceipt(receipt), receipt);
+
+  const stateTamper = structuredClone(receipt);
+  stateTamper.state = "duplicate";
+  assert.throws(
+    () => validateUploadReceipt(stateTamper),
+    (error) => error.code === "RECEIPT_INTEGRITY_FAILED",
+  );
+
+  const digestTamper = structuredClone(receipt);
+  digestTamper.packetDigest = sha256Digest("replacement");
+  assert.throws(
+    () => validateUploadReceipt(digestTamper),
+    (error) => error.code === "RECEIPT_INTEGRITY_FAILED",
+  );
+});
+
+test("a failed receipt write still reports the remote effect that already happened", async () => {
+  const plan = planFor();
+  const receipt = createUploadReceipt({ plan, receiptId: "receipt-1", now: fixedNow });
+  const streams = captureStreams();
+
+  const status = await main(["apply", "--plan", "plan.json", "--out", "receipt.json", "--json"], {
+    ...streams,
+    read: async () => Buffer.from(JSON.stringify(plan)),
+    fetchImpl: async () => jsonResponse(receipt),
+    write: async () => { throw new Error("read-only volume"); },
+  });
+
+  assert.equal(status, 1);
+  const payload = JSON.parse(streams.stdoutText());
+  assert.equal(payload.diagnostics[0].code, "OUTPUT_WRITE_FAILED");
+  assert.deepEqual(payload.meta, { sideEffects: "remote-write", network: "request" });
+});
+
+test("upload apply refuses an oversized destination response", async () => {
+  const plan = planFor();
+  const streams = captureStreams();
+
+  const status = await main(["apply", "--plan", "plan.json", "--json"], {
+    ...streams,
+    read: async () => Buffer.from(JSON.stringify(plan)),
+    fetchImpl: async () => new Response("x".repeat(70 * 1024), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  });
+
+  assert.equal(status, 1);
+  assert.equal(JSON.parse(streams.stdoutText()).diagnostics[0].code, "UPLOAD_RESPONSE_TOO_LARGE");
 });

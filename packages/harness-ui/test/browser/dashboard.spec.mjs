@@ -15,7 +15,6 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await expect(page.getByText("Acme Engineering")).toHaveCount(0);
   await expect(page.getByText("Script-aligned preview")).toHaveCount(0);
   await expect(page.getByText("Preview data")).toHaveCount(0);
-  await expect(page.getByText("TASK-42")).toHaveCount(0);
   await expect(page.getByText("Skills", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("MCPs", { exact: true })).toBeVisible();
   await expect(page.getByText("Hooks", { exact: true })).toBeVisible();
@@ -23,6 +22,11 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await expect(page.getByRole("heading", { name: "Data quality" })).toHaveCount(0);
   await expect(page.getByText("First-pass success")).toHaveCount(0);
   await expect(page.getByText("Autonomy portfolio")).toHaveCount(0);
+  // Evidence applied through the real CLI and upload endpoint reaches the page.
+  await expect(page.getByRole("heading", { name: "Accepted task evidence" })).toBeVisible();
+  await expect(page.getByText("TASK-42")).toBeVisible();
+  await expect(page.getByText("Prepare Skill feedback")).toBeVisible();
+  await expect(page.getByText("better-harness-browser", { exact: false })).toBeVisible();
   await page.screenshot({ path: "test-results/harness-usage-wide.png", fullPage: true });
 
   if (await page.getByRole("heading", { name: "Usage activity" }).count()) {

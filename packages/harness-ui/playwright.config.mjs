@@ -1,8 +1,13 @@
+import path from "node:path";
+
 import { defineConfig } from "@playwright/test";
+
+const uploads = path.join(import.meta.dirname, "test-results", "uploads");
 
 export default defineConfig({
   testDir: "./test/browser",
   outputDir: "./test-results",
+  globalSetup: "./test/browser/global-setup.mjs",
   workers: 1,
   use: {
     baseURL: "http://127.0.0.1:3410",
@@ -12,6 +17,12 @@ export default defineConfig({
   webServer: {
     command: "npm run start",
     url: "http://127.0.0.1:3410",
-    reuseExistingServer: true,
+    // The suite asserts on evidence written to its own store, so it always
+    // starts a server with that store configured instead of reusing one.
+    reuseExistingServer: false,
+    env: {
+      BETTER_HARNESS_UPLOADS: uploads,
+      BETTER_HARNESS_REFRESH_MS: "60000",
+    },
   },
 });
