@@ -15,7 +15,7 @@ describe("server experiment event projection", () => {
       .toEqual([{ type: "assistant-message-finished", messageId: "message-1" }]);
   });
 
-  it("normalizes ACP, AG-UI, and Anthropic tool shapes before browser delivery", () => {
+  it("normalizes ACP, Harness, and Anthropic tool shapes before browser delivery", () => {
     expect(canonicalToolEvents({
       type: "tool.requested",
       toolInvocationId: "acp-1",
@@ -29,9 +29,9 @@ describe("server experiment event projection", () => {
     }]);
     expect(canonicalToolEvents({
       type: "tool-call-result",
-      toolCallId: "agui-1",
+      toolCallId: "native-1",
       isError: true,
-    })).toEqual([{ type: "tool-call-result", toolCallId: "agui-1", isError: true }]);
+    })).toEqual([{ type: "tool-call-result", toolCallId: "native-1", isError: true }]);
     expect(canonicalToolEvents({
       message: {
         content: [

@@ -4,7 +4,9 @@ import type { ExperimentToolCall } from "../src/contracts/experiment-stream-cont
 import { aggregateToolCalls } from "../src/app/experiment/experiment-comparison-model.js";
 import { buildTimelineBins, groupLiveTimeline } from "../src/app/run/timeline-model.js";
 import { fixedVirtualWindow } from "../src/app/experiment/virtual-list-model.js";
-import { applyAguiEvent, initialRunState } from "../src/app/run/agui-store.js";
+import { HARNESS_RUN_STREAM_EVENT_KIND, type HarnessRunStreamEventV1 } from "@qoder-ai/harness/protocol";
+import type { HarnessRunEvent } from "@qoder-ai/harness/exec";
+import { applyHarnessRunEvent, initialRunState } from "../src/app/run/run-store.js";
 
 describe("session scale gates", () => {
   for (const eventCount of [100, 1_000, 10_000]) {
@@ -41,12 +43,25 @@ describe("session scale gates", () => {
 
   it("updates 10,000 streamed tools through keyed lookups", () => {
     let state = initialRunState();
+    let sequence = 0;
+    const apply = (event: HarnessRunEvent): void => {
+      sequence += 1;
+      const envelope: HarnessRunStreamEventV1 = {
+        kind: HARNESS_RUN_STREAM_EVENT_KIND,
+        threadId: "thread",
+        runId: "run",
+        sequence,
+        event,
+      };
+      state = applyHarnessRunEvent(state, envelope);
+    };
+    apply({ type: "run-started", revisionId: "sha256:one", host: "qoder" });
     const startedAt = performance.now();
     for (let index = 0; index < 10_000; index += 1) {
       const id = `tool-${index}`;
-      state = applyAguiEvent(state, { type: "TOOL_CALL_START", toolCallId: id, toolCallName: "Read" });
-      state = applyAguiEvent(state, { type: "TOOL_CALL_ARGS", toolCallId: id, delta: "{}" });
-      state = applyAguiEvent(state, { type: "TOOL_CALL_RESULT", toolCallId: id, messageId: `result-${index}`, content: "ok", role: "tool" });
+      apply({ type: "tool-call-started", toolCallId: id, toolName: "Read", input: {} });
+      apply({ type: "tool-call-finished", toolCallId: id });
+      apply({ type: "tool-call-result", toolCallId: id, messageId: `result-${index}`, content: "ok" });
     }
     expect(state.timelineKeys).toHaveLength(10_000);
     expect(state.toolCallCount).toBe(10_000);

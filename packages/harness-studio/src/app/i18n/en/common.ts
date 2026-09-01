@@ -93,7 +93,7 @@ export const common = {
   debugger: {
     eyebrow: "Live runs",
     title: "Load a harness for live runs",
-    detail: "The Debugger drives a live harness run over the embedded AG-UI endpoint and saves finished runs for replay.",
+    detail: "The Debugger drives a live Harness run over its native event stream and saves finished runs for replay.",
     liveTrial: "Live Trial",
     workspaceDefaultQoder: "Project default · Qoder",
     projectScopedEyebrow: "Project-scoped live runs",

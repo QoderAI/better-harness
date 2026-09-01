@@ -1,11 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import {
-  assertBindAddressAllowed,
-  handleAguiRun,
-  type HarnessUiExecutorFactory,
-} from "@qoder-ai/harness-ui";
-import { PiSdkExecutor, QoderSdkExecutor } from "@qoder-ai/harness/exec";
+import { PiSdkExecutor, QoderSdkExecutor, type HarnessExecutorFactory } from "@qoder-ai/harness/exec";
 import { ARTIFACT_PROVIDER_STATUS_RESPONSE_KIND } from "../contracts/artifact.js";
 import {
   DEFAULT_LOCAL_ACP_HARNESS_SOURCE,
@@ -25,6 +20,8 @@ import { createCheckpointHistoryCatalogAdapter } from "./query/checkpoint-histor
 import { discoverArtifactProviderRuntime } from "./artifacts/registry/artifact-provider-discovery.js";
 import type { HarnessStudioServerOptions, HarnessStudioState } from "./studio-types.js";
 import { decodeRouteComponent, respondJson, sameOriginRequest } from "./http-utils.js";
+import { assertStudioBindAddressAllowed } from "./bind-policy.js";
+import { streamHarnessRun } from "./run-stream.js";
 import {
   acpAgentEnabled,
   acpExecutorFactory,
@@ -105,7 +102,7 @@ import {
   serveStatic,
 } from "./content-routes.js";
 
-const builtInExecutorFactory: HarnessUiExecutorFactory = (context) => {
+const builtInExecutorFactory: HarnessExecutorFactory = (context) => {
   if (context.runtimeId === "qoder") {
     return new QoderSdkExecutor({ onRunEvent: context.onRunEvent });
   }
@@ -117,8 +114,7 @@ const builtInExecutorFactory: HarnessUiExecutorFactory = (context) => {
 
 /**
  * The studio host: serves the React bundle, exposes the compare evidence as
- * JSON, and (when a harness is loaded) mounts the same AG-UI endpoint as
- * `@qoder-ai/harness-ui` under `/agui`.
+ * JSON and, when a Harness is loaded, exposes its native run stream.
  */
 export function createHarnessStudioServer(options: HarnessStudioServerOptions): Server {
   const resolvedOptions = resolveStudioServerOptions(options);
@@ -215,7 +211,7 @@ async function route(
     const defaultAcpAgent = options.acpAgent
       ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)?.agent;
     respondJson(response, 200, {
-      aguiEnabled: options.harnessSource !== undefined,
+      runEnabled: options.harnessSource !== undefined,
       acpEnabled: acpAgentEnabled(options),
       acpAgentLabel: defaultAcpAgent?.label ?? "ACP Agent",
       artifactsEnabled: state.artifactDirectory !== undefined,
@@ -373,7 +369,9 @@ async function route(
     respondJson(response, 200, state.workspace.inspectorReport, { "Cache-Control": "no-store" });
     return;
   }
-  const runRead = url.pathname.match(/^\/api\/runs\/([^/]+)(?:\/(session))?$/);
+  const runRead = url.pathname === "/api/runs/stream"
+    ? null
+    : url.pathname.match(/^\/api\/runs\/([^/]+)(?:\/(session))?$/);
   if (url.pathname === "/api/runs" || runRead !== null) {
     const runId = runRead === null ? undefined : decodeRouteComponent(response, runRead[1]!);
     if (runRead === null || runId !== undefined) {
@@ -569,20 +567,20 @@ async function route(
     cancelAcpRun(request, response, state, acpCancelMatch[1]!);
     return;
   }
-  if (url.pathname === "/agui/acp") {
+  if (url.pathname === "/api/acp/runs/stream") {
     if (!acpAgentEnabled(options)) {
       respondJson(response, 404, { error: "No ACP Agent is configured for Harness Studio." });
       return;
     }
     if (request.method !== "POST") {
-      respondJson(response, 405, { error: "Use POST for /agui/acp." });
+      respondJson(response, 405, { error: "Use POST for /api/acp/runs/stream." });
       return;
     }
     if (!acceptProjectBinding(request, response, state, options.harnessMode === "workspace-default")) return;
     const runtimeOptions = activeWorkspaceOptions(options, state);
     const acpAgent = options.acpAgent
       ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)!.agent!;
-    await handleAguiRun(request, response, {
+    await streamHarnessRun(request, response, {
       source: acpAgent.harnessSource ?? DEFAULT_LOCAL_ACP_HARNESS_SOURCE,
       harnessId: acpAgent.harnessId ?? DEFAULT_LOCAL_HARNESS_ID,
       runtimeId: acpAgent.runtimeId ?? DEFAULT_LOCAL_ACP_RUNTIME_ID,
@@ -594,15 +592,15 @@ async function route(
     });
     return;
   }
-  if (url.pathname === "/agui" || url.pathname === "/healthz") {
+  if (url.pathname === "/api/runs/stream") {
     if (options.harnessSource === undefined) {
       respondJson(response, 404, { error: "No harness loaded; start with --harness <file.harness>." });
       return;
     }
-    if (request.method === "POST" && url.pathname === "/agui") {
+    if (request.method === "POST") {
       if (!acceptProjectBinding(request, response, state, options.harnessMode === "workspace-default")) return;
       const runtimeOptions = activeWorkspaceOptions(options, state);
-      await handleAguiRun(request, response, {
+      await streamHarnessRun(request, response, {
         source: runtimeOptions.harnessSource!,
         ...(runtimeOptions.harnessId !== undefined ? { harnessId: runtimeOptions.harnessId } : {}),
         ...(runtimeOptions.runtimeId !== undefined ? { runtimeId: runtimeOptions.runtimeId } : {}),
@@ -612,9 +610,7 @@ async function route(
       });
       return;
     }
-    respondJson(response, url.pathname === "/healthz" ? 200 : 405, url.pathname === "/healthz"
-      ? { ok: true }
-      : { error: "Use POST for /agui." });
+    respondJson(response, 405, { error: "Use POST for /api/runs/stream." });
     return;
   }
   if (request.method === "GET") {
@@ -704,9 +700,7 @@ export async function startHarnessStudioServer(
 ): Promise<StartedHarnessStudioServer> {
   const server = createHarnessStudioServer(options);
   const host = options.host ?? "127.0.0.1";
-  // The studio mounts the same unauthenticated AG-UI run endpoint, so it
-  // inherits the same bind-address boundary rather than restating it.
-  assertBindAddressAllowed(host, options.allowRemote === true);
+  assertStudioBindAddressAllowed(host, options.allowRemote === true);
   await new Promise<void>((resolvePromise, rejectPromise) => {
     server.once("error", rejectPromise);
     server.listen(options.port ?? 0, host, resolvePromise);

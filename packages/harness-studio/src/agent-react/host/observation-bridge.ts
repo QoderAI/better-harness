@@ -1,15 +1,11 @@
-import type { AguiCustomEvent } from "@qoder-ai/harness-ui/protocol";
 import type { Digest, ObservationEvent, ObservationInput } from "../contracts/index.js";
 import { cloneAndFreezePlainData } from "./data-ownership.js";
 
 /**
  * Namespaced observation event.
  *
- * The source design routed these through `HARNESS_PROTOCOL_EVENT`, but that
- * constant's payload is ACP protocol evidence (`protocol: "acp"`), and an artifact
- * render is not ACP traffic. Reusing it would let a consumer read a render failure
- * as a protocol receipt, so the AG-UI `CUSTOM` envelope is kept and only the name
- * is new.
+ * Artifact observations own a domain envelope because a render is neither an
+ * executor lifecycle event nor host protocol traffic.
  */
 export const HARNESS_ARTIFACT_OBSERVATION_EVENT = "harness.artifact-observation";
 
@@ -21,13 +17,18 @@ export interface ArtifactObservationPayload {
   readonly detail?: Record<string, unknown>;
 }
 
+export interface ArtifactObservationEnvelope {
+  readonly type: typeof HARNESS_ARTIFACT_OBSERVATION_EVENT;
+  readonly payload: ArtifactObservationPayload;
+}
+
 export interface ObservationBridge {
   record(observation: ObservationInput): ObservationEvent;
-  encodeHarnessEvent(observation: ObservationEvent): AguiCustomEvent;
+  encodeObservation(observation: ObservationEvent): ArtifactObservationEnvelope;
   /** Recorded observations in order, oldest first, bounded by `maxRetained`. */
   recorded(): readonly ObservationEvent[];
-  /** Every recorded observation encoded for an AG-UI stream. */
-  drainToAgent(): readonly AguiCustomEvent[];
+  /** Every retained observation encoded for an Agent-facing stream. */
+  drainEnvelopes(): readonly ArtifactObservationEnvelope[];
   /** Observes live events even when the bounded retained buffer evicts them. */
   subscribe(listener: (observation: ObservationEvent) => void): () => void;
   clear(): void;
@@ -64,7 +65,7 @@ export function createObservationBridge(options: ObservationBridgeOptions = {}):
       for (const listener of listeners) listener(event);
       return event;
     },
-    encodeHarnessEvent(observation) {
+    encodeObservation(observation) {
       const payload: ArtifactObservationPayload = {
         kind: observation.kind,
         sequence: observation.sequence,
@@ -72,13 +73,13 @@ export function createObservationBridge(options: ObservationBridgeOptions = {}):
         ...(observation.buildDigest === undefined ? {} : { buildDigest: observation.buildDigest }),
         ...(observation.detail === undefined ? {} : { detail: observation.detail }),
       };
-      return { type: "CUSTOM", name: HARNESS_ARTIFACT_OBSERVATION_EVENT, value: payload };
+      return { type: HARNESS_ARTIFACT_OBSERVATION_EVENT, payload };
     },
     recorded() {
       return [...events];
     },
-    drainToAgent() {
-      return events.map((event) => bridge.encodeHarnessEvent(event));
+    drainEnvelopes() {
+      return events.map((event) => bridge.encodeObservation(event));
     },
     subscribe(listener) {
       listeners.add(listener);

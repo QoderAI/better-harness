@@ -20,7 +20,7 @@ export interface HarnessProtocolEvent {
  * Host-neutral streaming run events.
  *
  * Executors emit these while a run is in flight so protocol adapters
- * (AG-UI, TUIs, dashboards) can render live progress without depending on a
+ * (Studio, TUIs, dashboards) can render live progress without depending on a
  * host SDK's message shape. Payloads are redacted before mapping; events must
  * never carry credential-shaped fields.
  *

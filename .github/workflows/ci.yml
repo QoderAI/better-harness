@@ -48,10 +48,6 @@ jobs:
         run: npm run harness:build
       - name: Test Harness DSL package
         run: npm run harness:test
-      - name: Build Harness UI package
-        run: npm run harness-ui:build
-      - name: Test Harness UI package
-        run: npm run harness-ui:test
       - name: Build Harness Studio package
         run: npm run harness-studio:build
       - name: Test Harness Studio package

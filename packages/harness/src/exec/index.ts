@@ -24,6 +24,13 @@ export {
   type HarnessToolResultOptions,
 } from "./events.js";
 export {
+  runHarness,
+  type HarnessExecutorContext,
+  type HarnessExecutorFactory,
+  type RunHarnessOptions,
+  type RunHarnessSummary,
+} from "./run.js";
+export {
   buildRunPreamble,
   buildRunPrompt,
   assertRevisionHost,

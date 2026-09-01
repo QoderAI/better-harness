@@ -38,7 +38,7 @@ const ALLOWED_PACKAGES: Readonly<Record<Layer, readonly string[]>> = {
   kernel: ["oxc-parser", "oxc-transform"],
   linker: ["esbuild-wasm"],
   runtime: ["react", "react/jsx-runtime"],
-  host: ["react", "@qoder-ai/harness-ui/protocol"],
+  host: ["react"],
 };
 
 /**

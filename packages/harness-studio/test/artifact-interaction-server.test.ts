@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { decodeSseStream } from "@qoder-ai/harness-ui";
+import type { ArtifactAgentStreamEventV1 } from "../src/contracts/artifact-agent-run.js";
+import { decodeSseStream } from "./sse-test-utils.js";
 import {
   canonicalArtifactInteractionJson,
   isArtifactCatalogResponse,
@@ -126,31 +127,30 @@ describe("Agentic Artifact interaction routes", () => {
       }),
     });
     expect(response.status).toBe(200);
-    const events = decodeSseStream(await response.text());
-    const custom = (name: string) => events.find((event) => event.type === "CUSTOM" && event.name === name);
-    expect(events[0]).toMatchObject({ type: "RUN_STARTED", runId: "artifact-run:success" });
-    expect(custom("artifact.agent.plan")).toMatchObject({
-      type: "CUSTOM",
-      value: {
+    const events = decodeSseStream<ArtifactAgentStreamEventV1>(await response.text());
+    expect(events[0]).toMatchObject({ type: "run-started", runId: "artifact-run:success" });
+    expect(events.find((event) => event.type === "plan")).toMatchObject({
+      type: "plan",
+      plan: {
         kind: "HarnessStudioArtifactAgentPlanV1",
         providerSteering: { kind: "rename", message: "Rename to Agent planned" },
       },
     });
-    expect(custom("artifact.agent.evidence")).toMatchObject({
-      type: "CUSTOM",
-      value: {
+    expect(events.find((event) => event.type === "evidence")).toMatchObject({
+      type: "evidence",
+      evidence: {
         kind: "HarnessStudioArtifactAgentRunEvidenceV1",
         executor: "acp",
         sessionId: "fixture-session",
         permissionRequestsCancelled: 1,
       },
     });
-    const proposalEvent = custom("artifact.agent.proposal");
+    const proposalEvent = events.find((event) => event.type === "proposal");
     expect(proposalEvent).toMatchObject({
-      type: "CUSTOM",
-      value: { proposal: { proposedBy: { kind: "agent" }, steering: { message: "Rename to Agent planned" } } },
+      type: "proposal",
+      proposal: { proposal: { proposedBy: { kind: "agent" }, steering: { message: "Rename to Agent planned" } } },
     });
-    expect(events.at(-1)).toMatchObject({ type: "RUN_FINISHED", runId: "artifact-run:success" });
+    expect(events.at(-1)).toMatchObject({ type: "run-finished" });
     expect(await readFile(fixture.sourcePath, "utf8")).toBe("Original");
   });
 
@@ -175,8 +175,8 @@ describe("Agentic Artifact interaction routes", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(agentRunBody("artifact-run:malformed")),
     })).text());
-    expect(malformedEvents.at(-1)).toMatchObject({ type: "RUN_ERROR", message: expect.stringContaining("strict Artifact plan JSON") });
-    expect(malformedEvents.some((event) => event.type === "CUSTOM" && event.name === "artifact.agent.proposal")).toBe(false);
+    expect(malformedEvents.at(-1)).toMatchObject({ type: "run-error", message: expect.stringContaining("strict Artifact plan JSON") });
+    expect(malformedEvents.some((event) => event.type === "proposal")).toBe(false);
     expect(await readFile(malformed.sourcePath, "utf8")).toBe("Original");
     await server.close();
     server = undefined;
@@ -190,12 +190,12 @@ describe("Agentic Artifact interaction routes", () => {
       body: JSON.stringify(agentRunBody("artifact-run:internal-error")),
     })).text());
     expect(internalErrorEvents.at(-1)).toMatchObject({
-      type: "RUN_ERROR",
+      type: "run-error",
       message: "The configured ACP Agent failed before producing a valid Artifact plan.",
     });
     expect(JSON.stringify(internalErrorEvents)).not.toContain("fixture-secret-context");
     expect(JSON.stringify(internalErrorEvents)).not.toContain("fixture-internal-error");
-    expect(internalErrorEvents.some((event) => event.type === "CUSTOM" && event.name === "artifact.agent.proposal")).toBe(false);
+    expect(internalErrorEvents.some((event) => event.type === "proposal")).toBe(false);
     expect(await readFile(internalError.sourcePath, "utf8")).toBe("Original");
     await server.close();
     server = undefined;
@@ -212,8 +212,8 @@ describe("Agentic Artifact interaction routes", () => {
     const cancelled = await fetch(`${agentRunUri(server.url, waitingArtifact)}/${encodeURIComponent("artifact-run:cancel")}/cancel`, { method: "POST" });
     expect(cancelled.status).toBe(202);
     const cancelledEvents = decodeSseStream(await running.text());
-    expect(cancelledEvents.at(-1)).toMatchObject({ type: "RUN_ERROR", message: expect.stringContaining("interrupted") });
-    expect(cancelledEvents.some((event) => event.type === "CUSTOM" && event.name === "artifact.agent.proposal")).toBe(false);
+    expect(cancelledEvents.at(-1)).toMatchObject({ type: "run-error", message: expect.stringContaining("interrupted") });
+    expect(cancelledEvents.some((event) => event.type === "proposal")).toBe(false);
     expect(await readFile(waiting.sourcePath, "utf8")).toBe("Original");
   });
 

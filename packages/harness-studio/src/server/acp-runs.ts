@@ -1,5 +1,4 @@
-import { HarnessUiExecutorFactory } from "@qoder-ai/harness-ui";
-import { AcpPermissionHandler, AcpSdkExecutor } from "@qoder-ai/harness/exec";
+import { AcpPermissionHandler, AcpSdkExecutor, HarnessExecutorFactory } from "@qoder-ai/harness/exec";
 import { ExperimentLaneExecutorFactory } from "@qoder-ai/harness/experiment";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
@@ -25,7 +24,7 @@ export function ensureAcpRun(state: HarnessStudioState, runId: string): AcpRunCo
 export function acpExecutorFactory(
   agent: StudioAcpAgentOptions,
   state: HarnessStudioState,
-): HarnessUiExecutorFactory {
+): HarnessExecutorFactory {
   return (context) => {
     const control = ensureAcpRun(state, context.runId);
     const executor = new AcpSdkExecutor({

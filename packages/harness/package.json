@@ -37,6 +37,10 @@
       "types": "./dist/exec/index.d.ts",
       "import": "./dist/exec/index.js"
     },
+    "./protocol": {
+      "types": "./dist/protocol/index.d.ts",
+      "import": "./dist/protocol/index.js"
+    },
     "./session-executor": {
       "types": "./dist/session-executor/index.d.ts",
       "import": "./dist/session-executor/index.js"

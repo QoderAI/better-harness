@@ -70,9 +70,8 @@ export function AgentReactPreviewHost(props: {
   const record = (build: ArtifactBuildSnapshot, kind: string, detail?: Record<string, unknown>): void => {
     observationSequence.current += 1;
     window.dispatchEvent(new CustomEvent(OBSERVATION_EVENT, { detail: {
-      type: "CUSTOM",
-      name: OBSERVATION_EVENT,
-      value: {
+      type: OBSERVATION_EVENT,
+      payload: {
         kind,
         sequence: observationSequence.current,
         artifactDigest: build.agentReact!.artifactDigest,

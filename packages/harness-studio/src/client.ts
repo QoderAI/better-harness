@@ -4,11 +4,11 @@
  * browser bundle importing `./client` never pulls in Node-only code.
  */
 export {
-  applyAguiEvent,
+  applyHarnessRunEvent,
   initialRunState,
-  type AguiRunState,
+  type HarnessRunState,
   type TimelineItem,
-} from "./app/run/agui-store.js";
+} from "./app/run/run-store.js";
 export {
   CompareVerdictError,
   parseVerdict,

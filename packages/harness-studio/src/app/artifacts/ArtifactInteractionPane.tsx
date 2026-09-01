@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AguiEvent } from "@qoder-ai/harness-ui";
 import type {
   ArtifactDescriptor,
   ArtifactHostedIntentOutcomeV1,
@@ -15,6 +14,7 @@ import {
   type ArtifactAgentPlanV1,
   type ArtifactAgentRunEvidenceV1,
   type ArtifactAgentRunPhaseV1,
+  type ArtifactAgentStreamEventV1,
 } from "../../contracts/artifact-agent-run.js";
 import { createSseParser } from "../sse-client.js";
 
@@ -186,18 +186,18 @@ export function ArtifactInteractionPane(props: {
       if (!response.ok || response.body === null) {
         throw new Error(await responseError(response, t("collaboration.errors.startAgent")));
       }
-      const parser = createSseParser<AguiEvent>((event) => {
-        if (event.type === "CUSTOM" && event.name === "artifact.agent.phase" && isAgentPhase(event.value)) {
-          setAgentPhase(event.value);
-        } else if (event.type === "CUSTOM" && event.name === "artifact.agent.plan" && isAgentPlan(event.value, workspace)) {
-          setAgentPlan(event.value);
-        } else if (event.type === "CUSTOM" && event.name === "artifact.agent.evidence" && isAgentEvidence(event.value, props.artifact, runId, selectedAddress, originRef?.originId)) {
-          setAgentEvidence(event.value);
-        } else if (event.type === "CUSTOM" && event.name === "artifact.agent.proposal") {
-          if (!isPreparedResponse(event.value, props.artifact, originRef?.originId)) throw new Error(t("collaboration.errors.agentProposalContract"));
+      const parser = createSseParser<ArtifactAgentStreamEventV1>((event) => {
+        if (event.type === "phase" && isAgentPhase(event)) {
+          setAgentPhase(event);
+        } else if (event.type === "plan" && isAgentPlan(event.plan, workspace)) {
+          setAgentPlan(event.plan);
+        } else if (event.type === "evidence" && isAgentEvidence(event.evidence, props.artifact, runId, selectedAddress, originRef?.originId)) {
+          setAgentEvidence(event.evidence);
+        } else if (event.type === "proposal") {
+          if (!isPreparedResponse(event.proposal, props.artifact, originRef?.originId)) throw new Error(t("collaboration.errors.agentProposalContract"));
           receivedProposal = true;
-          setPrepared(event.value);
-        } else if (event.type === "RUN_ERROR") {
+          setPrepared(event.proposal);
+        } else if (event.type === "run-error") {
           terminalError = event.message;
         }
       });

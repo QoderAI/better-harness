@@ -463,15 +463,14 @@ test("runs explicit AgentReact end to end and commits only a verified staging bu
 
     const observations = await page.evaluate(() => globalThis.__agentReactObservations);
     expect(observations.length).toBeGreaterThanOrEqual(5);
-    expect(observations.map((entry) => entry?.value?.kind)).toEqual(expect.arrayContaining([
+    expect(observations.map((entry) => entry?.payload?.kind)).toEqual(expect.arrayContaining([
       "renderCompleted",
       "renderFailed",
     ]));
-    expect(observations.every((entry, index) => entry.type === "CUSTOM"
-      && entry.name === "harness.artifact-observation"
-      && entry.value.sequence === index + 1
-      && typeof entry.value.artifactDigest === "string"
-      && typeof entry.value.buildDigest === "string")).toBe(true);
+    expect(observations.every((entry, index) => entry.type === "harness.artifact-observation"
+      && entry.payload.sequence === index + 1
+      && typeof entry.payload.artifactDigest === "string"
+      && typeof entry.payload.buildDigest === "string")).toBe(true);
 
     await live.getByRole("button", { name: "Show source" }).click();
     await expect(page.getByRole("tab", { name: "Source", exact: true })).toHaveAttribute("aria-selected", "true");
@@ -1515,7 +1514,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await page.screenshot({ path: "test-results/default-workspace-debugger-wide.png", fullPage: true });
 
   const config = await page.evaluate(async () => await (await fetch("api/config")).json());
-  expect(config).toMatchObject({ aguiEnabled: true, harnessMode: "workspace-default", workspaceConnected: true, workspaceWorkbenchEnabled: true, sessionCount: 2 });
+  expect(config).toMatchObject({ runEnabled: true, harnessMode: "workspace-default", workspaceConnected: true, workspaceWorkbenchEnabled: true, sessionCount: 2 });
   const workspace = await page.evaluate(async () => await (await fetch("api/workspace")).json());
   expect(workspace).toMatchObject({ connected: true, label: "fixture-project", providers: [{ provider: "qoder", status: "ok" }] });
   expect(JSON.stringify(workspace)).not.toContain(selectedWorkspace);

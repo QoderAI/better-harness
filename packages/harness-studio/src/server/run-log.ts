@@ -17,7 +17,7 @@ export type SavedRunTimelineItem =
       resultOriginalBytes?: number;
     };
 
-/** One retained Debugger run: the browser-observed AG-UI evidence, frozen at run end. */
+/** One retained Debugger run: the browser-observed Harness evidence, frozen at run end. */
 export interface SavedRunRecord {
   id: string;
   savedAt: string;

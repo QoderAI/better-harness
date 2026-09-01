@@ -45,9 +45,13 @@ import { UserCircle } from "@phosphor-icons/react/UserCircle";
 import { WarningCircle } from "@phosphor-icons/react/WarningCircle";
 import { Wrench } from "@phosphor-icons/react/Wrench";
 import { XCircle } from "@phosphor-icons/react/XCircle";
-import type { AguiEvent } from "@qoder-ai/harness-ui";
+import {
+  HARNESS_RUN_REQUEST_KIND,
+  parseHarnessRunStreamEventV1,
+  type HarnessRunStreamEventV1,
+} from "@qoder-ai/harness/protocol";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { applyAguiEvent, initialRunState, timelineItems, type AguiRunState, type TimelineItem } from "./agui-store.js";
+import { applyHarnessRunEvent, initialRunState, timelineItems, type HarnessRunState, type TimelineItem } from "./run-store.js";
 import { ArtifactCodeView } from "../code/ArtifactCodeView.js";
 import { studioLocale } from "../i18n/index.js";
 import { createSseParser } from "../sse-client.js";
@@ -85,14 +89,14 @@ import { SAMPLE_DEBUGGER_SESSION } from "./sample-debugger-session.js";
 import { describeToolPayload } from "./tool-call-model.js";
 import { buildTimelineBins, groupLiveTimeline, semanticToolKind, type LiveTimelineGroup, type TimelineBin } from "./timeline-model.js";
 
-/** Post one AG-UI run and fold the SSE stream into state updates. */
+/** Post one Harness run and fold its native event stream into state updates. */
 async function streamRun(
   endpoint: string,
   prompt: string,
   threadId: string,
   runId: string,
   project: { id: string; label: string; revision: number } | undefined,
-  onEvents: (events: AguiEvent[]) => void,
+  onEvents: (events: HarnessRunStreamEventV1[]) => void,
 ): Promise<void> {
   const response = await fetch(endpoint, {
     method: "POST",
@@ -104,16 +108,17 @@ async function streamRun(
       }),
     },
     body: JSON.stringify({
+      kind: HARNESS_RUN_REQUEST_KIND,
       threadId,
       runId,
-      messages: [{ id: "m1", role: "user", content: prompt }],
+      prompt,
     }),
   });
   if (!response.ok || response.body === null) {
     const detail = await response.text().catch(() => "");
     throw new Error(`Run request failed (${response.status}): ${detail}`);
   }
-  let pendingEvents: AguiEvent[] = [];
+  let pendingEvents: HarnessRunStreamEventV1[] = [];
   let frame: number | undefined;
   const flush = (): void => {
     frame = undefined;
@@ -121,11 +126,11 @@ async function streamRun(
     pendingEvents = [];
     if (events.length > 0) onEvents(events);
   };
-  const apply = (event: AguiEvent): void => {
+  const apply = (event: HarnessRunStreamEventV1): void => {
     pendingEvents.push(event);
     frame ??= globalThis.requestAnimationFrame(flush);
   };
-  const parser = createSseParser(apply);
+  const parser = createSseParser<unknown>((event) => apply(parseHarnessRunStreamEventV1(event)));
   const decoder = new TextDecoder();
   const reader = response.body.getReader();
   for (;;) {
@@ -245,7 +250,7 @@ function stopConditionLabel(enabled: StopConditionState, t: (key: string, option
 }
 
 export function RunView({
-  aguiEndpoint,
+  runEndpoint,
   acpEndpoint,
   acpAgentLabel,
   artifactEndpoint,
@@ -254,7 +259,7 @@ export function RunView({
   initialMode = "live",
   project,
 }: {
-  aguiEndpoint: string;
+  runEndpoint: string;
   acpEndpoint?: string;
   acpAgentLabel?: string;
   artifactEndpoint?: string;
@@ -272,7 +277,7 @@ export function RunView({
   const [activeRuntime, setActiveRuntime] = useState<LiveRuntime>("qoder");
   const [submittedPrompt, setSubmittedPrompt] = useState("");
   const [runProject, setRunProject] = useState(project);
-  const [state, setState] = useState<AguiRunState>(initialRunState);
+  const [state, setState] = useState<HarnessRunState>(initialRunState);
   const [cursor, setCursor] = useState<DebuggerCursor>(DEFAULT_DEBUGGER_CURSOR);
   const [stopConditions, setStopConditions] = useState<StopConditionState>(DEFAULT_STOP_CONDITIONS);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set(["session", "turn"]));
@@ -287,7 +292,7 @@ export function RunView({
   const busy = useRef(false);
   const permissionOpenedInspector = useRef(false);
   const firstCursorRender = useRef(true);
-  const liveStateRef = useRef<AguiRunState>(initialRunState());
+  const liveStateRef = useRef<HarnessRunState>(initialRunState());
 
   const selectedEvent = eventForCursor(retainedSession, cursor);
   const viewState = state;
@@ -390,7 +395,7 @@ export function RunView({
     busy.current = true;
     const promptText = prompt.trim();
     const selectedRuntime = runtime === "acp" && acpEndpoint !== undefined ? "acp" : "qoder";
-    const endpoint = selectedRuntime === "acp" ? acpEndpoint! : aguiEndpoint;
+    const endpoint = selectedRuntime === "acp" ? acpEndpoint! : runEndpoint;
     const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const threadId = `thread_${stamp}`;
     const runId = `run_${stamp}`;
@@ -402,14 +407,14 @@ export function RunView({
     setRetainedSession(SAMPLE_DEBUGGER_SESSION);
     setRunsPanelOpen(false);
     setComposerOpen(false);
-    const fresh: AguiRunState = { ...initialRunState(), status: "running" };
+    const fresh: HarnessRunState = { ...initialRunState(), status: "running" };
     liveStateRef.current = fresh;
     setState(fresh);
     try {
       await streamRun(endpoint, promptText, threadId, runId, project, (events) => {
-        // Fold outside any React updater: applyAguiEvent mutates the keyed
-        // map for O(1) deltas and each batch must be applied exactly once.
-        liveStateRef.current = events.reduce(applyAguiEvent, liveStateRef.current);
+        // Fold outside any React updater: the run store mutates its keyed map
+        // for O(1) deltas and sequence ids reject duplicate frames.
+        liveStateRef.current = events.reduce(applyHarnessRunEvent, liveStateRef.current);
         setState(liveStateRef.current);
       });
     } catch (error) {
@@ -446,7 +451,7 @@ export function RunView({
         // Saving is best-effort evidence retention; the live view already holds the run.
       }
     }
-  }, [acpEndpoint, aguiEndpoint, project, prompt, refreshRuns, runtime]);
+  }, [acpEndpoint, project, prompt, refreshRuns, runEndpoint, runtime]);
 
   const cancelLiveRun = useCallback(async (): Promise<void> => {
     if (activeRuntime !== "acp" || state.runId === undefined) return;
@@ -474,7 +479,7 @@ const ranWithProject = submittedPrompt === "" ? project : runProject;
     <header className="debugger-topbar">
       <div className="debugger-brand"><span className="debugger-mark"><BugBeetle size={18} weight="fill" /></span><strong>{live ? t("title.liveRun") : t("labels.inspector")}</strong><span title={ranWithProject === undefined ? undefined : t("projectMeta", { label: ranWithProject.label, revision: ranWithProject.revision })}>{live ? `${harnessName}${ranWithProject === undefined ? "" : ` · ${ranWithProject.label}`}` : saved ? t("mode.retainedDebugger") : t("mode.demoDebugger")}</span></div>
       <div className="debugger-session-meta"><span>{t("labels.session")}</span><strong title={sessionName}>{sessionName}</strong><em className={live ? "live" : "recorded"}>{runMode}</em></div>
-      <div className="debugger-runtime-meta"><span className={`connection-dot status-${connectionState}`} /><strong>{connectionState}</strong><i /><span>{t("labels.agent")}</span><strong>{live ? activeRuntime === "acp" ? agentLabel : t("localHarness") : retainedSession.agent}</strong><i /><span>{t("labels.protocol")}</span><strong>{live ? activeRuntime === "acp" ? t("acpProjection") : "AG-UI" : retainedSession.protocol}</strong></div>
+      <div className="debugger-runtime-meta"><span className={`connection-dot status-${connectionState}`} /><strong>{connectionState}</strong><i /><span>{t("labels.agent")}</span><strong>{live ? activeRuntime === "acp" ? agentLabel : t("localHarness") : retainedSession.agent}</strong><i /><span>{t("labels.protocol")}</span><strong>{live ? activeRuntime === "acp" ? t("acpStream") : t("harnessStream") : retainedSession.protocol}</strong></div>
       <div className="debugger-top-actions">{navigation}{live && activeRuntime === "acp" && state.status === "running" ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />{t("cancelRun")}</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>{t("savedRuns")}{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label={t("savedRuns")}>{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>{t("backToLive")}</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">{t("noSavedRuns")}</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{t("savedRunMeta", { count: run.toolCallCount, time: run.savedAt.slice(0, 19).replace("T", " ") })}</span></button>)}</div>}</div><button type="button" onClick={() => setTreeCollapsed((value) => !value)} aria-pressed={!treeCollapsed} title={t("toggleTree")}><TreeStructure size={15} /></button><button type="button" onClick={() => setInspectorCollapsed((value) => !value)} aria-pressed={!inspectorCollapsed} title={t("toggleInspector")}><SidebarSimple size={15} /></button><button type="button" className="new-run" onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" />{t("newLiveRun")}</button></div>
     </header>
 
@@ -736,12 +741,12 @@ function TimelineMinimap(props: { session: DebuggerSession; cursor: DebuggerCurs
   return <footer className="timeline-minimap" aria-label={t("minimap.aria")}><div className="timeline-range"><span>{props.session.startedAt}</span><strong>{t("minimap.title")}</strong><span>{props.session.finishedAt}</span></div><div className="timeline-track">{props.session.events.map((event) => <button key={event.id} type="button" className={`timeline-segment kind-${event.kind}${event.id === props.cursor.eventId ? " selected" : ""}`} aria-label={t("minimap.segmentAria", { phase: event.phase, title: event.title })} aria-current={event.id === props.cursor.eventId ? "true" : undefined} onClick={() => props.onSelect({ eventId: event.id })}><span>{event.phase}</span></button>)}</div><div className="timeline-footer"><div className="timeline-legend">{(["prompt", "plan", "explore", "change", "verify", "response"] as DebuggerEventKind[]).map((kind) => <span key={kind}><i className={`kind-${kind}`} />{kind}</span>)}</div><div><span>{t("minimap.cursor", { index: selectedIndex + 1, total: props.session.events.length })}</span><strong>{t("minimap.readOnly")}</strong></div></div></footer>;
 }
 
-function LiveExecutionTree({ state, prompt }: { state: AguiRunState; prompt: string }): React.JSX.Element {
+function LiveExecutionTree({ state, prompt }: { state: HarnessRunState; prompt: string }): React.JSX.Element {
   const { t } = useTranslation("run");
   return <aside className="execution-tree live-tree" aria-label={t("tree.title")}><header><div><small>{t("tree.title")}</small><strong>{t("tree.liveObservations")}</strong></div><span>{t("tree.eventCount", { count: state.timelineKeys.length })}</span></header><div className="execution-tree-scroll"><TreeRow nodeId="live-session" label={t("tree.session")} detail={state.runId ?? t("tree.starting")} icon={Database} selected={false} depth={0} expandable expanded onSelect={() => undefined} /><TreeRow nodeId="live-turn" label={t("tree.turn", { turn: 1 })} detail={prompt} icon={GitBranch} selected={false} depth={1} expandable expanded onSelect={() => undefined} /><TreeRow nodeId="live-prompt" label={t("tree.prompt")} detail={prompt} icon={UserCircle} selected={false} depth={2} onSelect={() => undefined} /><TreeRow nodeId="live-tools" label={t("tree.stages")} detail={t("tree.toolCallCount", { count: state.toolCallCount })} icon={Wrench} selected={false} depth={2} status={state.status} onSelect={() => undefined} /></div></aside>;
 }
 
-function LiveNotebook({ state, prompt, groups }: { state: AguiRunState; prompt: string; groups: LiveTimelineGroup[] }): React.JSX.Element {
+function LiveNotebook({ state, prompt, groups }: { state: HarnessRunState; prompt: string; groups: LiveTimelineGroup[] }): React.JSX.Element {
   const { t } = useTranslation("run");
   return <main className="session-notebook live-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><nav><button type="button" className="active"><ClipboardText size={13} />{t("live.notebookTitle")}</button></nav><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><div className="session-notebook-scroll"><article className="debugger-event event-prompt"><div className="event-rail"><span><UserCircle size={13} /></span></div><div className="debugger-event-card"><header><div><strong>{t("live.userRequest")}</strong></div><span>{t("event.prompt")}</span></header><section className="prompt-cell"><p>{prompt}</p></section></div></article><section className="live-session-stage"><p className="status-line run-status"><span className={`status-dot status-${state.status}`} aria-hidden="true" />{t("live.statusLabel")}<strong>{state.status}</strong>{state.runId ? <span>{t("live.runId", { id: state.runId })}</span> : null}</p>{state.warnings.map((warning, index) => <p className="warning" key={index}><WarningCircle size={14} />{warning}</p>)}{state.error ? <p className="error"><XCircle size={14} />{state.error}</p> : null}<section className="activity-panel" aria-label={t("live.agentActivity")}><header className="activity-panel-head"><div><small>{t("live.semanticStages")}</small><h2>{t("live.agentActivity")}</h2></div><span>{t("live.activitySummary", { calls: state.toolCallCount, groups: groups.length })}</span></header><VirtualLiveTimeline groups={groups} followLatest={state.status === "running"} /></section>{state.result !== undefined ? <details className="live-run-result"><summary>{t("live.runResult")}</summary><pre>{JSON.stringify(state.result, null, 2)}</pre></details> : null}</section></div></main>;
 }
@@ -773,17 +778,17 @@ function LiveGroupEntry({ group }: { group: LiveTimelineGroup }): React.JSX.Elem
   return <details className={`live-tool-group kind-${group.kind}`}><summary><span>{group.kind}</span><strong>{tool.name} ×{group.items.length}</strong><em>{t("live.toolGroup")}</em></summary><div>{group.items.map((item) => <ToolCallEntry item={item as ToolCallTimelineItem} key={item.id} />)}</div></details>;
 }
 
-function LiveInspector({ state, runtime, onPermission }: { state: AguiRunState; runtime: LiveRuntime; onPermission: (requestId: string, optionId: string) => Promise<void> }): React.JSX.Element {
+function LiveInspector({ state, runtime, onPermission }: { state: HarnessRunState; runtime: LiveRuntime; onPermission: (requestId: string, optionId: string) => Promise<void> }): React.JSX.Element {
 const { t } = useTranslation("run");
   return <aside className="state-inspector live-inspector" aria-label={t("inspector.stateAria")}><header><div><small>{t("inspector.title")}</small><strong>{t("inspector.liveObservation")}</strong></div><span>{liveRunStatusLabel(state, t)}</span></header><div className="inspector-scroll"><InspectorSection title={t("inspector.runtimeBoundary")}><ul className="checkpoint-boundary"><li className="available"><CheckCircle size={13} weight="fill" /><span><strong>{t("inspector.evidenceStream")}</strong><small>{state.status}</small></span></li><li className={state.pendingPermission === undefined ? "" : "available"}>{state.pendingPermission === undefined ? <WarningCircle size={13} weight="fill" /> : <CheckCircle size={13} weight="fill" />}<span><strong>{t("inspector.gatePause")}</strong><small>{state.pendingPermission === undefined ? t("inspector.notReported") : t("inspector.permissionRequested")}</small></span></li><li><WarningCircle size={13} weight="fill" /><span><strong>{t("inspector.hardPause")}</strong><small>{t("inspector.notReported")}</small></span></li></ul></InspectorSection>{state.pendingPermission !== undefined ? <InspectorSection title={t("inspector.acpPermission")}><div className="acp-permission"><strong>{state.pendingPermission.title}</strong><small>{t("inspector.toolCall", { id: state.pendingPermission.toolCallId })}</small><div>{state.pendingPermission.options.map((option) => <button type="button" key={option.optionId} onClick={() => void onPermission(state.pendingPermission!.requestId, option.optionId)}>{option.name}<span>{option.kind}</span></button>)}</div></div></InspectorSection> : null}<InspectorSection title={t("inspector.observedState")}><dl className="fact-list"><div><dt>{t("inspector.runId")}</dt><dd>{state.runId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.threadId")}</dt><dd>{state.threadId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.toolCalls")}</dt><dd>{state.toolCallCount}</dd></div><div><dt>{t("inspector.warnings")}</dt><dd>{state.warnings.length}</dd></div>{runtime === "acp" ? <div><dt>{t("inspector.acpFrames")}</dt><dd>{state.protocolEvents.length}</dd></div> : null}</dl></InspectorSection>{runtime === "acp" ? <InspectorSection title={t("raw.rawAcp")}><div className="acp-protocol-list">{state.protocolEvents.length === 0 ? <p className="inspector-note">{t("raw.waiting")}</p> : state.protocolEvents.slice(-12).map((event, index) => <details key={`${event.direction}:${event.rpcId ?? index}:${index}`}><summary><span>{event.direction}</span><strong>{event.method}</strong></summary><pre>{JSON.stringify(event.payload, null, 2)}</pre></details>)}</div></InspectorSection> : null}{runtime === "acp" ? <InspectorSection title={t("inspector.meaning")}><p className="inspector-note">{t("inspector.acpMeaning")}</p></InspectorSection> : null}</div></aside>;
 }
 
-function LiveTimeline({ state, bins, eventCount }: { state: AguiRunState; bins: TimelineBin<DebuggerEventKind>[]; eventCount: number }): React.JSX.Element {
+function LiveTimeline({ state, bins, eventCount }: { state: HarnessRunState; bins: TimelineBin<DebuggerEventKind>[]; eventCount: number }): React.JSX.Element {
   const { t } = useTranslation("run");
   return <footer className="timeline-minimap live-minimap"><div className="timeline-range"><span>{t("live.liveLabel")}</span><strong>{t("live.semanticTimeline")}</strong><span>{state.status}</span></div><div className="timeline-track">{bins.length === 0 ? <span className="live-track-empty">{t("live.waitingEvents")}</span> : bins.map((bin) => <span key={bin.index} className={`timeline-segment kind-${bin.kind}`} title={t("live.binEvents", { count: bin.count })} />)}</div><div className="timeline-footer"><strong>{t("live.retainedEvents", { count: eventCount })}</strong></div></footer>;
 }
 
-function liveRunStatusLabel(state: AguiRunState, t: (key: string, options?: Record<string, unknown>) => string): string {
+function liveRunStatusLabel(state: HarnessRunState, t: (key: string, options?: Record<string, unknown>) => string): string {
   if (state.pendingPermission !== undefined) return t("status.permissionRequired");
   if (state.status === "running") return t("status.running");
   if (state.status === "finished") return t("status.finished");
@@ -791,7 +796,7 @@ function liveRunStatusLabel(state: AguiRunState, t: (key: string, options?: Reco
   return t("status.ready");
 }
 
-function liveObservationCopy(state: AguiRunState, t: (key: string, options?: Record<string, unknown>) => string): { title: string; detail: string } {
+function liveObservationCopy(state: HarnessRunState, t: (key: string, options?: Record<string, unknown>) => string): { title: string; detail: string } {
   if (state.pendingPermission !== undefined) return { title: t("observation.permissionTitle"), detail: t("observation.permissionDetail") };
   if (state.status === "running") return { title: t("observation.runningTitle"), detail: t("observation.runningDetail") };
   if (state.status === "finished") return { title: t("observation.finishedTitle"), detail: t("observation.finishedDetail") };

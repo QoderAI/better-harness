@@ -28,7 +28,7 @@ const commonT = englishT("common");
 const overviewT = englishT("overview");
 
 const EMPTY: StudioConfig = {
-  aguiEnabled: false,
+  runEnabled: false,
   acpEnabled: false,
   artifactsEnabled: false,
   evidenceEnabled: false,
@@ -94,7 +94,7 @@ describe("Studio control-plane navigation", () => {
 
   it("routes configured artifacts to Debugger, Compare, and Inspector surfaces", () => {
     const config: StudioConfig = {
-      aguiEnabled: true,
+      runEnabled: true,
       acpEnabled: false,
       artifactsEnabled: true,
       evidenceEnabled: true,
@@ -169,8 +169,8 @@ describe("Studio control-plane navigation", () => {
     expect(studioDestinations(config, "results", commonT).find((destination) => destination.id === "compare")?.status).toBe("Frozen results");
   });
 
-  it("does not present a live AG-UI endpoint as retained Inspector evidence or a Compare input", () => {
-    const config: StudioConfig = { ...EMPTY, aguiEnabled: true, harnessMode: "configured" };
+  it("does not present a live Harness run endpoint as retained Inspector evidence or a Compare input", () => {
+    const config: StudioConfig = { ...EMPTY, runEnabled: true, harnessMode: "configured" };
 
     expect(inspectorSurfaces(config)).toEqual([]);
     expect(compareSurfaces(config)).toEqual([]);
@@ -184,7 +184,7 @@ describe("Studio control-plane navigation", () => {
   });
 
   it("labels the zero-configuration workspace harness without presenting it as retained evidence", () => {
-    const config: StudioConfig = { ...EMPTY, aguiEnabled: true, harnessMode: "workspace-default", workspaceDiscoveryEnabled: true };
+    const config: StudioConfig = { ...EMPTY, runEnabled: true, harnessMode: "workspace-default", workspaceDiscoveryEnabled: true };
 
 expect(studioDestinations(config, undefined, commonT).find((destination) => destination.id === "debugger")).toMatchObject({
       availability: "foundation",
@@ -252,13 +252,13 @@ expect(studioDestinations(config, undefined, commonT).find((destination) => dest
     expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, evidenceEnabled: true }, true)).toBe(false);
     expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, artifactsEnabled: true }, false)).toBe(false);
     expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, artifactsEnabled: true, artifactCount: 0 }, false)).toBe(true);
-    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, aguiEnabled: true, harnessMode: "configured" }, false)).toBe(false);
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, runEnabled: true, harnessMode: "configured" }, false)).toBe(false);
   });
 
   it("does not advertise the Project-default Debugger before a Project is active", () => {
     const overview = studioOverview({
       ...EMPTY,
-      aguiEnabled: true,
+      runEnabled: true,
       harnessMode: "workspace-default",
       inspectorEnabled: true,
     }, overviewT);
@@ -271,7 +271,7 @@ expect(studioDestinations(config, undefined, commonT).find((destination) => dest
   it("keeps imported retained-run Projects out of the default execution path", () => {
     const config: StudioConfig = {
       ...EMPTY,
-      aguiEnabled: true,
+      runEnabled: true,
       harnessMode: "workspace-default",
       workspaceConnected: true,
       projectExecutionEnabled: false,
@@ -287,7 +287,7 @@ expect(studioDestinations(config, undefined, commonT).find((destination) => dest
   it("summarizes connected workspace evidence without capability maturity totals", () => {
     const overview = studioOverview({
       ...EMPTY,
-      aguiEnabled: true,
+      runEnabled: true,
       artifactsEnabled: true,
       artifactCount: 6,
       gitEnabled: true,

@@ -29,3 +29,13 @@ export interface ArtifactAgentRunEvidenceV1 {
   model?: string;
   stopReason?: string;
 }
+
+export type ArtifactAgentStreamEventV1 =
+  | { type: "run-started"; runId: string }
+  | { type: "phase"; phase: ArtifactAgentRunPhaseV1; summary: string }
+  | { type: "action"; action: "permission-cancelled"; summary: string }
+  | { type: "plan"; plan: ArtifactAgentPlanV1 }
+  | { type: "evidence"; evidence: ArtifactAgentRunEvidenceV1 }
+  | { type: "proposal"; proposal: unknown }
+  | { type: "run-finished"; proposalId: string }
+  | { type: "run-error"; message: string };
