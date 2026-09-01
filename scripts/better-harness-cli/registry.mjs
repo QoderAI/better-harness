@@ -50,6 +50,22 @@ const COMMANDS = [
     summary: "Run bounded read-only Better Harness runtime and host diagnostics.",
   },
   {
+    name: "upload",
+    kind: "direct",
+    audience: "workflow",
+    script: "task-evidence-upload/cli.mjs",
+    summary: "Prepare a redacted, reviewable task evidence upload plan without using the network.",
+    subcommands: [
+      {
+        name: "plan",
+        audience: "workflow",
+        script: "task-evidence-upload/cli.mjs",
+        summary: "Build, validate, preview, and optionally save a local task evidence upload plan.",
+        description: "Project strict task, acceptance, validation, and Skill/MCP usage observations into a digest-bound local plan while excluding raw high-risk evidence and making no network request.",
+      },
+    ],
+  },
+  {
     name: "agent-lint",
     kind: "direct",
     audience: "advanced",

@@ -570,7 +570,7 @@ test("better-harness CLI filters machine inventory by audience", () => {
   assert.equal(workflow.status, 0, workflow.stderr);
   const workflowPayload = JSON.parse(workflow.stdout);
   assert.equal(workflowPayload.data.audience, "workflow");
-  assert.deepEqual(workflowPayload.data.commands.map((command) => command.name), ["doctor", "harness", "report"]);
+  assert.deepEqual(workflowPayload.data.commands.map((command) => command.name), ["doctor", "harness", "report", "upload"]);
   assert.deepEqual(
     workflowPayload.data.commands.find((command) => command.name === "harness").subcommands.map((entry) => entry.name),
     ["evidence-bundle", "analyze", "checkup", "record-fix-output"],

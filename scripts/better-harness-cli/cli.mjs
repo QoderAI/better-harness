@@ -30,7 +30,7 @@ const HELP_GROUPS = [
   {
     title: "Workflows",
     audience: "workflow",
-    commands: ["harness"],
+    commands: ["harness", "upload"],
   },
   {
     title: "Project Evidence",
@@ -54,6 +54,7 @@ const ROOT_EXAMPLES = [
   { audience: "workflow", text: "better-harness doctor --platform all --json" },
   { audience: "workflow", text: "better-harness harness analyze --workspace . --language en --format json" },
   { audience: "workflow", text: "better-harness harness checkup --phase scan --provider qoder --workspace . --json" },
+  { audience: "workflow", text: "better-harness upload plan --input task-evidence.json --workspace . --destination https://harness.example.com/evidence --organization <id>" },
   { audience: "advanced", text: "better-harness harness render --findings <input>/findings.json --mode qoder-canvas --out .qoder/better-harness --target . --validate --json" },
   { audience: "advanced", text: "better-harness harness report-quality --report <run>/report.md" },
   { audience: "advanced", text: "better-harness harness validate-canvas --canvas <run>/report.canvas.tsx" },
