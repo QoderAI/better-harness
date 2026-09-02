@@ -3,6 +3,7 @@ import path from "node:path";
 import { defineConfig } from "@playwright/test";
 
 const uploads = path.join(import.meta.dirname, "test-results", "uploads");
+const repositoryRoot = path.resolve(import.meta.dirname, "..", "..");
 const port = process.env.HARNESS_UI_TEST_PORT ?? "3410";
 const baseURL = `http://127.0.0.1:${port}`;
 
@@ -24,6 +25,8 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       BETTER_HARNESS_UPLOADS: uploads,
+      BETTER_HARNESS_WORKSPACES: [repositoryRoot, import.meta.dirname].join(path.delimiter),
+      BETTER_HARNESS_PROVIDERS: "codex",
       // The readiness probe loads the page before globalSetup applies its
       // fixture. Disable reuse so the browser observes that accepted evidence.
       BETTER_HARNESS_REFRESH_MS: "0",

@@ -35,6 +35,12 @@ function validInput({ workspace = process.cwd(), home = os.homedir(), secret = "
         { id: "AC-2", status: "unobserved", summary: `Remote receipt at ${home}/receipts is unavailable.` },
       ],
     },
+    links: {
+      projectRef: "project:better-harness",
+      sessionRefs: ["session:codex:01"],
+      commitRefs: ["commit:abc123"],
+      artifactRefs: [`artifact:${workspace}/report.json`],
+    },
     assets: [
       {
         kind: "skill",
@@ -115,6 +121,12 @@ test("task evidence upload plan is redacted, uncertainty-preserving, and locally
   assert.equal(plan.packet.assets[0].attribution, "associated");
   assert.equal(plan.packet.assets[1].outcome, "unobserved");
   assert.equal(plan.packet.assets[1].attribution, "not-applicable");
+  assert.deepEqual(plan.packet.links, {
+    projectRef: "project:better-harness",
+    sessionRefs: ["session:codex:01"],
+    commitRefs: ["commit:abc123"],
+    artifactRefs: ["artifact:<private-path>/report.json"],
+  });
   assert.equal(plan.packet.privacy.redactions >= 3, true);
 
   const serialized = JSON.stringify(plan);

@@ -192,6 +192,12 @@ export interface TaskEvidencePacket {
   schemaVersion: 1;
   generatedAt: string;
   workspace: { label: string };
+  links?: {
+    projectRef?: string;
+    sessionRefs: string[];
+    commitRefs: string[];
+    artifactRefs: string[];
+  };
   task: {
     id: string;
     title: string;
@@ -207,6 +213,9 @@ export interface TaskEvidencePacket {
     stage: string;
     outcome: "succeeded" | "failed" | "unobserved";
     attribution: string;
+    publisher?: string;
+    revision?: string;
+    summary?: string;
   }>;
   observations: Array<{
     kind: string;
@@ -283,3 +292,12 @@ export interface DashboardInput {
     truncated: boolean;
   };
 }
+
+export interface DashboardProject {
+  id: string;
+  label: string;
+}
+
+export type DashboardProjectSnapshot =
+  | { project: DashboardProject; status: "ready"; input: DashboardInput }
+  | { project: DashboardProject; status: "failed"; message: string };

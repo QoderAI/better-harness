@@ -19,8 +19,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
-import type { DashboardInput } from "@/lib/contracts";
-import { buildDashboardModel } from "@/lib/dashboard-model";
+import type { DashboardInput, DashboardProject, DashboardProjectSnapshot } from "@/lib/contracts";
+import { buildDashboardModel, type DashboardModel } from "@/lib/dashboard-model";
 
 type ActivityMetric = "activeMinutes" | "sessionStarts";
 type ModelMetric = "responseCount" | "usageFieldObservedCount";
@@ -96,6 +96,98 @@ function NamedCountList({ label, rows, unit }: { label: string; rows: Array<{ na
   );
 }
 
+function TaskEvidencePane({ evidence }: { evidence: DashboardModel["evidenceDeliveries"] }) {
+  const [selectedDigest, setSelectedDigest] = useState(evidence.items[0]?.digest ?? "");
+  const selected = evidence.items.find((packet) => packet.digest === selectedDigest) ?? evidence.items[0];
+  if (!selected) return null;
+
+  return (
+    <section className="task-evidence-pane" aria-labelledby="task-evidence-title">
+      <div className="pane-heading">
+        <div>
+          <h2 id="task-evidence-title">Task evidence</h2>
+          <p className="muted metric-caption">{evidence.organizations.join(", ")}</p>
+        </div>
+        <span className="upload-count"><UploadCloud size={14} />{evidence.total} received</span>
+      </div>
+      <div className={`task-evidence-layout${evidence.items.length === 1 ? " single-task" : ""}`}>
+        {evidence.items.length > 1 ? <div className="task-list" role="listbox" aria-label="Received task evidence">
+          {evidence.items.map((packet) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={packet.digest === selected.digest}
+              className={packet.digest === selected.digest ? "selected" : ""}
+              key={packet.digest}
+              onClick={() => setSelectedDigest(packet.digest)}
+            >
+              <span className="packet-id">{packet.id}</span>
+              <strong>{packet.title}</strong>
+              <span>{formatTimestamp(packet.acceptedAt)}</span>
+            </button>
+          ))}
+        </div> : null}
+        <div className="task-evidence-detail">
+          <div className="task-detail-heading">
+            <div>
+              <span className="packet-id">{selected.id}</span>
+              <h3>{selected.title}</h3>
+              <p className="task-meta">{selected.workspace} · received {formatTimestamp(selected.acceptedAt)}</p>
+            </div>
+            <span className="receipt-state">Packet {selected.receiptState}</span>
+          </div>
+          <ol className="evidence-spine" aria-label="Task evidence chain">
+            {selected.stages.map((stage) => (
+              <li key={stage.id} data-state={stage.state}>
+                <span className="stage-marker" aria-hidden="true" />
+                <span className="stage-label">{stage.label}</span>
+                <strong>{stage.value}</strong>
+              </li>
+            ))}
+          </ol>
+          <details className="task-detail-disclosure">
+            <summary>Show packet detail</summary>
+            <div className="task-detail-grid">
+              <div>
+                <h4>Acceptance</h4>
+                <ul>
+                  {selected.acceptanceItems.map((item) => (
+                    <li key={item.id}><span>{item.id}</span><strong data-state={item.status}>{item.status}</strong></li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h4>Harness assets</h4>
+                {selected.assetItems.length > 0 ? <ul>
+                  {selected.assetItems.map((item) => (
+                    <li key={`${item.kind}:${item.id}`}><span>{item.id}</span><strong data-state={item.outcome}>{item.outcome}</strong></li>
+                  ))}
+                </ul> : <p>Unobserved</p>}
+              </div>
+              <div>
+                <h4>Links</h4>
+                <dl>
+                  <div><dt>Sessions</dt><dd>{selected.links.sessionRefs.length}</dd></div>
+                  <div><dt>Commits</dt><dd>{selected.links.commitRefs.length}</dd></div>
+                  <div><dt>Artifacts</dt><dd>{selected.links.artifactRefs.length}</dd></div>
+                </dl>
+              </div>
+              <div>
+                <h4>Packet</h4>
+                <dl>
+                  <div><dt>Workspace</dt><dd>{selected.workspace}</dd></div>
+                  <div><dt>Redactions</dt><dd>{selected.redactions}</dd></div>
+                  <div><dt>Digest</dt><dd className="packet-digest">{selected.digest}</dd></div>
+                </dl>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function dashboardProjectOptions(inputs: DashboardInput[]) {
   return inputs.map((candidate, index) => ({
     id: candidate.workspace?.id ?? `project:${index}`,
@@ -111,11 +203,117 @@ export function selectDashboardProject(
   return projects.find((project) => project.id === selectedId) ?? projects[0];
 }
 
-export function UsageDashboard({ inputs }: { inputs: DashboardInput[] }) {
-  const projectOptions = useMemo(() => dashboardProjectOptions(inputs), [inputs]);
-  const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
-  const selectedProject = selectDashboardProject(projectOptions, selectedProjectId)!;
-  const input = selectedProject.input;
+function ProjectState({
+  projects,
+  selectedProjectId,
+  status,
+  onProjectChange,
+  onRetry,
+}: {
+  projects: DashboardProject[];
+  selectedProjectId: string;
+  status: "loading" | "failed";
+  onProjectChange: (id: string) => void;
+  onRetry: () => void;
+}) {
+  const selected = projects.find((project) => project.id === selectedProjectId) ?? projects[0];
+  return (
+    <div className="site-shell">
+      <main className="dashboard">
+        <header className="page-header">
+          <h1>{selected.label}</h1>
+          {projects.length > 1 ? (
+            <select
+              aria-label="Project"
+              className="project-select"
+              value={selected.id}
+              onChange={(event) => onProjectChange(event.target.value)}
+            >
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.label}</option>)}
+            </select>
+          ) : null}
+        </header>
+        <section className="card project-state" aria-live="polite">
+          {status === "loading" ? (
+            <>
+              <h2>Collecting project evidence</h2>
+              <p>Loading this project without blocking the other configured projects.</p>
+            </>
+          ) : (
+            <>
+              <h2>Project evidence unavailable</h2>
+              <p>Collection failed for this project. Other configured projects remain available.</p>
+              <button type="button" onClick={onRetry}>Retry project</button>
+            </>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
+
+export function UsageDashboard({
+  projects,
+  initialSnapshot,
+}: {
+  projects: DashboardProject[];
+  initialSnapshot: DashboardProjectSnapshot;
+}) {
+  const [selectedProjectId, setSelectedProjectId] = useState(initialSnapshot.project.id);
+  const [snapshots, setSnapshots] = useState<Record<string, DashboardProjectSnapshot>>({
+    [initialSnapshot.project.id]: initialSnapshot,
+  });
+  const [loadingProjectId, setLoadingProjectId] = useState<string | null>(null);
+
+  async function loadProject(id: string, { retry = false } = {}) {
+    setSelectedProjectId(id);
+    if (!retry && snapshots[id]?.status === "ready") return;
+    setLoadingProjectId(id);
+    try {
+      const response = await fetch(`/api/project?id=${encodeURIComponent(id)}`);
+      if (!response.ok) throw new Error("Project request failed");
+      const snapshot = await response.json() as DashboardProjectSnapshot;
+      setSnapshots((current) => ({ ...current, [id]: snapshot }));
+    } catch {
+      const project = projects.find((candidate) => candidate.id === id)!;
+      setSnapshots((current) => ({
+        ...current,
+        [id]: { project, status: "failed", message: "Project collection failed." },
+      }));
+    } finally {
+      setLoadingProjectId((current) => current === id ? null : current);
+    }
+  }
+
+  const snapshot = snapshots[selectedProjectId];
+  if (loadingProjectId === selectedProjectId || !snapshot) {
+    return <ProjectState projects={projects} selectedProjectId={selectedProjectId} status="loading" onProjectChange={loadProject} onRetry={() => loadProject(selectedProjectId, { retry: true })} />;
+  }
+  if (snapshot.status === "failed") {
+    return <ProjectState projects={projects} selectedProjectId={selectedProjectId} status="failed" onProjectChange={loadProject} onRetry={() => loadProject(selectedProjectId, { retry: true })} />;
+  }
+  return (
+    <DashboardView
+      key={selectedProjectId}
+      input={snapshot.input}
+      projects={projects}
+      selectedProjectId={selectedProjectId}
+      onProjectChange={loadProject}
+    />
+  );
+}
+
+function DashboardView({
+  input,
+  projects,
+  selectedProjectId,
+  onProjectChange,
+}: {
+  input: DashboardInput;
+  projects: DashboardProject[];
+  selectedProjectId: string;
+  onProjectChange: (id: string) => void;
+}) {
   const model = useMemo(() => buildDashboardModel(input), [input]);
   const [metric, setMetric] = useState<ActivityMetric>("activeMinutes");
   const [modelMetric, setModelMetric] = useState<ModelMetric>("responseCount");
@@ -157,7 +355,6 @@ export function UsageDashboard({ inputs }: { inputs: DashboardInput[] }) {
   const hasMcps = model.mcps.length > 0;
   const hasTokenActivity = model.tokenActivity !== null && tokenRows.length > 0;
   const hasBreakdown = model.providerBreakdown.length > 1;
-  const digestAlgorithm = model.evidenceDeliveries.items[0]?.digestAlgorithm;
   const delivery = model.delivery;
   const commits = model.commitAttribution;
   const topology = model.topology;
@@ -188,14 +385,14 @@ export function UsageDashboard({ inputs }: { inputs: DashboardInput[] }) {
         <header className="page-header">
           <h1>{model.workspaceLabel ?? "Workspace"}</h1>
           <div className="page-header-controls">
-            {projectOptions.length > 1 ? (
+            {projects.length > 1 ? (
               <select
                 aria-label="Project"
                 className="project-select"
-                value={selectedProject.id}
-                onChange={(event) => setSelectedProjectId(event.target.value)}
+                value={selectedProjectId}
+                onChange={(event) => onProjectChange(event.target.value)}
               >
-                {projectOptions.map((project) => <option key={project.id} value={project.id}>{project.label}</option>)}
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.label}</option>)}
               </select>
             ) : null}
             {windowLabel ? (
@@ -208,6 +405,10 @@ export function UsageDashboard({ inputs }: { inputs: DashboardInput[] }) {
             ) : null}
           </div>
         </header>
+
+        {model.evidenceDeliveries.items.length > 0 ? (
+          <TaskEvidencePane evidence={model.evidenceDeliveries} />
+        ) : null}
 
         {hasUsage ? <section className="stat-grid" aria-label="Observed usage summary">
           <StatCard
@@ -517,47 +718,6 @@ export function UsageDashboard({ inputs }: { inputs: DashboardInput[] }) {
               </ChartContainer>
             </div>
           </article>
-        </section> : null}
-
-        {model.evidenceDeliveries.items.length > 0 ? <section className="card packet-card" aria-labelledby="packet-title">
-          <div className="card-header">
-            <div>
-              <h2 id="packet-title">Accepted task evidence</h2>
-              <p className="muted metric-caption">
-                {model.evidenceDeliveries.organizations.length > 0
-                  ? `Organizations: ${model.evidenceDeliveries.organizations.join(", ")}`
-                  : "No organization recorded"}
-              </p>
-            </div>
-            <span className="upload-count">
-              <UploadCloud size={14} />
-              {model.evidenceDeliveries.truncated
-                ? `${model.evidenceDeliveries.shown} of ${model.evidenceDeliveries.total} accepted`
-                : `${model.evidenceDeliveries.total} accepted`}
-            </span>
-          </div>
-          <div className="packet-list">
-            {model.evidenceDeliveries.items.map((packet) => (
-              <article className="packet-row" key={packet.digest}>
-                <div className="packet-main">
-                  <span className="packet-id">{packet.id}</span>
-                  <strong>{packet.title}</strong>
-                  <p>
-                    {packet.organization} · {packet.workspace} · accepted {formatTimestamp(packet.acceptedAt)}
-                    {packet.receiptState === "duplicate" ? " · duplicate" : ""}
-                  </p>
-                </div>
-                <div className="packet-facts">
-                  <span><b>{packet.acceptance.passed}</b>/{packet.acceptance.total} acceptance passed</span>
-                  <span><b>{packet.assets.succeeded}</b>/{packet.assets.total} assets succeeded</span>
-                  <span><b>{packet.assetMatches.exact}</b>/{packet.assetMatches.total} assets matched exactly</span>
-                  <span><b>{packet.observations.unobserved}</b> observations unobserved</span>
-                  <span><b>{packet.redactions}</b> redactions</span>
-                  <span className="packet-digest" title={digestAlgorithm ? `${digestAlgorithm} packet digest` : "packet digest"}>{packet.digest}</span>
-                </div>
-              </article>
-            ))}
-          </div>
         </section> : null}
 
         {delivery || commits || topology || hasBreakdown ? (

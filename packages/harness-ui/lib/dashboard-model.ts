@@ -36,6 +36,11 @@ function emptyAssetTotals(): Record<AssetKey, number> {
   return { skills: 0, mcps: 0, hooks: 0, commands: 0, rules: 0, agents: 0, plugins: 0 };
 }
 
+function evidenceState({ observed, failed = false }: { observed: boolean; failed?: boolean }) {
+  if (failed) return "failed" as const;
+  return observed ? "observed" as const : "unobserved" as const;
+}
+
 /**
  * Distinct configured assets across every host inventory, plus the configured
  * instances those inventories reported.
@@ -225,24 +230,66 @@ export function buildDashboardModel(input: DashboardInput) {
       total: input.evidenceDeliveries?.total ?? deliveries.length,
       truncated: input.evidenceDeliveries?.truncated ?? false,
       organizations: [...new Set(deliveries.map((delivery) => delivery.organization))].sort(),
-      items: deliveries.map((delivery) => ({
-        id: delivery.packet.task.id,
-        title: delivery.packet.task.title,
-        workspace: delivery.packet.workspace.label,
-        organization: delivery.organization,
-        acceptedAt: delivery.acceptedAt,
-        receiptState: delivery.receiptState,
-        // The digest is prefixed with its algorithm; a short form has to skip
-        // the prefix or it shows the same 7 characters for every packet.
-        digest: delivery.packetDigest.replace(/^[a-z0-9]+:/u, "").slice(0, 12),
-        digestAlgorithm: delivery.packetDigest.includes(":") ? delivery.packetDigest.split(":", 1)[0] : null,
-        generatedAt: delivery.packet.generatedAt,
-        acceptance: delivery.packet.coverage.acceptance,
-        assets: delivery.packet.coverage.assetOutcomes,
-        assetMatches: delivery.packet.coverage.assetMatches,
-        observations: delivery.packet.coverage.observations,
-        redactions: delivery.packet.privacy.redactions,
-      })),
+      items: deliveries.map((delivery) => {
+        const packet = delivery.packet;
+        const links = packet.links ?? { sessionRefs: [], commitRefs: [], artifactRefs: [] };
+        const changeObservations = packet.observations.filter((entry) => ["change", "artifact"].includes(entry.kind));
+        const changeEvidenceCount = changeObservations.filter((entry) => entry.status !== "unobserved").length
+          + links.commitRefs.length
+          + links.artifactRefs.length;
+        const failedChangeEvidence = changeObservations.some((entry) => entry.status === "failed");
+        const observedAcceptance = packet.task.acceptance.filter((entry) => entry.status !== "unobserved").length;
+        return {
+          id: packet.task.id,
+          title: packet.task.title,
+          intent: packet.task.intent,
+          workspace: packet.workspace.label,
+          organization: delivery.organization,
+          acceptedAt: delivery.acceptedAt,
+          receiptState: delivery.receiptState,
+          // The digest is prefixed with its algorithm; a short form has to skip
+          // the prefix or it shows the same 7 characters for every packet.
+          digest: delivery.packetDigest.replace(/^[a-z0-9]+:/u, "").slice(0, 12),
+          digestAlgorithm: delivery.packetDigest.includes(":") ? delivery.packetDigest.split(":", 1)[0] : null,
+          generatedAt: packet.generatedAt,
+          acceptance: packet.coverage.acceptance,
+          acceptanceItems: packet.task.acceptance,
+          assets: packet.coverage.assetOutcomes,
+          assetItems: packet.assets,
+          assetMatches: packet.coverage.assetMatches,
+          observations: packet.coverage.observations,
+          observationItems: packet.observations,
+          links,
+          redactions: packet.privacy.redactions,
+          stages: [
+            { id: "task", label: "Task", state: "observed" as const, value: "Defined" },
+            {
+              id: "execution",
+              label: "Execution",
+              state: evidenceState({ observed: links.sessionRefs.length > 0 }),
+              value: links.sessionRefs.length > 0 ? `${links.sessionRefs.length} linked` : "Unobserved",
+            },
+            {
+              id: "assets",
+              label: "Harness assets",
+              state: evidenceState({ observed: packet.assets.length > 0, failed: packet.assets.some((entry) => entry.outcome === "failed") }),
+              value: packet.assets.length > 0 ? `${packet.assets.length} observed` : "Unobserved",
+            },
+            {
+              id: "change",
+              label: "Change",
+              state: evidenceState({ observed: changeEvidenceCount > 0, failed: failedChangeEvidence }),
+              value: changeEvidenceCount > 0 ? `${changeEvidenceCount} linked` : "Unobserved",
+            },
+            {
+              id: "acceptance",
+              label: "Acceptance",
+              state: evidenceState({ observed: observedAcceptance > 0, failed: packet.task.acceptance.some((entry) => entry.status === "failed") }),
+              value: observedAcceptance > 0 ? `${packet.coverage.acceptance.passed}/${packet.coverage.acceptance.total} passed` : "Unobserved",
+            },
+          ],
+        };
+      }),
     },
   };
 }

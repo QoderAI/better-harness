@@ -3,7 +3,14 @@ import path from "node:path";
 import { test } from "vitest";
 
 import { buildUsageSummary } from "../../../scripts/session-analysis/usage-summary.mjs";
-import { collectorArgs, collectorArgvList, createTimedCache, refreshMs } from "../lib/local-data.server.ts";
+import {
+  collectorArgs,
+  collectorArgvList,
+  createKeyedTimedCache,
+  createTimedCache,
+  listLocalDashboardProjects,
+  refreshMs,
+} from "../lib/local-data.server.ts";
 import { aggregateUsageActivity, aggregateUsageSummaries, normalizeSessionLimit } from "../scripts/collect-local-data.mjs";
 import { resolveWorkspace, resolveWorkspaces, splitWorkspaceList, workspaceIdentity } from "../scripts/workspace.mjs";
 
@@ -163,6 +170,27 @@ test("a failed collection is not cached so the next request retries", async () =
   assert.equal(calls, 2);
 });
 
+test("project caches are independent and retry only the failed project", async () => {
+  const calls = [];
+  const attempts = new Map();
+  const cache = createKeyedTimedCache({
+    load: async (project) => {
+      calls.push(project);
+      attempts.set(project, (attempts.get(project) ?? 0) + 1);
+      if (project === "broken" && attempts.get(project) === 1) throw new Error("collector exited");
+      return `${project}:${attempts.get(project)}`;
+    },
+    ttlMs: () => 30_000,
+    now: () => 5_000,
+  });
+
+  assert.equal(await cache.read("ready"), "ready:1");
+  await assert.rejects(cache.read("broken"), /collector exited/u);
+  assert.equal(await cache.read("ready"), "ready:1");
+  assert.equal(await cache.read("broken"), "broken:2");
+  assert.deepEqual(calls, ["ready", "broken", "broken"]);
+});
+
 test("collector arguments carry the configured providers and session limit", () => {
   const collector = path.join("scripts", "collect-local-data.mjs");
   const workspace = path.join(path.sep, "work", "repo");
@@ -240,6 +268,18 @@ test("workspace lists use the native delimiter and keep the singular fallback", 
     resolveWorkspaces({ BETTER_HARNESS_WORKSPACE: first }),
     [path.resolve(first)],
   );
+});
+
+test("project discovery returns every opaque identity without collecting data", () => {
+  const first = path.join(path.sep, "work", "one");
+  const second = path.join(path.sep, "work", "two");
+  const projects = listLocalDashboardProjects({
+    BETTER_HARNESS_WORKSPACES: [first, second].join(path.delimiter),
+  });
+
+  assert.deepEqual(projects.map((project) => project.label), ["one", "two"]);
+  assert.equal(projects.every((project) => project.id.startsWith("local-workspace:")), true);
+  assert.equal(JSON.stringify(projects).includes(path.dirname(first)), false);
 });
 
 test("local workspace identities distinguish same-named checkouts without disclosing paths", () => {

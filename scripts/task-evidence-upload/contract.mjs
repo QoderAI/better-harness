@@ -322,10 +322,29 @@ function normalizeObservation(value, pointer, sanitizer) {
   };
 }
 
+function normalizeLinks(value, pointer, sanitizer) {
+  const object = exactKeys(value, pointer, {
+    optional: ["projectRef", "sessionRefs", "commitRefs", "artifactRefs"],
+  });
+  const references = (key) => (
+    Object.hasOwn(object, key)
+      ? stringArrayAt(object[key], `${pointer}.${key}`, sanitizer)
+      : []
+  );
+  return {
+    ...(Object.hasOwn(object, "projectRef")
+      ? { projectRef: optionalString(object, "projectRef", pointer, sanitizer) }
+      : {}),
+    sessionRefs: references("sessionRefs"),
+    commitRefs: references("commitRefs"),
+    artifactRefs: references("artifactRefs"),
+  };
+}
+
 function normalizeInput(input, sanitizer) {
   const object = exactKeys(input, "input", {
     required: ["kind", "schemaVersion", "task"],
-    optional: ["assets", "observations"],
+    optional: ["assets", "observations", "links"],
   });
   if (object.kind !== INPUT_KIND) {
     fail("UNSUPPORTED_INPUT_KIND", `input.kind must be ${INPUT_KIND}.`);
@@ -335,6 +354,9 @@ function normalizeInput(input, sanitizer) {
   }
   return {
     task: normalizeTask(object.task, "input.task", sanitizer),
+    ...(Object.hasOwn(object, "links")
+      ? { links: normalizeLinks(object.links, "input.links", sanitizer) }
+      : {}),
     assets: Object.hasOwn(object, "assets")
       ? arrayAt(object.assets, "input.assets")
         .map((entry, index) => normalizeAsset(entry, `input.assets[${index}]`, sanitizer))
@@ -392,6 +414,7 @@ export function createTaskEvidencePacket(input, {
     generatedAt: normalizeTimestamp(now, "generatedAt"),
     workspace: { label },
     task: normalized.task,
+    ...(normalized.links ? { links: normalized.links } : {}),
     assets: normalized.assets,
     observations: normalized.observations,
     coverage: packetCoverage(normalized),
@@ -456,6 +479,7 @@ export function validateTaskEvidencePacket(packet) {
       "coverage",
       "privacy",
     ],
+    optional: ["links"],
   });
   if (object.kind !== PACKET_KIND) fail("INVALID_PLAN", `packet.kind must be ${PACKET_KIND}.`);
   if (object.schemaVersion !== SCHEMA_VERSION) {
@@ -465,6 +489,10 @@ export function validateTaskEvidencePacket(packet) {
   const workspace = exactKeys(object.workspace, "packet.workspace", { required: ["label"] });
   sanitizedStringAt(workspace.label, "packet.workspace.label", { maximum: 128 });
   const task = validatePacketTask(object.task, "packet.task");
+  if (Object.hasOwn(object, "links")) {
+    const identity = (entry, entryPointer, options) => sanitizedStringAt(entry, entryPointer, options);
+    normalizeLinks(object.links, "packet.links", identity);
+  }
   const assets = arrayAt(object.assets, "packet.assets")
     .map((entry, index) => validatePacketAsset(entry, `packet.assets[${index}]`));
   const observations = arrayAt(object.observations, "packet.observations")

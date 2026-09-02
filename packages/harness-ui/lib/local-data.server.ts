@@ -3,10 +3,10 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { resolveWorkspace, resolveWorkspaces } from "@/scripts/workspace.mjs";
+import { resolveWorkspace, resolveWorkspaces, workspaceIdentity } from "@/scripts/workspace.mjs";
 import { normalizeSessionLimit } from "@/scripts/collect-local-data.mjs";
 
-import type { DashboardInput } from "./contracts";
+import type { DashboardInput, DashboardProject, DashboardProjectSnapshot } from "./contracts";
 
 const execFileAsync = promisify(execFile);
 
@@ -65,6 +65,32 @@ export function createTimedCache<T>({
   };
 }
 
+export function createKeyedTimedCache<K, T>({
+  load,
+  ttlMs,
+  now = () => Date.now(),
+}: {
+  load: (key: K) => Promise<T>;
+  ttlMs: () => number;
+  now?: () => number;
+}) {
+  const caches = new Map<K, ReturnType<typeof createTimedCache<T>>>();
+  return {
+    read(key: K) {
+      let cache = caches.get(key);
+      if (!cache) {
+        cache = createTimedCache({ load: () => load(key), ttlMs, now });
+        caches.set(key, cache);
+      }
+      return cache.read();
+    },
+    clear() {
+      for (const cache of caches.values()) cache.clear();
+      caches.clear();
+    },
+  };
+}
+
 function collectorPath() {
   const candidates = [
     path.resolve(process.cwd(), "scripts", "collect-local-data.mjs"),
@@ -98,6 +124,24 @@ export function collectorArgvList(
   return resolveWorkspaces(env, cwd).map((workspace) => collectorArgs(collector, env, workspace));
 }
 
+export function listLocalDashboardProjects(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd(),
+): DashboardProject[] {
+  return resolveWorkspaces(env, cwd).map((workspace) => workspaceIdentity(workspace));
+}
+
+function configuredWorkspaceById(
+  id: string,
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd(),
+) {
+  const workspace = resolveWorkspaces(env, cwd)
+    .find((candidate) => workspaceIdentity(candidate).id === id);
+  if (!workspace) throw new Error("The requested project is not configured for this Dashboard.");
+  return workspace;
+}
+
 async function collectWorkspaceData(args: string[]) {
   const { stdout } = await execFileAsync(process.execPath, args, {
     encoding: "utf8",
@@ -107,25 +151,34 @@ async function collectWorkspaceData(args: string[]) {
   return JSON.parse(stdout) as DashboardInput;
 }
 
-async function collectLocalData() {
+async function collectProject(id: string) {
   const collector = collectorPath();
-  const inputs: DashboardInput[] = [];
-  // Collection is intentionally sequential: each project already fans out to
-  // every configured Agent source, so project-level concurrency would multiply
-  // filesystem pressure with little benefit for this local-only view.
-  for (const args of collectorArgvList(collector)) {
-    inputs.push(await collectWorkspaceData(args));
-  }
-  return inputs;
+  const workspace = configuredWorkspaceById(id);
+  return collectWorkspaceData(collectorArgs(collector, process.env, workspace));
 }
 
-const dashboardCache = createTimedCache<DashboardInput[]>({
-  load: collectLocalData,
+const dashboardCache = createKeyedTimedCache<string, DashboardInput>({
+  load: collectProject,
   ttlMs: () => refreshMs(),
 });
 
-export function loadLocalDashboardInputs() {
-  return dashboardCache.read();
+export function loadLocalDashboardProject(id: string) {
+  configuredWorkspaceById(id);
+  return dashboardCache.read(id);
+}
+
+export async function loadLocalDashboardProjectSnapshot(id: string): Promise<DashboardProjectSnapshot> {
+  const project = listLocalDashboardProjects().find((candidate) => candidate.id === id);
+  if (!project) throw new Error("The requested project is not configured for this Dashboard.");
+  try {
+    return { project, status: "ready", input: await loadLocalDashboardProject(id) };
+  } catch {
+    return {
+      project,
+      status: "failed",
+      message: "Project collection failed. Retry this project or inspect the server log.",
+    };
+  }
 }
 
 export function clearLocalDashboardCache() {

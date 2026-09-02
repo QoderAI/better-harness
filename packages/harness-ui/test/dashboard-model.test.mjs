@@ -65,8 +65,17 @@ function packetInput() {
         { id: "AC-2", status: "unobserved", summary: "Remote upload is unavailable." },
       ],
     },
+    links: {
+      projectRef: "project:fixture",
+      sessionRefs: ["session:qoder:a"],
+      commitRefs: ["commit:abc123"],
+      artifactRefs: [],
+    },
     assets: [{ kind: "skill", id: "better-harness", match: "exact", stage: "validated", outcome: "succeeded" }],
-    observations: [{ kind: "validation", status: "passed", summary: "Focused tests passed." }],
+    observations: [
+      { kind: "validation", status: "passed", summary: "Focused tests passed." },
+      { kind: "change", status: "observed", summary: "One change was retained." },
+    ],
   };
 }
 
@@ -166,6 +175,16 @@ test("dashboard projects values built by the real scripts", async () => {
     assert.equal(model.assets.observed, true);
     assert.equal(model.evidenceDeliveries.items[0].acceptance.unobserved, 1);
     assert.equal(model.evidenceDeliveries.items[0].organization, "acme-engineering");
+    assert.deepEqual(
+      model.evidenceDeliveries.items[0].stages.map(({ id, state }) => ({ id, state })),
+      [
+        { id: "task", state: "observed" },
+        { id: "execution", state: "observed" },
+        { id: "assets", state: "observed" },
+        { id: "change", state: "observed" },
+        { id: "acceptance", state: "observed" },
+      ],
+    );
     assert.equal(model.evidence.accountingMode, "effort-proxy");
     assert.equal(model.modelCoverage.attributed, 3);
     assert.equal(model.modelCoverage.unattributed, 0);

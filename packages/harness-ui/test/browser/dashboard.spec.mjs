@@ -20,7 +20,18 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   // The page leads with one compact identity line, four decision facts, and
   // the primary asset types. Operational evidence does not delay the charts.
   await expect(page.getByRole("heading", { level: 1, name: "better-harness" })).toBeVisible();
-  await expect(page.getByLabel("Project")).toHaveCount(0);
+  const projectRequests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/project") projectRequests.push(request.url());
+  });
+  const projectSelect = page.getByLabel("Project");
+  await expect(projectSelect).toBeVisible();
+  await expect(projectSelect.locator("option")).toHaveCount(2);
+  await projectSelect.selectOption({ label: "harness-ui" });
+  await expect(page.getByRole("heading", { level: 1, name: "harness-ui" })).toBeVisible({ timeout: 30_000 });
+  await projectSelect.selectOption({ label: "better-harness" });
+  await expect(page.getByRole("heading", { level: 1, name: "better-harness" })).toBeVisible();
+  expect(projectRequests).toHaveLength(1);
   await expect(page.getByRole("heading", { level: 2, name: "Harness footprint" })).toBeVisible();
   await expect(page.locator(".page-window")).toContainText(/Jul|Aug|Sep/);
   await expect(page.locator(".stat-card")).toHaveCount(4);
@@ -38,12 +49,26 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await expect(page.getByText("Autonomy portfolio")).toHaveCount(0);
   // Evidence applied through the real CLI and upload endpoint reaches the page,
   // carrying the organization the destination accepted it for.
-  await expect(page.getByRole("heading", { name: "Accepted task evidence" })).toBeVisible();
-  await expect(page.getByText("TASK-42")).toBeVisible();
-  await expect(page.getByText("Prepare Skill feedback")).toBeVisible();
-  await expect(page.getByText("better-harness-browser", { exact: false })).toBeVisible();
-  await expect(page.locator(".packet-card")).toContainText("acme-engineering");
-  await expect(page.locator(".packet-card")).toContainText("accepted");
+  await expect(page.getByRole("heading", { name: "Task evidence" })).toBeVisible();
+  await expect(page.getByText("TASK-42").first()).toBeVisible();
+  await expect(page.getByText("Prepare Skill feedback").first()).toBeVisible();
+  await expect(page.getByText("better-harness-browser", { exact: false }).first()).toBeVisible();
+  await expect(page.locator(".task-evidence-pane")).toContainText("acme-engineering");
+  await expect(page.locator(".task-evidence-pane")).toContainText("Packet accepted");
+  await expect(page.locator(".evidence-spine li")).toHaveCount(5);
+  await expect(page.locator(".evidence-spine")).toContainText("Execution");
+  await expect(page.locator(".evidence-spine")).toContainText("Acceptance");
+  const taskDetail = page.locator(".task-detail-disclosure");
+  await expect(taskDetail).not.toHaveAttribute("open", "");
+  await taskDetail.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(taskDetail).toHaveAttribute("open", "");
+  await expect(taskDetail).toContainText("Sessions");
+  await page.keyboard.press("Enter");
+  await expect(taskDetail).not.toHaveAttribute("open", "");
+  const taskSummary = taskDetail.locator("summary");
+  expect(await taskSummary.evaluate((element) => getComputedStyle(element).outlineWidth)).not.toBe("0px");
+  await taskSummary.evaluate((element) => element.blur());
 
   const operationalDetails = page.locator(".operational-disclosure");
   await expect(operationalDetails).not.toHaveAttribute("open", "");

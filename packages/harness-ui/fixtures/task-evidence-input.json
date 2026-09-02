@@ -25,6 +25,18 @@
       }
     ]
   },
+  "links": {
+    "projectRef": "project:better-harness",
+    "sessionRefs": [
+      "session:codex:task-42"
+    ],
+    "commitRefs": [
+      "commit:f377993"
+    ],
+    "artifactRefs": [
+      "artifact:dashboard-preview"
+    ]
+  },
   "assets": [
     {
       "kind": "skill",
@@ -54,6 +66,12 @@
       "kind": "human-review",
       "status": "unobserved",
       "summary": "No remote organization review was recorded."
+    },
+    {
+      "kind": "change",
+      "status": "observed",
+      "summary": "The Dashboard change was retained in a repository commit.",
+      "evidenceRef": "commit:f377993"
     }
   ]
 }
