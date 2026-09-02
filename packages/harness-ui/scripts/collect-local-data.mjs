@@ -4,9 +4,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runAgentLint } from "../../../scripts/agent-lint/index.mjs";
-import { SUPPORTED_CUSTOMIZE_PROVIDERS } from "../../../scripts/agent-customize/providers/index.mjs";
-import { createAnalyzer, SUPPORTED_SESSION_PLATFORMS } from "../../../scripts/session-analysis/analyzer.mjs";
-import { buildUsageSummary } from "../../../scripts/session-analysis/usage-summary.mjs";
+import { SUPPORTED_CUSTOMIZE_PROVIDERS } from "../../../scripts/agent-customize/index.mjs";
+import {
+  buildUsageSummary,
+  createAnalyzer,
+  SUPPORTED_SESSION_PLATFORMS,
+} from "../../../scripts/session-analysis/index.mjs";
+import {
+  DASHBOARD_INPUT_KIND,
+  DASHBOARD_INPUT_SCHEMA_VERSION,
+} from "./dashboard-input-contract.mjs";
 import { aggregateDeliverySignals, projectDeliverySignals } from "./delivery-signals.mjs";
 import { collectRepositorySignals } from "./repository-signals.mjs";
 import { readUploadDeliveries, resolveUploadsDirectory } from "./upload-store.mjs";
@@ -308,6 +315,8 @@ export async function collectLocalDashboardData({
   const contextUsage = selectContextUsage(sessionRows);
   const usageActivity = aggregateUsageActivity(sessionRows.map((row) => row.activity));
   return {
+    kind: DASHBOARD_INPUT_KIND,
+    schemaVersion: DASHBOARD_INPUT_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     workspace: workspaceIdentity(resolvedWorkspace),
     // The analyzed window is a boundary on every dated series below. Without it

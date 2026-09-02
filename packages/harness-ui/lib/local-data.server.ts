@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 
 import { resolveWorkspace, resolveWorkspaces, workspaceIdentity } from "@/scripts/workspace.mjs";
 import { normalizeSessionLimit } from "@/scripts/collect-local-data.mjs";
+import { parseDashboardInputV1 } from "@/scripts/dashboard-input-contract.mjs";
 
 import type { DashboardInput, DashboardProject, DashboardProjectSnapshot } from "./contracts";
 
@@ -148,7 +149,7 @@ async function collectWorkspaceData(args: string[]) {
     maxBuffer: 16 * 1024 * 1024,
     timeout: 300_000,
   });
-  return JSON.parse(stdout) as DashboardInput;
+  return parseDashboardInputV1(stdout) as DashboardInput;
 }
 
 async function collectProject(id: string) {

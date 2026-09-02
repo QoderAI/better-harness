@@ -263,10 +263,12 @@ export interface ContextUsage {
 }
 
 export interface DashboardInput {
+  kind: "better-harness.dashboard-input";
+  schemaVersion: 1;
   generatedAt: string;
-  workspace?: { id?: string; label: string };
+  workspace: { id: string; label: string };
   /** The dated boundary every series below shares. */
-  window?: {
+  window: {
     firstDate: string | null;
     lastDate: string | null;
     dayCount: number;
@@ -280,13 +282,13 @@ export interface DashboardInput {
   };
   usageSummary: SessionUsageSummary;
   usageActivity: UsageActivity;
-  providerBreakdown?: ProviderUsageRow[];
-  deliverySignals?: DeliverySignals | null;
+  providerBreakdown: ProviderUsageRow[];
+  deliverySignals: DeliverySignals | null;
   commitAttribution?: CommitAttribution;
   topology?: WorkspaceTopologyProjection;
   contextUsage?: ContextUsage;
   assetInventories: AssetInventoryReport[];
-  evidenceDeliveries?: {
+  evidenceDeliveries: {
     items: EvidenceDelivery[];
     total: number;
     truncated: boolean;
