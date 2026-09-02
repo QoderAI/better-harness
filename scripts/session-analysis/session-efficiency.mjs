@@ -4,7 +4,11 @@ import { buildDailyUsageActivity } from "./daily-usage.mjs";
 import { privacySafeUserInputSummary } from "./privacy-safe-text.mjs";
 import { sessionAnalysisRef } from "./session-ref.mjs";
 import { buildToolCallTrace } from "./tool-call-trace.mjs";
-import { responseIdentityKeys } from "./usage-records.mjs";
+import {
+  CACHE_ACCOUNTING_MODE,
+  observedCacheAccountingMode,
+  responseIdentityKeys,
+} from "./usage-records.mjs";
 
 export const SESSION_EFFICIENCY_SCHEMA_VERSION = 1;
 
@@ -120,6 +124,7 @@ function buildSessionRow(duration, session, events, responses, thresholds, prici
 function buildCoverage(rows, responses, exactCost) {
   const usageFieldObservedCount = responses.filter((event) => event.usageFieldsObserved === true).length;
   const nonZeroUsageCount = responses.filter(hasNonZeroUsage).length;
+  const cacheAccountingModes = observedCacheAccountingModes(responses);
   const modelAttributedResponseCount = responses.filter((event) => event.model).length;
   const unattributedResponseCount = responses.length - modelAttributedResponseCount;
   const childAgentCandidateCount = rows.filter((row) => row.role === "child-agent-candidate").length;
@@ -137,6 +142,7 @@ function buildCoverage(rows, responses, exactCost) {
     usageCoverageRate: ratio(usageFieldObservedCount, responses.length),
     nonZeroUsageCoverageRate: ratio(nonZeroUsageCount, responses.length),
     accountingMode,
+    cacheAccountingModes,
     exactCreditsAvailable: exactCost.available,
     pricingVersion: exactCost.available ? exactCost.pricingVersion : null,
     pricingStatus: exactCost.available ? "available" : exactCost.reason,
@@ -324,6 +330,21 @@ function tokenTotalsOrNull(responses) {
 
 function hasNonZeroUsage(event) {
   return TOKEN_FIELDS.some((field) => Number(event?.modelUsage?.[field] ?? 0) > 0);
+}
+
+/**
+ * The distinct cache relationships behind the retained token counters. A host
+ * that folds cache reads into `inputTokens` and a host that keeps a separate
+ * input lane cannot be summed into one comparable input total, so the modes
+ * travel with the coverage that a consumer would otherwise add up blindly.
+ */
+function observedCacheAccountingModes(responses) {
+  const modes = new Set();
+  for (const event of responses) {
+    if (!hasNonZeroUsage(event)) continue;
+    modes.add(observedCacheAccountingMode(event?.cacheAccountingMode) ?? CACHE_ACCOUNTING_MODE.RELATIONSHIP_UNKNOWN);
+  }
+  return [...modes].sort();
 }
 
 function usageStatus(responses, observed, nonZero) {

@@ -124,15 +124,24 @@ test("a prepared plan is applied to its destination and reaches the Dashboard pr
     uploadsDirectory: uploads,
   });
   assert.deepEqual(collected.sources.errors, []);
-  assert.deepEqual(collected.evidencePackets.map((packet) => packet.task.id), ["TASK-42"]);
+  assert.deepEqual(collected.evidenceDeliveries.items.map((delivery) => delivery.packet.task.id), ["TASK-42"]);
+  // The record, not the packet, carries who the evidence was accepted for.
+  assert.deepEqual(collected.evidenceDeliveries.items.map((delivery) => delivery.organization), ["acme-engineering"]);
 
   const model = buildDashboardModel(collected);
-  assert.deepEqual(model.evidencePackets.map((packet) => packet.id), ["TASK-42"]);
-  assert.equal(model.evidencePackets[0].title, "Prepare Skill feedback");
-  assert.equal(model.evidencePackets[0].workspace, "better-harness-e2e");
-  assert.equal(model.evidencePackets[0].acceptance.unobserved, 1);
-  assert.equal(model.evidencePackets[0].assets.unobserved, 1);
-  assert.equal(model.evidencePackets[0].redactions >= 2, true);
+  const rows = model.evidenceDeliveries.items;
+  assert.deepEqual(rows.map((packet) => packet.id), ["TASK-42"]);
+  assert.equal(rows[0].title, "Prepare Skill feedback");
+  assert.equal(rows[0].workspace, "better-harness-e2e");
+  assert.equal(rows[0].organization, "acme-engineering");
+  assert.equal(rows[0].receiptState, "accepted");
+  assert.equal(rows[0].acceptedAt, receipt.acceptedAt);
+  assert.equal(rows[0].acceptance.unobserved, 1);
+  assert.equal(rows[0].assets.unobserved, 1);
+  assert.equal(rows[0].redactions >= 2, true);
+  assert.deepEqual(model.evidenceDeliveries.organizations, ["acme-engineering"]);
+  assert.equal(model.evidenceDeliveries.total, 1);
+  assert.equal(model.evidenceDeliveries.truncated, false);
 });
 
 test("the destination rejects a tampered plan and stores nothing", async () => {
@@ -163,7 +172,7 @@ test("the destination rejects a tampered plan and stores nothing", async () => {
     providers: [],
     uploadsDirectory: uploads,
   });
-  assert.deepEqual(collected.evidencePackets, []);
+  assert.deepEqual(collected.evidenceDeliveries.items, []);
 });
 
 test("the destination refuses an organization it does not serve", async () => {
@@ -196,7 +205,7 @@ test("the destination refuses an organization it does not serve", async () => {
     providers: [],
     uploadsDirectory: uploads,
   });
-  assert.deepEqual(collected.evidencePackets, []);
+  assert.deepEqual(collected.evidenceDeliveries.items, []);
 });
 
 test("the destination rejects the wrong media type and a plan addressed elsewhere", async () => {
@@ -232,5 +241,5 @@ test("the destination rejects the wrong media type and a plan addressed elsewher
     providers: [],
     uploadsDirectory: uploads,
   });
-  assert.deepEqual(collected.evidencePackets, []);
+  assert.deepEqual(collected.evidenceDeliveries.items, []);
 });

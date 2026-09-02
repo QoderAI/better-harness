@@ -6,6 +6,7 @@ import { parseFrontmatter } from "../agent-customize/core/items.mjs";
 import { enrichFindingWithRecommendation } from "../findings-recommend.mjs";
 import { isDirectory, normalizeWorkspace, pathExists } from "../session-analysis/index.mjs";
 import {
+  canonicalPath,
   ownerRouteForPath,
   pathIsContained,
   resolveConfiguredCwd,
@@ -998,6 +999,73 @@ function summarizeAssetInventory(inventory, options = {}) {
   };
 }
 
+// The inventory summary counts what one host is configured with. Several hosts
+// read the same project files, so a consumer that adds their summaries counts
+// one file once per host. These identities make that difference observable:
+// they are stable across hosts and carry no absolute path.
+const ASSET_IDENTITY_COLLECTIONS = Object.freeze([
+  ["skills", "skill"],
+  ["mcps", "mcp"],
+  ["commands", "command"],
+  ["hooks", "hook"],
+  ["rules", "rule"],
+  ["subagents", "agent"],
+  ["plugins", "plugin"],
+]);
+
+const MAX_ASSET_IDENTITIES = 1_000;
+
+// Hosts report asset paths in whatever form they stored them, so a symlinked
+// workspace root reaches containment as a different prefix. Canonicalize both
+// sides before comparing; an unresolvable path is simply not contained.
+function containedRelativePath(workspace, filePath) {
+  const resolve = (value) => {
+    try {
+      return canonicalPath(value);
+    } catch {
+      return path.resolve(value);
+    }
+  };
+  const root = resolve(workspace);
+  const target = resolve(filePath);
+  return pathIsContained(root, target) ? normalizeSlash(path.relative(root, target)) : null;
+}
+
+function assetIdentity(item, kind, workspace) {
+  const filePath = item.filePath ?? item.rootPath ?? item.evidence?.path ?? null;
+  // A workspace file is the same asset for every host that reads it. Anything
+  // outside the workspace keeps a scope-qualified name so a user-home or plugin
+  // location never travels with the report; that name is still host-stable.
+  const relative = filePath ? containedRelativePath(workspace, filePath) : null;
+  const scope = item.scope ?? "unknown";
+  return {
+    kind,
+    id: relative ?? `${scope}:${kind}:${item.name ?? item.id ?? "unnamed"}`,
+    name: String(item.name ?? item.id ?? "unnamed").slice(0, 200),
+    scope,
+  };
+}
+
+function collectAssetIdentities(inventory, options, workspace) {
+  const identities = [];
+  const seen = new Set();
+  let truncated = false;
+  for (const [collection, kind] of ASSET_IDENTITY_COLLECTIONS) {
+    for (const item of selectedAssetItems(inventory, collection, options)) {
+      const identity = assetIdentity(item, kind, workspace);
+      const key = `${identity.kind}:${identity.id}`;
+      if (seen.has(key)) continue;
+      if (identities.length >= MAX_ASSET_IDENTITIES) {
+        truncated = true;
+        break;
+      }
+      seen.add(key);
+      identities.push(identity);
+    }
+  }
+  return { assets: identities, truncated };
+}
+
 function relativeAssetPath(workspace, filePath) {
   if (!filePath) {
     return undefined;
@@ -1646,11 +1714,16 @@ export async function applyAgentAssetsReviewProfile(graph, options = {}) {
   const summary = explicitSkillTarget
     ? { skills: skills.length, mcps: 0, commands: 0, hooks: 0, rules: 0, agents: 0, plugins: 0 }
     : summarizeAssetInventory(inventory, options);
+  const identities = explicitSkillTarget
+    ? { assets: [], truncated: false }
+    : collectAssetIdentities(inventory, options, graph.workspace);
   return {
     profile: PROFILE_AGENT_ASSETS_REVIEW,
     assetInventory: {
       provider,
       summary,
+      assets: identities.assets,
+      assetsTruncated: identities.truncated,
     },
     findings: [
       ...explicitSkillResult.findings,

@@ -17,7 +17,10 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await expect(page).toHaveTitle("Better Harness");
-  await expect(page.getByRole("heading", { level: 1, name: "Harness assets" })).toBeVisible();
+  // The page leads with the workspace it analyzed and the window it covers.
+  await expect(page.getByRole("heading", { level: 1, name: "better-harness" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Harness assets" })).toBeVisible();
+  await expect(page.locator(".page-facts")).toContainText("Collected");
   await expect(page.getByText("Better Harness Dashboard")).toHaveCount(0);
   await expect(page.getByText("Acme Engineering")).toHaveCount(0);
   await expect(page.getByText("Script-aligned preview")).toHaveCount(0);
@@ -29,11 +32,30 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await expect(page.getByRole("heading", { name: "Data quality" })).toHaveCount(0);
   await expect(page.getByText("First-pass success")).toHaveCount(0);
   await expect(page.getByText("Autonomy portfolio")).toHaveCount(0);
-  // Evidence applied through the real CLI and upload endpoint reaches the page.
+  // Evidence applied through the real CLI and upload endpoint reaches the page,
+  // carrying the organization the destination accepted it for.
   await expect(page.getByRole("heading", { name: "Accepted task evidence" })).toBeVisible();
   await expect(page.getByText("TASK-42")).toBeVisible();
   await expect(page.getByText("Prepare Skill feedback")).toBeVisible();
   await expect(page.getByText("better-harness-browser", { exact: false })).toBeVisible();
+  await expect(page.locator(".packet-card")).toContainText("acme-engineering");
+  await expect(page.locator(".packet-card")).toContainText("accepted");
+
+  // Delivery behavior, repository outcome, and per-host rows are the sections
+  // that make this more than a usage counter.
+  if (await page.getByRole("heading", { name: "Validation and closure" }).count()) {
+    await expect(page.locator(".delivery-card")).toContainText("Post-edit validation");
+    await expect(page.locator(".delivery-card")).toContainText("Task episodes");
+    await expect(page.locator(".delivery-card .delivery-fact")).toHaveCount(3);
+  }
+  if (await page.getByRole("heading", { name: "Delivered change" }).count()) {
+    await expect(page.locator(".repo-card")).toContainText("Session-attributed commits");
+  }
+  if (await page.getByRole("heading", { name: "Per-host activity" }).count()) {
+    await expect(page.locator(".breakdown-table tbody tr").first()).toBeVisible();
+    const tableOverflow = await page.locator(".table-scroll").evaluate((element) => getComputedStyle(element).overflowX);
+    expect(tableOverflow).toBe("auto");
+  }
   await page.screenshot({ path: "test-results/harness-usage-wide.png", fullPage: true });
 
   if (await page.getByRole("heading", { name: "Usage activity" }).count()) {
@@ -57,6 +79,9 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   }
 
   if (await page.getByRole("heading", { name: "Token usage" }).count()) {
+    // Input lanes are only additive inside one cache relationship; the section
+    // says which one it observed instead of leaving the sum unqualified.
+    await expect(page.locator(".token-section .lane-note")).toBeVisible();
     await expect(page.locator(".token-chart-card")).toHaveCount(4);
     await expect(page.locator(".token-chart-card .recharts-area-curve")).toHaveCount(4);
     await page.locator(".token-section select").selectOption("7");
@@ -65,6 +90,9 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
 
   if (await page.getByRole("heading", { name: "Model activity" }).count()) {
     await expect(page.locator(".model-chart-card .recharts-bar-rectangle").first()).toBeVisible();
+    // The chart can only plot responses a host attributed to a model, so the
+    // caption states that share rather than implying the full population.
+    await expect(page.locator(".model-chart-card .metric-caption")).toContainText("responses carry a model");
     await page.getByRole("button", { name: "Usage observed", exact: true }).click();
     await expect(page.locator(".model-chart-card .metric-caption")).toContainText("Usage observed");
   }
@@ -73,7 +101,7 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await page.screenshot({ path: "test-results/harness-usage-compact.png", fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("heading", { level: 1, name: "Harness assets" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Harness assets" })).toBeVisible();
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(390);
   await page.screenshot({ path: "test-results/harness-usage-narrow.png", fullPage: true });

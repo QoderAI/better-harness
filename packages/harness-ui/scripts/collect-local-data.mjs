@@ -7,7 +7,9 @@ import { runAgentLint } from "../../../scripts/agent-lint/index.mjs";
 import { SUPPORTED_CUSTOMIZE_PROVIDERS } from "../../../scripts/agent-customize/providers/index.mjs";
 import { createAnalyzer, SUPPORTED_SESSION_PLATFORMS } from "../../../scripts/session-analysis/analyzer.mjs";
 import { buildUsageSummary } from "../../../scripts/session-analysis/usage-summary.mjs";
-import { readUploadPackets, resolveUploadsDirectory } from "./upload-store.mjs";
+import { aggregateDeliverySignals, projectDeliverySignals } from "./delivery-signals.mjs";
+import { collectRepositorySignals } from "./repository-signals.mjs";
+import { readUploadDeliveries, resolveUploadsDirectory } from "./upload-store.mjs";
 import { resolveWorkspace } from "./workspace.mjs";
 
 // Every host adapter the workspace can analyze is collected by default, so a
@@ -98,6 +100,10 @@ export function aggregateUsageSummaries(rows) {
         modelAttributedResponseCount: rows.reduce((total, row) => total + count(row.summary.usageEfficiency.coverage.modelAttributedResponseCount), 0),
         unattributedResponseCount: rows.reduce((total, row) => total + count(row.summary.usageEfficiency.coverage.unattributedResponseCount), 0),
         exactCreditsAvailable: rows.length > 0 && rows.every((row) => row.summary.usageEfficiency.coverage.exactCreditsAvailable),
+        // Hosts that fold cache reads into their input lane and hosts that keep
+        // it separate cannot be summed into one comparable input total. Keeping
+        // every observed mode lets the page say so instead of hiding it.
+        cacheAccountingModes: [...new Set(rows.flatMap((row) => row.summary.usageEfficiency.coverage.cacheAccountingModes ?? []))].sort(),
       },
       longSessions: {
         longActiveCount: rows.reduce((total, row) => total + count(row.summary.usageEfficiency.longSessions.longActiveCount), 0),
@@ -212,7 +218,31 @@ async function collectSessionProvider(provider, workspace, limit) {
     summary: buildUsageSummary(result),
     activity: result.insights?.keySignals?.usageEfficiency?.activity ?? null,
     contextUsage: result.contextUsage ?? null,
+    delivery: projectDeliverySignals(result.insights),
   };
+}
+
+// One row per host, so an organization view can compare hosts instead of only
+// seeing their sum. Everything here already exists in the host's own summary.
+export function providerBreakdown(rows) {
+  return rows.map((row) => {
+    const coverage = row.summary.usageEfficiency.coverage;
+    return {
+      provider: row.provider,
+      analyzedSessions: count(row.summary.selection.analyzedCount),
+      eligibleSessions: count(row.summary.selection.eligibleCount),
+      responseCount: count(coverage.responseCount),
+      modelAttributedResponseCount: count(coverage.modelAttributedResponseCount),
+      activeMinutes: Number((row.activity?.sessions?.activeMinutes ?? [])
+        .reduce((total, value) => total + count(value), 0)
+        .toFixed(1)),
+      accountingMode: row.summary.usageEfficiency.accountingMode,
+      cacheAccountingModes: coverage.cacheAccountingModes ?? [],
+      tokenTotals: row.summary.usageEfficiency.tokenTotals,
+      editCount: row.delivery?.validationAfterEdit.editCount ?? 0,
+      episodeCount: row.delivery?.episodes.episodeCount ?? 0,
+    };
+  });
 }
 
 async function collectAssetProvider(provider, workspace) {
@@ -239,12 +269,28 @@ export async function collectLocalDashboardData({
   // without an inventory adapter is skipped instead of reported as a failure.
   const assetProviders = providers.filter((provider) => SUPPORTED_CUSTOMIZE_PROVIDERS.includes(provider));
 
-  const uploads = await readUploadPackets({
+  const uploads = await readUploadDeliveries({
     directory: resolveUploadsDirectory({ workspace: resolvedWorkspace, uploadsDirectory }),
-  }).catch((error) => ({ packets: [], errors: [{ source: "uploads", message: error?.message ?? String(error) }] }));
+  }).catch((error) => ({
+    deliveries: [],
+    total: 0,
+    truncated: false,
+    errors: [{ source: "uploads", message: error?.message ?? String(error) }],
+  }));
   errors.push(...uploads.errors);
 
-  await Promise.all([
+  // Commits and topology answer what the sessions produced and how the
+  // workspace is divided. They read git rather than session analysis, so they
+  // run alongside it and a repository without git still gets the rest.
+  const repositoryWork = collectRepositorySignals({ workspace: resolvedWorkspace, platforms: providers })
+    .catch((error) => ({
+      commitAttribution: null,
+      topology: null,
+      errors: [{ source: "repository", message: error?.message ?? String(error) }],
+    }));
+
+  const [repository] = await Promise.all([
+    repositoryWork,
     ...providers.map((provider) => collectSessionProvider(provider, resolvedWorkspace, limit)
       .then((row) => sessionRows.push(row))
       .catch((error) => errors.push({ source: `${provider}:sessions`, message: error?.message ?? String(error) }))),
@@ -252,13 +298,24 @@ export async function collectLocalDashboardData({
       .then((report) => assetInventories.push(report))
       .catch((error) => errors.push({ source: `${provider}:assets`, message: error?.message ?? String(error) }))),
   ]);
+  errors.push(...repository.errors);
 
   sessionRows.sort((left, right) => providers.indexOf(left.provider) - providers.indexOf(right.provider));
   assetInventories.sort((left, right) => providers.indexOf(left.assetInventory.provider) - providers.indexOf(right.assetInventory.provider));
   const usageSummary = sessionRows.length > 0 ? aggregateUsageSummaries(sessionRows) : emptySummary();
   const contextUsage = selectContextUsage(sessionRows);
+  const usageActivity = aggregateUsageActivity(sessionRows.map((row) => row.activity));
   return {
     generatedAt: new Date().toISOString(),
+    workspace: { label: path.basename(resolvedWorkspace) || "workspace" },
+    // The analyzed window is a boundary on every dated series below. Without it
+    // a reader cannot tell a week of evidence from a year of it.
+    window: {
+      firstDate: usageActivity.dates[0] ?? null,
+      lastDate: usageActivity.dates.at(-1) ?? null,
+      dayCount: usageActivity.dates.length,
+      truncated: usageActivity.truncated === true,
+    },
     sources: {
       sessionProviders: sessionRows.map((row) => row.provider),
       assetProviders: assetInventories.map((report) => report.assetInventory.provider),
@@ -266,10 +323,18 @@ export async function collectLocalDashboardData({
       errors: errors.map((error) => ({ source: error.source, message: String(error.message).split("\n", 1)[0].slice(0, 240) })),
     },
     usageSummary,
-    usageActivity: aggregateUsageActivity(sessionRows.map((row) => row.activity)),
+    usageActivity,
+    providerBreakdown: providerBreakdown(sessionRows),
+    deliverySignals: aggregateDeliverySignals(sessionRows.map((row) => row.delivery)),
+    ...(repository.commitAttribution ? { commitAttribution: repository.commitAttribution } : {}),
+    ...(repository.topology ? { topology: repository.topology } : {}),
     ...(contextUsage ? { contextUsage } : {}),
     assetInventories,
-    evidencePackets: uploads.packets,
+    evidenceDeliveries: {
+      items: uploads.deliveries,
+      total: uploads.total ?? uploads.deliveries.length,
+      truncated: uploads.truncated === true,
+    },
   };
 }
 

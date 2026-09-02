@@ -7,9 +7,12 @@ import {
   Clock3,
   Code2,
   FileCheck2,
+  GitCommitHorizontal,
   Gauge,
+  Layers,
   MessagesSquare,
   PlugZap,
+  ShieldAlert,
   Sparkles,
   UploadCloud,
   Webhook,
@@ -27,6 +30,7 @@ type ModelMetric = "responseCount" | "usageFieldObservedCount";
 type RangeDays = 7 | 30;
 
 const numberFormat = new Intl.NumberFormat("en-US");
+const percentFormat = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 });
 
 function compactNumber(value: number) {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -49,6 +53,22 @@ function formatTimestamp(value: string) {
   });
 }
 
+const CACHE_MODE_LABELS: Record<string, string> = {
+  "included-in-input": "cache read included in input",
+  "separate-input-lane": "cache read in a separate lane",
+  "relationship-unknown": "cache relationship unknown",
+};
+
+function cacheModeLabel(mode: string) {
+  return CACHE_MODE_LABELS[mode] ?? mode;
+}
+
+const POST_EDIT_LABELS: Record<string, string> = {
+  "validated-after-edit": "Observed",
+  "edit-without-validation": "Not observed",
+  "no-edit-observed": "No edits",
+};
+
 function StatCard({ icon, label, value, note }: { icon: ReactNode; label: string; value: string; note: string }) {
   return (
     <article className="stat-card">
@@ -59,6 +79,23 @@ function StatCard({ icon, label, value, note }: { icon: ReactNode; label: string
         <p className="stat-note">{note}</p>
       </div>
     </article>
+  );
+}
+
+function NamedCountList({ label, rows, unit }: { label: string; rows: Array<{ name: string; count: number }>; unit: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="signal-list">
+      <p className="eyebrow">{label}</p>
+      <ul>
+        {rows.slice(0, 5).map((row) => (
+          <li key={row.name}>
+            <span title={row.name}>{row.name}</span>
+            <b>{numberFormat.format(row.count)}<i>{unit}</i></b>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -94,52 +131,85 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
   const hasModels = model.models.length > 0;
   const hasSkills = model.skills.length > 0;
   const hasTokenActivity = model.tokenActivity !== null && tokenRows.length > 0;
+  const hasBreakdown = model.providerBreakdown.length > 1;
+  const digestAlgorithm = model.evidenceDeliveries.items[0]?.digestAlgorithm;
+  const delivery = model.delivery;
+  const commits = model.commitAttribution;
+  const topology = model.topology;
   const modelRows = model.models.slice(0, 8);
   const modelMetricLabel = modelMetric === "responseCount" ? "Responses" : "Usage observed";
+  const windowLabel = model.window?.firstDate && model.window.lastDate
+    ? `${formatDate(model.window.firstDate)} – ${formatDate(model.window.lastDate)} UTC · ${model.window.dayCount} days`
+    : null;
 
-  const headlineAssets = [
-    { label: "Skills", value: model.assets.totals.skills, icon: <Sparkles /> },
-    { label: "MCPs", value: model.assets.totals.mcps, icon: <PlugZap /> },
-    { label: "Hooks", value: model.assets.totals.hooks, icon: <Webhook /> },
-  ];
+  const assetCards = [
+    { key: "skills", label: "Skills", icon: <Sparkles /> },
+    { key: "mcps", label: "MCPs", icon: <PlugZap /> },
+    { key: "hooks", label: "Hooks", icon: <Webhook /> },
+  ] as const;
+  const headlineAssets = assetCards.map((asset) => ({
+    ...asset,
+    value: model.assets.totals[asset.key],
+    instances: model.assets.configuredInstances[asset.key],
+  }));
   const primaryAssets = headlineAssets.filter((asset) => asset.value > 0);
   const secondaryAssets = [
     ...headlineAssets.filter((asset) => asset.value === 0),
-    { label: "Commands", value: model.assets.totals.commands, icon: <Code2 /> },
-    { label: "Rules", value: model.assets.totals.rules, icon: <FileCheck2 /> },
-    { label: "Agents", value: model.assets.totals.agents, icon: <Bot /> },
-    { label: "Plugins", value: model.assets.totals.plugins, icon: <Blocks /> },
+    { key: "commands", label: "Commands", icon: <Code2 />, value: model.assets.totals.commands },
+    { key: "rules", label: "Rules", icon: <FileCheck2 />, value: model.assets.totals.rules },
+    { key: "agents", label: "Agents", icon: <Bot />, value: model.assets.totals.agents },
+    { key: "plugins", label: "Plugins", icon: <Blocks />, value: model.assets.totals.plugins },
   ];
 
   return (
     <div className="site-shell">
       <main className="dashboard">
+        <header className="page-header">
+          <div>
+            <p className="eyebrow">Harness evidence</p>
+            <h1>{model.workspaceLabel ?? "Workspace"}</h1>
+          </div>
+          <dl className="page-facts">
+            {windowLabel ? <div><dt>Window</dt><dd>{windowLabel}{model.window?.truncated ? " (truncated)" : ""}</dd></div> : null}
+            <div><dt>Hosts</dt><dd>{model.sources.sessionProviders.length} session · {model.sources.assetProviders.length} inventory</dd></div>
+            <div><dt>Collected</dt><dd><time dateTime={model.generatedAt}>{formatTimestamp(model.generatedAt)}</time></dd></div>
+          </dl>
+        </header>
+
         {model.assets.observed ? <section className="card asset-overview" aria-labelledby="asset-title">
           <div className="card-header asset-header">
             <div>
               <p className="eyebrow">Inventory</p>
-              <h1 id="asset-title">Harness assets</h1>
+              <h2 id="asset-title">Harness assets</h2>
               <p className="muted">
-                {model.assets.inventoryReports} host {model.assets.inventoryReports === 1 ? "inventory" : "inventories"}
+                {model.assets.distinctComplete
+                  ? `Distinct configured files across ${model.assets.inventoryReports} host ${model.assets.inventoryReports === 1 ? "inventory" : "inventories"}`
+                  : `Configured instances across ${model.assets.inventoryReports} host ${model.assets.inventoryReports === 1 ? "inventory" : "inventories"}`}
                 {model.assets.providers.length > 0 ? ` · ${model.assets.providers.join(", ")}` : ""}
               </p>
             </div>
             <div className="inventory-meta">
-              <time dateTime={model.generatedAt}>Scanned {formatTimestamp(model.generatedAt)}</time>
               <div className="finding-summary" aria-label="Asset inventory findings">
                 <span className={model.assets.findings.errors > 0 ? "danger" : "success"}>{model.assets.findings.errors} errors</span>
                 <span>{model.assets.findings.warnings} lint warnings</span>
                 <span>{model.assets.findings.advisories} advisories</span>
               </div>
+              {model.assets.hostMultiplier && model.assets.hostMultiplier > 1 ? (
+                <p className="muted">Each asset is configured in {model.assets.hostMultiplier} hosts on average</p>
+              ) : null}
             </div>
           </div>
           <div className="asset-primary-grid">
             {primaryAssets.map((asset) => (
-              <article className="asset-primary" key={asset.label} title={`${asset.value} configured ${asset.label} instances`}>
+              <article className="asset-primary" key={asset.label}>
                 <div className="asset-icon" aria-hidden="true">{asset.icon}</div>
                 <div>
                   <p>{asset.label}</p>
                   <strong>{numberFormat.format(asset.value)}</strong>
+                  <span className="asset-sub">
+                    {numberFormat.format(asset.instances)} configured instances
+                    {asset.key === "skills" ? ` · ${numberFormat.format(model.overview.skillInvocations)} observed invocations` : ""}
+                  </span>
                 </div>
               </article>
             ))}
@@ -154,7 +224,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
             ))}
           </div>
         </section> : <section className="card empty-state asset-empty-state">
-          <h1>No local asset inventory observed</h1>
+          <h2>No local asset inventory observed</h2>
           <p>Run agent asset analysis for a supported host in this workspace, then reload this page.</p>
         </section>}
 
@@ -169,13 +239,13 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
             icon={<Clock3 />}
             label="Active time"
             value={`${numberFormat.format(model.overview.activeMinutes)} min`}
-            note="capped event-gap estimate"
+            note={`capped event-gap estimate · ${model.window?.dayCount ?? model.activity.length} days`}
           />
           <StatCard
             icon={<MessagesSquare />}
             label="Model responses"
             value={numberFormat.format(model.overview.modelResponses)}
-            note="deduplicated responses"
+            note={`${percentFormat.format(model.modelCoverage.attributionRate)} attributed to a model`}
           />
           <StatCard
             icon={<Wrench />}
@@ -189,6 +259,155 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
             <p>Run session analysis for a supported host in this workspace, then reload this page.</p>
           </section>
         )}
+
+        {delivery ? <section className="card delivery-card" aria-labelledby="delivery-title">
+          <div className="card-header">
+            <div>
+              <p className="eyebrow">Delivery behavior</p>
+              <h2 id="delivery-title">Validation and closure</h2>
+              <p className="muted metric-caption">Observed in analyzed sessions, not configured policy</p>
+            </div>
+            <ShieldAlert className="header-icon" aria-hidden="true" />
+          </div>
+          <div className="delivery-grid">
+            <div className="delivery-fact">
+              <p className="eyebrow">Post-edit validation</p>
+              <strong data-status={delivery.validationAfterEdit.status}>
+                {POST_EDIT_LABELS[delivery.validationAfterEdit.status] ?? delivery.validationAfterEdit.status}
+              </strong>
+              <span>
+                {numberFormat.format(delivery.validationAfterEdit.editCount)} edits ·{" "}
+                {numberFormat.format(delivery.validationAfterEdit.validationAfterEditCount)} later validations
+              </span>
+            </div>
+            <div className="delivery-fact">
+              <p className="eyebrow">Task episodes</p>
+              <strong>{numberFormat.format(delivery.episodes.episodeCount)}</strong>
+              <span>
+                {numberFormat.format(delivery.episodes.closedEpisodeCount)}/{numberFormat.format(delivery.episodes.eligibleEpisodeCount)} eligible closed ·{" "}
+                {percentFormat.format(delivery.episodeClosureRate)}
+              </span>
+            </div>
+            <div className="delivery-fact">
+              <p className="eyebrow">Execution friction</p>
+              <strong>{numberFormat.format(delivery.friction.reduce((total, row) => total + row.count, 0))}</strong>
+              <span>{delivery.friction.length > 0 ? delivery.friction.map((row) => row.name).join(", ") : "no friction category observed"}</span>
+            </div>
+          </div>
+          <div className="signal-grid">
+            <NamedCountList label="Validation commands" rows={delivery.validationCommands} unit=" runs" />
+            <NamedCountList label="Top tools" rows={delivery.topTools} unit=" calls" />
+            {delivery.observedHooks.length > 0
+              ? <NamedCountList label="Observed hooks" rows={delivery.observedHooks} unit=" fires" />
+              : <div className="signal-list">
+                <p className="eyebrow">Observed hooks</p>
+                <p className="muted signal-empty">
+                  {model.assets.totals.hooks > 0
+                    ? `${model.assets.totals.hooks} configured, none observed firing`
+                    : "none configured, none observed"}
+                </p>
+              </div>}
+          </div>
+        </section> : null}
+
+        {commits || topology ? <section className="card repo-card" aria-labelledby="repo-title">
+          <div className="card-header">
+            <div>
+              <p className="eyebrow">Repository</p>
+              <h2 id="repo-title">Delivered change</h2>
+              {commits ? <p className="muted metric-caption">
+                Last {numberFormat.format(commits.commitCount)} commits correlated with {numberFormat.format(commits.correlatedSessionCount)} sessions · {commits.graceMinutes} min grace
+              </p> : null}
+            </div>
+            <GitCommitHorizontal className="header-icon" aria-hidden="true" />
+          </div>
+          <div className="delivery-grid">
+            {commits ? <>
+              <div className="delivery-fact">
+                <p className="eyebrow">Session-attributed commits</p>
+                <strong>{numberFormat.format(commits.attributedCommits)}<i>/{numberFormat.format(commits.commitCount)}</i></strong>
+                <span>{percentFormat.format(commits.attributionRate)} · high {commits.byConfidence.high} · medium {commits.byConfidence.medium}</span>
+              </div>
+              <div className="delivery-fact">
+                <p className="eyebrow">Attributed lines added</p>
+                <strong>{compactNumber(commits.attributedLinesAdded)}<i>/{compactNumber(commits.linesAdded)}</i></strong>
+                <span>{percentFormat.format(commits.lineAttributionRate)} of added lines</span>
+              </div>
+            </> : null}
+            {topology ? <div className="delivery-fact">
+              <p className="eyebrow">Workspace members</p>
+              <strong>{numberFormat.format(topology.memberCount)}</strong>
+              <span>
+                {numberFormat.format(topology.trackedFiles)} tracked files · {topology.instructionScopes.effective} effective instruction scopes
+              </span>
+            </div> : null}
+          </div>
+          {commits && commits.byPlatform.length > 0 ? (
+            <div className="signal-grid">
+              <NamedCountList
+                label="Commits by host"
+                rows={commits.byPlatform.map((row) => ({ name: row.platform, count: row.commitCount }))}
+                unit=" commits"
+              />
+              {topology && topology.members.length > 0 ? (
+                <div className="signal-list">
+                  <p className="eyebrow">Members</p>
+                  <ul>
+                    {topology.members.slice(0, 5).map((member) => (
+                      <li key={member.route}><span title={member.route}>{member.route}</span><b>{member.kind}</b></li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </section> : null}
+
+        {hasBreakdown ? <section className="card breakdown-card" aria-labelledby="breakdown-title">
+          <div className="card-header">
+            <div>
+              <p className="eyebrow">Hosts</p>
+              <h2 id="breakdown-title">Per-host activity</h2>
+              <p className="muted metric-caption">
+                Every column is that host&apos;s own summary, not a share of the total
+                {model.providersWithoutSessions.length > 0
+                  ? ` · scanned with no sessions: ${model.providersWithoutSessions.join(", ")}`
+                  : ""}
+              </p>
+            </div>
+            <Layers className="header-icon" aria-hidden="true" />
+          </div>
+          <div className="table-scroll">
+            <table className="breakdown-table">
+              <thead>
+                <tr>
+                  <th scope="col">Host</th>
+                  <th scope="col">Sessions</th>
+                  <th scope="col">Active min</th>
+                  <th scope="col">Responses</th>
+                  <th scope="col">Model attributed</th>
+                  <th scope="col">Edits</th>
+                  <th scope="col">Episodes</th>
+                  <th scope="col">Cache accounting</th>
+                </tr>
+              </thead>
+              <tbody>
+                {model.providerBreakdown.map((row) => (
+                  <tr key={row.provider}>
+                    <th scope="row">{row.provider}</th>
+                    <td>{numberFormat.format(row.analyzedSessions)}</td>
+                    <td>{numberFormat.format(row.activeMinutes)}</td>
+                    <td>{numberFormat.format(row.responseCount)}</td>
+                    <td>{numberFormat.format(row.modelAttributedResponseCount)}</td>
+                    <td>{numberFormat.format(row.editCount)}</td>
+                    <td>{numberFormat.format(row.episodeCount)}</td>
+                    <td className="mode-cell">{row.cacheAccountingModes.map(cacheModeLabel).join(", ") || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section> : null}
 
         {hasActivity ? <section className="content-grid">
           <article className="card chart-card">
@@ -281,7 +500,9 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
             <div>
               <p className="eyebrow">Usage</p>
               <h2 id="token-usage-title">Token usage</h2>
-              <p className="muted metric-caption">Observed from {model.sources.tokenProviders.join(", ")} · {numberFormat.format(model.tokenActivity?.observedResponseCount ?? 0)} responses</p>
+              <p className="muted metric-caption">
+                {model.tokenUsage.accountingMode} accounting · observed from {model.sources.tokenProviders.join(", ")} · {numberFormat.format(model.tokenActivity?.observedResponseCount ?? 0)} responses
+              </p>
             </div>
             <label className="range-select">
               <span className="sr-only">Token date range</span>
@@ -291,13 +512,22 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
               </select>
             </label>
           </div>
+          {model.tokenUsage.cacheAccountingModes.length > 0 ? (
+            <p className={model.tokenUsage.cacheLanesComparable ? "lane-note" : "lane-note warn"}>
+              {model.tokenUsage.cacheLanesComparable
+                ? `All observed hosts report ${cacheModeLabel(model.tokenUsage.cacheAccountingModes[0])}.`
+                : `Hosts disagree on cache accounting (${model.tokenUsage.cacheAccountingModes.map(cacheModeLabel).join("; ")}), so the Input and Cache read lanes overlap by an unknown amount and are not comparable across hosts.`}
+            </p>
+          ) : null}
           <div className="token-chart-grid">
             {tokenLanes.map((lane) => {
               const rangeTotal = tokenRows.reduce((total, row) => total + row[lane.key], 0);
               const gradientId = `token-${lane.key}`;
+              const overlaps = model.tokenUsage.cacheLanesOverlap
+                && (lane.key === "inputTokens" || lane.key === "cacheReadInputTokens");
               return <article className="card token-chart-card" key={lane.key}>
                 <div className="token-chart-summary">
-                  <span>{lane.label}</span>
+                  <span>{lane.label}{overlaps ? " (overlapping)" : ""}</span>
                   <strong>{compactNumber(rangeTotal)}</strong>
                 </div>
                 <div className="token-chart-body">
@@ -327,6 +557,12 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
               <div>
                 <p className="eyebrow">Context</p>
                 <h2>Context window</h2>
+                {model.contextUsage?.capturedAt ? (
+                  <p className="muted metric-caption">
+                    Captured {formatTimestamp(model.contextUsage.capturedAt)} · {numberFormat.format(model.contextUsage.itemCount)} items
+                    {model.contextUsage.truncated ? " (truncated)" : ""}
+                  </p>
+                ) : null}
               </div>
               <Gauge className="header-icon" aria-hidden="true" />
             </div>
@@ -356,13 +592,21 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
               <div>
                 <p className="eyebrow">Models</p>
                 <h2>Model activity</h2>
-                <p className="muted metric-caption">{modelMetricLabel}{model.models.length > modelRows.length ? ` · top ${modelRows.length} by responses` : ""}</p>
+                <p className="muted metric-caption">
+                  {modelMetricLabel} · {numberFormat.format(model.modelCoverage.attributed)} of {numberFormat.format(model.modelCoverage.total)} responses carry a model
+                  {model.models.length > modelRows.length ? ` · top ${modelRows.length} by responses` : ""}
+                </p>
               </div>
               <div className="segmented" aria-label="Model metric">
                 <button type="button" className={modelMetric === "responseCount" ? "active" : ""} onClick={() => setModelMetric("responseCount")}>Responses</button>
                 <button type="button" className={modelMetric === "usageFieldObservedCount" ? "active" : ""} onClick={() => setModelMetric("usageFieldObservedCount")}>Usage observed</button>
               </div>
             </div>
+            {model.modelCoverage.unattributed > 0 ? (
+              <p className="lane-note warn">
+                {numberFormat.format(model.modelCoverage.unattributed)} responses carry no model attribution and are absent from this chart.
+              </p>
+            ) : null}
             <div className="model-chart-body">
               <ChartContainer>
                 <BarChart data={modelRows} layout="vertical" margin={{ left: 4, right: 28, top: 8, bottom: 8 }} accessibilityLayer>
@@ -380,27 +624,42 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
           </article>
         </section> : null}
 
-        {model.evidencePackets.length > 0 ? <section className="card packet-card" aria-labelledby="packet-title">
+        {model.evidenceDeliveries.items.length > 0 ? <section className="card packet-card" aria-labelledby="packet-title">
           <div className="card-header">
             <div>
               <p className="eyebrow">Upload</p>
               <h2 id="packet-title">Accepted task evidence</h2>
+              <p className="muted metric-caption">
+                {model.evidenceDeliveries.organizations.length > 0
+                  ? `Organizations: ${model.evidenceDeliveries.organizations.join(", ")}`
+                  : "No organization recorded"}
+              </p>
             </div>
-            <span className="upload-count"><UploadCloud size={14} /> {model.evidencePackets.length} accepted</span>
+            <span className="upload-count">
+              <UploadCloud size={14} />
+              {model.evidenceDeliveries.truncated
+                ? `${model.evidenceDeliveries.shown} of ${model.evidenceDeliveries.total} accepted`
+                : `${model.evidenceDeliveries.total} accepted`}
+            </span>
           </div>
           <div className="packet-list">
-            {model.evidencePackets.map((packet) => (
-              <article className="packet-row" key={packet.id}>
+            {model.evidenceDeliveries.items.map((packet) => (
+              <article className="packet-row" key={packet.digest}>
                 <div className="packet-main">
                   <span className="packet-id">{packet.id}</span>
                   <strong>{packet.title}</strong>
-                  <p>{packet.workspace} · {new Date(packet.generatedAt).toLocaleString("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>
+                  <p>
+                    {packet.organization} · {packet.workspace} · accepted {formatTimestamp(packet.acceptedAt)}
+                    {packet.receiptState === "duplicate" ? " · duplicate" : ""}
+                  </p>
                 </div>
                 <div className="packet-facts">
                   <span><b>{packet.acceptance.passed}</b>/{packet.acceptance.total} acceptance passed</span>
                   <span><b>{packet.assets.succeeded}</b>/{packet.assets.total} assets succeeded</span>
+                  <span><b>{packet.assetMatches.exact}</b>/{packet.assetMatches.total} assets matched exactly</span>
                   <span><b>{packet.observations.unobserved}</b> observations unobserved</span>
                   <span><b>{packet.redactions}</b> redactions</span>
+                  <span className="packet-digest" title={digestAlgorithm ? `${digestAlgorithm} packet digest` : "packet digest"}>{packet.digest}</span>
                 </div>
               </article>
             ))}

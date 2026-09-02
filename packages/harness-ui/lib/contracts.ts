@@ -24,6 +24,8 @@ export interface SessionUsageSummary {
       modelAttributedResponseCount: number;
       unattributedResponseCount: number;
       exactCreditsAvailable: boolean;
+      /** Distinct cache relationships behind the retained counters. */
+      cacheAccountingModes: string[];
     };
     longSessions: {
       longActiveCount: number;
@@ -81,11 +83,22 @@ export interface UsageActivity {
   };
 }
 
+export type AssetKind = "skill" | "mcp" | "command" | "hook" | "rule" | "agent" | "plugin";
+
+export interface AssetIdentity {
+  kind: AssetKind | string;
+  /** Workspace-relative path, or a scope-qualified name when outside it. */
+  id: string;
+  name: string;
+  scope: string;
+}
+
 export interface AssetInventoryReport {
   kind: "agent-lint";
   profile: "agent-assets-review";
   assetInventory: {
     provider: string;
+    /** Configured instances for this host. Several hosts may read one file. */
     summary: {
       skills: number;
       mcps: number;
@@ -95,11 +108,82 @@ export interface AssetInventoryReport {
       agents: number;
       plugins: number;
     };
+    assets?: AssetIdentity[];
+    assetsTruncated?: boolean;
   };
   findings: Array<{
     severity: "error" | "warning" | "advisory" | string;
     assetKind?: string;
   }>;
+}
+
+export interface ProviderUsageRow {
+  provider: string;
+  analyzedSessions: number;
+  eligibleSessions: number;
+  responseCount: number;
+  modelAttributedResponseCount: number;
+  activeMinutes: number;
+  accountingMode: string;
+  cacheAccountingModes: string[];
+  tokenTotals: TokenTotals | null;
+  editCount: number;
+  episodeCount: number;
+}
+
+export interface NamedCount {
+  name: string;
+  count: number;
+}
+
+export interface DeliverySignals {
+  validationAfterEdit: {
+    status: "validated-after-edit" | "edit-without-validation" | "no-edit-observed" | string;
+    editCount: number;
+    validationAfterEditCount: number;
+    relevantValidationCount: number;
+  };
+  validationCommands: NamedCount[];
+  episodes: {
+    episodeCount: number;
+    eligibleEpisodeCount: number;
+    closedEpisodeCount: number;
+    unobservedClosureCount: number;
+  };
+  friction: NamedCount[];
+  topTools: NamedCount[];
+  observedHooks: NamedCount[];
+}
+
+export interface CommitAttribution {
+  graceMinutes: number;
+  correlatedSessionCount: number;
+  commitCount: number;
+  attributedCommits: number;
+  linesAdded: number;
+  linesRemoved: number;
+  attributedLinesAdded: number;
+  attributedLinesRemoved: number;
+  byConfidence: Record<"explicit" | "high" | "medium" | "low", number>;
+  byPlatform: Array<{ platform: string; commitCount: number }>;
+}
+
+export interface WorkspaceTopologyProjection {
+  target: string;
+  memberCount: number;
+  members: Array<{ route: string; kind: string }>;
+  instructionScopes: { total: number; effective: number; candidate: number };
+  trackedFiles: number;
+}
+
+export interface EvidenceDelivery {
+  organization: string;
+  endpoint: string;
+  acceptedAt: string;
+  receiptState: "accepted" | "duplicate" | string;
+  packetDigest: string;
+  packetBytes: number;
+  packet: TaskEvidencePacket;
 }
 
 export interface TaskEvidencePacket {
@@ -170,6 +254,14 @@ export interface ContextUsage {
 
 export interface DashboardInput {
   generatedAt: string;
+  workspace?: { label: string };
+  /** The dated boundary every series below shares. */
+  window?: {
+    firstDate: string | null;
+    lastDate: string | null;
+    dayCount: number;
+    truncated: boolean;
+  };
   sources: {
     sessionProviders: string[];
     assetProviders: string[];
@@ -178,7 +270,15 @@ export interface DashboardInput {
   };
   usageSummary: SessionUsageSummary;
   usageActivity: UsageActivity;
+  providerBreakdown?: ProviderUsageRow[];
+  deliverySignals?: DeliverySignals | null;
+  commitAttribution?: CommitAttribution;
+  topology?: WorkspaceTopologyProjection;
   contextUsage?: ContextUsage;
   assetInventories: AssetInventoryReport[];
-  evidencePackets: TaskEvidencePacket[];
+  evidenceDeliveries?: {
+    items: EvidenceDelivery[];
+    total: number;
+    truncated: boolean;
+  };
 }

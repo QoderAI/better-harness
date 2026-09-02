@@ -2,9 +2,21 @@
 
 Private Next.js Dashboard for local Better Harness script outputs.
 
-The server reads the current workspace with session analysis and agent asset
-inventory. Missing sources stay absent instead of being replaced with demo
-metrics.
+The server reads the current workspace with session analysis, agent asset
+inventory, commit correlation, and workspace topology. Missing sources stay
+absent instead of being replaced with demo metrics.
+
+## What the page reports, and on what basis
+
+| Section | Source | Boundary it states |
+| --- | --- | --- |
+| Harness assets | `agent-lint` `agent-assets-review` per host | Distinct configured files, with the per-host configured instances beside them. One project file read by several hosts counts once. |
+| Validation and closure | `insights.keySignals.validationAfterEdit`, `episodeSummary`, `friction` | Observed execution, never configured policy. |
+| Delivered change | `commit-session-link correlate` and `harness workspace-topology` | Only `explicit`/`high`/`medium` matches attribute a commit; a bare time overlap does not. |
+| Per-host activity | one row per session provider | Each column is that host's own summary, not a share of a total. |
+| Token usage | `usageActivity.tokens` | Input lanes are additive only inside one cache relationship; mixed hosts are labelled as overlapping. |
+| Model activity | `usageEfficiency.modelUsage` | States how many responses carry a model, because unattributed responses cannot be plotted. |
+| Accepted task evidence | stored upload records | Organization, acceptance time, receipt state, and digest come from the record, not the packet. |
 
 ```bash
 npm run harness-ui:dev

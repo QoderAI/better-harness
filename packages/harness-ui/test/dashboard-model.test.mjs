@@ -120,7 +120,19 @@ test("dashboard projects values built by the real scripts", async () => {
       usageSummary,
       usageActivity,
       assetInventories: [assetInventory],
-      evidencePackets: [packet],
+      evidenceDeliveries: {
+        items: [{
+          organization: "acme-engineering",
+          endpoint: "https://harness.example.test/evidence",
+          acceptedAt: "2026-09-01T12:05:00.000Z",
+          receiptState: "accepted",
+          packetDigest: "a".repeat(64),
+          packetBytes: 512,
+          packet,
+        }],
+        total: 1,
+        truncated: false,
+      },
     });
 
     assert.deepEqual(model.overview, {
@@ -136,8 +148,11 @@ test("dashboard projects values built by the real scripts", async () => {
     assert.equal(model.assets.totals.mcps, 1);
     assert.equal(model.assets.totals.hooks, 1);
     assert.equal(model.assets.observed, true);
-    assert.equal(model.evidencePackets[0].acceptance.unobserved, 1);
+    assert.equal(model.evidenceDeliveries.items[0].acceptance.unobserved, 1);
+    assert.equal(model.evidenceDeliveries.items[0].organization, "acme-engineering");
     assert.equal(model.evidence.accountingMode, "effort-proxy");
+    assert.equal(model.modelCoverage.attributed, 3);
+    assert.equal(model.modelCoverage.unattributed, 0);
     assert.deepEqual(model.tokenActivity?.totals, {
       inputTokens: 120,
       outputTokens: 30,
@@ -151,10 +166,24 @@ test("dashboard projects values built by the real scripts", async () => {
   }
 });
 
-test("asset totals remain configured instances across inventory reports", () => {
-  const input = {
+function inventoryReport(provider, summary, assets) {
+  return {
+    kind: "agent-lint",
+    profile: "agent-assets-review",
+    assetInventory: { provider, summary, ...(assets ? { assets, assetsTruncated: false } : {}) },
+    findings: [],
+  };
+}
+
+function baseInput(assetInventories) {
+  return {
     generatedAt: "2026-09-01T12:10:00.000Z",
-    sources: { sessionProviders: ["qoder"], assetProviders: ["qoder", "codex"], tokenProviders: ["qoder"], errors: [] },
+    sources: {
+      sessionProviders: ["qoder"],
+      assetProviders: assetInventories.map((report) => report.assetInventory.provider),
+      tokenProviders: ["qoder"],
+      errors: [],
+    },
     usageSummary: buildUsageSummary(usageResult()),
     usageActivity: buildDailyUsageActivity(
       [{ sessionId: "a", firstSeen: "2026-09-01T10:00:00.000Z" }],
@@ -162,20 +191,120 @@ test("asset totals remain configured instances across inventory reports", () => 
       [],
       [],
     ),
-    assetInventories: [
-      { kind: "agent-lint", profile: "agent-assets-review", assetInventory: { provider: "qoder", summary: { skills: 2, mcps: 1, hooks: 3, commands: 0, rules: 0, agents: 0, plugins: 0 } }, findings: [] },
-      { kind: "agent-lint", profile: "agent-assets-review", assetInventory: { provider: "codex", summary: { skills: 4, mcps: 2, hooks: 1, commands: 0, rules: 0, agents: 0, plugins: 0 } }, findings: [] },
-    ],
-    evidencePackets: [],
+    assetInventories,
   };
-  const model = buildDashboardModel(input);
+}
+
+test("one project file discovered by several hosts counts once", () => {
+  // Both hosts read the same two project files, so their summaries add to four
+  // configured instances over two distinct assets.
+  const shared = [
+    { kind: "skill", id: ".agents/skills/review/SKILL.md", name: "review", scope: "project" },
+    { kind: "rule", id: "AGENTS.md", name: "AGENTS.md", scope: "project" },
+  ];
+  const model = buildDashboardModel(baseInput([
+    inventoryReport("qoder", { skills: 1, mcps: 0, hooks: 0, commands: 0, rules: 1, agents: 0, plugins: 0 }, shared),
+    inventoryReport("codex", { skills: 1, mcps: 0, hooks: 0, commands: 0, rules: 1, agents: 0, plugins: 0 }, shared),
+  ]));
 
   assert.deepEqual(
-    { skills: model.assets.totals.skills, mcps: model.assets.totals.mcps, hooks: model.assets.totals.hooks },
-    { skills: 6, mcps: 3, hooks: 4 },
+    { skills: model.assets.totals.skills, rules: model.assets.totals.rules },
+    { skills: 1, rules: 1 },
   );
+  assert.deepEqual(
+    { skills: model.assets.configuredInstances.skills, rules: model.assets.configuredInstances.rules },
+    { skills: 2, rules: 2 },
+  );
+  assert.equal(model.assets.distinctComplete, true);
+  assert.equal(model.assets.hostMultiplier, 2);
   assert.equal(model.assets.inventoryReports, 2);
   assert.deepEqual(model.assets.providers, ["qoder", "codex"]);
+});
+
+test("distinct asset totals stay incomplete when a host reports no identities", () => {
+  const model = buildDashboardModel(baseInput([
+    inventoryReport("qoder", { skills: 2, mcps: 1, hooks: 3, commands: 0, rules: 0, agents: 0, plugins: 0 }),
+    inventoryReport("codex", { skills: 4, mcps: 2, hooks: 1, commands: 0, rules: 0, agents: 0, plugins: 0 }),
+  ]));
+
+  assert.equal(model.assets.distinctComplete, false);
+  assert.equal(model.assets.hostMultiplier, null);
+  assert.deepEqual(
+    {
+      skills: model.assets.configuredInstances.skills,
+      mcps: model.assets.configuredInstances.mcps,
+      hooks: model.assets.configuredInstances.hooks,
+    },
+    { skills: 6, mcps: 3, hooks: 4 },
+  );
+});
+
+test("token lanes report whether hosts share one cache relationship", () => {
+  const mixed = usageResult();
+  mixed.insights.keySignals.usageEfficiency.coverage.cacheAccountingModes = ["included-in-input", "separate-input-lane"];
+  const model = buildDashboardModel({ ...baseInput([]), usageSummary: buildUsageSummary(mixed) });
+
+  assert.deepEqual(model.tokenUsage.cacheAccountingModes, ["included-in-input", "separate-input-lane"]);
+  assert.equal(model.tokenUsage.cacheLanesComparable, false);
+  assert.equal(model.tokenUsage.cacheLanesOverlap, true);
+});
+
+test("the model chart keeps its unattributed remainder visible", () => {
+  const partial = usageResult();
+  partial.insights.keySignals.usageEfficiency.coverage.responseCount = 100;
+  partial.insights.keySignals.usageEfficiency.coverage.modelAttributedResponseCount = 9;
+  partial.insights.keySignals.usageEfficiency.coverage.unattributedResponseCount = 91;
+  const model = buildDashboardModel({ ...baseInput([]), usageSummary: buildUsageSummary(partial) });
+
+  assert.equal(model.modelCoverage.attributed, 9);
+  assert.equal(model.modelCoverage.unattributed, 91);
+  assert.equal(Number(model.modelCoverage.attributionRate.toFixed(2)), 0.09);
+});
+
+test("delivery, commit, and host rows project without evidence paths", () => {
+  const model = buildDashboardModel({
+    ...baseInput([]),
+    providerBreakdown: [
+      { provider: "codex", analyzedSessions: 3, eligibleSessions: 3, responseCount: 30, modelAttributedResponseCount: 0, activeMinutes: 12, accountingMode: "host-estimated", cacheAccountingModes: ["included-in-input"], tokenTotals: null, editCount: 4, episodeCount: 6 },
+      { provider: "claude", analyzedSessions: 9, eligibleSessions: 9, responseCount: 10, modelAttributedResponseCount: 10, activeMinutes: 30, accountingMode: "host-estimated", cacheAccountingModes: ["separate-input-lane"], tokenTotals: null, editCount: 2, episodeCount: 3 },
+    ],
+    deliverySignals: {
+      validationAfterEdit: { status: "edit-without-validation", editCount: 6, validationAfterEditCount: 0, relevantValidationCount: 0 },
+      validationCommands: [{ name: "vitest", count: 5 }],
+      episodes: { episodeCount: 9, eligibleEpisodeCount: 4, closedEpisodeCount: 1, unobservedClosureCount: 3 },
+      friction: [{ name: "failed-event", count: 2 }],
+      topTools: [{ name: "Bash", count: 40 }],
+      observedHooks: [],
+    },
+    commitAttribution: {
+      graceMinutes: 45,
+      correlatedSessionCount: 12,
+      commitCount: 20,
+      attributedCommits: 5,
+      linesAdded: 400,
+      linesRemoved: 100,
+      attributedLinesAdded: 100,
+      attributedLinesRemoved: 20,
+      byConfidence: { explicit: 0, high: 2, medium: 3, low: 0 },
+      byPlatform: [{ platform: "codex", commitCount: 5 }],
+    },
+    topology: {
+      target: "repo-root",
+      memberCount: 2,
+      members: [{ route: "packages/app", kind: "manifest" }],
+      instructionScopes: { total: 3, effective: 2, candidate: 1 },
+      trackedFiles: 120,
+    },
+  });
+
+  // Hosts are ordered by analyzed sessions, not by the collection order.
+  assert.deepEqual(model.providerBreakdown.map((row) => row.provider), ["claude", "codex"]);
+  assert.equal(model.delivery.validationAfterEdit.status, "edit-without-validation");
+  assert.equal(model.delivery.episodeClosureRate, 0.25);
+  assert.equal(model.commitAttribution.attributionRate, 0.25);
+  assert.equal(model.commitAttribution.lineAttributionRate, 0.25);
+  assert.equal(model.topology.memberCount, 2);
+  assert.equal(JSON.stringify(model.delivery).includes("evidenceRef"), false);
 });
 
 test("a bounded session selection stays visible in the Dashboard model", () => {
@@ -192,7 +321,6 @@ test("a bounded session selection stays visible in the Dashboard model", () => {
       [],
     ),
     assetInventories: [],
-    evidencePackets: [],
   });
 
   assert.equal(model.overview.selectionStrategy, "latest-n");
@@ -218,7 +346,6 @@ test("the aggregated Other Skill bucket stays after named Skills", () => {
     usageSummary: buildUsageSummary({}),
     usageActivity,
     assetInventories: [],
-    evidencePackets: [],
   });
 
   assert.deepEqual(model.skills.map((skill) => skill.name), ["named-skill", "Other"]);

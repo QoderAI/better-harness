@@ -32,6 +32,11 @@ function optionalText(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function cacheAccountingModes(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(optionalText).filter(Boolean))].sort();
+}
+
 function tokenTotals(value) {
   if (!value || typeof value !== "object") return null;
   return {
@@ -71,6 +76,9 @@ export function buildUsageSummary(result = {}) {
         modelAttributedResponseCount: count(coverage.modelAttributedResponseCount),
         unattributedResponseCount: count(coverage.unattributedResponseCount),
         exactCreditsAvailable: coverage.exactCreditsAvailable === true,
+        // Input lanes are only additive within one cache relationship, so the
+        // observed modes stay attached to the totals a consumer may sum.
+        cacheAccountingModes: cacheAccountingModes(coverage.cacheAccountingModes),
       },
       longSessions: {
         longActiveCount: count(longSessions.longActiveCount),

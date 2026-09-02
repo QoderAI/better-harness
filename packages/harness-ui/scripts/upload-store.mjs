@@ -158,11 +158,39 @@ export async function readUploadRecords({ directory, limit = DEFAULT_RECORD_LIMI
   }
 
   records.sort((left, right) => right.receipt.acceptedAt.localeCompare(left.receipt.acceptedAt));
-  return { records: records.slice(0, Math.max(0, limit)), errors };
+  const bounded = records.slice(0, Math.max(0, limit));
+  return { records: bounded, total: records.length, truncated: bounded.length < records.length, errors };
 }
 
 /** @param {{ directory: string, limit?: number }} options */
 export async function readUploadPackets(options) {
-  const { records, errors } = await readUploadRecords(options);
-  return { packets: records.map((record) => record.plan.packet), errors };
+  const { records, total, truncated, errors } = await readUploadRecords(options);
+  return { packets: records.map((record) => record.plan.packet), total, truncated, errors };
+}
+
+/**
+ * Project stored records as deliveries: the packet plus the acceptance facts a
+ * packet cannot carry on its own. Organization, acceptance time, receipt state,
+ * and digest live on the record, so a consumer that reads only the packet
+ * cannot group evidence by organization or tell an accepted packet from a
+ * duplicate.
+ *
+ * @param {{ directory: string, limit?: number }} options
+ */
+export async function readUploadDeliveries(options) {
+  const { records, total, truncated, errors } = await readUploadRecords(options);
+  return {
+    deliveries: records.map((record) => ({
+      organization: record.plan.destination.organization,
+      endpoint: record.plan.destination.endpoint,
+      acceptedAt: record.receipt.acceptedAt,
+      receiptState: record.receipt.state,
+      packetDigest: record.plan.packetDigest,
+      packetBytes: record.plan.packetBytes,
+      packet: record.plan.packet,
+    })),
+    total,
+    truncated,
+    errors,
+  };
 }
