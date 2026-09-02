@@ -113,7 +113,20 @@ html[data-theme="dark"] {
   }
 }
 
-@media (min-width: 997px) and (max-width: 1250px) {
+/* Infima lets .navbar__brand shrink (min-width: 0) and .navbar__title
+   truncate. Keep the product name fully visible at every width. */
+.navbar__brand {
+  flex-shrink: 0;
+  min-width: auto;
+}
+
+.navbar__title {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+@media (min-width: 997px) and (max-width: 1400px) {
   .navbar__item {
     padding-right: 0.55rem;
     padding-left: 0.55rem;
