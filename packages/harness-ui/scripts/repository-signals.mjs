@@ -36,8 +36,9 @@ export const MAX_ATTRIBUTED_COMMIT_REFS = 200;
 /**
  * Correlate recent commits with discovered sessions and reduce them to counts
  * a page can render, plus the bounded commit-to-session references those counts
- * were derived from. Comparing `attributedCommitRefs.length` with
- * `attributedCommits` states whether the reference list was bounded.
+ * were derived from. `attributedCommitRefs.length` can trail
+ * `attributedCommits` for two reasons: the list hit its bound, or a commit
+ * carried no usable join key.
  */
 export function projectCommitAttribution(correlation) {
   const commits = correlation.commits ?? [];
@@ -60,10 +61,15 @@ export function projectCommitAttribution(correlation) {
     attributedLinesRemoved += commit.linesRemoved;
     byConfidence[match.confidence] = (byConfidence[match.confidence] ?? 0) + 1;
     byPlatform.set(match.platform, (byPlatform.get(match.platform) ?? 0) + 1);
-    if (attributedCommitRefs.length < MAX_ATTRIBUTED_COMMIT_REFS) {
+    // Both halves of the key have to be present for the reference to name
+    // anything. Emitting a blank one would offer a join key that matches
+    // nothing, so such a commit keeps its count and contributes no reference.
+    const commitKey = String(commit.hash ?? commit.shortHash ?? "").trim();
+    const sessionKey = String(match.sessionId ?? "").trim();
+    if (commitKey && sessionKey && attributedCommitRefs.length < MAX_ATTRIBUTED_COMMIT_REFS) {
       attributedCommitRefs.push({
-        commit: String(commit.hash ?? commit.shortHash ?? ""),
-        sessionId: String(match.sessionId ?? ""),
+        commit: commitKey,
+        sessionId: sessionKey,
         platform: match.platform ?? null,
         confidence: match.confidence,
       });

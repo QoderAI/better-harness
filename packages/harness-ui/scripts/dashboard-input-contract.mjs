@@ -80,6 +80,14 @@ function nullableStringAt(value, pointer) {
   return value;
 }
 
+// A join key that is present but blank names nothing a consumer could match,
+// which is the same reason a blank revision is refused: it offers an identifier
+// the producer never held.
+function identifierAt(value, pointer) {
+  if (stringAt(value, pointer).trim() === "") fail(`${pointer} must not be blank.`);
+  return value;
+}
+
 function booleanAt(value, pointer) {
   if (typeof value !== "boolean") fail(`${pointer} must be a boolean.`);
   return value;
@@ -328,8 +336,8 @@ function validateCommitAttribution(value) {
   for (const [index, entry] of refs.entries()) {
     const pointer = `dashboardInput.commitAttribution.attributedCommitRefs[${index}]`;
     const row = exactKeys(entry, pointer, ["commit", "sessionId", "platform", "confidence"]);
-    stringAt(row.commit, `${pointer}.commit`);
-    stringAt(row.sessionId, `${pointer}.sessionId`);
+    identifierAt(row.commit, `${pointer}.commit`);
+    identifierAt(row.sessionId, `${pointer}.sessionId`);
     nullableStringAt(row.platform, `${pointer}.platform`);
     if (!ATTRIBUTING_CONFIDENCES.includes(row.confidence)) {
       fail(`${pointer}.confidence must be an attributing confidence.`);

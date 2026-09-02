@@ -1031,6 +1031,8 @@ function containedRelativePath(workspace, filePath) {
   return pathIsContained(root, target) ? normalizeSlash(path.relative(root, target)) : null;
 }
 
+const MAX_DECLARED_IDENTITY_LENGTH = 120;
+
 // A host records a revision and a publisher for the assets it installed from a
 // manifest, and records neither for a plain workspace file. Reporting one only
 // when the host actually declared it keeps an undeclared asset undeclared
@@ -1038,7 +1040,21 @@ function containedRelativePath(workspace, filePath) {
 function declaredIdentityText(value) {
   const source = typeof value === "object" && value !== null ? value.displayName ?? value.name : value;
   const text = typeof source === "string" ? source.trim() : "";
-  return text ? text.slice(0, 120) : undefined;
+  return text || undefined;
+}
+
+// A publisher is read, so an over-long one is shortened. A revision is
+// compared, and a shortened revision is a *wrong* join key rather than a long
+// one: a consumer would read it as a version mismatch. An over-long revision is
+// therefore reported as undeclared, which the contract says to treat as "no
+// revision to compare" rather than as a disagreement.
+function declaredRevision(value) {
+  const text = declaredIdentityText(value);
+  return text && text.length <= MAX_DECLARED_IDENTITY_LENGTH ? text : undefined;
+}
+
+function declaredPublisher(value) {
+  return declaredIdentityText(value)?.slice(0, MAX_DECLARED_IDENTITY_LENGTH);
 }
 
 function assetIdentity(item, kind, workspace) {
@@ -1051,8 +1067,8 @@ function assetIdentity(item, kind, workspace) {
   // The revision is what makes an inventoried asset comparable with the
   // versioned asset a Task evidence packet reports. Dropping a declared one
   // leaves the two sides unjoinable.
-  const revision = declaredIdentityText(item.version);
-  const publisher = declaredIdentityText(item.publisher);
+  const revision = declaredRevision(item.version);
+  const publisher = declaredPublisher(item.publisher);
   return {
     kind,
     id: relative ?? `${scope}:${kind}:${item.name ?? item.id ?? "unnamed"}`,

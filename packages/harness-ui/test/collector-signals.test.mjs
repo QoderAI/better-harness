@@ -124,6 +124,40 @@ test("commit references stay bounded while the counts remain complete", () => {
   assert.equal(projection.attributedCommitRefs.length, MAX_ATTRIBUTED_COMMIT_REFS);
 });
 
+test("an attributed commit missing either half of the key contributes no reference", () => {
+  // A blank commit or session id is a join key that matches nothing, so it is
+  // left out entirely rather than emitted empty. The attribution still counts.
+  const projection = projectCommitAttribution({
+    graceMinutes: 45,
+    sessionCount: 2,
+    commits: [
+      { linesAdded: 5, linesRemoved: 1, matches: [{ sessionId: "s-1", platform: "codex", confidence: "high" }] },
+      { hash: "aaa1", linesAdded: 5, linesRemoved: 1, matches: [{ platform: "codex", confidence: "high" }] },
+      { hash: "   ", linesAdded: 5, linesRemoved: 1, matches: [{ sessionId: "s-3", platform: "codex", confidence: "high" }] },
+      { hash: "ddd4", linesAdded: 5, linesRemoved: 1, matches: [{ sessionId: "s-4", platform: "codex", confidence: "high" }] },
+    ],
+  });
+
+  assert.equal(projection.attributedCommits, 4);
+  assert.deepEqual(projection.attributedCommitRefs, [
+    { commit: "ddd4", sessionId: "s-4", platform: "codex", confidence: "high" },
+  ]);
+});
+
+test("a commit identified only by its short hash still yields a reference", () => {
+  const projection = projectCommitAttribution({
+    graceMinutes: 45,
+    sessionCount: 1,
+    commits: [
+      { shortHash: "eee5", linesAdded: 1, linesRemoved: 0, matches: [{ sessionId: "s-5", platform: "qoder", confidence: "explicit" }] },
+    ],
+  });
+
+  assert.deepEqual(projection.attributedCommitRefs, [
+    { commit: "eee5", sessionId: "s-5", platform: "qoder", confidence: "explicit" },
+  ]);
+});
+
 test("topology projection keeps member routes and instruction activation", () => {
   const projection = projectTopology({
     target: { kind: "repo-root" },

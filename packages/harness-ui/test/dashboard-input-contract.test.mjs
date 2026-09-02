@@ -141,6 +141,20 @@ test("Dashboard input V1 rejects commit references that outrun their own attribu
   assert.throws(() => validateDashboardInputV1(lowConfidence), /must be an attributing confidence/u);
 });
 
+test("Dashboard input V1 rejects a commit reference that names neither side", () => {
+  // A blank key is refused for the same reason a blank revision is: it offers a
+  // join key that matches nothing.
+  const blankCommit = dashboardInputFixture();
+  blankCommit.commitAttribution = commitAttributionFixture();
+  blankCommit.commitAttribution.attributedCommitRefs[0].commit = "";
+  assert.throws(() => validateDashboardInputV1(blankCommit), /\[0\]\.commit must not be blank/u);
+
+  const blankSession = dashboardInputFixture();
+  blankSession.commitAttribution = commitAttributionFixture();
+  blankSession.commitAttribution.attributedCommitRefs[0].sessionId = "   ";
+  assert.throws(() => validateDashboardInputV1(blankSession), /\[0\]\.sessionId must not be blank/u);
+});
+
 test("Dashboard input V1 rejects an asset revision the host never declared", () => {
   const input = dashboardInputFixture();
   input.assetInventories = [{

@@ -561,6 +561,10 @@ test("agent-assets-review carries a declared plugin revision and leaves a projec
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-lint-assets-revision-")));
   const qoderHome = path.join(root, ".home", "qoder");
   const pluginRoot = path.join(qoderHome, "plugins", "cache", "qoder-marketplace", "design-review", "1.4.2");
+  const overlongRoot = path.join(qoderHome, "plugins", "cache", "qoder-marketplace", "sprawling-review", "1");
+  // Longer than the reported revision limit. A shortened revision would be a
+  // different version than the host declared, so none is reported.
+  const overlongVersion = `9.9.9-${"build".repeat(40)}`;
 
   try {
     // A project Skill declares no version; an installed plugin does.
@@ -573,16 +577,26 @@ test("agent-assets-review carries a declared plugin revision and leaves a projec
       JSON.stringify({ name: "design-review", displayName: "Design Review", version: "1.4.2" }),
     );
     await writeText(
+      path.join(overlongRoot, ".qoder-plugin", "plugin.json"),
+      JSON.stringify({ name: "sprawling-review", displayName: "Sprawling Review", version: overlongVersion }),
+    );
+    await writeText(
       path.join(qoderHome, "plugins", "installed_plugins.json"),
       JSON.stringify({
         plugins: {
           "design-review@qoder-marketplace": { installPath: pluginRoot, version: "1.4.2", scope: "user" },
+          "sprawling-review@qoder-marketplace": { installPath: overlongRoot, version: overlongVersion, scope: "user" },
         },
       }),
     );
     await writeText(
       path.join(qoderHome, "settings.json"),
-      JSON.stringify({ enabledPlugins: { "design-review@qoder-marketplace": true } }),
+      JSON.stringify({
+        enabledPlugins: {
+          "design-review@qoder-marketplace": true,
+          "sprawling-review@qoder-marketplace": true,
+        },
+      }),
     );
 
     const payload = await runAgentLint({
@@ -600,11 +614,19 @@ test("agent-assets-review carries a declared plugin revision and leaves a projec
     const skill = assets.find((asset) => asset.kind === "skill" && asset.name === "asset-review");
     assert.ok(skill, "the project Skill is inventoried");
     assert.equal(Object.hasOwn(skill, "revision"), false);
+    assert.equal(Object.hasOwn(skill, "publisher"), false);
 
-    const plugin = assets.find((asset) => asset.kind === "plugin");
+    const plugin = assets.find((asset) => asset.kind === "plugin" && asset.name === "design-review");
     assert.ok(plugin, "the installed plugin is inventoried");
     assert.equal(plugin.revision, "1.4.2");
     assert.equal(plugin.publisher, "Qoder Marketplace");
+
+    // The over-long revision is dropped rather than shortened, but the asset is
+    // still inventoried and still carries its publisher.
+    const sprawling = assets.find((asset) => asset.kind === "plugin" && asset.name === "sprawling-review");
+    assert.ok(sprawling, "the plugin with an over-long version is still inventoried");
+    assert.equal(Object.hasOwn(sprawling, "revision"), false);
+    assert.equal(sprawling.publisher, "Qoder Marketplace");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
