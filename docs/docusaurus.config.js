@@ -123,7 +123,7 @@ const config = {
             label: "Docs",
           },
           {
-            to: "/inspector/",
+            to: "/inspector",
             label: "Inspector",
             position: "left",
             className: "navbar__link--inspector-new",

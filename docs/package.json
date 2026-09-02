@@ -8,6 +8,7 @@
     "start": "docusaurus start",
     "prebuild": "node scripts/sync-assets.mjs",
     "build": "docusaurus build",
+    "postbuild": "node scripts/alias-inspector-trailing-slash.mjs",
     "serve": "docusaurus serve",
     "clear": "docusaurus clear"
   },
