@@ -33,7 +33,13 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await expect(page.getByRole("heading", { level: 1, name: "better-harness" })).toBeVisible();
   expect(projectRequests).toHaveLength(1);
   await expect(page.getByRole("heading", { level: 2, name: "Harness footprint" })).toBeVisible();
-  await expect(page.locator(".page-window")).toContainText(/Jul|Aug|Sep/);
+  // The window line exists only when local host sessions carry a date range, which
+  // a clean checkout does not have, and its months follow the wall clock, so the
+  // assertion checks the rendered shape rather than a fixed month.
+  const windowLine = page.locator(".page-window");
+  if (await windowLine.count()) {
+    await expect(windowLine).toContainText(/[A-Z][a-z]{2} \d{1,2} – [A-Z][a-z]{2} \d{1,2}/);
+  }
   await expect(page.locator(".stat-card")).toHaveCount(4);
   await expect(page.locator(".asset-primary")).toHaveCount(3);
   await expect(page.getByText("Better Harness Dashboard")).toHaveCount(0);
@@ -103,7 +109,14 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
     });
     expect(activityBeforeOperational).toBe(true);
   } else {
-    await expect(page.getByRole("heading", { name: "No local session data observed" })).toBeVisible();
+    // Two absent-evidence states reach here: no session provider ran at all, or a
+    // provider ran and found no dated activity. Both must state the absence and
+    // plot nothing, rather than leaving an empty chart frame behind.
+    await expect(page.locator(".chart-card")).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "No local session data observed" })
+        .or(page.getByLabel("Observed usage summary").getByText("0/0")),
+    ).toBeVisible();
   }
 
   if (await page.getByRole("heading", { name: "Skill activity" }).count()) {
