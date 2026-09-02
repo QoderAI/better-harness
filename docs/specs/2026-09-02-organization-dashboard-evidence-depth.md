@@ -115,6 +115,11 @@ Unchanged from `2026-09-01-organization-harness-dashboard`, and specifically:
   the browser build the pinned `@playwright/test@1.55.0` requires
   (`chromium_headless_shell-1187`), so the run fails before reaching the page.
   Run it where that download succeeds before treating its assertions as passing.
+
+  Follow-up: CI hit the same missing browser build, because the repository-level
+  `playwright install chromium` step provisions only the version the other
+  workspaces share. The Dashboard now depends on that same
+  `@playwright/test@^1.62.1`, and the suite passes under it.
 - **No regression in the owners:** `npx vitest run` at the repository root passes
   1,639 tests, covering `session-efficiency`, `usage-summary`, and `agent-lint`
   after the contract additions.
