@@ -26,15 +26,24 @@ function attributedMatch(commit) {
   return commit.matches.find((match) => ATTRIBUTING_CONFIDENCE.has(match.confidence)) ?? null;
 }
 
+// Counts alone cannot be joined to anything. One reference per attributed
+// commit carries the commit and the session that earned the attribution, which
+// is the only key a Task evidence packet's `links.commitRefs` and
+// `links.sessionRefs` can be matched against. Subjects, authors and file lists
+// still stay out of the projection.
+export const MAX_ATTRIBUTED_COMMIT_REFS = 200;
+
 /**
  * Correlate recent commits with discovered sessions and reduce them to counts
- * a page can render. Commit subjects and file lists stay out of the projection;
- * only the delivery quantities and their attribution survive.
+ * a page can render, plus the bounded commit-to-session references those counts
+ * were derived from. Comparing `attributedCommitRefs.length` with
+ * `attributedCommits` states whether the reference list was bounded.
  */
 export function projectCommitAttribution(correlation) {
   const commits = correlation.commits ?? [];
   const byConfidence = { explicit: 0, high: 0, medium: 0, low: 0 };
   const byPlatform = new Map();
+  const attributedCommitRefs = [];
   let attributedCommits = 0;
   let attributedLinesAdded = 0;
   let attributedLinesRemoved = 0;
@@ -51,6 +60,14 @@ export function projectCommitAttribution(correlation) {
     attributedLinesRemoved += commit.linesRemoved;
     byConfidence[match.confidence] = (byConfidence[match.confidence] ?? 0) + 1;
     byPlatform.set(match.platform, (byPlatform.get(match.platform) ?? 0) + 1);
+    if (attributedCommitRefs.length < MAX_ATTRIBUTED_COMMIT_REFS) {
+      attributedCommitRefs.push({
+        commit: String(commit.hash ?? commit.shortHash ?? ""),
+        sessionId: String(match.sessionId ?? ""),
+        platform: match.platform ?? null,
+        confidence: match.confidence,
+      });
+    }
   }
 
   return {
@@ -66,6 +83,7 @@ export function projectCommitAttribution(correlation) {
     byPlatform: [...byPlatform.entries()]
       .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
       .map(([platform, commitCount]) => ({ platform, commitCount })),
+    attributedCommitRefs,
   };
 }
 

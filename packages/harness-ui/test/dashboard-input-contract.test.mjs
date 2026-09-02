@@ -87,6 +87,76 @@ test("Dashboard input V1 rejects incompatible nested source versions", () => {
   assert.throws(() => validateDashboardInputV1(wrongActivity), /usageActivity uses an unsupported/u);
 });
 
+function commitAttributionFixture() {
+  return {
+    graceMinutes: 45,
+    correlatedSessionCount: 2,
+    commitCount: 3,
+    attributedCommits: 1,
+    linesAdded: 10,
+    linesRemoved: 2,
+    attributedLinesAdded: 6,
+    attributedLinesRemoved: 1,
+    byConfidence: { explicit: 0, high: 1, medium: 0, low: 0 },
+    byPlatform: [{ platform: "codex", commitCount: 1 }],
+    attributedCommitRefs: [
+      { commit: "abc123", sessionId: "s-1", platform: "codex", confidence: "high" },
+    ],
+  };
+}
+
+test("Dashboard input V1 accepts commit references and versioned assets", () => {
+  const input = dashboardInputFixture();
+  input.commitAttribution = commitAttributionFixture();
+  input.assetInventories = [{
+    kind: "agent-lint",
+    profile: "agent-assets-review",
+    assetInventory: {
+      provider: "claude",
+      summary: { skills: 0, mcps: 0, commands: 0, hooks: 0, rules: 0, agents: 0, plugins: 1 },
+      assets: [{
+        kind: "plugin",
+        id: "plugin:plugin:better-harness",
+        name: "better-harness",
+        scope: "plugin",
+        revision: "0.6.6",
+        publisher: "Qoder",
+      }],
+      assetsTruncated: false,
+    },
+    findings: [],
+  }];
+  assert.equal(validateDashboardInputV1(input), input);
+});
+
+test("Dashboard input V1 rejects commit references that outrun their own attribution", () => {
+  const input = dashboardInputFixture();
+  input.commitAttribution = commitAttributionFixture();
+  input.commitAttribution.attributedCommits = 0;
+  assert.throws(() => validateDashboardInputV1(input), /cannot exceed attributedCommits/u);
+
+  const lowConfidence = dashboardInputFixture();
+  lowConfidence.commitAttribution = commitAttributionFixture();
+  lowConfidence.commitAttribution.attributedCommitRefs[0].confidence = "low";
+  assert.throws(() => validateDashboardInputV1(lowConfidence), /must be an attributing confidence/u);
+});
+
+test("Dashboard input V1 rejects an asset revision the host never declared", () => {
+  const input = dashboardInputFixture();
+  input.assetInventories = [{
+    kind: "agent-lint",
+    profile: "agent-assets-review",
+    assetInventory: {
+      provider: "claude",
+      summary: { skills: 1, mcps: 0, commands: 0, hooks: 0, rules: 0, agents: 0, plugins: 0 },
+      assets: [{ kind: "skill", id: "skills/a/SKILL.md", name: "a", scope: "project", revision: "  " }],
+      assetsTruncated: false,
+    },
+    findings: [],
+  }];
+  assert.throws(() => validateDashboardInputV1(input), /must be omitted when the host declared none/u);
+});
+
 test("Dashboard input V1 rejects dated series that do not align with the shared window", () => {
   const input = dashboardInputFixture();
   input.usageActivity = {

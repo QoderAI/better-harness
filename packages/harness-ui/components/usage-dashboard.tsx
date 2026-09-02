@@ -442,6 +442,60 @@ function DashboardView({
           </section>
         )}
 
+        {/*
+          The counts above say how much ran, not whether any of it closed. This
+          card answers that, so it sits with them rather than behind the
+          supporting-evidence disclosure.
+        */}
+        {delivery ? <section className="card delivery-card" aria-labelledby="delivery-title">
+          <div className="card-header">
+            <div>
+              <h2 id="delivery-title">Validation and closure</h2>
+              <p className="muted metric-caption">Observed in analyzed sessions, not configured policy</p>
+            </div>
+            <ShieldAlert className="header-icon" aria-hidden="true" />
+          </div>
+          <div className="delivery-grid">
+            <div className="delivery-fact">
+              <p className="eyebrow">Post-edit validation</p>
+              <strong data-status={delivery.validationAfterEdit.status}>
+                {POST_EDIT_LABELS[delivery.validationAfterEdit.status] ?? delivery.validationAfterEdit.status}
+              </strong>
+              <span>
+                {numberFormat.format(delivery.validationAfterEdit.editCount)} edits ·{" "}
+                {numberFormat.format(delivery.validationAfterEdit.validationAfterEditCount)} later validations
+              </span>
+            </div>
+            <div className="delivery-fact">
+              <p className="eyebrow">Task episodes</p>
+              <strong>{numberFormat.format(delivery.episodes.episodeCount)}</strong>
+              <span>
+                {numberFormat.format(delivery.episodes.closedEpisodeCount)}/{numberFormat.format(delivery.episodes.eligibleEpisodeCount)} eligible closed ·{" "}
+                {percentFormat.format(delivery.episodeClosureRate)}
+              </span>
+            </div>
+            <div className="delivery-fact">
+              <p className="eyebrow">Execution friction</p>
+              <strong>{numberFormat.format(delivery.friction.reduce((total, row) => total + row.count, 0))}</strong>
+              <span>{delivery.friction.length > 0 ? delivery.friction.map((row) => row.name).join(", ") : "no friction category observed"}</span>
+            </div>
+          </div>
+          <div className="signal-grid">
+            <NamedCountList label="Validation commands" rows={delivery.validationCommands} unit=" runs" />
+            <NamedCountList label="Top tools" rows={delivery.topTools} unit=" calls" />
+            {delivery.observedHooks.length > 0
+              ? <NamedCountList label="Observed hooks" rows={delivery.observedHooks} unit=" fires" />
+              : <div className="signal-list">
+                <p className="eyebrow">Observed hooks</p>
+                <p className="muted signal-empty">
+                  {model.assets.totals.hooks > 0
+                    ? `${model.assets.totals.hooks} configured, none observed firing`
+                    : "none configured, none observed"}
+                </p>
+              </div>}
+          </div>
+        </section> : null}
+
         {model.assets.observed ? <section className="asset-section" aria-labelledby="asset-title">
           <div className="section-header asset-section-header">
             <div>
@@ -449,6 +503,9 @@ function DashboardView({
             </div>
             <p className="muted metric-caption">
               {model.assets.distinctComplete ? "Distinct assets" : "Configured instances"}
+              {model.assets.declaredRevisions.length > 0
+                ? ` · ${model.assets.declaredRevisions.length} with a declared revision`
+                : ""}
               {assetFindingCount > 0
                 ? ` · ${model.assets.findings.errors} errors · ${model.assets.findings.warnings} warnings`
                 : ""}
@@ -720,12 +777,12 @@ function DashboardView({
           </article>
         </section> : null}
 
-        {delivery || commits || topology || hasBreakdown ? (
+        {commits || topology || hasBreakdown ? (
           <section className="operational-evidence" aria-labelledby="operational-evidence-title">
             <details className="card operational-disclosure">
               <summary>
                 <div>
-                  <h2 id="operational-evidence-title">Delivery, repository and Agent sources</h2>
+                  <h2 id="operational-evidence-title">Repository and Agent sources</h2>
                 </div>
                 <span className="disclosure-action">
                   <span className="detail-show">Show detail</span>
@@ -734,61 +791,15 @@ function DashboardView({
                 </span>
               </summary>
               <div className="operational-content">
-                {delivery ? <section className="card delivery-card" aria-labelledby="delivery-title">
-                  <div className="card-header">
-                    <div>
-                      <h2 id="delivery-title">Validation and closure</h2>
-                      <p className="muted metric-caption">Observed in analyzed sessions, not configured policy</p>
-                    </div>
-                    <ShieldAlert className="header-icon" aria-hidden="true" />
-                  </div>
-                  <div className="delivery-grid">
-                    <div className="delivery-fact">
-                      <p className="eyebrow">Post-edit validation</p>
-                      <strong data-status={delivery.validationAfterEdit.status}>
-                        {POST_EDIT_LABELS[delivery.validationAfterEdit.status] ?? delivery.validationAfterEdit.status}
-                      </strong>
-                      <span>
-                        {numberFormat.format(delivery.validationAfterEdit.editCount)} edits ·{" "}
-                        {numberFormat.format(delivery.validationAfterEdit.validationAfterEditCount)} later validations
-                      </span>
-                    </div>
-                    <div className="delivery-fact">
-                      <p className="eyebrow">Task episodes</p>
-                      <strong>{numberFormat.format(delivery.episodes.episodeCount)}</strong>
-                      <span>
-                        {numberFormat.format(delivery.episodes.closedEpisodeCount)}/{numberFormat.format(delivery.episodes.eligibleEpisodeCount)} eligible closed ·{" "}
-                        {percentFormat.format(delivery.episodeClosureRate)}
-                      </span>
-                    </div>
-                    <div className="delivery-fact">
-                      <p className="eyebrow">Execution friction</p>
-                      <strong>{numberFormat.format(delivery.friction.reduce((total, row) => total + row.count, 0))}</strong>
-                      <span>{delivery.friction.length > 0 ? delivery.friction.map((row) => row.name).join(", ") : "no friction category observed"}</span>
-                    </div>
-                  </div>
-                  <div className="signal-grid">
-                    <NamedCountList label="Validation commands" rows={delivery.validationCommands} unit=" runs" />
-                    <NamedCountList label="Top tools" rows={delivery.topTools} unit=" calls" />
-                    {delivery.observedHooks.length > 0
-                      ? <NamedCountList label="Observed hooks" rows={delivery.observedHooks} unit=" fires" />
-                      : <div className="signal-list">
-                        <p className="eyebrow">Observed hooks</p>
-                        <p className="muted signal-empty">
-                          {model.assets.totals.hooks > 0
-                            ? `${model.assets.totals.hooks} configured, none observed firing`
-                            : "none configured, none observed"}
-                        </p>
-                      </div>}
-                  </div>
-                </section> : null}
-
                 {commits || topology ? <section className="card repo-card" aria-labelledby="repo-title">
                   <div className="card-header">
                     <div>
                       <h2 id="repo-title">Delivered change</h2>
                       {commits ? <p className="muted metric-caption">
                         Last {numberFormat.format(commits.commitCount)} commits correlated with {numberFormat.format(commits.correlatedSessionCount)} sessions · {commits.graceMinutes} min grace
+                        {commits.attributedCommitRefs.length > 0
+                          ? ` · ${numberFormat.format(commits.attributedCommitRefs.length)} commit-session references`
+                          : ""}
                       </p> : null}
                     </div>
                     <GitCommitHorizontal className="header-icon" aria-hidden="true" />

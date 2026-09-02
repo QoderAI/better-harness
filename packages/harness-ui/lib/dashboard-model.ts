@@ -54,6 +54,10 @@ function buildAssetTotals(input: DashboardInput) {
   const distinct = emptyAssetTotals();
   const instances = emptyAssetTotals();
   const seen = new Set<string>();
+  // Only the assets whose host declared a revision. This is the subset that can
+  // be compared with the versioned assets a Task evidence packet reports, so it
+  // is reported as its own count rather than folded into the distinct totals.
+  const revisions: Array<{ kind: string; name: string; revision: string; publisher: string | null }> = [];
   let complete = input.assetInventories.length > 0;
 
   for (const report of input.assetInventories) {
@@ -71,12 +75,23 @@ function buildAssetTotals(input: DashboardInput) {
       if (seen.has(identity)) continue;
       seen.add(identity);
       distinct[key] += 1;
+      if (asset.revision) {
+        revisions.push({
+          kind: asset.kind,
+          name: asset.name,
+          revision: asset.revision,
+          publisher: asset.publisher ?? null,
+        });
+      }
     }
   }
+
+  revisions.sort((left, right) => left.name.localeCompare(right.name) || left.kind.localeCompare(right.kind));
 
   return {
     distinct,
     instances,
+    revisions,
     complete,
     // How many times the average distinct asset was counted per host. Above 1
     // means several hosts are configured against the same files.
@@ -168,6 +183,8 @@ export function buildDashboardModel(input: DashboardInput) {
       totals: assetTotals.distinct,
       /** What the per-host summaries add up to; one file counts once per host. */
       configuredInstances: assetTotals.instances,
+      /** Distinct assets whose host declared a revision, and that revision. */
+      declaredRevisions: assetTotals.revisions,
       distinctComplete: assetTotals.complete,
       hostMultiplier: assetTotals.hostMultiplier,
       inventoryReports: input.assetInventories.length,

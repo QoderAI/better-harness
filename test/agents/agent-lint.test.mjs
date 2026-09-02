@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -550,6 +550,61 @@ ${filler}
     assert.equal(missing.file, ".agents/skills/asset-review/SKILL.md");
     assert.equal(missing.severity, "error");
     assert.equal(missing.assetKind, "skill");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("agent-assets-review carries a declared plugin revision and leaves a project file undeclared", async () => {
+  // The temp root is resolved because plugin scope resolution compares real
+  // paths, and the platform temp directory can itself be a symlink.
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-lint-assets-revision-")));
+  const qoderHome = path.join(root, ".home", "qoder");
+  const pluginRoot = path.join(qoderHome, "plugins", "cache", "qoder-marketplace", "design-review", "1.4.2");
+
+  try {
+    // A project Skill declares no version; an installed plugin does.
+    await writeText(
+      path.join(root, ".agents", "skills", "asset-review", "SKILL.md"),
+      "---\nname: asset-review\ndescription: Use when reviewing configured agent assets in this workspace.\n---\n\n# Asset Review\n",
+    );
+    await writeText(
+      path.join(pluginRoot, ".qoder-plugin", "plugin.json"),
+      JSON.stringify({ name: "design-review", displayName: "Design Review", version: "1.4.2" }),
+    );
+    await writeText(
+      path.join(qoderHome, "plugins", "installed_plugins.json"),
+      JSON.stringify({
+        plugins: {
+          "design-review@qoder-marketplace": { installPath: pluginRoot, version: "1.4.2", scope: "user" },
+        },
+      }),
+    );
+    await writeText(
+      path.join(qoderHome, "settings.json"),
+      JSON.stringify({ enabledPlugins: { "design-review@qoder-marketplace": true } }),
+    );
+
+    const payload = await runAgentLint({
+      workspace: root,
+      profile: "agent-assets-review",
+      provider: "qoder",
+      // Plugin-scoped assets are outside the profile's default boundary, so the
+      // revision path is exercised by asking for them explicitly.
+      includePluginAssets: true,
+      qoderHome,
+      qoderSharedClientCacheRoot: path.join(root, ".home", "shared-cache"),
+    });
+    const assets = payload.assetInventory.assets ?? [];
+
+    const skill = assets.find((asset) => asset.kind === "skill" && asset.name === "asset-review");
+    assert.ok(skill, "the project Skill is inventoried");
+    assert.equal(Object.hasOwn(skill, "revision"), false);
+
+    const plugin = assets.find((asset) => asset.kind === "plugin");
+    assert.ok(plugin, "the installed plugin is inventoried");
+    assert.equal(plugin.revision, "1.4.2");
+    assert.equal(plugin.publisher, "Qoder Marketplace");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

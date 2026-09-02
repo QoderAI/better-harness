@@ -8,7 +8,11 @@ import { runAgentLint } from "../../../scripts/agent-lint/index.mjs";
 import { buildInsightPack } from "../../../scripts/session-analysis/insights.mjs";
 import { createUploadPlan } from "../../../scripts/task-evidence-upload/index.mjs";
 import { aggregateDeliverySignals, projectDeliverySignals } from "../scripts/delivery-signals.mjs";
-import { projectCommitAttribution, projectTopology } from "../scripts/repository-signals.mjs";
+import {
+  MAX_ATTRIBUTED_COMMIT_REFS,
+  projectCommitAttribution,
+  projectTopology,
+} from "../scripts/repository-signals.mjs";
 import { providerBreakdown } from "../scripts/collect-local-data.mjs";
 import { readUploadDeliveries, storeUploadPlan } from "../scripts/upload-store.mjs";
 
@@ -81,12 +85,12 @@ test("commit attribution counts only matches strong enough to attribute", () => 
     graceMinutes: 45,
     sessionCount: 4,
     commits: [
-      { linesAdded: 100, linesRemoved: 10, matches: [{ platform: "codex", confidence: "high" }] },
-      { linesAdded: 40, linesRemoved: 4, matches: [{ platform: "claude", confidence: "medium" }] },
+      { hash: "aaa1", linesAdded: 100, linesRemoved: 10, matches: [{ sessionId: "s-1", platform: "codex", confidence: "high" }] },
+      { hash: "bbb2", linesAdded: 40, linesRemoved: 4, matches: [{ sessionId: "s-2", platform: "claude", confidence: "medium" }] },
       // A `low` match is a bare time overlap that every concurrent session
       // satisfies, so it attributes nothing.
-      { linesAdded: 60, linesRemoved: 6, matches: [{ platform: "codex", confidence: "low" }] },
-      { linesAdded: 20, linesRemoved: 2, matches: [] },
+      { hash: "ccc3", linesAdded: 60, linesRemoved: 6, matches: [{ sessionId: "s-3", platform: "codex", confidence: "low" }] },
+      { hash: "ddd4", linesAdded: 20, linesRemoved: 2, matches: [] },
     ],
   });
 
@@ -99,6 +103,25 @@ test("commit attribution counts only matches strong enough to attribute", () => 
     { platform: "claude", commitCount: 1 },
     { platform: "codex", commitCount: 1 },
   ]);
+  // Only the attributing commits carry a reference, and each one names the
+  // session that earned the attribution.
+  assert.deepEqual(projection.attributedCommitRefs, [
+    { commit: "aaa1", sessionId: "s-1", platform: "codex", confidence: "high" },
+    { commit: "bbb2", sessionId: "s-2", platform: "claude", confidence: "medium" },
+  ]);
+});
+
+test("commit references stay bounded while the counts remain complete", () => {
+  const commits = Array.from({ length: MAX_ATTRIBUTED_COMMIT_REFS + 25 }, (_, index) => ({
+    hash: `hash-${index}`,
+    linesAdded: 1,
+    linesRemoved: 0,
+    matches: [{ sessionId: `s-${index}`, platform: "codex", confidence: "high" }],
+  }));
+  const projection = projectCommitAttribution({ graceMinutes: 45, sessionCount: 1, commits });
+
+  assert.equal(projection.attributedCommits, MAX_ATTRIBUTED_COMMIT_REFS + 25);
+  assert.equal(projection.attributedCommitRefs.length, MAX_ATTRIBUTED_COMMIT_REFS);
 });
 
 test("topology projection keeps member routes and instruction activation", () => {

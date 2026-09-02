@@ -10,9 +10,9 @@ absent instead of being replaced with demo metrics.
 
 | Section | Source | Boundary it states |
 | --- | --- | --- |
-| Harness assets | `agent-lint` `agent-assets-review` per agent source | Distinct configured files, with the per-source configured instances beside them. One project file read by several sources counts once. |
-| Validation and closure | `insights.keySignals.validationAfterEdit`, `episodeSummary`, `friction` | Observed execution, never configured policy. |
-| Delivered change | `commit-session-link correlate` and `harness workspace-topology` | Only `explicit`/`high`/`medium` matches attribute a commit; a bare time overlap does not. |
+| Harness assets | `agent-lint` `agent-assets-review` per agent source | Distinct configured files, with the per-source configured instances beside them. One project file read by several sources counts once. A revision is shown only for assets whose host declared one. |
+| Validation and closure | `insights.keySignals.validationAfterEdit`, `episodeSummary`, `friction` | Observed execution, never configured policy. Reported beside the activity totals, because activity volume does not state whether the work closed. |
+| Delivered change | `commit-session-link correlate` and `harness workspace-topology` | Only `explicit`/`high`/`medium` matches attribute a commit; a bare time overlap does not. Each attributed commit carries the session that earned it, bounded to 200 references. |
 | Agent source activity | one row per session provider | Each row is that source's own summary, not a share of a total. |
 | Token usage | `usageActivity.tokens` | Input lanes are additive only inside one cache relationship; mixed sources are labelled as overlapping. |
 | Model activity | `usageEfficiency.modelUsage` | States how many responses carry a model, because unattributed responses cannot be plotted. |

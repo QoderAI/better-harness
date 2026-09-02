@@ -256,6 +256,25 @@ test("one project file discovered by several hosts counts once", () => {
   assert.deepEqual(model.assets.providers, ["qoder", "codex"]);
 });
 
+test("a declared asset revision survives the projection once per distinct asset", () => {
+  // The same installed plugin is read by two hosts. It is one distinct asset,
+  // so it carries one revision entry rather than one per host; the project file
+  // beside it declared none and must not be given one.
+  const assets = [
+    { kind: "plugin", id: "plugin:plugin:better-harness", name: "better-harness", scope: "plugin", revision: "0.6.6", publisher: "Qoder" },
+    { kind: "skill", id: ".agents/skills/review/SKILL.md", name: "review", scope: "project" },
+  ];
+  const summary = { skills: 1, mcps: 0, hooks: 0, commands: 0, rules: 0, agents: 0, plugins: 1 };
+  const model = buildDashboardModel(baseInput([
+    inventoryReport("qoder", summary, assets),
+    inventoryReport("codex", summary, assets),
+  ]));
+
+  assert.deepEqual(model.assets.declaredRevisions, [
+    { kind: "plugin", name: "better-harness", revision: "0.6.6", publisher: "Qoder" },
+  ]);
+});
+
 test("distinct asset totals stay incomplete when a host reports no identities", () => {
   const model = buildDashboardModel(baseInput([
     inventoryReport("qoder", { skills: 2, mcps: 1, hooks: 3, commands: 0, rules: 0, agents: 0, plugins: 0 }),

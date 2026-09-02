@@ -76,6 +76,25 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   expect(await taskSummary.evaluate((element) => getComputedStyle(element).outlineWidth)).not.toBe("0px");
   await taskSummary.evaluate((element) => element.blur());
 
+  // Whether the observed work closed is a first-screen fact, not something the
+  // reader has to open a disclosure to reach, and it stays ahead of the
+  // supporting repository and Agent-source evidence.
+  if (await page.getByRole("heading", { name: "Validation and closure" }).count()) {
+    await expect(page.locator(".delivery-card")).toBeVisible();
+    await expect(page.locator(".delivery-card")).toContainText("Post-edit validation");
+    await expect(page.locator(".delivery-card .delivery-fact")).toHaveCount(3);
+    const closureBeforeOperational = await page.evaluate(() => {
+      const delivery = document.querySelector(".delivery-card");
+      const operational = document.querySelector(".operational-evidence");
+      if (!delivery) return null;
+      return operational === null
+        || Boolean(delivery.compareDocumentPosition(operational) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    expect(closureBeforeOperational).toBe(true);
+    // The card must not have been pulled back inside the disclosure.
+    await expect(page.locator(".operational-disclosure .delivery-card")).toHaveCount(0);
+  }
+
   const operationalDetails = page.locator(".operational-disclosure");
   await expect(operationalDetails).not.toHaveAttribute("open", "");
   await expect(page.locator(".operational-disclosure > summary")).toBeVisible();
@@ -171,12 +190,14 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await operationalSummary.focus();
   await page.keyboard.press("Enter");
   await expect(operationalDetails).toHaveAttribute("open", "");
-  if (await page.getByRole("heading", { name: "Validation and closure" }).count()) {
-    await expect(page.locator(".delivery-card")).toContainText("Post-edit validation");
-    await expect(page.locator(".delivery-card .delivery-fact")).toHaveCount(3);
-  }
   if (await page.getByRole("heading", { name: "Delivered change" }).count()) {
     await expect(page.locator(".repo-card")).toContainText("Session-attributed commits");
+    // Attributed commits carry the session references they were derived from,
+    // which is what a Task evidence packet can later be matched against.
+    const attributed = await page.locator(".repo-card .delivery-fact strong").first().textContent();
+    if (!attributed?.startsWith("0/")) {
+      await expect(page.locator(".repo-card .metric-caption")).toContainText("commit-session references");
+    }
   }
   if (await page.getByRole("heading", { name: "Agent source activity" }).count()) {
     await expect(page.locator(".breakdown-table tbody tr").first()).toBeVisible();

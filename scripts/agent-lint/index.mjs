@@ -1031,6 +1031,16 @@ function containedRelativePath(workspace, filePath) {
   return pathIsContained(root, target) ? normalizeSlash(path.relative(root, target)) : null;
 }
 
+// A host records a revision and a publisher for the assets it installed from a
+// manifest, and records neither for a plain workspace file. Reporting one only
+// when the host actually declared it keeps an undeclared asset undeclared
+// instead of inventing a version for it.
+function declaredIdentityText(value) {
+  const source = typeof value === "object" && value !== null ? value.displayName ?? value.name : value;
+  const text = typeof source === "string" ? source.trim() : "";
+  return text ? text.slice(0, 120) : undefined;
+}
+
 function assetIdentity(item, kind, workspace) {
   const filePath = item.filePath ?? item.rootPath ?? item.evidence?.path ?? null;
   // A workspace file is the same asset for every host that reads it. Anything
@@ -1038,11 +1048,18 @@ function assetIdentity(item, kind, workspace) {
   // location never travels with the report; that name is still host-stable.
   const relative = filePath ? containedRelativePath(workspace, filePath) : null;
   const scope = item.scope ?? "unknown";
+  // The revision is what makes an inventoried asset comparable with the
+  // versioned asset a Task evidence packet reports. Dropping a declared one
+  // leaves the two sides unjoinable.
+  const revision = declaredIdentityText(item.version);
+  const publisher = declaredIdentityText(item.publisher);
   return {
     kind,
     id: relative ?? `${scope}:${kind}:${item.name ?? item.id ?? "unnamed"}`,
     name: String(item.name ?? item.id ?? "unnamed").slice(0, 200),
     scope,
+    ...(revision ? { revision } : {}),
+    ...(publisher ? { publisher } : {}),
   };
 }
 

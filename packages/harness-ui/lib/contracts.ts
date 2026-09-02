@@ -92,6 +92,13 @@ export interface AssetIdentity {
   id: string;
   name: string;
   scope: string;
+  /**
+   * Present only when the host declared one. This is the field a Task evidence
+   * packet's versioned asset can be compared against; an absent revision means
+   * the asset declared none, not that it is unversioned.
+   */
+  revision?: string;
+  publisher?: string;
 }
 
 export interface AssetInventoryReport {
@@ -167,6 +174,17 @@ export interface CommitAttribution {
   attributedLinesRemoved: number;
   byConfidence: Record<"explicit" | "high" | "medium" | "low", number>;
   byPlatform: Array<{ platform: string; commitCount: number }>;
+  /**
+   * One reference per attributed commit, bounded. The join key between a
+   * delivered commit and the session that earned the attribution; fewer entries
+   * than `attributedCommits` means the list was bounded.
+   */
+  attributedCommitRefs: Array<{
+    commit: string;
+    sessionId: string;
+    platform: string | null;
+    confidence: "explicit" | "high" | "medium";
+  }>;
 }
 
 export interface WorkspaceTopologyProjection {
