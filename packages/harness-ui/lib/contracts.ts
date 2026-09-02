@@ -71,6 +71,7 @@ export interface UsageActivity {
   };
   models: Array<{ name: string; total: number; daily: number[] }>;
   skills: Array<{ name: string; total: number; daily: number[] }>;
+  mcps?: Array<{ name: string; total: number; daily: number[] }>;
   tokens?: {
     observedResponseCount: number;
     totals: TokenTotals;

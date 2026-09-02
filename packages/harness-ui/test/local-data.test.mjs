@@ -76,6 +76,7 @@ test("local activity aggregation aligns provider dates before summing", () => {
       sessions: { total: 2, starts: [1, 1], activeMinutes: [2, 3] },
       models: [],
       skills: [{ name: "review", total: 1, daily: [0, 1] }],
+      mcps: [{ name: "docs", total: 1, daily: [0, 1] }],
       tokens: {
         observedResponseCount: 1,
         totals: { inputTokens: 20, outputTokens: 2, cacheReadInputTokens: 10, cacheCreationInputTokens: 0 },
@@ -93,6 +94,7 @@ test("local activity aggregation aligns provider dates before summing", () => {
       sessions: { total: 1, starts: [1], activeMinutes: [4] },
       models: [],
       skills: [{ name: "review", total: 2, daily: [2] }],
+      mcps: [{ name: "docs", total: 2, daily: [2] }],
       tokens: {
         observedResponseCount: 1,
         totals: { inputTokens: 30, outputTokens: 3, cacheReadInputTokens: 15, cacheCreationInputTokens: 1 },
@@ -107,6 +109,8 @@ test("local activity aggregation aligns provider dates before summing", () => {
   assert.deepEqual(activity.sessions.starts, [1, 2]);
   assert.deepEqual(activity.sessions.activeMinutes, [2, 7]);
   assert.deepEqual(activity.skills[0], { name: "review", total: 3, daily: [0, 3] });
+  assert.equal(activity.schemaVersion, 4);
+  assert.deepEqual(activity.mcps[0], { name: "docs", total: 3, daily: [0, 3] });
   assert.deepEqual(activity.tokens.daily.inputTokens, [0, 50]);
   assert.deepEqual(activity.tokens.totals, {
     inputTokens: 50,

@@ -151,14 +151,15 @@ export function aggregateUsageActivity(activities) {
   const usable = activities.filter(Boolean);
   if (usable.length === 0) {
     return {
-      schemaVersion: 3,
+      schemaVersion: 4,
       dateBasis: "UTC",
-      measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-and-observed-token-usage",
+      measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage",
       truncated: false,
       dates: [],
       sessions: { total: 0, starts: [], activeMinutes: [] },
       models: [],
       skills: [],
+      mcps: [],
     };
   }
   const dates = [...new Set(usable.flatMap((activity) => activity.dates))].sort();
@@ -169,9 +170,9 @@ export function aggregateUsageActivity(activities) {
     return index === -1 ? 0 : count(activity.sessions[field][index]);
   };
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     dateBasis: "UTC",
-    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-and-observed-token-usage",
+    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage",
     truncated: usable.some((activity) => activity.truncated),
     dates,
     sessions: {
@@ -181,6 +182,7 @@ export function aggregateUsageActivity(activities) {
     },
     models: seriesMap(usable, "models", dates),
     skills: seriesMap(usable, "skills", dates),
+    mcps: seriesMap(usable, "mcps", dates),
     ...(tokenActivities.length > 0 ? {
       tokens: {
         observedResponseCount: tokenActivities.reduce((total, activity) => total + count(activity.tokens.observedResponseCount), 0),

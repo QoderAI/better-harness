@@ -1,10 +1,12 @@
 import { timestampMillis } from "./time.mjs";
 
-export const DAILY_USAGE_SCHEMA_VERSION = 3;
+export const DAILY_USAGE_SCHEMA_VERSION = 4;
 
 const DEFAULT_MAX_DAYS = 365;
 const DEFAULT_MODEL_LIMIT = 6;
 const DEFAULT_SKILL_LIMIT = 8;
+const DEFAULT_MCP_LIMIT = 8;
+const NESTED_MCP_CALL_RE = /\btools\.(mcp__[A-Za-z_$][\w$]*(?:__[A-Za-z_$][\w$]*)+)\s*\(/gu;
 const TOKEN_FIELDS = Object.freeze([
   "inputTokens",
   "outputTokens",
@@ -86,6 +88,44 @@ export function collectSkillUsageObservations(events = []) {
   return observations;
 }
 
+function mcpToolName(event) {
+  const direct = boundedLabel(event?.toolName ?? event?.functionCallName);
+  if (direct && direct !== "exec") return direct;
+  if (direct !== "exec") return null;
+  const matches = [...String(event?.commandText ?? "").matchAll(NESTED_MCP_CALL_RE)];
+  return boundedLabel(matches.at(-1)?.[1]);
+}
+
+function mcpServerName(toolName) {
+  const match = String(toolName ?? "").match(/^mcp__(\S+?)__(\S+)$/u);
+  return boundedLabel(match?.[1]);
+}
+
+export function collectMcpUsageObservations(events = []) {
+  const seen = new Set();
+  const observations = [];
+  events.forEach((event, index) => {
+    const toolName = mcpToolName(event);
+    const name = mcpServerName(toolName);
+    const date = dateKey(event?.timestamp);
+    if (!name || !date) return;
+    const invocationId = boundedLabel(
+      event?.toolInvocationId ?? event?.requestId ?? event?.callId,
+    );
+    const sessionId = boundedLabel(event?.sessionId) ?? "unknown";
+    const fallbackId = boundedLabel(event?.evidenceRef)
+      ?? boundedLabel(event?.timestamp)
+      ?? String(index);
+    const identity = invocationId
+      ? `${sessionId}:invocation:${invocationId}`
+      : `${sessionId}:event:${fallbackId}:${toolName}`;
+    if (seen.has(identity)) return;
+    seen.add(identity);
+    observations.push({ name, date });
+  });
+  return observations;
+}
+
 export function collectModelSessionObservations(responses = []) {
   const seen = new Set();
   const observations = [];
@@ -144,11 +184,13 @@ export function buildDailyUsageActivity(sessions = [], durationRows = [], respon
   const modelObservations = collectModelSessionObservations(responses);
   const tokenObservations = responses.map(tokenUsageObservation).filter(Boolean);
   const skillObservations = collectSkillUsageObservations(events).filter((row) => row.date);
+  const mcpObservations = collectMcpUsageObservations(events);
   const observedDates = [
     ...sessionRows.map((row) => row.date),
     ...modelObservations.map((row) => row.date),
     ...tokenObservations.map((row) => row.date),
     ...skillObservations.map((row) => row.date),
+    ...mcpObservations.map((row) => row.date),
   ].sort();
   if (observedDates.length === 0) return null;
 
@@ -176,7 +218,7 @@ export function buildDailyUsageActivity(sessions = [], durationRows = [], respon
   return {
     schemaVersion: DAILY_USAGE_SCHEMA_VERSION,
     dateBasis: "UTC",
-    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-and-observed-token-usage",
+    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage",
     truncated,
     dates,
     sessions: {
@@ -188,6 +230,7 @@ export function buildDailyUsageActivity(sessions = [], durationRows = [], respon
     },
     models: buildSeries(modelObservations, dates, Number(options.modelLimit ?? DEFAULT_MODEL_LIMIT), "Unknown model"),
     skills: buildSeries(skillObservations, dates, Number(options.skillLimit ?? DEFAULT_SKILL_LIMIT), "Unknown Skill"),
+    mcps: buildSeries(mcpObservations, dates, Number(options.mcpLimit ?? DEFAULT_MCP_LIMIT), "Unknown MCP"),
     ...(visibleTokenObservations.length > 0 ? {
       tokens: {
         observedResponseCount: visibleTokenObservations.length,

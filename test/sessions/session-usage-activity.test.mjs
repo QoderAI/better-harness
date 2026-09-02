@@ -28,13 +28,39 @@ test("daily usage aggregates session, model, and Skill observations without ids"
   );
 
   assert.deepEqual(activity.dates, ["2026-07-09", "2026-07-10", "2026-07-11"]);
-  assert.equal(activity.schemaVersion, 3);
-  assert.equal(activity.measurementBasis, "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-and-observed-token-usage");
+  assert.equal(activity.schemaVersion, 4);
+  assert.equal(activity.measurementBasis, "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage");
   assert.deepEqual(activity.sessions, { total: 2, starts: [1, 0, 1], activeMinutes: [2, 0, 0.5] });
   assert.deepEqual(activity.models.find((row) => row.name === "ultimate")?.daily, [1, 0, 1]);
   assert.equal(activity.models.find((row) => row.name === "performance")?.total, 1);
   assert.equal(activity.skills.find((row) => row.name === "browser")?.total, 1);
   assert.equal(JSON.stringify(activity).includes("private-a"), false);
+});
+
+test("daily usage groups canonical MCP calls by server and deduplicates invocation lifecycles", () => {
+  const activity = buildDailyUsageActivity(
+    [{ sessionId: "a", firstSeen: "2026-07-09T10:00:00.000Z" }],
+    [{ id: "a", firstSeen: "2026-07-09T10:00:00.000Z", activeMs: 0 }],
+    [],
+    [
+      { sessionId: "a", timestamp: "2026-07-09T10:00:10.000Z", toolName: "mcp__docs__search", toolInvocationId: "call-1" },
+      { sessionId: "a", timestamp: "2026-07-09T10:00:11.000Z", toolName: "mcp__docs__search", toolInvocationId: "call-1" },
+      {
+        sessionId: "a",
+        timestamp: "2026-07-10T10:00:10.000Z",
+        toolName: "exec",
+        commandText: "await tools.mcp__codex_app__list_threads({ limit: 10 })",
+        toolInvocationId: "call-2",
+      },
+      { sessionId: "a", timestamp: "2026-07-10T10:00:20.000Z", toolName: "Bash", toolInvocationId: "call-3" },
+      { sessionId: "a", timestamp: "2026-07-10T10:00:30.000Z", toolName: "fake_mcp_tool", toolInvocationId: "call-4" },
+    ],
+  );
+
+  assert.deepEqual(activity.mcps, [
+    { name: "codex_app", total: 1, daily: [0, 1] },
+    { name: "docs", total: 1, daily: [1, 0] },
+  ]);
 });
 
 test("daily usage keeps real token lanes aligned to response dates", () => {

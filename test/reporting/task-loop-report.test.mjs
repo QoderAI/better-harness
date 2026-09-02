@@ -1595,7 +1595,7 @@ test("task-loop validation keeps summary shape checks without policing finding p
 
 test("task-loop projection carries one optional date-aligned usage activity field", () => {
   const usageActivity = {
-    schemaVersion: 1,
+    schemaVersion: 4,
     dateBasis: "UTC",
     measurementBasis: "session-starts-active-estimate-model-responses-skill-invocations-and-reads",
     truncated: false,
@@ -1603,6 +1603,7 @@ test("task-loop projection carries one optional date-aligned usage activity fiel
     sessions: { total: 2, starts: [1, 1], activeMinutes: [12, 18.5] },
     models: [{ name: "ultimate", total: 3, daily: [1, 2] }],
     skills: [{ name: "skill-creator", total: 2, daily: [0, 2] }],
+    mcps: [{ name: "docs", total: 2, daily: [1, 1] }],
     tokens: {
       observedResponseCount: 3,
       totals: { inputTokens: 300, outputTokens: 30, cacheReadInputTokens: 120, cacheCreationInputTokens: 0 },

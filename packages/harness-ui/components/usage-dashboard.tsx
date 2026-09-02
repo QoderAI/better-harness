@@ -2,11 +2,8 @@
 
 import {
   Activity,
-  Blocks,
-  Bot,
+  ChevronDown,
   Clock3,
-  Code2,
-  FileCheck2,
   GitCommitHorizontal,
   Gauge,
   Layers,
@@ -105,8 +102,10 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
   const [modelMetric, setModelMetric] = useState<ModelMetric>("responseCount");
   const [rangeDays, setRangeDays] = useState<RangeDays>(30);
   const [skillRangeDays, setSkillRangeDays] = useState<RangeDays>(30);
+  const [mcpRangeDays, setMcpRangeDays] = useState<RangeDays>(30);
   const [tokenRangeDays, setTokenRangeDays] = useState<RangeDays>(30);
   const [selectedSkillName, setSelectedSkillName] = useState(model.skills[0]?.name ?? "");
+  const [selectedMcpName, setSelectedMcpName] = useState(model.mcps[0]?.name ?? "");
   const chartRows = model.activity.slice(-rangeDays);
   const metricLabel = metric === "activeMinutes" ? "Estimated active minutes" : "Session starts";
   const metricFormatter = metric === "activeMinutes"
@@ -118,6 +117,12 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
     return { date: row.date, invocations: selectedSkill?.daily[sourceIndex] ?? 0 };
   });
   const selectedSkillTotal = skillRows.reduce((total, row) => total + row.invocations, 0);
+  const selectedMcp = model.mcps.find((mcp) => mcp.name === selectedMcpName) ?? model.mcps[0];
+  const mcpRows = model.activity.slice(-mcpRangeDays).map((row, index, rows) => {
+    const sourceIndex = model.activity.length - rows.length + index;
+    return { date: row.date, calls: selectedMcp?.daily[sourceIndex] ?? 0 };
+  });
+  const selectedMcpTotal = mcpRows.reduce((total, row) => total + row.calls, 0);
   const tokenRows = model.tokenActivity?.rows.slice(-tokenRangeDays) ?? [];
   const tokenLanes = [
     { key: "inputTokens", label: "Input" },
@@ -130,6 +135,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
   const hasContext = model.contextUsage?.status === "observed";
   const hasModels = model.models.length > 0;
   const hasSkills = model.skills.length > 0;
+  const hasMcps = model.mcps.length > 0;
   const hasTokenActivity = model.tokenActivity !== null && tokenRows.length > 0;
   const hasBreakdown = model.providerBreakdown.length > 1;
   const digestAlgorithm = model.evidenceDeliveries.items[0]?.digestAlgorithm;
@@ -138,8 +144,11 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
   const topology = model.topology;
   const modelRows = model.models.slice(0, 8);
   const modelMetricLabel = modelMetric === "responseCount" ? "Responses" : "Usage observed";
+  const activeHostCount = model.providerBreakdown.length > 0
+    ? model.providerBreakdown.length
+    : model.sources.sessionProviders.length;
   const windowLabel = model.window?.firstDate && model.window.lastDate
-    ? `${formatDate(model.window.firstDate)} – ${formatDate(model.window.lastDate)} UTC · ${model.window.dayCount} days`
+    ? `${formatDate(model.window.firstDate)} – ${formatDate(model.window.lastDate)}`
     : null;
 
   const assetCards = [
@@ -152,81 +161,22 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
     value: model.assets.totals[asset.key],
     instances: model.assets.configuredInstances[asset.key],
   }));
-  const primaryAssets = headlineAssets.filter((asset) => asset.value > 0);
-  const secondaryAssets = [
-    ...headlineAssets.filter((asset) => asset.value === 0),
-    { key: "commands", label: "Commands", icon: <Code2 />, value: model.assets.totals.commands },
-    { key: "rules", label: "Rules", icon: <FileCheck2 />, value: model.assets.totals.rules },
-    { key: "agents", label: "Agents", icon: <Bot />, value: model.assets.totals.agents },
-    { key: "plugins", label: "Plugins", icon: <Blocks />, value: model.assets.totals.plugins },
-  ];
+  const assetFindingCount = model.assets.findings.errors + model.assets.findings.warnings;
 
   return (
     <div className="site-shell">
       <main className="dashboard">
         <header className="page-header">
-          <div>
-            <p className="eyebrow">Harness evidence</p>
-            <h1>{model.workspaceLabel ?? "Workspace"}</h1>
-          </div>
-          <dl className="page-facts">
-            {windowLabel ? <div><dt>Window</dt><dd>{windowLabel}{model.window?.truncated ? " (truncated)" : ""}</dd></div> : null}
-            <div><dt>Hosts</dt><dd>{model.sources.sessionProviders.length} session · {model.sources.assetProviders.length} inventory</dd></div>
-            <div><dt>Collected</dt><dd><time dateTime={model.generatedAt}>{formatTimestamp(model.generatedAt)}</time></dd></div>
-          </dl>
+          <h1>{model.workspaceLabel ?? "Workspace"}</h1>
+          {windowLabel ? (
+            <span
+              className="page-window"
+              title={`${model.window?.dayCount ?? 0} analyzed days · collected ${formatTimestamp(model.generatedAt)}`}
+            >
+              {windowLabel}{model.window?.truncated ? " (truncated)" : ""}
+            </span>
+          ) : null}
         </header>
-
-        {model.assets.observed ? <section className="card asset-overview" aria-labelledby="asset-title">
-          <div className="card-header asset-header">
-            <div>
-              <p className="eyebrow">Inventory</p>
-              <h2 id="asset-title">Harness assets</h2>
-              <p className="muted">
-                {model.assets.distinctComplete
-                  ? `Distinct configured files across ${model.assets.inventoryReports} host ${model.assets.inventoryReports === 1 ? "inventory" : "inventories"}`
-                  : `Configured instances across ${model.assets.inventoryReports} host ${model.assets.inventoryReports === 1 ? "inventory" : "inventories"}`}
-                {model.assets.providers.length > 0 ? ` · ${model.assets.providers.join(", ")}` : ""}
-              </p>
-            </div>
-            <div className="inventory-meta">
-              <div className="finding-summary" aria-label="Asset inventory findings">
-                <span className={model.assets.findings.errors > 0 ? "danger" : "success"}>{model.assets.findings.errors} errors</span>
-                <span>{model.assets.findings.warnings} lint warnings</span>
-                <span>{model.assets.findings.advisories} advisories</span>
-              </div>
-              {model.assets.hostMultiplier && model.assets.hostMultiplier > 1 ? (
-                <p className="muted">Each asset is configured in {model.assets.hostMultiplier} hosts on average</p>
-              ) : null}
-            </div>
-          </div>
-          <div className="asset-primary-grid">
-            {primaryAssets.map((asset) => (
-              <article className="asset-primary" key={asset.label}>
-                <div className="asset-icon" aria-hidden="true">{asset.icon}</div>
-                <div>
-                  <p>{asset.label}</p>
-                  <strong>{numberFormat.format(asset.value)}</strong>
-                  <span className="asset-sub">
-                    {numberFormat.format(asset.instances)} configured instances
-                    {asset.key === "skills" ? ` · ${numberFormat.format(model.overview.skillInvocations)} observed invocations` : ""}
-                  </span>
-                </div>
-              </article>
-            ))}
-          </div>
-          <div className="asset-secondary-row">
-            {secondaryAssets.map((asset) => (
-              <div className="asset-secondary" key={asset.label}>
-                <span aria-hidden="true">{asset.icon}</span>
-                <p>{asset.label}</p>
-                <strong>{numberFormat.format(asset.value)}</strong>
-              </div>
-            ))}
-          </div>
-        </section> : <section className="card empty-state asset-empty-state">
-          <h2>No local asset inventory observed</h2>
-          <p>Run agent asset analysis for a supported host in this workspace, then reload this page.</p>
-        </section>}
 
         {hasUsage ? <section className="stat-grid" aria-label="Observed usage summary">
           <StatCard
@@ -260,162 +210,45 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
           </section>
         )}
 
-        {delivery ? <section className="card delivery-card" aria-labelledby="delivery-title">
-          <div className="card-header">
+        {model.assets.observed ? <section className="asset-section" aria-labelledby="asset-title">
+          <div className="section-header asset-section-header">
             <div>
-              <p className="eyebrow">Delivery behavior</p>
-              <h2 id="delivery-title">Validation and closure</h2>
-              <p className="muted metric-caption">Observed in analyzed sessions, not configured policy</p>
+              <h2 id="asset-title">Harness footprint</h2>
             </div>
-            <ShieldAlert className="header-icon" aria-hidden="true" />
+            <p className="muted metric-caption">
+              {model.assets.distinctComplete ? "Distinct assets" : "Configured instances"}
+              {assetFindingCount > 0
+                ? ` · ${model.assets.findings.errors} errors · ${model.assets.findings.warnings} warnings`
+                : ""}
+            </p>
           </div>
-          <div className="delivery-grid">
-            <div className="delivery-fact">
-              <p className="eyebrow">Post-edit validation</p>
-              <strong data-status={delivery.validationAfterEdit.status}>
-                {POST_EDIT_LABELS[delivery.validationAfterEdit.status] ?? delivery.validationAfterEdit.status}
-              </strong>
-              <span>
-                {numberFormat.format(delivery.validationAfterEdit.editCount)} edits ·{" "}
-                {numberFormat.format(delivery.validationAfterEdit.validationAfterEditCount)} later validations
-              </span>
-            </div>
-            <div className="delivery-fact">
-              <p className="eyebrow">Task episodes</p>
-              <strong>{numberFormat.format(delivery.episodes.episodeCount)}</strong>
-              <span>
-                {numberFormat.format(delivery.episodes.closedEpisodeCount)}/{numberFormat.format(delivery.episodes.eligibleEpisodeCount)} eligible closed ·{" "}
-                {percentFormat.format(delivery.episodeClosureRate)}
-              </span>
-            </div>
-            <div className="delivery-fact">
-              <p className="eyebrow">Execution friction</p>
-              <strong>{numberFormat.format(delivery.friction.reduce((total, row) => total + row.count, 0))}</strong>
-              <span>{delivery.friction.length > 0 ? delivery.friction.map((row) => row.name).join(", ") : "no friction category observed"}</span>
-            </div>
-          </div>
-          <div className="signal-grid">
-            <NamedCountList label="Validation commands" rows={delivery.validationCommands} unit=" runs" />
-            <NamedCountList label="Top tools" rows={delivery.topTools} unit=" calls" />
-            {delivery.observedHooks.length > 0
-              ? <NamedCountList label="Observed hooks" rows={delivery.observedHooks} unit=" fires" />
-              : <div className="signal-list">
-                <p className="eyebrow">Observed hooks</p>
-                <p className="muted signal-empty">
-                  {model.assets.totals.hooks > 0
-                    ? `${model.assets.totals.hooks} configured, none observed firing`
-                    : "none configured, none observed"}
-                </p>
-              </div>}
-          </div>
-        </section> : null}
-
-        {commits || topology ? <section className="card repo-card" aria-labelledby="repo-title">
-          <div className="card-header">
-            <div>
-              <p className="eyebrow">Repository</p>
-              <h2 id="repo-title">Delivered change</h2>
-              {commits ? <p className="muted metric-caption">
-                Last {numberFormat.format(commits.commitCount)} commits correlated with {numberFormat.format(commits.correlatedSessionCount)} sessions · {commits.graceMinutes} min grace
-              </p> : null}
-            </div>
-            <GitCommitHorizontal className="header-icon" aria-hidden="true" />
-          </div>
-          <div className="delivery-grid">
-            {commits ? <>
-              <div className="delivery-fact">
-                <p className="eyebrow">Session-attributed commits</p>
-                <strong>{numberFormat.format(commits.attributedCommits)}<i>/{numberFormat.format(commits.commitCount)}</i></strong>
-                <span>{percentFormat.format(commits.attributionRate)} · high {commits.byConfidence.high} · medium {commits.byConfidence.medium}</span>
-              </div>
-              <div className="delivery-fact">
-                <p className="eyebrow">Attributed lines added</p>
-                <strong>{compactNumber(commits.attributedLinesAdded)}<i>/{compactNumber(commits.linesAdded)}</i></strong>
-                <span>{percentFormat.format(commits.lineAttributionRate)} of added lines</span>
-              </div>
-            </> : null}
-            {topology ? <div className="delivery-fact">
-              <p className="eyebrow">Workspace members</p>
-              <strong>{numberFormat.format(topology.memberCount)}</strong>
-              <span>
-                {numberFormat.format(topology.trackedFiles)} tracked files · {topology.instructionScopes.effective} effective instruction scopes
-              </span>
-            </div> : null}
-          </div>
-          {commits && commits.byPlatform.length > 0 ? (
-            <div className="signal-grid">
-              <NamedCountList
-                label="Commits by host"
-                rows={commits.byPlatform.map((row) => ({ name: row.platform, count: row.commitCount }))}
-                unit=" commits"
-              />
-              {topology && topology.members.length > 0 ? (
-                <div className="signal-list">
-                  <p className="eyebrow">Members</p>
-                  <ul>
-                    {topology.members.slice(0, 5).map((member) => (
-                      <li key={member.route}><span title={member.route}>{member.route}</span><b>{member.kind}</b></li>
-                    ))}
-                  </ul>
+          <div className="asset-primary-grid">
+            {headlineAssets.map((asset) => (
+              <article className="card asset-primary" key={asset.label}>
+                <div className="asset-icon" aria-hidden="true">{asset.icon}</div>
+                <div>
+                  <p>{asset.label}</p>
+                  <strong>{numberFormat.format(asset.value)}</strong>
+                  {asset.instances > 0 ? (
+                    <span className="asset-sub">{numberFormat.format(asset.instances)} host installs</span>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
-          ) : null}
-        </section> : null}
-
-        {hasBreakdown ? <section className="card breakdown-card" aria-labelledby="breakdown-title">
-          <div className="card-header">
-            <div>
-              <p className="eyebrow">Hosts</p>
-              <h2 id="breakdown-title">Per-host activity</h2>
-              <p className="muted metric-caption">
-                Every column is that host&apos;s own summary, not a share of the total
-                {model.providersWithoutSessions.length > 0
-                  ? ` · scanned with no sessions: ${model.providersWithoutSessions.join(", ")}`
-                  : ""}
-              </p>
-            </div>
-            <Layers className="header-icon" aria-hidden="true" />
+              </article>
+            ))}
           </div>
-          <div className="table-scroll">
-            <table className="breakdown-table">
-              <thead>
-                <tr>
-                  <th scope="col">Host</th>
-                  <th scope="col">Sessions</th>
-                  <th scope="col">Active min</th>
-                  <th scope="col">Responses</th>
-                  <th scope="col">Model attributed</th>
-                  <th scope="col">Edits</th>
-                  <th scope="col">Episodes</th>
-                  <th scope="col">Cache accounting</th>
-                </tr>
-              </thead>
-              <tbody>
-                {model.providerBreakdown.map((row) => (
-                  <tr key={row.provider}>
-                    <th scope="row">{row.provider}</th>
-                    <td>{numberFormat.format(row.analyzedSessions)}</td>
-                    <td>{numberFormat.format(row.activeMinutes)}</td>
-                    <td>{numberFormat.format(row.responseCount)}</td>
-                    <td>{numberFormat.format(row.modelAttributedResponseCount)}</td>
-                    <td>{numberFormat.format(row.editCount)}</td>
-                    <td>{numberFormat.format(row.episodeCount)}</td>
-                    <td className="mode-cell">{row.cacheAccountingModes.map(cacheModeLabel).join(", ") || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section> : null}
+        </section> : <section className="card empty-state asset-empty-state">
+          <h2>No local asset inventory observed</h2>
+          <p>Run agent asset analysis for a supported host in this workspace, then reload this page.</p>
+        </section>}
 
         {hasActivity ? <section className="content-grid">
           <article className="card chart-card">
             <div className="card-header chart-header">
               <div>
-                <p className="eyebrow">Activity</p>
                 <h2>Usage activity</h2>
-                <p className="muted metric-caption">{metricLabel} · {model.sources.sessionProviders.join(", ")}</p>
+                <p className="muted metric-caption">
+                  {metricLabel} · {activeHostCount} {activeHostCount === 1 ? "host" : "hosts"}
+                </p>
               </div>
               <div className="chart-controls">
                 <div className="segmented" aria-label="Activity metric">
@@ -445,7 +278,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
                   <YAxis tickLine={false} axisLine={false} width={38} tickFormatter={compactNumber} />
                   <ChartTooltip formatter={metricFormatter} />
                   <Area
-                    type="natural"
+                    type="monotone"
                     dataKey={metric}
                     stroke="var(--chart)"
                     fill="url(#usage-area-fill)"
@@ -462,7 +295,6 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
         {hasSkills ? <section className="card skill-chart-card" aria-labelledby="skill-activity-title">
           <div className="card-header chart-header">
             <div>
-              <p className="eyebrow">Skills</p>
               <h2 id="skill-activity-title">Skill activity</h2>
               <p className="muted metric-caption">{numberFormat.format(selectedSkillTotal)} invocations in the selected range</p>
             </div>
@@ -495,10 +327,44 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
           </div>
         </section> : null}
 
+        {hasMcps ? <section className="card mcp-chart-card" aria-labelledby="mcp-activity-title">
+          <div className="card-header chart-header">
+            <div>
+              <h2 id="mcp-activity-title">MCP activity</h2>
+              <p className="muted metric-caption">{numberFormat.format(selectedMcpTotal)} tool calls in the selected range</p>
+            </div>
+            <div className="chart-controls">
+              <label className="range-select skill-select">
+                <span className="sr-only">MCP server</span>
+                <select value={selectedMcp?.name ?? ""} onChange={(event) => setSelectedMcpName(event.target.value)}>
+                  {model.mcps.map((mcp) => <option value={mcp.name} key={mcp.name}>{mcp.name}</option>)}
+                </select>
+              </label>
+              <label className="range-select">
+                <span className="sr-only">MCP date range</span>
+                <select value={mcpRangeDays} onChange={(event) => setMcpRangeDays(Number(event.target.value) as RangeDays)}>
+                  <option value={7}>Last 7 days</option>
+                  <option value={30}>Last 30 days</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div className="chart-body">
+            <ChartContainer>
+              <BarChart data={mcpRows} margin={{ left: 0, right: 8, top: 8, bottom: 0 }} accessibilityLayer>
+                <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={12} minTickGap={28} tickFormatter={formatDate} />
+                <YAxis allowDecimals={false} domain={[0, "auto"]} tickLine={false} axisLine={false} width={38} tickFormatter={compactNumber} />
+                <ChartTooltip formatter={(value) => `${numberFormat.format(value)} tool calls`} />
+                <Bar dataKey="calls" fill="var(--chart)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+              </BarChart>
+            </ChartContainer>
+          </div>
+        </section> : null}
+
         {hasTokenActivity ? <section className="token-section" aria-labelledby="token-usage-title">
           <div className="section-header">
             <div>
-              <p className="eyebrow">Usage</p>
               <h2 id="token-usage-title">Token usage</h2>
               <p className="muted metric-caption">
                 {model.tokenUsage.accountingMode} accounting · observed from {model.sources.tokenProviders.join(", ")} · {numberFormat.format(model.tokenActivity?.observedResponseCount ?? 0)} responses
@@ -555,7 +421,6 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
           <article className="card context-card">
             <div className="card-header">
               <div>
-                <p className="eyebrow">Context</p>
                 <h2>Context window</h2>
                 {model.contextUsage?.capturedAt ? (
                   <p className="muted metric-caption">
@@ -590,7 +455,6 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
           <article className="card model-chart-card">
             <div className="card-header chart-header">
               <div>
-                <p className="eyebrow">Models</p>
                 <h2>Model activity</h2>
                 <p className="muted metric-caption">
                   {modelMetricLabel} · {numberFormat.format(model.modelCoverage.attributed)} of {numberFormat.format(model.modelCoverage.total)} responses carry a model
@@ -627,7 +491,6 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
         {model.evidenceDeliveries.items.length > 0 ? <section className="card packet-card" aria-labelledby="packet-title">
           <div className="card-header">
             <div>
-              <p className="eyebrow">Upload</p>
               <h2 id="packet-title">Accepted task evidence</h2>
               <p className="muted metric-caption">
                 {model.evidenceDeliveries.organizations.length > 0
@@ -666,11 +529,174 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
           </div>
         </section> : null}
 
+        {delivery || commits || topology || hasBreakdown ? (
+          <section className="operational-evidence" aria-labelledby="operational-evidence-title">
+            <details className="card operational-disclosure">
+              <summary>
+                <div>
+                  <h2 id="operational-evidence-title">Delivery, repository and hosts</h2>
+                </div>
+                <span className="disclosure-action">
+                  <span className="detail-show">Show detail</span>
+                  <span className="detail-hide">Hide detail</span>
+                  <ChevronDown aria-hidden="true" />
+                </span>
+              </summary>
+              <div className="operational-content">
+                {delivery ? <section className="card delivery-card" aria-labelledby="delivery-title">
+                  <div className="card-header">
+                    <div>
+                      <h2 id="delivery-title">Validation and closure</h2>
+                      <p className="muted metric-caption">Observed in analyzed sessions, not configured policy</p>
+                    </div>
+                    <ShieldAlert className="header-icon" aria-hidden="true" />
+                  </div>
+                  <div className="delivery-grid">
+                    <div className="delivery-fact">
+                      <p className="eyebrow">Post-edit validation</p>
+                      <strong data-status={delivery.validationAfterEdit.status}>
+                        {POST_EDIT_LABELS[delivery.validationAfterEdit.status] ?? delivery.validationAfterEdit.status}
+                      </strong>
+                      <span>
+                        {numberFormat.format(delivery.validationAfterEdit.editCount)} edits ·{" "}
+                        {numberFormat.format(delivery.validationAfterEdit.validationAfterEditCount)} later validations
+                      </span>
+                    </div>
+                    <div className="delivery-fact">
+                      <p className="eyebrow">Task episodes</p>
+                      <strong>{numberFormat.format(delivery.episodes.episodeCount)}</strong>
+                      <span>
+                        {numberFormat.format(delivery.episodes.closedEpisodeCount)}/{numberFormat.format(delivery.episodes.eligibleEpisodeCount)} eligible closed ·{" "}
+                        {percentFormat.format(delivery.episodeClosureRate)}
+                      </span>
+                    </div>
+                    <div className="delivery-fact">
+                      <p className="eyebrow">Execution friction</p>
+                      <strong>{numberFormat.format(delivery.friction.reduce((total, row) => total + row.count, 0))}</strong>
+                      <span>{delivery.friction.length > 0 ? delivery.friction.map((row) => row.name).join(", ") : "no friction category observed"}</span>
+                    </div>
+                  </div>
+                  <div className="signal-grid">
+                    <NamedCountList label="Validation commands" rows={delivery.validationCommands} unit=" runs" />
+                    <NamedCountList label="Top tools" rows={delivery.topTools} unit=" calls" />
+                    {delivery.observedHooks.length > 0
+                      ? <NamedCountList label="Observed hooks" rows={delivery.observedHooks} unit=" fires" />
+                      : <div className="signal-list">
+                        <p className="eyebrow">Observed hooks</p>
+                        <p className="muted signal-empty">
+                          {model.assets.totals.hooks > 0
+                            ? `${model.assets.totals.hooks} configured, none observed firing`
+                            : "none configured, none observed"}
+                        </p>
+                      </div>}
+                  </div>
+                </section> : null}
+
+                {commits || topology ? <section className="card repo-card" aria-labelledby="repo-title">
+                  <div className="card-header">
+                    <div>
+                      <h2 id="repo-title">Delivered change</h2>
+                      {commits ? <p className="muted metric-caption">
+                        Last {numberFormat.format(commits.commitCount)} commits correlated with {numberFormat.format(commits.correlatedSessionCount)} sessions · {commits.graceMinutes} min grace
+                      </p> : null}
+                    </div>
+                    <GitCommitHorizontal className="header-icon" aria-hidden="true" />
+                  </div>
+                  <div className="delivery-grid">
+                    {commits ? <>
+                      <div className="delivery-fact">
+                        <p className="eyebrow">Session-attributed commits</p>
+                        <strong>{numberFormat.format(commits.attributedCommits)}<i>/{numberFormat.format(commits.commitCount)}</i></strong>
+                        <span>{percentFormat.format(commits.attributionRate)} · high {commits.byConfidence.high} · medium {commits.byConfidence.medium}</span>
+                      </div>
+                      <div className="delivery-fact">
+                        <p className="eyebrow">Attributed lines added</p>
+                        <strong>{compactNumber(commits.attributedLinesAdded)}<i>/{compactNumber(commits.linesAdded)}</i></strong>
+                        <span>{percentFormat.format(commits.lineAttributionRate)} of added lines</span>
+                      </div>
+                    </> : null}
+                    {topology ? <div className="delivery-fact">
+                      <p className="eyebrow">Workspace members</p>
+                      <strong>{numberFormat.format(topology.memberCount)}</strong>
+                      <span>
+                        {numberFormat.format(topology.trackedFiles)} tracked files · {topology.instructionScopes.effective} effective instruction scopes
+                      </span>
+                    </div> : null}
+                  </div>
+                  {commits && commits.byPlatform.length > 0 ? (
+                    <div className="signal-grid">
+                      <NamedCountList
+                        label="Commits by host"
+                        rows={commits.byPlatform.map((row) => ({ name: row.platform, count: row.commitCount }))}
+                        unit=" commits"
+                      />
+                      {topology && topology.members.length > 0 ? (
+                        <div className="signal-list">
+                          <p className="eyebrow">Members</p>
+                          <ul>
+                            {topology.members.slice(0, 5).map((member) => (
+                              <li key={member.route}><span title={member.route}>{member.route}</span><b>{member.kind}</b></li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </section> : null}
+
+                {hasBreakdown ? <section className="card breakdown-card" aria-labelledby="breakdown-title">
+                  <div className="card-header">
+                    <div>
+                      <h2 id="breakdown-title">Per-host activity</h2>
+                      <p className="muted metric-caption">
+                        Every column is that host&apos;s own summary, not a share of the total
+                        {model.providersWithoutSessions.length > 0
+                          ? ` · scanned with no sessions: ${model.providersWithoutSessions.join(", ")}`
+                          : ""}
+                      </p>
+                    </div>
+                    <Layers className="header-icon" aria-hidden="true" />
+                  </div>
+                  <div className="table-scroll">
+                    <table className="breakdown-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Host</th>
+                          <th scope="col">Sessions</th>
+                          <th scope="col">Active min</th>
+                          <th scope="col">Responses</th>
+                          <th scope="col">Model attributed</th>
+                          <th scope="col">Edits</th>
+                          <th scope="col">Episodes</th>
+                          <th scope="col">Cache accounting</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {model.providerBreakdown.map((row) => (
+                          <tr key={row.provider}>
+                            <th scope="row">{row.provider}</th>
+                            <td>{numberFormat.format(row.analyzedSessions)}</td>
+                            <td>{numberFormat.format(row.activeMinutes)}</td>
+                            <td>{numberFormat.format(row.responseCount)}</td>
+                            <td>{numberFormat.format(row.modelAttributedResponseCount)}</td>
+                            <td>{numberFormat.format(row.editCount)}</td>
+                            <td>{numberFormat.format(row.episodeCount)}</td>
+                            <td className="mode-cell">{row.cacheAccountingModes.map(cacheModeLabel).join(", ") || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section> : null}
+              </div>
+            </details>
+          </section>
+        ) : null}
+
         {model.sources.errors.length > 0 ? (
           <section className="card source-errors" aria-labelledby="source-errors-title">
             <div className="card-header">
               <div>
-                <p className="eyebrow">Collection</p>
                 <h2 id="source-errors-title">Unavailable sources</h2>
               </div>
             </div>

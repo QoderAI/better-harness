@@ -3470,7 +3470,7 @@ export function validateTaskLoopFindings(data) {
     const activity = summary.usageActivity;
     if (!isObject(activity)) errors.push("summary.usageActivity must be an object when supplied");
     else {
-      errors.push(...unsupportedFields(activity, ["schemaVersion", "dateBasis", "measurementBasis", "truncated", "dates", "sessions", "models", "skills", "tokens"], "summary.usageActivity"));
+      errors.push(...unsupportedFields(activity, ["schemaVersion", "dateBasis", "measurementBasis", "truncated", "dates", "sessions", "models", "skills", "mcps", "tokens"], "summary.usageActivity"));
       if (activity.schemaVersion !== undefined && (!Number.isInteger(activity.schemaVersion) || activity.schemaVersion < 1)) {
         errors.push("summary.usageActivity.schemaVersion must be positive integer metadata when supplied");
       }
@@ -3489,7 +3489,12 @@ export function validateTaskLoopFindings(data) {
         || activity.sessions.activeMinutes.length !== length) {
         errors.push("summary.usageActivity.sessions must align totals, starts, and activeMinutes to dates");
       }
-      for (const field of ["models", "skills"]) {
+      const seriesFields = [
+        "models",
+        "skills",
+        ...(activity.mcps !== undefined || activity.schemaVersion >= 4 ? ["mcps"] : []),
+      ];
+      for (const field of seriesFields) {
         if (!Array.isArray(activity[field])) errors.push(`summary.usageActivity.${field} must be an array`);
         else for (const [index, series] of activity[field].entries()) {
           const prefix = `summary.usageActivity.${field}[${index}]`;

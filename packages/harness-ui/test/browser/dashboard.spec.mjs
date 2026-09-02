@@ -17,10 +17,13 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await expect(page).toHaveTitle("Better Harness");
-  // The page leads with the workspace it analyzed and the window it covers.
+  // The page leads with one compact identity line, four decision facts, and
+  // the primary asset types. Operational evidence does not delay the charts.
   await expect(page.getByRole("heading", { level: 1, name: "better-harness" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Harness assets" })).toBeVisible();
-  await expect(page.locator(".page-facts")).toContainText("Collected");
+  await expect(page.getByRole("heading", { level: 2, name: "Harness footprint" })).toBeVisible();
+  await expect(page.locator(".page-window")).toContainText(/Jul|Aug|Sep/);
+  await expect(page.locator(".stat-card")).toHaveCount(4);
+  await expect(page.locator(".asset-primary")).toHaveCount(3);
   await expect(page.getByText("Better Harness Dashboard")).toHaveCount(0);
   await expect(page.getByText("Acme Engineering")).toHaveCount(0);
   await expect(page.getByText("Script-aligned preview")).toHaveCount(0);
@@ -28,7 +31,7 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await expect(page.getByText("Skills", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("MCPs", { exact: true })).toBeVisible();
   await expect(page.getByText("Hooks", { exact: true })).toBeVisible();
-  await expect(page.getByText(/lint warnings/)).toBeVisible();
+  await expect(page.locator(".finding-summary")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Data quality" })).toHaveCount(0);
   await expect(page.getByText("First-pass success")).toHaveCount(0);
   await expect(page.getByText("Autonomy portfolio")).toHaveCount(0);
@@ -41,21 +44,9 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   await expect(page.locator(".packet-card")).toContainText("acme-engineering");
   await expect(page.locator(".packet-card")).toContainText("accepted");
 
-  // Delivery behavior, repository outcome, and per-host rows are the sections
-  // that make this more than a usage counter.
-  if (await page.getByRole("heading", { name: "Validation and closure" }).count()) {
-    await expect(page.locator(".delivery-card")).toContainText("Post-edit validation");
-    await expect(page.locator(".delivery-card")).toContainText("Task episodes");
-    await expect(page.locator(".delivery-card .delivery-fact")).toHaveCount(3);
-  }
-  if (await page.getByRole("heading", { name: "Delivered change" }).count()) {
-    await expect(page.locator(".repo-card")).toContainText("Session-attributed commits");
-  }
-  if (await page.getByRole("heading", { name: "Per-host activity" }).count()) {
-    await expect(page.locator(".breakdown-table tbody tr").first()).toBeVisible();
-    const tableOverflow = await page.locator(".table-scroll").evaluate((element) => getComputedStyle(element).overflowX);
-    expect(tableOverflow).toBe("auto");
-  }
+  const operationalDetails = page.locator(".operational-disclosure");
+  await expect(operationalDetails).not.toHaveAttribute("open", "");
+  await expect(page.locator(".operational-disclosure > summary")).toBeVisible();
   await page.screenshot({ path: "test-results/harness-usage-wide.png", fullPage: true });
 
   if (await page.getByRole("heading", { name: "Usage activity" }).count()) {
@@ -69,6 +60,22 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
     const outlineWidth = await activityChart.evaluate((element) => getComputedStyle(element).outlineWidth);
     expect(outlineWidth).not.toBe("0px");
     await activityChart.evaluate((element) => element.blur());
+    const activityGeometry = await page.locator(".chart-card").evaluate((element) => {
+      const curve = element.querySelector(".recharts-area-curve");
+      const horizontalLines = [...element.querySelectorAll(".recharts-cartesian-grid-horizontal line")];
+      if (!(curve instanceof SVGGraphicsElement) || horizontalLines.length === 0) return null;
+      const curveBounds = curve.getBBox();
+      const baseline = Math.max(...horizontalLines.map((line) => Number(line.getAttribute("y1"))));
+      return { curveBottom: curveBounds.y + curveBounds.height, baseline };
+    });
+    expect(activityGeometry).not.toBeNull();
+    expect(activityGeometry.curveBottom).toBeLessThanOrEqual(activityGeometry.baseline + 1);
+    const activityBeforeOperational = await page.evaluate(() => {
+      const activity = document.querySelector(".chart-card");
+      const operational = document.querySelector(".operational-evidence");
+      return Boolean(activity && operational && (activity.compareDocumentPosition(operational) & Node.DOCUMENT_POSITION_FOLLOWING));
+    });
+    expect(activityBeforeOperational).toBe(true);
   } else {
     await expect(page.getByRole("heading", { name: "No local session data observed" })).toBeVisible();
   }
@@ -76,6 +83,28 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   if (await page.getByRole("heading", { name: "Skill activity" }).count()) {
     await expect(page.locator(".skill-chart-card .recharts-bar-rectangle").first()).toBeVisible();
     await expect(page.locator(".skill-chart-card select").first()).toBeVisible();
+    await expect(page.locator(".skill-chart-card .card-header .eyebrow")).toHaveCount(0);
+  }
+
+  if (await page.getByRole("heading", { name: "MCP activity" }).count()) {
+    await expect(page.locator(".mcp-chart-card .recharts-bar-rectangle").first()).toBeVisible();
+    await expect(page.getByLabel("MCP server")).toBeVisible();
+    await expect(page.locator(".mcp-chart-card .card-header .eyebrow")).toHaveCount(0);
+    await page.getByLabel("MCP date range").selectOption("7");
+    const mcpChart = page.locator(".mcp-chart-card .chart-container svg");
+    await mcpChart.focus();
+    expect(await mcpChart.evaluate((element) => getComputedStyle(element).outlineWidth)).not.toBe("0px");
+    await mcpChart.evaluate((element) => element.blur());
+    const placement = await page.evaluate(() => {
+      const skill = document.querySelector(".skill-chart-card");
+      const mcp = document.querySelector(".mcp-chart-card");
+      const token = document.querySelector(".token-section");
+      return {
+        afterSkill: Boolean(skill && mcp && (skill.compareDocumentPosition(mcp) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        beforeToken: Boolean(!token || (mcp && (mcp.compareDocumentPosition(token) & Node.DOCUMENT_POSITION_FOLLOWING))),
+      };
+    });
+    expect(placement).toEqual({ afterSkill: true, beforeToken: true });
   }
 
   if (await page.getByRole("heading", { name: "Token usage" }).count()) {
@@ -97,11 +126,32 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
     await expect(page.locator(".model-chart-card .metric-caption")).toContainText("Usage observed");
   }
 
+  // Supporting evidence stays available through the native keyboard-operable
+  // disclosure, including the bounded host table.
+  const operationalSummary = page.locator(".operational-disclosure > summary");
+  await operationalSummary.focus();
+  await page.keyboard.press("Enter");
+  await expect(operationalDetails).toHaveAttribute("open", "");
+  if (await page.getByRole("heading", { name: "Validation and closure" }).count()) {
+    await expect(page.locator(".delivery-card")).toContainText("Post-edit validation");
+    await expect(page.locator(".delivery-card .delivery-fact")).toHaveCount(3);
+  }
+  if (await page.getByRole("heading", { name: "Delivered change" }).count()) {
+    await expect(page.locator(".repo-card")).toContainText("Session-attributed commits");
+  }
+  if (await page.getByRole("heading", { name: "Per-host activity" }).count()) {
+    await expect(page.locator(".breakdown-table tbody tr").first()).toBeVisible();
+    const tableOverflow = await page.locator(".table-scroll").evaluate((element) => getComputedStyle(element).overflowX);
+    expect(tableOverflow).toBe("auto");
+  }
+  await page.keyboard.press("Enter");
+  await expect(operationalDetails).not.toHaveAttribute("open", "");
+
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.screenshot({ path: "test-results/harness-usage-compact.png", fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("heading", { level: 2, name: "Harness assets" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Harness footprint" })).toBeVisible();
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(390);
   await page.screenshot({ path: "test-results/harness-usage-narrow.png", fullPage: true });

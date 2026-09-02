@@ -188,6 +188,11 @@ export function buildDashboardModel(input: DashboardInput) {
       if (right.name === "Other") return -1;
       return right.total - left.total;
     }),
+    mcps: [...(activity.mcps ?? [])].sort((left, right) => {
+      if (left.name === "Other") return 1;
+      if (right.name === "Other") return -1;
+      return right.total - left.total;
+    }),
     // A host that was scanned and found nothing is coverage evidence, but a
     // dozen all-zero rows bury the hosts that did work. Rows carry the active
     // hosts; the scanned-but-empty ones are named once instead.

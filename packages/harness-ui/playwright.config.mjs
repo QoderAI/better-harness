@@ -3,6 +3,8 @@ import path from "node:path";
 import { defineConfig } from "@playwright/test";
 
 const uploads = path.join(import.meta.dirname, "test-results", "uploads");
+const port = process.env.HARNESS_UI_TEST_PORT ?? "3410";
+const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./test/browser",
@@ -10,13 +12,13 @@ export default defineConfig({
   globalSetup: "./test/browser/global-setup.mjs",
   workers: 1,
   use: {
-    baseURL: "http://127.0.0.1:3410",
+    baseURL,
     browserName: "chromium",
     colorScheme: "light",
   },
   webServer: {
-    command: "npm run start",
-    url: "http://127.0.0.1:3410",
+    command: `next start --hostname 127.0.0.1 --port ${port}`,
+    url: baseURL,
     // The suite asserts on evidence written to its own store, so it always
     // starts a server with that store configured instead of reusing one.
     reuseExistingServer: false,

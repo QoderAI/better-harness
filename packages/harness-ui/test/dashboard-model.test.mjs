@@ -91,6 +91,7 @@ test("dashboard projects values built by the real scripts", async () => {
       [
         { sessionId: "a", timestamp: "2026-08-30T10:00:30.000Z", skillName: "better-harness" },
         { sessionId: "b", timestamp: "2026-09-01T10:00:30.000Z", skillName: "better-harness" },
+        { sessionId: "a", timestamp: "2026-08-30T10:00:40.000Z", toolName: "mcp__docs__search", toolInvocationId: "mcp-1" },
       ],
     );
     const assetInventory = await runAgentLint({
@@ -147,6 +148,7 @@ test("dashboard projects values built by the real scripts", async () => {
     assert.equal(model.assets.totals.skills, 1);
     assert.equal(model.assets.totals.mcps, 1);
     assert.equal(model.assets.totals.hooks, 1);
+    assert.deepEqual(model.mcps, [{ name: "docs", total: 1, daily: [1, 0, 0] }]);
     assert.equal(model.assets.observed, true);
     assert.equal(model.evidenceDeliveries.items[0].acceptance.unobserved, 1);
     assert.equal(model.evidenceDeliveries.items[0].organization, "acme-engineering");
@@ -327,7 +329,7 @@ test("a bounded session selection stays visible in the Dashboard model", () => {
   assert.equal(model.overview.selectionNote, "latest-n bounded selection");
 });
 
-test("the aggregated Other Skill bucket stays after named Skills", () => {
+test("aggregated Other activity buckets stay after named assets", () => {
   const usageActivity = buildDailyUsageActivity(
     [{ sessionId: "a", firstSeen: "2026-09-01T10:00:00.000Z" }],
     [{ id: "a", firstSeen: "2026-09-01T10:00:00.000Z", activeMs: 0 }],
@@ -337,8 +339,12 @@ test("the aggregated Other Skill bucket stays after named Skills", () => {
       { timestamp: "2026-09-01T10:02:00.000Z", skillName: "named-skill" },
       { timestamp: "2026-09-01T10:03:00.000Z", skillName: "tail-one" },
       { timestamp: "2026-09-01T10:04:00.000Z", skillName: "tail-two" },
+      { timestamp: "2026-09-01T10:05:00.000Z", toolName: "mcp__docs__search", toolInvocationId: "mcp-a" },
+      { timestamp: "2026-09-01T10:06:00.000Z", toolName: "mcp__docs__open", toolInvocationId: "mcp-b" },
+      { timestamp: "2026-09-01T10:07:00.000Z", toolName: "mcp__browser__open", toolInvocationId: "mcp-c" },
+      { timestamp: "2026-09-01T10:08:00.000Z", toolName: "mcp__codex_app__list_threads", toolInvocationId: "mcp-d" },
     ],
-    { skillLimit: 1 },
+    { skillLimit: 1, mcpLimit: 1 },
   );
   const model = buildDashboardModel({
     generatedAt: "2026-09-01T12:10:00.000Z",
@@ -349,5 +355,6 @@ test("the aggregated Other Skill bucket stays after named Skills", () => {
   });
 
   assert.deepEqual(model.skills.map((skill) => skill.name), ["named-skill", "Other"]);
+  assert.deepEqual(model.mcps.map((mcp) => mcp.name), ["docs", "Other"]);
   assert.equal(model.assets.observed, false);
 });

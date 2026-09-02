@@ -8,6 +8,7 @@ const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(import.meta.dirname, "..", "..");
 const repositoryRoot = path.resolve(packageRoot, "..", "..");
 const cli = path.join(repositoryRoot, "scripts", "better-harness.mjs");
+const port = process.env.HARNESS_UI_TEST_PORT ?? "3410";
 
 export const UPLOADS_DIRECTORY = path.join(packageRoot, "test-results", "uploads");
 
@@ -28,7 +29,7 @@ export default async function globalSetup() {
     "--input", path.join(packageRoot, "fixtures", "task-evidence-input.json"),
     "--workspace", repositoryRoot,
     "--workspace-label", "better-harness-browser",
-    "--destination", "http://127.0.0.1:3410/api/upload",
+    "--destination", `http://127.0.0.1:${port}/api/upload`,
     "--organization", "acme-engineering",
     "--out", planPath,
   ], { cwd: repositoryRoot });
