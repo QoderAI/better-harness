@@ -67,16 +67,16 @@ acceptance checks.
   (<a href="assets/demo/better-harness-report.html">source</a>).</sub>
 </p>
 
-For delivery tracing, the interactive [Harness Inspector](https://qoderai.github.io/better-harness/inspector/)
+For delivery tracing, the interactive [Harness Inspector](https://qoderai.github.io/better-harness/inspector)
 follows product intent through agent activity, sessions, files, and commits in
 a read-only workspace, keeping evidence strength and limitations visible:
 
 <p align="center">
-  <a href="https://qoderai.github.io/better-harness/inspector/"><img src="docs/assets/harness-inspector/session-view.png" alt="Harness Inspector session view: a synchronized timeline of prompts, tool calls, and commits with the Evidence Drawer explaining each link" width="900"></a>
+  <a href="https://qoderai.github.io/better-harness/inspector"><img src="docs/assets/harness-inspector/session-view.png" alt="Harness Inspector session view: a synchronized timeline of prompts, tool calls, and commits with the Evidence Drawer explaining each link" width="900"></a>
 </p>
 
 <p align="center">
-  <sub><a href="https://qoderai.github.io/better-harness/inspector/">Open the interactive Harness Inspector sample</a> (fictional English data; it never reads your workspace).</sub>
+  <sub><a href="https://qoderai.github.io/better-harness/inspector">Open the interactive Harness Inspector sample</a> (fictional English data; it never reads your workspace).</sub>
 </p>
 
 After you have comparable reports over time, the history view shows how the five

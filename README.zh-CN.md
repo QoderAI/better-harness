@@ -60,16 +60,16 @@ Qoder 与 Cursor 生成宿主原生 Canvas 报告；Claude Code、Codex、Qwen C
   （<a href="assets/demo/better-harness-report.html">源文件</a>）。</sub>
 </p>
 
-若要追踪交付链路，交互式 [Harness Inspector](https://qoderai.github.io/better-harness/inspector/)
+若要追踪交付链路，交互式 [Harness Inspector](https://qoderai.github.io/better-harness/inspector)
 会在一个只读工作区中，把产品意图与智能体活动、会话、文件和提交串联起来，
 同时保持证据强度与局限清晰可见：
 
 <p align="center">
-  <a href="https://qoderai.github.io/better-harness/inspector/"><img src="docs/assets/harness-inspector/session-view.png" alt="Harness Inspector 会话视图：提示词、工具调用与提交的同步时间线，配套证据抽屉解释每条关联" width="900"></a>
+  <a href="https://qoderai.github.io/better-harness/inspector"><img src="docs/assets/harness-inspector/session-view.png" alt="Harness Inspector 会话视图：提示词、工具调用与提交的同步时间线，配套证据抽屉解释每条关联" width="900"></a>
 </p>
 
 <p align="center">
-  <sub><a href="https://qoderai.github.io/better-harness/inspector/">打开交互式 Harness Inspector 示例</a>（使用虚构的英文数据，不会读取你的工作区）。</sub>
+  <sub><a href="https://qoderai.github.io/better-harness/inspector">打开交互式 Harness Inspector 示例</a>（使用虚构的英文数据，不会读取你的工作区）。</sub>
 </p>
 
 当你积累了多份可比较的历史报告后，历史视图会展示智能体工作闭环五个维度的变化：

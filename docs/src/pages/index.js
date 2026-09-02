@@ -538,7 +538,7 @@ function HowItWorks() {
 }
 
 function InspectorSection() {
-  const inspectorUrl = useBaseUrl("/inspector/");
+  const inspectorUrl = useBaseUrl("/inspector");
   const architectureUrl = useBaseUrl("/docs/concepts/harness-inspector");
 
   return (
