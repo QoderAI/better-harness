@@ -8,6 +8,7 @@ import { runAgentLint } from "../../../scripts/agent-lint/index.mjs";
 import { buildUsageSummary } from "../../../scripts/session-analysis/usage-summary.mjs";
 import { buildDailyUsageActivity } from "../../../scripts/session-analysis/daily-usage.mjs";
 import { createTaskEvidencePacket } from "../../../scripts/task-evidence-upload/index.mjs";
+import { dashboardProjectOptions, selectDashboardProject } from "../components/usage-dashboard.tsx";
 import { buildDashboardModel } from "../lib/dashboard-model.ts";
 
 function usageResult() {
@@ -68,6 +69,19 @@ function packetInput() {
     observations: [{ kind: "validation", status: "passed", summary: "Focused tests passed." }],
   };
 }
+
+test("project selection resolves one Dashboard input without aggregating projects", () => {
+  const first = { workspace: { id: "local-workspace:first", label: "first" } };
+  const second = { workspace: { id: "local-workspace:second", label: "second" } };
+  const projects = dashboardProjectOptions([first, second]);
+
+  assert.deepEqual(projects.map(({ id, label }) => ({ id, label })), [
+    { id: "local-workspace:first", label: "first" },
+    { id: "local-workspace:second", label: "second" },
+  ]);
+  assert.equal(selectDashboardProject(projects, "local-workspace:second").input, second);
+  assert.equal(selectDashboardProject(projects, "missing").input, first);
+});
 
 test("dashboard projects values built by the real scripts", async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "harness-ui-contract-"));

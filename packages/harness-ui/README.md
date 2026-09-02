@@ -10,11 +10,11 @@ absent instead of being replaced with demo metrics.
 
 | Section | Source | Boundary it states |
 | --- | --- | --- |
-| Harness assets | `agent-lint` `agent-assets-review` per host | Distinct configured files, with the per-host configured instances beside them. One project file read by several hosts counts once. |
+| Harness assets | `agent-lint` `agent-assets-review` per agent source | Distinct configured files, with the per-source configured instances beside them. One project file read by several sources counts once. |
 | Validation and closure | `insights.keySignals.validationAfterEdit`, `episodeSummary`, `friction` | Observed execution, never configured policy. |
 | Delivered change | `commit-session-link correlate` and `harness workspace-topology` | Only `explicit`/`high`/`medium` matches attribute a commit; a bare time overlap does not. |
-| Per-host activity | one row per session provider | Each column is that host's own summary, not a share of a total. |
-| Token usage | `usageActivity.tokens` | Input lanes are additive only inside one cache relationship; mixed hosts are labelled as overlapping. |
+| Agent source activity | one row per session provider | Each row is that source's own summary, not a share of a total. |
+| Token usage | `usageActivity.tokens` | Input lanes are additive only inside one cache relationship; mixed sources are labelled as overlapping. |
 | Model activity | `usageEfficiency.modelUsage` | States how many responses carry a model, because unattributed responses cannot be plotted. |
 | Accepted task evidence | stored upload records | Organization, acceptance time, receipt state, and digest come from the record, not the packet. |
 
@@ -47,8 +47,9 @@ Dashboard's upload section.
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `BETTER_HARNESS_WORKSPACE` | the repository holding this package | Workspace the collector and upload store read. |
+| `BETTER_HARNESS_WORKSPACES` | unset | Platform-delimited workspace paths (`:` on macOS/Linux, `;` on Windows). When set, the Dashboard collects each path and shows a Project selector. |
 | `BETTER_HARNESS_UPLOADS` | `<workspace>/.better-harness/uploads` | Where accepted evidence records are stored and read. |
-| `BETTER_HARNESS_PROVIDERS` | every supported session platform | Comma-separated hosts to analyze. Narrow it for a faster first load. |
+| `BETTER_HARNESS_PROVIDERS` | every supported session platform | Comma-separated agent sources to analyze. Narrow it for a faster first load. |
 | `BETTER_HARNESS_SESSION_LIMIT` | unset (every eligible session) | Bounds analysis with `latest-n`, which the page reports as an incomplete selection. |
 | `BETTER_HARNESS_REFRESH_MS` | `30000` | How long a collection is reused before the next request recollects. `0` disables reuse. |
 | `BETTER_HARNESS_UPLOAD_ORGANIZATIONS` | unset (any) | Comma-separated organizations the local endpoint accepts. |

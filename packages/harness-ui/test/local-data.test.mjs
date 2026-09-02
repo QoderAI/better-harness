@@ -3,9 +3,9 @@ import path from "node:path";
 import { test } from "vitest";
 
 import { buildUsageSummary } from "../../../scripts/session-analysis/usage-summary.mjs";
-import { collectorArgs, createTimedCache, refreshMs } from "../lib/local-data.server.ts";
+import { collectorArgs, collectorArgvList, createTimedCache, refreshMs } from "../lib/local-data.server.ts";
 import { aggregateUsageActivity, aggregateUsageSummaries, normalizeSessionLimit } from "../scripts/collect-local-data.mjs";
-import { resolveWorkspace } from "../scripts/workspace.mjs";
+import { resolveWorkspace, resolveWorkspaces, splitWorkspaceList, workspaceIdentity } from "../scripts/workspace.mjs";
 
 function sourceResult({ eligible, analyzed, inputTokens, model }) {
   return buildUsageSummary({
@@ -190,6 +190,23 @@ test("collector arguments carry the configured providers and session limit", () 
   assert.throws(() => normalizeSessionLimit("later"), /positive safe integer/u);
 });
 
+test("multi-project collector arguments preserve one invocation per distinct workspace", () => {
+  const collector = path.join("scripts", "collect-local-data.mjs");
+  const first = path.join(path.sep, "work", "one", "app");
+  const second = path.join(path.sep, "work", "two", "app");
+  const env = {
+    BETTER_HARNESS_WORKSPACE: path.join(path.sep, "ignored"),
+    BETTER_HARNESS_WORKSPACES: [first, first, second].join(path.delimiter),
+    BETTER_HARNESS_PROVIDERS: "codex,qoder",
+    BETTER_HARNESS_SESSION_LIMIT: "25",
+  };
+
+  assert.deepEqual(collectorArgvList(collector, env), [
+    [collector, "--workspace", path.resolve(first), "--providers", "codex,qoder", "--limit", "25"],
+    [collector, "--workspace", path.resolve(second), "--providers", "codex,qoder", "--limit", "25"],
+  ]);
+});
+
 test("the refresh window falls back to its default for an unusable value", () => {
   assert.equal(refreshMs({ BETTER_HARNESS_REFRESH_MS: "0" }), 0);
   assert.equal(refreshMs({ BETTER_HARNESS_REFRESH_MS: "1500" }), 1500);
@@ -205,6 +222,37 @@ test("the workspace is the repository that contains this package unless configur
     resolveWorkspace({ BETTER_HARNESS_WORKSPACE: path.join(path.sep, "elsewhere") }, repository),
     path.resolve(path.join(path.sep, "elsewhere")),
   );
+});
+
+test("workspace lists use the native delimiter and keep the singular fallback", () => {
+  const first = path.join(path.sep, "work", "one");
+  const second = path.join(path.sep, "work", "two");
+
+  assert.deepEqual(splitWorkspaceList("C:\\one;D:\\two", ";"), ["C:\\one", "D:\\two"]);
+  assert.deepEqual(
+    resolveWorkspaces({
+      BETTER_HARNESS_WORKSPACE: path.join(path.sep, "ignored"),
+      BETTER_HARNESS_WORKSPACES: [first, first, second].join(path.delimiter),
+    }),
+    [path.resolve(first), path.resolve(second)],
+  );
+  assert.deepEqual(
+    resolveWorkspaces({ BETTER_HARNESS_WORKSPACE: first }),
+    [path.resolve(first)],
+  );
+});
+
+test("local workspace identities distinguish same-named checkouts without disclosing paths", () => {
+  const firstPath = path.join(path.sep, "work", "one", "app");
+  const secondPath = path.join(path.sep, "work", "two", "app");
+  const first = workspaceIdentity(firstPath);
+  const repeated = workspaceIdentity(path.join(firstPath, "."));
+  const second = workspaceIdentity(secondPath);
+
+  assert.deepEqual(first, repeated);
+  assert.equal(first.label, "app");
+  assert.notEqual(first.id, second.id);
+  assert.equal(JSON.stringify(first).includes(firstPath), false);
 });
 
 test("a single bounded host reports its own selection strategy rather than a mix", () => {

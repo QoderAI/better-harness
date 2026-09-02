@@ -20,6 +20,7 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   // The page leads with one compact identity line, four decision facts, and
   // the primary asset types. Operational evidence does not delay the charts.
   await expect(page.getByRole("heading", { level: 1, name: "better-harness" })).toBeVisible();
+  await expect(page.getByLabel("Project")).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: "Harness footprint" })).toBeVisible();
   await expect(page.locator(".page-window")).toContainText(/Jul|Aug|Sep/);
   await expect(page.locator(".stat-card")).toHaveCount(4);
@@ -139,7 +140,7 @@ test("keeps script-backed metrics clear across wide, compact, and narrow layouts
   if (await page.getByRole("heading", { name: "Delivered change" }).count()) {
     await expect(page.locator(".repo-card")).toContainText("Session-attributed commits");
   }
-  if (await page.getByRole("heading", { name: "Per-host activity" }).count()) {
+  if (await page.getByRole("heading", { name: "Agent source activity" }).count()) {
     await expect(page.locator(".breakdown-table tbody tr").first()).toBeVisible();
     const tableOverflow = await page.locator(".table-scroll").evaluate((element) => getComputedStyle(element).overflowX);
     expect(tableOverflow).toBe("auto");

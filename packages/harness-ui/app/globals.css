@@ -679,6 +679,18 @@ select:focus-visible {
   margin: 0;
 }
 
+.page-header-controls {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.project-select {
+  max-width: 260px;
+  min-width: 160px;
+}
+
 .page-window {
   color: var(--muted);
   font-size: 12px;
@@ -1011,6 +1023,22 @@ select:focus-visible {
 @media (max-width: 640px) {
   .dashboard {
     padding: 12px 12px 48px;
+  }
+
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .page-header-controls {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .project-select {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .asset-section-header,

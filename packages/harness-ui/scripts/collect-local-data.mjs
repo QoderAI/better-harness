@@ -10,7 +10,7 @@ import { buildUsageSummary } from "../../../scripts/session-analysis/usage-summa
 import { aggregateDeliverySignals, projectDeliverySignals } from "./delivery-signals.mjs";
 import { collectRepositorySignals } from "./repository-signals.mjs";
 import { readUploadDeliveries, resolveUploadsDirectory } from "./upload-store.mjs";
-import { resolveWorkspace } from "./workspace.mjs";
+import { resolveWorkspace, workspaceIdentity } from "./workspace.mjs";
 
 // Every host adapter the workspace can analyze is collected by default, so a
 // Dashboard never silently omits a host the developer actually works in.
@@ -309,7 +309,7 @@ export async function collectLocalDashboardData({
   const usageActivity = aggregateUsageActivity(sessionRows.map((row) => row.activity));
   return {
     generatedAt: new Date().toISOString(),
-    workspace: { label: path.basename(resolvedWorkspace) || "workspace" },
+    workspace: workspaceIdentity(resolvedWorkspace),
     // The analyzed window is a boundary on every dated series below. Without it
     // a reader cannot tell a week of evidence from a year of it.
     window: {

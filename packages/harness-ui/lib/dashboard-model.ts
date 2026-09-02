@@ -28,7 +28,7 @@ function ratio(numerator: number, denominator: number) {
 function selectionNote(strategy: string) {
   if (strategy === "all-eligible") return "all-eligible selection";
   if (strategy === "latest-n") return "latest-n bounded selection";
-  if (strategy === "mixed") return "mixed host selection";
+  if (strategy === "mixed") return "mixed Agent source selection";
   return `${strategy} selection`;
 }
 

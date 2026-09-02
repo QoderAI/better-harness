@@ -255,7 +255,7 @@ export interface ContextUsage {
 
 export interface DashboardInput {
   generatedAt: string;
-  workspace?: { label: string };
+  workspace?: { id?: string; label: string };
   /** The dated boundary every series below shares. */
   window?: {
     firstDate: string | null;

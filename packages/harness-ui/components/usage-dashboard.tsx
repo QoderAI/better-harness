@@ -96,7 +96,26 @@ function NamedCountList({ label, rows, unit }: { label: string; rows: Array<{ na
   );
 }
 
-export function UsageDashboard({ input }: { input: DashboardInput }) {
+export function dashboardProjectOptions(inputs: DashboardInput[]) {
+  return inputs.map((candidate, index) => ({
+    id: candidate.workspace?.id ?? `project:${index}`,
+    label: candidate.workspace?.label ?? `Project ${index + 1}`,
+    input: candidate,
+  }));
+}
+
+export function selectDashboardProject(
+  projects: ReturnType<typeof dashboardProjectOptions>,
+  selectedId: string,
+) {
+  return projects.find((project) => project.id === selectedId) ?? projects[0];
+}
+
+export function UsageDashboard({ inputs }: { inputs: DashboardInput[] }) {
+  const projectOptions = useMemo(() => dashboardProjectOptions(inputs), [inputs]);
+  const [selectedProjectId, setSelectedProjectId] = useState(projectOptions[0]?.id ?? "");
+  const selectedProject = selectDashboardProject(projectOptions, selectedProjectId)!;
+  const input = selectedProject.input;
   const model = useMemo(() => buildDashboardModel(input), [input]);
   const [metric, setMetric] = useState<ActivityMetric>("activeMinutes");
   const [modelMetric, setModelMetric] = useState<ModelMetric>("responseCount");
@@ -144,7 +163,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
   const topology = model.topology;
   const modelRows = model.models.slice(0, 8);
   const modelMetricLabel = modelMetric === "responseCount" ? "Responses" : "Usage observed";
-  const activeHostCount = model.providerBreakdown.length > 0
+  const activeAgentSourceCount = model.providerBreakdown.length > 0
     ? model.providerBreakdown.length
     : model.sources.sessionProviders.length;
   const windowLabel = model.window?.firstDate && model.window.lastDate
@@ -168,14 +187,26 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
       <main className="dashboard">
         <header className="page-header">
           <h1>{model.workspaceLabel ?? "Workspace"}</h1>
-          {windowLabel ? (
-            <span
-              className="page-window"
-              title={`${model.window?.dayCount ?? 0} analyzed days · collected ${formatTimestamp(model.generatedAt)}`}
-            >
-              {windowLabel}{model.window?.truncated ? " (truncated)" : ""}
-            </span>
-          ) : null}
+          <div className="page-header-controls">
+            {projectOptions.length > 1 ? (
+              <select
+                aria-label="Project"
+                className="project-select"
+                value={selectedProject.id}
+                onChange={(event) => setSelectedProjectId(event.target.value)}
+              >
+                {projectOptions.map((project) => <option key={project.id} value={project.id}>{project.label}</option>)}
+              </select>
+            ) : null}
+            {windowLabel ? (
+              <span
+                className="page-window"
+                title={`${model.window?.dayCount ?? 0} analyzed days · collected ${formatTimestamp(model.generatedAt)}`}
+              >
+                {windowLabel}{model.window?.truncated ? " (truncated)" : ""}
+              </span>
+            ) : null}
+          </div>
         </header>
 
         {hasUsage ? <section className="stat-grid" aria-label="Observed usage summary">
@@ -206,7 +237,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
         </section> : (
           <section className="card empty-state">
             <h2>No local session data observed</h2>
-            <p>Run session analysis for a supported host in this workspace, then reload this page.</p>
+            <p>Run session analysis for a supported agent source in this workspace, then reload this page.</p>
           </section>
         )}
 
@@ -230,7 +261,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
                   <p>{asset.label}</p>
                   <strong>{numberFormat.format(asset.value)}</strong>
                   {asset.instances > 0 ? (
-                    <span className="asset-sub">{numberFormat.format(asset.instances)} host installs</span>
+                    <span className="asset-sub">{numberFormat.format(asset.instances)} configured instances</span>
                   ) : null}
                 </div>
               </article>
@@ -238,7 +269,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
           </div>
         </section> : <section className="card empty-state asset-empty-state">
           <h2>No local asset inventory observed</h2>
-          <p>Run agent asset analysis for a supported host in this workspace, then reload this page.</p>
+          <p>Run agent asset analysis for a supported agent source in this workspace, then reload this page.</p>
         </section>}
 
         {hasActivity ? <section className="content-grid">
@@ -247,7 +278,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
               <div>
                 <h2>Usage activity</h2>
                 <p className="muted metric-caption">
-                  {metricLabel} · {activeHostCount} {activeHostCount === 1 ? "host" : "hosts"}
+                  {metricLabel} · {activeAgentSourceCount} Agent {activeAgentSourceCount === 1 ? "source" : "sources"}
                 </p>
               </div>
               <div className="chart-controls">
@@ -381,8 +412,8 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
           {model.tokenUsage.cacheAccountingModes.length > 0 ? (
             <p className={model.tokenUsage.cacheLanesComparable ? "lane-note" : "lane-note warn"}>
               {model.tokenUsage.cacheLanesComparable
-                ? `All observed hosts report ${cacheModeLabel(model.tokenUsage.cacheAccountingModes[0])}.`
-                : `Hosts disagree on cache accounting (${model.tokenUsage.cacheAccountingModes.map(cacheModeLabel).join("; ")}), so the Input and Cache read lanes overlap by an unknown amount and are not comparable across hosts.`}
+                ? `All observed agent sources report ${cacheModeLabel(model.tokenUsage.cacheAccountingModes[0])}.`
+                : `Agent sources disagree on cache accounting (${model.tokenUsage.cacheAccountingModes.map(cacheModeLabel).join("; ")}), so the Input and Cache read lanes overlap by an unknown amount and are not comparable across sources.`}
             </p>
           ) : null}
           <div className="token-chart-grid">
@@ -534,7 +565,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
             <details className="card operational-disclosure">
               <summary>
                 <div>
-                  <h2 id="operational-evidence-title">Delivery, repository and hosts</h2>
+                  <h2 id="operational-evidence-title">Delivery, repository and Agent sources</h2>
                 </div>
                 <span className="disclosure-action">
                   <span className="detail-show">Show detail</span>
@@ -626,7 +657,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
                   {commits && commits.byPlatform.length > 0 ? (
                     <div className="signal-grid">
                       <NamedCountList
-                        label="Commits by host"
+                        label="Commits by Agent source"
                         rows={commits.byPlatform.map((row) => ({ name: row.platform, count: row.commitCount }))}
                         unit=" commits"
                       />
@@ -647,9 +678,9 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
                 {hasBreakdown ? <section className="card breakdown-card" aria-labelledby="breakdown-title">
                   <div className="card-header">
                     <div>
-                      <h2 id="breakdown-title">Per-host activity</h2>
+                      <h2 id="breakdown-title">Agent source activity</h2>
                       <p className="muted metric-caption">
-                        Every column is that host&apos;s own summary, not a share of the total
+                        Each row is that Agent source&apos;s own summary, not a share of the total
                         {model.providersWithoutSessions.length > 0
                           ? ` · scanned with no sessions: ${model.providersWithoutSessions.join(", ")}`
                           : ""}
@@ -661,7 +692,7 @@ export function UsageDashboard({ input }: { input: DashboardInput }) {
                     <table className="breakdown-table">
                       <thead>
                         <tr>
-                          <th scope="col">Host</th>
+                          <th scope="col">Agent source</th>
                           <th scope="col">Sessions</th>
                           <th scope="col">Active min</th>
                           <th scope="col">Responses</th>

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { resolveWorkspace } from "@/scripts/workspace.mjs";
+import { resolveWorkspace, resolveWorkspaces } from "@/scripts/workspace.mjs";
 import { normalizeSessionLimit } from "@/scripts/collect-local-data.mjs";
 
 import type { DashboardInput } from "./contracts";
@@ -75,8 +75,12 @@ function collectorPath() {
   return resolved;
 }
 
-export function collectorArgs(collector: string, env: NodeJS.ProcessEnv = process.env) {
-  const args = [collector, "--workspace", resolveWorkspace(env)];
+export function collectorArgs(
+  collector: string,
+  env: NodeJS.ProcessEnv = process.env,
+  workspace = resolveWorkspace(env),
+) {
+  const args = [collector, "--workspace", path.resolve(workspace)];
   const providers = env.BETTER_HARNESS_PROVIDERS?.trim();
   if (providers) args.push("--providers", providers);
   // An unset limit means every eligible session. A configured limit bounds the
@@ -86,9 +90,16 @@ export function collectorArgs(collector: string, env: NodeJS.ProcessEnv = proces
   return args;
 }
 
-async function collectLocalData() {
-  const collector = collectorPath();
-  const { stdout } = await execFileAsync(process.execPath, collectorArgs(collector), {
+export function collectorArgvList(
+  collector: string,
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd(),
+) {
+  return resolveWorkspaces(env, cwd).map((workspace) => collectorArgs(collector, env, workspace));
+}
+
+async function collectWorkspaceData(args: string[]) {
+  const { stdout } = await execFileAsync(process.execPath, args, {
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
     timeout: 300_000,
@@ -96,12 +107,24 @@ async function collectLocalData() {
   return JSON.parse(stdout) as DashboardInput;
 }
 
-const dashboardCache = createTimedCache<DashboardInput>({
+async function collectLocalData() {
+  const collector = collectorPath();
+  const inputs: DashboardInput[] = [];
+  // Collection is intentionally sequential: each project already fans out to
+  // every configured Agent source, so project-level concurrency would multiply
+  // filesystem pressure with little benefit for this local-only view.
+  for (const args of collectorArgvList(collector)) {
+    inputs.push(await collectWorkspaceData(args));
+  }
+  return inputs;
+}
+
+const dashboardCache = createTimedCache<DashboardInput[]>({
   load: collectLocalData,
   ttlMs: () => refreshMs(),
 });
 
-export function loadLocalDashboardInput() {
+export function loadLocalDashboardInputs() {
   return dashboardCache.read();
 }
 
