@@ -89,8 +89,11 @@ function captureStreams() {
 }
 
 test("task evidence upload plan is redacted, uncertainty-preserving, and locally verifiable", () => {
-  const workspace = "/private/work/better-harness";
-  const home = "/Users/private-person";
+  // The packet resolves its workspace with node:path, so the fixture roots must be
+  // host-native too; a POSIX literal becomes a drive path on Windows and would no
+  // longer match the strings under redaction.
+  const workspace = path.resolve("/private/work/better-harness");
+  const home = path.resolve("/Users/private-person");
   const secret = "credential-value-123";
   const plan = createUploadPlan({
     input: validInput({ workspace, home, secret }),

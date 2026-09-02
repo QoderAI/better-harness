@@ -586,7 +586,11 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
   await expect(card).toHaveAttribute("open", "");
   await expect(card.getByRole("heading", { name: "Arguments" })).toBeVisible();
   await expect(card.getByText(/Result truncated from [\d,]+ bytes/)).toBeVisible();
-  await expect(card.getByText("run_", { exact: false })).toBeVisible();
+  // The native run stream folds host tool call ids without the AG-UI `<runId>:<id>`
+  // namespacing, so the card footer identifies the call itself and the run id stays
+  // on the run status line.
+  await expect(card.getByText("tu_failed", { exact: false })).toBeVisible();
+  await expect(page.locator(".run-status")).toContainText(/run run_/);
   await page.screenshot({ path: testInfo.outputPath("tool-call-390.png"), fullPage: true });
 
   await page.keyboard.press("Enter");
