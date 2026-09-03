@@ -3,6 +3,46 @@
 This file records notable public changes to Better Harness. Entries describe
 observable behavior and compatibility, not every internal refactor.
 
+## 0.7.0-alpha1 - 2026-09-03
+
+### Added
+
+- The local organization Harness Dashboard combines observed agent assets,
+  Session usage, model and token activity, delivery evidence, and project
+  topology in one responsive evidence view.
+
+- Dashboard collection can switch between explicitly configured local projects
+  without disclosing absolute workspace paths, and now reports observed MCP
+  server activity separately from configured MCP inventory.
+
+- Task evidence can be prepared as a reviewable, digest-bound upload plan,
+  explicitly applied to the plan's fixed destination, and verified through an
+  idempotent receipt before appearing in the local Dashboard.
+
+### Changed
+
+- Harness Studio uses the native sequenced run-stream contract owned by
+  `@qoder-ai/harness`, removing the obsolete AG-UI translation layer while
+  preserving retained run timelines.
+
+- Dashboard evidence distinguishes unique configured assets from per-agent
+  instances and makes cache, context, delivery, and unavailable-data boundaries
+  explicit.
+
+- npm publication selects `alpha`, `beta`, or `rc` dist-tags for supported
+  prerelease versions while stable versions continue to publish as `latest`.
+
+### Fixed
+
+- Dashboard browser checks no longer depend on developer-local Session data,
+  and Playwright dependencies resolve to the browser build installed by CI.
+
+- Windows path fixtures and native run-stream assertions now exercise their
+  platform and protocol contracts instead of stale POSIX or AG-UI details.
+
+- Inspector links work with GitHub Pages' generated file layout, and the docs
+  navbar keeps the Better Harness brand visible at compact desktop widths.
+
 ## 0.6.6 - 2026-08-31
 
 ### Added

@@ -9,7 +9,7 @@
     {
       "name": "better-harness",
       "description": "Build an AI-ready engineering system for safe coding-agent delivery and continuous software improvement.",
-      "version": "0.6.6",
+      "version": "0.7.0-alpha1",
       "source": "./",
       "author": {
         "name": "Qoder",

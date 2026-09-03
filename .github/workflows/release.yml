@@ -31,13 +31,16 @@ jobs:
           package-manager-cache: false
       - run: npm ci
       - run: npm run check
+      - name: Resolve npm dist-tag
+        id: release
+        run: node scripts/npm-package/npm-dist-tag.mjs "${{ inputs.package }}"
       - name: Publish Better Harness
         if: ${{ inputs.package == 'better-harness' }}
-        run: npm publish --access public
+        run: npm publish --access public --tag "${{ steps.release.outputs.tag }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish selected Harness workspace
         if: ${{ inputs.package != 'better-harness' }}
-        run: npm publish --workspace "@qoder-ai/${{ inputs.package }}" --access public
+        run: npm publish --workspace "@qoder-ai/${{ inputs.package }}" --access public --tag "${{ steps.release.outputs.tag }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
