@@ -28,7 +28,7 @@ test("daily usage aggregates session, model, and Skill observations without ids"
   );
 
   assert.deepEqual(activity.dates, ["2026-07-09", "2026-07-10", "2026-07-11"]);
-  assert.equal(activity.schemaVersion, 4);
+  assert.equal(activity.schemaVersion, 5);
   assert.equal(activity.measurementBasis, "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage");
   assert.deepEqual(activity.sessions, { total: 2, starts: [1, 0, 1], activeMinutes: [2, 0, 0.5] });
   assert.deepEqual(activity.models.find((row) => row.name === "ultimate")?.daily, [1, 0, 1]);
@@ -58,8 +58,8 @@ test("daily usage groups canonical MCP calls by server and deduplicates invocati
   );
 
   assert.deepEqual(activity.mcps, [
-    { name: "codex_app", total: 1, daily: [0, 1] },
-    { name: "docs", total: 1, daily: [1, 0] },
+    { name: "codex_app", total: 1, daily: [0, 1], totalFailed: 0, dailyFailed: [0, 0] },
+    { name: "docs", total: 1, daily: [1, 0], totalFailed: 0, dailyFailed: [0, 0] },
   ]);
 });
 

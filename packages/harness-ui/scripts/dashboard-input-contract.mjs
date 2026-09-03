@@ -29,9 +29,6 @@ const TOKEN_FIELDS = Object.freeze([
   "cacheReadInputTokens",
   "cacheCreationInputTokens",
 ]);
-// A bare time overlap (`low`) attributes nothing, so it can never produce a
-// commit-to-session reference.
-const ATTRIBUTING_CONFIDENCES = Object.freeze(["explicit", "high", "medium"]);
 
 export class DashboardInputContractError extends TypeError {
   constructor(message) {
@@ -77,14 +74,6 @@ function stringAt(value, pointer) {
 
 function nullableStringAt(value, pointer) {
   if (value !== null) stringAt(value, pointer);
-  return value;
-}
-
-// A join key that is present but blank names nothing a consumer could match,
-// which is the same reason a blank revision is refused: it offers an identifier
-// the producer never held.
-function identifierAt(value, pointer) {
-  if (stringAt(value, pointer).trim() === "") fail(`${pointer} must not be blank.`);
   return value;
 }
 
@@ -190,12 +179,14 @@ function validateDatedSeries(value, pointer, expectedLength) {
     stringAt(row.name, `${pointer}[${index}].name`);
     nonNegativeNumberAt(row.total, `${pointer}[${index}].total`);
     numberArrayAt(row.daily, `${pointer}[${index}].daily`, expectedLength);
+    if (row.totalFailed !== undefined) nonNegativeNumberAt(row.totalFailed, `${pointer}[${index}].totalFailed`);
+    if (row.dailyFailed !== undefined) numberArrayAt(row.dailyFailed, `${pointer}[${index}].dailyFailed`, expectedLength);
   }
 }
 
 function validateUsageActivity(value) {
   const activity = recordAt(value, "dashboardInput.usageActivity");
-  if (activity.schemaVersion !== 4 || activity.dateBasis !== "UTC") {
+  if (![4, 5].includes(activity.schemaVersion) || activity.dateBasis !== "UTC") {
     fail("dashboardInput.usageActivity uses an unsupported schema version or date basis.");
   }
   stringAt(activity.measurementBasis, "dashboardInput.usageActivity.measurementBasis");
@@ -309,8 +300,8 @@ function validateCommitAttribution(value) {
   const commit = exactKeys(value, "dashboardInput.commitAttribution", [
     "graceMinutes", "correlatedSessionCount", "commitCount", "attributedCommits",
     "linesAdded", "linesRemoved", "attributedLinesAdded", "attributedLinesRemoved",
-    "byConfidence", "byPlatform", "attributedCommitRefs",
-  ]);
+    "byConfidence", "byPlatform",
+  ], ["attributedCommitRefs"]);
   for (const key of [
     "graceMinutes", "correlatedSessionCount", "commitCount", "attributedCommits",
     "linesAdded", "linesRemoved", "attributedLinesAdded", "attributedLinesRemoved",
@@ -326,22 +317,6 @@ function validateCommitAttribution(value) {
     const row = exactKeys(entry, pointer, ["platform", "commitCount"]);
     stringAt(row.platform, `${pointer}.platform`);
     nonNegativeIntegerAt(row.commitCount, `${pointer}.commitCount`);
-  }
-  const refs = arrayAt(commit.attributedCommitRefs, "dashboardInput.commitAttribution.attributedCommitRefs");
-  // A reference exists only where an attributing match did, so more references
-  // than attributed commits means the projection lost its own boundary.
-  if (refs.length > commit.attributedCommits) {
-    fail("dashboardInput.commitAttribution.attributedCommitRefs cannot exceed attributedCommits.");
-  }
-  for (const [index, entry] of refs.entries()) {
-    const pointer = `dashboardInput.commitAttribution.attributedCommitRefs[${index}]`;
-    const row = exactKeys(entry, pointer, ["commit", "sessionId", "platform", "confidence"]);
-    identifierAt(row.commit, `${pointer}.commit`);
-    identifierAt(row.sessionId, `${pointer}.sessionId`);
-    nullableStringAt(row.platform, `${pointer}.platform`);
-    if (!ATTRIBUTING_CONFIDENCES.includes(row.confidence)) {
-      fail(`${pointer}.confidence must be an attributing confidence.`);
-    }
   }
 }
 
@@ -427,14 +402,6 @@ function validateAssetInventories(value) {
         stringAt(identity.id, `${assetPointer}.id`);
         stringAt(identity.name, `${assetPointer}.name`);
         stringAt(identity.scope, `${assetPointer}.scope`);
-        // Absent means the host declared none. Present but empty would claim a
-        // revision the host never recorded, so it is rejected rather than kept.
-        for (const field of ["revision", "publisher"]) {
-          if (identity[field] === undefined) continue;
-          if (stringAt(identity[field], `${assetPointer}.${field}`).trim() === "") {
-            fail(`${assetPointer}.${field} must be omitted when the host declared none.`);
-          }
-        }
       }
     }
     if (inventory.assetsTruncated !== undefined) booleanAt(inventory.assetsTruncated, `${pointer}.assetInventory.assetsTruncated`);

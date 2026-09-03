@@ -83,92 +83,62 @@ test("Dashboard input V1 rejects incompatible nested source versions", () => {
   assert.throws(() => validateDashboardInputV1(wrongSummary), /usageSummary uses an unsupported/u);
 
   const wrongActivity = dashboardInputFixture();
-  wrongActivity.usageActivity = { ...wrongActivity.usageActivity, schemaVersion: 5 };
+  wrongActivity.usageActivity = { ...wrongActivity.usageActivity, schemaVersion: 6 };
   assert.throws(() => validateDashboardInputV1(wrongActivity), /usageActivity uses an unsupported/u);
 });
 
-function commitAttributionFixture() {
-  return {
-    graceMinutes: 45,
-    correlatedSessionCount: 2,
-    commitCount: 3,
-    attributedCommits: 1,
-    linesAdded: 10,
-    linesRemoved: 2,
-    attributedLinesAdded: 6,
-    attributedLinesRemoved: 1,
-    byConfidence: { explicit: 0, high: 1, medium: 0, low: 0 },
-    byPlatform: [{ platform: "codex", commitCount: 1 }],
-    attributedCommitRefs: [
-      { commit: "abc123", sessionId: "s-1", platform: "codex", confidence: "high" },
-    ],
-  };
-}
-
-test("Dashboard input V1 accepts commit references and versioned assets", () => {
+test("Dashboard input V1 accepts schema version 5 data with totalFailed and dailyFailed fields", () => {
   const input = dashboardInputFixture();
-  input.commitAttribution = commitAttributionFixture();
-  input.assetInventories = [{
-    kind: "agent-lint",
-    profile: "agent-assets-review",
-    assetInventory: {
-      provider: "claude",
-      summary: { skills: 0, mcps: 0, commands: 0, hooks: 0, rules: 0, agents: 0, plugins: 1 },
-      assets: [{
-        kind: "plugin",
-        id: "plugin:plugin:better-harness",
-        name: "better-harness",
-        scope: "plugin",
-        revision: "0.6.6",
-        publisher: "Qoder",
-      }],
-      assetsTruncated: false,
-    },
-    findings: [],
-  }];
+  input.usageActivity = {
+    ...input.usageActivity,
+    schemaVersion: 5,
+    dates: ["2026-09-02"],
+    sessions: { total: 1, starts: [1], activeMinutes: [2] },
+    skills: [{ name: "harness", total: 3, daily: [3], totalFailed: 1, dailyFailed: [1] }],
+    mcps: [{ name: "docs", total: 2, daily: [2], totalFailed: 0, dailyFailed: [0] }],
+  };
+  input.window = { firstDate: "2026-09-02", lastDate: "2026-09-02", dayCount: 1, truncated: false };
   assert.equal(validateDashboardInputV1(input), input);
 });
 
-test("Dashboard input V1 rejects commit references that outrun their own attribution", () => {
+test("Dashboard input V1 still accepts schema version 4 data without totalFailed fields", () => {
   const input = dashboardInputFixture();
-  input.commitAttribution = commitAttributionFixture();
-  input.commitAttribution.attributedCommits = 0;
-  assert.throws(() => validateDashboardInputV1(input), /cannot exceed attributedCommits/u);
-
-  const lowConfidence = dashboardInputFixture();
-  lowConfidence.commitAttribution = commitAttributionFixture();
-  lowConfidence.commitAttribution.attributedCommitRefs[0].confidence = "low";
-  assert.throws(() => validateDashboardInputV1(lowConfidence), /must be an attributing confidence/u);
+  input.usageActivity = {
+    ...input.usageActivity,
+    schemaVersion: 4,
+    dates: ["2026-09-02"],
+    sessions: { total: 1, starts: [1], activeMinutes: [2] },
+    skills: [{ name: "harness", total: 3, daily: [3] }],
+    mcps: [{ name: "docs", total: 2, daily: [2] }],
+  };
+  input.window = { firstDate: "2026-09-02", lastDate: "2026-09-02", dayCount: 1, truncated: false };
+  assert.equal(validateDashboardInputV1(input), input);
 });
 
-test("Dashboard input V1 rejects a commit reference that names neither side", () => {
-  // A blank key is refused for the same reason a blank revision is: it offers a
-  // join key that matches nothing.
-  const blankCommit = dashboardInputFixture();
-  blankCommit.commitAttribution = commitAttributionFixture();
-  blankCommit.commitAttribution.attributedCommitRefs[0].commit = "";
-  assert.throws(() => validateDashboardInputV1(blankCommit), /\[0\]\.commit must not be blank/u);
-
-  const blankSession = dashboardInputFixture();
-  blankSession.commitAttribution = commitAttributionFixture();
-  blankSession.commitAttribution.attributedCommitRefs[0].sessionId = "   ";
-  assert.throws(() => validateDashboardInputV1(blankSession), /\[0\]\.sessionId must not be blank/u);
+test("Dashboard input V1 rejects dailyFailed with wrong length", () => {
+  const input = dashboardInputFixture();
+  input.usageActivity = {
+    ...input.usageActivity,
+    schemaVersion: 5,
+    dates: ["2026-09-02"],
+    sessions: { total: 1, starts: [1], activeMinutes: [2] },
+    skills: [{ name: "harness", total: 3, daily: [3], totalFailed: 1, dailyFailed: [1, 0] }],
+  };
+  input.window = { firstDate: "2026-09-02", lastDate: "2026-09-02", dayCount: 1, truncated: false };
+  assert.throws(() => validateDashboardInputV1(input), /dailyFailed must contain 1 entries/u);
 });
 
-test("Dashboard input V1 rejects an asset revision the host never declared", () => {
+test("Dashboard input V1 rejects negative totalFailed", () => {
   const input = dashboardInputFixture();
-  input.assetInventories = [{
-    kind: "agent-lint",
-    profile: "agent-assets-review",
-    assetInventory: {
-      provider: "claude",
-      summary: { skills: 1, mcps: 0, commands: 0, hooks: 0, rules: 0, agents: 0, plugins: 0 },
-      assets: [{ kind: "skill", id: "skills/a/SKILL.md", name: "a", scope: "project", revision: "  " }],
-      assetsTruncated: false,
-    },
-    findings: [],
-  }];
-  assert.throws(() => validateDashboardInputV1(input), /must be omitted when the host declared none/u);
+  input.usageActivity = {
+    ...input.usageActivity,
+    schemaVersion: 5,
+    dates: ["2026-09-02"],
+    sessions: { total: 1, starts: [1], activeMinutes: [2] },
+    skills: [{ name: "harness", total: 3, daily: [3], totalFailed: -1, dailyFailed: [0] }],
+  };
+  input.window = { firstDate: "2026-09-02", lastDate: "2026-09-02", dayCount: 1, truncated: false };
+  assert.throws(() => validateDashboardInputV1(input), /totalFailed must be a finite non-negative number/u);
 });
 
 test("Dashboard input V1 rejects dated series that do not align with the shared window", () => {
@@ -185,4 +155,64 @@ test("Dashboard input V1 rejects dated series that do not align with the shared 
     truncated: false,
   };
   assert.throws(() => validateDashboardInputV1(input), /sessions\.starts must contain 1 entries/u);
+});
+
+test("aggregateUsageActivity sums dailyFailed from two v5 activities", () => {
+  const a = {
+    schemaVersion: 5,
+    dateBasis: "UTC",
+    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage",
+    truncated: false,
+    dates: ["2026-09-01", "2026-09-02"],
+    sessions: { total: 1, starts: [1, 0], activeMinutes: [1, 0] },
+    models: [],
+    skills: [{ name: "harness", total: 3, daily: [2, 1], totalFailed: 1, dailyFailed: [1, 0] }],
+    mcps: [],
+  };
+  const b = {
+    schemaVersion: 5,
+    dateBasis: "UTC",
+    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage",
+    truncated: false,
+    dates: ["2026-09-01", "2026-09-02"],
+    sessions: { total: 1, starts: [0, 1], activeMinutes: [0, 2] },
+    models: [],
+    skills: [{ name: "harness", total: 2, daily: [0, 2], totalFailed: 2, dailyFailed: [0, 2] }],
+    mcps: [],
+  };
+  const result = aggregateUsageActivity([a, b]);
+  const skill = result.skills.find((row) => row.name === "harness");
+  assert.equal(skill.total, 5);
+  assert.equal(skill.totalFailed, 3);
+  assert.deepEqual(skill.dailyFailed, [1, 2]);
+});
+
+test("aggregateUsageActivity mixes v4 activity without dailyFailed and v5 activity", () => {
+  const v4 = {
+    schemaVersion: 4,
+    dateBasis: "UTC",
+    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage",
+    truncated: false,
+    dates: ["2026-09-01"],
+    sessions: { total: 1, starts: [1], activeMinutes: [1] },
+    models: [],
+    skills: [{ name: "harness", total: 2, daily: [2] }],
+    mcps: [],
+  };
+  const v5 = {
+    schemaVersion: 5,
+    dateBasis: "UTC",
+    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage",
+    truncated: false,
+    dates: ["2026-09-01"],
+    sessions: { total: 1, starts: [1], activeMinutes: [2] },
+    models: [],
+    skills: [{ name: "harness", total: 1, daily: [1], totalFailed: 1, dailyFailed: [1] }],
+    mcps: [],
+  };
+  const result = aggregateUsageActivity([v4, v5]);
+  const skill = result.skills.find((row) => row.name === "harness");
+  assert.equal(skill.total, 3);
+  assert.equal(skill.totalFailed, 1);
+  assert.deepEqual(skill.dailyFailed, [1]);
 });

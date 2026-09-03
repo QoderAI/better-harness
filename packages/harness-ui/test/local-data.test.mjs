@@ -115,9 +115,9 @@ test("local activity aggregation aligns provider dates before summing", () => {
   assert.deepEqual(activity.dates, ["2026-08-31", "2026-09-01"]);
   assert.deepEqual(activity.sessions.starts, [1, 2]);
   assert.deepEqual(activity.sessions.activeMinutes, [2, 7]);
-  assert.deepEqual(activity.skills[0], { name: "review", total: 3, daily: [0, 3] });
-  assert.equal(activity.schemaVersion, 4);
-  assert.deepEqual(activity.mcps[0], { name: "docs", total: 3, daily: [0, 3] });
+  assert.deepEqual(activity.skills[0], { name: "review", total: 3, daily: [0, 3], totalFailed: 0, dailyFailed: [0, 0] });
+  assert.equal(activity.schemaVersion, 5);
+  assert.deepEqual(activity.mcps[0], { name: "docs", total: 3, daily: [0, 3], totalFailed: 0, dailyFailed: [0, 0] });
   assert.deepEqual(activity.tokens.daily.inputTokens, [0, 50]);
   assert.deepEqual(activity.tokens.totals, {
     inputTokens: 50,

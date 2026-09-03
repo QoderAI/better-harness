@@ -331,15 +331,21 @@ function DashboardView({
   const selectedSkill = model.skills.find((skill) => skill.name === selectedSkillName) ?? model.skills[0];
   const skillRows = model.activity.slice(-skillRangeDays).map((row, index, rows) => {
     const sourceIndex = model.activity.length - rows.length + index;
-    return { date: row.date, invocations: selectedSkill?.daily[sourceIndex] ?? 0 };
+    const total = selectedSkill?.daily[sourceIndex] ?? 0;
+    const failed = selectedSkill?.dailyFailed?.[sourceIndex] ?? 0;
+    return { date: row.date, succeeded: total - failed, failed };
   });
-  const selectedSkillTotal = skillRows.reduce((total, row) => total + row.invocations, 0);
+  const selectedSkillTotal = skillRows.reduce((sum, row) => sum + row.succeeded + row.failed, 0);
+  const selectedSkillFailed = skillRows.reduce((sum, row) => sum + row.failed, 0);
   const selectedMcp = model.mcps.find((mcp) => mcp.name === selectedMcpName) ?? model.mcps[0];
   const mcpRows = model.activity.slice(-mcpRangeDays).map((row, index, rows) => {
     const sourceIndex = model.activity.length - rows.length + index;
-    return { date: row.date, calls: selectedMcp?.daily[sourceIndex] ?? 0 };
+    const total = selectedMcp?.daily[sourceIndex] ?? 0;
+    const failed = selectedMcp?.dailyFailed?.[sourceIndex] ?? 0;
+    return { date: row.date, succeeded: total - failed, failed };
   });
-  const selectedMcpTotal = mcpRows.reduce((total, row) => total + row.calls, 0);
+  const selectedMcpTotal = mcpRows.reduce((sum, row) => sum + row.succeeded + row.failed, 0);
+  const selectedMcpFailed = mcpRows.reduce((sum, row) => sum + row.failed, 0);
   const tokenRows = model.tokenActivity?.rows.slice(-tokenRangeDays) ?? [];
   const tokenLanes = [
     { key: "inputTokens", label: "Input" },
@@ -442,59 +448,6 @@ function DashboardView({
           </section>
         )}
 
-        {/*
-          The counts above say how much ran, not whether any of it closed. This
-          card answers that, so it sits with them rather than behind the
-          supporting-evidence disclosure.
-        */}
-        {delivery ? <section className="card delivery-card" aria-labelledby="delivery-title">
-          <div className="card-header">
-            <div>
-              <h2 id="delivery-title">Validation and closure</h2>
-              <p className="muted metric-caption">Observed in analyzed sessions, not configured policy</p>
-            </div>
-            <ShieldAlert className="header-icon" aria-hidden="true" />
-          </div>
-          <div className="delivery-grid">
-            <div className="delivery-fact">
-              <p className="eyebrow">Post-edit validation</p>
-              <strong data-status={delivery.validationAfterEdit.status}>
-                {POST_EDIT_LABELS[delivery.validationAfterEdit.status] ?? delivery.validationAfterEdit.status}
-              </strong>
-              <span>
-                {numberFormat.format(delivery.validationAfterEdit.editCount)} edits ·{" "}
-                {numberFormat.format(delivery.validationAfterEdit.validationAfterEditCount)} later validations
-              </span>
-            </div>
-            <div className="delivery-fact">
-              <p className="eyebrow">Task episodes</p>
-              <strong>{numberFormat.format(delivery.episodes.episodeCount)}</strong>
-              <span>
-                {numberFormat.format(delivery.episodes.closedEpisodeCount)}/{numberFormat.format(delivery.episodes.eligibleEpisodeCount)} eligible closed ·{" "}
-                {percentFormat.format(delivery.episodeClosureRate)}
-              </span>
-            </div>
-            <div className="delivery-fact">
-              <p className="eyebrow">Execution friction</p>
-              <strong>{numberFormat.format(delivery.friction.reduce((total, row) => total + row.count, 0))}</strong>
-              <span>{delivery.friction.length > 0 ? delivery.friction.map((row) => row.name).join(", ") : "no friction category observed"}</span>
-            </div>
-          </div>
-          <div className="signal-grid">
-            <NamedCountList label="Validation commands" rows={delivery.validationCommands} unit=" runs" />
-            <NamedCountList label="Top tools" rows={delivery.topTools} unit=" calls" />
-            {delivery.observedHooks.length > 0
-              ? <NamedCountList label="Observed hooks" rows={delivery.observedHooks} unit=" fires" />
-              : <div className="signal-list">
-                <p className="eyebrow">Observed hooks</p>
-                <p className="muted signal-empty">
-                  {model.assets.totals.hooks > 0
-                    ? `${model.assets.totals.hooks} configured, none observed firing`
-                    : "none configured, none observed"}
-                </p>
-              </div>}
-          </div>
-        </section> : null}
 
         {model.assets.observed ? <section className="asset-section" aria-labelledby="asset-title">
           <div className="section-header asset-section-header">
@@ -585,7 +538,9 @@ function DashboardView({
           <div className="card-header chart-header">
             <div>
               <h2 id="skill-activity-title">Skill activity</h2>
-              <p className="muted metric-caption">{numberFormat.format(selectedSkillTotal)} invocations in the selected range</p>
+              <p className="muted metric-caption">
+                {numberFormat.format(selectedSkillTotal)} invocations{selectedSkillFailed > 0 ? ` · ${numberFormat.format(selectedSkillFailed)} failed` : ""} in the selected range
+              </p>
             </div>
             <div className="chart-controls">
               <label className="range-select skill-select">
@@ -609,8 +564,23 @@ function DashboardView({
                 <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
                 <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={12} minTickGap={28} tickFormatter={formatDate} />
                 <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={38} tickFormatter={compactNumber} />
-                <ChartTooltip formatter={(value) => `${numberFormat.format(value)} invocations`} />
-                <Bar dataKey="invocations" fill="var(--chart)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <ChartTooltip formatter={(value: number) => numberFormat.format(value)} />
+                <Bar
+                  dataKey="succeeded"
+                  stackId="outcome"
+                  fill="var(--chart)"
+                  radius={selectedSkillFailed > 0 ? [0, 0, 0, 0] : [4, 4, 0, 0]}
+                  isAnimationActive={false}
+                />
+                {selectedSkillFailed > 0 && (
+                  <Bar
+                    dataKey="failed"
+                    stackId="outcome"
+                    fill="var(--destructive)"
+                    radius={[4, 4, 0, 0]}
+                    isAnimationActive={false}
+                  />
+                )}
               </BarChart>
             </ChartContainer>
           </div>
@@ -620,7 +590,9 @@ function DashboardView({
           <div className="card-header chart-header">
             <div>
               <h2 id="mcp-activity-title">MCP activity</h2>
-              <p className="muted metric-caption">{numberFormat.format(selectedMcpTotal)} tool calls in the selected range</p>
+              <p className="muted metric-caption">
+                {numberFormat.format(selectedMcpTotal)} tool calls{selectedMcpFailed > 0 ? ` · ${numberFormat.format(selectedMcpFailed)} failed` : ""} in the selected range
+              </p>
             </div>
             <div className="chart-controls">
               <label className="range-select skill-select">
@@ -644,8 +616,23 @@ function DashboardView({
                 <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
                 <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={12} minTickGap={28} tickFormatter={formatDate} />
                 <YAxis allowDecimals={false} domain={[0, "auto"]} tickLine={false} axisLine={false} width={38} tickFormatter={compactNumber} />
-                <ChartTooltip formatter={(value) => `${numberFormat.format(value)} tool calls`} />
-                <Bar dataKey="calls" fill="var(--chart)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <ChartTooltip formatter={(value: number) => numberFormat.format(value)} />
+                <Bar
+                  dataKey="succeeded"
+                  stackId="outcome"
+                  fill="var(--chart)"
+                  radius={selectedMcpFailed > 0 ? [0, 0, 0, 0] : [4, 4, 0, 0]}
+                  isAnimationActive={false}
+                />
+                {selectedMcpFailed > 0 && (
+                  <Bar
+                    dataKey="failed"
+                    stackId="outcome"
+                    fill="var(--destructive)"
+                    radius={[4, 4, 0, 0]}
+                    isAnimationActive={false}
+                  />
+                )}
               </BarChart>
             </ChartContainer>
           </div>
@@ -777,6 +764,55 @@ function DashboardView({
           </article>
         </section> : null}
 
+        {delivery ? <section className="card delivery-card" aria-labelledby="delivery-title">
+          <div className="card-header">
+            <div>
+              <h2 id="delivery-title">Validation and closure</h2>
+              <p className="muted metric-caption">Observed in analyzed sessions, not configured policy</p>
+            </div>
+            <ShieldAlert className="header-icon" aria-hidden="true" />
+          </div>
+          <div className="delivery-grid">
+            <div className="delivery-fact">
+              <p className="eyebrow">Post-edit validation</p>
+              <strong data-status={delivery.validationAfterEdit.status}>
+                {POST_EDIT_LABELS[delivery.validationAfterEdit.status] ?? delivery.validationAfterEdit.status}
+              </strong>
+              <span>
+                {numberFormat.format(delivery.validationAfterEdit.editCount)} edits ·{" "}
+                {numberFormat.format(delivery.validationAfterEdit.validationAfterEditCount)} later validations
+              </span>
+            </div>
+            <div className="delivery-fact">
+              <p className="eyebrow">Task episodes</p>
+              <strong>{numberFormat.format(delivery.episodes.episodeCount)}</strong>
+              <span>
+                {numberFormat.format(delivery.episodes.closedEpisodeCount)}/{numberFormat.format(delivery.episodes.eligibleEpisodeCount)} eligible closed ·{" "}
+                {percentFormat.format(delivery.episodeClosureRate)}
+              </span>
+            </div>
+            <div className="delivery-fact">
+              <p className="eyebrow">Execution friction</p>
+              <strong>{numberFormat.format(delivery.friction.reduce((total, row) => total + row.count, 0))}</strong>
+              <span>{delivery.friction.length > 0 ? delivery.friction.map((row) => row.name).join(", ") : "no friction category observed"}</span>
+            </div>
+          </div>
+          <div className="signal-grid">
+            <NamedCountList label="Validation commands" rows={delivery.validationCommands} unit=" runs" />
+            <NamedCountList label="Top tools" rows={delivery.topTools} unit=" calls" />
+            {delivery.observedHooks.length > 0
+              ? <NamedCountList label="Observed hooks" rows={delivery.observedHooks} unit=" fires" />
+              : <div className="signal-list">
+                <p className="eyebrow">Observed hooks</p>
+                <p className="muted signal-empty">
+                  {model.assets.totals.hooks > 0
+                    ? `${model.assets.totals.hooks} configured, none observed firing`
+                    : "none configured, none observed"}
+                </p>
+              </div>}
+          </div>
+        </section> : null}
+
         {commits || topology || hasBreakdown ? (
           <section className="operational-evidence" aria-labelledby="operational-evidence-title">
             <details className="card operational-disclosure">
@@ -797,8 +833,8 @@ function DashboardView({
                       <h2 id="repo-title">Delivered change</h2>
                       {commits ? <p className="muted metric-caption">
                         Last {numberFormat.format(commits.commitCount)} commits correlated with {numberFormat.format(commits.correlatedSessionCount)} sessions · {commits.graceMinutes} min grace
-                        {commits.attributedCommitRefs.length > 0
-                          ? ` · ${numberFormat.format(commits.attributedCommitRefs.length)} commit-session references`
+                        {Array.isArray((commits as any).attributedCommitRefs) && (commits as any).attributedCommitRefs.length > 0
+                          ? ` · ${numberFormat.format((commits as any).attributedCommitRefs.length)} commit-session references`
                           : ""}
                       </p> : null}
                     </div>

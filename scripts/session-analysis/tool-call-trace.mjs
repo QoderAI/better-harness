@@ -104,7 +104,7 @@ function isToolEvent(event) {
     || String(event?.type ?? "").toLowerCase().includes("tool"));
 }
 
-function isFailure(event) {
+export function isFailure(event) {
   return event?.success === false
     || event?.hasError === true
     || event?.level === "error"

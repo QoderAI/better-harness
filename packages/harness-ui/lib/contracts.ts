@@ -70,8 +70,8 @@ export interface UsageActivity {
     activeMinutes: number[];
   };
   models: Array<{ name: string; total: number; daily: number[] }>;
-  skills: Array<{ name: string; total: number; daily: number[] }>;
-  mcps?: Array<{ name: string; total: number; daily: number[] }>;
+  skills: Array<{ name: string; total: number; daily: number[]; totalFailed?: number; dailyFailed?: number[] }>;
+  mcps?: Array<{ name: string; total: number; daily: number[]; totalFailed?: number; dailyFailed?: number[] }>;
   tokens?: {
     observedResponseCount: number;
     totals: TokenTotals;
@@ -92,14 +92,6 @@ export interface AssetIdentity {
   id: string;
   name: string;
   scope: string;
-  /**
-   * Present only when the host declared one, and only when it is short enough
-   * to be reported intact. This is the field a Task evidence packet's versioned
-   * asset can be compared against; an absent revision means there is none to
-   * compare, not that the asset disagrees.
-   */
-  revision?: string;
-  publisher?: string;
 }
 
 export interface AssetInventoryReport {
@@ -175,18 +167,6 @@ export interface CommitAttribution {
   attributedLinesRemoved: number;
   byConfidence: Record<"explicit" | "high" | "medium" | "low", number>;
   byPlatform: Array<{ platform: string; commitCount: number }>;
-  /**
-   * One reference per attributed commit that carried a usable join key,
-   * bounded. The join key between a delivered commit and the session that
-   * earned the attribution; fewer entries than `attributedCommits` means the
-   * list was bounded or a commit named neither side.
-   */
-  attributedCommitRefs: Array<{
-    commit: string;
-    sessionId: string;
-    platform: string | null;
-    confidence: "explicit" | "high" | "medium";
-  }>;
 }
 
 export interface WorkspaceTopologyProjection {

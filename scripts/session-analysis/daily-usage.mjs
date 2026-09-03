@@ -1,6 +1,7 @@
 import { timestampMillis } from "./time.mjs";
+import { isFailure } from "./tool-call-trace.mjs";
 
-export const DAILY_USAGE_SCHEMA_VERSION = 4;
+export const DAILY_USAGE_SCHEMA_VERSION = 5;
 
 const DEFAULT_MAX_DAYS = 365;
 const DEFAULT_MODEL_LIMIT = 6;
@@ -82,6 +83,7 @@ export function collectSkillUsageObservations(events = []) {
         name,
         date: dateKey(event?.timestamp),
         evidenceRef: event?.evidenceRef,
+        failed: isFailure(event),
       });
     }
   }
@@ -121,7 +123,7 @@ export function collectMcpUsageObservations(events = []) {
       : `${sessionId}:event:${fallbackId}:${toolName}`;
     if (seen.has(identity)) return;
     seen.add(identity);
-    observations.push({ name, date });
+    observations.push({ name, date, failed: isFailure(event) });
   });
   return observations;
 }
@@ -148,12 +150,20 @@ export function collectModelSessionObservations(responses = []) {
 function buildSeries(observations, dates, limit, fallbackLabel) {
   const totals = new Map();
   const daily = new Map();
+  const totalsFailed = new Map();
+  const dailyFailed = new Map();
   for (const observation of observations) {
     const name = boundedLabel(observation.name) ?? fallbackLabel;
     increment(totals, name);
     const row = daily.get(name) ?? new Map();
     increment(row, observation.date);
     daily.set(name, row);
+    if (observation.failed) {
+      increment(totalsFailed, name);
+      const failRow = dailyFailed.get(name) ?? new Map();
+      increment(failRow, observation.date);
+      dailyFailed.set(name, failRow);
+    }
   }
   const ranked = [...totals.entries()]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
@@ -163,6 +173,8 @@ function buildSeries(observations, dates, limit, fallbackLabel) {
     name,
     total,
     daily: dates.map((date) => daily.get(name)?.get(date) ?? 0),
+    totalFailed: totalsFailed.get(name) ?? 0,
+    dailyFailed: dates.map((date) => dailyFailed.get(name)?.get(date) ?? 0),
   }));
   const other = ranked.filter(([name]) => !selectedNames.has(name));
   if (other.length > 0) {
@@ -170,6 +182,8 @@ function buildSeries(observations, dates, limit, fallbackLabel) {
       name: "Other",
       total: other.reduce((sum, [, count]) => sum + count, 0),
       daily: dates.map((date) => other.reduce((sum, [name]) => sum + (daily.get(name)?.get(date) ?? 0), 0)),
+      totalFailed: other.reduce((sum, [name]) => sum + (totalsFailed.get(name) ?? 0), 0),
+      dailyFailed: dates.map((date) => other.reduce((sum, [name]) => sum + (dailyFailed.get(name)?.get(date) ?? 0), 0)),
     });
   }
   return output;

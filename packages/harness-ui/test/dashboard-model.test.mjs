@@ -113,8 +113,8 @@ test("dashboard projects values built by the real scripts", async () => {
       }],
       [
         { sessionId: "a", timestamp: "2026-08-30T10:00:30.000Z", skillName: "better-harness" },
-        { sessionId: "b", timestamp: "2026-09-01T10:00:30.000Z", skillName: "better-harness" },
-        { sessionId: "a", timestamp: "2026-08-30T10:00:40.000Z", toolName: "mcp__docs__search", toolInvocationId: "mcp-1" },
+        { sessionId: "b", timestamp: "2026-09-01T10:00:30.000Z", skillName: "better-harness", success: false },
+        { sessionId: "a", timestamp: "2026-08-30T10:00:40.000Z", toolName: "mcp__docs__search", toolInvocationId: "mcp-1", hasError: true },
       ],
     );
     const assetInventory = await runAgentLint({
@@ -171,7 +171,9 @@ test("dashboard projects values built by the real scripts", async () => {
     assert.equal(model.assets.totals.skills, 1);
     assert.equal(model.assets.totals.mcps, 1);
     assert.equal(model.assets.totals.hooks, 1);
-    assert.deepEqual(model.mcps, [{ name: "docs", total: 1, daily: [1, 0, 0] }]);
+    assert.deepEqual(model.mcps, [{ name: "docs", total: 1, daily: [1, 0, 0], totalFailed: 1, dailyFailed: [1, 0, 0] }]);
+    assert.equal(model.skills[0].totalFailed, 1);
+    assert.deepEqual(model.skills[0].dailyFailed, [0, 0, 1]);
     assert.equal(model.assets.observed, true);
     assert.equal(model.evidenceDeliveries.items[0].acceptance.unobserved, 1);
     assert.equal(model.evidenceDeliveries.items[0].organization, "acme-engineering");
@@ -408,5 +410,33 @@ test("aggregated Other activity buckets stay after named assets", () => {
 
   assert.deepEqual(model.skills.map((skill) => skill.name), ["named-skill", "Other"]);
   assert.deepEqual(model.mcps.map((mcp) => mcp.name), ["docs", "Other"]);
+  assert.equal(model.skills[0].totalFailed, 0);
+  assert.equal(model.mcps[0].totalFailed, 0);
   assert.equal(model.assets.observed, false);
+});
+
+test("model passes through skills without totalFailed for backward compatibility", () => {
+  const usageActivity = {
+    schemaVersion: 4,
+    dateBasis: "UTC",
+    measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage",
+    truncated: false,
+    dates: ["2026-09-01"],
+    sessions: { total: 1, starts: [1], activeMinutes: [1] },
+    models: [],
+    skills: [{ name: "legacy-skill", total: 2, daily: [2] }],
+    mcps: [{ name: "legacy-mcp", total: 1, daily: [1] }],
+  };
+  const model = buildDashboardModel({
+    generatedAt: "2026-09-01T12:10:00.000Z",
+    sources: { sessionProviders: ["qoder"], assetProviders: [], tokenProviders: [], errors: [] },
+    usageSummary: buildUsageSummary({}),
+    usageActivity,
+    assetInventories: [],
+  });
+
+  assert.equal(model.skills[0].name, "legacy-skill");
+  assert.equal(model.skills[0].totalFailed, undefined);
+  assert.equal(model.skills[0].dailyFailed, undefined);
+  assert.equal(model.mcps[0].totalFailed, undefined);
 });

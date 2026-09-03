@@ -141,24 +141,36 @@ export function aggregateUsageSummaries(rows) {
 function seriesMap(activities, key, dates) {
   const totals = new Map();
   const daily = new Map();
+  const totalsFailed = new Map();
+  const dailyFailed = new Map();
   for (const activity of activities) {
     for (const series of activity[key] ?? []) {
       totals.set(series.name, (totals.get(series.name) ?? 0) + count(series.total));
       const values = daily.get(series.name) ?? new Map();
       activity.dates.forEach((date, index) => values.set(date, (values.get(date) ?? 0) + count(series.daily[index])));
       daily.set(series.name, values);
+      totalsFailed.set(series.name, (totalsFailed.get(series.name) ?? 0) + count(series.totalFailed ?? 0));
+      const failValues = dailyFailed.get(series.name) ?? new Map();
+      activity.dates.forEach((date, index) => failValues.set(date, (failValues.get(date) ?? 0) + count(series.dailyFailed?.[index] ?? 0)));
+      dailyFailed.set(series.name, failValues);
     }
   }
   return [...totals.entries()]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-    .map(([name, total]) => ({ name, total, daily: dates.map((date) => daily.get(name)?.get(date) ?? 0) }));
+    .map(([name, total]) => ({
+      name,
+      total,
+      daily: dates.map((date) => daily.get(name)?.get(date) ?? 0),
+      totalFailed: totalsFailed.get(name) ?? 0,
+      dailyFailed: dates.map((date) => dailyFailed.get(name)?.get(date) ?? 0),
+    }));
 }
 
 export function aggregateUsageActivity(activities) {
   const usable = activities.filter(Boolean);
   if (usable.length === 0) {
     return {
-      schemaVersion: 4,
+      schemaVersion: 5,
       dateBasis: "UTC",
       measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage",
       truncated: false,
@@ -177,7 +189,7 @@ export function aggregateUsageActivity(activities) {
     return index === -1 ? 0 : count(activity.sessions[field][index]);
   };
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     dateBasis: "UTC",
     measurementBasis: "session-starts-active-estimate-model-active-session-days-skill-invocations-loads-mcp-tool-calls-and-observed-token-usage",
     truncated: usable.some((activity) => activity.truncated),
