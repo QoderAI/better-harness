@@ -85,7 +85,7 @@
     "build": "npm run clean && npm run langium:generate && tsc",
     "check:generated": "npm run langium:generate && git diff --exit-code -- src/language/generated",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "langium:generate": "langium generate",
+    "langium:generate": "node scripts/generate-langium.mjs",
     "prepack": "npm test",
     "pretest": "npm run build",
     "test": "vitest run",
