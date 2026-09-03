@@ -266,6 +266,9 @@ async function probeTranscript(filePath, scope) {
       summary.workspaceMatch = true;
       summary.sessionId = raw.id;
       summary.cwd = raw.cwd;
+      // TODO: OMP forked sessions (parentSession field) duplicate all parent
+      // messages. Detect parentSession and mark as derived; process only the
+      // incremental messages after the fork point to avoid double-counting.
     } else if (raw?.type === "session") {
       // Multiple headers are not a valid Pi session and can splice content
       // from different workspaces, so reject the whole file fail-closed.
