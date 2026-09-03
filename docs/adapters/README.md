@@ -45,6 +45,7 @@ project `.kimi-code/skills/`), then runs `/skill:better-harness`.
 | Qwen Code | Analysis-capable source-local host | `qwen-extension.json` | `scripts/agent-customize/providers/qwen.mjs` | `scripts/session-analysis/platforms/qwen.mjs` | self-contained HTML + Markdown | `.qwen` + `QWEN.md` + `AGENTS.md` | `harness prepare --platform qwen` -> finalize with `html-report` validation |
 | GitHub Copilot | Analysis-capable source-local host | `.github/plugin/` | `scripts/agent-customize/providers/copilot.mjs` | `scripts/session-analysis/platforms/copilot.mjs` | self-contained HTML + Markdown | `.github` + `AGENTS.md` + `~/.copilot` | `copilot plugin marketplace add .` -> `copilot plugin install better-harness@better-harness` -> configured-asset baseline -> validated `html` render |
 | Pi | Analysis-capable source-local host | `pi` manifest in `package.json` | `scripts/agent-customize/providers/pi.mjs` | `scripts/session-analysis/platforms/pi.mjs` | self-contained HTML + Markdown | `.pi` + `.agents` + `AGENTS.md` | `pi install <source>` or `pi -e <source>` -> `/better-harness` prompt template -> validated `html` render |
+| Oh My Pi (OMP) | Analysis-capable source-local host; reuses Pi adapter with `PI_CODING_AGENT_DIR` override | `pi` manifest in `package.json` | `scripts/agent-customize/providers/pi.mjs` | `scripts/session-analysis/platforms/pi.mjs` | self-contained HTML + Markdown | `~/.omp/agent` + `.agents` + `AGENTS.md` | `PI_CODING_AGENT_DIR=~/.omp/agent` -> `/better-harness` prompt template -> validated `html` render |
 | Kimi Code | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | `scripts/agent-customize/providers/kimi.mjs` | `scripts/session-analysis/platforms/kimi.mjs` | self-contained HTML + Markdown | `AGENTS.md` + `~/.kimi-code/skills` + project `.kimi-code/skills`/`.kimi/skills` + `~/.kimi-code/mcp.json` | `harness evidence-bundle --platform kimi` -> validated `html` render |
 | WorkBuddy | Analysis-capable source-local host | none (skills install into `~/.workbuddy/skills`) | `scripts/agent-customize/providers/workbuddy.mjs` | `scripts/session-analysis/platforms/workbuddy.mjs` | self-contained HTML + Markdown | `~/.workbuddy` `AGENTS.md` + identity files + `.agents` + `AGENTS.md` | `session-analysis --platform workbuddy sources` -> validated `html` render |
 | Grok | Analysis-capable source-local host | none (skills install into `~/.grok/skills`) | `scripts/agent-customize/providers/grok.mjs` | `scripts/session-analysis/platforms/grok.mjs` | self-contained HTML + Markdown | `~/.grok` + `.grok` + `.agents` + `AGENTS.md` | `session-analysis --platform grok sources` -> skill symlink -> validated `html` render |
@@ -83,6 +84,7 @@ Plans never execute and always preserve native surface differences:
 | Qwen Code | Native extension install/list argv; update and remove remain unavailable until safe scope-targeted mutation semantics are evidenced |
 | GitHub Copilot CLI | Native marketplace install, list, update, and uninstall argv |
 | Pi CLI / CLI session | Persistent user/project install guidance and inventory; separate `pi -e` session-only activation whose update/remove operations are not applicable |
+| Oh My Pi (OMP) | Reuses Pi lifecycle with `PI_CODING_AGENT_DIR` override; no separate lifecycle target |
 | WorkBuddy | `PLUGIN_LIFECYCLE_UNSUPPORTED`; adapter evidence remains available |
 
 Kimi Code, Grok, and DSH are absent from this table on purpose: none has a
@@ -166,6 +168,13 @@ edit host settings, or register an `apply` path.
   discovers the canonical root `skills/` directory and the `prompts/`
   templates through the `pi` manifest in `package.json`; that manifest is
   install/discovery metadata and does not own Pi evidence collection.
+- Oh My Pi (OMP) reuses the Pi adapter. Set `PI_CODING_AGENT_DIR=~/.omp/agent`
+  to point at OMP's agent directory; session evidence is read from
+  `~/.omp/agent/sessions/` using home-relative directory names (e.g.
+  `-src-dotai` for `~/src/dotai`). OMP JSONL transcripts include a `title`
+  preamble record before the session header, which the Pi session adapter
+  now skips. Configured assets are inventoried through the shared Pi provider
+  when the `PI_CODING_AGENT_DIR` override is set.
 - Kimi Code configured assets are inventoried through
   `scripts/agent-customize/providers/kimi.mjs`: user-level
   `~/.kimi-code/skills/**/SKILL.md` and `~/.kimi-code/mcp.json`, plus
@@ -287,7 +296,7 @@ Canonical templates live under `templates/reporting/`.
   `findings.json`, Canvas-only `canvas.json`, and `report.canvas.tsx`.
 - `cursor-canvas.md`: Cursor Canvas output contract, covering the complete
   report, native Context Usage projection, and public IDE actions.
-- `html-visual.md`: portable Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok/DeepSeek Harness visual output contract, covering
+- `html-visual.md`: portable Claude Code/Codex/Qwen/Copilot/Pi/Oh My Pi (OMP)/Kimi Code/WorkBuddy/Grok/DeepSeek Harness visual output contract, covering
   `findings.json`, `report.md`, and `report.html`.
 - Markdown-only output has no visual companion.
 

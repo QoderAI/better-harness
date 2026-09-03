@@ -38,6 +38,7 @@ remains the complete capability-level source of truth.
 | Qwen Code | Verified Quickstart | Analysis-capable source-local host | `qwen-extension.json` | Workspace-matching local Qwen transcripts when present | Self-contained HTML + Markdown |
 | GitHub Copilot | Verified Quickstart | Analysis-capable source-local host | `.github/plugin/` | Workspace-matched Copilot CLI transcripts; partial coverage stays explicit | Self-contained HTML + Markdown |
 | Pi | Adapter support | Analysis-capable source-local host | `pi` manifest in `package.json` | Workspace-matching local Pi sessions | Self-contained HTML + Markdown |
+| Oh My Pi (OMP) | Adapter support | Analysis-capable source-local host; reuses Pi adapter with `PI_CODING_AGENT_DIR` override | `pi` manifest in `package.json` | Workspace-matching OMP JSONL sessions under `~/.omp/agent/sessions/` | Self-contained HTML + Markdown |
 | Kimi Code | Adapter support | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | Workspace-matching Kimi wire transcripts | Self-contained HTML + Markdown |
 | WorkBuddy | Adapter support | Analysis-capable source-local host | None; skills use WorkBuddy-owned paths | Workspace-matching WorkBuddy JSONL transcripts | Self-contained HTML + Markdown |
 | Grok | Adapter support | Analysis-capable source-local host | None; skills use Grok-owned paths | Workspace-matching Grok session dirs (`updates.jsonl`) | Self-contained HTML + Markdown |
@@ -80,7 +81,7 @@ lifecycle target.
   `canvas.json`, and `report.canvas.tsx`.
 - **Cursor Canvas** — the same complete report contract rendered with
   `cursor/canvas`, native Context Window evidence, and IDE actions.
-- **HTML visual** — portable Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok/DeepSeek Harness contract
+- **HTML visual** — portable Claude Code/Codex/Qwen/Copilot/Pi/Oh My Pi (OMP)/Kimi Code/WorkBuddy/Grok/DeepSeek Harness contract
   covering `findings.json`, `report.md`, and a self-contained `report.html`
   (see the [sample report](pathname:///demo/better-harness-report/)).
 - **Markdown-only** — no visual companion.
@@ -121,6 +122,17 @@ running session omitted the package. Package discovery, configured assets,
 workspace-matched session evidence, and portable HTML routing are implemented.
 Pi remains outside the verified Quickstart set until a complete interactive
 report-loop smoke is observed.
+
+### Oh My Pi (OMP) {#oh-my-pi-omp}
+
+Oh My Pi (OMP) reuses the Pi adapter with `PI_CODING_AGENT_DIR=~/.omp/agent` to
+point at OMP's session directory. OMP stores sessions under `~/.omp/agent/sessions/`
+using home-relative directory names (e.g. `~/src/dotai` → `-src-dotai`) and JSONL
+transcripts with a `title` preamble record before the session header. The Pi adapter
+now handles both naming conventions and the OMP preamble format. Configured assets,
+workspace-matched session evidence, and portable HTML routing are implemented through
+the shared Pi provider. OMP remains outside the verified Quickstart set until a
+complete interactive report-loop smoke is observed.
 
 ### Kimi Code {#kimi-code}
 

@@ -363,13 +363,15 @@ Copilot 不记录逐次响应的 token 用量，VS Code Copilot Chat 也没有�
 
 ### 更多适配器
 
-除上述宿主外，Better Harness 还支持 Qwen Code、Pi、Kimi Code、WorkBuddy 与
+除上述宿主外，Better Harness 还支持 Qwen Code、Pi、Oh My Pi (OMP)、Kimi Code、WorkBuddy 与
 Grok。它们确切的安装、调用与证据边界都放在文档里，以保持本 README 精简：
 
 - **Qwen Code** —— [安装指南](docs/docs/installation.mdx#qwen-code)
   （`qwen extensions install QoderAI/better-harness`）。
 - **Pi** —— [宿主适配器矩阵](docs/docs/hosts/adapter-matrix.md#pi)
   （`pi install <source>` 或 `pi -e <source>`）。
+- **Oh My Pi (OMP)** —— [宿主适配器矩阵](docs/docs/hosts/adapter-matrix.md#oh-my-pi-omp)
+  （`PI_CODING_AGENT_DIR=~/.omp/agent` 环境变量指向 OMP 会话目录）。
 - **Kimi Code** —— [宿主适配器矩阵](docs/adapters/README.md)
   （`.kimi-plugin/plugin.json` 插件安装）。
 - **WorkBuddy** —— [宿主适配器矩阵](docs/docs/hosts/adapter-matrix.md#workbuddy)。

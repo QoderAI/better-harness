@@ -35,16 +35,27 @@ function isScopedWorkspaceMatch(candidate, scope) {
 
 export function workspaceToPiSessionDirVariants(workspace) {
   const expanded = expandHome(workspace ?? process.cwd());
-  const normalized = path.win32.isAbsolute(expanded) ? path.win32.normalize(expanded) : normalizeWorkspace(expanded);
+  const normalized = path.isAbsolute(expanded) ? path.normalize(expanded) : normalizeWorkspace(expanded);
   // Match pi's session directory naming: strip one leading separator, then
   // replace every "/", "\", and ":" with "-", wrapped as --<slug>--.
   const body = normalized.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-");
-  return {
+  const result = {
     exact: `--${body}--`,
     // Sessions started in a subdirectory of the workspace live in their own
     // cwd-keyed directory; its name starts with the workspace slug body.
     prefix: `--${body}-`,
   };
+  // OMP (Oh My Pi) v17.2.9+ uses home-relative directory names for paths
+  // under the home directory: "-" prefix + relative path with "/" → "-".
+  // e.g. ~/src/dotai → "-src-dotai" (not "--Users-ooxx-src-dotai--").
+  const home = expandHome("~");
+  const homeRelative = path.relative(home, normalized);
+  if (homeRelative && !homeRelative.startsWith("..") && !path.isAbsolute(homeRelative)) {
+    const homeBody = homeRelative.replace(/[/\\:]/g, "-");
+    result.homeExact = `-${homeBody}`;
+    result.homePrefix = `-${homeBody}`;
+  }
+  return result;
 }
 
 function sessionIdFromFileName(filePath) {
@@ -239,13 +250,16 @@ async function probeTranscript(filePath, scope) {
     validHeader: false,
     cwd: null,
   };
-  let firstRecord = true;
+  let headerSeen = false;
   await forEachJsonLine(filePath, (raw) => {
-    if (firstRecord) {
-      firstRecord = false;
-      // Pi requires the first parsed record to be the session header. Do not
-      // let a later injected header qualify an otherwise foreign transcript.
-      if (raw?.type !== "session" || typeof raw.id !== "string" || !isScopedWorkspaceMatch(raw.cwd, scope)) {
+    if (!headerSeen) {
+      // OMP emits a "title" record before the session header; skip it.
+      // Any other non-session record before the header indicates a foreign
+      // or corrupted transcript — reject fail-closed.
+      if (raw?.type === "title") return undefined;
+      if (raw?.type !== "session") return false;
+      headerSeen = true;
+      if (typeof raw.id !== "string" || !isScopedWorkspaceMatch(raw.cwd, scope)) {
         return false;
       }
       summary.validHeader = true;
@@ -301,7 +315,10 @@ async function listSessionDirectories(sessionsRoot, variants) {
   return entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
-    .filter((name) => name === variants.exact || name.startsWith(variants.prefix))
+    .filter((name) =>
+      name === variants.exact || name.startsWith(variants.prefix) ||
+      (variants.homeExact != null && (name === variants.homeExact || name.startsWith(variants.homePrefix)))
+    )
     .map((name) => path.join(sessionsRoot, name));
 }
 
