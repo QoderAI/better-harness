@@ -249,6 +249,8 @@ async function probeTranscript(filePath, scope) {
     workspaceMatch: false,
     validHeader: false,
     cwd: null,
+    forkTimestamp: null,
+    parentSessionId: null,
   };
   let headerSeen = false;
   await forEachJsonLine(filePath, (raw) => {
@@ -266,9 +268,13 @@ async function probeTranscript(filePath, scope) {
       summary.workspaceMatch = true;
       summary.sessionId = raw.id;
       summary.cwd = raw.cwd;
-      // TODO: OMP forked sessions (parentSession field) duplicate all parent
-      // messages. Detect parentSession and mark as derived; process only the
-      // incremental messages after the fork point to avoid double-counting.
+      // OMP /fork creates a new session file with all parent entries copied.
+      // The parentSession field identifies the source; the header timestamp
+      // marks the fork point — messages before it are inherited, not new.
+      if (typeof raw.parentSession === "string" && raw.parentSession.length > 0) {
+        summary.parentSessionId = raw.parentSession;
+        summary.forkTimestamp = raw.timestamp ?? null;
+      }
     } else if (raw?.type === "session") {
       // Multiple headers are not a valid Pi session and can splice content
       // from different workspaces, so reject the whole file fail-closed.
@@ -291,7 +297,13 @@ function addRef(sessions, sessionId, workspace, ref) {
     sourceKinds: new Set(),
     sourceRefs: [],
     workspaceCwds: new Set(),
+    forkTimestamp: null,
+    parentSessionId: null,
   };
+  if (ref.forkTimestamp && !session.forkTimestamp) {
+    session.forkTimestamp = ref.forkTimestamp;
+    session.parentSessionId = ref.parentSessionId ?? null;
+  }
   if (typeof ref.cwd === "string" && ref.cwd.length > 0) session.workspaceCwds.add(ref.cwd);
   session.sourceKinds.add(ref.kind);
   session.sourceRefs.push(ref);
@@ -459,6 +471,8 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
             role: transcriptRoot.role,
             path: filePath,
             firstSeen: probe.firstSeen,
+            forkTimestamp: probe.forkTimestamp,
+            parentSessionId: probe.parentSessionId,
             lastSeen: probe.lastSeen,
             cwd: probe.cwd,
           });
@@ -486,6 +500,9 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
     const identityCwd = scope._workspaceMatchScope
       ? sessionWorkspaceCwd(session, scope._workspaceMatchScope)
       : null;
+    // OMP forked sessions copy all parent entries. Skip inherited messages
+    // (timestamp before fork point) to avoid double-counting with the parent.
+    const forkCutoff = session.forkTimestamp ? timestampMillis(session.forkTimestamp) : null;
     for (const ref of session.sourceRefs ?? []) {
       if (remainingLines !== null && remainingLines <= 0) {
         truncated = true;
@@ -494,6 +511,11 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
       if (!ref.path.endsWith(".jsonl")) continue;
       const readCoverage = await forEachJsonLine(ref.path, (raw, line) => {
         if (raw?.type === "session" && raw?.cwd && !isScopedWorkspaceMatch(raw.cwd, scope)) return;
+        // Skip entries inherited from parent session in forked files.
+        if (forkCutoff !== null && raw?.type !== "session") {
+          const evtTs = timestampMillis(inferTimestamp(raw));
+          if (evtTs !== null && evtTs < forkCutoff) return;
+        }
         for (const event of this.normalizeEvents(raw, { ...ref, sessionId: session.sessionId, line }, options)) {
           if (withinTimeRange(event.timestamp, scope)) events.push(event);
         }
