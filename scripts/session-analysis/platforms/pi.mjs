@@ -50,10 +50,11 @@ export function workspaceToPiSessionDirVariants(workspace) {
   // e.g. ~/src/dotai → "-src-dotai" (not "--Users-ooxx-src-dotai--").
   const home = expandHome("~");
   const homeRelative = path.relative(home, normalized);
-  if (homeRelative && !homeRelative.startsWith("..") && !path.isAbsolute(homeRelative)) {
+  const outsideHome = homeRelative === ".." || homeRelative.startsWith(`..${path.sep}`);
+  if (homeRelative && !outsideHome && !path.isAbsolute(homeRelative)) {
     const homeBody = homeRelative.replace(/[/\\:]/g, "-");
     result.homeExact = `-${homeBody}`;
-    result.homePrefix = `-${homeBody}`;
+    result.homePrefix = `-${homeBody}-`;
   }
   return result;
 }
