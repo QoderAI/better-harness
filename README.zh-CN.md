@@ -369,7 +369,9 @@ Grok。它们确切的安装、调用与证据边界都放在文档里，以保�
 - **Qwen Code** —— [安装指南](docs/docs/installation.mdx#qwen-code)
   （`qwen extensions install QoderAI/better-harness`）。
 - **Pi** —— [宿主适配器矩阵](docs/docs/hosts/adapter-matrix.md#pi)
-  （`pi install <source>` 或 `pi -e <source>`）。
+  （`pi install <source>` 或 `pi -e <source>`）。当 `PI_CODING_AGENT_DIR` 指向 OMP
+  的 agent 目录时，同一适配器也能读取
+  [Oh My Pi (OMP)](docs/docs/hosts/adapter-matrix.md#oh-my-pi-omp) 会话。
 - **Kimi Code** —— [宿主适配器矩阵](docs/adapters/README.md)
   （`.kimi-plugin/plugin.json` 插件安装）。
 - **WorkBuddy** —— [宿主适配器矩阵](docs/docs/hosts/adapter-matrix.md#workbuddy)。

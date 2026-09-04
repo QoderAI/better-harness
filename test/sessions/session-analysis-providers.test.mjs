@@ -114,7 +114,10 @@ test("Claude, Cursor, and Qwen workspace slugs cover Unix and Windows layouts", 
   assert.ok(workspaceToClaudeSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToCursorSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
   assert.ok(workspaceToQwenSlugVariants("C:\\workspace\\project").some((value) => value.includes("C--workspace-project")));
-  assert.ok(workspaceToPiSessionDirVariants("C:\\workspace\\project").exact.includes("C--workspace-project"));
+  // A Windows workspace string keeps its drive letter on every host instead of
+  // being resolved against the running host's cwd.
+  assert.equal(workspaceToPiSessionDirVariants("C:\\workspace\\project").exact, "--C--workspace-project--");
+  assert.equal(workspaceToPiSessionDirVariants("C:\\workspace\\project").prefix, "--C--workspace-project-");
   assert.ok(workspaceToWorkbuddySlugVariants("C:\\workspace\\project").exact.includes("C--workspace-project"));
   assert.equal(
     workspaceToGrokSessionDirName("C:\\workspace\\project"),
@@ -1485,6 +1488,158 @@ test("Pi provider discovers subdirectory session dirs that share the workspace p
   const result = await new PiSessionAnalyzer().analyze({ command: "sources", workspace, home });
   assert.equal(result.sessions.length, 1);
   assert.equal(result.sources[0].path, path.join(home, "sessions", dirName));
+});
+
+// OMP (Oh My Pi) keys session directories on the home-relative workspace path
+// instead of pi's absolute --<slug>-- form. os.homedir() reads HOME on POSIX and
+// USERPROFILE on Windows, so both are redirected to keep the fixture host-neutral.
+async function withFakeHome(prefix, run) {
+  const fakeHome = await fixtureRoot(prefix);
+  const previous = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  process.env.HOME = fakeHome;
+  process.env.USERPROFILE = fakeHome;
+  try {
+    return await run(fakeHome);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+test("Pi derives OMP home-relative session directory names with a bounded prefix", async () => {
+  await withFakeHome("session-omp-slug-", (fakeHome) => {
+    const variants = workspaceToPiSessionDirVariants(path.join(fakeHome, "src", "dotai"));
+    assert.equal(variants.homeExact, "-src-dotai");
+    // The trailing separator keeps a sibling workspace out of the prefix match.
+    assert.equal(variants.homePrefix, "-src-dotai-");
+    // A workspace outside the home directory has no home-relative form.
+    assert.equal(workspaceToPiSessionDirVariants(path.join(fakeHome, "..", "elsewhere")).homeExact, undefined);
+    assert.equal(workspaceToPiSessionDirVariants(path.dirname(fakeHome)).homeExact, undefined);
+    // A directory whose name merely begins with ".." is still inside the home
+    // directory, so it keeps a home-relative form.
+    assert.equal(workspaceToPiSessionDirVariants(path.join(fakeHome, "..cache")).homeExact, "-..cache");
+  });
+});
+
+test("Pi discovers OMP home-relative session directories and skips the title preamble", async () => {
+  await withFakeHome("session-omp-discovery-", async (fakeHome) => {
+    const workspace = path.join(fakeHome, "src", "dotai");
+    const home = path.join(fakeHome, ".omp", "agent");
+    const sessionId = "99999999-9999-4999-8999-999999999999";
+    await writeJsonl(path.join(home, "sessions", "-src-dotai", `2026-09-01T01-00-00-000Z_${sessionId}.jsonl`), [
+      { type: "title", title: "Add the OMP adapter" },
+      { type: "session", version: 3, id: sessionId, timestamp: "2026-09-01T01:00:00.000Z", cwd: workspace },
+      {
+        type: "message",
+        id: "omp1",
+        parentId: null,
+        timestamp: "2026-09-01T01:00:10.000Z",
+        message: { role: "user", content: [{ type: "text", text: "omp prompt" }] },
+      },
+    ]);
+
+    const analyzer = new PiSessionAnalyzer();
+    const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+    assert.deepEqual(discovery.sessions.map((session) => session.sessionId), [sessionId]);
+    const scope = await analyzer.resolveScope({ workspace, home });
+    const events = await analyzer.readSession(discovery.sessions[0], scope, { includeUserText: true });
+    assert.deepEqual(events.filter((event) => event.type === "user").map((event) => event.userText), ["omp prompt"]);
+  });
+});
+
+test("Pi keeps a sibling OMP workspace out of the home-relative prefix match", async () => {
+  await withFakeHome("session-omp-sibling-", async (fakeHome) => {
+    const workspace = path.join(fakeHome, "src", "dotai");
+    const sibling = path.join(fakeHome, "src", "dotaix");
+    const home = path.join(fakeHome, ".omp", "agent");
+    // Only the sibling workspace has sessions; the target must stay empty.
+    await writeJsonl(path.join(home, "sessions", "-src-dotaix", "2026-09-01T01-00-00-000Z_sibling.jsonl"), [
+      { type: "session", version: 3, id: "sibling", timestamp: "2026-09-01T01:00:00.000Z", cwd: sibling },
+    ]);
+
+    const result = await new PiSessionAnalyzer().analyze({ command: "sources", workspace, home });
+    assert.equal(result.sessions.length, 0);
+    assert.equal(result.sources[0].exists, false);
+  });
+});
+
+test("Pi discovers OMP subdirectory session dirs under the home-relative prefix", async () => {
+  await withFakeHome("session-omp-subdir-", async (fakeHome) => {
+    const workspace = path.join(fakeHome, "src", "dotai");
+    const subdir = path.join(workspace, "packages", "app");
+    const home = path.join(fakeHome, ".omp", "agent");
+    await writeJsonl(path.join(home, "sessions", "-src-dotai-packages-app", "2026-09-01T01-00-00-000Z_child.jsonl"), [
+      { type: "session", version: 3, id: "omp-child", timestamp: "2026-09-01T01:00:00.000Z", cwd: subdir },
+    ]);
+
+    const result = await new PiSessionAnalyzer().analyze({ command: "sources", workspace, home });
+    assert.deepEqual(result.sessions.map((session) => session.sessionId), ["omp-child"]);
+  });
+});
+
+const OMP_FORK_PARENT = [
+  { type: "session", version: 3, id: "omp-parent", timestamp: "2026-09-01T01:00:00.000Z" },
+  {
+    type: "message",
+    id: "f1",
+    parentId: null,
+    timestamp: "2026-09-01T01:00:10.000Z",
+    message: { role: "user", content: [{ type: "text", text: "inherited prompt" }] },
+  },
+];
+const OMP_FORK_CHILD = [
+  { type: "session", version: 3, id: "omp-fork", parentSession: "omp-parent", timestamp: "2026-09-01T02:00:00.000Z" },
+  OMP_FORK_PARENT[1],
+  {
+    type: "message",
+    id: "f2",
+    parentId: "f1",
+    timestamp: "2026-09-01T02:00:10.000Z",
+    message: { role: "user", content: [{ type: "text", text: "forked prompt" }] },
+  },
+];
+
+async function readOmpForkSessions(prefix, { includeParent }) {
+  return withFakeHome(prefix, async (fakeHome) => {
+    const workspace = path.join(fakeHome, "src", "dotai");
+    const home = path.join(fakeHome, ".omp", "agent");
+    const sessionsDir = path.join(home, "sessions", "-src-dotai");
+    const withCwd = (rows) => rows.map((row) => (row.type === "session" ? { ...row, cwd: workspace } : row));
+    if (includeParent) {
+      await writeJsonl(path.join(sessionsDir, "2026-09-01T01-00-00-000Z_omp-parent.jsonl"), withCwd(OMP_FORK_PARENT));
+    }
+    await writeJsonl(path.join(sessionsDir, "2026-09-01T02-00-00-000Z_omp-fork.jsonl"), withCwd(OMP_FORK_CHILD));
+
+    const analyzer = new PiSessionAnalyzer();
+    const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+    const scope = await analyzer.resolveScope({ workspace, home });
+    const byId = new Map(discovery.sessions.map((session) => [session.sessionId, session]));
+    const prompts = async (sessionId) => (await analyzer.readSession(byId.get(sessionId), scope, { includeUserText: true }))
+      .filter((event) => event.type === "user")
+      .map((event) => event.userText);
+    return { byId, prompts };
+  });
+}
+
+test("Pi counts OMP inherited fork entries once when the parent session is discovered", async () => {
+  const { byId, prompts } = await readOmpForkSessions("session-omp-fork-", { includeParent: true });
+  assert.deepEqual([...byId.keys()].sort(), ["omp-fork", "omp-parent"]);
+  assert.deepEqual(await prompts("omp-parent"), ["inherited prompt"]);
+  assert.deepEqual(await prompts("omp-fork"), ["forked prompt"]);
+  // The fork's reported range starts at the fork point, matching its events.
+  assert.equal(byId.get("omp-fork").firstSeen, "2026-09-01T02:00:00.000Z");
+  assert.equal(byId.get("omp-fork").parentSessionId, "omp-parent");
+});
+
+test("Pi retains OMP inherited fork entries when the parent session is absent", async () => {
+  const { byId, prompts } = await readOmpForkSessions("session-omp-orphan-fork-", { includeParent: false });
+  assert.deepEqual([...byId.keys()], ["omp-fork"]);
+  // Nothing else owns the inherited entries, so dropping them would lose evidence.
+  assert.deepEqual(await prompts("omp-fork"), ["inherited prompt", "forked prompt"]);
+  assert.equal(byId.get("omp-fork").firstSeen, "2026-09-01T01:00:10.000Z");
+  assert.equal(byId.get("omp-fork").parentSessionId, "omp-parent");
 });
 
 test("Pi treats a configured session directory as the exact flat JSONL directory", async () => {

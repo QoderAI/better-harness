@@ -166,6 +166,19 @@ edit host settings, or register an `apply` path.
   discovers the canonical root `skills/` directory and the `prompts/`
   templates through the `pi` manifest in `package.json`; that manifest is
   install/discovery metadata and does not own Pi evidence collection.
+- Oh My Pi (OMP) is a session layout of the `pi` platform, not a host of its own:
+  it has no host id, capability profile, install shell, or lifecycle target here.
+  Pointing `PI_CODING_AGENT_DIR` at `~/.omp/agent` makes both the Pi
+  configured-asset provider and `scripts/session-analysis/platforms/pi.mjs` read
+  that tree. OMP names session directories relative to the home directory
+  (`-src-dotai` for `~/src/dotai`) alongside pi's absolute `--<slug>--` form, and
+  prefixes its JSONL transcripts with a `title` record before the session header;
+  the adapter skips that preamble while still rejecting any other pre-header
+  record fail-closed. An OMP `/fork` transcript carries a copy of its parent's
+  entries and a `parentSession` id: those entries are attributed to the parent
+  only when the parent session is discovered in the same result, so they are
+  counted exactly once and never dropped silently. Boundaries and acceptance
+  scenarios live in `docs/specs/2026-09-04-omp-session-format-compat.md`.
 - Kimi Code configured assets are inventoried through
   `scripts/agent-customize/providers/kimi.mjs`: user-level
   `~/.kimi-code/skills/**/SKILL.md` and `~/.kimi-code/mcp.json`, plus

@@ -389,13 +389,15 @@ surface.
 ### More adapters
 
 Beyond the hosts above, Better Harness also supports Qwen Code, Pi, Kimi Code,
-WorkBuddy, and Grok. Their exact install, invocation, and evidence boundaries
-live in the docs so this README stays focused:
+WorkBuddy, and Grok. Their exact install, invocation, and
+evidence boundaries live in the docs so this README stays focused:
 
 - **Qwen Code** — [installation guide](docs/docs/installation.mdx#qwen-code)
   (`qwen extensions install QoderAI/better-harness`).
 - **Pi** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#pi)
-  (`pi install <source>` or `pi -e <source>`).
+  (`pi install <source>` or `pi -e <source>`). The same adapter reads
+  [Oh My Pi (OMP)](docs/docs/hosts/adapter-matrix.md#oh-my-pi-omp) sessions when
+  `PI_CODING_AGENT_DIR` points at an OMP agent directory.
 - **Kimi Code** — [Host Adapter Matrix](docs/adapters/README.md)
   (`.kimi-plugin/plugin.json` plugin install).
 - **WorkBuddy** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#workbuddy).

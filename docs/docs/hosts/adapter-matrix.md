@@ -37,7 +37,7 @@ remains the complete capability-level source of truth.
 | Cursor | Verified Quickstart | Canvas-capable source-local host | `.cursor-plugin/` | Workspace-matched transcripts, metadata, audit logs, and optional native Context Usage snapshots; partial coverage stays explicit | Cursor Canvas report |
 | Qwen Code | Verified Quickstart | Analysis-capable source-local host | `qwen-extension.json` | Workspace-matching local Qwen transcripts when present | Self-contained HTML + Markdown |
 | GitHub Copilot | Verified Quickstart | Analysis-capable source-local host | `.github/plugin/` | Workspace-matched Copilot CLI transcripts; partial coverage stays explicit | Self-contained HTML + Markdown |
-| Pi | Adapter support | Analysis-capable source-local host | `pi` manifest in `package.json` | Workspace-matching local Pi sessions | Self-contained HTML + Markdown |
+| Pi | Adapter support | Analysis-capable source-local host | `pi` manifest in `package.json` | Workspace-matching local Pi sessions, including the Oh My Pi (OMP) session layout | Self-contained HTML + Markdown |
 | Kimi Code | Adapter support | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | Workspace-matching Kimi wire transcripts | Self-contained HTML + Markdown |
 | WorkBuddy | Adapter support | Analysis-capable source-local host | None; skills use WorkBuddy-owned paths | Workspace-matching WorkBuddy JSONL transcripts | Self-contained HTML + Markdown |
 | Grok | Adapter support | Analysis-capable source-local host | None; skills use Grok-owned paths | Workspace-matching Grok session dirs (`updates.jsonl`) | Self-contained HTML + Markdown |
@@ -121,6 +121,24 @@ running session omitted the package. Package discovery, configured assets,
 workspace-matched session evidence, and portable HTML routing are implemented.
 Pi remains outside the verified Quickstart set until a complete interactive
 report-loop smoke is observed.
+
+### Oh My Pi (OMP) {#oh-my-pi-omp}
+
+Oh My Pi (OMP) is not a separate host adapter: it is a session layout the `pi`
+platform recognizes when `PI_CODING_AGENT_DIR=~/.omp/agent` points at an OMP
+agent directory. OMP has no host id, capability profile, install shell, or
+lifecycle target of its own.
+
+OMP keys session directories on the home-relative workspace path (`~/src/dotai` →
+`-src-dotai`) instead of pi's absolute `--<slug>--` form, and its JSONL
+transcripts start with a `title` record before the session header. The Pi adapter
+reads both naming conventions and skips that preamble while keeping pi's
+fail-closed header rule and workspace isolation. An OMP `/fork` transcript copies
+its parent's entries; those entries count as the parent's only when the parent
+session is discovered in the same result, so nothing is double-counted and nothing
+silently disappears. Session evidence and portable HTML routing come from the
+shared Pi provider, and configured assets are inventoried by the Pi provider
+because it honors the same `PI_CODING_AGENT_DIR` override.
 
 ### Kimi Code {#kimi-code}
 
