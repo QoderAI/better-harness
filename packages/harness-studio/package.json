@@ -55,7 +55,7 @@
     "esbuild-wasm": "0.28.2",
     "fast-xml-parser": "^5.11.1",
     "fflate": "^0.8.3",
-    "i18next": "^26.4.0",
+    "i18next": "^26.4.1",
     "oxc-parser": "0.147.0",
     "oxc-transform": "0.147.0",
     "pdfjs-dist": "^6.2.108",
