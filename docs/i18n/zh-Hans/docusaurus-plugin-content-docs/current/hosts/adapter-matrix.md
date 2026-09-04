@@ -27,7 +27,7 @@ Better Harness 当前声明了十个能力层宿主适配器，其中六个已�
 | Cursor | 已验证快速开始 | 支持 Canvas 的源码本地宿主 | `.cursor-plugin/` | 工作区匹配的转录、元数据、审计日志和可选原生 Context Usage 快照；部分覆盖保持显式标注 | Cursor Canvas 报告 |
 | Qwen Code | 已验证快速开始 | 具备分析能力的源码本地宿主 | `qwen-extension.json` | 匹配当前工作区的本地 Qwen 转录（存在时） | 自包含 HTML + Markdown |
 | GitHub Copilot | 已验证快速开始 | 具备分析能力的源码本地宿主 | `.github/plugin/` | 工作区匹配的 Copilot CLI 转录；部分覆盖保持显式标注 | 自包含 HTML + Markdown |
-| Pi | 适配器支持 | 具备分析能力的源码本地宿主 | `package.json` 中的 `pi` manifest | 匹配当前工作区的本地 Pi 会话 | 自包含 HTML + Markdown |
+| Pi | 适配器支持 | 具备分析能力的源码本地宿主 | `package.json` 中的 `pi` manifest | 匹配当前工作区的本地 Pi 会话，包含 Oh My Pi (OMP) 会话布局 | 自包含 HTML + Markdown |
 | Kimi Code | 适配器支持 | 具备分析能力的源码本地宿主 | `.kimi-plugin/plugin.json` | 匹配工作区的 Kimi wire 转录 | 自包含 HTML + Markdown |
 | WorkBuddy | 适配器支持 | 具备分析能力的源码本地宿主 | 无；Skill 使用 WorkBuddy 自有路径 | 匹配工作区的 WorkBuddy JSONL 转录 | 自包含 HTML + Markdown |
 | Grok | 适配器支持 | 具备分析能力的源码本地宿主 | 无；Skill 使用 Grok 自有路径 | 匹配工作区的 Grok 会话目录（`updates.jsonl`） | 自包含 HTML + Markdown |
@@ -75,6 +75,20 @@ Pi 可以通过 `pi install <source>` 安装本仓库，或使用 `pi -e <source
 运行的会话没有加载该包。包发现、已配置资产、工作区匹配的会话证据与可移植
 HTML 路由均已实现。在观察到完整交互式报告闭环冒烟验证前，Pi 仍不进入已验证
 快速开始集合。
+
+### Oh My Pi (OMP) {#oh-my-pi-omp}
+
+Oh My Pi (OMP) 不是独立的宿主适配器，而是 `pi` 平台能识别的一种会话布局：将
+`PI_CODING_AGENT_DIR=~/.omp/agent` 指向 OMP 的 agent 目录即可。OMP 在本仓库里
+没有自己的 host id、能力画像、安装 Shell 或生命周期目标。
+
+OMP 以相对 home 目录的工作区路径命名会话目录（`~/src/dotai` → `-src-dotai`），
+而不是 pi 的绝对路径 `--<slug>--` 形式，并且在会话头之前先写一条 `title` 记录。
+Pi 适配器同时识别两种命名约定并跳过该前置记录，同时保留 pi 的 fail-closed
+会话头规则与工作区隔离。OMP 的 `/fork` 转录会复制父会话的全部条目：只有当父
+会话也在同一次发现结果中时，这些条目才计入父会话，因此既不会重复计数，也不会
+静默丢失。会话证据与可移植 HTML 路由均来自共享的 Pi provider；已配置资产也由 Pi
+provider 清点，因为它遵循同一个 `PI_CODING_AGENT_DIR` 覆盖项。
 
 ### Kimi Code {#kimi-code}
 

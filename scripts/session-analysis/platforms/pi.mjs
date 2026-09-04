@@ -33,9 +33,33 @@ function isScopedWorkspaceMatch(candidate, scope) {
   return classifyWorkspaceCwd(candidate, scope._workspaceMatchScope) !== WORKSPACE_CWD_MATCH.UNMATCHED;
 }
 
-export function workspaceToPiSessionDirVariants(workspace) {
+// A Windows-shaped workspace string stays a Windows path on every host, so the
+// slug keeps its drive letter instead of being resolved against the POSIX cwd.
+function normalizeWorkspaceForSlug(workspace) {
   const expanded = expandHome(workspace ?? process.cwd());
-  const normalized = path.isAbsolute(expanded) ? path.normalize(expanded) : normalizeWorkspace(expanded);
+  return path.win32.isAbsolute(expanded) ? path.win32.normalize(expanded) : normalizeWorkspace(expanded);
+}
+
+// OMP (Oh My Pi) names session directories relative to the home directory: one
+// leading "-" plus the home-relative path with separators folded to "-", e.g.
+// ~/src/dotai → "-src-dotai" instead of pi's "--Users-ooxx-src-dotai--".
+// This reads the host-native path rather than the slug form, because only a
+// host-native absolute path can be home-relative at all: a foreign-platform
+// workspace string would resolve against the host cwd and invent a false body.
+function homeRelativeSlugBody(workspace) {
+  const expanded = expandHome(workspace ?? process.cwd());
+  const home = expandHome("~");
+  if (typeof home !== "string" || !path.isAbsolute(home) || !path.isAbsolute(expanded)) return null;
+  const relative = path.relative(home, path.resolve(expanded));
+  // Compare whole segments: a directory legitimately named "..cache" is inside
+  // the home directory, while ".." and "../<rest>" escape it.
+  const outsideHome = relative === ".." || relative.startsWith(`..${path.sep}`);
+  if (!relative || outsideHome || path.isAbsolute(relative)) return null;
+  return relative.replace(/[/\\:]/g, "-");
+}
+
+export function workspaceToPiSessionDirVariants(workspace) {
+  const normalized = normalizeWorkspaceForSlug(workspace);
   // Match pi's session directory naming: strip one leading separator, then
   // replace every "/", "\", and ":" with "-", wrapped as --<slug>--.
   const body = normalized.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-");
@@ -45,15 +69,12 @@ export function workspaceToPiSessionDirVariants(workspace) {
     // cwd-keyed directory; its name starts with the workspace slug body.
     prefix: `--${body}-`,
   };
-  // OMP (Oh My Pi) v17.2.9+ uses home-relative directory names for paths
-  // under the home directory: "-" prefix + relative path with "/" → "-".
-  // e.g. ~/src/dotai → "-src-dotai" (not "--Users-ooxx-src-dotai--").
-  const home = expandHome("~");
-  const homeRelative = path.relative(home, normalized);
-  const outsideHome = homeRelative === ".." || homeRelative.startsWith(`..${path.sep}`);
-  if (homeRelative && !outsideHome && !path.isAbsolute(homeRelative)) {
-    const homeBody = homeRelative.replace(/[/\\:]/g, "-");
+  const homeBody = homeRelativeSlugBody(workspace);
+  if (homeBody) {
     result.homeExact = `-${homeBody}`;
+    // Keep the trailing separator: without it a sibling workspace whose name
+    // merely starts with this one (~/src/dotai vs ~/src/dotai-next) would
+    // qualify as a subdirectory session directory.
     result.homePrefix = `-${homeBody}-`;
   }
   return result;
@@ -242,6 +263,16 @@ function transcriptEvents(raw, sourceRef, options) {
   return events;
 }
 
+// OMP `/fork` copies every parent entry into the new session file. The header
+// timestamp is the fork point, so records stamped before it were produced by the
+// parent session. Discovery and reading share this predicate so the session time
+// range can never disagree with the events the session actually yields.
+function isInheritedForkEntry(raw, forkCutoff) {
+  if (forkCutoff === null || raw?.type === "session") return false;
+  const millis = timestampMillis(inferTimestamp(raw));
+  return millis !== null && millis < forkCutoff;
+}
+
 async function probeTranscript(filePath, scope) {
   const summary = {
     sessionId: sessionIdFromFileName(filePath),
@@ -250,10 +281,16 @@ async function probeTranscript(filePath, scope) {
     workspaceMatch: false,
     validHeader: false,
     cwd: null,
-    forkTimestamp: null,
     parentSessionId: null,
+    forkTimestamp: null,
+    // Time range excluding entries inherited from the parent session. Used only
+    // when the parent is discovered too, so inherited entries stay counted once.
+    ownedFirstSeen: null,
+    ownedLastSeen: null,
   };
+  const ownedRange = { firstSeen: null, lastSeen: null };
   let headerSeen = false;
+  let forkCutoff = null;
   await forEachJsonLine(filePath, (raw) => {
     if (!headerSeen) {
       // OMP emits a "title" record before the session header; skip it.
@@ -269,12 +306,10 @@ async function probeTranscript(filePath, scope) {
       summary.workspaceMatch = true;
       summary.sessionId = raw.id;
       summary.cwd = raw.cwd;
-      // OMP /fork creates a new session file with all parent entries copied.
-      // The parentSession field identifies the source; the header timestamp
-      // marks the fork point — messages before it are inherited, not new.
       if (typeof raw.parentSession === "string" && raw.parentSession.length > 0) {
         summary.parentSessionId = raw.parentSession;
-        summary.forkTimestamp = raw.timestamp ?? null;
+        summary.forkTimestamp = normalizeTimestamp(raw.timestamp) ?? null;
+        forkCutoff = timestampMillis(summary.forkTimestamp);
       }
     } else if (raw?.type === "session") {
       // Multiple headers are not a valid Pi session and can splice content
@@ -283,8 +318,12 @@ async function probeTranscript(filePath, scope) {
       summary.workspaceMatch = false;
       return false;
     }
-    mergeTimeRange(summary, inferTimestamp(raw));
+    const timestamp = inferTimestamp(raw);
+    mergeTimeRange(summary, timestamp);
+    if (!isInheritedForkEntry(raw, forkCutoff)) mergeTimeRange(ownedRange, timestamp);
   });
+  summary.ownedFirstSeen = ownedRange.firstSeen;
+  summary.ownedLastSeen = ownedRange.lastSeen;
   return summary;
 }
 
@@ -298,13 +337,13 @@ function addRef(sessions, sessionId, workspace, ref) {
     sourceKinds: new Set(),
     sourceRefs: [],
     workspaceCwds: new Set(),
-    forkTimestamp: null,
     parentSessionId: null,
+    forkTimestamp: null,
   };
-  if (ref.forkTimestamp && !session.forkTimestamp) {
-    session.forkTimestamp = ref.forkTimestamp;
-    session.parentSessionId = ref.parentSessionId ?? null;
-  }
+  // Provenance is per file; the effective fork cutoff is applied per source ref
+  // so a second transcript for the same id never inherits a foreign cutoff.
+  session.parentSessionId ??= ref.parentSessionId ?? null;
+  session.forkTimestamp ??= ref.forkTimestamp ?? null;
   if (typeof ref.cwd === "string" && ref.cwd.length > 0) session.workspaceCwds.add(ref.cwd);
   session.sourceKinds.add(ref.kind);
   session.sourceRefs.push(ref);
@@ -321,6 +360,12 @@ function finalizeSession(session) {
   );
 }
 
+function matchesSessionDirVariants(name, variants) {
+  if (name === variants.exact || name.startsWith(variants.prefix)) return true;
+  if (variants.homeExact == null) return false;
+  return name === variants.homeExact || name.startsWith(variants.homePrefix);
+}
+
 async function listSessionDirectories(sessionsRoot, variants) {
   let entries;
   try {
@@ -331,10 +376,7 @@ async function listSessionDirectories(sessionsRoot, variants) {
   return entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
-    .filter((name) =>
-      name === variants.exact || name.startsWith(variants.prefix) ||
-      (variants.homeExact != null && (name === variants.homeExact || name.startsWith(variants.homePrefix)))
-    )
+    .filter((name) => matchesSessionDirVariants(name, variants))
     .map((name) => path.join(sessionsRoot, name));
 }
 
@@ -442,11 +484,11 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
   }
 
   async discoverSessions(scope, roots) {
-    const sessions = new Map();
     const transcriptRoot = roots.find((root) => root.kind === "pi-session-jsonl");
     if (!transcriptRoot) return [];
     const custom = scope.sessionDirMode === "custom";
     const seenDirs = new Set();
+    const probes = [];
     for (const sessionsRoot of transcriptRoot.paths ?? []) {
       if (!await pathExists(sessionsRoot)) continue;
       // Custom session directories contain JSONL files directly; the default
@@ -467,18 +509,29 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
           // shared custom directory never leaks foreign-workspace sessions.
           const probe = await probeTranscript(filePath, scope);
           if (!probe.validHeader || !probe.workspaceMatch || !withinTimeRange(probe.lastSeen ?? probe.firstSeen, scope)) continue;
-          addRef(sessions, probe.sessionId, scope.workspace, {
-            kind: transcriptRoot.kind,
-            role: transcriptRoot.role,
-            path: filePath,
-            firstSeen: probe.firstSeen,
-            forkTimestamp: probe.forkTimestamp,
-            parentSessionId: probe.parentSessionId,
-            lastSeen: probe.lastSeen,
-            cwd: probe.cwd,
-          });
+          probes.push({ filePath, probe });
         }
       }
+    }
+    // A fork cutoff only deduplicates evidence the parent session also carries.
+    // When the parent is absent from this result the inherited entries have no
+    // other owner, so they stay with the fork rather than vanishing untracked.
+    const discoveredIds = new Set(probes.map(({ probe }) => probe.sessionId));
+    const sessions = new Map();
+    for (const { filePath, probe } of probes) {
+      const dedupeFork = probe.forkTimestamp !== null
+        && probe.parentSessionId !== null
+        && discoveredIds.has(probe.parentSessionId);
+      addRef(sessions, probe.sessionId, scope.workspace, {
+        kind: transcriptRoot.kind,
+        role: transcriptRoot.role,
+        path: filePath,
+        firstSeen: dedupeFork ? probe.ownedFirstSeen ?? probe.firstSeen : probe.firstSeen,
+        lastSeen: dedupeFork ? probe.ownedLastSeen ?? probe.lastSeen : probe.lastSeen,
+        cwd: probe.cwd,
+        parentSessionId: probe.parentSessionId,
+        forkTimestamp: dedupeFork ? probe.forkTimestamp : null,
+      });
     }
     return [...sessions.values()].map(finalizeSession)
       .sort((left, right) => (timestampMillis(right.lastSeen) ?? 0) - (timestampMillis(left.lastSeen) ?? 0));
@@ -501,22 +554,18 @@ export class PiSessionAnalyzer extends SessionAnalyzer {
     const identityCwd = scope._workspaceMatchScope
       ? sessionWorkspaceCwd(session, scope._workspaceMatchScope)
       : null;
-    // OMP forked sessions copy all parent entries. Skip inherited messages
-    // (timestamp before fork point) to avoid double-counting with the parent.
-    const forkCutoff = session.forkTimestamp ? timestampMillis(session.forkTimestamp) : null;
     for (const ref of session.sourceRefs ?? []) {
       if (remainingLines !== null && remainingLines <= 0) {
         truncated = true;
         break;
       }
       if (!ref.path.endsWith(".jsonl")) continue;
+      // Per source ref: discovery decided whether this file's inherited entries
+      // are already owned by a discovered parent session.
+      const forkCutoff = ref.forkTimestamp ? timestampMillis(ref.forkTimestamp) : null;
       const readCoverage = await forEachJsonLine(ref.path, (raw, line) => {
         if (raw?.type === "session" && raw?.cwd && !isScopedWorkspaceMatch(raw.cwd, scope)) return;
-        // Skip entries inherited from parent session in forked files.
-        if (forkCutoff !== null && raw?.type !== "session") {
-          const evtTs = timestampMillis(inferTimestamp(raw));
-          if (evtTs !== null && evtTs < forkCutoff) return;
-        }
+        if (isInheritedForkEntry(raw, forkCutoff)) return;
         for (const event of this.normalizeEvents(raw, { ...ref, sessionId: session.sessionId, line }, options)) {
           if (withinTimeRange(event.timestamp, scope)) events.push(event);
         }
