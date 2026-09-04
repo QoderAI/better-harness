@@ -24,8 +24,10 @@
     "react-dom": "^19.0.0"
   },
   "overrides": {
+    "fast-uri": "^3.1.7",
     "js-yaml": "^4.3.1",
     "nanoid": "^3.3.18",
+    "qs": "^6.16.0",
     "serialize-javascript": "^7.0.5",
     "uuid": "^11.1.1"
   },
