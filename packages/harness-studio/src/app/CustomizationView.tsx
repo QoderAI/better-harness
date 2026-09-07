@@ -2,14 +2,28 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
 import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
+import type { ColumnDef } from "@tanstack/react-table";
 import type {
   CustomizationAnalysisResponseV1,
   CustomizationDefinitionV1,
   CustomizationHostId,
   PluginInstallationV1,
-  PluginPackageV1,
 } from "@qoder-ai/harness/customization";
 import { studioApiError } from "./studio-api.js";
+import { DataTable } from "./shell/DataTable.js";
+
+/** One catalog row: a definition already resolved against its Host exposures. */
+interface DefinitionRow {
+  definition: CustomizationDefinitionV1;
+  hosts: string;
+}
+
+/** One catalog row: an installation already resolved against its package. */
+interface InstallationRow {
+  installation: PluginInstallationV1;
+  packageName: string;
+  declaredVersion: string | undefined;
+}
 
 export interface CustomizationViewProps {
   analyzed: boolean;
@@ -112,10 +126,112 @@ function CustomizationResults(props: {
   const { t } = useTranslation("customize");
   const { catalog, summary } = props.analysis;
   const [detailView, setDetailView] = useState<"definitions" | "installations">("definitions");
-  const packagesById = useMemo(
-    () => new Map(catalog.packages.map((packageValue) => [packageValue.id, packageValue])),
-    [catalog.packages],
-  );
+
+  // Rows resolve their cross-references once here rather than inside a cell:
+  // sorting compares the value a reader sees, so the Hosts column has to sort by
+  // its rendered Host list and not by the definition id behind it.
+  const definitionRows = useMemo<DefinitionRow[]>(() => catalog.definitions.map((definition) => {
+    const hosts = props.hostsByDefinition.get(definition.id) ?? [];
+    return { definition, hosts: hosts.length > 0 ? hosts.map(hostLabel).join(", ") : t("results.unexposed") };
+  }), [catalog.definitions, props.hostsByDefinition, t]);
+
+  const installationRows = useMemo<InstallationRow[]>(() => {
+    const packagesById = new Map(catalog.packages.map((packageValue) => [packageValue.id, packageValue]));
+    return catalog.installations.map((installation) => {
+      const packageValue = packagesById.get(installation.packageId);
+      return {
+        installation,
+        packageName: packageValue?.manifest.displayName ?? packageValue?.manifest.name ?? t("results.unknownPackage"),
+        declaredVersion: packageValue?.manifest.declaredVersion,
+      };
+    });
+  }, [catalog.installations, catalog.packages, t]);
+
+  const definitionColumns = useMemo<ColumnDef<DefinitionRow, never>[]>(() => [
+    {
+      id: "name",
+      header: t("results.cols.name"),
+      accessorFn: (row) => row.definition.name,
+      meta: { width: "32%" },
+      cell: ({ row }) => <NameCell
+        name={row.original.definition.name}
+        detail={row.original.definition.description}
+      />,
+    },
+    {
+      id: "kind",
+      header: t("results.cols.kind"),
+      accessorFn: (row) => t(`results.kinds.${row.definition.kind}`),
+      meta: { width: "16%" },
+    },
+    {
+      id: "hosts",
+      header: t("results.cols.hosts"),
+      accessorFn: (row) => row.hosts,
+      meta: { width: "16%" },
+    },
+    {
+      id: "source",
+      header: t("results.cols.source"),
+      accessorFn: (row) => row.definition.source.logicalPath ?? t("results.opaqueSource"),
+      meta: { width: "22%" },
+      cell: ({ getValue }) => <SourceCell value={String(getValue())} />,
+    },
+    {
+      id: "evidence",
+      header: t("results.cols.evidence"),
+      accessorFn: (row) => row.definition.validation.status,
+      meta: { width: "14%" },
+    },
+  ], [t]);
+
+  const installationColumns = useMemo<ColumnDef<InstallationRow, never>[]>(() => [
+    {
+      id: "package",
+      header: t("results.installCols.package"),
+      accessorFn: (row) => row.packageName,
+      meta: { width: "21%" },
+      cell: ({ row }) => <NameCell name={row.original.packageName} detail={row.original.declaredVersion} />,
+    },
+    {
+      id: "host",
+      header: t("results.installCols.host"),
+      accessorFn: (row) => hostLabel(row.installation.hostId),
+      meta: { width: "9%" },
+    },
+    {
+      id: "scope",
+      header: t("results.installCols.scope"),
+      accessorFn: (row) => row.installation.scope,
+      meta: { width: "9%" },
+    },
+    {
+      id: "installSource",
+      header: t("results.installCols.installSource"),
+      accessorFn: (row) => row.installation.installSource,
+      meta: { width: "15%" },
+    },
+    {
+      id: "enablement",
+      header: t("results.installCols.enablement"),
+      accessorFn: (row) => row.installation.enablement,
+      meta: { width: "14%" },
+    },
+    {
+      id: "applicability",
+      header: t("results.installCols.applicability"),
+      accessorFn: (row) => row.installation.applicability,
+      meta: { width: "14%" },
+    },
+    {
+      id: "source",
+      header: t("results.installCols.source"),
+      accessorFn: (row) => row.installation.source.logicalPath ?? t("results.opaqueSource"),
+      meta: { width: "18%" },
+      cell: ({ getValue }) => <SourceCell value={String(getValue())} />,
+    },
+  ], [t]);
+
   return <div className="customization-results">
     <dl className="customization-summary" aria-label={t("results.summaryAria")}>
       <SummaryFact label={t("results.definitions")} value={summary.definitionCount} />
@@ -146,14 +262,26 @@ function CustomizationResults(props: {
             : t("results.installationsSummary", { count: summary.installationCount })}</span>
         </header>
         {detailView === "definitions"
-          ? <div className="customization-table-scroll" role="tabpanel"><table>
-              <thead><tr><th>{t("results.cols.name")}</th><th>{t("results.cols.kind")}</th><th>{t("results.cols.hosts")}</th><th>{t("results.cols.source")}</th><th>{t("results.cols.evidence")}</th></tr></thead>
-              <tbody>{catalog.definitions.map((definition) => <DefinitionRow key={definition.id} definition={definition} hosts={props.hostsByDefinition.get(definition.id) ?? []} />)}</tbody>
-            </table></div>
-          : <div className="customization-table-scroll" role="tabpanel"><table>
-              <thead><tr><th>{t("results.installCols.package")}</th><th>{t("results.installCols.host")}</th><th>{t("results.installCols.scope")}</th><th>{t("results.installCols.installSource")}</th><th>{t("results.installCols.enablement")}</th><th>{t("results.installCols.applicability")}</th><th>{t("results.installCols.source")}</th></tr></thead>
-              <tbody>{catalog.installations.map((installation) => <InstallationRow key={installation.id} installation={installation} packageValue={packagesById.get(installation.packageId)} />)}</tbody>
-            </table></div>}
+          ? <DataTable
+            key="definitions"
+            role="tabpanel"
+            label={t("results.tabs.definitions")}
+            columns={definitionColumns}
+            rows={definitionRows}
+            rowId={(row) => row.definition.id}
+            minWidth="760px"
+            initialSorting={[{ id: "name", desc: false }]}
+          />
+          : <DataTable
+            key="installations"
+            role="tabpanel"
+            label={t("results.tabs.installations")}
+            columns={installationColumns}
+            rows={installationRows}
+            rowId={(row) => row.installation.id}
+            minWidth="860px"
+            initialSorting={[{ id: "package", desc: false }]}
+          />}
       </section>
     </div>
   </div>;
@@ -163,29 +291,22 @@ function SummaryFact(props: { label: string; value: number }): React.JSX.Element
   return <div><dt>{props.label}</dt><dd>{props.value}</dd></div>;
 }
 
-function DefinitionRow(props: { definition: CustomizationDefinitionV1; hosts: CustomizationHostId[] }): React.JSX.Element {
-  const { t } = useTranslation("customize");
-  return <tr>
-    <td><strong>{props.definition.name}</strong>{props.definition.description && <small>{props.definition.description}</small>}</td>
-    <td>{t(`results.kinds.${props.definition.kind}`)}</td>
-    <td>{props.hosts.length > 0 ? props.hosts.map(hostLabel).join(", ") : t("results.unexposed")}</td>
-    <td><code>{props.definition.source.logicalPath ?? t("results.opaqueSource")}</code></td>
-    <td>{props.definition.validation.status}</td>
-  </tr>;
+/** A named row leads with its label and keeps the detail on a bounded second line. */
+function NameCell(props: { name: string; detail: string | undefined }): React.JSX.Element {
+  return <span className="customization-name-cell">
+    <strong>{props.name}</strong>
+    {props.detail !== undefined && props.detail !== "" && <small title={props.detail}>{props.detail}</small>}
+  </span>;
 }
 
-function InstallationRow(props: { installation: PluginInstallationV1; packageValue: PluginPackageV1 | undefined }): React.JSX.Element {
-  const { t } = useTranslation("customize");
-  const packageName = props.packageValue?.manifest.displayName ?? props.packageValue?.manifest.name ?? t("results.unknownPackage");
-  return <tr>
-    <td><strong>{packageName}</strong>{props.packageValue?.manifest.declaredVersion && <small>{props.packageValue.manifest.declaredVersion}</small>}</td>
-    <td>{hostLabel(props.installation.hostId)}</td>
-    <td>{props.installation.scope}</td>
-    <td>{props.installation.installSource}</td>
-    <td>{props.installation.enablement}</td>
-    <td>{props.installation.applicability}</td>
-    <td><code>{props.installation.source.logicalPath ?? t("results.opaqueSource")}</code></td>
-  </tr>;
+/**
+ * A logical path truncates from the left: the distinguishing part of
+ * `Workspace/.codex/plugins/review-plugin/.codex-plugin/plugin.json` is its tail.
+ * The full value stays available on hover rather than as a tab stop, because a
+ * catalog of hundreds of rows must not add hundreds of keyboard stops.
+ */
+function SourceCell(props: { value: string }): React.JSX.Element {
+  return <code className="customization-source-cell" title={props.value}>{props.value}</code>;
 }
 
 function hostLabel(host: CustomizationHostId): string {

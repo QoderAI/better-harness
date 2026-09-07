@@ -1718,17 +1718,28 @@
 .customization-hosts > footer p { margin: 0; padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); color: var(--color-warning); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
 
 .customization-definitions { grid-template-rows: var(--pane-header-height) minmax(0, 1fr); background: var(--color-workspace); }
-.customization-table-scroll { min-width: 0; min-height: 0; overflow: auto; }
-.customization-definitions table { width: 100%; min-width: 760px; border-collapse: collapse; }
-.customization-definitions th { position: sticky; top: 0; z-index: 1; color: var(--color-text-muted); background: var(--color-surface-subtle); text-align: left; font-size: var(--type-meta-size); font-weight: var(--weight-medium); line-height: var(--type-meta-line); }
-.customization-definitions th,
-.customization-definitions td { padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); vertical-align: top; }
-.customization-definitions td:first-child { min-width: 180px; }
-.customization-definitions td > strong,
-.customization-definitions td > small { display: block; }
-.customization-definitions td > strong { font-size: var(--type-label-size); font-weight: var(--weight-medium); line-height: var(--type-label-line); }
-.customization-definitions td > small { max-width: 44ch; overflow: hidden; margin-top: var(--space-xs); color: var(--color-text-muted); text-overflow: ellipsis; white-space: nowrap; }
-.customization-definitions code { font-family: var(--font-code); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
+/* The catalog rows come from the shared DataTable, so only the two cells that
+   carry more than a value are described here. */
+.customization-name-cell { min-width: 0; display: grid; }
+.customization-name-cell > strong,
+.customization-name-cell > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.customization-name-cell > strong { font-size: var(--type-label-size); font-weight: var(--weight-medium); line-height: var(--type-label-line); }
+.customization-name-cell > small { color: var(--color-text-muted); }
+/* A logical path is distinguished by its tail, so it clips at the head. */
+.customization-source-cell {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  direction: rtl;
+  color: var(--color-text-muted);
+  font-family: var(--font-code);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.customization-source-cell:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 
 @media (max-width: 1080px) {
   .customization-panes { grid-template-columns: minmax(220px, 260px) minmax(0, 1fr); }
