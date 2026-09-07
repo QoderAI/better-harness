@@ -8,18 +8,24 @@ import { startHarnessStudioServer, type StartedHarnessStudioServer } from "../sr
 import { decodeSseStream } from "./sse-test-utils.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const HOST_EXECUTABLE = resolve(
-  here,
-  "../../better-harness-desktop/dist/native",
-  process.platform === "win32" ? "harness-acp-host.exe" : "harness-acp-host",
-);
+const nativeDir = resolve(here, "../../better-harness-desktop/dist/native");
+const STDIO_HOST = join(nativeDir, process.platform === "win32" ? "harness-acp-host.exe" : "harness-acp-host");
+// The NSXPC bridge only resolves its launchd service from inside the dev .app.
+const NSXPC_BRIDGE = join(nativeDir, "Harness ACP.app", "Contents", "MacOS", "harness-acp-client");
 const ACP_AGENT_FIXTURE = resolve(here, "../../harness/test/fixtures/acp-agent.mjs");
+
+const transports = [
+  { transport: "stdio" as const, executable: STDIO_HOST, profile: "acp-v1-rust" as const },
+  ...(process.platform === "darwin"
+    ? [{ transport: "nsxpc" as const, executable: NSXPC_BRIDGE, profile: "acp-v1-nsxpc" as const }]
+    : []),
+];
 
 function runRequest(threadId: string, runId: string, prompt: string): string {
   return JSON.stringify({ kind: HARNESS_RUN_REQUEST_KIND, threadId, runId, prompt });
 }
 
-describe("Harness Studio Rust ACP route", () => {
+describe.each(transports)("Harness Studio Rust ACP route ($transport)", ({ transport, executable, profile }) => {
   let started: StartedHarnessStudioServer | undefined;
   const temporaryDirectories: string[] = [];
 
@@ -39,7 +45,8 @@ describe("Harness Studio Rust ACP route", () => {
 
     started = await startHarnessStudioServer({
       appDir,
-      acpHostExecutable: HOST_EXECUTABLE,
+      acpHostExecutable: executable,
+      acpHostTransport: transport,
       workspaceDirectoryPicker: async () => workspace,
       workspaceSessionProvider: {
         discover: async () => ({ label: "rust-acp-project", sessions: [] }),
@@ -54,7 +61,7 @@ describe("Harness Studio Rust ACP route", () => {
     expect(await (await fetch(`${started.url}/api/config`)).json()).toMatchObject({
       acpEnabled: true,
       acpAgentLabel: "Fixture ACP via Rust",
-      acpRuntimeProfile: "acp-v1-rust",
+      acpRuntimeProfile: profile,
     });
     await fetch(`${started.url}/api/workspace/open`, { method: "POST" });
     const catalog = await (await fetch(`${started.url}/api/projects`)).json() as {
@@ -135,5 +142,59 @@ describe("Harness Studio Rust ACP route", () => {
     started = undefined;
     await expect(rm(workspace, { recursive: true })).resolves.toBeUndefined();
     temporaryDirectories.splice(temporaryDirectories.indexOf(workspace), 1);
+  });
+});
+
+describe.skipIf(process.platform !== "darwin")("Apple NSXPC ACP transport requires a real service", () => {
+  let started: StartedHarnessStudioServer | undefined;
+  const temporaryDirectories: string[] = [];
+
+  afterEach(async () => {
+    await started?.close();
+    started = undefined;
+    await Promise.all(temporaryDirectories.splice(0).map((path) =>
+      rm(path, { recursive: true, force: true })));
+  });
+
+  it("fails the run rather than falling back to stdio when the host is not the bridge", async () => {
+    const appDir = await mkdtemp(join(tmpdir(), "studio-acp-nsxpc-guard-app-"));
+    const workspace = await mkdtemp(join(tmpdir(), "studio-acp-nsxpc-guard-ws-"));
+    temporaryDirectories.push(appDir, workspace);
+    await writeFile(join(appDir, "index.html"), "<!doctype html><title>guard</title>");
+
+    // The plain stdio driver never emits the `transport` proof frame, so a
+    // client told NSXPC is mandatory must refuse it.
+    started = await startHarnessStudioServer({
+      appDir,
+      acpHostExecutable: STDIO_HOST,
+      acpHostTransport: "nsxpc",
+      workspaceDirectoryPicker: async () => workspace,
+      workspaceSessionProvider: { discover: async () => ({ label: "guard", sessions: [] }) },
+      acpAgent: { command: process.execPath, args: [ACP_AGENT_FIXTURE], label: "guard" },
+    });
+    expect(await (await fetch(`${started.url}/api/config`)).json()).toMatchObject({
+      acpRuntimeProfile: "acp-v1-nsxpc",
+    });
+    await fetch(`${started.url}/api/workspace/open`, { method: "POST" });
+    const catalog = await (await fetch(`${started.url}/api/projects`)).json() as {
+      activeProjectId: string;
+      revision: number;
+    };
+
+    const response = await fetch(`${started.url}/api/acp/runs/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Harness-Project-Id": catalog.activeProjectId,
+        "X-Harness-Project-Revision": String(catalog.revision),
+      },
+      body: runRequest("guard-thread", "guard-run", "should not run"),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    const events = decodeSseStream<HarnessRunStreamEventV1>(body);
+    const finished = events.find((entry) => entry.event.type === "run-finished");
+    expect(finished?.event).toMatchObject({ type: "run-finished", exitCode: 1 });
+    expect(JSON.stringify(events)).toContain("stdio fallback");
   });
 });

@@ -319,6 +319,9 @@ export async function streamExperiment(
                 ...(options.acpHostExecutable === undefined
                   ? {}
                   : { executable: options.acpHostExecutable }),
+                ...(options.acpHostTransport === undefined
+                  ? {}
+                  : { transport: options.acpHostTransport }),
                 ...(options.cwd === undefined ? {} : { allowRoots: [options.cwd] }),
               },
             ),

@@ -12,10 +12,13 @@ import { readJsonBody, respondJson, sameOriginRequest } from "./http-utils.js";
 import { AcpRunControl, HarnessStudioServerOptions, HarnessStudioState, StudioAcpAgentOptions } from "./studio-types.js";
 import { effectiveAcpAgentProfiles } from "./acp-agent-catalog.js";
 
-export function acpRuntimeProfile(options: HarnessStudioServerOptions): "acp-v1-rust" | "acp-v1-stdio" {
-  return options.acpHostExecutable !== undefined && existsSync(options.acpHostExecutable)
-    ? "acp-v1-rust"
-    : "acp-v1-stdio";
+export function acpRuntimeProfile(
+  options: HarnessStudioServerOptions,
+): "acp-v1-nsxpc" | "acp-v1-rust" | "acp-v1-stdio" {
+  if (options.acpHostExecutable === undefined || !existsSync(options.acpHostExecutable)) {
+    return "acp-v1-stdio";
+  }
+  return options.acpHostTransport === "nsxpc" ? "acp-v1-nsxpc" : "acp-v1-rust";
 }
 
 export function acpAgentEnabled(options: HarnessStudioServerOptions): boolean {
@@ -36,7 +39,7 @@ export function ensureAcpRun(state: HarnessStudioState, runId: string): AcpRunCo
 export function acpExecutorFactory(
   agent: StudioAcpAgentOptions,
   state: HarnessStudioState,
-  host: { executable?: string; allowRoots?: readonly string[] } = {},
+  host: { executable?: string; transport?: "stdio" | "nsxpc"; allowRoots?: readonly string[] } = {},
 ): HarnessExecutorFactory {
   return (context) => {
     const control = ensureAcpRun(state, context.runId);
@@ -62,6 +65,7 @@ export function acpExecutorFactory(
           command: agent.command,
           args: agent.args,
           env: agent.env,
+          ...(host.transport === undefined ? {} : { transport: host.transport }),
           ...(host.allowRoots === undefined ? {} : { allowRoots: host.allowRoots }),
           onRunEvent: context.onRunEvent,
           abortSignal: control.abortController.signal,
@@ -86,7 +90,7 @@ export function acpExecutorFactory(
 export function acpExperimentExecutorFactory(
   agentForLane: (laneId: string) => StudioAcpAgentOptions,
   state: HarnessStudioState,
-  host: { executable?: string; allowRoots?: readonly string[] } = {},
+  host: { executable?: string; transport?: "stdio" | "nsxpc"; allowRoots?: readonly string[] } = {},
 ): ExperimentLaneExecutorFactory {
   return (context) => {
     const agent = agentForLane(context.lane.id);
@@ -117,6 +121,7 @@ export function acpExperimentExecutorFactory(
           command: agent.command,
           args: agent.args,
           env: agent.env,
+          ...(host.transport === undefined ? {} : { transport: host.transport }),
           ...(host.allowRoots === undefined ? {} : { allowRoots: host.allowRoots }),
           ...(agent.modelPolicy === "agent-default" ? {} : { sessionConfig: { model: context.lane.runtime.model } }),
           onRunEvent: context.onRunEvent,

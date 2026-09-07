@@ -606,6 +606,9 @@ async function route(
         ...(options.acpHostExecutable === undefined
           ? {}
           : { executable: options.acpHostExecutable }),
+        ...(options.acpHostTransport === undefined
+          ? {}
+          : { transport: options.acpHostTransport }),
         ...(runtimeOptions.cwd === undefined ? {} : { allowRoots: [runtimeOptions.cwd] }),
       }),
       runAbortSignal: (runId) => ensureAcpRun(state, runId).abortController.signal,

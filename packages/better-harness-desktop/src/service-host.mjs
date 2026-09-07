@@ -1,7 +1,7 @@
 import { isMessage, isStudioUrl, message } from './protocol.mjs';
 
 /** Owns one child. No generic method dispatch or renderer IPC surface. */
-export function connectStudioService(child, { token, dataDirectory, oxcExecutable, oxcTransport = 'stdio', acpHostExecutable, pickDirectory, onFailure, startupTimeout = 30_000, shutdownTimeout = 5_000 }) {
+export function connectStudioService(child, { token, dataDirectory, oxcExecutable, oxcTransport = 'stdio', acpHostExecutable, acpHostTransport = 'stdio', pickDirectory, onFailure, startupTimeout = 30_000, shutdownTimeout = 5_000 }) {
   let ready = false;
   let stopping = false;
   let exited = false;
@@ -49,7 +49,7 @@ export function connectStudioService(child, { token, dataDirectory, oxcExecutabl
       else if (!stopping) onFailure(new Error(`Studio service exited unexpectedly (${code})`));
     });
   });
-  child.postMessage(message('start', { token, dataDirectory, oxcExecutable, oxcTransport, acpHostExecutable }));
+  child.postMessage(message('start', { token, dataDirectory, oxcExecutable, oxcTransport, acpHostExecutable, acpHostTransport }));
   return {
     started,
     stop() {

@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { cp, mkdir } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { installNsxpc } from './nsxpc-bundle.mjs';
+import { installNsxpc, installAcpXpc } from './nsxpc-bundle.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const test = process.argv.includes('--test');
@@ -25,17 +25,20 @@ cargo('oxc-service');
 cargo('acp-host');
 if (!test) {
   await stage('harness-oxc-service');
-  // The ACP host is a plain stdio service on every platform; it has no NSXPC
-  // variant yet, so staging the executable is all packaging needs.
+  // Windows/Linux spawn the ACP driver directly; macOS reaches it through the
+  // NSXPC bundle below. Staging it also keeps one path rule across platforms.
   await stage('harness-acp-host');
 }
 
 if (!test && process.platform === 'darwin') {
   const binaries = join(root, 'dist', 'rust', 'release');
-  for (const binary of ['harness-oxc-client', 'harness-oxc-xpc']) {
+  for (const binary of ['harness-oxc-client', 'harness-oxc-xpc', 'harness-acp-client', 'harness-acp-xpc']) {
     await cp(join(binaries, binary), join(root, 'dist', 'native', binary));
   }
-  const app = join(root, 'dist', 'native', 'Harness OXC.app');
-  await installNsxpc(app, binaries, { development: true });
-  execFileSync('codesign', ['--force', '--sign', '-', '--deep', app], { stdio: 'inherit' });
+  const oxcApp = join(root, 'dist', 'native', 'Harness OXC.app');
+  await installNsxpc(oxcApp, binaries, { development: true });
+  execFileSync('codesign', ['--force', '--sign', '-', '--deep', oxcApp], { stdio: 'inherit' });
+  const acpApp = join(root, 'dist', 'native', 'Harness ACP.app');
+  await installAcpXpc(acpApp, binaries, { development: true });
+  execFileSync('codesign', ['--force', '--sign', '-', '--deep', acpApp], { stdio: 'inherit' });
 }

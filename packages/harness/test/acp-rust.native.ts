@@ -296,3 +296,53 @@ describe("AcpRustExecutor", () => {
     expect(result.errorOutput).toContain("could not start");
   });
 });
+
+// The macOS bridge resolves its launchd service only from inside the dev .app.
+const NSXPC_BRIDGE = resolve(
+  here,
+  "../../better-harness-desktop/dist/native/Harness ACP.app/Contents/MacOS/harness-acp-client",
+);
+
+describe.skipIf(process.platform !== "darwin")("AcpRustExecutor over NSXPC", () => {
+  it("runs a prompt session through the launchd service and stamps the nsxpc profile", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const executor = new AcpRustExecutor({
+      hostExecutable: NSXPC_BRIDGE,
+      transport: "nsxpc",
+      command: process.execPath,
+      args: [FIXTURE_AGENT],
+      requestPermission: approveFirstOption(),
+    });
+
+    const result = await executor.execute(revision, bundle, { prompt: "Prove the NSXPC route" });
+
+    expect(result).toMatchObject({
+      host: "acp",
+      exitCode: 0,
+      output: "fixture:allow-once",
+      runtimeReceipt: { executor: "harness-acp-host", runtimeProfile: "acp-v1-nsxpc" },
+      metrics: { sessionId: "fixture-session", stopReason: "end_turn" },
+    });
+    // The permission round trip and the redacted trace must survive the XPC hop.
+    const serialized = JSON.stringify(result.trace);
+    expect(serialized).not.toContain("fixture-secret");
+    expect(serialized).toContain("[REDACTED]");
+  });
+
+  it("refuses a stdio host when NSXPC was required instead of silently downgrading", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const executor = new AcpRustExecutor({
+      // The plain driver never emits the `transport` proof frame.
+      hostExecutable: HOST_EXECUTABLE,
+      transport: "nsxpc",
+      command: process.execPath,
+      args: [FIXTURE_AGENT],
+      requestPermission: approveFirstOption(),
+    });
+
+    const result = await executor.execute(revision, bundle, { prompt: "Should not run" });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errorOutput).toContain("stdio fallback");
+  });
+});

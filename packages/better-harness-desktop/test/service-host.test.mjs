@@ -16,6 +16,7 @@ const setup = (overrides = {}) => {
   const service = connectStudioService(child, {
     token: 'a'.repeat(64), dataDirectory: 'test-data',
     oxcExecutable: '/native/harness-oxc-service', acpHostExecutable: '/native/harness-acp-host',
+    acpHostTransport: 'nsxpc',
     pickDirectory: async () => undefined,
     onFailure: (error) => failures.push(error), ...overrides,
   });
@@ -37,6 +38,7 @@ test('startup sends the versioned contract and returns the validated ready resul
   assert.equal(child.sent[0].type, 'start');
   assert.equal(child.sent[0].version, 1);
   assert.equal(child.sent[0].acpHostExecutable, '/native/harness-acp-host');
+  assert.equal(child.sent[0].acpHostTransport, 'nsxpc');
   ready(child);
   assert.equal((await service.started).url, 'http://127.0.0.1:3311');
   const stopping = service.stop();

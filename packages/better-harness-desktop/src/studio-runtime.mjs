@@ -45,7 +45,7 @@ async function stop() {
 port.on('message', async (data) => {
   try {
     if (isMessage(data, 'start') && !starting && !stopping) {
-      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || typeof data.oxcExecutable !== 'string' || typeof data.acpHostExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport)) {
+      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || typeof data.oxcExecutable !== 'string' || typeof data.acpHostExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport) || !['stdio', 'nsxpc'].includes(data.acpHostTransport)) {
         throw new Error('Invalid Studio startup contract');
       }
       starting = true;
@@ -69,11 +69,12 @@ port.on('message', async (data) => {
       const nativeLibraries = process.report.getReport().sharedObjects;
       if (nativeLibraries.some((library) => /oxc[_-](parser|transform)/i.test(library))) throw new Error('OXC NAPI unexpectedly loaded in Studio');
       // Local diagnostic receipt, without source text or credentials.
-      console.info(JSON.stringify({ kind: 'better-harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false, acpRuntime: 'acp-v1-rust' }));
+      console.info(JSON.stringify({ kind: 'better-harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false, acpTransport: data.acpHostTransport, acpRuntime: data.acpHostTransport === 'nsxpc' ? 'acp-v1-nsxpc' : 'acp-v1-rust' }));
       const acpAgents = await discoverAcpAgentProfiles();
       server = await startHarnessStudioServer({
         oxcCompilerFactory,
         acpHostExecutable: data.acpHostExecutable,
+        acpHostTransport: data.acpHostTransport,
         acpAgents,
         harnessMode: 'workspace-default',
         appDir: defaultAppDir(), host: '127.0.0.1', port: 0, accessToken: data.token,

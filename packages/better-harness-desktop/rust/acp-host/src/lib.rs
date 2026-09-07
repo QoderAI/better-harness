@@ -30,3 +30,9 @@ pub mod redact;
 pub mod services;
 pub mod thread;
 pub mod wire;
+
+/// Foundation NSXPC transport for the desktop app. The service runs one
+/// `harness-acp-host` driver child per connection; the bridge is a byte-for-byte
+/// stdio forwarder. Neither contains ACP logic.
+#[cfg(target_os = "macos")]
+pub mod xpc;

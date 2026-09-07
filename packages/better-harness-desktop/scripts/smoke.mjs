@@ -53,7 +53,7 @@ try {
     return { status: response.status, body: await response.json() };
   });
   assert.equal(studioConfig.status, 200);
-  assert.equal(studioConfig.body.acpRuntimeProfile, 'acp-v1-rust');
+  assert.equal(studioConfig.body.acpRuntimeProfile, process.platform === 'darwin' ? 'acp-v1-nsxpc' : 'acp-v1-rust');
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
   assert.equal(await page.evaluate(() => typeof window.process), 'undefined');
   const proof = await instance.evaluate(({ app, BrowserWindow }) => ({
@@ -72,6 +72,8 @@ try {
   assert.notEqual(nativeProof.oxcPid, proof.mainPid);
   assert.equal(nativeProof.transport, process.platform === 'darwin' ? 'nsxpc' : 'stdio');
   if (nativeProof.transport === 'nsxpc') assert.notEqual(nativeProof.oxcPid, nativeProof.bridgePid);
+  assert.equal(nativeProof.acpTransport, process.platform === 'darwin' ? 'nsxpc' : 'stdio');
+  assert.equal(nativeProof.acpRuntime, process.platform === 'darwin' ? 'acp-v1-nsxpc' : 'acp-v1-rust');
   // The bridge belongs to Studio; the NSXPC service lifetime belongs to launchd.
   assert.throws(() => process.kill(nativeProof.bridgePid, 0), { code: 'ESRCH' });
   assert.notEqual(proof.metrics[0].pid, proof.mainPid);

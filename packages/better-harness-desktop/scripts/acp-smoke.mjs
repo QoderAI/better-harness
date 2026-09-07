@@ -7,8 +7,11 @@
 // stdio contract the Node runtime will use.
 //
 // Usage: node scripts/acp-smoke.mjs [--agent <command>] [--agent-arg <arg>]
+//                                   [--transport stdio|nsxpc]
 // Defaults to the shared TypeScript fixture agent, which blocks every turn on a
 // permission request, so a passing run proves the permission round trip too.
+// `--transport nsxpc` drives the macOS `harness-acp-client` bridge from
+// `dist/native/Harness ACP.app` instead of the plain stdio driver.
 
 import { spawn } from 'node:child_process';
 import { access, constants } from 'node:fs/promises';
@@ -23,18 +26,23 @@ const STEP_TIMEOUT_MS = 30_000;
 function parseArguments(argv) {
   const agentArgs = [];
   let agent;
+  let transport = 'stdio';
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === '--agent') agent = argv[index += 1];
     else if (argv[index] === '--agent-arg') agentArgs.push(argv[index += 1]);
+    else if (argv[index] === '--transport') transport = argv[index += 1];
   }
-  return { agent, agentArgs };
+  if (!['stdio', 'nsxpc'].includes(transport)) throw new Error(`Unknown --transport ${transport}`);
+  return { agent, agentArgs, transport };
 }
 
 const options = parseArguments(process.argv.slice(2));
-const hostExecutable = join(
-  root, 'dist', 'native',
-  process.platform === 'win32' ? 'harness-acp-host.exe' : 'harness-acp-host',
-);
+const hostExecutable = options.transport === 'nsxpc'
+  ? join(root, 'dist', 'native', 'Harness ACP.app', 'Contents', 'MacOS', 'harness-acp-client')
+  : join(
+      root, 'dist', 'native',
+      process.platform === 'win32' ? 'harness-acp-host.exe' : 'harness-acp-host',
+    );
 const fixtureAgent = join(
   repositoryRoot, 'packages', 'harness', 'test', 'fixtures', 'acp-agent.mjs',
 );
@@ -147,13 +155,22 @@ async function main() {
     await requireFile(fixtureAgent, 'The shared ACP fixture agent is part of the repository.');
   }
 
-  process.stdout.write(`ACP host smoke\n  host  ${hostExecutable}\n  agent ${agentCommand} ${agentArgs.join(' ')}\n\n`);
+  process.stdout.write(`ACP host smoke\n  host  ${hostExecutable}\n  transport ${options.transport}\n  agent ${agentCommand} ${agentArgs.join(' ')}\n\n`);
   const child = spawn(hostExecutable, [], { stdio: ['pipe', 'pipe', 'inherit'] });
   child.once('error', (error) => { throw error; });
   const session = new HostSession(child);
 
   const described = await session.call('host.describe', null);
   report('host.describe', `${described.host} ${described.version} · ${described.protocol}`);
+
+  if (options.transport === 'nsxpc') {
+    const proof = await session.waitForEvent('transport');
+    if (proof.transport !== 'nsxpc' || !(proof.servicePid > 0) || proof.servicePid === proof.bridgePid) {
+      throw new Error(`bad NSXPC transport proof: ${JSON.stringify(proof)}`);
+    }
+    session.events.length = 0;
+    report('transport proof', `service ${proof.servicePid} ≠ bridge ${proof.bridgePid}`);
+  }
 
   const opened = await session.call('connection.open', {
     connectionId: 'smoke',

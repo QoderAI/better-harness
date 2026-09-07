@@ -19,8 +19,9 @@ notarization and automatic updates are not configured.
 
 The main process owns the native window, menus, single instance and directory
 chooser. A utility process owns a Node worker hosting the Studio HTTP server, providers,
-ACP and the semantic kernel. OXC parsing and transformation run in Rust. On macOS, launchd owns a bundled
-NSXPC service; on Windows/Linux, Studio supervises the Rust stdio process. Renderer fetch and SSE stay unchanged. A per-launch
+ACP and the semantic kernel. OXC parsing/transformation and the ACP host run in
+Rust. On macOS, launchd owns their bundled NSXPC services; on Windows/Linux,
+Studio supervises the Rust stdio processes. Renderer fetch and SSE stay unchanged. A per-launch
 HTTP credential is attached by an isolated Electron session; the renderer has
 no Node integration or preload API. External links need native confirmation.
 
@@ -29,13 +30,21 @@ request/result. Startup and shutdown are bounded, directory requests are
 correlated, and service failure terminates the desktop app. The browser CLI
 continues to use its existing directory chooser and server behavior.
 
-All extracted capability services, including OXC and future ACP services, are
-written in Rust. macOS uses a Rust client bridge and an actual Foundation
-`NSXPCConnection` to `com.qoder.harness-studio.oxc`. The exported protocol has
-one `NSData` request/reply method. A small Objective-C declaration supplies
-Clang protocol/block ABI metadata; all service and client behavior is Rust.
-The Node-to-bridge boundary and Windows/Linux transport use bounded JSONL.
+All extracted capability services are written in Rust. macOS uses a Rust client
+bridge and an actual Foundation `NSXPCConnection`: OXC talks to
+`com.qoder.harness-studio.oxc` (one `NSData` request/reply method), and ACP talks
+to `com.qoder.harness-studio.acp` (a bidirectional pair — `sendFrame:` from the
+bridge, `deliverFrame:` / `hostFailed:` back). Small Objective-C declarations
+supply Clang protocol/block ABI metadata; all service and client behavior is
+Rust. The Node-to-bridge boundary and Windows/Linux transport use bounded JSONL.
 No TCP listener or public Mach service is added.
+
+The ACP service runs one unmodified `harness-acp-host` driver per NSXPC
+connection, so a crashed agent still fails only its own run. The bridge speaks
+the same newline contract as the plain driver, so Studio spawns it the same way;
+it emits a leading `transport` frame carrying the service and bridge pids, and
+the Node client refuses to run if that proof is missing — NSXPC never silently
+downgrades to stdio. Windows/Linux keep the `harness-acp-host` stdio driver.
 
 A compiler belongs to one artifact build. Parse/transform requests carry source
 text and portable module names; Rust never opens those names as files. Profile,
@@ -47,15 +56,18 @@ watchdog: exceeding it terminates the service and fails all its outstanding
 connections. A later request can create a fresh connection; work is never
 replayed automatically. There is no desktop fallback to NAPI or from NSXPC to stdio. Compiler-factory identity partitions artifact caches.
 
-macOS packages the Rust service in
-`Contents/XPCServices/com.qoder.harness-studio.oxc.xpc` and the client in
-`Contents/MacOS/harness-oxc-client`. Development uses the same service inside
-`dist/native/Harness OXC.app`, so service discovery works without modifying
+macOS packages each Rust service in `Contents/XPCServices/<id>.xpc` and its
+client/bridge in `Contents/MacOS`: `com.qoder.harness-studio.oxc.xpc` +
+`harness-oxc-client`, and `com.qoder.harness-studio.acp.xpc` (which also carries
+the `harness-acp-host` driver it spawns) + `harness-acp-client`. Development uses
+the same services inside `dist/native/Harness OXC.app` and
+`dist/native/Harness ACP.app`, so service discovery works without modifying
 Electron.app. Local bundles receive ad-hoc code signatures; this is not a
 notarized release or an App Sandbox entitlement configuration.
-Windows/Linux package `Resources/native/harness-oxc-service` (with `.exe` on
-Windows), outside ASAR. The browser CLI still uses its existing NAPI
-worker, so the shared Studio package retains those dependencies.
+Windows/Linux package `Resources/native/harness-oxc-service` and
+`Resources/native/harness-acp-host` (with `.exe` on Windows), outside ASAR. The
+browser CLI still uses its existing NAPI worker, so the shared Studio package
+retains those dependencies.
 
 Validation:
 

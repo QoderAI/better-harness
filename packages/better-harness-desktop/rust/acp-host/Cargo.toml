@@ -5,6 +5,22 @@ edition = "2024"
 rust-version = "1.96"
 publish = false
 
+# The stdio driver Node/Windows/Linux spawn directly.
+[[bin]]
+name = "harness-acp-host"
+path = "src/main.rs"
+
+# macOS NSXPC service (launchd-managed) and the stdio<->NSXPC bridge Studio
+# spawns in its place. Both are thin transport shells around the driver above;
+# off macOS they compile to a stub that exits non-zero.
+[[bin]]
+name = "harness-acp-xpc"
+path = "src/bin/harness-acp-xpc.rs"
+
+[[bin]]
+name = "harness-acp-client"
+path = "src/bin/harness-acp-client.rs"
+
 [dependencies]
 # The Rust reference implementation of the Agent Client Protocol. Pinned
 # exactly: this crate's wire types are the host's public contract, so a patch
@@ -20,3 +36,13 @@ uuid = { version = "1", features = ["v4"] }
 [profile.release]
 lto = "thin"
 strip = true
+
+# Foundation NSXPC bindings for the macOS service and bridge. Same crates and
+# feature set as rust/oxc-service so the two transports stay reviewable together.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "libc", "NSXPCConnection", "NSObject", "NSString", "NSData", "NSError", "NSSet", "NSRunLoop", "block2"] }
+block2 = "0.6.2"
+
+[build-dependencies]
+cc = "1"

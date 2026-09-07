@@ -107,6 +107,13 @@ export interface HarnessStudioServerOptions {
    * host; when absent, Studio retains the Node SDK path for CLI/browser use.
    */
   acpHostExecutable?: string;
+  /**
+   * Which ACP host `acpHostExecutable` is. `"nsxpc"` means it is the macOS
+   * `harness-acp-client` bridge to a launchd-managed service; `"stdio"` (default)
+   * means the `harness-acp-host` driver spoken to directly. Set by the desktop
+   * shell; unused by the CLI/browser.
+   */
+  acpHostTransport?: "stdio" | "nsxpc";
   /** Server-owned selectable ACP Agent catalog, including unavailable known presets. */
   acpAgents?: readonly StudioAcpAgentProfile[];
   /** `harness-experiment.v1` manifest; enables the live three-lane trace view. */

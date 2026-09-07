@@ -21,6 +21,7 @@ import {
 const WIRE_VERSION = 1;
 const HOST_PROTOCOL_VERSION = "acp-rust-2.0.0+jsonl-v1";
 const RUNTIME_PROFILE = "acp-v1-rust";
+const RUNTIME_PROFILE_NSXPC = "acp-v1-nsxpc";
 
 const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;
@@ -52,6 +53,16 @@ export interface AcpRustExecutorOptions {
    * knowledge, and this package must not acquire any.
    */
   hostExecutable: string;
+  /**
+   * Which host `hostExecutable` is.
+   *
+   * `"stdio"` (default) is the `harness-acp-host` driver, spoken to directly.
+   * `"nsxpc"` is the macOS `harness-acp-client` bridge: it speaks the same
+   * newline contract but tunnels it to a launchd-managed service, and proves the
+   * hop with a leading `transport` frame. A trusted desktop-host choice — the
+   * client never silently accepts a stdio host where NSXPC was required.
+   */
+  transport?: "stdio" | "nsxpc";
   /** The ACP Agent the host should spawn. */
   command: string;
   args?: readonly string[];
@@ -244,7 +255,7 @@ export class AcpRustExecutor implements HarnessExecutor {
     const fs = (this.options.allowRoots?.length ?? 0) > 0;
     return {
       executor: "harness-acp-host",
-      runtimeProfile: RUNTIME_PROFILE,
+      runtimeProfile: this.options.transport === "nsxpc" ? RUNTIME_PROFILE_NSXPC : RUNTIME_PROFILE,
       // Only capabilities actually granted are listed; the receipt must not
       // advertise reach the host was never given.
       tools: fs
@@ -290,6 +301,10 @@ class HostClient {
   private connectionId: string | undefined;
   private abortSignal: AbortSignal | undefined;
   private readonly exited: Promise<void>;
+  /** stdio needs no proof; nsxpc must present a `transport` frame first. */
+  private transportProven: boolean;
+  private servicePid: number | undefined;
+  private bridgePid: number | undefined;
 
   constructor(
     private readonly options: AcpRustExecutorOptions,
@@ -297,6 +312,7 @@ class HostClient {
     private readonly trace: HarnessProtocolEvent[],
     private readonly output: string[],
   ) {
+    this.transportProven = options.transport !== "nsxpc";
     const launch = options.spawnHost ?? spawn;
     this.child = launch(options.hostExecutable, [], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -328,7 +344,10 @@ class HostClient {
   /** Append retained host stderr, which usually names the real cause. */
   decorate(message: string): string {
     const detail = this.stderr.trim();
-    return detail.length > 0 ? `${message}\n${detail}` : message;
+    const routed = this.servicePid === undefined
+      ? message
+      : `${message} (NSXPC service pid ${this.servicePid}, bridge pid ${this.bridgePid})`;
+    return detail.length > 0 ? `${routed}\n${detail}` : routed;
   }
 
   async call(method: string, params: unknown): Promise<Record<string, unknown>> {
@@ -388,6 +407,31 @@ class HostClient {
       if (frame.version !== WIRE_VERSION) {
         this.fail(new Error("The ACP host emitted a frame from another envelope generation."));
         return;
+      }
+      if (!this.transportProven) {
+        // NSXPC was required. The bridge proves it reached a distinct launchd
+        // service before any real frame; anything else is a silent stdio host.
+        const proof = frame.id === undefined
+          ? (frame.event as Record<string, unknown> | undefined)
+          : undefined;
+        if (
+          proof?.type !== "transport"
+          || proof.transport !== "nsxpc"
+          || !Number.isInteger(proof.servicePid)
+          || !Number.isInteger(proof.bridgePid)
+          || Number(proof.servicePid) <= 0
+          || proof.servicePid === proof.bridgePid
+        ) {
+          this.fail(new Error(
+            "The ACP host did not prove an NSXPC service before its first frame; "
+              + "refusing a silent stdio fallback.",
+          ));
+          return;
+        }
+        this.transportProven = true;
+        this.servicePid = Number(proof.servicePid);
+        this.bridgePid = Number(proof.bridgePid);
+        continue;
       }
       if (frame.id === undefined) {
         this.apply(frame.event as HostEvent | undefined);
