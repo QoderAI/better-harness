@@ -10,14 +10,17 @@ export const RUST_OXC_COMPILER_VERSION = "oxc-rust-0.147.0+jsonl-v1";
 
 export interface RustOxcCompilerOptions {
   readonly executable: string;
+  /** Trusted desktop host selection; NSXPC never silently falls back to stdio. */
+  readonly transport?: "stdio" | "nsxpc";
   readonly timeoutMs?: number;
   readonly limits?: Partial<OxcCompileLimits>;
   /** Host/test seam; never supplied by renderer requests. */
   readonly spawnProcess?: (executable: string) => ChildProcessWithoutNullStreams;
 }
 export interface RustOxcCompiler extends ManagedOxcCompiler {
-  /** Last child PID, retained after close for process-isolation receipts. */
+  /** Last compiler service PID, retained after close for isolation receipts. */
   readonly processId: number | undefined;
+  readonly bridgeProcessId: number | undefined;
 }
 interface Pending {
   readonly method: "parse" | "transform";
@@ -43,6 +46,8 @@ function validResult(value: unknown, method: Pending["method"]): value is Record
 
 /** Dedicated Rust process per compiler/build; no native addon imports in this module. */
 export function createRustOxcCompiler(options: RustOxcCompilerOptions): RustOxcCompiler {
+  const transport = options.transport ?? "stdio";
+  if (transport !== "stdio" && transport !== "nsxpc") throw new TypeError("Unknown OXC transport.");
   const timeoutMs = options.timeoutMs ?? 5_000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new RangeError("OXC service timeout must be a positive safe integer.");
   const limits = { ...DEFAULT_OXC_COMPILE_LIMITS, ...options.limits };
@@ -54,6 +59,7 @@ export function createRustOxcCompiler(options: RustOxcCompilerOptions): RustOxcC
   const launch = options.spawnProcess ?? ((executable: string) => spawn(executable, [], { stdio: "pipe", windowsHide: true }));
   let child: ChildProcessWithoutNullStreams | undefined;
   let lastPid: number | undefined;
+  let bridgePid: number | undefined;
   let sequence = 0;
   let closed = false;
   const pending = new Map<number, Pending>();
@@ -69,7 +75,8 @@ export function createRustOxcCompiler(options: RustOxcCompilerOptions): RustOxcC
   const start = (): ChildProcessWithoutNullStreams => {
     if (child) return child;
     const active = child = launch(options.executable);
-    lastPid = active.pid;
+    bridgePid = active.pid;
+    lastPid = transport === "stdio" ? active.pid : undefined;
     let buffer = Buffer.alloc(0);
     const exited = new Promise<void>((resolve) => active.once("close", resolve));
     exiting.add(exited);
@@ -94,9 +101,15 @@ export function createRustOxcCompiler(options: RustOxcCompilerOptions): RustOxcC
         }
         const request = pending.get(Number(value.id));
         if (!request) { fail(active, new Error("OXC service returned an unknown request id.")); return; }
-        if (value.pid !== active.pid || !validResult(value.result, request.method)) {
+        const validIdentity = transport === "stdio"
+          ? value.pid === active.pid && value.transport === undefined
+          : value.transport === "nsxpc" && value.bridgePid === active.pid
+            && Number.isSafeInteger(value.pid) && Number(value.pid) > 0 && value.pid !== active.pid
+            && (lastPid === undefined || value.pid === lastPid);
+        if (!validIdentity || !validResult(value.result, request.method)) {
           fail(active, new Error("OXC service failed or returned an invalid result.")); return;
         }
+        lastPid = Number(value.pid);
         clearTimeout(request.timer);
         pending.delete(Number(value.id));
         request.resolve(value.result);
@@ -132,8 +145,9 @@ export function createRustOxcCompiler(options: RustOxcCompilerOptions): RustOxcC
   const semantic = createSemanticOxcCompiler(backend, RUST_OXC_COMPILER_VERSION, limits);
   return {
     ...semantic,
-    policyFingerprint: JSON.stringify({ limits, timeoutMs, transport: "rust-jsonl-v1" }),
+    policyFingerprint: JSON.stringify({ limits, timeoutMs, transport: transport === "nsxpc" ? "rust-nsxpc-v1" : "rust-jsonl-v1" }),
     get processId() { return lastPid; },
+    get bridgeProcessId() { return bridgePid; },
     async compileModule(input) {
       if (closed) throw new Error("OXC Rust compiler is closed.");
       try { return await semantic.compileModule(input); }

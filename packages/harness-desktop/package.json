@@ -55,6 +55,15 @@
     "win": {
       "target": [
         "nsis"
+      ],
+      "extraResources": [
+        {
+          "from": "dist/native",
+          "to": "native",
+          "filter": [
+            "harness-oxc-service*"
+          ]
+        }
       ]
     },
     "linux": {
@@ -62,16 +71,17 @@
         "AppImage"
       ],
       "category": "Development",
-      "executableName": "harness-studio"
+      "executableName": "harness-studio",
+      "extraResources": [
+        {
+          "from": "dist/native",
+          "to": "native",
+          "filter": [
+            "harness-oxc-service*"
+          ]
+        }
+      ]
     },
-    "extraResources": [
-      {
-        "from": "dist/native",
-        "to": "native",
-        "filter": [
-          "harness-oxc-service*"
-        ]
-      }
-    ]
+    "afterPack": "scripts/after-pack.mjs"
   }
 }

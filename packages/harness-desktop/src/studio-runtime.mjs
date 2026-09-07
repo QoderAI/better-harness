@@ -45,13 +45,13 @@ async function stop() {
 port.on('message', async (data) => {
   try {
     if (isMessage(data, 'start') && !starting && !stopping) {
-      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || typeof data.oxcExecutable !== 'string') {
+      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || typeof data.oxcExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport)) {
         throw new Error('Invalid Studio startup contract');
       }
       starting = true;
       const oxcCompilerFactory = ({ timeoutMs }) => {
         if (stopping) throw new Error('Studio is shutting down');
-        const compiler = createRustOxcCompiler({ executable: data.oxcExecutable, timeoutMs });
+        const compiler = createRustOxcCompiler({ executable: data.oxcExecutable, transport: data.oxcTransport, timeoutMs });
         const close = compiler.close.bind(compiler);
         compiler.close = async () => { try { await close(); } finally { compilers.delete(compiler); } };
         compilers.add(compiler);
@@ -59,15 +59,17 @@ port.on('message', async (data) => {
       };
       const probe = oxcCompilerFactory({ timeoutMs: 5_000 });
       let oxcPid;
+      let bridgePid;
       try {
         const compiled = await probe.compileModule({ module: { path: '/desktop-smoke.tsx', text: 'export const Desktop = () => <h1>你好</h1>;' }, entry: false, allowedPackages: ['@studio/agent-react/jsx-dev-runtime'] });
         if (compiled.diagnostics.length || !compiled.code) throw new Error('Rust OXC startup probe failed');
         oxcPid = probe.processId;
+        bridgePid = probe.bridgeProcessId;
       } finally { await probe.close(); }
       const nativeLibraries = process.report.getReport().sharedObjects;
       if (nativeLibraries.some((library) => /oxc[_-](parser|transform)/i.test(library))) throw new Error('OXC NAPI unexpectedly loaded in Studio');
       // Local diagnostic receipt, without source text or credentials.
-      console.info(JSON.stringify({ kind: 'harness-desktop.oxc-proof', rust: true, oxcPid, studioPid: process.pid, oxcNativeLoaded: false }));
+      console.info(JSON.stringify({ kind: 'harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false }));
       server = await startHarnessStudioServer({
         oxcCompilerFactory,
         appDir: defaultAppDir(), host: '127.0.0.1', port: 0, accessToken: data.token,

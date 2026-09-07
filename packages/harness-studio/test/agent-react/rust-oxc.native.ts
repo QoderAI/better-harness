@@ -12,21 +12,27 @@ import { createSemanticOxcCompiler } from "../../src/agent-react/kernel/semantic
 import { compileAgentReactProduction } from "../../src/server/artifacts/registry/agent-react-production-runtime.js";
 import type { CompileModuleInput } from "../../src/agent-react/contracts/index.js";
 
-const executable = resolve(dirname(fileURLToPath(import.meta.url)), '../../../harness-desktop/dist/native', process.platform === 'win32' ? 'harness-oxc-service.exe' : 'harness-oxc-service');
+const stdioExecutable = resolve(dirname(fileURLToPath(import.meta.url)), '../../../harness-desktop/dist/native', process.platform === 'win32' ? 'harness-oxc-service.exe' : 'harness-oxc-service');
 const source = `import { defineArtifactView } from "@studio/agent-react";
 function Orders() { return <h1 title="你好😀">Orders</h1>; }
 export default defineArtifactView({ id: "orders", component: Orders });`;
 const input = (text = source): CompileModuleInput => ({ module: { path: '/orders.tsx', text }, entry: true,
   allowedPackages: ['react', '@studio/agent-react', '@studio/agent-react/jsx-dev-runtime'] });
 
-describe('Rust OXC native service', () => {
+const nativeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../harness-desktop/dist/native');
+const xpcExecutable = join(nativeRoot, 'Harness OXC.app', 'Contents', 'MacOS', 'harness-oxc-client');
+const transports = [
+  { transport: 'stdio' as const, executable: stdioExecutable },
+  ...(process.platform === 'darwin' ? [{ transport: 'nsxpc' as const, executable: xpcExecutable }] : []),
+];
+describe.each(transports)('Rust OXC $transport service', ({ executable, transport }) => {
   it('build and preview HTTP routes both use the injected Rust compiler', async () => {
     const root = await mkdtemp(join(tmpdir(), 'rust-oxc-http-'));
     await writeFile(join(root, 'index.html'), '<!doctype html><title>Studio</title>');
     await writeFile(join(root, 'orders.agent.canvas.tsx'), source);
     let calls = 0;
     const server = await startHarnessStudioServer({ appDir: root, artifactDirectory: root,
-      oxcCompilerFactory(options) { calls++; return createRustOxcCompiler({ executable, ...options }); },
+      oxcCompilerFactory(options) { calls++; return createRustOxcCompiler({ executable, transport, ...options }); },
     });
     try {
       const catalog = await (await fetch(`${server.url}/api/artifacts`)).json();
@@ -44,7 +50,7 @@ describe('Rust OXC native service', () => {
   });
 
   it('preserves semantic outputs, diagnostic coordinates, code and source maps across the native backends', async () => {
-    const rust = createRustOxcCompiler({ executable });
+    const rust = createRustOxcCompiler({ executable, transport });
     const napi = createOxcCompiler();
     try {
       for (const text of [source, source.replace('return <h1', "const greeting = '你好😀'; return <h1"), source.replace('<h1', '<div').replace('</h1>', '</div>'), 'const 中文 = "😀"; const =', 'import fs from "node:fs";\n' + source, source.replace('return <h1', 'fetch("https://example.com"); return <h1'), source.replace('id: "orders"', 'id: dynamic')]) {
@@ -53,7 +59,9 @@ describe('Rust OXC native service', () => {
         expect({ ...actual, sourceMap: actual.sourceMap && JSON.parse(actual.sourceMap) })
           .toEqual({ ...expected, sourceMap: expected.sourceMap && JSON.parse(expected.sourceMap) });
       }
+      expect(rust.processId).toBeGreaterThan(0);
       expect(rust.processId).not.toBe(process.pid);
+      if (transport === 'nsxpc') expect(rust.processId).not.toBe(rust.bridgeProcessId);
     } finally { await rust.close(); }
   });
 
@@ -74,7 +82,7 @@ describe('Rust OXC native service', () => {
   it('recovers with a fresh Rust process after timeout, crash, malformed and oversized output', async () => {
     for (const code of ['setInterval(() => {}, 1000)', 'process.exit(0)', 'process.stdout.write("not-json\\n"); setInterval(()=>{},1000)', 'process.stdout.write("x".repeat(17 * 1024 * 1024)); setInterval(()=>{},1000)']) {
       let launches = 0;
-      const rust = createRustOxcCompiler({ executable, timeoutMs: 500,
+      const rust = createRustOxcCompiler({ executable, transport, timeoutMs: 1_000,
         spawnProcess(binary) {
           launches++;
           return launches === 1 ? spawn(process.execPath, ['-e', code], { stdio: 'pipe' }) : spawn(binary, [], { stdio: 'pipe' });
@@ -89,7 +97,7 @@ describe('Rust OXC native service', () => {
   });
 
   it('close cancels pending work and refuses later compilation', async () => {
-    const rust = createRustOxcCompiler({ executable, spawnProcess: () => spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'pipe' }) });
+    const rust = createRustOxcCompiler({ executable, transport, spawnProcess: () => spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'pipe' }) });
     const compiling = rust.compileModule(input());
     await rust.close();
     expect((await compiling).diagnostics[0]?.code).toBe('limit/compile-timeout');
@@ -97,7 +105,7 @@ describe('Rust OXC native service', () => {
   });
 
   it('bounds source admission before launching and correlates concurrent requests', async () => {
-    const rust = createRustOxcCompiler({ executable });
+    const rust = createRustOxcCompiler({ executable, transport });
     try {
       expect((await rust.compileModule(input('x'.repeat(513 * 1024)))).diagnostics[0]?.code).toBe('limit/module-bytes');
       expect(rust.processId).toBeUndefined();
@@ -117,7 +125,7 @@ describe('Rust OXC native service', () => {
       const result = await compileAgentReactProduction({ artifactRoot: root, entryPath, viewId: 'orders', maxModules: 8,
         maxSourceBytes: 1024 * 1024, maxOutputBytes: 4 * 1024 * 1024, timeoutMs: 20_000,
         oxcCompilerFactory(options) {
-          const rust = createRustOxcCompiler({ executable, ...options });
+          const rust = createRustOxcCompiler({ executable, transport, ...options });
           return { ...rust, compileModule(module) { compiled++; return rust.compileModule(module); }, async close() { closed++; await rust.close(); } };
         },
       });
@@ -126,5 +134,36 @@ describe('Rust OXC native service', () => {
       expect(compiled).toBeGreaterThan(0);
       expect(closed).toBe(1);
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
+
+
+describe.skipIf(process.platform !== 'darwin')('Apple NSXPC lifecycle', () => {
+  it('bounds an unresponsive service, closes the bridge, and reconnects after service termination', async () => {
+    const stalled = createRustOxcCompiler({ executable: xpcExecutable, transport: 'nsxpc', timeoutMs: 1_000 });
+    let pid: number | undefined;
+    try {
+      expect((await stalled.compileModule(input())).diagnostics).toEqual([]);
+      pid = stalled.processId!;
+      process.kill(pid, 'SIGSTOP');
+      expect((await stalled.compileModule(input())).diagnostics[0]?.code).toBe('limit/compile-timeout');
+      await stalled.close();
+      expect(() => process.kill(stalled.bridgeProcessId!, 0)).toThrow();
+    } finally {
+      if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* Already reaped. */ } }
+      await stalled.close();
+    }
+    // launchd may throttle immediate relaunch after termination.
+    const recovered = createRustOxcCompiler({ executable: xpcExecutable, transport: 'nsxpc', timeoutMs: 20_000 });
+    try {
+      expect((await recovered.compileModule(input())).diagnostics).toEqual([]);
+      expect(recovered.processId).not.toBe(pid);
+    } finally { await recovered.close(); }
+  });
+
+  it('refuses a stdio service when the host explicitly requires NSXPC', async () => {
+    const rust = createRustOxcCompiler({ executable: stdioExecutable, transport: 'nsxpc' });
+    try { expect((await rust.compileModule(input())).diagnostics[0]?.code).toBe('limit/compile-timeout'); }
+    finally { await rust.close(); }
   });
 });

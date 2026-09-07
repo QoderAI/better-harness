@@ -65,7 +65,10 @@ try {
   assert.equal(nativeProof.studioPid, proof.metrics[0].pid);
   assert.notEqual(nativeProof.oxcPid, nativeProof.studioPid);
   assert.notEqual(nativeProof.oxcPid, proof.mainPid);
-  assert.throws(() => process.kill(nativeProof.oxcPid, 0), { code: 'ESRCH' });
+  assert.equal(nativeProof.transport, process.platform === 'darwin' ? 'nsxpc' : 'stdio');
+  if (nativeProof.transport === 'nsxpc') assert.notEqual(nativeProof.oxcPid, nativeProof.bridgePid);
+  // The bridge belongs to Studio; the NSXPC service lifetime belongs to launchd.
+  assert.throws(() => process.kill(nativeProof.bridgePid, 0), { code: 'ESRCH' });
   assert.notEqual(proof.metrics[0].pid, proof.mainPid);
   // Stub only the OS dialog, exercise real HTTP -> utility -> main -> utility flow.
   await instance.evaluate(({ dialog }) => {
