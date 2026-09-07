@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use harness_acp_host::connection::{AgentConnection, EVENT_CHANNEL_CAPACITY, EventSink};
+use harness_acp_host::connection::{AgentConnection, EVENT_CHANNEL_CAPACITY, EventSink, Outbound};
 use harness_acp_host::thread::Entry;
 use harness_acp_host::wire::{ConnectionOpenParams, HostEvent, TurnStatus};
 use tokio::sync::mpsc::Receiver;
@@ -61,13 +61,19 @@ fn open_params(connection_id: &str, extra_args: &[&str]) -> ConnectionOpenParams
 
 /// Drain events until one matches, failing on timeout rather than hanging.
 async fn wait_for_event(
-    events: &mut Receiver<HostEvent>,
+    events: &mut Receiver<Outbound>,
     mut matches: impl FnMut(&HostEvent) -> bool,
     what: &str,
 ) -> HostEvent {
     let deadline = tokio::time::timeout(STEP_TIMEOUT, async {
         loop {
-            let event = events.recv().await.expect("the event channel closed early");
+            let Some(item) = events.recv().await else {
+                panic!("the outbound channel closed early");
+            };
+            // Replies share this queue so ordering holds; only events matter here.
+            let Outbound::Event(event) = item else {
+                continue;
+            };
             if matches(&event) {
                 return event;
             }
@@ -81,7 +87,7 @@ async fn wait_for_event(
 /// Answer the fixture's permission request with the given option.
 async fn approve_next_permission(
     connection: &AgentConnection,
-    events: &mut Receiver<HostEvent>,
+    events: &mut Receiver<Outbound>,
     option_id: &str,
 ) -> String {
     let event = wait_for_event(

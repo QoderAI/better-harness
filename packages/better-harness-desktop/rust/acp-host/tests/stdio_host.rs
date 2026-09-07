@@ -311,6 +311,27 @@ async fn refuses_a_decision_for_an_unknown_request() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn shutdown_reaps_the_agent_and_exits_without_an_external_kill() {
+    let mut host = Host::start();
+    host.open_fixture("c1").await;
+
+    let shutdown = host.call("shutdown", Value::Null).await;
+    assert_eq!(shutdown["result"]["status"], "shutting-down");
+    // Stop holding stdin, exactly as the Node client does after receiving the
+    // acknowledgement. The host must then drop its connection driver, reap the
+    // agent process group, close the event queue, and let the writer finish.
+    host.stdin.shutdown().await.expect("stdin should close");
+    let status = tokio::time::timeout(STEP_TIMEOUT, host.child.wait())
+        .await
+        .expect("shutdown must not leave the host waiting on an EventSink clone")
+        .expect("waiting on the host should succeed");
+    assert!(
+        status.success(),
+        "graceful shutdown should exit 0, got {status}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn exits_when_a_frame_from_another_envelope_generation_arrives() {
     let mut host = Host::start();
     host.stdin

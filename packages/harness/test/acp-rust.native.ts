@@ -101,6 +101,42 @@ describe("AcpRustExecutor", () => {
     expect(streamed).toBe("fixture:allow-once");
   });
 
+  it("retains real ACP protocol frames with credentials redacted", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const protocolEvents: HarnessRunEvent[] = [];
+    const executor = new AcpRustExecutor({
+      hostExecutable: HOST_EXECUTABLE,
+      command: process.execPath,
+      args: [FIXTURE_AGENT],
+      onRunEvent: (event) => {
+        if (event.type === "protocol-event") protocolEvents.push(event);
+      },
+      requestPermission: approveFirstOption(),
+    });
+
+    const result = await executor.execute(revision, bundle, { prompt: "Prove the trace arrives" });
+
+    // Same evidence contract the Node executor already satisfies, so a reviewer
+    // reading a trace never has to know which host produced it.
+    expect(result.trace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ direction: "Client → Agent", method: "initialize" }),
+      expect.objectContaining({ direction: "Client → Agent", method: "session/new" }),
+      expect.objectContaining({ direction: "Client → Agent", method: "session/prompt" }),
+      expect.objectContaining({
+        direction: "Agent → Client",
+        method: "session/request_permission",
+      }),
+      expect.objectContaining({ direction: "Agent → Client", method: "session/update" }),
+    ]));
+    expect(protocolEvents).toHaveLength((result.trace as unknown[]).length);
+
+    // The fixture puts a bearer token in _meta precisely so this is exercised.
+    // Redaction happens in the host, before the frame ever reaches this process.
+    const serialized = JSON.stringify(result.trace);
+    expect(serialized).not.toContain("fixture-secret");
+    expect(serialized).toContain("[REDACTED]");
+  });
+
   it("cancels a permission request when no handler is configured", async () => {
     const { bundle, revision } = await revisionUnderTest();
     const executor = new AcpRustExecutor({

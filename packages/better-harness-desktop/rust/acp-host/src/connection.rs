@@ -29,14 +29,16 @@ use agent_client_protocol::schema::v1::{
     SelectedPermissionOutcome, SessionConfigKind, SessionConfigOptionValue, SessionNotification,
     SessionUpdate, SetSessionConfigOptionRequest, TextContent,
 };
-use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, Client, ConnectionTo};
+use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, Client, ConnectionTo, LineDirection};
 use anyhow::{Context, Result, anyhow};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::fence::Fence;
+use crate::redact::redact;
 use crate::thread::{self, Change, ChunkKind, Thread};
 use crate::wire::{
-    ConfigOptionValue, ConnectionOpenParams, HostEvent, PermissionOption, TurnStatus,
+    ConfigOptionValue, ConnectionOpenParams, FrameDirection, HostEvent, PermissionOption,
+    TurnStatus,
 };
 
 /// Client identity reported in `initialize`.
@@ -50,16 +52,37 @@ const CLIENT_NAME: &str = "better-harness-acp-host";
 /// of letting the host grow without limit.
 pub const EVENT_CHANNEL_CAPACITY: usize = 4096;
 
+/// Anything the host writes to stdout.
+///
+/// Events and replies share one queue on purpose. An event is caused by an agent
+/// notification that arrived *before* the response completing a call, so the
+/// event must reach stdout first. Routing them through separate queues let a
+/// reply overtake the event that preceded it: `session.prompt` answered
+/// `end_turn` while the assistant text was still one hop behind, and the caller
+/// closed the run with an empty output. One queue makes the ordering structural
+/// instead of a race the writer happens to win.
+#[derive(Debug)]
+pub enum Outbound {
+    Event(HostEvent),
+    /// An already encoded reply line, including its trailing newline.
+    Reply(String),
+}
+
 /// Bounded outlet for host events.
 #[derive(Clone)]
 pub struct EventSink {
-    sender: mpsc::Sender<HostEvent>,
+    sender: mpsc::Sender<Outbound>,
 }
 
 impl EventSink {
-    pub fn new(capacity: usize) -> (Self, mpsc::Receiver<HostEvent>) {
+    pub fn new(capacity: usize) -> (Self, mpsc::Receiver<Outbound>) {
         let (sender, receiver) = mpsc::channel(capacity);
         (Self { sender }, receiver)
+    }
+
+    /// The shared queue, so replies can be ordered against events.
+    pub fn outbound(&self) -> mpsc::Sender<Outbound> {
+        self.sender.clone()
     }
 
     /// Queue one event, waiting for room if the channel is full.
@@ -67,7 +90,17 @@ impl EventSink {
     /// A closed channel means the writer is gone and the host is shutting down,
     /// so the event is dropped rather than treated as a failure.
     pub async fn send(&self, event: HostEvent) {
-        let _ = self.sender.send(event).await;
+        let _ = self.sender.send(Outbound::Event(event)).await;
+    }
+
+    /// Queue one event from a synchronous context, dropping it if there is no room.
+    ///
+    /// The transport tap is a plain `Fn` callback on the crate's read path, so it
+    /// cannot await. Blocking there would stall the agent's stdout. Evidence
+    /// frames are already capped downstream, so shedding them under pressure is
+    /// the established contract; the transcript never travels this way.
+    pub fn try_send(&self, event: HostEvent) -> bool {
+        self.sender.try_send(Outbound::Event(event)).is_ok()
     }
 }
 
@@ -151,9 +184,10 @@ pub struct AgentConnection {
     fence: Fence,
     permissions: PermissionStore,
     threads: SharedThreads,
-    /// Holding this task holds the agent process. Dropping it closes the
-    /// transport and lets `AcpAgent` reap the child's process group.
-    _driver: tokio::task::JoinHandle<()>,
+    /// Holding this task holds the agent process. `Drop` explicitly aborts it;
+    /// dropping a Tokio JoinHandle alone only detaches and would leak both the
+    /// Agent and the EventSink clone that keeps the stdout writer alive.
+    driver: tokio::task::JoinHandle<()>,
 }
 
 impl AgentConnection {
@@ -180,7 +214,19 @@ impl AgentConnection {
             AcpAgentConfig::new(params.command.clone())
                 .args(params.args.clone())
                 .envs(params.env.clone()),
-        );
+        )
+        .with_debug({
+            // The crate hands every transport line to this callback, which is the
+            // only place raw JSON-RPC is observable. Retaining it here keeps the
+            // evidence trace identical in shape to the Node executor's.
+            let tap = events.clone();
+            let tapped_connection = id.clone();
+            move |line: &str, direction: LineDirection| {
+                if let Some(event) = protocol_frame(&tapped_connection, line, direction) {
+                    tap.try_send(event);
+                }
+            }
+        });
 
         let (connection_tx, connection_rx) = oneshot::channel();
         let notification_state = (id.clone(), threads.clone(), events.clone());
@@ -268,7 +314,7 @@ impl AgentConnection {
             fence,
             permissions,
             threads,
-            _driver: driver,
+            driver,
         })
     }
 
@@ -462,6 +508,16 @@ impl AgentConnection {
     }
 }
 
+impl Drop for AgentConnection {
+    fn drop(&mut self) {
+        // Tokio JoinHandle::drop detaches — it does not cancel. Detaching here
+        // leaks the connection future, the agent process, and the EventSink
+        // clone that keeps the stdout writer waiting forever on shutdown.
+        self.driver.abort();
+        self.permissions.cancel_all();
+    }
+}
+
 /// Turn one transcript change into the matching host event.
 async fn announce_change(
     connection_id: &str,
@@ -560,6 +616,48 @@ async fn apply_session_notification(
         }
     };
     announce_change(connection_id, &session_id, threads, change, events).await;
+}
+
+/// Turn one raw transport line into a redacted protocol frame event.
+///
+/// Returns `None` for stderr and for anything that is not a JSON-RPC object, so
+/// agent logging never enters the evidence trace as if it were protocol.
+fn protocol_frame(connection_id: &str, line: &str, direction: LineDirection) -> Option<HostEvent> {
+    let direction = match direction {
+        LineDirection::Stdin => FrameDirection::ClientToAgent,
+        LineDirection::Stdout => FrameDirection::AgentToClient,
+        // Stderr is diagnostics, not protocol.
+        _ => return None,
+    };
+    let parsed: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let object = parsed.as_object()?;
+    let rpc_id = object.get("id").map(|id| match id {
+        serde_json::Value::String(text) => text.clone(),
+        other => other.to_string(),
+    });
+    // A frame with no method is a response. Naming it after the request it
+    // answers would need correlation state on the read path, so it is reported
+    // plainly and the rpc id is what pairs the two.
+    let method = object
+        .get("method")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("response")
+        .to_owned();
+    let session_id = object
+        .get("params")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|params| params.get("sessionId"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    Some(HostEvent::ProtocolFrame {
+        connection_id: connection_id.to_owned(),
+        direction,
+        method,
+        rpc_id,
+        session_id,
+        // Redacted before it leaves this function, so no caller can forget.
+        payload: redact(parsed),
+    })
 }
 
 /// Render a protocol enum using its own wire spelling.

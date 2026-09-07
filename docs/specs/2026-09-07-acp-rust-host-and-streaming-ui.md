@@ -52,8 +52,8 @@ Rust 侧的会话状态归并、chunk 合并、权限状态机形态参照 Zed �
 
 ### 事件契约与 host 扩展
 
-- **AC-15**：`host` 联合扩展为 `"qoder" | "acp" | "acp-rust"`；`acp-rust` 的 `runtimeProfile` 为 `"acp-v1-rust"`，其 `runtimeReceipt.tools` 如实列出已开启的 `fs`/`terminal` 能力。既有 `"acp"` 通路的 `runtimeProfile` 仍为 `"acp-v1-stdio"` 且行为不变。
-- **AC-16**：`host="acp-rust"` 的运行发出 entry 取向的新事件（`entry-appended` / `entry-updated` / `entries-removed`）；`host="acp"` 的运行继续发既有的 `message-*` / `tool-call-*` 事件。`parseHarnessRunEvent` 接受两组事件，既有测试断言的事件形状不变。
+- **AC-15**：Harness DSL 的 `host` **保持** `"qoder" | "acp"`；Rust 与 Node 两条 ACP 通路都实现同一个 `"acp"` host，因为 `preflightRevision` 要求执行器 host 与已解析 revision 的 host 相等。运行时差异由 receipt 表达：Rust 通路的 `runtimeProfile` 为 `"acp-v1-rust"`，既有 Node 通路仍为 `"acp-v1-stdio"`；Rust receipt 的 `tools` 如实列出已实际开启的 `fs`/`terminal` 能力。
+- **AC-16**：`runtimeProfile="acp-v1-rust"` 的运行发出 entry 取向的新事件（`entry-appended` / `entry-updated` / `entries-removed`）；既有 `"acp-v1-stdio"` 通路继续发 `message-*` / `tool-call-*` 事件。`parseHarnessRunEvent` 接受两组事件，既有测试断言的事件形状不变。
 - **AC-17**：Rust 二进制缺失时，Studio 回落到既有 `AcpSdkExecutor`（`host="acp"`），功能不减、无报错弹窗，`/api/config` 如实反映当前可用的 ACP 宿主。
 
 ### UI 流式渲染
@@ -171,9 +171,8 @@ oneshot sender 内联在 ToolCall 的待授权状态里，而非旁路 pending m
 新增 `packages/harness/src/exec/acp-rust.ts`：`AcpRustExecutor`，`executable` 为必填选项（不自行解析二进制路径），`spawnProcess` 为可注入测试缝。帧边界、pending 上限、超时即整进程失败、stderr `resume()` 排空等策略照搬 [rust-oxc-compiler.ts](../../packages/harness-studio/src/agent-react/host/rust-oxc-compiler.ts)。
 从 `packages/harness/src/exec/index.ts` 导出。**保留 `AcpSdkExecutor` 不动**，作为二进制缺失时的回落（AC-17）。
 
-**T9 — host 联合与适配器描述符**（AC-15）
-`packages/harness/src/experiment/contract.ts` 的 host union 加 `Type.Literal("acp-rust")`；新增 `AcpRustRuntimeProfileSchema = Type.Literal("acp-v1-rust")`；`packages/harness/src/resolver/adapter-registry.ts` 增加对应描述符。
-连带核实：`server.ts` 的 executor factory 分支、`studio-types.ts`、以及所有断言 host 字面量的测试。
+**T9 — Runtime profile 与适配器描述符**（AC-15）
+Harness DSL 的 host union **不扩展**。实施验证发现 `preflightRevision` 会以 `assertRevisionHost` 强制 executor host 与 revision host 相等；增加 `"acp-rust"` 会拒绝所有现存 `"acp"` revision，与无迁移接入目标相反。Rust 执行器因此仍声明 `host = "acp"`，并以 `runtimeProfile = "acp-v1-rust"` 区分实现；既有 Node 执行器维持 `"acp-v1-stdio"`。无需增加第二个适配器描述符，两条通路共同服从 `ACP_ADAPTER_DESCRIPTOR`。
 
 **T10 — 服务端接线（最小改动）**（AC-15 AC-17）
 `acp-runs.ts` 增加 `acpRustExecutorFactory`，与既有 `acpExecutorFactory` 并列；`server.ts` 在 Rust 宿主可用时选用前者，否则回落。`/api/config` 增加宿主标识字段。权限与取消路由、`AcpRunControl`、`waitForAcpPermission` 的形状与语义**不变**——权限仍走 `control.pendingPermissions`，只是 settle 后经 `permission.decide` 转发给 Rust。

@@ -13,87 +13,70 @@
 //!
 //! # Why one writer owns stdout
 //!
-//! Replies and events share stdout. Encoding each frame fully before handing it
-//! to a single writer is what keeps two concurrent tasks from interleaving
-//! halves of two JSON objects onto one line.
+//! Replies and events share stdout *and* the queue that feeds it. Sharing the
+//! queue is what orders them: an event caused by an agent notification that
+//! preceded a call's response must reach the caller first, and separate queues
+//! let the reply overtake it. Encoding each frame fully before it is queued is
+//! what keeps two concurrent tasks from interleaving halves of two JSON objects.
 
 use std::collections::HashMap;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use harness_acp_host::connection::{AgentConnection, EVENT_CHANNEL_CAPACITY, EventSink};
+use harness_acp_host::connection::{AgentConnection, EVENT_CHANNEL_CAPACITY, EventSink, Outbound};
 use harness_acp_host::wire::{
-    Call, EventFrame, HOST_PROTOCOL_VERSION, HostEvent, ResponseFrame, encode_frame,
+    Call, EventFrame, HOST_PROTOCOL_VERSION, ResponseFrame, encode_frame,
 };
 use serde_json::json;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Mutex, mpsc};
-
-/// Bound on encoded frames waiting for the writer.
-const WRITER_QUEUE_CAPACITY: usize = 1_024;
 
 /// Live connections, keyed by the id the caller chose.
 type Registry = Arc<Mutex<HashMap<String, Arc<AgentConnection>>>>;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let (lines, mut writer_task) = start_writer();
-    let (events, event_receiver) = EventSink::new(EVENT_CHANNEL_CAPACITY);
-    let forwarder = tokio::spawn(forward_events(event_receiver, lines.clone()));
+    let (events, outbound) = EventSink::new(EVENT_CHANNEL_CAPACITY);
+    let mut writer_task = tokio::spawn(write_outbound(outbound));
     let registry: Registry = Arc::new(Mutex::new(HashMap::new()));
 
-    let exit = read_requests(registry.clone(), events, lines.clone()).await;
+    let exit = read_requests(registry.clone(), events.clone()).await;
 
     // Drop every connection before returning so each agent's process group is
     // collected while this process is still alive to do it.
     registry.lock().await.clear();
-    drop(lines);
-    forwarder.abort();
+    drop(events);
     let _ = (&mut writer_task).await;
     exit
 }
 
-/// Own stdout on one task so concurrent producers cannot interleave lines.
-fn start_writer() -> (mpsc::Sender<String>, tokio::task::JoinHandle<()>) {
-    let (sender, mut receiver) = mpsc::channel::<String>(WRITER_QUEUE_CAPACITY);
-    let task = tokio::spawn(async move {
-        let mut stdout = tokio::io::stdout();
-        while let Some(line) = receiver.recv().await {
-            if stdout.write_all(line.as_bytes()).await.is_err() {
-                // The caller closed the pipe; further frames have nowhere to go.
-                break;
-            }
-            let _ = stdout.flush().await;
-        }
-    });
-    (sender, task)
-}
-
-/// Encode host events onto the shared writer.
-async fn forward_events(mut events: mpsc::Receiver<HostEvent>, lines: mpsc::Sender<String>) {
-    while let Some(event) = events.recv().await {
-        match encode_frame(&EventFrame::new(event)) {
-            Ok(line) => {
-                if lines.send(line).await.is_err() {
-                    break;
+/// Own stdout on one task, encoding events and forwarding already encoded replies.
+async fn write_outbound(mut outbound: mpsc::Receiver<Outbound>) {
+    let mut stdout = tokio::io::stdout();
+    while let Some(item) = outbound.recv().await {
+        let line = match item {
+            Outbound::Reply(line) => line,
+            Outbound::Event(event) => match encode_frame(&EventFrame::new(event)) {
+                Ok(line) => line,
+                Err(error) => {
+                    // An event too large to encode is dropped rather than killing
+                    // a healthy run: the caller loses one frame, not the session.
+                    eprintln!("[acp-host] dropped an unencodable event: {error}");
+                    continue;
                 }
-            }
-            Err(error) => {
-                // An event too large to encode is dropped rather than killing a
-                // healthy run: the caller loses one frame, not the session. It
-                // is reported on stderr so the size ceiling stays visible.
-                eprintln!("[acp-host] dropped an unencodable event: {error}");
-            }
+            },
+        };
+        if stdout.write_all(line.as_bytes()).await.is_err() {
+            // The caller closed the pipe; further frames have nowhere to go.
+            break;
         }
+        let _ = stdout.flush().await;
     }
 }
 
 /// Read and dispatch request frames until stdin ends or `shutdown` arrives.
-async fn read_requests(
-    registry: Registry,
-    events: EventSink,
-    lines: mpsc::Sender<String>,
-) -> ExitCode {
+async fn read_requests(registry: Registry, events: EventSink) -> ExitCode {
+    let lines = events.outbound();
     let mut stdin = BufReader::new(tokio::io::stdin()).lines();
     loop {
         let line = match stdin.next_line().await {
@@ -121,40 +104,36 @@ async fn read_requests(
             Ok(call) => call,
             Err(error) => {
                 let _ = lines
-                    .send(fail(frame.id, error.code(), error.to_string()))
+                    .send(Outbound::Reply(fail(
+                        frame.id,
+                        error.code(),
+                        error.to_string(),
+                    )))
                     .await;
                 continue;
             }
         };
         if matches!(call, Call::Shutdown) {
             let _ = lines
-                .send(ok(frame.id, json!({ "status": "shutting-down" })))
+                .send(Outbound::Reply(ok(
+                    frame.id,
+                    json!({ "status": "shutting-down" }),
+                )))
                 .await;
             return ExitCode::SUCCESS;
         }
         // Concurrent by necessity: see the module note on deadlock.
-        tokio::spawn(dispatch(
-            frame.id,
-            call,
-            registry.clone(),
-            events.clone(),
-            lines.clone(),
-        ));
+        tokio::spawn(dispatch(frame.id, call, registry.clone(), events.clone()));
     }
 }
 
-async fn dispatch(
-    id: u32,
-    call: Call,
-    registry: Registry,
-    events: EventSink,
-    lines: mpsc::Sender<String>,
-) {
+async fn dispatch(id: u32, call: Call, registry: Registry, events: EventSink) {
+    let lines = events.outbound();
     let reply = match run_call(call, &registry, &events).await {
         Ok(result) => ok(id, result),
         Err(error) => fail(id, "call-failed", error.to_string()),
     };
-    let _ = lines.send(reply).await;
+    let _ = lines.send(Outbound::Reply(reply)).await;
 }
 
 async fn run_call(
