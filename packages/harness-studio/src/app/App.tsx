@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { ArrowRight } from "@phosphor-icons/react/ArrowRight";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
+import { Gear } from "@phosphor-icons/react/Gear";
 import { GitBranch } from "@phosphor-icons/react/GitBranch";
 import { Moon } from "@phosphor-icons/react/Moon";
 import { SidebarSimple } from "@phosphor-icons/react/SidebarSimple";
@@ -10,6 +11,7 @@ import { Sun } from "@phosphor-icons/react/Sun";
 import { ArtifactsWorkspace } from "./ArtifactsWorkspace.js";
 import { ArtifactView } from "./artifacts/ArtifactView.js";
 import { CompareView } from "./CompareView.js";
+import { CompareLiveView } from "./CompareLiveView.js";
 import { CustomizationView } from "./CustomizationView.js";
 import { ExperimentView } from "./experiment/ExperimentView.js";
 import { GitHistoryView } from "./GitHistoryView.js";
@@ -22,6 +24,7 @@ import {
 import type { DebuggerSession } from "../contracts/debugger-session.js";
 import { isStudioProjectCatalog, type StudioProjectCatalog, type StudioProjectDescriptor } from "../contracts/studio-project.js";
 import { ProjectSidebar } from "./shell/ProjectSidebar.js";
+import { TOOLBAR_ACTIONS_ID } from "./shell/ToolbarActions.js";
 import { parseStudioLocation, studioLocationHash } from "./shell/project-routing.js";
 import {
   isWorkspaceArtifactNavigation,
@@ -95,6 +98,50 @@ function initialStudioTheme(): StudioTheme {
   return document.documentElement.dataset.theme === "light" ? "light" : "dark";
 }
 
+const SIDEBAR_WIDTH_KEY = "harness-studio-sidebar-width";
+const SIDEBAR_COLLAPSED_KEY = "harness-studio-sidebar-collapsed";
+/** Below this width the sidebar is an overlay, so a stored width does not apply. */
+const SIDEBAR_OVERLAY_QUERY = "(max-width: 1080px)";
+
+/**
+ * Sidebar geometry lives in the token file, which DESIGN.md owns. Reading it back
+ * rather than restating the numbers here keeps one source for the contract, so a
+ * revised token moves the default and the drag bounds together.
+ */
+function sidebarBounds(): { min: number; max: number; fallback: number } {
+  const declared = (name: string, fallback: number): number => {
+    const value = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue(name), 10);
+    return Number.isFinite(value) ? value : fallback;
+  };
+  return {
+    min: declared("--sidebar-min-width", 180),
+    max: declared("--sidebar-max-width", 420),
+    fallback: declared("--sidebar-width", 236),
+  };
+}
+
+function storedSidebarWidth(): number {
+  const { min, max, fallback } = sidebarBounds();
+  let stored = Number.NaN;
+  try {
+    stored = Number.parseInt(globalThis.localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? "", 10);
+  } catch {
+    stored = Number.NaN;
+  }
+  if (!Number.isFinite(stored)) return fallback;
+  // Clamped on read: a width stored on a wide display must not strand a window
+  // that has since become narrow.
+  return Math.min(max, Math.max(min, stored));
+}
+
+function storedSidebarCollapsed(): boolean {
+  try {
+    return globalThis.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 async function fetchStudioState(): Promise<{ config: StudioConfig; sources: StudioSourceOption[]; projectCatalog: StudioProjectCatalog }> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const [configResponse, sourcesResponse, projectsResponse] = await Promise.all([
@@ -139,12 +186,34 @@ export function App(): React.JSX.Element {
   const [locationRevision, setLocationRevision] = useState(0);
   const [compareSurface, setCompareSurface] = useState<StudioCompareSurface>("sessions");
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(storedSidebarCollapsed);
+  const [sidebarWidth, setSidebarWidth] = useState(storedSidebarWidth);
+  const [overlaySidebar, setOverlaySidebar] = useState(() => globalThis.matchMedia?.(SIDEBAR_OVERLAY_QUERY).matches === true);
   const [theme, setTheme] = useState<StudioTheme>(initialStudioTheme);
   const navigationToggleRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  // The overlay regime is a CSS breakpoint, so the shell asks the same query
+  // rather than tracking window width itself and risking a different answer.
+  useEffect(() => {
+    const media = globalThis.matchMedia?.(SIDEBAR_OVERLAY_QUERY);
+    if (media === undefined) return;
+    const sync = (event: MediaQueryListEvent): void => setOverlaySidebar(event.matches);
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    try {
+      globalThis.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+      globalThis.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+    } catch {
+      // The layout stays usable for this page when storage is blocked.
+    }
+  }, [sidebarWidth, sidebarCollapsed]);
 
   /**
    * Only a choice made here is stored. Writing on every render would persist the
@@ -421,8 +490,23 @@ export function App(): React.JSX.Element {
   const workspaceGateOpen = projects.length === 0 && studioProjectGateRequired(config, sources.length > 0);
   const overviewConfig = workspaceGateOpen ? config : { ...config, workspaceDiscoveryEnabled: false };
 
+  // Two regimes share one control. Wide windows dock the sidebar and collapse it
+  // in place; narrow windows float it over the content, which is the existing
+  // `navigationOpen` overlay. The toggle drives whichever one is in force.
+  const sidebarVisible = overlaySidebar ? navigationOpen : !sidebarCollapsed;
+  function toggleSidebar(): void {
+    if (overlaySidebar) setNavigationOpen((value) => !value);
+    else setSidebarCollapsed((value) => !value);
+  }
+
   return <StudioThemeContext.Provider value={theme}>
-  <div className={`studio-control-plane${navigationOpen ? " navigation-open" : ""}`} inert={workspaceGateOpen ? true : undefined} aria-hidden={workspaceGateOpen ? true : undefined}>
+  <div
+    className={`studio-control-plane${navigationOpen ? " navigation-open" : ""}`}
+    data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
+    style={{ ["--sidebar-width" as string]: `${sidebarWidth}px` }}
+    inert={workspaceGateOpen ? true : undefined}
+    aria-hidden={workspaceGateOpen ? true : undefined}
+  >
     <ProjectSidebar
       projects={projects}
       activeProjectId={activeProjectId}
@@ -434,16 +518,20 @@ export function App(): React.JSX.Element {
       onActivateProject={(projectId) => void activateStudioProject(projectId)}
       onRemoveProject={(projectId) => void removeStudioProject(projectId)}
       onSelectView={openArea}
+      onCollapseSidebar={() => { setSidebarCollapsed(true); navigationToggleRef.current?.focus(); }}
       onCloseNavigation={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }}
+      settings={<SettingsMenu theme={theme} onTheme={chooseTheme} />}
     />
+    <SidebarSash width={sidebarWidth} onWidth={setSidebarWidth} />
     <button className="studio-nav-backdrop" type="button" aria-label={t("workspace:gate.closeAria")} onClick={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }} />
     <section className="studio-area">
       <header className={`studio-context-bar${contextNavigation ? " has-surface-navigation" : ""}`}>
-        <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={navigationOpen ? t("workspace:gate.closeTitle") : t("workspace:gate.openTitle")} aria-label={navigationOpen ? t("workspace:gate.closeAria") : t("workspace:gate.openAria")} aria-expanded={navigationOpen} onClick={() => setNavigationOpen((value) => !value)}><SidebarSimple aria-hidden="true" size={17} /></button>
+        <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={sidebarVisible ? t("workspace:gate.closeTitle") : t("workspace:gate.openTitle")} aria-label={sidebarVisible ? t("workspace:gate.closeAria") : t("workspace:gate.openAria")} aria-expanded={sidebarVisible} onClick={toggleSidebar}><SidebarSimple aria-hidden="true" size={17} /></button>
         <div className="studio-context-title"><small>{activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("contextBar.noProject"))}</small><h1>{t(`area.${area}`)}</h1></div>
         {contextNavigation && <div className="studio-context-navigation">{contextNavigation}</div>}
-        <ThemeToggle theme={theme} onChange={chooseTheme} />
-        <LanguageToggle />
+        {/* The active View's primary action lands here, so a workbench does not
+            open a second bar just to hold one button. */}
+        <div className="studio-context-actions" id={TOOLBAR_ACTIONS_ID} />
         {sources.length > 0 && <SourceSwitcher sources={sources} onSelect={(source) => void selectSource(source)} />}
         {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
@@ -457,7 +545,7 @@ export function App(): React.JSX.Element {
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} openProjectAction={openProjectAction} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
-        {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} />}
+        {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
       </div>
       <StatusBar
         scope={activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
@@ -521,6 +609,108 @@ function StatusBar(props: {
       {counts.map((entry) => <span key={entry}>{entry}</span>)}
     </div>}
   </footer>;
+}
+
+/**
+ * The sash between the sidebar and the content column. It is a real separator:
+ * draggable, focusable, and keyboard operable, because a divider that only
+ * responds to a precise drag is unusable without a mouse.
+ *
+ * The sidebar's leading edge is the window's, so the pointer's x coordinate is
+ * the width being asked for. Double-click returns the token default.
+ */
+function SidebarSash(props: { width: number; onWidth: (width: number) => void }): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const [dragging, setDragging] = useState(false);
+  const bounds = sidebarBounds();
+
+  function commit(next: number): void {
+    props.onWidth(Math.min(bounds.max, Math.max(bounds.min, Math.round(next))));
+  }
+
+  return <div
+    className={`studio-sidebar-sash${dragging ? " dragging" : ""}`}
+    role="separator"
+    tabIndex={0}
+    aria-orientation="vertical"
+    aria-label={t("sidebar.resizeAria")}
+    aria-valuenow={props.width}
+    aria-valuemin={bounds.min}
+    aria-valuemax={bounds.max}
+    onPointerDown={(event) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setDragging(true);
+    }}
+    onPointerMove={(event) => { if (dragging) commit(event.clientX); }}
+    onPointerUp={(event) => {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      setDragging(false);
+    }}
+    onLostPointerCapture={() => setDragging(false)}
+    onDoubleClick={() => commit(bounds.fallback)}
+    onKeyDown={(event) => {
+      const step = event.shiftKey ? 32 : 8;
+      if (event.key === "ArrowLeft") commit(props.width - step);
+      else if (event.key === "ArrowRight") commit(props.width + step);
+      else if (event.key === "Home") commit(bounds.min);
+      else if (event.key === "End") commit(bounds.max);
+      else return;
+      event.preventDefault();
+    }}
+  />;
+}
+
+/**
+ * Appearance and language are set once and rarely changed, so they belong in a
+ * Settings pop-up at the quiet end of the window rather than as two permanent
+ * buttons in the toolbar, where they competed with the current View's own action.
+ *
+ * The pop-up opens upward because its trigger sits on the bottom edge.
+ */
+function SettingsMenu(props: { theme: StudioTheme; onTheme: (theme: StudioTheme) => void }): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (!(event.target instanceof Node)) return;
+      if (rootRef.current?.contains(event.target) === true) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return <div className="studio-settings" ref={rootRef}>
+    <button
+      className="studio-settings-toggle"
+      type="button"
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-label={t("settings.aria")}
+      title={t("settings.title")}
+      onClick={() => setOpen((value) => !value)}
+    >
+      <Gear aria-hidden="true" size={14} />
+      <span>{t("settings.title")}</span>
+    </button>
+    {open && <div className="studio-settings-menu" role="menu" aria-label={t("settings.menuAria")}>
+      <h2>{t("settings.appearance")}</h2>
+      <ThemeToggle theme={props.theme} onChange={props.onTheme} />
+      <h2>{t("settings.language")}</h2>
+      <LanguageToggle />
+    </div>}
+  </div>;
 }
 
 function ThemeToggle(props: { theme: StudioTheme; onChange: (theme: StudioTheme) => void }): React.JSX.Element {
@@ -687,6 +877,7 @@ function SessionsWorkspace(props: {
   const [surface, setSurface] = useState<"inspector" | "catalog">(
     props.config.workspaceWorkbenchEnabled ? "inspector" : "catalog",
   );
+  const [agentFilter, setAgentFilter] = useState("all");
 
   useEffect(() => {
     if (!props.config.workspaceConnected) return;
@@ -752,15 +943,17 @@ function SessionsWorkspace(props: {
   function moveSessionFocus(event: ReactKeyboardEvent<HTMLButtonElement>, id: string): void {
     if (sessions === undefined || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const index = Math.max(0, sessions.findIndex((session) => session.id === id));
+    const rows = sessions.filter((session) => agentFilter === "all" || (session.provider ?? t("common:localAgent")) === agentFilter);
+    if (rows.length === 0) return;
+    const index = Math.max(0, rows.findIndex((session) => session.id === id));
     const nextIndex = event.key === "Home"
       ? 0
       : event.key === "End"
-        ? sessions.length - 1
+        ? rows.length - 1
         : event.key === "ArrowDown"
-          ? (index + 1) % sessions.length
-          : (index - 1 + sessions.length) % sessions.length;
-    const nextId = sessions[nextIndex]!.id;
+          ? (index + 1) % rows.length
+          : (index - 1 + rows.length) % rows.length;
+    const nextId = rows[nextIndex]!.id;
     setFocusedSessionId(nextId);
     sessionRowRefs.current.get(nextId)?.focus();
   }
@@ -774,13 +967,20 @@ function SessionsWorkspace(props: {
   if (sessions === undefined) return <p className="artifact-status" role="status">{t("indexing")}</p>;
 
   const pair = [...compareIds];
+  const agentLabel = (session: SessionSummary): string => session.provider ?? t("common:localAgent");
+  // Sessions are the Agent-dimension entry point for Compare, so the catalog can
+  // be narrowed to one Agent and always reports how many Agents it observed.
+  const agentCounts = sessions.reduce<Map<string, number>>((counts, session) => counts.set(agentLabel(session), (counts.get(agentLabel(session)) ?? 0) + 1), new Map());
+  const agents = [...agentCounts.keys()].sort((left, right) => left.localeCompare(right));
+  const visibleSessions = agentFilter === "all" ? sessions : sessions.filter((session) => agentLabel(session) === agentFilter);
   const catalog = <section className="session-browser-workspace" aria-label={t("workspaceAria")}>
     <aside className="session-catalog-pane">
-      <header><div><small>{t("evidenceEyebrow")}</small><h2>{t("common:area.sessions")}</h2></div><span>{sessions.length}</span></header>
+      <header><div><small>{t("evidenceEyebrow")}</small><h2>{t("common:area.sessions")}</h2></div><span>{visibleSessions.length}</span></header>
+      {agents.length > 1 && <div className="session-agent-filter"><label><span>{t("agentFilterLabel")}</span><select aria-label={t("agentFilterAria")} value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)}><option value="all">{t("allAgents")}</option>{agents.map((agent) => <option key={agent} value={agent}>{t("agentSessionCount", { agent, sessions: agentCounts.get(agent) })}</option>)}</select></label></div>}
       {omittedCount > 0 && <p className="session-omissions">{t("omitted", { count: omittedCount })}</p>}
-      <ul className="session-catalog-rows">{sessions.map((session) => <li key={session.id}>
-        <label title={t("selectTitle", { prompt: session.prompt })}><input type="checkbox" aria-label={t("selectAria", { prompt: session.prompt, provider: session.provider ?? t("common:localAgent"), time: formatSessionTime(session.savedAt, studioLocale()) })} checked={compareIds.has(session.id)} disabled={!compareIds.has(session.id) && compareIds.size >= 2} onChange={() => toggleCompare(session.id)} /></label>
-        <button ref={(node) => { if (node) sessionRowRefs.current.set(session.id, node); else sessionRowRefs.current.delete(session.id); }} type="button" tabIndex={focusedSessionId === session.id ? 0 : -1} className={selected === session.id ? "selected" : undefined} onFocus={() => setFocusedSessionId(session.id)} onKeyDown={(event) => moveSessionFocus(event, session.id)} onClick={() => { setFocusedSessionId(session.id); void openSession(session.id); }}><small>{session.provider ?? t("common:localAgent")} · {formatSessionTime(session.savedAt, studioLocale())}</small><strong>{session.prompt}</strong><small>{t("status", { status: session.status, count: session.toolCallCount })}</small></button>
+      <ul className="session-catalog-rows">{visibleSessions.map((session) => <li key={session.id}>
+        <label title={t("selectTitle", { prompt: session.prompt })}><input type="checkbox" aria-label={t("selectAria", { prompt: session.prompt, provider: agentLabel(session), time: formatSessionTime(session.savedAt, studioLocale()) })} checked={compareIds.has(session.id)} disabled={!compareIds.has(session.id) && compareIds.size >= 2} onChange={() => toggleCompare(session.id)} /></label>
+        <button ref={(node) => { if (node) sessionRowRefs.current.set(session.id, node); else sessionRowRefs.current.delete(session.id); }} type="button" tabIndex={focusedSessionId === session.id ? 0 : -1} className={selected === session.id ? "selected" : undefined} onFocus={() => setFocusedSessionId(session.id)} onKeyDown={(event) => moveSessionFocus(event, session.id)} onClick={() => { setFocusedSessionId(session.id); void openSession(session.id); }}><small>{agentLabel(session)} · {formatSessionTime(session.savedAt, studioLocale())}</small><strong>{session.prompt}</strong><small>{t("status", { status: session.status, count: session.toolCallCount })}</small></button>
       </li>)}</ul>
       <footer><button type="button" className="primary" disabled={pair.length !== 2} onClick={() => props.onCompare(pair as [string, string])}>{t("compareButton", { pair: pair.length })}</button></footer>
     </aside>
@@ -932,13 +1132,13 @@ function formatSessionTime(value: string, locale: string): string {
 
 function DebuggerWorkspace(props: { config: StudioConfig; openProjectAction?: { label: string; onClick: () => void }; project?: { id: string; label: string; revision: number } }): React.JSX.Element {
   const { t } = useTranslation("common");
-  if (!props.config.runEnabled) {
+  if (!props.config.runEnabled && !props.config.acpEnabled) {
     return <EmptyWorkspace eyebrow={t("debugger.eyebrow")} title={t("debugger.title")} detail={t("debugger.detail")} command="--harness ./my-agent.harness" />;
   }
   if (props.config.harnessMode === "workspace-default" && !props.config.projectExecutionEnabled) {
     return <EmptyWorkspace eyebrow={t("debugger.projectScopedEyebrow")} title={props.project === undefined ? t("debugger.openProjectTitle") : t("debugger.readOnlyTitle")} detail={props.project === undefined ? (props.config.workspaceDiscoveryEnabled ? t("debugger.openProjectDetail") : t("debugger.noDiscoveryDetail")) : t("debugger.readOnlyDetail")} action={props.openProjectAction} />;
   }
-  return <div className="debugger-mode"><RunView runEndpoint="/api/runs/stream" acpEndpoint={props.config.acpEnabled ? "/api/acp/runs/stream" : undefined} acpAgentLabel={props.config.acpAgentLabel} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? t("debugger.workspaceDefaultQoder") : t("debugger.liveTrial")} project={props.project} /></div>;
+  return <div className="debugger-mode"><RunView runEndpoint="/api/runs/stream" acpEndpoint={props.config.acpEnabled ? "/api/acp/runs/stream" : undefined} acpAgentLabel={props.config.acpAgentLabel} acpAgents={props.config.acpAgents} localRunEnabled={props.config.runEnabled} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? t("debugger.workspaceDefaultQoder") : t("debugger.liveTrial")} project={props.project} /></div>;
 }
 
 function CompareWorkspace(props: {
@@ -947,13 +1147,36 @@ function CompareWorkspace(props: {
   navigation: ReactNode;
   sessionIds?: [string, string];
   openProjectAction?: { label: string; onClick: () => void };
+  onOpenSessions: () => void;
+  project?: { id: string; label: string; revision: number };
 }): React.JSX.Element {
   const { t } = useTranslation("compare");
   const available = compareSurfaces(props.config);
   if (available.length === 0) {
-    return <EmptyWorkspace eyebrow={t("empty.eyebrow")} title={props.config.workspaceConnected ? t("empty.titleConnected") : t("empty.titleDisconnected")} detail={props.config.workspaceConnected ? t("empty.detailConnected") : props.config.workspaceDiscoveryEnabled ? t("empty.discoveryDetail") : t("empty.noDiscoveryDetail")} action={props.openProjectAction} />;
+    // A connected Project is never asked to open a second Project: cross-Agent
+    // compare is answered inside this working tree by observing another Agent.
+    return props.config.workspaceConnected
+      ? <EmptyWorkspace
+          eyebrow={t("empty.eyebrow")}
+          title={t("empty.titleConnected")}
+          detail={props.config.sessionCount === 0 ? t("empty.detailNoSessions") : t("empty.detailConnected")}
+          action={{ label: t("empty.openSessions"), onClick: props.onOpenSessions }}
+        />
+      : <EmptyWorkspace
+          eyebrow={t("empty.eyebrow")}
+          title={t("empty.titleDisconnected")}
+          detail={props.config.workspaceDiscoveryEnabled ? t("empty.discoveryDetail") : t("empty.noDiscoveryDetail")}
+          action={props.openProjectAction}
+        />;
   }
-  if (props.surface === "sessions" && props.config.sessionCount >= 2) {
+  if (props.surface === "live") {
+    return <CompareLiveView
+      navigation={props.navigation}
+      agents={props.config.acpAgents ?? []}
+      {...(props.project === undefined ? {} : { project: props.project })}
+    />;
+  }
+  if (props.surface === "sessions") {
     return <SessionCompareView navigation={props.navigation} initialIds={props.sessionIds} />;
   }
   if (props.surface === "bench" && props.config.experimentEnabled) {
@@ -971,6 +1194,7 @@ interface SessionComparisonSide {
   prompt: string;
   savedAt: string;
   status: "finished" | "error" | "observed";
+  agent: string;
   retainedEventCount: number;
   toolCallCount: number;
   messageCount: number;
@@ -981,8 +1205,21 @@ interface SessionComparisonSide {
 interface SessionComparison {
   kind: "observational-session-compare.v1";
   boundary: string;
+  crossAgent: boolean;
   left: SessionComparisonSide;
   right: SessionComparisonSide;
+}
+
+/**
+ * Seed the pair with two different Agents when the Project has them, so the
+ * default view answers the cross-Agent question instead of pairing whichever
+ * two Sessions happen to be newest.
+ */
+function crossAgentPair(sessions: readonly SessionSummary[]): [string, string] | undefined {
+  const first = sessions[0];
+  if (first === undefined) return undefined;
+  const other = sessions.find((session) => (session.provider ?? "") !== (first.provider ?? ""));
+  return other === undefined ? undefined : [first.id, other.id];
 }
 
 function SessionCompareView(props: { navigation: ReactNode; initialIds?: [string, string] }): React.JSX.Element {
@@ -1002,8 +1239,9 @@ function SessionCompareView(props: { navigation: ReactNode; initialIds?: [string
         const loaded = await response.json() as { sessions: SessionSummary[] };
         if (cancelled) return;
         setSessions(loaded.sessions);
-        setLeftId((current) => current || loaded.sessions[0]?.id || "");
-        setRightId((current) => current || loaded.sessions[1]?.id || "");
+        const preferred = crossAgentPair(loaded.sessions);
+        setLeftId((current) => current || preferred?.[0] || loaded.sessions[0]?.id || "");
+        setRightId((current) => current || preferred?.[1] || loaded.sessions[1]?.id || "");
       } catch (error) {
         if (!cancelled) setFailure(error instanceof Error ? error.message : String(error));
       }
@@ -1027,15 +1265,18 @@ function SessionCompareView(props: { navigation: ReactNode; initialIds?: [string
     return () => controller.abort();
   }, [leftId, rightId]);
 
+  const optionLabel = (session: SessionSummary): string => t("compare.optionLabel", { agent: session.provider ?? t("common:localAgent"), prompt: session.prompt });
   return <main className="session-compare-workspace">
     <header><div><small>{t("compare.eyebrow")}</small><h1>{t("compare.title")}</h1></div>{props.navigation}</header>
-    <div className="session-compare-picker"><label><span>{t("compare.left")}</span><select value={leftId} onChange={(event) => setLeftId(event.target.value)}>{sessions.map((session) => <option key={session.id} value={session.id} disabled={session.id === rightId}>{session.prompt}</option>)}</select></label><label><span>{t("compare.right")}</span><select value={rightId} onChange={(event) => setRightId(event.target.value)}>{sessions.map((session) => <option key={session.id} value={session.id} disabled={session.id === leftId}>{session.prompt}</option>)}</select></label></div>
+    <div className="session-compare-picker"><label><span>{t("compare.left")}</span><select value={leftId} onChange={(event) => setLeftId(event.target.value)}>{sessions.map((session) => <option key={session.id} value={session.id} disabled={session.id === rightId}>{optionLabel(session)}</option>)}</select></label><label><span>{t("compare.right")}</span><select value={rightId} onChange={(event) => setRightId(event.target.value)}>{sessions.map((session) => <option key={session.id} value={session.id} disabled={session.id === leftId}>{optionLabel(session)}</option>)}</select></label></div>
     {failure !== undefined && <p className="session-compare-boundary status-danger" role="alert">{failure}</p>}
     {comparison === undefined ? <p className="artifact-status" role="status">{t("compare.loading")}</p> : <>
       <p className="session-compare-boundary"><strong>{t("compare.noWinner")}</strong> {comparison.boundary}</p>
-      <div className="session-compare-heads"><article><small>{t("compare.leftSide")}</small><h2>{comparison.left.prompt}</h2><span className={`run-badge status-${comparison.left.status}`}>{comparison.left.status}</span></article><article><small>{t("compare.rightSide")}</small><h2>{comparison.right.prompt}</h2><span className={`run-badge status-${comparison.right.status}`}>{comparison.right.status}</span></article></div>
+      <p className={`session-compare-boundary${comparison.crossAgent ? "" : " status-warning"}`} role="status">{comparison.crossAgent ? t("compare.crossAgent") : t("compare.sameAgent", { agent: comparison.left.agent })}</p>
+      <div className="session-compare-heads"><article><small>{t("compare.leftSide")} · {comparison.left.agent}</small><h2>{comparison.left.prompt}</h2><span className={`run-badge status-${comparison.left.status}`}>{comparison.left.status}</span></article><article><small>{t("compare.rightSide")} · {comparison.right.agent}</small><h2>{comparison.right.prompt}</h2><span className={`run-badge status-${comparison.right.status}`}>{comparison.right.status}</span></article></div>
       <div className="session-compare-table" role="table" aria-label={t("compare.aria")}>
         <div className="session-compare-columns" role="row"><strong role="columnheader">{t("compare.metricColumn")}</strong><strong role="columnheader">{t("compare.leftSide")}</strong><strong role="columnheader">{t("compare.rightSide")}</strong></div>
+        <div role="row"><strong role="rowheader">{t("compare.agentRow")}</strong><span role="cell">{comparison.left.agent}</span><span role="cell">{comparison.right.agent}</span></div>
         {(["retainedEventCount", "toolCallCount", "messageCount", "warningCount"] as const).map((metric) => <div role="row" key={metric}><strong role="rowheader">{sessionMetricLabel(metric, t)}</strong><span role="cell">{comparison.left[metric]}</span><span role="cell">{comparison.right[metric]}</span></div>)}
       </div>
       <div className="session-tool-sequences"><section><header>{t("compare.leftToolSequence")}</header><ol>{comparison.left.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section><section><header>{t("compare.rightToolSequence")}</header><ol>{comparison.right.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section></div>

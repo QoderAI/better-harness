@@ -311,7 +311,18 @@ export async function streamExperiment(
       ...(agentSelectionEvidence === undefined ? {} : { runtimeSelection: agentSelectionEvidence }),
       signal: controller.signal,
       ...(experimentHost === "acp"
-        ? { executorFactory: acpExperimentExecutorFactory((laneId) => agentSelections!.get(laneId)!, state) }
+        ? {
+            executorFactory: acpExperimentExecutorFactory(
+              (laneId) => agentSelections!.get(laneId)!,
+              state,
+              {
+                ...(options.acpHostExecutable === undefined
+                  ? {}
+                  : { executable: options.acpHostExecutable }),
+                ...(options.cwd === undefined ? {} : { allowRoots: [options.cwd] }),
+              },
+            ),
+          }
         : {}),
       onEvent: send,
     });

@@ -62,7 +62,8 @@
           "from": "dist/native",
           "to": "native",
           "filter": [
-            "harness-oxc-service*"
+            "harness-oxc-service*",
+            "harness-acp-host*"
           ]
         }
       ]
@@ -78,7 +79,8 @@
           "from": "dist/native",
           "to": "native",
           "filter": [
-            "harness-oxc-service*"
+            "harness-oxc-service*",
+            "harness-acp-host*"
           ]
         }
       ]

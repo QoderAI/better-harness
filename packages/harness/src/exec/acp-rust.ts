@@ -247,7 +247,9 @@ export class AcpRustExecutor implements HarnessExecutor {
       runtimeProfile: RUNTIME_PROFILE,
       // Only capabilities actually granted are listed; the receipt must not
       // advertise reach the host was never given.
-      tools: fs ? ["fs/read_text_file", "fs/write_text_file"] : [],
+      tools: fs
+        ? ["terminal", "fs/read_text_file", "fs/write_text_file"]
+        : [],
       allowedTools: [],
       disallowedTools: [],
       persistSession: false,
@@ -436,7 +438,17 @@ class HostClient {
         return;
       }
       case "permission-requested": {
+        // Studio's existing permission projection reads requestId from a
+        // protocol event rpcId. The host uses its own UUID to address the later
+        // permission.decide call, while the raw ACP frame carries the Agent's
+        // unrelated JSON-RPC id. Emit a synthetic protocol envelope using the
+        // host UUID so the unchanged HTTP route can address the right waiter.
+        this.emitPermissionProtocol(event, false);
         void this.decide(event);
+        return;
+      }
+      case "permission-resolved": {
+        this.emitPermissionProtocol(event, true);
         return;
       }
       case "protocol-frame": {
@@ -523,6 +535,32 @@ class HostClient {
   private readonly emittedText = new Map<number, string>();
   private readonly emittedTools = new Set<string>();
   private readonly settledTools = new Set<string>();
+
+  private emitPermissionProtocol(event: HostEvent, resolved: boolean): void {
+    const requestId = typeof event.requestId === "string" ? event.requestId : undefined;
+    if (requestId === undefined) return;
+    const protocol: HarnessProtocolEvent = {
+      protocol: "acp",
+      direction: resolved ? "Client → Agent" : "Agent → Client",
+      method: resolved ? "session/request_permission:response" : "session/request_permission",
+      rpcId: requestId,
+      ...(typeof event.sessionId === "string" ? { sessionId: event.sessionId } : {}),
+      payload: resolved
+        ? { result: { outcome: event.outcome ?? "cancelled" } }
+        : {
+            params: {
+              sessionId: event.sessionId,
+              toolCall: {
+                toolCallId: event.toolCallId,
+                title: event.title,
+              },
+              options: event.options,
+            },
+          },
+    };
+    if (this.trace.length < MAX_PROTOCOL_EVENTS) this.trace.push(protocol);
+    this.emitter.protocol(protocol);
+  }
 
   private async decide(event: HostEvent): Promise<void> {
     const requestId = typeof event.requestId === "string" ? event.requestId : undefined;

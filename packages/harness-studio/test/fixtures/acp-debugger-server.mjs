@@ -8,6 +8,7 @@ const packageRoot = path.resolve(fixtureDirectory, "../..");
 const repositoryRoot = path.resolve(packageRoot, "../..");
 const acpAgentFixture = path.resolve(packageRoot, "../harness/test/fixtures/acp-agent.mjs");
 const configuredAgent = process.env.BETTER_HARNESS_ACP_AGENT;
+const configuredHost = process.env.BETTER_HARNESS_ACP_HOST;
 const configuredAgentArgs = configuredAgent === undefined
   ? [acpAgentFixture]
   : JSON.parse(process.env.BETTER_HARNESS_ACP_ARGS_JSON || "[]");
@@ -19,6 +20,7 @@ const port = portIndex >= 0 ? Number(process.argv[portIndex + 1]) : 3311;
 
 const started = await startHarnessStudioServer({
   appDir: path.join(packageRoot, "dist", "app"),
+  ...(configuredHost === undefined ? {} : { acpHostExecutable: configuredHost }),
   port,
   workspaceDirectoryPicker: async () => repositoryRoot,
   workspaceSessionProvider: {

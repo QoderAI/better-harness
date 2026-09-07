@@ -278,9 +278,9 @@
 .operation-inspector.empty strong { color: var(--color-text); }
 
 /* Debugger-owned ACP controls and bounded protocol evidence. */
-.live-runtime-select { display: grid; gap: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.live-runtime-select select { width: 100%; height: var(--control-height); padding: 0 var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); font: inherit; }
-.live-runtime-select select:focus-visible,
+.live-agent-select { padding: 0 var(--space-md); display: grid; gap: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.live-agent-select select { width: 100%; height: var(--control-height); padding: 0 var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); font: inherit; }
+.live-agent-select select:focus-visible,
 .acp-permission button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .debugger-top-actions .cancel-live-run { color: var(--color-danger); }
 .acp-permission { display: grid; gap: var(--space-sm); }
@@ -719,11 +719,12 @@
 .debugger-brand > span:last-child { color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .debugger-session-meta,
 .debugger-runtime-meta { min-width: 0; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); }
-.debugger-session-meta strong { overflow: hidden; max-width: 28ch; color: var(--color-text); text-overflow: ellipsis; white-space: nowrap; }
-.debugger-session-meta em { border-left: 1px solid var(--color-border); padding-left: var(--space-sm); font-style: normal; }
+.debugger-session-meta { overflow: hidden; }
+.debugger-session-meta strong { min-width: 4ch; overflow: hidden; max-width: 28ch; color: var(--color-text); text-overflow: ellipsis; white-space: nowrap; }
+.debugger-session-meta em { min-width: 0; overflow: hidden; border-left: 1px solid var(--color-border); padding-left: var(--space-sm); font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .debugger-session-meta em.live { color: var(--color-success); }
 .debugger-runtime-meta i { height: var(--type-label-size); border-left: 1px solid var(--color-border); }
-.debugger-runtime-meta strong { color: var(--color-text); font-size: var(--type-meta-size); }
+.debugger-runtime-meta strong { color: var(--color-text); font-size: var(--type-meta-size); white-space: nowrap; }
 .connection-dot { width: var(--space-sm); height: var(--space-sm); border-radius: var(--radius-full); background: var(--color-text-subtle); }
 .connection-dot.status-connected,
 .connection-dot.status-finished { background: var(--color-success); }
@@ -771,14 +772,47 @@
 
 .debugger-toolbar,
 .live-observation-bar { min-width: 0; padding: 0 var(--space-sm); display: flex; align-items: center; gap: var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
-.step-controls { min-width: 0; display: flex; align-items: center; gap: var(--space-xs); }
-.step-controls button { min-width: var(--toolbar-target); padding-inline: var(--space-sm); display: inline-flex; align-items: center; gap: var(--space-xs); }
+.step-controls { min-width: 0; flex: none; display: flex; align-items: center; gap: var(--space-xs); }
+/* The debug transport is drawn as icon targets. Its verbs stay reachable through
+   the accessible name and the tooltip below, which is what keeps seven commands,
+   the stop conditions, and the cursor marker on one row. */
+.step-controls button {
+  width: var(--toolbar-target);
+  min-width: var(--toolbar-target);
+  height: var(--toolbar-target);
+  min-height: var(--toolbar-target);
+  position: relative;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+.step-controls button[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  left: 0;
+  z-index: 70;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  color: var(--color-text);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--type-meta-size);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) ease;
+}
+.step-controls button[data-tooltip]:hover::after,
+.step-controls button[data-tooltip]:focus-visible::after { opacity: 1; }
 .toolbar-divider { height: var(--type-section-size); border-left: 1px solid var(--color-border); }
-.stop-conditions { min-width: 0; margin: 0; padding: 0; display: flex; align-items: center; gap: var(--space-sm); border: 0; }
+.stop-conditions { min-width: 0; margin: 0; padding: 0; display: flex; flex: 0 1 auto; align-items: center; gap: var(--space-sm); overflow: hidden; border: 0; }
 .stop-conditions legend { float: left; margin-right: var(--space-sm); color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.stop-conditions label { display: inline-flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); }
+.stop-conditions label { flex: none; display: inline-flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); white-space: nowrap; }
 .stop-conditions input { accent-color: var(--color-primary); }
-.pause-boundary { margin-left: auto; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-primary); }
+.pause-boundary { flex: none; margin-left: auto; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-primary); white-space: nowrap; }
 .live-observation-bar { justify-content: space-between; color: var(--color-text-muted); }
 .live-observation-bar span { display: flex; align-items: center; gap: var(--space-xs); }
 
@@ -1253,7 +1287,6 @@
     white-space: nowrap;
   }
   .debugger-toolbar { padding-inline: var(--space-xs); }
-  .step-controls button span { display: none; }
   .pause-boundary { margin-left: 0; }
   .debugger-shell { grid-template-rows: var(--workbench-bar-height) var(--pane-header-height) minmax(0, 1fr) 48px; }
   .live-observation-bar { padding-inline: var(--space-sm); align-items: center; flex-direction: row; gap: var(--space-xs); }
@@ -1624,8 +1657,11 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: var(--pane-header-height) auto minmax(0, 1fr);
+  /* A stack rather than a fixed row grid: the analyse action moved to the window
+     toolbar and the progress and failure notes are conditional, so the number of
+     children varies and row indexes would drift. */
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: var(--color-workspace);
 }
@@ -1649,6 +1685,7 @@
 .customization-progress,
 .customization-failure {
   margin: 0;
+  flex: none;
   padding: var(--space-sm) var(--space-md);
   border-bottom: 1px solid var(--color-border);
   font-size: var(--type-meta-size);
@@ -1658,7 +1695,7 @@
 .customization-failure { color: var(--color-danger); background: var(--color-danger-surface); }
 
 .customization-empty,
-.customization-results { grid-row: 3; }
+.customization-results { flex: 1; min-height: 0; }
 
 /* The pre-analysis state is given the whole work area, so it is centred as one
    readable column. Laid out from the top in two full-bleed columns, it drew a
@@ -1986,6 +2023,58 @@
 .session-catalog-pane > header h2 { margin: 0; overflow: hidden; font-size: var(--type-label-size); text-overflow: ellipsis; white-space: nowrap; }
 .session-catalog-pane > header > span { color: var(--color-text-muted); }
 .session-omissions { margin: 0; padding: var(--space-xs) var(--space-md); border-bottom: 1px solid var(--color-border); color: var(--color-warning); background: var(--color-warning-surface); font-size: var(--type-meta-size); }
+/* The Agent selector is the Session catalog's Agent-dimension control, so it
+   reads as a toolbar row under the pane header rather than a floating field. */
+.session-agent-filter { padding: var(--space-xs) var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.session-agent-filter label { min-width: 0; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.session-agent-filter select { min-width: 0; flex: 1; height: var(--control-height); padding: 0 var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); }
+/* One prompt, two Agent lanes. The composer is a docked toolbar block above the
+   lanes so the requirement stays visible while both Agents stream. */
+.live-compare-workspace { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: auto; display: grid; grid-template-rows: auto auto auto auto minmax(0, 1fr); background: var(--color-workspace); }
+.live-compare-workspace > header { min-height: var(--pane-header-height); padding: 0 var(--space-md); display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.live-compare-workspace > header h1 { margin: 0; font-size: var(--type-label-size); }
+.live-compare-workspace > header small { display: block; color: var(--color-text-muted); }
+.live-compare-composer { padding: var(--space-md); display: grid; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.live-compare-prompt { min-width: 0; display: grid; gap: var(--space-xs); }
+.live-compare-prompt > span,
+.live-compare-agents label > span { color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.live-compare-prompt textarea { width: 100%; min-width: 0; padding: var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); font: inherit; resize: vertical; }
+.live-compare-agents { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: var(--space-sm); }
+.live-compare-agents label { min-width: 0; display: grid; gap: var(--space-xs); }
+.live-compare-agents select { width: 100%; min-width: 0; height: var(--control-height); padding: 0 var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); }
+.live-compare-agents button { display: inline-flex; align-items: center; gap: var(--space-xs); }
+.live-compare-boundary { margin: 0; padding: var(--space-xs) 0; color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.live-compare-workspace > .live-compare-boundary { padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.live-compare-metrics { border-bottom: 1px solid var(--color-border); }
+.live-compare-metrics > [role="row"] { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); border-top: 1px solid var(--color-border); }
+.live-compare-metrics > [role="row"]:first-child { border-top: 0; background: var(--color-surface-subtle); }
+.live-compare-metrics [role="columnheader"],
+.live-compare-metrics [role="rowheader"],
+.live-compare-metrics [role="cell"] { min-width: 0; padding: var(--space-xs) var(--space-md); overflow: hidden; text-overflow: ellipsis; }
+.live-compare-metrics [role="cell"] { font-variant-numeric: tabular-nums; }
+.live-compare-lanes { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.live-compare-lane { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+.live-compare-lane + .live-compare-lane { border-left: 1px solid var(--color-border); }
+.live-compare-lane > header { min-height: var(--pane-header-height); padding: 0 var(--space-md); display: flex; align-items: center; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.live-compare-lane > header > div { min-width: 0; margin-right: auto; }
+.live-compare-lane > header small { display: block; color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.live-compare-lane > header strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The lane badge states its own status as text, so it must not inherit the
+   global filled status-dot background. */
+.live-compare-lane .run-badge { color: var(--color-text-muted); background: transparent; font-weight: var(--weight-semibold); }
+.live-compare-lane .run-badge.status-running { color: var(--color-warning); }
+.live-compare-lane .run-badge.status-finished { color: var(--color-success); }
+.live-compare-lane .run-badge.status-error { color: var(--color-danger); }
+.live-compare-permission { padding: var(--space-sm) var(--space-md); display: grid; gap: var(--space-xs); border-bottom: 1px solid var(--color-border); background: var(--color-warning-surface); }
+.live-compare-permission > div { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.live-compare-events { min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.live-compare-events > li { min-width: 0; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
+.live-compare-message { white-space: pre-wrap; }
+.live-compare-tool { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); }
+.live-compare-tool small { color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.live-compare-tool.status-failed small { color: var(--color-danger); }
+.live-compare-tool.status-completed small { color: var(--color-success); }
+.live-compare-waiting { color: var(--color-text-muted); }
 .session-catalog-rows { min-height: 0; flex: 1; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .session-catalog-rows li { min-width: 0; min-height: var(--session-row-height); display: grid; grid-template-columns: var(--toolbar-target) minmax(0, 1fr); border-bottom: 1px solid var(--color-border); content-visibility: auto; contain-intrinsic-size: auto var(--session-row-height); }
 .session-catalog-rows label { display: grid; place-items: center; }
@@ -2314,4 +2403,13 @@
   .session-compare-picker label + label,
   .session-compare-heads article + article,
   .session-tool-sequences section + section { border-left: 0; border-top: 1px solid var(--color-border); }
+  /* Narrow keeps both Agent lanes, stacked, so the comparison never loses a side. */
+  .live-compare-agents,
+  .live-compare-lanes { grid-template-columns: minmax(0, 1fr); }
+  .live-compare-lanes { grid-template-rows: minmax(220px, auto) minmax(220px, auto); }
+  .live-compare-lane + .live-compare-lane { border-left: 0; border-top: 1px solid var(--color-border); }
+  .live-compare-metrics > [role="row"] { grid-template-columns: minmax(0, 1fr) minmax(56px, 88px) minmax(56px, 88px); }
+  .live-compare-metrics [role="columnheader"],
+  .live-compare-metrics [role="rowheader"],
+  .live-compare-metrics [role="cell"] { padding: var(--space-xs) var(--space-sm); }
 }

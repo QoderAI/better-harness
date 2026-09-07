@@ -5,11 +5,21 @@ let cancelled = false;
 const sessionConfig = {};
 
 const app = agent({ name: "better-harness-acp-fixture" })
-  .onRequest(methods.agent.initialize, (context) => ({
-    protocolVersion: context.params.protocolVersion,
-    agentCapabilities: { loadSession: false },
-    authMethods: [],
-  }))
+  .onRequest(methods.agent.initialize, (context) => {
+    if (process.argv.includes("--require-client-services")) {
+      const capabilities = context.params.clientCapabilities;
+      if (capabilities?.fs?.readTextFile !== true
+        || capabilities.fs.writeTextFile !== true
+        || capabilities.terminal !== true) {
+        throw new Error("fixture-required-client-capabilities-missing");
+      }
+    }
+    return {
+      protocolVersion: context.params.protocolVersion,
+      agentCapabilities: { loadSession: false },
+      authMethods: [],
+    };
+  })
   .onRequest(methods.agent.session.new, async () => {
     if (process.argv.includes("--delay-new")) {
       await new Promise((resolve) => setTimeout(resolve, 10_000));
@@ -69,13 +79,44 @@ const app = agent({ name: "better-harness-acp-fixture" })
       ],
       _meta: { authorization: "Bearer fixture-secret" },
     });
+    let serviceResult;
+    if (process.argv.includes("--exercise-client-services")) {
+      const source = process.env.ACP_SERVICE_SOURCE;
+      const target = process.env.ACP_SERVICE_TARGET;
+      const cwd = process.env.ACP_SERVICE_CWD;
+      if (!source || !target || !cwd) throw new Error("ACP service fixture paths are missing");
+      const read = await context.client.request(methods.client.fs.readTextFile, {
+        sessionId, path: source, line: 2, limit: 1,
+      });
+      await context.client.request(methods.client.fs.writeTextFile, {
+        sessionId, path: target, content: `copied:${read.content}`,
+      });
+      const terminal = await context.client.request(methods.client.terminal.create, {
+        sessionId,
+        command: process.execPath,
+        args: ["-e", "process.stdout.write('terminal-ok\\n')"],
+        cwd,
+        outputByteLimit: 4096,
+      });
+      const exited = await context.client.request(methods.client.terminal.waitForExit, {
+        sessionId, terminalId: terminal.terminalId,
+      });
+      const terminalOutput = await context.client.request(methods.client.terminal.output, {
+        sessionId, terminalId: terminal.terminalId,
+      });
+      await context.client.request(methods.client.terminal.release, {
+        sessionId, terminalId: terminal.terminalId,
+      });
+      serviceResult = `services:${read.content.trim()}:${terminalOutput.output.trim()}:${exited.exitCode}`;
+    }
     await context.client.notify(methods.client.session.update, {
       sessionId,
       update: {
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: process.argv.includes("--artifact-plan")
+          text: serviceResult
+            ?? (process.argv.includes("--artifact-plan")
             ? JSON.stringify({
                 kind: "HarnessStudioArtifactAgentPlanV1",
                 summary: "Rename the selected target through the bounded Provider contract.",
@@ -86,7 +127,7 @@ const app = agent({ name: "better-harness-acp-fixture" })
               ? "The plan is ready."
               : permission.outcome.outcome === "selected"
                 ? `fixture:${permission.outcome.optionId}${sessionConfig.model ? `:${sessionConfig.model}` : ""}`
-                : "fixture:cancelled",
+                : "fixture:cancelled"),
         },
       },
     });

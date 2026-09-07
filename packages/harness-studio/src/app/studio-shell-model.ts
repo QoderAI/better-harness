@@ -10,13 +10,37 @@ export type StudioArea =
   | "debugger"
   | "compare";
 
-export type StudioCompareSurface = "sessions" | "bench" | "results";
+export type StudioCompareSurface = "live" | "sessions" | "bench" | "results";
 export type StudioInspectorSurface = "workbench";
+
+/** One selectable local ACP Agent, as published by the server's bounded catalog. */
+export interface StudioAcpAgentOption {
+  id: string;
+  label: string;
+  available: boolean;
+  detail: string;
+}
+
+/** Retained Session count for one Agent (Coding Agent / ACP client) in the active Project. */
+export interface StudioSessionAgent {
+  agent: string;
+  sessionCount: number;
+}
+
+/**
+ * Session compare asks what two Agents did to the same working tree, so its
+ * readiness is an Agent-count question, not a Project-count or Session-count
+ * question. Two Sessions from a single Agent stay comparable but cannot answer
+ * it, and that narrower capability is reported as such.
+ */
+export type StudioSessionCompareScope = "cross-agent" | "single-agent" | "insufficient";
 
 export interface StudioConfig {
   runEnabled: boolean;
   acpEnabled: boolean;
   acpAgentLabel?: string;
+  acpRuntimeProfile?: "acp-v1-stdio" | "acp-v1-rust";
+  acpAgents?: readonly StudioAcpAgentOption[];
   artifactsEnabled: boolean;
   artifactCount?: number;
   evidenceEnabled: boolean;
@@ -33,6 +57,8 @@ export interface StudioConfig {
   activeProjectId?: string;
   projectRevision?: number;
   sessionCount: number;
+  /** Per-Agent Session breakdown. Absent when the host predates the Agent dimension. */
+  sessionAgents?: readonly StudioSessionAgent[];
   inputCount: number;
   intentAnalysisEnabled: boolean;
   customizationAnalysisEnabled: boolean;
@@ -75,6 +101,7 @@ export interface StudioOverviewModel {
 
 export function studioDestinations(config: StudioConfig, activeCompareSurface: StudioCompareSurface | undefined, t: TFunction<"common">): readonly StudioDestination[] {
   const compareAvailable = config.experimentEnabled || config.evidenceEnabled;
+  const compareScope = sessionCompareScope(config);
   const debuggerReady = isDebuggerReady(config);
   const artifactsReady = hasUsableArtifacts(config);
   const availableCompareSurfaces = compareSurfaces(config);
@@ -102,16 +129,18 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
       ? config.workspaceConnected ? t("destination.readOnlyProject") : t("destination.workspaceRequired")
       : t("destination.harnessRequired");
   const compareStatus = (): string => effectiveCompareSurface === undefined
-    ? t("destination.workspaceRequired")
-    : effectiveCompareSurface === "bench"
-      ? config.experimentRunnable ? t("destination.harnessBench") : t("destination.comparisonBlocked")
-      : effectiveCompareSurface === "results"
-        ? t("destination.frozenResults")
-        : effectiveCompareSurface === "sessions"
-          ? t("destination.sessionCompare")
-          : config.workspaceConnected
-            ? t("destination.chooseTwoSessions")
-            : t("destination.workspaceRequired");
+    ? config.workspaceConnected
+      ? compareScope === "single-agent" ? t("destination.singleAgentOnly") : t("destination.secondAgentRequired")
+      : t("destination.workspaceRequired")
+    : effectiveCompareSurface === "live"
+      ? t("destination.liveAgentCompare")
+      : effectiveCompareSurface === "bench"
+        ? config.experimentRunnable ? t("destination.harnessBench") : t("destination.comparisonBlocked")
+        : effectiveCompareSurface === "results"
+          ? t("destination.frozenResults")
+          : compareScope === "cross-agent"
+            ? t("destination.agentCompare")
+            : t("destination.singleAgentOnly");
 
   return [
     { id: "overview", label: t("area.overview"), group: t("group.control"), availability: "ready", status: t("destination.overviewStatus") },
@@ -167,7 +196,11 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
       group: t("group.validate"),
       availability: effectiveCompareSurface === "bench" && !config.experimentRunnable
         ? "partial"
-        : compareAvailable || config.sessionCount >= 2 ? "ready" : config.workspaceConnected ? "partial" : "foundation",
+        : effectiveCompareSurface === "sessions" && compareScope !== "cross-agent"
+          ? "partial"
+          : effectiveCompareSurface === "live" || compareAvailable || compareScope === "cross-agent"
+            ? "ready"
+            : config.workspaceConnected ? "partial" : "foundation",
       status: compareStatus(),
     },
   ];
@@ -175,10 +208,38 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
 
 export function compareSurfaces(config: StudioConfig): readonly StudioCompareSurface[] {
   return [
-    ...(config.sessionCount >= 2 ? ["sessions" as const] : []),
+    ...(liveCompareReady(config) ? ["live" as const] : []),
+    ...(sessionCompareScope(config) === "insufficient" ? [] : ["sessions" as const]),
     ...(config.experimentEnabled ? ["bench" as const] : []),
     ...(config.evidenceEnabled ? ["results" as const] : []),
   ];
+}
+
+/** Agents this host can actually launch for a live comparison. */
+export function selectableAcpAgents(config: StudioConfig): readonly StudioAcpAgentOption[] {
+  return (config.acpAgents ?? []).filter((agent) => agent.available);
+}
+
+/**
+ * A live comparison starts two Agent runs against the open Project, so it needs
+ * a launchable ACP Agent and a Project that can execute. It stays reachable with
+ * a single available Agent, because the reader may still want the same Agent on
+ * both sides.
+ */
+export function liveCompareReady(config: StudioConfig): boolean {
+  return config.acpEnabled
+    && config.projectExecutionEnabled
+    && selectableAcpAgents(config).length >= 1;
+}
+
+/** Agents that contributed at least one retained Session to the active Project. */
+export function sessionAgents(config: StudioConfig): readonly StudioSessionAgent[] {
+  return (config.sessionAgents ?? []).filter((entry) => entry.sessionCount > 0);
+}
+
+export function sessionCompareScope(config: StudioConfig): StudioSessionCompareScope {
+  if (config.sessionCount < 2) return "insufficient";
+  return sessionAgents(config).length >= 2 ? "cross-agent" : "single-agent";
 }
 
 export function inspectorSurfaces(config: StudioConfig): readonly StudioInspectorSurface[] {
@@ -187,6 +248,7 @@ export function inspectorSurfaces(config: StudioConfig): readonly StudioInspecto
 
 export function studioOverview(config: StudioConfig, t: TFunction<"overview">): StudioOverviewModel {
   const artifactsReady = hasUsableArtifacts(config);
+  const agents = sessionAgents(config);
   if (config.workspaceConnected) {
     return {
       mode: "workspace",
@@ -197,7 +259,7 @@ export function studioOverview(config: StudioConfig, t: TFunction<"overview">): 
       primaryAction: { area: "sessions", label: t("actions.openSessions") },
       secondaryActions: [
         ...(config.workspaceWorkbenchEnabled ? [{ area: "inputs" as const, label: t("actions.reviewInputs") }] : []),
-        ...(config.sessionCount >= 2 || config.experimentEnabled || config.evidenceEnabled ? [{ area: "compare" as const, label: t("actions.openCompare") }] : []),
+        ...(compareSurfaces(config).length > 0 ? [{ area: "compare" as const, label: t("actions.openCompare") }] : []),
         ...(isDebuggerReady(config) ? [{ area: "debugger" as const, label: t("actions.openDebugger") }] : []),
         ...(artifactsReady ? [{ area: "artifacts" as const, label: t("actions.openArtifacts") }] : []),
       ],
@@ -213,6 +275,16 @@ export function studioOverview(config: StudioConfig, t: TFunction<"overview">): 
           label: t("facts.sessions"),
           value: String(config.sessionCount),
           detail: t("facts.observedRuns"),
+        },
+        {
+          id: "agents",
+          label: t("facts.agents"),
+          value: String(agents.length),
+          detail: agents.length === 0
+            ? t("facts.noAgentEvidence")
+            : agents.length === 1
+              ? t("facts.singleAgentOnly", { agent: agents[0]!.agent })
+              : t("facts.crossAgentComparable"),
         },
         {
           id: "artifacts",
@@ -300,7 +372,8 @@ export function studioOverview(config: StudioConfig, t: TFunction<"overview">): 
 }
 
 function isDebuggerReady(config: StudioConfig): boolean {
-  return config.runEnabled && (config.harnessMode !== "workspace-default" || config.projectExecutionEnabled);
+  return (config.runEnabled || config.acpEnabled)
+    && (config.harnessMode !== "workspace-default" || config.projectExecutionEnabled);
 }
 
 function hasUsableArtifacts(config: StudioConfig): boolean {

@@ -34,6 +34,8 @@ let studio;
 let experimentStudio;
 let blockedExperimentStudio;
 let inspectorStudio;
+let singleAgentStudio;
+let singleAgentWorkspaceDir;
 let lockedFixtureDir;
 let inspectorFixtureDir;
 let runsFixtureDir;
@@ -47,7 +49,7 @@ const LAYOUTS = [
 
 async function openDestination(page, label) {
   const quickAction = page.getByRole("button", { name: new RegExp(`^(?:Go to|Open) ${label}\\b`) });
-  const destination = page.getByRole("navigation", { name: "Studio project and View navigation" }).getByRole("button", { name: new RegExp(`^${label}`) });
+  const destination = page.getByRole("navigation", { name: "Studio View navigation" }).getByRole("button", { name: new RegExp(`^${label}`) });
   const toggle = page.getByRole("button", { name: "Open Studio navigation" });
   await expect.poll(async () => (
     await quickAction.isVisible().catch(() => false)
@@ -281,6 +283,23 @@ test.beforeAll(async () => {
     acpAgents: [{ id: "codex-acp", label: "Codex ACP", unavailableReason: "not used by Qoder" }],
     experimentRunner: async () => { throw new Error("blocked comparison must not start"); },
   });
+  // One Project, one Agent: the state that must ask for a second Agent here
+  // rather than for a second Project.
+  singleAgentWorkspaceDir = await mkdtemp(join(tmpdir(), "studio-browser-single-agent-"));
+  singleAgentStudio = await startHarnessStudioServer({
+    appDir: resolve(packageRoot, "dist/app"),
+    workspaceDirectoryPicker: async () => singleAgentWorkspaceDir,
+    workspaceSessionProvider: {
+      discover: async () => ({
+        label: "single-agent-project",
+        providers: [{ provider: "qoder", status: "ok", discovered: 1, included: 1 }],
+        sessions: [{
+          summary: { id: "qoder:run_only", savedAt: "2026-08-20T10:00:00.000Z", prompt: "Repair parser", status: "observed", toolCallCount: 1, provider: "qoder", messageCount: 1, warningCount: 0 },
+          debugger: { id: "qoder:run_only", name: "Repair parser", agent: "qoder", protocol: "Inspector normalized local evidence", connection: "observed", mode: "Retained run", events: [] },
+        }],
+      }),
+    },
+  });
 });
 
 test.afterAll(async () => {
@@ -288,10 +307,41 @@ test.afterAll(async () => {
   await experimentStudio?.close();
   await blockedExperimentStudio?.close();
   await inspectorStudio?.close();
+  await singleAgentStudio?.close();
   if (lockedFixtureDir) await rm(lockedFixtureDir, { recursive: true, force: true });
   if (inspectorFixtureDir) await rm(inspectorFixtureDir, { recursive: true, force: true });
   if (runsFixtureDir) await rm(runsFixtureDir, { recursive: true, force: true });
   if (artifactFixtureDir) await rm(artifactFixtureDir, { recursive: true, force: true });
+  if (singleAgentWorkspaceDir) await rm(singleAgentWorkspaceDir, { recursive: true, force: true });
+});
+
+test("asks a single-Agent Project for a second Agent instead of a second Project", async ({ page }, testInfo) => {
+  const browserErrors = [];
+  page.on("console", (message) => { if (message.type() === "error") browserErrors.push(`console: ${message.text()}`); });
+  page.on("pageerror", (error) => browserErrors.push(`page: ${error.message}`));
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(singleAgentStudio.url);
+  await page.getByRole("button", { name: "Choose Project" }).click();
+  await expect(page.getByRole("dialog", { name: "Open a Project to start" })).toHaveCount(0);
+
+  await openDestination(page, "Compare");
+  await expect(page.getByRole("heading", { name: "Run a second Agent in this Project" })).toBeVisible();
+  const empty = page.locator(".empty-workspace");
+  await expect(empty).toContainText("two Agents side by side on the same working tree");
+  // The remedy must stay inside this Project.
+  await expect(empty.getByRole("button", { name: "Open Another Project" })).toHaveCount(0);
+  await expect(empty.getByRole("button", { name: "Open Project" })).toHaveCount(0);
+  const review = empty.getByRole("button", { name: "Review this Project's Sessions" });
+  await expect(review).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Studio View navigation" }).getByRole("button", { name: /^Compare/ })).toHaveAttribute("title", "Second Agent required");
+  await page.screenshot({ path: testInfo.outputPath("compare-second-agent-required.png"), fullPage: true });
+
+  await review.click();
+  await expect(page).toHaveURL(/sessions$/u);
+  // A single Agent leaves nothing to filter by.
+  await expect(page.getByRole("combobox", { name: "Filter Sessions by Agent" })).toHaveCount(0);
+  expect(browserErrors).toEqual([]);
 });
 
 test("organizes configured surfaces around the Harness control plane", async ({ page }) => {
@@ -299,9 +349,9 @@ test("organizes configured surfaces around the Harness control plane", async ({ 
   await page.goto(inspectorStudio.url);
 
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Studio project and View navigation" })).toContainText("Sessions");
-  await expect(page.getByRole("navigation", { name: "Studio project and View navigation" })).toContainText("Debugger");
-  await expect(page.getByRole("navigation", { name: "Studio project and View navigation" })).toContainText("Compare");
+  await expect(page.getByRole("navigation", { name: "Studio View navigation" })).toContainText("Sessions");
+  await expect(page.getByRole("navigation", { name: "Studio View navigation" })).toContainText("Debugger");
+  await expect(page.getByRole("navigation", { name: "Studio View navigation" })).toContainText("Compare");
   await expect(page.getByRole("button", { name: "Open Project", exact: true })).toHaveCount(0);
   await openDestination(page, "Sessions");
   await expect(page.getByRole("heading", { name: "Open a Project" })).toBeVisible();
@@ -606,7 +656,30 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
   await page.getByRole("button", { name: /Saved runs/ }).click();
   await page.getByRole("menuitem", { name: /Run the scripted browser fixture/ }).click();
   await expect(page.getByRole("navigation", { name: "Session debugger controls" })).toBeVisible();
-  await expect(page.locator(".step-controls button")).toHaveCount(7);
+  const stepControls = page.locator(".step-controls button");
+  await expect(stepControls).toHaveCount(7);
+  // The debug transport is icon-only: every command is still addressable by its
+  // verb, and the verb is revealed on hover and on keyboard focus instead of
+  // being printed inline, where seven labels used to wrap the toolbar row.
+  const stepOver = page.getByRole("button", { name: "Step Over", exact: true });
+  await expect(stepOver).toBeVisible();
+  await expect(stepControls.first()).toHaveText("");
+  const tooltipState = (target) => target.evaluate((node) => {
+    const style = getComputedStyle(node, "::after");
+    return { content: style.content, opacity: style.opacity, verb: node.dataset.tooltip, inToolbar: node.closest(".step-controls") !== null };
+  });
+  await stepOver.hover();
+  await expect.poll(async () => (await tooltipState(stepOver)).opacity).toBe("1");
+  expect((await tooltipState(stepOver)).content).toContain("Step Over");
+  // Previous Stop is already at the first retained stop, so this click only moves
+  // focus; Tab then reaches the next control through a real keyboard interaction.
+  await page.getByRole("button", { name: "Previous Stop", exact: true }).click();
+  await page.keyboard.press("Tab");
+  const focusedControl = page.locator(".step-controls button:focus");
+  await expect.poll(async () => (await tooltipState(focusedControl)).opacity).toBe("1");
+  const focused = await tooltipState(focusedControl);
+  expect(focused.inToolbar).toBe(true);
+  expect(focused.content).toContain(focused.verb);
   await expect(page.locator(".debugger-event-card").filter({ hasText: "Bash tool call" })).toBeVisible();
   await expect(page.locator(".event-status.failed")).toContainText("failed");
   await page.getByTitle("Toggle State Inspector").click();

@@ -230,6 +230,10 @@
   --workbench-bar-height: 44px;
   --statusbar-height: 28px;
   --sidebar-width: 236px;
+  /* Drag bounds for the sidebar sash. Below the minimum a source-list row cannot
+     hold a name; above the maximum the content column stops being primary. */
+  --sidebar-min-width: 180px;
+  --sidebar-max-width: 420px;
   --secondary-pane-width: 312px;
   --navigation-row-height: 30px;
   --session-row-height: 56px;

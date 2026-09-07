@@ -25,13 +25,14 @@ import { streamHarnessRun } from "./run-stream.js";
 import {
   acpAgentEnabled,
   acpExecutorFactory,
+  acpRuntimeProfile,
   abortAcpRun,
   cancelAcpRun,
   cancelAllAcpRuns,
   decideAcpPermission,
   ensureAcpRun,
 } from "./acp-runs.js";
-import { effectiveAcpAgentProfiles } from "./acp-agent-catalog.js";
+import { effectiveAcpAgentProfiles, publicAcpAgentProfiles, resolveAcpAgent } from "./acp-agent-catalog.js";
 import {
   abortWorkspaceImport,
   activateProject,
@@ -46,6 +47,7 @@ import {
   removeProject,
   serveProjectCatalog,
   serveSessionComparison,
+  sessionAgentBreakdown,
   serveWorkspaceCustomizations,
   serveWorkspaceInputs,
   serveWorkspaceSession,
@@ -218,6 +220,10 @@ async function route(
       runEnabled: options.harnessSource !== undefined,
       acpEnabled: acpAgentEnabled(options),
       acpAgentLabel: defaultAcpAgent?.label ?? "ACP Agent",
+      acpRuntimeProfile: acpRuntimeProfile(options),
+      // The browser needs the whole bounded catalog, not just the default, to
+      // let a reader pick which two Agents answer one prompt.
+      acpAgents: publicAcpAgentProfiles(options).agents,
       artifactsEnabled: state.artifactDirectory !== undefined,
       artifactCount: state.artifactPaths?.length,
       evidenceEnabled: activeSourcePath(state.sourceCatalog, state.activeSources, "evidence") !== undefined,
@@ -234,6 +240,7 @@ async function route(
       activeProjectId: state.activeProjectId,
       projectRevision: state.projectRevision,
       sessionCount: state.workspace?.sessionCount ?? 0,
+      sessionAgents: sessionAgentBreakdown(state.workspace),
       inputCount: state.workspace?.inputTrace?.summary.inputCount ?? 0,
       intentAnalysisEnabled: options.intentAnalyzer !== undefined,
       customizationAnalysisEnabled: options.customizationCollector !== undefined,
@@ -582,15 +589,30 @@ async function route(
     }
     if (!acceptProjectBinding(request, response, state, options.harnessMode === "workspace-default")) return;
     const runtimeOptions = activeWorkspaceOptions(options, state);
-    const acpAgent = options.acpAgent
-      ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)!.agent!;
+    // An explicit `agent` selects one catalog entry so two concurrent runs can
+    // answer the same prompt with different Agents. Omitting it keeps the
+    // single-Agent Debugger behaviour.
+    const requestedAgentId = url.searchParams.get("agent");
+    const acpAgent = requestedAgentId === null
+      ? options.acpAgent
+        ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)!.agent!
+      : resolveAcpAgent(options, requestedAgentId);
+    if (acpAgent === undefined) {
+      respondJson(response, 400, { error: `ACP Agent '${requestedAgentId}' is not an available Studio Agent.` });
+      return;
+    }
     await streamHarnessRun(request, response, {
       source: acpAgent.harnessSource ?? DEFAULT_LOCAL_ACP_HARNESS_SOURCE,
       harnessId: acpAgent.harnessId ?? DEFAULT_LOCAL_HARNESS_ID,
       runtimeId: acpAgent.runtimeId ?? DEFAULT_LOCAL_ACP_RUNTIME_ID,
       ...(runtimeOptions.cwd !== undefined ? { cwd: runtimeOptions.cwd } : {}),
       ...(runtimeOptions.sourceRoot !== undefined ? { sourceRoot: runtimeOptions.sourceRoot } : {}),
-      executorFactory: acpExecutorFactory(acpAgent, state),
+      executorFactory: acpExecutorFactory(acpAgent, state, {
+        ...(options.acpHostExecutable === undefined
+          ? {}
+          : { executable: options.acpHostExecutable }),
+        ...(runtimeOptions.cwd === undefined ? {} : { allowRoots: [runtimeOptions.cwd] }),
+      }),
       runAbortSignal: (runId) => ensureAcpRun(state, runId).abortController.signal,
       onClientDisconnect: (runId) => { abortAcpRun(state, runId); },
     });

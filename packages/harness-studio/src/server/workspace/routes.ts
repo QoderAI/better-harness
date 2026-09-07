@@ -20,6 +20,8 @@ import { HarnessStudioServerOptions, HarnessStudioState, StoredStudioProject, St
 export const MAX_WORKSPACE_FILES = 512;
 export const MAX_WORKSPACE_SESSIONS = 200;
 const MAX_PROJECT_REVISION_CONTEXTS = 128;
+/** Stand-in Agent identity for a retained Session whose provider is unknown. */
+export const UNATTRIBUTED_SESSION_AGENT = "unattributed";
 
 export async function createWorkspaceImport(
   request: IncomingMessage,
@@ -769,6 +771,23 @@ export async function serveWorkspaceSession(
   }
   respondJson(response, 200, debuggerProjection ? session.debugger : session.retainedRun ?? session.summary);
 }
+/**
+ * Retained Sessions grouped by the Agent (Coding Agent / ACP client) that
+ * produced them. Derived from the Sessions Studio actually retained, so the
+ * Compare gate and the Compare picker can never disagree.
+ */
+export function sessionAgentBreakdown(
+  workspace: StudioWorkspace | undefined,
+): { agent: string; sessionCount: number }[] {
+  const counts = new Map<string, number>();
+  for (const session of workspace?.sessions.values() ?? []) {
+    const agent = session.summary.provider ?? UNATTRIBUTED_SESSION_AGENT;
+    counts.set(agent, (counts.get(agent) ?? 0) + 1);
+  }
+  return [...counts]
+    .map(([agent, sessionCount]) => ({ agent, sessionCount }))
+    .sort((left, right) => right.sessionCount - left.sessionCount || left.agent.localeCompare(right.agent));
+}
 export async function serveSessionComparison(
   response: ServerResponse,
   state: HarnessStudioState,
@@ -792,6 +811,7 @@ export async function serveSessionComparison(
   respondJson(response, 200, {
     kind: "observational-session-compare.v1",
     boundary: "Observed retained evidence only; no winner is inferred.",
+    crossAgent: (left.summary.provider ?? UNATTRIBUTED_SESSION_AGENT) !== (right.summary.provider ?? UNATTRIBUTED_SESSION_AGENT),
     left: sessionComparisonSide(left),
     right: sessionComparisonSide(right),
   });
@@ -805,6 +825,7 @@ function sessionComparisonSide(session: StoredWorkspaceSession): Record<string, 
     prompt: session.summary.prompt,
     savedAt: session.summary.savedAt,
     status: session.summary.status,
+    agent: session.summary.provider ?? UNATTRIBUTED_SESSION_AGENT,
     retainedEventCount: session.debugger.events.length,
     toolCallCount: session.summary.toolCallCount,
     messageCount: messages,

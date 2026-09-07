@@ -24,10 +24,13 @@ use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ContentBlock, Implementation, InitializeRequest, NewSessionRequest,
-    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    CancelNotification, ClientCapabilities, ContentBlock, CreateTerminalRequest,
+    FileSystemCapabilities, Implementation, InitializeRequest, KillTerminalRequest,
+    NewSessionRequest, PromptRequest, ReadTextFileRequest, ReleaseTerminalRequest,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     SelectedPermissionOutcome, SessionConfigKind, SessionConfigOptionValue, SessionNotification,
-    SessionUpdate, SetSessionConfigOptionRequest, TextContent,
+    SessionUpdate, SetSessionConfigOptionRequest, TerminalOutputRequest, TextContent,
+    WaitForTerminalExitRequest, WriteTextFileRequest,
 };
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, Client, ConnectionTo, LineDirection};
 use anyhow::{Context, Result, anyhow};
@@ -35,6 +38,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::fence::Fence;
 use crate::redact::redact;
+use crate::services::ClientServices;
 use crate::thread::{self, Change, ChunkKind, Thread};
 use crate::wire::{
     ConfigOptionValue, ConnectionOpenParams, FrameDirection, HostEvent, PermissionOption,
@@ -181,7 +185,7 @@ type SharedThreads = Arc<Mutex<HashMap<String, Thread>>>;
 pub struct AgentConnection {
     id: String,
     connection: ConnectionTo<Agent>,
-    fence: Fence,
+    services: ClientServices,
     permissions: PermissionStore,
     threads: SharedThreads,
     /// Holding this task holds the agent process. `Drop` explicitly aborts it;
@@ -196,7 +200,7 @@ impl AgentConnection {
     }
 
     pub fn fence(&self) -> &Fence {
-        &self.fence
+        self.services.fence()
     }
 
     pub fn permissions(&self) -> &PermissionStore {
@@ -206,7 +210,7 @@ impl AgentConnection {
     /// Spawn an agent and complete the ACP handshake.
     pub async fn open(params: &ConnectionOpenParams, events: EventSink) -> Result<Self> {
         let id = params.connection_id.clone();
-        let fence = Fence::new(&params.allow_roots);
+        let services = ClientServices::new(Fence::new(&params.allow_roots));
         let permissions = PermissionStore::default();
         let threads: SharedThreads = Arc::new(Mutex::new(HashMap::new()));
 
@@ -231,6 +235,13 @@ impl AgentConnection {
         let (connection_tx, connection_rx) = oneshot::channel();
         let notification_state = (id.clone(), threads.clone(), events.clone());
         let permission_state = (id.clone(), permissions.clone(), events.clone());
+        let read_services = services.clone();
+        let write_services = services.clone();
+        let create_terminal_services = services.clone();
+        let output_services = services.clone();
+        let kill_terminal_services = services.clone();
+        let release_terminal_services = services.clone();
+        let wait_terminal_services = services.clone();
         let lost_state = (id.clone(), permissions.clone(), events.clone());
 
         let driver = tokio::spawn(async move {
@@ -238,6 +249,125 @@ impl AgentConnection {
             let (permission_id, permission_store, permission_events) = permission_state;
             let outcome = Client
                 .builder()
+                .on_receive_request(
+                    async move |request: ReadTextFileRequest, responder, _connection| {
+                        let services = read_services.clone();
+                        tokio::spawn(async move {
+                            match services.read_text_file(request).await {
+                                Ok(response) => {
+                                    let _ = responder.respond(response);
+                                }
+                                Err(error) => {
+                                    let _ = responder.respond_with_error(error);
+                                }
+                            }
+                        });
+                        Ok(())
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |request: WriteTextFileRequest, responder, _connection| {
+                        let services = write_services.clone();
+                        tokio::spawn(async move {
+                            match services.write_text_file(request).await {
+                                Ok(response) => {
+                                    let _ = responder.respond(response);
+                                }
+                                Err(error) => {
+                                    let _ = responder.respond_with_error(error);
+                                }
+                            }
+                        });
+                        Ok(())
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |request: CreateTerminalRequest, responder, _connection| {
+                        let services = create_terminal_services.clone();
+                        tokio::spawn(async move {
+                            match services.create_terminal(request).await {
+                                Ok(response) => {
+                                    let _ = responder.respond(response);
+                                }
+                                Err(error) => {
+                                    let _ = responder.respond_with_error(error);
+                                }
+                            }
+                        });
+                        Ok(())
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |request: TerminalOutputRequest, responder, _connection| {
+                        let services = output_services.clone();
+                        tokio::spawn(async move {
+                            match services.terminal_output(request).await {
+                                Ok(response) => {
+                                    let _ = responder.respond(response);
+                                }
+                                Err(error) => {
+                                    let _ = responder.respond_with_error(error);
+                                }
+                            }
+                        });
+                        Ok(())
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |request: KillTerminalRequest, responder, _connection| {
+                        let services = kill_terminal_services.clone();
+                        tokio::spawn(async move {
+                            match services.kill_terminal(request).await {
+                                Ok(response) => {
+                                    let _ = responder.respond(response);
+                                }
+                                Err(error) => {
+                                    let _ = responder.respond_with_error(error);
+                                }
+                            }
+                        });
+                        Ok(())
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |request: ReleaseTerminalRequest, responder, _connection| {
+                        let services = release_terminal_services.clone();
+                        tokio::spawn(async move {
+                            match services.release_terminal(request).await {
+                                Ok(response) => {
+                                    let _ = responder.respond(response);
+                                }
+                                Err(error) => {
+                                    let _ = responder.respond_with_error(error);
+                                }
+                            }
+                        });
+                        Ok(())
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
+                .on_receive_request(
+                    async move |request: WaitForTerminalExitRequest, responder, _connection| {
+                        let services = wait_terminal_services.clone();
+                        tokio::spawn(async move {
+                            match services.wait_for_terminal_exit(request).await {
+                                Ok(response) => {
+                                    let _ = responder.respond(response);
+                                }
+                                Err(error) => {
+                                    let _ = responder.respond_with_error(error);
+                                }
+                            }
+                        });
+                        Ok(())
+                    },
+                    agent_client_protocol::on_receive_request!(),
+                )
                 .on_receive_notification(
                     async move |notification: SessionNotification, _connection| {
                         apply_session_notification(
@@ -302,6 +432,13 @@ impl AgentConnection {
         connection
             .send_request(
                 InitializeRequest::new(ProtocolVersion::V1)
+                    .client_capabilities(
+                        ClientCapabilities::new()
+                            .fs(FileSystemCapabilities::new()
+                                .read_text_file(true)
+                                .write_text_file(true))
+                            .terminal(true),
+                    )
                     .client_info(Implementation::new(CLIENT_NAME, env!("CARGO_PKG_VERSION"))),
             )
             .block_task()
@@ -311,7 +448,7 @@ impl AgentConnection {
         Ok(Self {
             id,
             connection,
-            fence,
+            services,
             permissions,
             threads,
             driver,

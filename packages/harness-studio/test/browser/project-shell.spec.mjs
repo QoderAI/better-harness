@@ -87,8 +87,22 @@ test.afterAll(async () => {
   if (projectB) await rm(projectB, { recursive: true, force: true });
 });
 
-function projectButton(page, label) {
-  return page.getByRole("button", { name: new RegExp(`^${label}`) });
+/** The switcher states the active Project; its menu is where Projects are chosen. */
+function activeProjectName(page) {
+  return page.locator(".studio-project-switcher > button strong");
+}
+
+function projectMenuItem(page, label) {
+  return page.getByRole("menuitemradio", { name: new RegExp(`^${label}`) });
+}
+
+async function selectProject(page, label) {
+  await page.locator(".studio-project-switcher > button").click();
+  await projectMenuItem(page, label).click();
+}
+
+function viewNavigation(page) {
+  return page.getByRole("navigation", { name: "Studio View navigation" });
 }
 
 test("switches one shared View workbench between remembered Projects", async ({ page }, testInfo) => {
@@ -98,30 +112,34 @@ test("switches one shared View workbench between remembered Projects", async ({ 
   await page.setViewportSize(layouts[0]);
   await page.goto(`${studio.url}/#/overview`);
 
-  await expect(projectButton(page, labelB)).toHaveAttribute("aria-current", "true");
+  await expect(activeProjectName(page)).toHaveText(labelB);
   await expect(page).toHaveURL(new RegExp(`#\/projects\/${descriptorB.id}\/overview$`, "u"));
   await expect(page.getByLabel(`${labelB} Views`)).toBeVisible();
   await expect(page.getByLabel(`${labelA} Views`)).toHaveCount(0);
   await expect(page.getByLabel("Workspace summary")).toContainText("Sessions2");
 
-  await projectButton(page, labelA).click();
-  await expect(projectButton(page, labelA)).toHaveAttribute("aria-current", "true");
+  await selectProject(page, labelA);
+  await expect(activeProjectName(page)).toHaveText(labelA);
   await expect(page).toHaveURL(new RegExp(`#\/projects\/${descriptorA.id}\/overview$`, "u"));
   await expect(page.getByLabel(`${labelA} Views`)).toBeVisible();
   await expect(page.getByLabel("Workspace summary")).toContainText("Sessions1");
 
   await page.goBack();
-  await expect(projectButton(page, labelB)).toHaveAttribute("aria-current", "true");
+  await expect(activeProjectName(page)).toHaveText(labelB);
   await expect(page.getByLabel("Workspace summary")).toContainText("Sessions2");
   await page.goForward();
-  await expect(projectButton(page, labelA)).toHaveAttribute("aria-current", "true");
+  await expect(activeProjectName(page)).toHaveText(labelA);
   await expect(page.getByLabel("Workspace summary")).toContainText("Sessions1");
 
-  await projectButton(page, labelA).focus();
+  // The roving tab stop now covers Views only: the Project moved to the switcher,
+  // which is a menu button with its own keyboard contract.
+  await viewNavigation(page).getByRole("button", { name: /^Overview/ }).focus();
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("button", { name: /^Overview/ })).toBeFocused();
+  await expect(viewNavigation(page).getByRole("button", { name: /^Customizations/ })).toBeFocused();
   await page.keyboard.press("End");
-  await expect(projectButton(page, labelB)).toBeFocused();
+  await expect(viewNavigation(page).getByRole("button", { name: /^Compare/ })).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(viewNavigation(page).getByRole("button", { name: /^Overview/ })).toBeFocused();
   expect(await page.locator(".studio-primary-nav nav button").evaluateAll((buttons) => buttons.filter((button) => button.tabIndex === 0).length)).toBe(1);
 
   for (const layout of layouts) {
@@ -130,14 +148,14 @@ test("switches one shared View workbench between remembered Projects", async ({ 
       await expect(page.locator(".studio-primary-nav")).not.toBeInViewport();
       await page.locator(".studio-nav-toggle").click();
       await expect(page.locator(".studio-primary-nav")).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
-      await expect(projectButton(page, labelA)).toBeVisible();
+      await expect(activeProjectName(page)).toBeVisible();
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
     const visibleViewNavigations = await page.evaluate(() => [...document.querySelectorAll(".studio-project-views")].filter((node) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden").length);
     expect(visibleViewNavigations).toBe(1);
     await page.screenshot({ path: testInfo.outputPath(`project-shell-${layout.name}.png`) });
     if (layout.name === "narrow") {
-      await projectButton(page, labelB).click();
+      await selectProject(page, labelB);
       await expect(page.locator(".studio-primary-nav")).not.toBeInViewport();
       await expect(page.locator(".studio-nav-toggle")).toBeFocused();
       await expect(page.locator(".studio-context-title > small")).toHaveText(labelB);
@@ -173,7 +191,7 @@ test("keeps a live run bound to its starting Project across a sidebar switch", a
   const beforeB = await runCount(projectB);
   await page.setViewportSize(layouts[0]);
   await page.goto(`${studio.url}/#/projects/${descriptorA.id}/debugger`);
-  await expect(projectButton(page, labelA)).toHaveAttribute("aria-current", "true");
+  await expect(activeProjectName(page)).toHaveText(labelA);
   await expect(page.getByRole("status").filter({ hasText: "Ready for a live run" })).toBeVisible();
   await expect(page.locator(".live-inspector > header")).toContainText("Ready");
   await expect(page.getByText(/Soft Pause|no Evidence Cursor/u)).toHaveCount(0);
@@ -184,8 +202,8 @@ test("keeps a live run bound to its starting Project across a sidebar switch", a
   await expect(page.getByRole("status").filter({ hasText: "Live run in progress" })).toBeVisible();
   await expect(page.locator(".debugger-brand")).toContainText(labelA);
 
-  await projectButton(page, labelB).click();
-  await expect(projectButton(page, labelB)).toHaveAttribute("aria-current", "true");
+  await selectProject(page, labelB);
+  await expect(activeProjectName(page)).toHaveText(labelB);
   await expect(page.locator(".debugger-brand")).toContainText(labelA);
   await expect(page.locator(".session-notebook")).toContainText(`bound project: ${labelA}`);
   expect(await realpath(observedRunCwd)).toBe(await realpath(projectA));
@@ -210,7 +228,8 @@ test("keeps configured Sources reachable without an active Project", async ({ pa
     await page.goto(sourceStudio.url);
     await expect(page.getByRole("dialog", { name: "Open a Project to start" })).toHaveCount(0);
     await expect(page.getByLabel("Studio Views")).toBeVisible();
-    await expect(projectButton(page, labelA)).not.toHaveAttribute("aria-current", "true");
+    // No Project is active, so the switcher names that state rather than a Project.
+    await expect(activeProjectName(page)).toHaveText("No Project");
     await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Evidence results are ready." })).toBeVisible();
 

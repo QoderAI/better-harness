@@ -7,6 +7,7 @@ export {
   type StartedHarnessStudioServer,
 } from "./server/server.js";
 export type { HarnessStudioServerOptions, StudioAcpAgentOptions } from "./server/studio-types.js";
+export { discoverAcpAgentProfiles } from "./server/acp-agent-catalog.js";
 export type { StudioIntentAnalyzer } from "./server/intent-analyzer.js";
 export { createQoderCliIntentAnalyzer, type QoderCliIntentAnalyzerOptions } from "./server/providers/qoder/intent-analyzer.js";
 export {

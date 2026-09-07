@@ -48,7 +48,12 @@ try {
   assert.ok((await page.locator('body').innerText()).length > 100);
   const origin = new URL(page.url()).origin;
   assert.equal((await fetch(`${origin}/api/config`)).status, 401);
-  assert.equal(await page.evaluate(async () => (await fetch('/api/config')).status), 200);
+  const studioConfig = await page.evaluate(async () => {
+    const response = await fetch('/api/config');
+    return { status: response.status, body: await response.json() };
+  });
+  assert.equal(studioConfig.status, 200);
+  assert.equal(studioConfig.body.acpRuntimeProfile, 'acp-v1-rust');
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
   assert.equal(await page.evaluate(() => typeof window.process), 'undefined');
   const proof = await instance.evaluate(({ app, BrowserWindow }) => ({
@@ -94,7 +99,7 @@ try {
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement !== document.body), true);
   assert.deepEqual(errors, []);
-  receipt = { nativeProof, oxcStartupProbe: true, directorySelection: true, origin, node: proof.node, mainPid: proof.mainPid, servicePid: proof.metrics[0].pid,
+  receipt = { nativeProof, oxcStartupProbe: true, acpRuntimeProfile: studioConfig.body.acpRuntimeProfile, acpAgentCount: studioConfig.body.acpAgents?.filter((agent) => agent.available).length ?? 0, directorySelection: true, origin, node: proof.node, mainPid: proof.mainPid, servicePid: proof.metrics[0].pid,
     rendererSandbox: true, httpAuthorization: true, directoryCancellation: true, errors };
 } finally {
   // A blocking native startup error dialog must not hang a headless CI job.

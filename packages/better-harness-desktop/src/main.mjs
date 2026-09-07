@@ -133,6 +133,11 @@ else {
       oxcExecutable: process.platform === 'darwin'
         ? join(app.isPackaged ? join(process.resourcesPath, '..') : fileURLToPath(new URL('../dist/native/Harness OXC.app/Contents', import.meta.url)), 'MacOS', 'harness-oxc-client')
         : join(app.isPackaged ? process.resourcesPath : fileURLToPath(new URL('../dist', import.meta.url)), 'native', process.platform === 'win32' ? 'harness-oxc-service.exe' : 'harness-oxc-service'),
+      acpHostExecutable: join(
+        app.isPackaged ? process.resourcesPath : fileURLToPath(new URL('../dist', import.meta.url)),
+        'native',
+        process.platform === 'win32' ? 'harness-acp-host.exe' : 'harness-acp-host',
+      ),
       async pickDirectory() {
         if (!window || window.isDestroyed()) throw new Error('No active Studio window');
         const result = await dialog.showOpenDialog(window, { title: 'Open a Project in Harness Studio', properties: ['openDirectory'] });

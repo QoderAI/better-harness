@@ -53,7 +53,7 @@ Rust 侧的会话状态归并、chunk 合并、权限状态机形态参照 Zed �
 ### 事件契约与 host 扩展
 
 - **AC-15**：Harness DSL 的 `host` **保持** `"qoder" | "acp"`；Rust 与 Node 两条 ACP 通路都实现同一个 `"acp"` host，因为 `preflightRevision` 要求执行器 host 与已解析 revision 的 host 相等。运行时差异由 receipt 表达：Rust 通路的 `runtimeProfile` 为 `"acp-v1-rust"`，既有 Node 通路仍为 `"acp-v1-stdio"`；Rust receipt 的 `tools` 如实列出已实际开启的 `fs`/`terminal` 能力。
-- **AC-16**：`runtimeProfile="acp-v1-rust"` 的运行发出 entry 取向的新事件（`entry-appended` / `entry-updated` / `entries-removed`）；既有 `"acp-v1-stdio"` 通路继续发 `message-*` / `tool-call-*` 事件。`parseHarnessRunEvent` 接受两组事件，既有测试断言的事件形状不变。
+- **AC-16**：Rust host 的私有 NDJSON 通道发出 entry 取向事件（`entry-appended` / `entry-updated` / `entries-removed`）；`AcpRustExecutor` 将其投影为既有 `message-*` / `tool-call-*` 公共事件。`HarnessRunStreamEventV1` 与 `parseHarnessRunEvent` 保持不变，既有消费者无需识别 Rust 实现细节。
 - **AC-17**：Rust 二进制缺失时，Studio 回落到既有 `AcpSdkExecutor`（`host="acp"`），功能不减、无报错弹窗，`/api/config` 如实反映当前可用的 ACP 宿主。
 
 ### UI 流式渲染
@@ -175,14 +175,13 @@ oneshot sender 内联在 ToolCall 的待授权状态里，而非旁路 pending m
 Harness DSL 的 host union **不扩展**。实施验证发现 `preflightRevision` 会以 `assertRevisionHost` 强制 executor host 与 revision host 相等；增加 `"acp-rust"` 会拒绝所有现存 `"acp"` revision，与无迁移接入目标相反。Rust 执行器因此仍声明 `host = "acp"`，并以 `runtimeProfile = "acp-v1-rust"` 区分实现；既有 Node 执行器维持 `"acp-v1-stdio"`。无需增加第二个适配器描述符，两条通路共同服从 `ACP_ADAPTER_DESCRIPTOR`。
 
 **T10 — 服务端接线（最小改动）**（AC-15 AC-17）
-`acp-runs.ts` 增加 `acpRustExecutorFactory`，与既有 `acpExecutorFactory` 并列；`server.ts` 在 Rust 宿主可用时选用前者，否则回落。`/api/config` 增加宿主标识字段。权限与取消路由、`AcpRunControl`、`waitForAcpPermission` 的形状与语义**不变**——权限仍走 `control.pendingPermissions`，只是 settle 后经 `permission.decide` 转发给 Rust。
+`acp-runs.ts` 的既有 `acpExecutorFactory` 根据 `acpHostExecutable` 选择 `AcpRustExecutor` 或回落到 `AcpSdkExecutor`，保持调用面不分叉；`server.ts` 传入宿主路径与当前 Project 根，并由 `/api/config` 返回实际 runtime profile。权限与取消路由、`AcpRunControl`、`waitForAcpPermission` 的 HTTP 形状与语义**不变**——Rust permission 适配为同一个 pending store，settle 后经私有 `permission.decide` 转发给 Rust。
 
-**T11 — 事件契约扩展**（AC-16）
-`packages/harness/src/exec/events.ts` 的 `HarnessRunEvent` 增加 `entry-appended` / `entry-updated` / `entries-removed` 三个变体；`packages/harness/src/protocol/run-stream.ts` 的 `parseHarnessRunEvent` 增加对应 case。
-注意该 switch 的 `default` 分支是 `throw`（[run-stream.ts#L104-L105](../../packages/harness/src/protocol/run-stream.ts#L104-L105)），即事件联合是**封闭**的：新增变体必须同步改解析器，否则旧解析器遇到新事件会抛错。信封 `kind` 仍为 `HarnessRunStreamEventV1`（信封 schema 未变），事件联合的版本由包版本承载。
+**T11 — 私有 entry 事件与公共事件投影**（AC-16）
+Rust host 的私有 NDJSON 协议包含 `entry-appended` / `entry-updated` / `entries-removed`；`AcpRustExecutor` 在 Node 侧将其投影为既有 `HarnessRunEvent`。不扩展公共事件联合，也不修改 `HarnessRunStreamEventV1`：这保留浏览器、TUI、dashboard 和持久化 run 消费者的兼容性，同时让 Rust 侧用 entry index 做精细状态归并。助手 entry 的全量快照在投影时做前缀比较，只把新增后缀发成 `text-delta`。
 
 **T12 — UI 流式渲染**（AC-18 至 AC-22）
-- `run-store.ts`：增加 entry 事件的归并分支。当前 `patchItem`/`appendItem` **原地修改** `timelineByKey` Map 再 spread state，靠 `timelineRevision` 触发重渲染（[run-store.ts#L189-L212](../../packages/harness-studio/src/app/run/run-store.ts#L189-L212)）——这个隐式契约要么保留要么显式改掉，不要半改。
+- `AcpRustExecutor` 先把私有 entry 事件投影为既有公共事件，因此 `run-store.ts` 不引入第二套 reducer 分支；当前 `patchItem`/`appendItem` 仍靠稳定 key 与 `timelineRevision` 驱动局部列表更新。
 - 新增浏览器侧平滑揭示缓冲：`ceil(积压 * 0.08)`/帧，按码点边界切分，消息切换与运行终止时立即排空。
 - `RunView.tsx`：修 `followLatest`（AC-20），加焦点守卫（AC-22），使未变化条目的 key 与对象标识稳定以保住 `measureElement` 缓存（AC-19），`liveBins` 改为节流重算而非每事件重算。
 - **保留** `@tanstack/react-virtual`。它已提供 `measureElement` 可变高度测量，不需要替换。

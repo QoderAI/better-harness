@@ -244,6 +244,8 @@ describe("harness-studio server", () => {
     expect(config).toEqual({
       acpAgentLabel: "ACP Agent",
       acpEnabled: false,
+      acpRuntimeProfile: "acp-v1-stdio",
+      acpAgents: [],
       runEnabled: false,
       artifactsEnabled: false,
       evidenceEnabled: true,
@@ -259,6 +261,7 @@ describe("harness-studio server", () => {
       projectRevision: 0,
       projectExecutionEnabled: false,
       sessionCount: 0,
+      sessionAgents: [],
       inputCount: 0,
       intentAnalysisEnabled: false,
       customizationAnalysisEnabled: false,
@@ -366,6 +369,12 @@ describe("harness-studio server", () => {
 
     const connectedConfig = await (await fetch(`${started.url}/api/config`)).json();
     expect(connectedConfig).toMatchObject({ workspaceWorkbenchEnabled: true, inputCount: 1 });
+    // Compare is an Agent-dimension question inside one Project, so the config
+    // reports which Agents contributed retained evidence, not just a total.
+    expect(connectedConfig).toMatchObject({
+      sessionCount: 2,
+      sessionAgents: [{ agent: "codex", sessionCount: 1 }, { agent: "qoder", sessionCount: 1 }],
+    });
     const inspectorReport = await fetch(`${started.url}/api/workspace-inspector-report`);
     expect(inspectorReport.status).toBe(200);
     expect(inspectorReport.headers.get("cache-control")).toBe("no-store");
@@ -393,8 +402,9 @@ describe("harness-studio server", () => {
     expect(detail).toMatchObject({ name: "Inspect Qoder session", agent: "qoder", protocol: "Inspector normalized local evidence" });
     const comparison = await (await fetch(`${started.url}/api/session-compare?left=${encodeURIComponent("qoder:run_qoder")}&right=${encodeURIComponent("codex:run_codex")}`)).json();
     expect(comparison).toMatchObject({
-      left: { prompt: "Inspect Qoder session", status: "observed", toolSequence: ["Read", "Bash"] },
-      right: { prompt: "Inspect Codex session", status: "observed", toolSequence: ["Read"] },
+      crossAgent: true,
+      left: { agent: "qoder", prompt: "Inspect Qoder session", status: "observed", toolSequence: ["Read", "Bash"] },
+      right: { agent: "codex", prompt: "Inspect Codex session", status: "observed", toolSequence: ["Read"] },
     });
   });
 
@@ -708,6 +718,70 @@ describe("harness-studio server", () => {
     }));
     expect(events.find((entry) => entry.event.type === "run-started")).toBeDefined();
     expect(DEFAULT_LOCAL_ACP_RUNTIME_ID).toBe("acp");
+  });
+
+  it("streams one selected ACP Agent per run and rejects ids it cannot launch", async () => {
+    const appDir = await makeAppDir();
+    const workspace = await makeTempDir("studio-acp-selection-workspace-");
+    const alpha = { command: process.execPath, args: [ACP_AGENT_FIXTURE], label: "Alpha ACP" };
+    const beta = { command: process.execPath, args: [ACP_AGENT_FIXTURE], label: "Beta ACP" };
+    started = await startHarnessStudioServer({
+      appDir,
+      workspaceDirectoryPicker: async () => workspace,
+      workspaceSessionProvider: { discover: async () => ({ label: "acp-selection-project", sessions: [] }) },
+      acpAgent: alpha,
+      acpAgents: [
+        { id: "alpha", label: "Alpha ACP", agent: alpha },
+        { id: "beta", label: "Beta ACP", agent: beta },
+        { id: "missing", label: "Missing ACP", unavailableReason: "bridge not installed" },
+      ],
+    });
+    // The browser needs the whole catalog to offer two independent choices.
+    const config = await (await fetch(`${started.url}/api/config`)).json() as {
+      acpAgents: Array<{ id: string; label: string; available: boolean; detail: string }>;
+    };
+    expect(config.acpAgents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "alpha", label: "Alpha ACP", available: true }),
+      expect.objectContaining({ id: "beta", label: "Beta ACP", available: true }),
+      expect.objectContaining({ id: "missing", available: false, detail: "bridge not installed" }),
+    ]));
+    expect(JSON.stringify(config)).not.toContain(ACP_AGENT_FIXTURE);
+
+    await fetch(`${started.url}/api/workspace/open`, { method: "POST" });
+    const projectCatalog = await (await fetch(`${started.url}/api/projects`)).json() as { activeProjectId: string; revision: number };
+    const start = async (query: string, runId: string): Promise<Response> => await fetch(
+      `${started!.url}/api/acp/runs/stream${query}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Harness-Project-Id": projectCatalog.activeProjectId,
+          "X-Harness-Project-Revision": String(projectCatalog.revision),
+        },
+        body: runRequest("acp-selection-thread", runId, "prove per-run Agent selection"),
+      },
+    );
+
+    const selected = await start("?agent=beta", "acp-run-beta");
+    expect(selected.status).toBe(200);
+    const reader = selected.body!.getReader();
+    const decoder = new TextDecoder();
+    let body = "";
+    while (!decodeSseStream<HarnessRunStreamEventV1>(body).some((entry) => entry.event.type === "run-started")) {
+      const chunk = await reader.read();
+      expect(chunk.done).toBe(false);
+      body += decoder.decode(chunk.value, { stream: true });
+    }
+    await fetch(`${started.url}/api/acp/runs/acp-run-beta/cancel`, { method: "POST" });
+    await reader.cancel();
+
+    // An id the host cannot launch never opens a stream.
+    const unknown = await start("?agent=nope", "acp-run-unknown");
+    expect(unknown.status).toBe(400);
+    expect(await unknown.json()).toMatchObject({ error: expect.stringContaining("nope") });
+    const unavailable = await start("?agent=missing", "acp-run-unavailable");
+    expect(unavailable.status).toBe(400);
+    expect(await unavailable.json()).toMatchObject({ error: expect.stringContaining("missing") });
   });
 
   it("keeps an explicitly configured harness and cwd authoritative after workspace selection", async () => {

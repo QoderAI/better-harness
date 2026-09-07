@@ -1,10 +1,22 @@
-import { AcpPermissionHandler, AcpSdkExecutor, HarnessExecutorFactory } from "@qoder-ai/harness/exec";
+import {
+  AcpPermissionHandler,
+  AcpRustExecutor,
+  AcpRustPermissionHandler,
+  AcpSdkExecutor,
+  HarnessExecutorFactory,
+} from "@qoder-ai/harness/exec";
 import { ExperimentLaneExecutorFactory } from "@qoder-ai/harness/experiment";
+import { existsSync } from "node:fs";
 import { IncomingMessage, ServerResponse } from "node:http";
-import { resolve } from "node:path";
 import { readJsonBody, respondJson, sameOriginRequest } from "./http-utils.js";
 import { AcpRunControl, HarnessStudioServerOptions, HarnessStudioState, StudioAcpAgentOptions } from "./studio-types.js";
 import { effectiveAcpAgentProfiles } from "./acp-agent-catalog.js";
+
+export function acpRuntimeProfile(options: HarnessStudioServerOptions): "acp-v1-rust" | "acp-v1-stdio" {
+  return options.acpHostExecutable !== undefined && existsSync(options.acpHostExecutable)
+    ? "acp-v1-rust"
+    : "acp-v1-stdio";
+}
 
 export function acpAgentEnabled(options: HarnessStudioServerOptions): boolean {
   const agent = options.acpAgent ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)?.agent;
@@ -24,22 +36,41 @@ export function ensureAcpRun(state: HarnessStudioState, runId: string): AcpRunCo
 export function acpExecutorFactory(
   agent: StudioAcpAgentOptions,
   state: HarnessStudioState,
+  host: { executable?: string; allowRoots?: readonly string[] } = {},
 ): HarnessExecutorFactory {
   return (context) => {
     const control = ensureAcpRun(state, context.runId);
-    const executor = new AcpSdkExecutor({
-      command: agent.command,
-      args: agent.args,
-      env: agent.env,
-      onRunEvent: context.onRunEvent,
-      abortSignal: control.abortController.signal,
-      requestPermission: (requestId, request, signal) => waitForAcpPermission(
-        control,
-        requestId,
-        request,
-        signal,
-      ),
-    });
+    const rustHost = host.executable !== undefined && existsSync(host.executable)
+      ? host.executable
+      : undefined;
+    const executor = rustHost === undefined
+      ? new AcpSdkExecutor({
+          command: agent.command,
+          args: agent.args,
+          env: agent.env,
+          onRunEvent: context.onRunEvent,
+          abortSignal: control.abortController.signal,
+          requestPermission: (requestId, request, signal) => waitForAcpPermission(
+            control,
+            requestId,
+            request,
+            signal,
+          ),
+        })
+      : new AcpRustExecutor({
+          hostExecutable: rustHost,
+          command: agent.command,
+          args: agent.args,
+          env: agent.env,
+          ...(host.allowRoots === undefined ? {} : { allowRoots: host.allowRoots }),
+          onRunEvent: context.onRunEvent,
+          abortSignal: control.abortController.signal,
+          requestPermission: (request, signal) => waitForAcpRustPermission(
+            control,
+            request,
+            signal,
+          ),
+        });
     return {
       host: executor.host,
       execute: async (revision, bundle, task) => {
@@ -55,6 +86,7 @@ export function acpExecutorFactory(
 export function acpExperimentExecutorFactory(
   agentForLane: (laneId: string) => StudioAcpAgentOptions,
   state: HarnessStudioState,
+  host: { executable?: string; allowRoots?: readonly string[] } = {},
 ): ExperimentLaneExecutorFactory {
   return (context) => {
     const agent = agentForLane(context.lane.id);
@@ -62,20 +94,39 @@ export function acpExperimentExecutorFactory(
     const abortLane = (): void => control.abortController.abort(context.abortController.signal.reason);
     if (context.abortController.signal.aborted) abortLane();
     else context.abortController.signal.addEventListener("abort", abortLane, { once: true });
-    const executor = new AcpSdkExecutor({
-      command: agent.command,
-      args: agent.args,
-      env: agent.env,
-      ...(agent.modelPolicy === "agent-default" ? {} : { sessionConfig: { model: context.lane.runtime.model } }),
-      onRunEvent: context.onRunEvent,
-      abortSignal: control.abortController.signal,
-      requestPermission: (requestId, request, signal) => waitForAcpPermission(
-        control,
-        requestId,
-        request,
-        signal,
-      ),
-    });
+    const rustHost = host.executable !== undefined && existsSync(host.executable)
+      ? host.executable
+      : undefined;
+    const executor = rustHost === undefined
+      ? new AcpSdkExecutor({
+          command: agent.command,
+          args: agent.args,
+          env: agent.env,
+          ...(agent.modelPolicy === "agent-default" ? {} : { sessionConfig: { model: context.lane.runtime.model } }),
+          onRunEvent: context.onRunEvent,
+          abortSignal: control.abortController.signal,
+          requestPermission: (requestId, request, signal) => waitForAcpPermission(
+            control,
+            requestId,
+            request,
+            signal,
+          ),
+        })
+      : new AcpRustExecutor({
+          hostExecutable: rustHost,
+          command: agent.command,
+          args: agent.args,
+          env: agent.env,
+          ...(host.allowRoots === undefined ? {} : { allowRoots: host.allowRoots }),
+          ...(agent.modelPolicy === "agent-default" ? {} : { sessionConfig: { model: context.lane.runtime.model } }),
+          onRunEvent: context.onRunEvent,
+          abortSignal: control.abortController.signal,
+          requestPermission: (request, signal) => waitForAcpRustPermission(
+            control,
+            request,
+            signal,
+          ),
+        });
     return {
       host: executor.host,
       execute: async (revision, bundle, task) => {
@@ -98,12 +149,41 @@ function waitForAcpPermission(
   request: Parameters<AcpPermissionHandler>[1],
   signal: AbortSignal,
 ): ReturnType<AcpPermissionHandler> {
+  return waitForPermission(
+    control,
+    requestId,
+    new Set(request.options.map((option) => option.optionId)),
+    signal,
+  );
+}
+
+function waitForAcpRustPermission(
+  control: AcpRunControl,
+  request: Parameters<AcpRustPermissionHandler>[0],
+  signal: AbortSignal,
+): ReturnType<AcpRustPermissionHandler> {
+  return waitForPermission(
+    control,
+    request.requestId,
+    new Set(request.options.map((option) => option.optionId)),
+    signal,
+  ).then((response) => response.outcome.outcome === "selected"
+    ? response.outcome.optionId
+    : undefined);
+}
+
+/** One permission store shared by the Node and Rust ACP clients. */
+function waitForPermission(
+  control: AcpRunControl,
+  requestId: string,
+  optionIds: Set<string>,
+  signal: AbortSignal,
+): ReturnType<AcpPermissionHandler> {
   if (control.abortController.signal.aborted || signal.aborted) {
     return Promise.resolve({ outcome: { outcome: "cancelled" } });
   }
   return new Promise((resolvePromise) => {
     let settled = false;
-    const optionIds = new Set(request.options.map((option) => option.optionId));
     const timeout = setTimeout(() => settle({ outcome: { outcome: "cancelled" } }), 5 * 60_000);
     const abort = (): void => settle({ outcome: { outcome: "cancelled" } });
     const settle = (response: Awaited<ReturnType<AcpPermissionHandler>>): void => {

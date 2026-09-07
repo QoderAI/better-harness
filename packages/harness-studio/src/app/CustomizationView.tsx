@@ -11,6 +11,7 @@ import type {
 } from "@qoder-ai/harness/customization";
 import { studioApiError } from "./studio-api.js";
 import { DataTable } from "./shell/DataTable.js";
+import { ToolbarActions } from "./shell/ToolbarActions.js";
 
 /** One catalog row: a definition already resolved against its Host exposures. */
 interface DefinitionRow {
@@ -93,10 +94,11 @@ export function CustomizationView(props: CustomizationViewProps): React.JSX.Elem
   </button>;
 
   return <section className="customization-workbench" aria-label={t("workbenchAria")}>
-    <header className="customization-toolbar">
-      <div><strong>{t("catalogTitle")}</strong><span>{t("catalogDetail")}</span></div>
-      {action}
-    </header>
+    {/* No local title bar: the toolbar already names this View, and repeating it
+       with a line of prose about what the catalog contains only pushed the
+       evidence down. The scope note moved into the pre-analysis state, which is
+       where a reader actually needs it. */}
+    <ToolbarActions>{action}</ToolbarActions>
     {busy && <p className="customization-progress" role="status" aria-live="polite">{t("collecting")}</p>}
     {failure !== undefined && <p className="customization-failure" role="alert">{failure}</p>}
     {loading

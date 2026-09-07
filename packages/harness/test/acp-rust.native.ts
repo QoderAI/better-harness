@@ -178,9 +178,58 @@ describe("AcpRustExecutor", () => {
       // The receipt must describe reach that was actually granted, so a reader
       // cannot mistake a fenced run for an unfenced one.
       expect(opened.runtimeReceipt?.tools).toEqual([
+        "terminal",
         "fs/read_text_file",
         "fs/write_text_file",
       ]);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("serves fenced file operations and terminal lifecycle calls", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const workspace = await mkdtemp(join(tmpdir(), "acp-rust-services-"));
+    const source = join(workspace, "source.txt");
+    const target = join(workspace, "target.txt");
+    await import("node:fs/promises").then(({ writeFile }) => writeFile(source, "one\ntwo\nthree\n"));
+    try {
+      const executor = new AcpRustExecutor({
+        hostExecutable: HOST_EXECUTABLE,
+        command: process.execPath,
+        args: [FIXTURE_AGENT, "--exercise-client-services", "--require-client-services"],
+        env: {
+          ...process.env,
+          ACP_SERVICE_SOURCE: source,
+          ACP_SERVICE_TARGET: target,
+          ACP_SERVICE_CWD: workspace,
+        },
+        allowRoots: [workspace],
+        requestPermission: approveFirstOption(),
+      });
+
+      const result = await executor.execute(revision, bundle, {
+        prompt: "Exercise client services",
+        cwd: workspace,
+      });
+
+      expect(result).toMatchObject({ exitCode: 0, errorOutput: "" });
+      expect(result.output).toBe("services:two:terminal-ok:0");
+      await expect(import("node:fs/promises").then(({ readFile }) => readFile(target, "utf8")))
+        .resolves.toBe("copied:two\n");
+      expect(result.runtimeReceipt?.tools).toEqual([
+        "terminal",
+        "fs/read_text_file",
+        "fs/write_text_file",
+      ]);
+      expect(result.trace).toEqual(expect.arrayContaining([
+        expect.objectContaining({ method: "fs/read_text_file" }),
+        expect.objectContaining({ method: "fs/write_text_file" }),
+        expect.objectContaining({ method: "terminal/create" }),
+        expect.objectContaining({ method: "terminal/wait_for_exit" }),
+        expect.objectContaining({ method: "terminal/output" }),
+        expect.objectContaining({ method: "terminal/release" }),
+      ]));
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

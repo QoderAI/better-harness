@@ -14,7 +14,9 @@ const setup = (overrides = {}) => {
   const child = new Child();
   const failures = [];
   const service = connectStudioService(child, {
-    token: 'a'.repeat(64), dataDirectory: 'test-data', pickDirectory: async () => undefined,
+    token: 'a'.repeat(64), dataDirectory: 'test-data',
+    oxcExecutable: '/native/harness-oxc-service', acpHostExecutable: '/native/harness-acp-host',
+    pickDirectory: async () => undefined,
     onFailure: (error) => failures.push(error), ...overrides,
   });
   return { child, service, failures };
@@ -34,6 +36,7 @@ test('startup sends the versioned contract and returns the validated ready resul
   const { child, service } = setup();
   assert.equal(child.sent[0].type, 'start');
   assert.equal(child.sent[0].version, 1);
+  assert.equal(child.sent[0].acpHostExecutable, '/native/harness-acp-host');
   ready(child);
   assert.equal((await service.started).url, 'http://127.0.0.1:3311');
   const stopping = service.stop();

@@ -6,6 +6,24 @@ import { expect, test } from "@playwright/test";
 import { startHarnessStudioServer } from "../../dist/server/server.js";
 import { createAgentCustomizationCollector } from "../../dist/server/customization-collector.js";
 
+/**
+ * Appearance and language live in a pop-up at the bottom of the sidebar. At or
+ * below the 1080px breakpoint that sidebar is an overlay, so Settings is only
+ * reachable while it is open and it must be put back afterwards: left open it
+ * intercepts clicks meant for the workbench.
+ */
+async function useStudioSetting(page, action) {
+  const overlay = (page.viewportSize()?.width ?? 1280) <= 1080;
+  if (overlay) await page.locator(".studio-nav-toggle").click();
+  const toggle = page.locator(".studio-settings-toggle");
+  await toggle.waitFor({ state: "visible" });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await action();
+  if ((await toggle.getAttribute("aria-expanded")) === "true") await toggle.click();
+  if (overlay) await page.locator(".studio-project-close").click();
+}
+
+
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const layouts = [
   { name: "wide", width: 1440, height: 900 },
@@ -131,14 +149,15 @@ test("analyzes Host customizations only after the explicit action across layouts
   await expect(installationRow).toContainText("Workspace/.codex/plugins/review-plugin/.codex-plugin/plugin.json");
   await definitionsTab.click();
 
-  await page.locator(".studio-language-toggle").click();
-  await expect(page.getByText("本地自定义目录", { exact: true })).toBeVisible();
+  await useStudioSetting(page, () => page.locator(".studio-language-toggle").click());
+  // The workbench no longer prints its own title: the toolbar already names the
+  // View, so translation is proved by the controls and tabs it does render.
   await expect(page.getByRole("button", { name: "再次分析" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "定义" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "安装" })).toBeVisible();
   await expect(hostFailure).toContainText("Claude customization collection failed");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-  await page.locator(".studio-language-toggle").click();
+  await useStudioSetting(page, () => page.locator(".studio-language-toggle").click());
   await expect(page.getByRole("button", { name: "Analyze again" })).toBeVisible();
 
   for (const layout of layouts) {

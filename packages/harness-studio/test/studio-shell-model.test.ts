@@ -4,6 +4,10 @@ import {
   capabilitySummary,
   compareSurfaces,
   inspectorSurfaces,
+  liveCompareReady,
+  selectableAcpAgents,
+  sessionAgents,
+  sessionCompareScope,
   studioProjectGateRequired,
   studioOverview,
   studioDestinations,
@@ -109,6 +113,7 @@ describe("Studio control-plane navigation", () => {
       workspaceConnected: true,
       projectExecutionEnabled: true,
       sessionCount: 3,
+      sessionAgents: [{ agent: "qoder", sessionCount: 2 }, { agent: "codex", sessionCount: 1 }],
       inputCount: 8,
       intentAnalysisEnabled: true,
       customizationAnalysisEnabled: true,
@@ -162,11 +167,90 @@ describe("Studio control-plane navigation", () => {
   });
 
   it("labels Compare from its active surface", () => {
-    const config: StudioConfig = { ...EMPTY, experimentEnabled: true, experimentRunnable: true, evidenceEnabled: true, sessionCount: 3, workspaceConnected: true };
+    const config: StudioConfig = {
+      ...EMPTY,
+      experimentEnabled: true,
+      experimentRunnable: true,
+      evidenceEnabled: true,
+      sessionCount: 3,
+      sessionAgents: [{ agent: "qoder", sessionCount: 2 }, { agent: "codex", sessionCount: 1 }],
+      workspaceConnected: true,
+    };
 
     expect(studioDestinations(config, "bench", commonT).find((destination) => destination.id === "compare")?.status).toBe("Harness Bench");
-    expect(studioDestinations(config, "sessions", commonT).find((destination) => destination.id === "compare")?.status).toBe("Session compare");
+    expect(studioDestinations(config, "sessions", commonT).find((destination) => destination.id === "compare")?.status).toBe("Cross-Agent compare");
     expect(studioDestinations(config, "results", commonT).find((destination) => destination.id === "compare")?.status).toBe("Frozen results");
+  });
+
+  it("offers a live Agent comparison only when an Agent can be launched in an executable Project", () => {
+    const ready: StudioConfig = {
+      ...EMPTY,
+      acpEnabled: true,
+      workspaceConnected: true,
+      projectExecutionEnabled: true,
+      acpAgents: [
+        { id: "qodercli", label: "Qoder CLI", available: true, detail: "Available" },
+        { id: "claude-acp", label: "Claude ACP", available: true, detail: "Available" },
+        { id: "dsh", label: "DSH ACP", available: false, detail: "No portable entrypoint." },
+      ],
+    };
+
+    expect(liveCompareReady(ready)).toBe(true);
+    expect(compareSurfaces(ready)).toEqual(["live"]);
+    expect(selectableAcpAgents(ready).map((agent) => agent.id)).toEqual(["qodercli", "claude-acp"]);
+    expect(studioDestinations(ready, "live", commonT).find((destination) => destination.id === "compare")).toMatchObject({
+      availability: "ready",
+      status: "Live Agent compare",
+    });
+    // An unavailable Agent, a read-only Project, or no ACP support each withdraw it.
+    expect(liveCompareReady({ ...ready, acpAgents: [{ id: "dsh", label: "DSH ACP", available: false, detail: "No portable entrypoint." }] })).toBe(false);
+    expect(liveCompareReady({ ...ready, projectExecutionEnabled: false })).toBe(false);
+    expect(liveCompareReady({ ...ready, acpEnabled: false })).toBe(false);
+    expect(compareSurfaces({ ...ready, projectExecutionEnabled: false })).toEqual([]);
+  });
+
+  it("scopes Session compare by Agent count rather than Session or Project count", () => {
+    const oneAgent: StudioConfig = {
+      ...EMPTY,
+      workspaceConnected: true,
+      sessionCount: 4,
+      sessionAgents: [{ agent: "qoder", sessionCount: 4 }],
+    };
+    const twoAgents: StudioConfig = {
+      ...oneAgent,
+      sessionAgents: [{ agent: "qoder", sessionCount: 3 }, { agent: "claude-code", sessionCount: 1 }],
+    };
+
+    expect(sessionCompareScope(oneAgent)).toBe("single-agent");
+    expect(sessionCompareScope(twoAgents)).toBe("cross-agent");
+    expect(sessionCompareScope({ ...twoAgents, sessionCount: 1 })).toBe("insufficient");
+    // A single Agent keeps the surface reachable but must not claim readiness.
+    expect(compareSurfaces(oneAgent)).toEqual(["sessions"]);
+    expect(studioDestinations(oneAgent, "sessions", commonT).find((destination) => destination.id === "compare")).toMatchObject({
+      availability: "partial",
+      status: "One Agent only",
+    });
+    expect(studioDestinations(twoAgents, "sessions", commonT).find((destination) => destination.id === "compare")).toMatchObject({
+      availability: "ready",
+      status: "Cross-Agent compare",
+    });
+  });
+
+  it("asks a connected Project for a second Agent instead of another Project", () => {
+    const config: StudioConfig = {
+      ...EMPTY,
+      workspaceConnected: true,
+      workspaceDiscoveryEnabled: true,
+      sessionCount: 1,
+      sessionAgents: [{ agent: "qoder", sessionCount: 1 }],
+    };
+
+    expect(compareSurfaces(config)).toEqual([]);
+    expect(studioDestinations(config, undefined, commonT).find((destination) => destination.id === "compare")).toMatchObject({
+      availability: "partial",
+      status: "Second Agent required",
+    });
+    expect(sessionAgents(config)).toEqual([{ agent: "qoder", sessionCount: 1 }]);
   });
 
   it("does not present a live Harness run endpoint as retained Inspector evidence or a Compare input", () => {
@@ -297,6 +381,7 @@ expect(studioDestinations(config, undefined, commonT).find((destination) => dest
       workspaceDiscoveryEnabled: true,
       workspaceConnected: true,
       sessionCount: 12,
+      sessionAgents: [{ agent: "qoder", sessionCount: 7 }, { agent: "codex", sessionCount: 5 }],
       inputCount: 34,
     }, overviewT);
 
@@ -307,9 +392,11 @@ expect(studioDestinations(config, undefined, commonT).find((destination) => dest
     expect(overview.facts.map(({ id, value }) => ({ id, value }))).toEqual([
       { id: "inputs", value: "34" },
       { id: "sessions", value: "12" },
+      { id: "agents", value: "2" },
       { id: "artifacts", value: "6" },
       { id: "repository", value: "Git" },
     ]);
+    expect(overview.facts.find((fact) => fact.id === "agents")?.detail).toBe("Comparable across Agents");
     expect(overview.secondaryActions).toEqual([
       { area: "inputs", label: "Review Inputs" },
       { area: "compare", label: "Open Compare" },

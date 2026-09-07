@@ -102,6 +102,11 @@ export interface HarnessStudioServerOptions {
   executorFactory?: HarnessExecutorFactory;
   /** Explicit local ACP Agent. The browser can select it but cannot alter its command or argv. */
   acpAgent?: StudioAcpAgentOptions;
+  /**
+   * Staged `harness-acp-host` executable. When present, ACP runs use the Rust
+   * host; when absent, Studio retains the Node SDK path for CLI/browser use.
+   */
+  acpHostExecutable?: string;
   /** Server-owned selectable ACP Agent catalog, including unavailable known presets. */
   acpAgents?: readonly StudioAcpAgentProfile[];
   /** `harness-experiment.v1` manifest; enables the live three-lane trace view. */

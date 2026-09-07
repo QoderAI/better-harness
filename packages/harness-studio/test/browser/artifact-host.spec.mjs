@@ -12,6 +12,24 @@ import { createDocxFixture } from "../docx-fixture.ts";
 import { createPptxFixture } from "../pptx-fixture.ts";
 import { createXlsxFixture } from "../xlsx-fixture.ts";
 
+/**
+ * Appearance and language live in a pop-up at the bottom of the sidebar. At or
+ * below the 1080px breakpoint that sidebar is an overlay, so Settings is only
+ * reachable while it is open and it must be put back afterwards: left open it
+ * intercepts clicks meant for the workbench.
+ */
+async function useStudioSetting(page, action) {
+  const overlay = (page.viewportSize()?.width ?? 1280) <= 1080;
+  if (overlay) await page.locator(".studio-nav-toggle").click();
+  const toggle = page.locator(".studio-settings-toggle");
+  await toggle.waitFor({ state: "visible" });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await action();
+  if ((await toggle.getAttribute("aria-expanded")) === "true") await toggle.click();
+  if (overlay) await page.locator(".studio-project-close").click();
+}
+
+
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const ARTIFACT_PREVIEW_PANEL_ID = "artifact-preview-panel";
 const canvasSdkRoot = process.env.CANVAS_SDK_ROOT ?? resolve(packageRoot, "../../../canvas-sdk");
@@ -119,6 +137,10 @@ test.beforeAll(async () => {
     retainedRun("run_left", "2026-08-20T10:00:00.000Z", "Repair parser", ["Read", "Edit", "Bash"]),
     retainedRun("run_right", "2026-08-20T11:00:00.000Z", "Repair renderer", ["Read", { name: "Edit", argsText: '{"path":"review.diff"}' }, "Bash"]),
   ];
+  // Session compare is a cross-Agent question inside one Project, so the two
+  // fixture Sessions come from two different Agents in the same working tree.
+  const workspaceAgents = ["qoder", "claude-code"];
+  const agentOf = (record) => workspaceAgents[workspaceRecords.indexOf(record)] ?? "qoder";
   await writeFile(join(selectedWorkspace, "review.diff"), [
     "diff --git a/src/viewer.ts b/src/viewer.ts",
     "--- a/src/viewer.ts",
@@ -132,7 +154,7 @@ test.beforeAll(async () => {
     featureTree: emptyFeatureTree(),
     sessions: workspaceRecords.map((record) => ({
       sessionId: record.id,
-      platform: "qoder",
+      platform: agentOf(record),
       firstSeen: record.savedAt,
       lastSeen: record.savedAt,
       prompts: [{ text: record.prompt, timestamp: record.savedAt }],
@@ -224,7 +246,10 @@ test.beforeAll(async () => {
       }] },
     })),
     correlation: { commits: [] },
-    providers: [{ platform: "qoder", status: "ok", discovered: 2, included: 2 }],
+    providers: [
+      { platform: "qoder", status: "ok", discovered: 1, included: 1 },
+      { platform: "claude-code", status: "ok", discovered: 1, included: 1 },
+    ],
     filters: { platform: "all", sessionLimit: 100 },
   });
   emptyStudio = await startHarnessStudioServer({
@@ -238,11 +263,14 @@ test.beforeAll(async () => {
         await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_200));
         return {
           label: "fixture-project",
-          providers: [{ provider: "qoder", status: "ok", discovered: 2, included: 2 }],
+          providers: [
+            { provider: "qoder", status: "ok", discovered: 1, included: 1 },
+            { provider: "claude-code", status: "ok", discovered: 1, included: 1 },
+          ],
           inspectorReport: workspaceInspectorReport,
           sessions: workspaceRecords.map((record) => ({
-            summary: { id: `qoder:${record.id}`, savedAt: record.savedAt, prompt: record.prompt, status: "observed", toolCallCount: record.toolCallCount, provider: "qoder", messageCount: 1, warningCount: 0 },
-            debugger: { ...sessionFromRetainedRun(record), id: `qoder:${record.id}`, agent: "qoder", protocol: "Inspector normalized local evidence", connection: "observed" },
+            summary: { id: `${agentOf(record)}:${record.id}`, savedAt: record.savedAt, prompt: record.prompt, status: "observed", toolCallCount: record.toolCallCount, provider: agentOf(record), messageCount: 1, warningCount: 0 },
+            debugger: { ...sessionFromRetainedRun(record), id: `${agentOf(record)}:${record.id}`, agent: agentOf(record), protocol: "Inspector normalized local evidence", connection: "observed" },
           })),
         };
       },
@@ -356,9 +384,9 @@ test("renders generated TSX in the sandbox and keeps its source reachable", asyn
   await expect(page.locator('[data-preview="current"]')).toHaveCount(0);
   // The frame learns the theme once during the handshake, so a later toggle has
   // to reach it over the same channel rather than leaving it on the old palette.
-  await page.getByRole("button", { name: /Dark theme active/ }).click();
+  await useStudioSetting(page, () => page.getByRole("button", { name: /Dark theme active/ }).click());
   await expect(preview.locator("html")).toHaveAttribute("data-artifact-theme", "light");
-  await page.getByRole("button", { name: /Light theme active/ }).click();
+  await useStudioSetting(page, () => page.getByRole("button", { name: /Light theme active/ }).click());
   await expect(preview.locator("html")).toHaveAttribute("data-artifact-theme", "dark");
   const frame = page.locator('iframe[title="Live artifact preview: component.canvas.tsx"]');
   await expect(frame).toHaveAttribute("sandbox", "allow-scripts");
@@ -373,7 +401,7 @@ test("renders generated TSX in the sandbox and keeps its source reachable", asyn
   await expect(source.locator('[data-highlight-state="highlighted"]')).toBeVisible();
   const darkToken = source.locator('span[style*="color"]').first();
   const darkColor = await darkToken.evaluate((element) => getComputedStyle(element).color);
-  await page.getByRole("button", { name: /Dark theme active/ }).click();
+  await useStudioSetting(page, () => page.getByRole("button", { name: /Dark theme active/ }).click());
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(source.locator('[data-highlight-state="highlighted"]')).toBeVisible();
   await expect.poll(() => darkToken.evaluate((element) => getComputedStyle(element).color)).not.toBe(darkColor);
@@ -412,11 +440,11 @@ test("runs explicit AgentReact end to end and commits only a verified staging bu
   await expect(live.locator("[data-agent-react-label]")).toHaveText("first verified build");
   await expect(live.locator("[data-artifact-node]").first()).toBeVisible();
   await expect(page.getByText("AgentReact build committed from isolated staging.")).toBeVisible();
-  await page.locator(".studio-language-toggle").click();
+  await useStudioSetting(page, () => page.locator(".studio-language-toggle").click());
   await expect(page.getByRole("tab", { name: "预览" })).toBeVisible();
   await expect(page.getByText("AgentReact 构建已从隔离暂存环境提交。")).toBeVisible();
   await expect(page.locator('iframe[title="实时 AgentReact 预览：orders.agent.canvas.tsx"]')).toBeVisible();
-  await page.locator(".studio-language-toggle").click();
+  await useStudioSetting(page, () => page.locator(".studio-language-toggle").click());
   await expect(page.getByText("AgentReact build committed from isolated staging.")).toBeVisible();
   await expect(liveFrame).toHaveAttribute("sandbox", "allow-scripts");
   await expect(liveFrame).toHaveAttribute("referrerpolicy", "no-referrer");
@@ -1116,18 +1144,21 @@ test("persists the explicit Studio theme and keeps core contrast accessible", as
     };
   });
 
+  // Polled rather than sampled once: the palette swap animates, so a single read
+  // can catch a blend of the two themes and measure a colour neither theme ships.
+  const expectAccessibleContrast = async () => {
+    await expect.poll(async () => (await contrast()).body).toBeGreaterThanOrEqual(4.5);
+    await expect.poll(async () => (await contrast()).primary).toBeGreaterThanOrEqual(4.5);
+  };
+
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  const darkContrast = await contrast();
-  expect(darkContrast.body).toBeGreaterThanOrEqual(4.5);
-  expect(darkContrast.primary).toBeGreaterThanOrEqual(4.5);
-  await page.getByRole("button", { name: /Dark theme active/ }).click();
+  await expectAccessibleContrast();
+  await useStudioSetting(page, () => page.getByRole("button", { name: /Dark theme active/ }).click());
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  const lightContrast = await contrast();
-  expect(lightContrast.body).toBeGreaterThanOrEqual(4.5);
-  expect(lightContrast.primary).toBeGreaterThanOrEqual(4.5);
+  await expectAccessibleContrast();
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByRole("button", { name: /Light theme active/ }).click();
+  await useStudioSetting(page, () => page.getByRole("button", { name: /Light theme active/ }).click());
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   // A stored choice outranks the host: flipping the host appearance underneath
   // an explicit selection must not silently discard it.
@@ -1179,7 +1210,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(gate).toHaveCount(0);
   await expect(page.locator(".studio-control-plane")).not.toHaveAttribute("inert", "");
   await expect(page).toHaveURL(/#\/projects\/project_[a-f0-9]{32}\/overview$/u);
-  await page.getByRole("navigation", { name: "Studio project and View navigation" }).getByRole("button", { name: /^Sessions/ }).click();
+  await page.getByRole("navigation", { name: "Studio View navigation" }).getByRole("button", { name: /^Sessions/ }).click();
   await expect(page).toHaveURL(/#\/projects\/project_[a-f0-9]{32}\/sessions$/u);
   const inspector = page.locator("[data-studio-native-inspector]");
   await expect(inspector).toBeVisible();
@@ -1489,15 +1520,29 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(sessionRows.first()).toBeFocused();
   await expect(page.getByRole("checkbox", { name: /Select Repair parser .* for comparison/u })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /Select Repair renderer .* for comparison/u })).toBeVisible();
+  // Two Agents in one Project means the catalog can be narrowed by Agent.
+  const agentFilter = page.getByRole("combobox", { name: "Filter Sessions by Agent" });
+  await expect(agentFilter).toBeVisible();
+  await agentFilter.selectOption("claude-code");
+  await expect(sessionRows).toHaveCount(1);
+  await agentFilter.selectOption("all");
+  await expect(sessionRows).toHaveCount(2);
   const compareChecks = page.locator(".session-catalog-rows input[type=checkbox]");
   await compareChecks.nth(0).check();
   await compareChecks.nth(1).check();
   await page.getByRole("button", { name: "Compare 2/2" }).click();
-  await expect(page.getByRole("heading", { name: "Compare Sessions" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Compare Agents" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Metric" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Left" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Right" })).toBeVisible();
-  await expect(page.locator(".session-compare-boundary")).toContainText("No winner inferred");
+  await expect(page.locator(".session-compare-boundary").first()).toContainText("No winner inferred");
+  // The comparison must name the two Agents it put side by side, not just the
+  // two Sessions, and it must never ask for a second Project.
+  await expect(page.getByRole("rowheader", { name: "Agent" })).toBeVisible();
+  await expect(page.locator(".session-compare-table")).toContainText("qoder");
+  await expect(page.locator(".session-compare-table")).toContainText("claude-code");
+  await expect(page.locator(".session-compare-workspace")).toContainText("Two Agents on the same working tree.");
+  await expect(page.locator(".session-compare-workspace")).not.toContainText("Open Another Project");
   await expect(page.locator(".session-compare-workspace")).toContainText("Repair parser");
   await expect(page.locator(".session-compare-workspace")).toContainText("Repair renderer");
   for (const layout of [
@@ -1529,7 +1574,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   }
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole("navigation", { name: "Studio project and View navigation" }).getByRole("button", { name: /^Debugger/ }).click();
+  await page.getByRole("navigation", { name: "Studio View navigation" }).getByRole("button", { name: /^Debugger/ }).click();
   await expect(page.getByText(/Project default · Qoder · fixture-project/u)).toBeVisible();
   await page.getByRole("button", { name: "New live run" }).click();
   await expect(page.getByRole("dialog", { name: "Start a live harness session" })).toContainText("Project fixture-project");
@@ -1540,8 +1585,13 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
 
   const config = await page.evaluate(async () => await (await fetch("api/config")).json());
   expect(config).toMatchObject({ runEnabled: true, harnessMode: "workspace-default", workspaceConnected: true, workspaceWorkbenchEnabled: true, sessionCount: 2 });
+  expect(config.sessionAgents).toEqual([{ agent: "claude-code", sessionCount: 1 }, { agent: "qoder", sessionCount: 1 }]);
   const workspace = await page.evaluate(async () => await (await fetch("api/workspace")).json());
-  expect(workspace).toMatchObject({ connected: true, label: "fixture-project", providers: [{ provider: "qoder", status: "ok" }] });
+  expect(workspace).toMatchObject({
+    connected: true,
+    label: "fixture-project",
+    providers: [{ provider: "qoder", status: "ok" }, { provider: "claude-code", status: "ok" }],
+  });
   expect(JSON.stringify(workspace)).not.toContain(selectedWorkspace);
   expect(failures).toEqual([]);
 });

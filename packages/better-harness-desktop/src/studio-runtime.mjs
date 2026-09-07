@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import { message, isMessage } from './protocol.mjs';
 import {
-  startHarnessStudioServer, defaultAppDir,
+  startHarnessStudioServer, defaultAppDir, discoverAcpAgentProfiles,
   createBundledInspectorWorkspaceSessionProvider, createBundledAgentCustomizationCollector,
 } from '@qoder-ai/harness-studio';
 
@@ -45,7 +45,7 @@ async function stop() {
 port.on('message', async (data) => {
   try {
     if (isMessage(data, 'start') && !starting && !stopping) {
-      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || typeof data.oxcExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport)) {
+      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || typeof data.oxcExecutable !== 'string' || typeof data.acpHostExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport)) {
         throw new Error('Invalid Studio startup contract');
       }
       starting = true;
@@ -69,9 +69,13 @@ port.on('message', async (data) => {
       const nativeLibraries = process.report.getReport().sharedObjects;
       if (nativeLibraries.some((library) => /oxc[_-](parser|transform)/i.test(library))) throw new Error('OXC NAPI unexpectedly loaded in Studio');
       // Local diagnostic receipt, without source text or credentials.
-      console.info(JSON.stringify({ kind: 'better-harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false }));
+      console.info(JSON.stringify({ kind: 'better-harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false, acpRuntime: 'acp-v1-rust' }));
+      const acpAgents = await discoverAcpAgentProfiles();
       server = await startHarnessStudioServer({
         oxcCompilerFactory,
+        acpHostExecutable: data.acpHostExecutable,
+        acpAgents,
+        harnessMode: 'workspace-default',
         appDir: defaultAppDir(), host: '127.0.0.1', port: 0, accessToken: data.token,
         cwd: data.dataDirectory,
         runDirectory: join(data.dataDirectory, 'runs'),

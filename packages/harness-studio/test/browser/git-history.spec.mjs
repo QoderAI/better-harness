@@ -6,6 +6,24 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { startHarnessStudioServer } from "../../dist/server/server.js";
 
+/**
+ * Appearance and language live in a pop-up at the bottom of the sidebar. At or
+ * below the 1080px breakpoint that sidebar is an overlay, so Settings is only
+ * reachable while it is open and it must be put back afterwards: left open it
+ * intercepts clicks meant for the workbench.
+ */
+async function useStudioSetting(page, action) {
+  const overlay = (page.viewportSize()?.width ?? 1280) <= 1080;
+  if (overlay) await page.locator(".studio-nav-toggle").click();
+  const toggle = page.locator(".studio-settings-toggle");
+  await toggle.waitFor({ state: "visible" });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await action();
+  if ((await toggle.getAttribute("aria-expanded")) === "true") await toggle.click();
+  if (overlay) await page.locator(".studio-project-close").click();
+}
+
+
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 let studio;
 let workspace;
@@ -120,12 +138,12 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   await expect(diff.locator("[data-line]").first()).toBeVisible();
   await expect.poll(async () => new Set(await diff.locator("[data-line] *").evaluateAll((elements) => elements.map((element) => getComputedStyle(element).color))).size).toBeGreaterThan(1);
   await page.screenshot({ path: testInfo.outputPath("git-history-wide.png"), fullPage: true });
-  await page.getByRole("button", { name: /Dark theme active/ }).click();
-  await expect(page.getByRole("button", { name: /Light theme active/ })).toBeVisible();
+  await useStudioSetting(page, () => page.getByRole("button", { name: /Dark theme active/ }).click());
+  await useStudioSetting(page, () => expect(page.getByRole("button", { name: /Light theme active/ })).toBeVisible());
   await expectSelectedRowCarriesItsGraphNode(page, featureRow);
   await page.screenshot({ path: testInfo.outputPath("git-history-wide-light.png"), fullPage: true });
-  await page.getByRole("button", { name: /Light theme active/ }).click();
-  await expect(page.getByRole("button", { name: /Dark theme active/ })).toBeVisible();
+  await useStudioSetting(page, () => page.getByRole("button", { name: /Light theme active/ }).click());
+  await useStudioSetting(page, () => expect(page.getByRole("button", { name: /Dark theme active/ })).toBeVisible());
 
   const commitTable = page.getByRole("table", { name: "Commits" });
   await expect(page.getByText("40 of 45 · More loads automatically", { exact: true })).toBeVisible();

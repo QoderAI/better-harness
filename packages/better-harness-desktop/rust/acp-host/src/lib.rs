@@ -27,5 +27,6 @@
 pub mod connection;
 pub mod fence;
 pub mod redact;
+pub mod services;
 pub mod thread;
 pub mod wire;

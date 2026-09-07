@@ -52,6 +52,7 @@ import {
 } from "@qoder-ai/harness/protocol";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { applyHarnessRunEvent, initialRunState, timelineItems, type HarnessRunState, type TimelineItem } from "./run-store.js";
+import { streamRun as streamHarnessRunRequest } from "./stream-run.js";
 import { ArtifactCodeView } from "../code/ArtifactCodeView.js";
 import { studioLocale } from "../i18n/index.js";
 import { createSseParser } from "../sse-client.js";
@@ -85,8 +86,16 @@ import {
   stepOverCursor,
   toolForCursor,
 } from "./debugger-cursor.js";
+import {
+  isAcpChoice,
+  liveAgentChoices,
+  liveRunEndpoint,
+  resolveLiveAgentChoice,
+} from "./live-agent-choices.js";
+import type { StudioAcpAgentOption } from "../studio-shell-model.js";
 import { SAMPLE_DEBUGGER_SESSION } from "./sample-debugger-session.js";
 import { describeToolPayload } from "./tool-call-model.js";
+import { nextStreamingText } from "./streaming-text.js";
 import { buildTimelineBins, groupLiveTimeline, semanticToolKind, type LiveTimelineGroup, type TimelineBin } from "./timeline-model.js";
 
 /** Post one Harness run and fold its native event stream into state updates. */
@@ -98,50 +107,7 @@ async function streamRun(
   project: { id: string; label: string; revision: number } | undefined,
   onEvents: (events: HarnessRunStreamEventV1[]) => void,
 ): Promise<void> {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(project === undefined ? {} : {
-        "X-Harness-Project-Id": project.id,
-        "X-Harness-Project-Revision": String(project.revision),
-      }),
-    },
-    body: JSON.stringify({
-      kind: HARNESS_RUN_REQUEST_KIND,
-      threadId,
-      runId,
-      prompt,
-    }),
-  });
-  if (!response.ok || response.body === null) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`Run request failed (${response.status}): ${detail}`);
-  }
-  let pendingEvents: HarnessRunStreamEventV1[] = [];
-  let frame: number | undefined;
-  const flush = (): void => {
-    frame = undefined;
-    const events = pendingEvents;
-    pendingEvents = [];
-    if (events.length > 0) onEvents(events);
-  };
-  const apply = (event: HarnessRunStreamEventV1): void => {
-    pendingEvents.push(event);
-    frame ??= globalThis.requestAnimationFrame(flush);
-  };
-  const parser = createSseParser<unknown>((event) => apply(parseHarnessRunStreamEventV1(event)));
-  const decoder = new TextDecoder();
-  const reader = response.body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    parser.push(decoder.decode(value, { stream: true }));
-  }
-  parser.push(decoder.decode());
-  parser.end();
-  if (frame !== undefined) globalThis.cancelAnimationFrame(frame);
-  flush();
+  await streamHarnessRunRequest(endpoint, prompt, threadId, runId, project, onEvents);
 }
 
 type MessageTimelineItem = Extract<TimelineItem, { kind: "message" }>;
@@ -190,9 +156,52 @@ const PLAN_ITEMS = [
   "Update timeline and event visualization",
 ];
 
+function useSmoothStreamingText(target: string, complete: boolean): string {
+  const [revealed, setRevealed] = useState(complete ? target : "");
+  const revealedRef = useRef(revealed);
+  const targetRef = useRef(target);
+  const frameRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    targetRef.current = target;
+    const replace = complete || !target.startsWith(revealedRef.current);
+    if (replace) {
+      if (frameRef.current !== undefined) cancelAnimationFrame(frameRef.current);
+      frameRef.current = undefined;
+      revealedRef.current = target;
+      setRevealed(target);
+      return;
+    }
+    const tick = (): void => {
+      const current = revealedRef.current;
+      const pending = targetRef.current.slice(current.length);
+      if (pending.length === 0) {
+        frameRef.current = undefined;
+        return;
+      }
+      // Match Zed's 16ms/200ms reveal target. Array.from splits by Unicode
+      // code point, so CJK and emoji are never cut at a UTF-16 surrogate.
+      const next = nextStreamingText(current, targetRef.current);
+      revealedRef.current = next;
+      setRevealed(next);
+      frameRef.current = requestAnimationFrame(tick);
+    };
+    if (frameRef.current === undefined && revealedRef.current !== target) {
+      frameRef.current = requestAnimationFrame(tick);
+    }
+    return () => {
+      if (frameRef.current !== undefined) cancelAnimationFrame(frameRef.current);
+      frameRef.current = undefined;
+    };
+  }, [complete, target]);
+
+  return revealed;
+}
+
 const MessageEntry = memo(function MessageEntry({ item }: { item: MessageTimelineItem }): React.JSX.Element {
   const { t } = useTranslation("run");
-  return <div className="entry message"><span className="entry-tag">{t("assistant")}</span><pre>{item.text}{item.complete ? "" : " ▌"}</pre></div>;
+  const text = useSmoothStreamingText(item.text, item.complete);
+  return <div className="entry message"><span className="entry-tag">{t("assistant")}</span><pre>{text}{item.complete ? "" : " ▌"}</pre></div>;
 });
 
 const ToolCallEntry = memo(function ToolCallEntry({ item }: { item: ToolCallTimelineItem }): React.JSX.Element {
@@ -233,6 +242,12 @@ function toolStatusLabel(status: ToolCallTimelineItem["status"], t: (key: string
   }
 }
 
+/**
+ * A step control is an icon target, the way a debug transport is drawn in a
+ * docked workbench. The verb stays addressable as the accessible name and is
+ * revealed on hover and on keyboard focus, so seven commands share one toolbar
+ * row instead of wrapping their labels across two lines.
+ */
 function ControlButton(props: {
   label: string;
   icon: Icon;
@@ -241,7 +256,7 @@ function ControlButton(props: {
   onClick: () => void;
 }): React.JSX.Element {
   const ControlIcon = props.icon;
-  return <button type="button" className={props.primary ? "primary" : ""} disabled={props.disabled} onClick={props.onClick}><ControlIcon size={13} weight="bold" aria-hidden="true" /><span>{props.label}</span></button>;
+  return <button type="button" className={props.primary ? "primary" : ""} disabled={props.disabled} aria-label={props.label} data-tooltip={props.label} onClick={props.onClick}><ControlIcon size={14} weight="bold" aria-hidden="true" /></button>;
 }
 
 function stopConditionLabel(enabled: StopConditionState, t: (key: string, options?: Record<string, unknown>) => string): string {
@@ -253,6 +268,8 @@ export function RunView({
   runEndpoint,
   acpEndpoint,
   acpAgentLabel,
+  acpAgents,
+  localRunEnabled = true,
   artifactEndpoint,
   harnessLabel,
   navigation,
@@ -262,6 +279,8 @@ export function RunView({
   runEndpoint: string;
   acpEndpoint?: string;
   acpAgentLabel?: string;
+  acpAgents?: readonly StudioAcpAgentOption[];
+  localRunEnabled?: boolean;
   artifactEndpoint?: string;
   harnessLabel?: string;
   navigation?: ReactNode;
@@ -273,8 +292,9 @@ export function RunView({
   const harnessName = harnessLabel ?? t("liveTrial");
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>(initialMode);
   const [prompt, setPrompt] = useState("");
-  const [runtime, setRuntime] = useState<LiveRuntime>("qoder");
+  const [requestedAgent, setRequestedAgent] = useState("");
   const [activeRuntime, setActiveRuntime] = useState<LiveRuntime>("qoder");
+  const [activeAgentLabel, setActiveAgentLabel] = useState<string>();
   const [submittedPrompt, setSubmittedPrompt] = useState("");
   const [runProject, setRunProject] = useState(project);
   const [state, setState] = useState<HarnessRunState>(initialRunState);
@@ -295,6 +315,13 @@ export function RunView({
   const liveStateRef = useRef<HarnessRunState>(initialRunState());
 
   const selectedEvent = eventForCursor(retainedSession, cursor);
+  const agentChoices = useMemo(() => liveAgentChoices({
+    localRunEnabled,
+    acpEnabled: acpEndpoint !== undefined,
+    ...(acpAgents === undefined ? {} : { agents: acpAgents }),
+    labels: { local: t("composer.qoderOption"), defaultAcp: t("composer.acpOption", { agent: agentLabel }) },
+  }), [acpAgents, acpEndpoint, agentLabel, localRunEnabled, t]);
+  const selectedAgent = resolveLiveAgentChoice(agentChoices, requestedAgent);
   const viewState = state;
   const viewPrompt = submittedPrompt;
   const liveTimeline = useMemo(() => timelineItems(viewState), [viewState, viewState.timelineRevision]);
@@ -391,15 +418,17 @@ export function RunView({
   }, []);
 
   const start = useCallback(async () => {
-    if (busy.current || prompt.trim().length === 0) return;
+    if (busy.current || prompt.trim().length === 0 || selectedAgent === undefined) return;
+    const endpoint = liveRunEndpoint(selectedAgent, { run: runEndpoint, ...(acpEndpoint === undefined ? {} : { acp: acpEndpoint }) });
+    if (endpoint === undefined) return;
     busy.current = true;
     const promptText = prompt.trim();
-    const selectedRuntime = runtime === "acp" && acpEndpoint !== undefined ? "acp" : "qoder";
-    const endpoint = selectedRuntime === "acp" ? acpEndpoint! : runEndpoint;
+    const selectedRuntime = isAcpChoice(selectedAgent) ? "acp" : "qoder";
     const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const threadId = `thread_${stamp}`;
     const runId = `run_${stamp}`;
     setActiveRuntime(selectedRuntime);
+    setActiveAgentLabel(selectedAgent.label);
     setSubmittedPrompt(promptText);
     setRunProject(project);
     setSurfaceMode("live");
@@ -451,7 +480,7 @@ export function RunView({
         // Saving is best-effort evidence retention; the live view already holds the run.
       }
     }
-  }, [acpEndpoint, project, prompt, refreshRuns, runEndpoint, runtime]);
+  }, [acpEndpoint, project, prompt, refreshRuns, runEndpoint, selectedAgent]);
 
   const cancelLiveRun = useCallback(async (): Promise<void> => {
     if (activeRuntime !== "acp" || state.runId === undefined) return;
@@ -479,7 +508,7 @@ const ranWithProject = submittedPrompt === "" ? project : runProject;
     <header className="debugger-topbar">
       <div className="debugger-brand"><span className="debugger-mark"><BugBeetle size={18} weight="fill" /></span><strong>{live ? t("title.liveRun") : t("labels.inspector")}</strong><span title={ranWithProject === undefined ? undefined : t("projectMeta", { label: ranWithProject.label, revision: ranWithProject.revision })}>{live ? `${harnessName}${ranWithProject === undefined ? "" : ` · ${ranWithProject.label}`}` : saved ? t("mode.retainedDebugger") : t("mode.demoDebugger")}</span></div>
       <div className="debugger-session-meta"><span>{t("labels.session")}</span><strong title={sessionName}>{sessionName}</strong><em className={live ? "live" : "recorded"}>{runMode}</em></div>
-      <div className="debugger-runtime-meta"><span className={`connection-dot status-${connectionState}`} /><strong>{connectionState}</strong><i /><span>{t("labels.agent")}</span><strong>{live ? activeRuntime === "acp" ? agentLabel : t("localHarness") : retainedSession.agent}</strong><i /><span>{t("labels.protocol")}</span><strong>{live ? activeRuntime === "acp" ? t("acpStream") : t("harnessStream") : retainedSession.protocol}</strong></div>
+      <div className="debugger-runtime-meta"><span className={`connection-dot status-${connectionState}`} /><strong>{connectionState}</strong><i /><span>{t("labels.agent")}</span><strong>{live ? activeRuntime === "acp" ? activeAgentLabel ?? agentLabel : t("localHarness") : retainedSession.agent}</strong><i /><span>{t("labels.protocol")}</span><strong>{live ? activeRuntime === "acp" ? t("acpStream") : t("harnessStream") : retainedSession.protocol}</strong></div>
       <div className="debugger-top-actions">{navigation}{live && activeRuntime === "acp" && state.status === "running" ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />{t("cancelRun")}</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>{t("savedRuns")}{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label={t("savedRuns")}>{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>{t("backToLive")}</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">{t("noSavedRuns")}</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{t("savedRunMeta", { count: run.toolCallCount, time: run.savedAt.slice(0, 19).replace("T", " ") })}</span></button>)}</div>}</div><button type="button" onClick={() => setTreeCollapsed((value) => !value)} aria-pressed={!treeCollapsed} title={t("toggleTree")}><TreeStructure size={15} /></button><button type="button" onClick={() => setInspectorCollapsed((value) => !value)} aria-pressed={!inspectorCollapsed} title={t("toggleInspector")}><SidebarSimple size={15} /></button><button type="button" className="new-run" onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" />{t("newLiveRun")}</button></div>
     </header>
 
@@ -506,7 +535,7 @@ const ranWithProject = submittedPrompt === "" ? project : runProject;
 
     {live ? <LiveTimeline state={viewState} bins={liveBins} eventCount={liveTimeline.length} /> : <TimelineMinimap session={retainedSession} cursor={cursor} onSelect={selectCursor} />}
 
-{composerOpen && <div className="live-composer-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setComposerOpen(false); }}><section className="live-composer" role="dialog" aria-modal="true" aria-labelledby="live-composer-title"><header><div><small>{harnessName}</small><h2 id="live-composer-title">{t("composer.title")}</h2></div><button type="button" onClick={() => setComposerOpen(false)} aria-label={t("composer.closeAria")}><XCircle size={19} /></button></header><p>{t("composer.detail", { context: project === undefined ? t("composer.configuredContext") : t("composer.projectContext", { label: project.label, revision: project.revision }) })}</p>{acpEndpoint !== undefined ? <label className="live-runtime-select"><span>{t("composer.runtime")}</span><select value={runtime} onChange={(event) => setRuntime(event.target.value as LiveRuntime)}><option value="qoder">{t("composer.qoderOption")}</option><option value="acp">{t("composer.acpOption", { agent: agentLabel })}</option></select></label> : null}<textarea value={prompt} placeholder={t("composer.promptPlaceholder")} onChange={(event) => setPrompt(event.target.value)} rows={5} autoFocus /><footer><button type="button" onClick={() => setComposerOpen(false)}>{t("composer.cancel")}</button><button type="button" className="primary" onClick={() => void start()} disabled={state.status === "running" || prompt.trim().length === 0}><Play size={14} weight="fill" />{t("composer.run")}</button></footer></section></div>}
+{composerOpen && <div className="live-composer-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setComposerOpen(false); }}><section className="live-composer" role="dialog" aria-modal="true" aria-labelledby="live-composer-title"><header><div><small>{harnessName}</small><h2 id="live-composer-title">{t("composer.title")}</h2></div><button type="button" onClick={() => setComposerOpen(false)} aria-label={t("composer.closeAria")}><XCircle size={19} /></button></header><p>{t("composer.detail", { context: project === undefined ? t("composer.configuredContext") : t("composer.projectContext", { label: project.label, revision: project.revision }) })}</p>{agentChoices.length > 1 ? <label className="live-agent-select"><span>{t("composer.agent")}</span><select value={selectedAgent?.value ?? ""} onChange={(event) => setRequestedAgent(event.target.value)}>{agentChoices.map((choice) => <option key={choice.value} value={choice.value} disabled={!choice.available} title={choice.detail}>{choice.available ? choice.label : t("composer.agentUnavailable", { agent: choice.label })}</option>)}</select></label> : null}<textarea value={prompt} placeholder={t("composer.promptPlaceholder")} onChange={(event) => setPrompt(event.target.value)} rows={5} autoFocus /><footer><button type="button" onClick={() => setComposerOpen(false)}>{t("composer.cancel")}</button><button type="button" className="primary" onClick={() => void start()} disabled={state.status === "running" || prompt.trim().length === 0 || selectedAgent === undefined}><Play size={14} weight="fill" />{t("composer.run")}</button></footer></section></div>}
   </section>;
 }
 
@@ -754,6 +783,7 @@ function LiveNotebook({ state, prompt, groups }: { state: HarnessRunState; promp
 function VirtualLiveTimeline(props: { groups: LiveTimelineGroup[]; followLatest: boolean }): React.JSX.Element {
   const { t } = useTranslation("run");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const followingRef = useRef(true);
   const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: props.groups.length,
     getScrollElement: () => scrollRef.current,
@@ -763,11 +793,18 @@ function VirtualLiveTimeline(props: { groups: LiveTimelineGroup[]; followLatest:
     initialRect: { width: 720, height: 520 },
     useFlushSync: false,
   });
+  const handleScroll = useCallback((): void => {
+    const element = scrollRef.current;
+    if (element === null) return;
+    followingRef.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 24;
+  }, []);
   useEffect(() => {
-    if (props.followLatest && props.groups.length > 0) virtualizer.scrollToIndex(props.groups.length - 1, { align: "end" });
-  }, [props.followLatest, props.groups.length, virtualizer]);
+    if (props.followLatest && followingRef.current && props.groups.length > 0) {
+      virtualizer.scrollToIndex(props.groups.length - 1, { align: "end" });
+    }
+  }, [props.followLatest, props.groups, virtualizer]);
   if (props.groups.length === 0) return <p className="activity-empty">{t("live.waiting")}</p>;
-  return <div className="timeline virtual-live-timeline" ref={scrollRef}><div className="virtual-live-spacer" style={{ height: virtualizer.getTotalSize() }}>{virtualizer.getVirtualItems().map((virtualItem) => { const group = props.groups[virtualItem.index]!; return <div className="virtual-live-row" data-index={virtualItem.index} key={group.key} ref={virtualizer.measureElement} style={{ transform: `translateY(${virtualItem.start}px)` }}><LiveGroupEntry group={group} /></div>; })}</div></div>;
+  return <div className="timeline virtual-live-timeline" ref={scrollRef} onScroll={handleScroll}><div className="virtual-live-spacer" style={{ height: virtualizer.getTotalSize() }}>{virtualizer.getVirtualItems().map((virtualItem) => { const group = props.groups[virtualItem.index]!; return <div className="virtual-live-row" data-index={virtualItem.index} key={group.key} ref={virtualizer.measureElement} style={{ transform: `translateY(${virtualItem.start}px)` }}><LiveGroupEntry group={group} /></div>; })}</div></div>;
 }
 
 function LiveGroupEntry({ group }: { group: LiveTimelineGroup }): React.JSX.Element {
