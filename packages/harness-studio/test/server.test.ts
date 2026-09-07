@@ -115,8 +115,26 @@ const tempDirs: string[] = [];
 afterEach(async () => {
   await started?.close();
   started = undefined;
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(tempDirs.splice(0).map((dir) => removeTempDir(dir)));
 });
+
+/**
+ * An ACP Agent keeps an open handle on its cwd until it is reaped. Windows
+ * reports EBUSY if the test removes that workspace in the same tick as close().
+ */
+async function removeTempDir(dir: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    try {
+      await rm(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? String((error as NodeJS.ErrnoException).code) : "";
+      if ((code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") || Date.now() >= deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix));

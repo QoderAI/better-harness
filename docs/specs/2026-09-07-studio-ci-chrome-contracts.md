@@ -28,6 +28,9 @@ stylesheet back into workbench.
   `connection.rs` and `services.rs`.
 - AC-5: At the compact 1024px Debugger layout, the session notebook is at
   least half the grid width, so live trial evidence stays the primary pane.
+- AC-6: Studio server tests retry Windows `EBUSY`/`EPERM` temp-dir removal
+  after an ACP Agent run, instead of failing teardown while the child still
+  holds its cwd.
 
 ## Non-goals
 
@@ -45,6 +48,7 @@ stylesheet back into workbench.
    `New live run`.
 5. Shrink the default tree and inspector pane widths so a 1024px overlay
    layout still leaves the notebook at least half the grid.
+6. Retry `rm` in `server.test.ts` teardown for Windows lock codes.
 
 ## Test and Review Evidence
 
@@ -53,6 +57,8 @@ stylesheet back into workbench.
   `packages/harness-studio/test/browser/artifact-host.spec.mjs` theme and
   workspace tests. Full Studio browser suite: 65 passed.
 - AC-4: `cargo fmt --check` in `packages/better-harness-desktop/rust/acp-host`.
+- AC-6: `test/server.test.ts` teardown retries `EBUSY`/`EPERM`/`ENOTEMPTY`
+  for up to 5s after `close()`.
 - Risk: relaxing the stylesheet count to an un-named integer would hide a
   fifth sheet. Named filenames keep the original gate.
 - Risk: a probe-only contrast check would pass with no on-screen primary fill.
