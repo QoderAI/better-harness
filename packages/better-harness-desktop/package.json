@@ -14,6 +14,7 @@
     "start": "electron .",
     "test": "node --test test/*.test.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:acp": "node scripts/acp-smoke.mjs",
     "stage": "node scripts/stage.mjs",
     "pack": "npm run build && npm run stage && electron-builder --dir",
     "dist": "npm run build && npm run stage && electron-builder",
