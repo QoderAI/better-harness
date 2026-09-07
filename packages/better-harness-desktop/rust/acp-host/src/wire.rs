@@ -311,7 +311,11 @@ impl EventFrame {
 /// diff vocabulary this small is what lets the browser update one row instead
 /// of rebuilding a transcript.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 pub enum HostEvent {
     /// A new entry was appended. Index is implied to be the current tail.
     EntryAppended {
@@ -614,6 +618,60 @@ mod tests {
             parsed["event"]["direction"], "Agent → Client",
             "directions must match the existing HarnessProtocolEvent vocabulary verbatim"
         );
+    }
+
+    #[test]
+    fn names_event_fields_the_same_way_request_params_are_named() {
+        // `rename_all` on an enum renames variants, not fields. Without
+        // `rename_all_fields` the events would ship snake_case keys while the
+        // request side ships camelCase, and nothing in a type would object.
+        let line = encode_frame(&EventFrame::new(HostEvent::PermissionRequested {
+            connection_id: "c1".to_owned(),
+            session_id: "s1".to_owned(),
+            request_id: "r1".to_owned(),
+            tool_call_id: "t1".to_owned(),
+            title: "Read a file".to_owned(),
+            options: vec![PermissionOption {
+                option_id: "allow-once".to_owned(),
+                name: "Allow once".to_owned(),
+                kind: "allow_once".to_owned(),
+            }],
+        }))
+        .expect("event should encode");
+        let parsed: Value = serde_json::from_str(line.trim_end()).expect("line should be JSON");
+        let event = &parsed["event"];
+        for key in [
+            "connectionId",
+            "sessionId",
+            "requestId",
+            "toolCallId",
+            "title",
+            "options",
+        ] {
+            assert!(
+                event.get(key).is_some(),
+                "expected camelCase key {key}, got {event}"
+            );
+        }
+        assert!(
+            event.get("request_id").is_none() && event.get("tool_call_id").is_none(),
+            "no snake_case key may survive, got {event}"
+        );
+        assert_eq!(event["options"][0]["optionId"], "allow-once");
+    }
+
+    #[test]
+    fn names_entry_event_fields_in_camel_case_too() {
+        let line = encode_frame(&EventFrame::new(HostEvent::EntryAppended {
+            connection_id: "c1".to_owned(),
+            session_id: "s1".to_owned(),
+            index: 0,
+            entry: Value::Null,
+        }))
+        .expect("event should encode");
+        let parsed: Value = serde_json::from_str(line.trim_end()).expect("line should be JSON");
+        assert!(parsed["event"].get("connectionId").is_some());
+        assert!(parsed["event"].get("connection_id").is_none());
     }
 
     #[test]

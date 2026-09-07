@@ -26,7 +26,8 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, Implementation, InitializeRequest, NewSessionRequest,
     PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionNotification, SessionUpdate, TextContent,
+    SelectedPermissionOutcome, SessionConfigKind, SessionConfigOptionValue, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, TextContent,
 };
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, Client, ConnectionTo};
 use anyhow::{Context, Result, anyhow};
@@ -34,7 +35,9 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::fence::Fence;
 use crate::thread::{self, Change, ChunkKind, Thread};
-use crate::wire::{ConnectionOpenParams, HostEvent, PermissionOption, TurnStatus};
+use crate::wire::{
+    ConfigOptionValue, ConnectionOpenParams, HostEvent, PermissionOption, TurnStatus,
+};
 
 /// Client identity reported in `initialize`.
 const CLIENT_NAME: &str = "better-harness-acp-host";
@@ -292,12 +295,14 @@ impl AgentConnection {
         prompt: &str,
         events: &EventSink,
     ) -> Result<String> {
-        if !self
-            .threads
-            .lock()
-            .expect("threads")
-            .contains_key(session_id)
-        {
+        // Scoped so the guard is released before the first await below. A
+        // std::sync guard held across an await would make this future non-Send
+        // and could deadlock a task that re-enters the same lock.
+        let known = {
+            let threads = self.threads.lock().expect("threads");
+            threads.contains_key(session_id)
+        };
+        if !known {
             return Err(anyhow!("unknown session"));
         }
         let change = self.with_thread(session_id, |thread| thread.push_user_message(prompt));
@@ -330,14 +335,16 @@ impl AgentConnection {
                 } else {
                     thread::ToolCallStatus::Canceled
                 };
-                for index in self
-                    .threads
-                    .lock()
-                    .expect("threads")
-                    .get_mut(session_id)
-                    .map(|thread| thread.settle_unfinished_tool_calls(terminal))
-                    .unwrap_or_default()
-                {
+                // Collected under the lock, then awaited after releasing it: the
+                // guard must not survive into the announce loop below.
+                let settled = {
+                    let mut threads = self.threads.lock().expect("threads");
+                    threads
+                        .get_mut(session_id)
+                        .map(|thread| thread.settle_unfinished_tool_calls(terminal))
+                        .unwrap_or_default()
+                };
+                for index in settled {
                     self.announce(session_id, Some(Change::Updated(index)), events)
                         .await;
                 }
@@ -362,6 +369,63 @@ impl AgentConnection {
                     .await;
                 Err(anyhow!("ACP session/prompt failed: {error}"))
             }
+        }
+    }
+
+    /// Apply one session config option and confirm the agent took it.
+    ///
+    /// Acknowledgement is verified rather than assumed, preserving the contract
+    /// the Node executor already enforced: an agent that silently ignores a
+    /// requested model would otherwise produce a run whose receipt claims a
+    /// setting the agent never honoured.
+    pub async fn set_config_option(
+        &self,
+        session_id: &str,
+        config_id: &str,
+        value: &ConfigOptionValue,
+    ) -> Result<()> {
+        let requested = match value {
+            ConfigOptionValue::Boolean(flag) => SessionConfigOptionValue::boolean(*flag),
+            ConfigOptionValue::Text(text) => SessionConfigOptionValue::value_id(text.clone()),
+        };
+        let response = self
+            .connection
+            .send_request(SetSessionConfigOptionRequest::new(
+                session_id.to_owned(),
+                config_id.to_owned(),
+                requested,
+            ))
+            .block_task()
+            .await
+            .map_err(|error| anyhow!("ACP session/set_config_option failed: {error}"))?;
+
+        let reported = response
+            .config_options
+            .iter()
+            .find(|option| option.id.0.as_ref() == config_id)
+            .ok_or_else(|| anyhow!("the agent did not acknowledge session option '{config_id}'"))?;
+        // The wire enum is non-exhaustive. A kind this host cannot read is not the
+        // same failure as a refused option, and saying so keeps the caller from
+        // chasing an agent bug that is really a schema gap here.
+        let observed = match &reported.kind {
+            SessionConfigKind::Boolean(boolean) => {
+                ConfigOptionValue::Boolean(boolean.current_value)
+            }
+            SessionConfigKind::Select(select) => {
+                ConfigOptionValue::Text(select.current_value.0.to_string())
+            }
+            _ => {
+                return Err(anyhow!(
+                    "the agent reported session option '{config_id}' in a form this host cannot verify"
+                ));
+            }
+        };
+        if observed == *value {
+            Ok(())
+        } else {
+            Err(anyhow!(
+                "the agent did not acknowledge session option '{config_id}'"
+            ))
         }
     }
 
