@@ -14,6 +14,9 @@ import { buildDashboardModel } from "../lib/dashboard-model.ts";
 const root = path.resolve(import.meta.dirname, "../../..");
 const cli = path.join(root, "scripts", "better-harness.mjs");
 const input = path.join(root, "packages", "harness-ui", "fixtures", "task-evidence-input.json");
+// These cases launch the real CLI process. Give process startup enough room
+// when Vitest runs this file alongside the other Dashboard suites.
+const REAL_CLI_TEST_TIMEOUT_MS = 15_000;
 
 /** Serve the real Next.js route handler over a loopback port. */
 async function startDestination() {
@@ -138,11 +141,22 @@ test("a prepared plan is applied to its destination and reaches the Dashboard pr
   assert.equal(rows[0].acceptedAt, receipt.acceptedAt);
   assert.equal(rows[0].acceptance.unobserved, 1);
   assert.equal(rows[0].assets.unobserved, 1);
+  assert.deepEqual(rows[0].scope, ["scripts/task-evidence-upload", "packages/harness-ui"]);
+  assert.deepEqual(rows[0].nonGoals, ["Upload raw prompts or transcripts"]);
+  assert.equal(rows[0].acceptanceItems[0].id, "AC-1");
+  assert.equal(rows[0].assetItems[0].publisher, "qoder-ai");
+  assert.equal(rows[0].assetItems[0].revision, "sha256:preview");
+  assert.equal(rows[0].observationItems[0].evidenceRef, "validation:harness-ui");
   assert.equal(rows[0].redactions >= 2, true);
   assert.deepEqual(model.evidenceDeliveries.organizations, ["acme-engineering"]);
   assert.equal(model.evidenceDeliveries.total, 1);
   assert.equal(model.evidenceDeliveries.truncated, false);
-});
+  assert.equal(model.decisionEvidence.state, "attention");
+  assert.equal(model.decisionEvidence.acceptance.passed, 1);
+  assert.equal(model.decisionEvidence.openEvidenceStates, 3);
+  assert.equal(model.assetEvidence.find((asset) => asset.key === "skills").taskLinked, 1);
+  assert.equal(model.assetEvidence.find((asset) => asset.key === "mcps").openStates, 1);
+}, REAL_CLI_TEST_TIMEOUT_MS);
 
 test("the destination rejects a tampered plan and stores nothing", async () => {
   const planPath = path.join(work, "plan.json");
@@ -173,7 +187,7 @@ test("the destination rejects a tampered plan and stores nothing", async () => {
     uploadsDirectory: uploads,
   });
   assert.deepEqual(collected.evidenceDeliveries.items, []);
-});
+}, REAL_CLI_TEST_TIMEOUT_MS);
 
 test("the destination refuses an organization it does not serve", async () => {
   const planPath = path.join(work, "plan.json");
@@ -206,7 +220,7 @@ test("the destination refuses an organization it does not serve", async () => {
     uploadsDirectory: uploads,
   });
   assert.deepEqual(collected.evidenceDeliveries.items, []);
-});
+}, REAL_CLI_TEST_TIMEOUT_MS);
 
 test("the destination rejects the wrong media type and a plan addressed elsewhere", async () => {
   const planPath = path.join(work, "plan.json");
@@ -242,4 +256,4 @@ test("the destination rejects the wrong media type and a plan addressed elsewher
     uploadsDirectory: uploads,
   });
   assert.deepEqual(collected.evidenceDeliveries.items, []);
-});
+}, REAL_CLI_TEST_TIMEOUT_MS);

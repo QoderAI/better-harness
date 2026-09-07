@@ -110,6 +110,42 @@ export function buildDashboardModel(input: DashboardInput) {
   const assetFindings = input.assetInventories.flatMap((report) => report.findings);
   const deliveries = input.evidenceDeliveries?.items ?? [];
   const cacheAccountingModes = coverage.cacheAccountingModes ?? [];
+  const linkedAssets = deliveries.flatMap((delivery) => delivery.packet.assets);
+  const decisionCoverage = deliveries.reduce((totals, delivery) => {
+    const packetCoverage = delivery.packet.coverage;
+    totals.acceptance.total += packetCoverage.acceptance.total;
+    totals.acceptance.passed += packetCoverage.acceptance.passed;
+    totals.acceptance.failed += packetCoverage.acceptance.failed;
+    totals.acceptance.unobserved += packetCoverage.acceptance.unobserved;
+    totals.assetMatches.total += packetCoverage.assetMatches.total;
+    totals.assetMatches.exact += packetCoverage.assetMatches.exact;
+    totals.assetMatches.ambiguous += packetCoverage.assetMatches.ambiguous;
+    totals.assetMatches.unresolved += packetCoverage.assetMatches.unresolved;
+    totals.assetOutcomes.total += packetCoverage.assetOutcomes.total;
+    totals.assetOutcomes.succeeded += packetCoverage.assetOutcomes.succeeded;
+    totals.assetOutcomes.failed += packetCoverage.assetOutcomes.failed;
+    totals.assetOutcomes.unobserved += packetCoverage.assetOutcomes.unobserved;
+    totals.observations.total += packetCoverage.observations.total;
+    totals.observations.passed += packetCoverage.observations.passed;
+    totals.observations.failed += packetCoverage.observations.failed;
+    totals.observations.observed += packetCoverage.observations.observed;
+    totals.observations.unobserved += packetCoverage.observations.unobserved;
+    return totals;
+  }, {
+    acceptance: { total: 0, passed: 0, failed: 0, unobserved: 0 },
+    assetMatches: { total: 0, exact: 0, ambiguous: 0, unresolved: 0 },
+    assetOutcomes: { total: 0, succeeded: 0, failed: 0, unobserved: 0 },
+    observations: { total: 0, passed: 0, failed: 0, observed: 0, unobserved: 0 },
+  });
+  const openEvidenceStates = decisionCoverage.acceptance.failed
+    + decisionCoverage.acceptance.unobserved
+    + decisionCoverage.assetOutcomes.failed
+    + decisionCoverage.assetOutcomes.unobserved
+    + decisionCoverage.observations.failed
+    + decisionCoverage.observations.unobserved
+    + input.sources.errors.length;
+  const taskLinkedAssetsFor = (kind: string) => linkedAssets.filter((asset) => asset.kind === kind);
+  const observedHookEvents = sum((input.deliverySignals?.observedHooks ?? []).map((hook) => hook.count));
 
   return {
     generatedAt: input.generatedAt,
@@ -195,6 +231,56 @@ export function buildDashboardModel(input: DashboardInput) {
         advisories: assetFindings.filter((finding) => finding.severity === "advisory").length,
       },
     },
+    decisionEvidence: {
+      state: deliveries.length === 0 ? "unavailable" : openEvidenceStates > 0 ? "attention" : "observed",
+      receiptCount: deliveries.length,
+      totalReceipts: input.evidenceDeliveries?.total ?? deliveries.length,
+      organizations: [...new Set(deliveries.map((delivery) => delivery.organization))].sort(),
+      acceptance: decisionCoverage.acceptance,
+      assetMatches: decisionCoverage.assetMatches,
+      assetOutcomes: decisionCoverage.assetOutcomes,
+      observations: decisionCoverage.observations,
+      openEvidenceStates,
+      collectionErrorCount: input.sources.errors.length,
+    },
+    assetEvidence: ([
+      {
+        key: "skills",
+        label: "Skills",
+        distinct: assetTotals.distinct.skills,
+        configuredInstances: assetTotals.instances.skills,
+        observedActivity: sum(activity.skills.map((skill) => skill.total)),
+        activityLabel: "invocations",
+        taskKind: "skill",
+      },
+      {
+        key: "mcps",
+        label: "MCPs",
+        distinct: assetTotals.distinct.mcps,
+        configuredInstances: assetTotals.instances.mcps,
+        observedActivity: null,
+        activityLabel: "identity-linked calls unavailable",
+        taskKind: "mcp",
+      },
+      {
+        key: "hooks",
+        label: "Hooks",
+        distinct: assetTotals.distinct.hooks,
+        configuredInstances: assetTotals.instances.hooks,
+        observedActivity: observedHookEvents,
+        activityLabel: "host events",
+        taskKind: "hook",
+      },
+    ] as const).map((row) => {
+      const taskAssets = taskLinkedAssetsFor(row.taskKind);
+      return {
+        ...row,
+        taskLinked: taskAssets.length,
+        exactMatches: taskAssets.filter((asset) => asset.match === "exact").length,
+        succeeded: taskAssets.filter((asset) => asset.outcome === "succeeded").length,
+        openStates: taskAssets.filter((asset) => asset.outcome === "failed" || asset.outcome === "unobserved").length,
+      };
+    }),
     models: [...summary.usageEfficiency.modelUsage]
       .sort((left, right) => right.responseCount - left.responseCount),
     // The model chart can only show responses a host attributed to a model.
@@ -260,6 +346,8 @@ export function buildDashboardModel(input: DashboardInput) {
           id: packet.task.id,
           title: packet.task.title,
           intent: packet.task.intent,
+          scope: [...packet.task.scope],
+          nonGoals: [...packet.task.nonGoals],
           workspace: packet.workspace.label,
           organization: delivery.organization,
           acceptedAt: delivery.acceptedAt,
@@ -270,13 +358,14 @@ export function buildDashboardModel(input: DashboardInput) {
           digestAlgorithm: delivery.packetDigest.includes(":") ? delivery.packetDigest.split(":", 1)[0] : null,
           generatedAt: packet.generatedAt,
           acceptance: packet.coverage.acceptance,
-          acceptanceItems: packet.task.acceptance,
+          acceptanceItems: packet.task.acceptance.map((criterion) => ({ ...criterion })),
           assets: packet.coverage.assetOutcomes,
-          assetItems: packet.assets,
+          assetItems: packet.assets.map((asset) => ({ ...asset })),
           assetMatches: packet.coverage.assetMatches,
           observations: packet.coverage.observations,
-          observationItems: packet.observations,
+          observationItems: packet.observations.map((observation) => ({ ...observation })),
           links,
+          privacyProfile: packet.privacy.profile,
           redactions: packet.privacy.redactions,
           stages: [
             { id: "task", label: "Task", state: "observed" as const, value: "Defined" },

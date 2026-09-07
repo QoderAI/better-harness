@@ -60,6 +60,8 @@ function packetInput() {
       id: "TASK-1",
       title: "Verify the Dashboard contract",
       intent: "Keep UI fields aligned with existing scripts.",
+      scope: ["packages/harness-ui"],
+      nonGoals: ["Infer organization readiness"],
       acceptance: [
         { id: "AC-1", status: "passed", summary: "The projection test passes." },
         { id: "AC-2", status: "unobserved", summary: "Remote upload is unavailable." },
@@ -71,9 +73,17 @@ function packetInput() {
       commitRefs: ["commit:abc123"],
       artifactRefs: [],
     },
-    assets: [{ kind: "skill", id: "better-harness", match: "exact", stage: "validated", outcome: "succeeded" }],
+    assets: [{
+      kind: "skill",
+      id: "better-harness",
+      publisher: "qoder-ai",
+      revision: "sha256:fixture",
+      match: "exact",
+      stage: "validated",
+      outcome: "succeeded",
+    }],
     observations: [
-      { kind: "validation", status: "passed", summary: "Focused tests passed." },
+      { kind: "validation", status: "passed", summary: "Focused tests passed.", evidenceRef: "validation:harness-ui" },
       { kind: "change", status: "observed", summary: "One change was retained." },
     ],
   };
@@ -187,6 +197,28 @@ test("dashboard projects values built by the real scripts", async () => {
         { id: "acceptance", state: "observed" },
       ],
     );
+    assert.equal(model.evidenceDeliveries.items[0].intent, "Keep UI fields aligned with existing scripts.");
+    assert.deepEqual(model.evidenceDeliveries.items[0].scope, ["packages/harness-ui"]);
+    assert.deepEqual(model.evidenceDeliveries.items[0].nonGoals, ["Infer organization readiness"]);
+    assert.equal(model.evidenceDeliveries.items[0].acceptanceItems[1].status, "unobserved");
+    assert.equal(model.evidenceDeliveries.items[0].assetItems[0].publisher, "qoder-ai");
+    assert.equal(model.evidenceDeliveries.items[0].assetItems[0].revision, "sha256:fixture");
+    assert.equal(model.evidenceDeliveries.items[0].observationItems[0].evidenceRef, "validation:harness-ui");
+    assert.equal(model.decisionEvidence.state, "attention");
+    assert.equal(model.decisionEvidence.receiptCount, 1);
+    assert.equal(model.decisionEvidence.acceptance.passed, 1);
+    assert.equal(model.decisionEvidence.openEvidenceStates, 1);
+    assert.deepEqual(model.decisionEvidence.organizations, ["acme-engineering"]);
+    assert.deepEqual(
+      model.assetEvidence.map((asset) => ({ key: asset.key, taskLinked: asset.taskLinked, succeeded: asset.succeeded })),
+      [
+        { key: "skills", taskLinked: 1, succeeded: 1 },
+        { key: "mcps", taskLinked: 0, succeeded: 0 },
+        { key: "hooks", taskLinked: 0, succeeded: 0 },
+      ],
+    );
+    assert.equal(model.assetEvidence[0].observedActivity, 2);
+    assert.equal(model.assetEvidence[1].observedActivity, null);
     assert.equal(model.evidence.accountingMode, "effort-proxy");
     assert.equal(model.modelCoverage.attributed, 3);
     assert.equal(model.modelCoverage.unattributed, 0);
@@ -413,6 +445,9 @@ test("aggregated Other activity buckets stay after named assets", () => {
   assert.equal(model.skills[0].totalFailed, 0);
   assert.equal(model.mcps[0].totalFailed, 0);
   assert.equal(model.assets.observed, false);
+  assert.equal(model.decisionEvidence.state, "unavailable");
+  assert.equal(model.decisionEvidence.receiptCount, 0);
+  assert.equal(model.decisionEvidence.openEvidenceStates, 0);
 });
 
 test("model passes through skills without totalFailed for backward compatibility", () => {

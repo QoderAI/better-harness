@@ -18,7 +18,7 @@ export default defineConfig({
     colorScheme: "light",
   },
   webServer: {
-    command: `next start --hostname 127.0.0.1 --port ${port}`,
+    command: `npx next start --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
     // The suite asserts on evidence written to its own store, so it always
     // starts a server with that store configured instead of reusing one.
