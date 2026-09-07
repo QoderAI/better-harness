@@ -138,10 +138,15 @@ harness-acp-host (packages/better-harness-desktop/rust/acp-host)
 **T1 — Rust crate 骨架**（AC-1 AC-2 AC-3）
 新增 `packages/better-harness-desktop/rust/acp-host/`：`Cargo.toml`（`agent-client-protocol` 精确锁 `=2.0.0`、`tokio`、`portable-pty`、`serde`/`serde_json`、`anyhow`、`uuid`）、`src/lib.rs`、`src/main.rs`（stdio NDJSON 循环）。
 先跑通 `connection.open` → `session.create` → `session.prompt`，用既有 fixture [acp-agent.mjs](../../packages/harness/test/fixtures/acp-agent.mjs) 对拍。
-**待确认**：`=2.0.0` 是否需要 `features = ["unstable"]`。Zed 开了该 feature；本宿主只有在 `session.setConfigOption` 或 terminal 相关类型落在 unstable 门下时才需要开。T1 首个任务即为核实并在 `Cargo.toml` 注释记录结论。
+
+**已核实（原待确认项）**：`=2.0.0` **不需要** `features = ["unstable"]`。该 umbrella 只含 `unstable_auth_methods`、`unstable_elicitation`、`unstable_end_turn_token_usage`、`unstable_mcp_over_acp`、`unstable_session_fork`，全部在本规格范围之外（elicitation 已列为 non-goal）。`FileSystemCapabilities`、`TerminalId`/`TerminalOutputRequest`/`TerminalExitStatus`、`ClientSessionCapabilities`/`SessionConfigOptionsCapabilities`/`BooleanConfigOptionCapabilities` 均未被 feature gate，默认 feature 即可用。结论记录在 `Cargo.toml` 注释中。
+
+**运行时选择**：该 crate 内部用 `async-io`/`async-process`（smol 生态），`tokio` 仅为其 dev-dependency；官方 client 示例本身以 `#[tokio::main]` 驱动，故 tokio 宿主是被支持的组合，代价是 `async-io` 自带一个独立 reactor 线程。选 tokio 是因为 T5 的 `portable-pty` 需要阻塞线程池、且有界通道与定时器在 tokio 下更直接。
 
 **T2 — 连接注册表与持久会话**（AC-1 AC-2 AC-10）
-连接按 Agent 身份缓存复用；会话句柄 + RAII 生命周期；`task_id` 取消通道；进程组回收沿用 [acp-sdk.ts#L328-L373](../../packages/harness/src/exec/acp-sdk.ts#L328-L373) 已验证的 `reapAgent`/`terminateAgentTree` 策略（POSIX 进程组、Windows `taskkill /T /F`、SIGTERM→2s→SIGKILL）——该逻辑已因 Windows `EBUSY` 修过一次，不要重新发明。
+连接按 Agent 身份缓存复用；会话句柄 + RAII 生命周期；`task_id` 取消通道。
+
+**进程回收不自行实现**。原计划移植 [acp-sdk.ts#L328-L373](../../packages/harness/src/exec/acp-sdk.ts#L328-L373) 的 `reapAgent`/`terminateAgentTree`，但核实后发现 `agent-client-protocol` 的 `AcpAgent` 已经做了同一件事：spawn 时 `process_group(0)`，`ChildGuard` 的 `Drop` 里 `kill_process_group(pid, SIGKILL)`，并有 1s `SHUTDOWN_GRACE_PERIOD` 与 64 KiB 上限的 stderr 捕获。因此 T2 依赖 `AcpAgent` 的 `ChildGuard`，不重复实现杀进程树；AC-2 仍需独立断言 cwd 可删除，因为这是**行为**契约而非实现细节，且 Windows 语义与 POSIX 进程组不同。
 
 **T3 — 状态归并**（AC-16 AC-21）
 移植 Zed 的三层 chunk 合并与合并谓词：仅当「两侧都有 message id 且不相等」时拒绝合并，任一侧为空则乐观合并并**回填 id**。三层分别对应「改文本 / 改 entry 内 block / 追加 entry」三种更新粒度，避免要么闪烁要么 entry 爆炸。全量快照走前缀比对转增量。
@@ -186,9 +191,13 @@ oneshot sender 内联在 ToolCall 的待授权状态里，而非旁路 pending m
 
 **T13 — 构建与 CI**
 `packages/better-harness-desktop/scripts/rust.mjs` 增加 acp-host 的 build/test/stage；macOS 上 NSXPC 变体复用 [nsxpc-bundle.mjs](../../packages/better-harness-desktop/scripts/nsxpc-bundle.mjs) 的 bundle+codesign 流程（Windows/Linux 仅 stdio）。
-`.tool-versions` 增加 rust 版本声明（当前仅声明 nodejs）。
-**CI 决策**：新增 `.github/workflows/acp-host.yml`，`dtolnay/rust-toolchain` 固定版本，在 ubuntu/macos/windows 三个 OS 上跑 `cargo test` 加一个针对已构建二进制的 Node 集成测试。
+
+**CI 决策**：新增 `.github/workflows/acp-host.yml`，`dtolnay/rust-toolchain` 固定版本，在 ubuntu/macos/windows 三个 OS 上跑 `cargo fmt --check` 与 `cargo test --locked`，后续加一个针对已构建二进制的 Node 集成测试。
 不往 `ci.yml` 加 Rust 工具链——它当前 4 个 job 全无 Rust，加进去会拖慢整个主矩阵；`ci.yml` 继续覆盖 Node 回落通路（AC-17），这本身就是需要长期保有的证据。
+
+**不改 `.tool-versions`**。原计划在其中声明 rust 版本，但仓库先例是在 workflow 里用 `dtolnay/rust-toolchain@<version>` 钉住（`better-harness-desktop.yml` 即如此），`.tool-versions` 只声明 nodejs。往其中加 rust 会让 asdf/mise 用户在不需要 Rust 时也去安装工具链，收益不抵副作用。
+
+**crate 本地 `.gitignore`**。oxc-service 因为总被 `rust.mjs` 以 `--target-dir dist/rust` 驱动，所以从未产生 crate 内 `target/`，仓库也就没有对应的 ignore 规则。但任何人直接跑 `cargo test` 都会生成它，因此 acp-host 自带一份 `/target` 的 `.gitignore`（`cargo new` 的标准行为），不依赖构建脚本的重定向才能保持工作区干净。
 
 ## Test and Review Evidence
 

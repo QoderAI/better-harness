@@ -1,0 +1,22 @@
+[package]
+name = "harness-acp-host"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+publish = false
+
+[dependencies]
+# The Rust reference implementation of the Agent Client Protocol. Pinned
+# exactly: this crate's wire types are the host's public contract, so a patch
+# bump must be a deliberate, tested change rather than a lockfile refresh.
+agent-client-protocol = "=2.0.0"
+anyhow = "1"
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+lto = "thin"
+strip = true
