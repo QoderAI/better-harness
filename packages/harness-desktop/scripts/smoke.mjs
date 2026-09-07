@@ -22,6 +22,22 @@ const instance = await electron.launch({
   timeout: 60_000,
 });
 let receipt;
+let nativeProof;
+let nativeLog = '';
+instance.process().stdout.on('data', (chunk) => {
+  nativeLog += chunk.toString();
+  for (;;) {
+    const end = nativeLog.indexOf('\n');
+    if (end === -1) break;
+    const line = nativeLog.slice(0, end);
+    nativeLog = nativeLog.slice(end + 1);
+    try {
+      const value = JSON.parse(line);
+      if (value.kind === 'harness-desktop.oxc-proof') nativeProof = value;
+    } catch { /* Other host diagnostics are not the native receipt. */ }
+  }
+  if (nativeLog.length > 64 * 1024) nativeLog = '';
+});
 try {
   const page = await instance.firstWindow({ timeout: 30_000 });
   const errors = [];
@@ -44,6 +60,12 @@ try {
   assert.equal(proof.preferences.contextIsolation, true);
   assert.equal(proof.preferences.nodeIntegration, false);
   assert.equal(proof.metrics.length, 1);
+  assert.equal(nativeProof?.rust, true);
+  assert.equal(nativeProof.oxcNativeLoaded, false);
+  assert.equal(nativeProof.studioPid, proof.metrics[0].pid);
+  assert.notEqual(nativeProof.oxcPid, nativeProof.studioPid);
+  assert.notEqual(nativeProof.oxcPid, proof.mainPid);
+  assert.throws(() => process.kill(nativeProof.oxcPid, 0), { code: 'ESRCH' });
   assert.notEqual(proof.metrics[0].pid, proof.mainPid);
   // Stub only the OS dialog, exercise real HTTP -> utility -> main -> utility flow.
   await instance.evaluate(({ dialog }) => {
@@ -69,7 +91,7 @@ try {
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement !== document.body), true);
   assert.deepEqual(errors, []);
-  receipt = { oxcStartupProbe: true, directorySelection: true, origin, node: proof.node, mainPid: proof.mainPid, servicePid: proof.metrics[0].pid,
+  receipt = { nativeProof, oxcStartupProbe: true, directorySelection: true, origin, node: proof.node, mainPid: proof.mainPid, servicePid: proof.metrics[0].pid,
     rendererSandbox: true, httpAuthorization: true, directoryCancellation: true, errors };
 } finally {
   // A blocking native startup error dialog must not hang a headless CI job.

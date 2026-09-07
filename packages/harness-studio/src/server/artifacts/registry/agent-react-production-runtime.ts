@@ -1,3 +1,4 @@
+import type { OxcCompilerFactory } from "../../../agent-react/host/index.js";
 import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { build, type Plugin } from "esbuild-wasm";
@@ -18,6 +19,7 @@ const PRODUCTION_RUNTIME_PACKAGES: readonly TrustedRuntimePackage[] = Object.fre
 ]);
 
 export interface AgentReactProductionCompileOptions {
+  readonly oxcCompilerFactory?: OxcCompilerFactory;
   readonly artifactRoot: string;
   readonly entryPath: string;
   readonly viewId: string;
@@ -41,7 +43,7 @@ export interface AgentReactProductionCompileResult {
 export async function compileAgentReactProduction(
   options: AgentReactProductionCompileOptions,
 ): Promise<AgentReactProductionCompileResult> {
-  const compiler = createWorkerOxcCompiler({ timeoutMs: Math.min(options.timeoutMs, 5_000) });
+  const compiler = (options.oxcCompilerFactory ?? createWorkerOxcCompiler)({ timeoutMs: Math.min(options.timeoutMs, 5_000) });
   try {
     return await withinDeadline((async () => {
       const loaded = await loadAgentReactProject({

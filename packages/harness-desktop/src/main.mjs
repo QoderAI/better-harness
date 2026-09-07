@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { app, BrowserWindow, dialog, Menu, session, utilityProcess } from 'electron';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -80,6 +81,7 @@ else {
     child.stderr?.on('data', (data) => process.stderr.write(data));
     service = connectStudioService(child, {
       token, dataDirectory: app.getPath('userData'), onFailure: fail,
+      oxcExecutable: join(app.isPackaged ? process.resourcesPath : fileURLToPath(new URL('../dist', import.meta.url)), 'native', process.platform === 'win32' ? 'harness-oxc-service.exe' : 'harness-oxc-service'),
       async pickDirectory() {
         if (!window || window.isDestroyed()) throw new Error('No active Studio window');
         const result = await dialog.showOpenDialog(window, { title: 'Open a Project in Harness Studio', properties: ['openDirectory'] });

@@ -1,4 +1,6 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { createWorkerOxcCompiler } from "../src/agent-react/host/index.js";
+import type { OxcCompilerFactory } from "../src/agent-react/host/index.js";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,16 +15,39 @@ import {
 } from "../src/server/artifacts/registry/artifact-compile-runtime.js";
 import { resolveArtifactPlugin } from "../src/server/artifacts/registry/artifact-plugin-registry.js";
 
-async function compileEntry(directory: string, label: string, limits?: Parameters<typeof compileArtifactPreview>[0]["limits"]) {
+async function compileEntry(directory: string, label: string, limits?: Parameters<typeof compileArtifactPreview>[0]["limits"], oxcCompilerFactory?: OxcCompilerFactory) {
   const index = await indexArtifactDirectory(directory, { includeDigests: true });
   const entry = index.entries.find((candidate) => candidate.label === label)!;
   const resolution = resolveArtifactPlugin(entry);
   const descriptor = describeArtifactCatalog(index, (candidate) => resolveArtifactPlugin(candidate))
     .artifacts.find((candidate) => candidate.id === entry.id)!;
-  return compileArtifactPreview({ artifactRoot: directory, entry, descriptor, buildRuntime: resolution.buildRuntime, limits });
+  return compileArtifactPreview({ artifactRoot: directory, entry, descriptor, buildRuntime: resolution.buildRuntime, limits, oxcCompilerFactory });
 }
 
 describe("ArtifactCompileRuntime", () => {
+  it("partitions cached AgentReact builds by the injected compiler factory", async () => {
+    resetArtifactCompileRuntime();
+    const directory = await mkdtemp(join(tmpdir(), "artifact-compiler-factory-"));
+    await writeFile(join(directory, "orders.agent.canvas.tsx"), 'import { defineArtifactView } from "@studio/agent-react"; function Orders() { return <h1>Orders</h1>; } export default defineArtifactView({ id: "orders", component: Orders });');
+    let refusedCalls = 0;
+    const good: OxcCompilerFactory = (options) => createWorkerOxcCompiler(options);
+    const refused: OxcCompilerFactory = (options) => ({
+      ...createWorkerOxcCompiler(options),
+      async compileModule(input) {
+        refusedCalls++;
+        return { module: input.module.path, diagnostics: [{ level: "error", code: "profile/network", message: "Compiler policy refusal" }] };
+      },
+    });
+    try {
+      const ready = await compileEntry(directory, "orders.agent.canvas.tsx", undefined, good);
+      const blocked = await compileEntry(directory, "orders.agent.canvas.tsx", undefined, refused);
+      expect(ready.snapshot.status).toBe("ready");
+      expect(blocked.snapshot.status).toBe("failed");
+      expect(refusedCalls).toBeGreaterThan(0);
+      expect(artifactCompileCount()).toBe(2);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
   it("bundles confined React and CSS sources and reuses an unchanged build", async () => {
     resetArtifactCompileRuntime();
     const directory = await mkdtemp(join(tmpdir(), "artifact-compile-"));

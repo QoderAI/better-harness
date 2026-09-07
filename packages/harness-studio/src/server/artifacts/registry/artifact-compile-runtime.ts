@@ -1,3 +1,4 @@
+import type { OxcCompilerFactory } from "../../../agent-react/host/index.js";
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -52,6 +53,7 @@ export interface CompiledArtifactPreview {
 }
 
 export interface CompileArtifactPreviewOptions {
+  oxcCompilerFactory?: OxcCompilerFactory;
   artifactRoot: string;
   entry: ArtifactEntry;
   descriptor: ArtifactDescriptor;
@@ -98,6 +100,14 @@ const retainedByBuild = new Map<string, CompiledArtifactPreview>();
 const inflightByRevision = new Map<string, Promise<CompiledArtifactPreview>>();
 let buildSequence = 0;
 let compileCount = 0;
+const compilerFactoryIds = new WeakMap<OxcCompilerFactory, number>();
+let compilerFactorySequence = 0;
+function compilerFactoryKey(factory?: OxcCompilerFactory): string {
+  if (factory === undefined) return "worker";
+  let id = compilerFactoryIds.get(factory);
+  if (id === undefined) { id = ++compilerFactorySequence; compilerFactoryIds.set(factory, id); }
+  return `injected-${id}`;
+}
 
 export function artifactCompileCount(): number {
   return compileCount;
@@ -126,7 +136,7 @@ export async function compileArtifactPreview(options: CompileArtifactPreviewOpti
   const buildRuntime = options.buildRuntime ?? REACT_SOURCE_BUILD_RUNTIME;
   const limits = resolveArtifactCompileLimits(options.limits);
   const limitKey = JSON.stringify(limits);
-  const entryKey = `${options.entry.path}\u0000${buildRuntime.id}@${buildRuntime.version}\u0000${limitKey}`;
+  const entryKey = `${options.entry.path}\u0000${buildRuntime.id}@${buildRuntime.version}\u0000${limitKey}\u0000${compilerFactoryKey(options.oxcCompilerFactory)}`;
   const cached = latestByEntry.get(entryKey);
   if (cached !== undefined
     && cached.snapshot.revisionId === options.descriptor.revision.id
@@ -160,6 +170,7 @@ async function compileArtifactRevision(
   let agentReact: ArtifactBuildSnapshot["agentReact"];
   if (buildRuntime.module.kind === "agent-react") {
     const result = await compileAgentReactProduction({
+      oxcCompilerFactory: options.oxcCompilerFactory,
       artifactRoot: root,
       entryPath,
       viewId: agentReactViewId(options.entry.label),

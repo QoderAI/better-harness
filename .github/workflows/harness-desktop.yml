@@ -25,11 +25,14 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - uses: dtolnay/rust-toolchain@1.96.0
       - run: npm ci
       - run: npm run harness-desktop:test
       - run: npm run harness-desktop:pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - run: npm run test:rust -w @qoder-ai/harness-desktop
+      - run: npm run test:native -w @qoder-ai/harness-desktop
       - if: runner.os != 'Linux'
         run: npm run smoke -w @qoder-ai/harness-desktop -- --packaged
       - if: runner.os == 'Linux'

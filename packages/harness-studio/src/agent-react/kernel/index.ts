@@ -16,3 +16,5 @@ export {
 } from "./compiler.js";
 export { validateAgentReactProfile, type ProfileValidationInput } from "./profile.js";
 export { buildSemanticIndex } from "./semantic-index.js";
+
+export { createSemanticOxcCompiler, type NativeOxcBackend, type NativeOxcError } from "./semantic-compiler.js";

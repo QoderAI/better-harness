@@ -74,3 +74,5 @@ export {
   type LocalFrameFactory,
   type LocalFrameHandle,
 } from "./frames/local-frame-factory.js";
+
+export type { ManagedOxcCompiler, OxcCompilerFactory } from "./compiler-factory.js";

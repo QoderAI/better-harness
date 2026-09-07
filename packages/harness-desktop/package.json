@@ -10,17 +10,19 @@
     "node": ">=22.20.0 <25.0.0"
   },
   "scripts": {
-    "build": "npm run build -w @qoder-ai/harness && npm run build -w @qoder-ai/harness-studio",
+    "build": "npm run build -w @qoder-ai/harness && npm run build -w @qoder-ai/harness-studio && npm run build:rust",
     "start": "electron .",
     "test": "node --test test/*.test.mjs",
     "smoke": "node scripts/smoke.mjs",
     "stage": "node scripts/stage.mjs",
     "pack": "npm run build && npm run stage && electron-builder --dir",
-    "dist": "npm run build && npm run stage && electron-builder"
+    "dist": "npm run build && npm run stage && electron-builder",
+    "build:rust": "node scripts/rust.mjs",
+    "test:rust": "node scripts/rust.mjs --test",
+    "test:native": "npm exec -w @qoder-ai/harness-studio -- vitest run --config vitest.native.config.ts"
   },
   "dependencies": {
-    "@qoder-ai/harness-studio": "0.1.1",
-    "oxc-parser": "0.147.0"
+    "@qoder-ai/harness-studio": "0.1.1"
   },
   "devDependencies": {
     "electron": "44.2.0",
@@ -61,6 +63,15 @@
       ],
       "category": "Development",
       "executableName": "harness-studio"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "dist/native",
+        "to": "native",
+        "filter": [
+          "harness-oxc-service*"
+        ]
+      }
+    ]
   }
 }

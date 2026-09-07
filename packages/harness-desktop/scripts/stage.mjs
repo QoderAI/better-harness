@@ -30,5 +30,5 @@ await writeFile(join(staging, 'package.json'), JSON.stringify({
 await cp(join(root, 'src'), join(staging, 'src'), { recursive: true });
 // Install only the two local public artifacts and their production closure.
 // This avoids copying repository dev dependencies into the desktop distribution.
-process.stdout.write(run(['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', ...archives, `oxc-parser@${source.dependencies['oxc-parser']}`], staging));
+process.stdout.write(run(['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', ...archives], staging));
 console.log(`Staged desktop runtime: ${staging}`);

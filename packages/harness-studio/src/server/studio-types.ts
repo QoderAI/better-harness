@@ -1,3 +1,4 @@
+import type { OxcCompilerFactory } from "../agent-react/host/index.js";
 import { DebuggerSession } from "../contracts/debugger-session.js";
 import { CheckpointSourcePreview, ExperimentLockReceipt } from "../contracts/experiment-setup.js";
 import { GitCommitDetail, GitRefsSnapshot } from "../contracts/git-history.js";
@@ -57,6 +58,8 @@ export interface StudioWorkspaceSessionProvider {
   discover(workspacePath: string): Promise<StudioWorkspaceDiscovery>;
 }
 export interface HarnessStudioServerOptions {
+  /** Host-owned compiler transport; omitted in browser/CLI mode. */
+  oxcCompilerFactory?: OxcCompilerFactory;
   /** Optional per-launch desktop credential. Browser CLI leaves this unset. */
   accessToken?: string;
   /** Directory holding the built React app (index.html + assets/). */

@@ -1,3 +1,4 @@
+import { createRustOxcCompiler } from "@qoder-ai/harness-studio/oxc-service";
 import { join } from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import { message, isMessage } from './protocol.mjs';
@@ -13,6 +14,7 @@ let starting = false;
 let stopping = false;
 let pendingPicker;
 let pickerId = 0;
+const compilers = new Set();
 
 function pickDirectory() {
   if (pendingPicker) return Promise.reject(new Error('Directory chooser already open'));
@@ -35,6 +37,7 @@ async function stop() {
     pendingPicker.reject(new Error('Studio is shutting down'));
     pendingPicker = undefined;
   }
+  await Promise.all([...compilers].map((compiler) => compiler.close()));
   await server?.close();
   process.exit(0);
 }
@@ -42,15 +45,31 @@ async function stop() {
 port.on('message', async (data) => {
   try {
     if (isMessage(data, 'start') && !starting && !stopping) {
-      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string') {
+      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || typeof data.oxcExecutable !== 'string') {
         throw new Error('Invalid Studio startup contract');
       }
       starting = true;
-      // Native dependency proof happens in the same process that hosts Studio.
-      const { parseSync } = await import('oxc-parser');
-      const parsed = parseSync('desktop-smoke.ts', 'const desktop: number = 1');
-      if (parsed.errors.length) throw new Error('oxc startup probe failed');
+      const oxcCompilerFactory = ({ timeoutMs }) => {
+        if (stopping) throw new Error('Studio is shutting down');
+        const compiler = createRustOxcCompiler({ executable: data.oxcExecutable, timeoutMs });
+        const close = compiler.close.bind(compiler);
+        compiler.close = async () => { try { await close(); } finally { compilers.delete(compiler); } };
+        compilers.add(compiler);
+        return compiler;
+      };
+      const probe = oxcCompilerFactory({ timeoutMs: 5_000 });
+      let oxcPid;
+      try {
+        const compiled = await probe.compileModule({ module: { path: '/desktop-smoke.tsx', text: 'export const Desktop = () => <h1>你好</h1>;' }, entry: false, allowedPackages: ['@studio/agent-react/jsx-dev-runtime'] });
+        if (compiled.diagnostics.length || !compiled.code) throw new Error('Rust OXC startup probe failed');
+        oxcPid = probe.processId;
+      } finally { await probe.close(); }
+      const nativeLibraries = process.report.getReport().sharedObjects;
+      if (nativeLibraries.some((library) => /oxc[_-](parser|transform)/i.test(library))) throw new Error('OXC NAPI unexpectedly loaded in Studio');
+      // Local diagnostic receipt, without source text or credentials.
+      console.info(JSON.stringify({ kind: 'harness-desktop.oxc-proof', rust: true, oxcPid, studioPid: process.pid, oxcNativeLoaded: false }));
       server = await startHarnessStudioServer({
+        oxcCompilerFactory,
         appDir: defaultAppDir(), host: '127.0.0.1', port: 0, accessToken: data.token,
         cwd: data.dataDirectory,
         runDirectory: join(data.dataDirectory, 'runs'),
