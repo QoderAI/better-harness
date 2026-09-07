@@ -123,7 +123,7 @@
     "es-module-lexer": "2.3.2",
     "langium-cli": "4.3.0",
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "5.0.0"
   },
   "publishConfig": {
     "access": "public"
