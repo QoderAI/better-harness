@@ -306,8 +306,12 @@ impl Terminal {
             // drain the final pipe bytes. Publish the exit only after both are
             // done, so wait_for_exit followed by output cannot race to an empty
             // result.
-            if let Some(task) = stdout_task { let _ = task.await; }
-            if let Some(task) = stderr_task { let _ = task.await; }
+            if let Some(task) = stdout_task {
+                let _ = task.await;
+            }
+            if let Some(task) = stderr_task {
+                let _ = task.await;
+            }
             let _ = exit_tx.send(Some(ExitSnapshot {
                 code: status
                     .and_then(|status| status.code())

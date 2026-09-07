@@ -1137,7 +1137,9 @@ test("persists the explicit Studio theme and keeps core contrast accessible", as
       return (light + 0.05) / (dark + 0.05);
     };
     const body = getComputedStyle(document.body);
-    const primary = getComputedStyle(document.querySelector("button.primary"));
+    const primaryEl = document.querySelector("button.primary, button.new-run, .studio-project-views > button[aria-current='page']");
+    if (!(primaryEl instanceof Element)) throw new Error("no primary-fill control");
+    const primary = getComputedStyle(primaryEl);
     return {
       body: ratio(body.color, body.backgroundColor),
       primary: ratio(primary.color, primary.backgroundColor),
@@ -1575,7 +1577,8 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole("navigation", { name: "Studio View navigation" }).getByRole("button", { name: /^Debugger/ }).click();
-  await expect(page.getByText(/Project default · Qoder · fixture-project/u)).toBeVisible();
+  await expect(page.locator(".studio-status-bar")).toContainText("fixture-project");
+  await expect(page.getByRole("button", { name: "New live run" })).toBeVisible();
   await page.getByRole("button", { name: "New live run" }).click();
   await expect(page.getByRole("dialog", { name: "New run" })).toContainText("fixture-project");
   await page.getByPlaceholder("Task prompt for the harness run…").fill("verify the default workspace harness");

@@ -514,7 +514,9 @@ impl AgentConnection {
             Ok(connection) => connection,
             Err(_) => {
                 return Err(diagnostics
-                    .explain_when_drained("the ACP transport closed before it produced a connection")
+                    .explain_when_drained(
+                        "the ACP transport closed before it produced a connection",
+                    )
                     .await);
             }
         };

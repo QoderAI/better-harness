@@ -91,7 +91,10 @@ async function assertRenderedContract(page) {
       belowFloor,
       dockedShadows,
       visibleSurfaceSwitchers: [...document.querySelectorAll('[aria-label="Compare surfaces"]')].filter(visible).length,
-      ownedStyleSheets: [...document.styleSheets].filter((sheet) => sheet.href?.includes("/assets/") && sheet.href.endsWith(".css")).length,
+      ownedStyleSheets: [...document.styleSheets]
+        .filter((sheet) => sheet.href?.includes("/assets/") && sheet.href.endsWith(".css"))
+        .map((sheet) => new URL(sheet.href).pathname.split("/").pop())
+        .sort(),
     };
   });
   expect(contract.documentWidth).toBe(contract.innerWidth);
@@ -99,7 +102,7 @@ async function assertRenderedContract(page) {
   expect(contract.belowFloor).toEqual([]);
   expect(contract.dockedShadows).toEqual([]);
   expect(contract.visibleSurfaceSwitchers).toBeLessThanOrEqual(1);
-  expect(contract.ownedStyleSheets).toBe(3);
+  expect(contract.ownedStyleSheets).toEqual(["live-composer.css", "shell.css", "tokens.css", "workbench.css"]);
 }
 
 test.beforeAll(async () => {

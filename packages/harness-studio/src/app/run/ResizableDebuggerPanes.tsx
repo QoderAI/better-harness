@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-const DEFAULTS = { tree: 224, inspector: 304 };
+const DEFAULTS = { tree: 200, inspector: 248 };
 const MINIMUM = { tree: 160, inspector: 200 };
 const CENTER_MINIMUM = 240;
 const SASHES = 12;
