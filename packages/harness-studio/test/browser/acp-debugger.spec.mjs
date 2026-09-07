@@ -349,3 +349,53 @@ test("shows shared assistant chunks in Debugger and Compare before completion", 
     }
   } finally { await server.close(); }
 });
+
+const nsxpcBridge = resolve(
+  packageRoot,
+  "../better-harness-desktop/dist/native/Harness ACP.app/Contents/MacOS/harness-acp-client",
+);
+
+test.describe("ACP over the macOS NSXPC service", () => {
+  test.skip(process.platform !== "darwin" || !existsSync(nsxpcBridge),
+    "needs the staged Harness ACP.app (npm run build:rust -w @qoder-ai/better-harness-desktop)");
+
+  test("Debugger and Compare stream a run through the launchd service", async ({ page }, testInfo) => {
+    const agent = { command: process.execPath, args: [acpAgentFixture], label: "NSXPC ACP" };
+    const server = await startHarnessStudioServer({
+      appDir: resolve(packageRoot, "dist/app"), runDirectory,
+      acpHostExecutable: nsxpcBridge,
+      acpHostTransport: "nsxpc",
+      workspaceDirectoryPicker: async () => repositoryRoot,
+      workspaceSessionProvider: { discover: async () => ({ label: "NSXPC fixture", sessions: [] }) },
+      acpAgent: agent,
+      acpAgents: [{ id: "first", label: "First", agent }, { id: "second", label: "Second", agent }],
+    });
+    try {
+      const config = await (await fetch(`${server.url}/api/config`)).json();
+      expect(config.acpRuntimeProfile).toBe("acp-v1-nsxpc");
+      await testInfo.attach("stream-runtime", { body: config.acpRuntimeProfile, contentType: "text/plain" });
+
+      await page.setViewportSize(layouts[0]);
+      await page.goto(`${server.url}/#/debugger`);
+      await page.getByRole("button", { name: "Choose Project" }).click();
+      await page.getByRole("button", { name: "New live run" }).click();
+      await page.getByRole("textbox", { name: "Task", exact: true }).fill("prove the NSXPC route");
+      await page.getByRole("button", { name: "Run", exact: true }).click();
+      await page.getByRole("button", { name: "Allow once allow_once" }).click();
+      await expect(page.getByText("fixture:allow-once", { exact: true })).toBeVisible();
+      await expect(page.locator(".debugger-status")).toContainText("Run finished");
+      // The debugger's raw ACP panel is what proves frames crossed the XPC hop.
+      await expect(page.getByText("session/prompt").first()).toBeVisible();
+
+      await page.goto(`${server.url}/#/compare`);
+      await page.getByRole("textbox", { name: "What should both Agents do?" }).fill("prove NSXPC in two lanes");
+      await page.getByRole("combobox", { name: "Left Agent" }).selectOption("first");
+      await page.getByRole("combobox", { name: "Right Agent" }).selectOption("second");
+      await page.getByRole("button", { name: "Run both", exact: true }).click();
+      for (const lane of await page.locator(".live-compare-lane").all()) {
+        await lane.getByRole("button", { name: "Allow once", exact: true }).click();
+        await expect(lane.locator(".streaming-message")).toContainText("fixture:allow-once");
+      }
+    } finally { await server.close(); }
+  });
+});

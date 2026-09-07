@@ -44,7 +44,7 @@ export interface StudioConfig {
   runEnabled: boolean;
   acpEnabled: boolean;
   acpAgentLabel?: string;
-  acpRuntimeProfile?: "acp-v1-stdio" | "acp-v1-rust";
+  acpRuntimeProfile?: "acp-v1-stdio" | "acp-v1-rust" | "acp-v1-nsxpc";
   acpAgents?: readonly StudioAcpAgentOption[];
   artifactsEnabled: boolean;
   artifactCount?: number;
