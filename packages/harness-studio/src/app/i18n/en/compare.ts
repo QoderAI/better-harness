@@ -20,7 +20,10 @@ export const compare = {
     noAgents: "No local ACP Agent is available on this host, so no live comparison can start.",
     sharedWorkingTree: "Both Agents run against this Project's working tree at the same time and can overwrite each other. Use Bench when you need isolated worktrees and a verdict.",
     idle: "Enter a requirement and choose two Agents to start a live comparison.",
-    laneCounts: "{{tools}} tools · {{messages}} messages",
+    laneTools: "{{count}} tool call",
+    laneTools_other: "{{count}} tool calls",
+    laneMessages: "{{count}} message",
+    laneMessages_other: "{{count}} messages",
     laneWarnings: "{{count}} warning",
     laneWarnings_other: "{{count}} warnings",
     status: {

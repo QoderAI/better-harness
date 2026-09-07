@@ -348,3 +348,33 @@ async fn exits_when_a_frame_from_another_envelope_generation_arrives() {
         "an untrusted envelope must fail the process instead of being absorbed"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reports_the_agent_stderr_when_the_handshake_never_completes() {
+    // The failure a misconfigured agent actually produces: it rejects its own
+    // configuration, writes the reason to stderr, and exits before answering
+    // `initialize`. Reporting only the closed transport would leave the reader
+    // with a symptom and no cause.
+    let mut host = Host::start();
+    let refused = host
+        .call(
+            "connection.open",
+            json!({
+                "connectionId": "broken",
+                "command": "node",
+                "args": [
+                    "-e",
+                    "process.stderr.write('error loading config: config.toml:10:16: unknown variant `default`\\n'); process.exit(1);",
+                ],
+            }),
+        )
+        .await;
+    assert_eq!(refused["error"]["code"], "call-failed", "got {refused}");
+    let message = refused["error"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a failed open should carry a message, got {refused}"));
+    assert!(
+        message.contains("unknown variant `default`"),
+        "the agent's own stderr must reach the caller, got {message:?}"
+    );
+}

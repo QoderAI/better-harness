@@ -1897,6 +1897,10 @@
 .live-compare-events { min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; }
 .live-compare-events > li { min-width: 0; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
 .live-compare-message { white-space: pre-wrap; }
+/* The shared streaming projection renders a <pre>, whose UA default is
+   monospace. An Agent's answer is product copy, not code, so a lane keeps the
+   UI font; the Debugger transcript keeps its own monospace reading. */
+.live-compare-message .streaming-message { font: inherit; }
 .live-compare-tool { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); }
 .live-compare-tool small { color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .live-compare-tool.status-failed small { color: var(--color-danger); }

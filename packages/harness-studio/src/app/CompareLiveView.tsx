@@ -182,6 +182,14 @@ function LiveLane(props: {
   const items = timelineItems(props.run.state);
   const permission = props.run.state.pendingPermission;
   const warnings = props.run.state.warnings.length;
+  // The counts the removed metric table carried, next to the evidence they
+  // describe rather than in a separate grid above both lanes. A warning count of
+  // zero is not a fact worth spending a lane header on.
+  const counts = [
+    t("live.laneTools", { count: props.run.state.toolCallCount }),
+    t("live.laneMessages", { count: items.filter((item) => item.kind === "message").length }),
+    ...(warnings > 0 ? [t("live.laneWarnings", { count: warnings })] : []),
+  ].join(" · ");
   const events = useRef<HTMLOListElement>(null);
   const following = useRef(true);
 
@@ -198,15 +206,7 @@ function LiveLane(props: {
     <header>
       <strong>{props.label}</strong>
       <span className={`run-badge status-${props.run.state.status}`}>{t(`live.status.${props.run.state.status}`)}</span>
-      {/* The counts the removed metric table carried, next to the evidence
-          they describe rather than in a separate grid above both lanes. */}
-      <small className="live-compare-counts">
-        {t("live.laneCounts", {
-          tools: props.run.state.toolCallCount,
-          messages: items.filter((item) => item.kind === "message").length,
-        })}
-        {warnings > 0 && ` · ${t("live.laneWarnings", { count: warnings })}`}
-      </small>
+      <small className="live-compare-counts">{counts}</small>
       {props.run.state.status === "running" && <button type="button" onClick={props.onCancel}>{t("live.cancel")}</button>}
     </header>
     {props.run.failure !== undefined && <p className="live-compare-boundary status-danger" role="alert">{props.run.failure}</p>}

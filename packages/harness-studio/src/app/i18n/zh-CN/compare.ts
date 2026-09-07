@@ -22,7 +22,10 @@ export const compare: typeof enCompare = {
     noAgents: "本机没有可用的本地 ACP Agent，无法开始实时对比。",
     sharedWorkingTree: "两个 Agent 会同时在本项目的工作树上执行，可能互相覆盖。需要隔离工作树和结论时请用试验台。",
     idle: "输入一个需求并选定两个 Agent，即可开始实时对比。",
-    laneCounts: "{{tools}} 个工具调用 · {{messages}} 条消息",
+    laneTools: "{{count}} 个工具调用",
+    laneTools_other: "{{count}} 个工具调用",
+    laneMessages: "{{count}} 条消息",
+    laneMessages_other: "{{count}} 条消息",
     laneWarnings: "{{count}} 条警告",
     laneWarnings_other: "{{count}} 条警告",
     status: {

@@ -109,7 +109,7 @@ test("keeps Date, Files, Artifact selection, and Canvas reachable at all target 
     await page.goto(`${studio.url}/#/artifacts`);
     const workspaceRegion = page.getByRole("region", { name: "Artifacts" });
     if (viewport.width <= 760) await workspaceRegion.getByRole("tab", { name: "Browse" }).click();
-    await expect(page.locator(".studio-context-title")).toContainText("artifact-fixture");
+    await expect(page.locator(".studio-context-title")).toHaveText("Artifacts");
     await expect(workspaceRegion.locator(".artifact-scope-pane > header")).toContainText("Project scopeBrowse");
     await expect(workspaceRegion.getByRole("gridcell", { name: /August 24, 2026, 3 artifacts/ })).toHaveAttribute("aria-selected", "true");
     await expect(page.locator(".artifact-editor-header small")).toContainText("current ");

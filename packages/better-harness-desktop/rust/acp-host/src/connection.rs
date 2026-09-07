@@ -22,6 +22,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Display;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
@@ -34,7 +35,7 @@ use agent_client_protocol::schema::v1::{
     WaitForTerminalExitRequest, WriteTextFileRequest,
 };
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, Client, ConnectionTo, LineDirection};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::fence::Fence;
@@ -115,6 +116,13 @@ const MAX_DIAGNOSTIC_LINES: usize = 40;
 /// Per-connection cap on retained Agent stderr bytes.
 const MAX_DIAGNOSTIC_BYTES: usize = 4 * 1024;
 
+/// Grace period for the crate's stderr reader to deliver its last lines.
+///
+/// stdout EOF is what fails the handshake, and stderr is drained by a separate
+/// task. Without a bounded wait the tail is often still in flight, so the error
+/// would lose exactly the text that explains it.
+const DIAGNOSTIC_DRAIN_GRACE: Duration = Duration::from_millis(300);
+
 /// A bounded tail of the Agent's own stderr, kept for failure reporting.
 ///
 /// The transport tap is the only place the crate exposes an Agent's diagnostics,
@@ -165,6 +173,15 @@ impl AgentDiagnostics {
         } else {
             anyhow!("{message}\n{tail}")
         }
+    }
+
+    /// Wait briefly for a still-draining stderr tail, then explain the failure.
+    async fn explain_when_drained(&self, message: impl Display) -> anyhow::Error {
+        let deadline = tokio::time::Instant::now() + DIAGNOSTIC_DRAIN_GRACE;
+        while self.tail().is_empty() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        self.explain(message)
     }
 }
 
@@ -497,11 +514,12 @@ impl AgentConnection {
             Ok(connection) => connection,
             Err(_) => {
                 return Err(diagnostics
-                    .explain("the ACP transport closed before it produced a connection"));
+                    .explain_when_drained("the ACP transport closed before it produced a connection")
+                    .await);
             }
         };
 
-        connection
+        let initialized = connection
             .send_request(
                 InitializeRequest::new(ProtocolVersion::V1)
                     .client_capabilities(
@@ -514,11 +532,15 @@ impl AgentConnection {
                     .client_info(Implementation::new(CLIENT_NAME, env!("CARGO_PKG_VERSION"))),
             )
             .block_task()
-            .await
+            .await;
+        if let Err(error) = initialized {
             // An Agent that refuses its own configuration dies here, and the
             // transport error alone only says the pipe closed. Its stderr is
             // what names the file, line, and setting to fix.
-            .map_err(|error| diagnostics.explain(format!("ACP initialize failed: {error}")))?;
+            return Err(diagnostics
+                .explain_when_drained(format!("ACP initialize failed: {error}"))
+                .await);
+        }
 
         Ok(Self {
             id,
@@ -966,4 +988,67 @@ async fn await_permission(
         })
         .await;
     outcome
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explains_a_failure_with_the_agent_own_words() {
+        let diagnostics = AgentDiagnostics::default();
+        diagnostics.push("error loading config: config.toml:10:16: unknown variant `default`");
+        let error = diagnostics.explain("ACP initialize failed: Incoming transport closed");
+        let reported = error.to_string();
+        assert!(
+            reported.contains("unknown variant `default`"),
+            "the agent's own reason must reach the caller, got {reported}"
+        );
+        assert!(
+            reported.starts_with("ACP initialize failed:"),
+            "the transport failure must still lead, got {reported}"
+        );
+    }
+
+    #[test]
+    fn reports_the_failure_alone_when_the_agent_said_nothing() {
+        let error = AgentDiagnostics::default().explain("ACP initialize failed");
+        assert_eq!(error.to_string(), "ACP initialize failed");
+    }
+
+    #[test]
+    fn drops_blank_stderr_lines_rather_than_padding_the_tail() {
+        let diagnostics = AgentDiagnostics::default();
+        diagnostics.push("");
+        diagnostics.push("   \n");
+        assert_eq!(diagnostics.tail(), "");
+    }
+
+    #[test]
+    fn keeps_the_newest_lines_within_the_line_bound() {
+        let diagnostics = AgentDiagnostics::default();
+        for index in 0..(MAX_DIAGNOSTIC_LINES * 2) {
+            diagnostics.push(&format!("line {index}"));
+        }
+        let tail = diagnostics.tail();
+        let lines: Vec<&str> = tail.lines().collect();
+        assert_eq!(lines.len(), MAX_DIAGNOSTIC_LINES);
+        // The last thing an agent said before dying is the part worth keeping.
+        assert_eq!(
+            *lines.last().expect("a retained line"),
+            format!("line {}", MAX_DIAGNOSTIC_LINES * 2 - 1)
+        );
+    }
+
+    #[test]
+    fn keeps_the_tail_within_the_byte_bound() {
+        let diagnostics = AgentDiagnostics::default();
+        for _ in 0..8 {
+            diagnostics.push(&"x".repeat(1_024));
+        }
+        assert!(
+            diagnostics.tail().len() <= MAX_DIAGNOSTIC_BYTES,
+            "a chatty agent must not grow the retained tail without limit"
+        );
+    }
 }

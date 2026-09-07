@@ -165,7 +165,7 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
   await page.setViewportSize(layouts[0]);
   await page.goto(`${liveCompareStudio.url}/#/compare`);
   await page.getByRole("button", { name: "Choose Project" }).click();
-  await expect(page.getByRole("heading", { name: "Compare Agents live" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "What should both Agents do?" })).toBeVisible();
 
   const prompt = page.getByRole("textbox", { name: "What should both Agents do?" });
   const left = page.getByRole("combobox", { name: "Left Agent" });
@@ -206,8 +206,8 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
   }
   await expect(lanes.nth(0)).toContainText("fixture:allow-once");
   await expect(lanes.nth(1)).toContainText("fixture:allow-once");
-  await expect(page.getByRole("rowheader", { name: "Tool calls" })).toBeVisible();
-  await expect(page.locator(".live-compare-workspace")).toContainText("No winner inferred");
+  await expect(lanes.nth(0).locator(".live-compare-counts")).toContainText("1 message");
+  await expect(lanes.nth(1).locator(".live-compare-counts")).toContainText("1 message");
 
   for (const layout of layouts) {
     await page.setViewportSize(layout);
@@ -233,6 +233,7 @@ test("keeps the compact run dialog bounded and restores keyboard focus", async (
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   await page.goto(`${studio.url}/#/debugger`);
   const choose = page.getByRole("button", { name: "Choose Project" });
+  await expect(choose.or(page.getByRole("button", { name: "New live run" }))).toBeVisible();
   if (await choose.isVisible()) await choose.click();
   for (const layout of layouts) {
     await page.setViewportSize(layout);
@@ -272,6 +273,7 @@ test("resizes both Debugger boundaries with pointer and keyboard", async ({ page
   await page.setViewportSize(layouts[0]);
   await page.goto(`${studio.url}/#/debugger`);
   const choose = page.getByRole("button", { name: "Choose Project" });
+  await expect(choose.or(page.getByRole("button", { name: "New live run" }))).toBeVisible();
   if (await choose.isVisible()) await choose.click();
   await expect(page.getByTitle("Toggle Execution Tree")).toHaveCount(0);
   await expect(page.getByTitle("Toggle State Inspector")).toHaveCount(0);

@@ -3,7 +3,7 @@
 ## Traceability
 
 - Spec ID: compare-live-minimal-streaming
-- Status: Draft
+- Status: Implemented
 
 ## Intent
 
@@ -39,9 +39,10 @@ handshake failure so the reader can act on it.
 - AC-6: A lane whose event list is already scrolled to the bottom follows new
   events; a lane the reader scrolled up is left where it was.
 - AC-7: When the Rust ACP host cannot complete `initialize`, the reported error
-  includes the Agent's retained stderr tail, bounded and redacted the same way
-  existing evidence is, so a misconfigured Agent names its own cause instead of
-  only `Incoming transport closed`.
+  includes the Agent's bounded stderr tail, so a misconfigured Agent names its own
+  cause instead of only `Incoming transport closed`. This matches what the Node
+  `AcpSdkExecutor` already does with the same stream; the tail decorates the
+  error the caller receives and never becomes a retained protocol frame.
 - AC-8: Focused tests cover the streaming hook module boundary, the reduced
   Compare DOM at wide, compact, and narrow widths with no horizontal overflow and
   no console or page errors, and the host reporting an Agent's stderr from a
@@ -84,10 +85,40 @@ handshake failure so the reader can act on it.
   opens a connection to a command that prints to stderr and exits, and asserts
   the reported error carries that text.
 - AC-8: package typechecks and test suites for `@qoder-ai/harness-studio`,
-  `cargo test` for the host, and Playwright screenshots at 1440x900, 900x800, and
+  `cargo test` for the host, and Playwright screenshots at 1440x900, 1024x768, and
   390x844.
 - Risk: removing the metric table could hide a fact. Mitigated by moving every
   metric it showed into the lane header, where it sits next to the evidence it
   describes.
-- Risk: stderr can carry secrets. Mitigated by reusing the existing bounded
-  retention and redaction path rather than adding a new channel.
+- Risk: stderr can carry secrets. Bounded to the last 40 lines / 4 KiB and kept
+  on the failure path only, matching the boundary the Node executor already set
+  for the same stream. Frame redaction does not apply: stderr is freeform text
+  with no keys to match, so widening it into retained evidence is out of scope.
+
+### Implemented evidence
+
+- Measured first: the transport was already incremental. `qodercli --acp` emits
+  one `agent_message_chunk` per token, and the Studio SSE endpoint forwards each
+  as its own `text-delta`. Compare rendered `item.text` directly, so the Agent's
+  ~100ms write coalescing landed as three or four visible jumps. The Debugger did
+  not have this problem because it already revealed text through
+  `nextStreamingText`. Sharing that hook is the fix; no transport change was
+  needed.
+- AC-1/AC-2/AC-3/AC-4/AC-5/AC-6: live Studio run against two real `qodercli`
+  lanes reported two top-level regions (`live-compare-composer`, then the lanes),
+  zero headings inside the view, 18 distinct reveal steps across one turn where
+  the previous build produced a handful, `0 tool calls · 1 message` per lane
+  header, a lane list still pinned to the bottom, and no console or page errors.
+- AC-8: `@qoder-ai/harness-studio` typecheck plus 544 unit tests pass. The
+  live-compare Playwright test passes against the reduced DOM. Layouts verified
+  at 1440x900, 1024x768, and 390x844 with `documentWidth === innerWidth` at each
+  and two lanes retained at every width.
+- AC-7: `cargo +1.96.0 test` for `harness-acp-host` passes 61 unit and 14
+  integration tests, including the new bounded-tail unit tests and a
+  `connection.open` against an agent that writes to stderr and exits, whose
+  reported `call-failed` message carries that stderr.
+- Pre-existing failures not caused by this change: seven Studio browser tests
+  fail in the current working tree from earlier uncommitted Debugger and shell
+  work. Five assert `ownedStyleSheets === 3` while `index.html` now links a fourth
+  sheet (`live-composer.css`); two assert Debugger chrome text and a
+  `button.primary` that the shell rework moved. None touch the Compare surface.
