@@ -141,11 +141,14 @@ test("links retained user inputs and exact file operations across layouts", asyn
   await page.getByRole("button", { name: "Close proposed Intent relationships" }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("navigation", { name: "Input trace panes" })).toBeVisible();
+  const panes = page.getByRole("navigation", { name: "Input trace panes" });
+  await expect(panes).toBeVisible();
   await page.getByRole("button", { name: "Files", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "Files linked to user inputs" })).toBeVisible();
   await page.getByRole("treeitem", { name: "DESIGN.md", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Inputs", exact: true })).toHaveAttribute("aria-current", "page");
+  // Scoped to the pane switcher: the sidebar also carries an "Inputs" row, and
+  // this asserts which pane the file selection brought forward, not which View.
+  await expect(panes.getByRole("button", { name: "Inputs", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.getByText("Inspect the design contract", { exact: true })).toBeVisible();
   await expect(rows).toHaveCount(1);
   await page.getByRole("button", { name: "Analyze relationships" }).click();

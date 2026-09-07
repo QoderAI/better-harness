@@ -48,11 +48,43 @@ test.afterAll(async () => {
   if (workspace) await rm(workspace, { recursive: true, force: true });
 });
 
+/**
+ * Resolves a colour token in the page, so an assertion can name the token it
+ * depends on instead of restating one theme's literal value.
+ */
+async function resolvedToken(page, token) {
+  return page.evaluate((name) => {
+    const sample = document.createElement("span");
+    sample.style.color = `var(${name})`;
+    document.body.append(sample);
+    const color = getComputedStyle(sample).color;
+    sample.remove();
+    return color;
+  }, token);
+}
+
+/**
+ * A selected commit row paints the selected-surface token, and its graph node
+ * takes the same colour so the node reads as part of the row. Resolving the
+ * token keeps this about that relationship rather than about one palette, so it
+ * holds in either theme.
+ */
+async function expectSelectedRowCarriesItsGraphNode(page, row) {
+  const selected = await resolvedToken(page, "--color-surface-selected");
+  await expect.poll(async () => row.evaluate((element) => ({
+    background: getComputedStyle(element).backgroundColor,
+    ring: getComputedStyle(element.querySelector(".git-commit-node")).stroke,
+  }))).toEqual({ background: selected, ring: selected });
+}
+
 test("browses refs, commits, changed files, and patches across Studio layouts", async ({ page }, testInfo) => {
   const failures = [];
   page.on("console", (message) => { if (message.type() === "error") failures.push(message.text()); });
   page.on("pageerror", (error) => failures.push(error.message));
   await page.setViewportSize({ width: 1440, height: 960 });
+  // Studio follows the host appearance, so the theme flow below needs a known
+  // starting point rather than whatever the runner's OS reports.
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.goto(`${studio.url}/#/commits`);
   await expect(page.getByRole("main", { name: "" }).filter({ has: page.getByText("Commit history", { exact: true }) })).toBeVisible();
   await expect(page.getByText("main", { exact: true }).first()).toBeVisible();
@@ -78,7 +110,7 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   expect(graphPalette.lineOpacity).toBeGreaterThanOrEqual(0.8);
   const featureRow = page.getByRole("row", { name: /feat: add filtered branch commit/ });
   await featureRow.click();
-  await expect.poll(async () => featureRow.evaluate((row) => ({ background: getComputedStyle(row).backgroundColor, ring: getComputedStyle(row.querySelector(".git-commit-node")).stroke }))).toEqual(expect.objectContaining({ background: "rgb(20, 41, 74)", ring: "rgb(20, 41, 74)" }));
+  await expectSelectedRowCarriesItsGraphNode(page, featureRow);
   await expect(page.getByText("Changed files", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /feature\.ts/ }).click();
   await expect(page.locator(".git-file-diff")).toContainText("export const feature");
@@ -90,7 +122,7 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   await page.screenshot({ path: testInfo.outputPath("git-history-wide.png"), fullPage: true });
   await page.getByRole("button", { name: /Dark theme active/ }).click();
   await expect(page.getByRole("button", { name: /Light theme active/ })).toBeVisible();
-  await expect.poll(async () => featureRow.evaluate((row) => ({ background: getComputedStyle(row).backgroundColor, ring: getComputedStyle(row.querySelector(".git-commit-node")).stroke }))).toEqual(expect.objectContaining({ background: "rgb(227, 237, 253)", ring: "rgb(227, 237, 253)" }));
+  await expectSelectedRowCarriesItsGraphNode(page, featureRow);
   await page.screenshot({ path: testInfo.outputPath("git-history-wide-light.png"), fullPage: true });
   await page.getByRole("button", { name: /Light theme active/ }).click();
   await expect(page.getByRole("button", { name: /Dark theme active/ })).toBeVisible();
@@ -141,7 +173,7 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   await expect(page.getByRole("complementary", { name: "Repository refs" })).toBeVisible();
   await page.getByRole("button", { name: "History", exact: true }).click();
   await expect(page.getByRole("button", { name: "History", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("button", { name: "History", exact: true })).toHaveCSS("background-color", "rgb(20, 41, 74)");
+  await expect(page.getByRole("button", { name: "History", exact: true })).toHaveCSS("background-color", await resolvedToken(page, "--color-surface-selected"));
   await expect(page.getByRole("button", { name: "Details", exact: true })).not.toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("button", { name: "Details", exact: true })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(page.getByRole("region", { name: "Commit history" })).toBeVisible();

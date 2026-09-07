@@ -77,6 +77,15 @@ export const common: typeof enCommon = {
     partial: "部分可用",
     foundation: "基础",
   },
+  statusBar: {
+    aria: "Studio 状态",
+    scopeAria: "当前范围",
+    countsAria: "已保留证据计数",
+    inputs: "{{count}} 个输入",
+    sessions: "{{count}} 个会话",
+    artifacts: "{{count}} 个产物",
+    noProject: "无项目",
+  },
   localAgent: "本地 Agent",
   theme: {
     dark: "深色",
@@ -108,6 +117,7 @@ export const common: typeof enCommon = {
   sidebar: {
     aria: "Studio 项目",
     navAria: "Studio 项目与视图导航",
+    projects: "项目",
     projectsAria: "项目",
     empty: "当前没有打开的项目。",
     openProject: "打开项目",

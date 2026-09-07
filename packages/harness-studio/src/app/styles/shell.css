@@ -38,8 +38,7 @@
   width: min(520px, 100%);
   overflow: hidden;
   border: 1px solid var(--color-border-strong);
-  border-top: 2px solid var(--color-primary);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   color: var(--color-text);
   background: var(--color-surface);
   box-shadow: var(--shadow-overlay);
@@ -104,6 +103,8 @@
   line-height: var(--type-meta-line);
 }
 
+/* The window: a source-list sidebar beside one content column. `canvas` shows
+   only where a region has not claimed space, so it reads as window frame. */
 .studio-control-plane {
   width: 100%;
   height: 100vh;
@@ -112,7 +113,7 @@
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   overflow: hidden;
   color: var(--color-text);
-  background: var(--color-workspace);
+  background: var(--color-canvas);
 }
 
 .studio-primary-nav {
@@ -126,10 +127,13 @@
   background: var(--color-sidebar);
 }
 
+/* The brand block is the sidebar's slice of the unified title bar: same height
+   and same material as the toolbar beside it, so the top of the window reads as
+   one continuous band rather than two stacked headers. */
 .studio-product-brand {
   height: var(--titlebar-height);
   flex: none;
-  padding: 0 var(--space-sm);
+  padding: 0 var(--space-md);
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -138,109 +142,123 @@
 }
 
 .studio-product-brand > span {
-  width: var(--toolbar-target);
-  height: var(--toolbar-target);
+  width: 22px;
+  height: 22px;
+  flex: none;
   display: grid;
   place-items: center;
-  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-xs);
-  color: var(--color-primary);
-  background: var(--color-primary-soft);
+  color: var(--color-on-primary);
+  background: var(--color-primary);
 }
 
 .studio-product-brand > div { min-width: 0; display: flex; align-items: baseline; gap: var(--space-xs); }
-.studio-product-brand strong { font-size: var(--type-label-size); line-height: var(--type-label-line); }
-.studio-product-brand small { color: var(--color-text-subtle); }
+.studio-product-brand strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-label-size); line-height: var(--type-label-line); }
+.studio-product-brand small { flex: none; color: var(--color-text-subtle); }
 .studio-project-close { display: none; width: var(--toolbar-target); height: var(--toolbar-target); margin-left: auto; place-items: center; padding: 0; }
 
 .studio-primary-nav > nav {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-xs) 0;
+  padding-bottom: var(--space-sm);
 }
 
+/* A macOS source list group header: small, semibold, quiet, and carried by the
+   sidebar material rather than by its own rule. */
 .studio-project-heading {
   min-height: var(--pane-header-height);
   flex: none;
-  padding: 0 var(--space-sm);
+  padding: var(--space-sm) var(--space-md) var(--space-xs);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
-  border-bottom: 1px solid var(--color-border);
   background: var(--color-sidebar);
 }
 
 .studio-project-heading > div { min-width: 0; display: flex; align-items: center; gap: var(--space-xs); }
-.studio-project-heading strong { font-size: var(--type-pane-size); line-height: var(--type-pane-line); }
+.studio-project-heading strong { color: var(--color-text-muted); font-size: var(--type-pane-size); font-weight: var(--weight-semibold); line-height: var(--type-pane-line); letter-spacing: var(--type-pane-track); }
 .studio-project-heading span { color: var(--color-text-subtle); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; }
-.studio-project-heading > button { width: var(--toolbar-target); height: var(--toolbar-target); display: grid; place-items: center; padding: 0; border: 0; color: var(--color-text-muted); background: transparent; }
-.studio-project-heading > button:hover { color: var(--color-text); background: var(--color-surface-hover); }
+.studio-project-heading > button { width: var(--toolbar-target); height: var(--toolbar-target); display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-xs); color: var(--color-text-muted); background: transparent; }
+.studio-project-heading > button:hover:not(:disabled) { color: var(--color-text); background: var(--color-surface-hover); }
 .studio-project-heading > button:disabled { color: var(--color-text-subtle); }
 .studio-project-spinner { width: var(--space-md); height: var(--space-md); border: 2px solid var(--color-border-strong); border-top-color: var(--color-primary); border-radius: var(--radius-full); animation: workspace-progress-spin 720ms linear infinite; }
 
-.studio-project-list { padding-bottom: var(--space-md); }
-.studio-project-entry { border-bottom: 1px solid var(--color-border); }
-.studio-project-entry.active { background: var(--color-surface-subtle); }
-.studio-project-entry.unavailable .studio-project-row > button:first-child { color: var(--color-text-muted); }
-.studio-project-entry.unavailable .studio-project-row small { color: var(--color-danger); }
-.studio-project-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--toolbar-target); align-items: center; }
-.studio-project-row > button:first-child {
+.studio-project-list { padding: 0; }
+.studio-project-entry { border: 0; }
+.studio-project-entry.unavailable .studio-project-row > button:first-child small { color: var(--color-danger); }
+.studio-project-row { min-width: 0; position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; }
+
+/* Source-list rows are inset and rounded, and the active row is filled with the
+   accent, as in a focused macOS source list. The former 2px leading border plus
+   tinted label is a VS Code treatment and asked `primary` to read as text on an
+   accent-tinted bed, which cannot reach AA in either theme. */
+.studio-project-row > button:first-child,
+.studio-project-views > button {
   min-width: 0;
   min-height: var(--navigation-row-height);
+  margin-inline: var(--sidebar-inset);
   display: grid;
-  grid-template-columns: var(--toolbar-target) minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   border: 0;
-  border-left: 2px solid transparent;
-  border-radius: var(--radius-none);
-  padding: var(--space-xs) 0 var(--space-xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-sm);
   color: var(--color-text);
   background: transparent;
   text-align: left;
+  font-weight: var(--weight-regular);
 }
-.studio-project-row > button:first-child:hover { background: var(--color-surface-hover); }
-.studio-project-row > button:first-child[aria-current="true"] { border-left-color: var(--color-primary); color: var(--color-primary); background: var(--color-surface-selected); }
-.studio-project-row > button:first-child > svg { justify-self: center; }
-.studio-project-row > button:first-child > span { min-width: 0; display: grid; }
+
+.studio-project-row > button:first-child { width: calc(100% - var(--sidebar-inset) * 2); }
+.studio-project-views > button { width: calc(100% - var(--sidebar-inset) * 2); }
+
+.studio-project-row > button:first-child:hover:not(:disabled),
+.studio-project-views > button:hover { background: var(--color-surface-hover); }
+.studio-project-row > button:first-child:active:not(:disabled),
+.studio-project-views > button:active { background: var(--color-surface-active); }
+
+.studio-project-row > button:first-child[aria-current="true"],
+.studio-project-views > button[aria-current="page"] {
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+}
+
+.studio-project-row > button:first-child[aria-current="true"]:hover,
+.studio-project-views > button[aria-current="page"]:hover { background: var(--color-primary-hover); }
+
+.studio-project-row > button:first-child > svg,
+.studio-project-views > button > svg { justify-self: center; color: var(--color-text-muted); }
+.studio-project-row > button:first-child[aria-current="true"] > svg,
+.studio-project-views > button[aria-current="page"] > svg { color: currentColor; }
+
 .studio-project-row strong,
-.studio-project-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.studio-project-row strong { color: inherit; font-size: var(--type-label-size); font-weight: var(--weight-medium); }
-.studio-project-row small { color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.studio-project-remove { width: var(--toolbar-target); height: var(--toolbar-target); display: grid; place-items: center; border: 0; padding: 0; color: var(--color-text-subtle); background: transparent; opacity: 0; }
+.studio-project-views > button strong { min-width: 0; overflow: hidden; color: inherit; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-label-size); font-weight: var(--weight-regular); }
+.studio-project-row > button:first-child[aria-current="true"] strong,
+.studio-project-views > button[aria-current="page"] strong { font-weight: var(--weight-semibold); }
+
+/* The trailing slot: a count for a Project, a named availability for a View. */
+.studio-project-row small,
+.studio-project-views > button small { flex: none; color: var(--color-text-subtle); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.studio-project-row > button:first-child[aria-current="true"] small,
+.studio-project-views > button[aria-current="page"] small { color: currentColor; }
+.studio-project-views > button small.availability-partial { color: var(--color-warning); }
+.studio-project-views > button[aria-current="page"] small.availability-partial { color: currentColor; }
+
+.studio-project-remove { width: var(--toolbar-target); height: var(--toolbar-target); position: absolute; top: 50%; right: var(--sidebar-inset); display: grid; place-items: center; border: 0; border-radius: var(--radius-xs); padding: 0; color: var(--color-text-subtle); background: transparent; opacity: 0; transform: translateY(-50%); }
 .studio-project-row:hover .studio-project-remove,
 .studio-project-remove:focus-visible { opacity: 1; }
 .studio-project-remove:hover { color: var(--color-danger); background: var(--color-danger-surface); }
-.studio-project-empty { margin: 0; padding: var(--space-lg) var(--space-md); display: flex; align-items: center; gap: var(--space-sm); color: var(--color-text-muted); }
+.studio-project-row:hover .studio-project-remove ~ button small,
+.studio-project-row:focus-within .studio-project-remove ~ button small { visibility: hidden; }
+.studio-project-empty { margin: 0; padding: var(--space-md); display: flex; align-items: center; gap: var(--space-sm); color: var(--color-text-muted); }
 
-.studio-project-views { padding: var(--space-xs) 0 var(--space-sm); border-top: 1px solid var(--color-border); }
-.studio-project-views h2 { height: var(--pane-header-height); margin: 0; padding: 0 var(--space-md); display: flex; align-items: center; color: var(--color-text-subtle); font-size: var(--type-pane-size); font-weight: var(--weight-semibold); line-height: var(--type-pane-line); letter-spacing: var(--type-pane-track); }
-.studio-project-views > button {
-  width: 100%;
-  min-height: var(--navigation-row-height);
-  display: grid;
-  grid-template-columns: var(--toolbar-target) minmax(0, 1fr) var(--space-sm);
-  gap: var(--space-xs);
-  align-items: center;
-  border: 0;
-  border-left: 2px solid transparent;
-  border-radius: var(--radius-none);
-  padding: var(--space-xs) var(--space-sm) var(--space-xs) var(--space-xs);
-  color: var(--color-text);
-  background: transparent;
-  text-align: left;
-}
-.studio-project-views > button:hover { background: var(--color-surface-hover); }
-.studio-project-views > button[aria-current="page"] { border-left-color: var(--color-primary); color: var(--color-primary); background: var(--color-surface-selected); }
-.studio-project-views > button > svg { justify-self: center; }
-.studio-project-views > button > span { min-width: 0; display: grid; }
-.studio-project-views > button strong,
-.studio-project-views > button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.studio-project-views > button strong { font-size: var(--type-label-size); font-weight: var(--weight-medium); }
-.studio-project-views > button[aria-current="page"] strong { font-weight: var(--weight-semibold); }
-.studio-project-views > button small { color: var(--color-text-muted); font-size: var(--type-meta-size); }
+/* Views belong to the selected Project, so they indent under it rather than
+   opening a bordered sub-panel. */
+.studio-project-views { padding-top: var(--space-xs); }
+.studio-project-views h2 { min-height: var(--pane-header-height); margin: 0; padding: var(--space-sm) var(--space-md) var(--space-xs); display: flex; align-items: flex-end; color: var(--color-text-muted); font-size: var(--type-pane-size); font-weight: var(--weight-semibold); line-height: var(--type-pane-line); letter-spacing: var(--type-pane-track); }
 
 .availability-dot {
   width: var(--space-sm);
@@ -253,26 +271,31 @@
   background: transparent;
 }
 
-.availability-ready { color: var(--color-success); background: var(--color-success); }
-.availability-partial { color: var(--color-warning); background: var(--color-warning); }
-.availability-foundation { color: var(--color-text-subtle); background: transparent; }
+/* Scoped to the dot: these paint a filled indicator, so an unscoped class would
+   also fill the trailing availability *label* that reuses the same name. */
+.availability-dot.availability-ready { color: var(--color-success); background: var(--color-success); }
+.availability-dot.availability-partial { color: var(--color-warning); background: var(--color-warning); }
+.availability-dot.availability-foundation { color: var(--color-text-subtle); background: transparent; }
 
+/* The content column: unified toolbar, one work area, status bar. Fixed rows so
+   the work area scrolls locally and the shell itself never scrolls. */
 .studio-area {
   min-width: 0;
   height: 100%;
   display: grid;
-  grid-template-rows: var(--titlebar-height) minmax(0, 1fr);
+  grid-template-rows: var(--titlebar-height) minmax(0, 1fr) var(--statusbar-height);
   overflow: hidden;
+  background: var(--color-workspace);
 }
 
 .studio-context-bar {
   position: relative;
   min-width: 0;
   z-index: 20;
-  padding: 0 var(--space-sm);
+  padding: 0 var(--space-sm) 0 var(--space-md);
   display: flex;
   align-items: center;
-  gap: var(--space-md);
+  gap: var(--space-sm);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-titlebar);
 }
@@ -320,7 +343,7 @@
   padding-inline: var(--space-sm);
   color: var(--color-text-muted);
   background: transparent;
-  font-size: var(--type-caption-size);
+  font-size: var(--type-meta-size);
   font-weight: var(--weight-semibold);
   letter-spacing: 0.04em;
 }
@@ -385,9 +408,66 @@
 .studio-source-menu button.selected { background: var(--color-surface-selected); }
 .studio-source-menu strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-meta-size); }
 .studio-source-menu span { color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.studio-context-state { display: flex; align-items: center; gap: var(--space-sm); color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.studio-context-state strong { color: var(--color-text); font-size: var(--type-meta-size); }
+/* The status bar reports scope and counts, and gives the shell a bottom
+   boundary so a short view no longer trails off into bare canvas. */
+.studio-status-bar {
+  min-width: 0;
+  padding: 0 var(--space-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-statusbar);
+  color: var(--color-text-muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+
+.studio-status-scope { min-width: 0; display: flex; align-items: center; gap: var(--space-sm); }
+.studio-status-scope strong { min-width: 0; overflow: hidden; color: var(--color-text); text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-meta-size); font-weight: var(--weight-medium); }
+.studio-status-scope > span[role="status"] { flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio-status-counts { flex: none; display: flex; align-items: center; gap: var(--space-md); font-variant-numeric: tabular-nums; }
+.studio-status-counts span { white-space: nowrap; }
+
 .studio-project-failure { position: absolute; top: calc(var(--titlebar-height) + var(--space-xs)); right: var(--space-sm); z-index: 60; max-width: min(460px, calc(100vw - var(--space-lg))); border: 1px solid var(--color-danger); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); color: var(--color-danger); background: var(--color-danger-surface); box-shadow: var(--shadow-popover); font-size: var(--type-meta-size); }
+
+/* Frameless desktop shell.
+
+   With no native title bar, Studio's own top band is the window's drag handle,
+   and it has to leave room for the OS window controls painted into it. Every
+   control inside the band opts back out of dragging, or it stops being
+   clickable. These rules are inert in a browser tab, which has a real title bar
+   and never sets `data-shell`. */
+[data-shell="desktop"] .studio-product-brand,
+[data-shell="desktop"] .studio-context-bar { -webkit-app-region: drag; app-region: drag; }
+
+[data-shell="desktop"] .studio-product-brand button,
+[data-shell="desktop"] .studio-context-bar button,
+[data-shell="desktop"] .studio-context-bar a,
+[data-shell="desktop"] .studio-context-bar input,
+[data-shell="desktop"] .studio-context-bar select,
+[data-shell="desktop"] .studio-context-bar [role="tablist"],
+[data-shell="desktop"] .studio-source-menu,
+[data-shell="desktop"] .studio-project-failure { -webkit-app-region: no-drag; app-region: no-drag; }
+
+/* macOS traffic lights are inlaid at the leading edge, which is the sidebar's
+   slice of the band. The wordmark gives up that space: a frameless native app
+   carries its identity in the menu bar and Dock, not in a sidebar caption, and
+   keeping it here only truncated it. The mark stays as an anchor. */
+[data-shell="desktop"][data-window-controls="left"] .studio-product-brand { padding-left: 78px; }
+/* Clipped rather than removed, so the product name stays in the accessibility
+   tree and the region keeps an accessible label. */
+[data-shell="desktop"][data-window-controls="left"] .studio-product-brand > div {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* Windows and Linux overlay their controls on the trailing edge instead. */
+[data-shell="desktop"][data-window-controls="right"] .studio-context-bar { padding-right: 146px; }
 
 .studio-surface { min-width: 0; min-height: 0; overflow: auto; background: var(--color-workspace); }
 .studio-surface-inspector,
@@ -424,37 +504,48 @@
 .studio-secondary-tabs { min-width: 276px; }
 
 /* Overview is an operational home: current context first, retained evidence in
-   the primary pane, and a bounded set of next actions in the secondary pane. */
+   the primary pane, and a bounded set of next actions in the secondary pane.
+   The last row is `1fr` so the panes reach the status bar instead of ending in
+   bare canvas. */
 .control-overview {
   width: 100%;
   height: 100%;
-  min-height: 100%;
+  min-height: 0;
   margin: 0;
   padding: 0;
+  overflow: hidden;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  background: var(--color-workspace);
 }
 
-.overview-summary {
+/* A document header, not a hero: the title and its one-line detail sit on the
+   leading edge and the primary action on the trailing edge, on one band the
+   height of a toolbar rather than a landing-page band. */
+.overview-header {
   min-width: 0;
+  padding: var(--space-md) var(--space-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-workspace);
 }
 
-.overview-lead { padding: var(--space-xl); }
-.overview-lead > small { color: var(--color-primary); font-size: var(--type-meta-size); font-weight: var(--weight-semibold); line-height: var(--type-meta-line); }
-.overview-lead h1 { max-width: 42ch; margin: var(--space-xs) 0 0; font-size: var(--type-page-size); line-height: var(--type-page-line); letter-spacing: var(--type-page-track); }
-.overview-lead p { max-width: 76ch; margin: var(--space-sm) 0 0; color: var(--color-text-muted); }
-.overview-lead > button { min-height: var(--control-height); margin-top: var(--space-lg); display: inline-flex; align-items: center; gap: var(--space-sm); }
+.overview-header > div { min-width: 0; display: grid; gap: 2px; }
+.overview-header h1 { max-width: 60ch; margin: 0; font-size: var(--type-section-size); font-weight: var(--weight-semibold); line-height: var(--type-section-line); letter-spacing: var(--type-section-track); }
+.overview-header p { max-width: 84ch; margin: 0; color: var(--color-text-muted); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
+.overview-header > button { flex: none; min-height: var(--control-height); display: inline-flex; align-items: center; gap: var(--space-sm); }
 
-.overview-facts { margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--color-border); }
-.overview-facts > div { min-width: 0; padding: var(--space-md) var(--space-lg); border-right: 1px solid var(--color-border); }
+.overview-facts { margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.overview-facts > div { min-width: 0; padding: var(--space-sm) var(--space-lg); border-right: 1px solid var(--color-border); }
 .overview-facts > div:last-child { border-right: 0; }
 .overview-facts dt { color: var(--color-text-muted); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
-.overview-facts dd { margin: var(--space-xs) 0 0; font-size: var(--type-section-size); font-weight: var(--weight-semibold); line-height: var(--type-section-line); font-variant-numeric: tabular-nums; }
-.overview-facts small { display: block; margin-top: var(--space-xs); overflow: hidden; color: var(--color-text-subtle); text-overflow: ellipsis; white-space: nowrap; }
+.overview-facts dd { margin: 0; font-size: var(--type-subhead-size); font-weight: var(--weight-semibold); line-height: var(--type-subhead-line); font-variant-numeric: tabular-nums; }
+.overview-facts small { display: block; overflow: hidden; color: var(--color-text-subtle); text-overflow: ellipsis; white-space: nowrap; }
 
-.overview-workspace { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 32%); background: var(--color-panel); }
+.overview-workspace { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 30%); background: var(--color-workspace); }
 .overview-pane { min-width: 0; min-height: 0; display: grid; grid-template-rows: var(--pane-header-height) minmax(0, 1fr); background: var(--color-panel); }
 .overview-pane + .overview-pane { border-left: 1px solid var(--color-border); }
 .overview-pane > header { min-height: var(--pane-header-height); padding: 0 var(--space-md); display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
@@ -573,6 +664,9 @@
 
 @media (max-width: 1080px) {
   .studio-control-plane { grid-template-columns: minmax(0, 1fr); }
+  /* The sidebar is off-canvas at this width, so its slice of the band is gone and
+     the leading inset moves to the toolbar that now starts the window. */
+  [data-shell="desktop"][data-window-controls="left"] .studio-context-bar { padding-left: 78px; }
   .studio-primary-nav {
     width: var(--sidebar-width);
     position: fixed;
@@ -605,10 +699,6 @@
   .studio-workspace-gate-panel > footer { padding-inline: var(--space-lg); }
 
   .studio-context-bar { padding-inline: var(--space-xs); gap: var(--space-sm); }
-  /* The view name outranks the surface status here: at this width the status
-     word would otherwise squeeze the title down to a single letter, and the
-     same state is already labelled on the navigation row it came from. */
-  .studio-context-state strong { display: none; }
   .studio-source-switcher > button { width: var(--toolbar-target); height: var(--toolbar-target); min-height: var(--toolbar-target); justify-content: center; padding: 0; }
   .studio-source-switcher > button > span { display: none; }
   .studio-source-switcher > button em { position: absolute; top: 1px; right: 1px; min-width: var(--space-md); min-height: var(--space-md); }
@@ -620,14 +710,21 @@
   .studio-secondary-tabs { min-width: 0; }
   .studio-secondary-tabs button { padding-inline: var(--space-xs); }
 
-  .overview-lead { padding: var(--space-lg); }
-  .overview-lead h1 { font-size: var(--type-section-size); line-height: var(--type-section-line); letter-spacing: var(--type-section-track); }
-  .overview-lead > button { width: 100%; justify-content: center; }
+  /* The status bar has room for one fact at this width. The counts are the ones
+     to drop: the view's own status already names the count that matters here,
+     and keeping both truncated the scope to a single letter. */
+  .studio-status-counts { display: none; }
+
+  .overview-header { align-items: stretch; flex-direction: column; gap: var(--space-md); padding: var(--space-md); }
+  .overview-header > button { width: 100%; justify-content: center; }
   .overview-facts { grid-template-columns: 1fr 1fr; }
   .overview-facts > div:nth-child(2) { border-right: 0; }
   .overview-facts > div:nth-child(-n + 2) { border-bottom: 1px solid var(--color-border); }
-  .overview-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; overflow: auto; }
-  .overview-pane { grid-template-rows: 44px auto; }
+  /* Stacking the panes makes the surface taller than the viewport, so the work
+     area scrolls while the toolbar and status bar stay put. */
+  .control-overview { overflow: auto; grid-template-rows: auto auto auto; }
+  .overview-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; overflow: visible; }
+  .overview-pane { grid-template-rows: var(--pane-header-height) auto; }
   .overview-pane + .overview-pane { border-top: 1px solid var(--color-border); border-left: 0; }
   .overview-session-rows,
   .overview-actions ul,

@@ -75,6 +75,15 @@ export const common = {
     partial: "partial",
     foundation: "foundation",
   },
+  statusBar: {
+    aria: "Studio status",
+    scopeAria: "Current scope",
+    countsAria: "Retained evidence counts",
+    inputs: "{{count}} inputs",
+    sessions: "{{count}} sessions",
+    artifacts: "{{count}} artifacts",
+    noProject: "No Project",
+  },
   localAgent: "Local agent",
   theme: {
     dark: "Dark",
@@ -106,6 +115,7 @@ export const common = {
   sidebar: {
     aria: "Studio Projects",
     navAria: "Studio project and View navigation",
+    projects: "Projects",
     projectsAria: "Projects",
     empty: "No Project is open.",
     openProject: "Open project",

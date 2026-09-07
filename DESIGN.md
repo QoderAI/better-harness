@@ -1,148 +1,170 @@
 ---
-version: beta
+version: macos
 name: Better Harness Studio
 description: Visual design contract for Studio, interactive reports, and other Better Harness product surfaces.
 colors:
-  primary: "#1B5CC8"
-  primary-hover: "#164EAD"
-  primary-soft: "#EAF1FE"
+  primary: "#0A5FD0"
+  primary-hover: "#0850B0"
+  primary-soft: "#E8F1FE"
   on-primary: "#FFFFFF"
-  text: "#1B2430"
-  text-muted: "#5A6676"
-  text-subtle: "#5C687A"
-  canvas: "#F2F4F7"
-  titlebar: "#FFFFFF"
-  sidebar: "#F7F9FB"
+  text: "#1D1D20"
+  text-muted: "#54545C"
+  text-subtle: "#5E5E66"
+  canvas: "#DCDCE1"
+  sidebar: "#EEEEF2"
   workspace: "#FFFFFF"
   panel: "#FFFFFF"
   surface: "#FFFFFF"
-  surface-subtle: "#F6F8FA"
-  surface-hover: "#EFF2F6"
-  surface-active: "#E3E8EF"
-  surface-selected: "#E3EDFD"
-  border: "rgba(15, 23, 42, 0.11)"
-  border-strong: "rgba(15, 23, 42, 0.22)"
-  focus: "#1E6FE0"
-  success: "#0F7048"
-  success-surface: "#E6F6EE"
-  warning: "#85500E"
-  warning-surface: "#FDF0DC"
-  danger: "#B23640"
-  danger-surface: "#FDEAEC"
-  candidate: "#6941B8"
-  candidate-surface: "#F3EFFB"
-  categorical-1: "#1C6699"
-  categorical-2: "#6B4BB0"
-  categorical-3: "#4A5B6E"
-  categorical-4: "#136B5E"
-  categorical-5: "#8A5710"
-  categorical-6: "#4F6E27"
-  categorical-7: "#665D6F"
+  titlebar: "#F0F0F4"
+  statusbar: "#EEEEF2"
+  surface-subtle: "#EFEFF3"
+  surface-hover: "#E8E8ED"
+  surface-active: "#D9D9E0"
+  surface-selected: "#DFDFE6"
+  border: "rgba(15, 23, 42, 0.13)"
+  border-strong: "rgba(15, 23, 42, 0.24)"
+  focus: "#0A5FD0"
+  success: "#0C6B44"
+  success-surface: "#E4F5EC"
+  warning: "#7A4900"
+  warning-surface: "#FCEFDA"
+  danger: "#B32B36"
+  danger-surface: "#FCE9EB"
+  candidate: "#5F35B8"
+  candidate-surface: "#F2EEFB"
+  categorical-1: "#165F92"
+  categorical-2: "#63449F"
+  categorical-3: "#445466"
+  categorical-4: "#106355"
+  categorical-5: "#7F5009"
+  categorical-6: "#486522"
+  categorical-7: "#5F5768"
 
 themes:
-  default: dark
+  # Studio is a desktop application, so it follows the host appearance until the
+  # reader chooses otherwise. Only an explicit choice is stored; a resolved
+  # appearance is never written back, or the app would stop following the system
+  # after one load. `fallback` applies when the host expresses no preference.
+  default: system
+  fallback: dark
   light:
     source: colors
-    selection: "rgba(27, 92, 200, 0.18)"
-    overlay: "rgba(20, 28, 40, 0.40)"
-    scrollbar: "rgba(15, 23, 42, 0.24)"
-    scrollbar-hover: "rgba(15, 23, 42, 0.40)"
-    overlay-shadow: "0 24px 56px -16px rgba(15, 23, 42, 0.24), 0 4px 12px -4px rgba(15, 23, 42, 0.12)"
-    popover-shadow: "0 12px 28px -10px rgba(15, 23, 42, 0.18), 0 2px 6px -2px rgba(15, 23, 42, 0.10)"
+    selection: "rgba(10, 95, 208, 0.20)"
+    overlay: "rgba(20, 28, 40, 0.34)"
+    scrollbar: "rgba(15, 23, 42, 0.26)"
+    scrollbar-hover: "rgba(15, 23, 42, 0.42)"
+    overlay-shadow: "0 32px 64px -16px rgba(15, 23, 42, 0.22), 0 8px 20px -8px rgba(15, 23, 42, 0.12)"
+    popover-shadow: "0 12px 32px -8px rgba(15, 23, 42, 0.16), 0 2px 8px -2px rgba(15, 23, 42, 0.10)"
   dark:
-    primary: "#5A97FF"
-    primary-hover: "#7CADFF"
-    primary-soft: "#12233F"
-    on-primary: "#061225"
-    text: "#E8ECF3"
-    text-muted: "#9BA6B7"
-    text-subtle: "#8C97A9"
-    canvas: "#08090C"
-    titlebar: "#0C0E12"
-    sidebar: "#0A0C10"
-    workspace: "#101319"
-    panel: "#14181F"
-    surface: "#191E26"
-    surface-subtle: "#0E1116"
-    surface-hover: "#1F252F"
-    surface-active: "#272E3A"
-    surface-selected: "#14294A"
-    border: "rgba(233, 240, 255, 0.09)"
-    border-strong: "rgba(233, 240, 255, 0.18)"
-    focus: "#7FB4FF"
-    success: "#46D3A3"
-    success-surface: "#0C2A21"
-    warning: "#F0B667"
-    warning-surface: "#33230F"
-    danger: "#FF7B87"
-    danger-surface: "#3A1620"
-    candidate: "#B99CFF"
-    candidate-surface: "#241C3C"
-    categorical-1: "#6FB3E8"
-    categorical-2: "#A98CF5"
-    categorical-3: "#94A6BD"
-    categorical-4: "#5FD0BC"
-    categorical-5: "#E6A85E"
-    categorical-6: "#9DC46B"
-    categorical-7: "#C0A5B6"
-    selection: "rgba(90, 151, 255, 0.28)"
-    overlay: "rgba(3, 5, 9, 0.70)"
-    scrollbar: "rgba(233, 240, 255, 0.16)"
-    scrollbar-hover: "rgba(233, 240, 255, 0.30)"
-    overlay-shadow: "0 24px 56px -16px rgba(0, 0, 0, 0.72), 0 4px 12px -4px rgba(0, 0, 0, 0.56)"
-    popover-shadow: "0 12px 28px -10px rgba(0, 0, 0, 0.66), 0 2px 6px -2px rgba(0, 0, 0, 0.48)"
+    primary: "#63A8FF"
+    primary-hover: "#82BAFF"
+    primary-soft: "#1B3054"
+    on-primary: "#0A1524"
+    text: "#F2F2F5"
+    text-muted: "#BEBEC9"
+    text-subtle: "#B2B2BD"
+    canvas: "#0F0F12"
+    sidebar: "#1D1D21"
+    workspace: "#28282D"
+    panel: "#2E2E34"
+    surface: "#36363D"
+    titlebar: "#313137"
+    statusbar: "#1D1D21"
+    surface-subtle: "#191A1D"
+    surface-hover: "#3C3C44"
+    surface-active: "#45454D"
+    surface-selected: "#3A3A43"
+    border: "rgba(233, 240, 255, 0.11)"
+    border-strong: "rgba(233, 240, 255, 0.20)"
+    focus: "#77B4FF"
+    success: "#4FDCA4"
+    success-surface: "#10352A"
+    warning: "#F7C46A"
+    warning-surface: "#3B2A14"
+    danger: "#FF929A"
+    danger-surface: "#421C26"
+    candidate: "#C9ADFF"
+    candidate-surface: "#2B2246"
+    categorical-1: "#7CBCEC"
+    categorical-2: "#B298F7"
+    categorical-3: "#A0B1C6"
+    categorical-4: "#6ED7C4"
+    categorical-5: "#ECB36C"
+    categorical-6: "#A8CD78"
+    categorical-7: "#C9B0C0"
+    selection: "rgba(99, 168, 255, 0.30)"
+    overlay: "rgba(6, 6, 9, 0.62)"
+    scrollbar: "rgba(233, 240, 255, 0.20)"
+    scrollbar-hover: "rgba(233, 240, 255, 0.34)"
+    overlay-shadow: "0 32px 64px -16px rgba(0, 0, 0, 0.66), 0 8px 20px -8px rgba(0, 0, 0, 0.48)"
+    popover-shadow: "0 12px 32px -8px rgba(0, 0, 0, 0.56), 0 2px 8px -2px rgba(0, 0, 0, 0.40)"
 
 surface-ramp:
-  order: [canvas, sidebar, titlebar, workspace, panel, surface]
+  order: [canvas, sidebar, workspace, panel, surface]
+  chrome: [titlebar, statusbar, surface-subtle]
   rule: >-
-    Surface roles are an ordered elevation ramp read back to front. A region that
-    sits closer to the reader takes a later step; a region never borrows a step
-    to look different. Structure comes from this ramp plus hairlines, never from
-    a new hue.
+    Two axes, deliberately separate. The content ramp is an ordered elevation
+    ramp read back to front: a region closer to the reader takes a later step and
+    never borrows a step to look different. Chrome materials are not ramp steps —
+    a toolbar is lighter than the content below it — so each is measured against
+    the content it borders rather than forced onto the ramp. Structure comes from
+    these two plus hairlines, never from a new hue.
+  minimum-step: 1.12
+  minimum-step-rule: >-
+    Where two regions meet with a ramp step and no hairline, the step must reach
+    1.12:1 so the boundary is visible. Where a hairline carries the boundary, the
+    two sides may share a value: in light, `panel` and `surface` are both white.
+    A ramp whose whole span is under about 1.3:1 reads as one unfinished slab,
+    which is what the previous palette did at 1.19:1.
+  enforced-by: packages/harness-studio/test/design-tokens.test.ts
 
 typography:
+  # Body sits at 13px, the size a macOS control label uses, so a workbench reads
+  # as an application rather than as a document. `metadata` is the floor for
+  # meaningful text. Headings tighten as they grow, so large type reads as one
+  # shape rather than as spaced letters.
   display:
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: 30px
+    fontSize: 26px
     fontWeight: 600
-    lineHeight: 38px
-    letterSpacing: -0.022em
+    lineHeight: 32px
+    letterSpacing: -0.021em
   page-title:
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: 22px
+    fontSize: 20px
     fontWeight: 600
-    lineHeight: 30px
+    lineHeight: 26px
     letterSpacing: -0.016em
   section-title:
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: 17px
     fontWeight: 600
-    lineHeight: 24px
+    lineHeight: 23px
     letterSpacing: -0.011em
   subhead:
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: 15px
     fontWeight: 600
-    lineHeight: 22px
+    lineHeight: 20px
     letterSpacing: 0em
   body:
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: 14px
+    fontSize: 13px
     fontWeight: 400
-    lineHeight: 20px
+    lineHeight: 18px
     letterSpacing: 0em
   label:
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: 13px
     fontWeight: 500
-    lineHeight: 18px
+    lineHeight: 16px
     letterSpacing: 0em
   pane-title:
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: 12px
     fontWeight: 600
     lineHeight: 16px
-    letterSpacing: 0.01em
+    letterSpacing: 0.006em
   metadata:
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: 12px
@@ -151,9 +173,9 @@ typography:
     letterSpacing: 0em
   code:
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace"
-    fontSize: 13px
+    fontSize: 12px
     fontWeight: 400
-    lineHeight: 20px
+    lineHeight: 18px
     letterSpacing: 0em
 
 weights:
@@ -163,11 +185,13 @@ weights:
   bold: 700
 
 rounded:
+  # macOS shapes controls more generously than a 5px chamfer. Docked panes and
+  # tables stay square; `md` and `lg` are reserved for surfaces that float.
   none: 0px
-  xs: 5px
-  sm: 6px
+  xs: 6px
+  sm: 8px
   md: 10px
-  lg: 12px
+  lg: 14px
   full: 9999px
 
 elevation:
@@ -185,14 +209,21 @@ spacing:
   xxxl: 48px
 
 sizing:
-  control-height: 32px
-  toolbar-target: 30px
-  pane-header: 36px
-  row: 30px
-  navigation-row: 46px
-  titlebar: 44px
-  statusbar: 26px
-  sidebar-width: 248px
+  control-height: 30px
+  toolbar-target: 28px
+  pane-header: 34px
+  row: 28px
+  # A source-list row is one line: icon, name, trailing slot. Nothing that costs
+  # a second line belongs in it.
+  navigation-row: 30px
+  navigation-row-touch: 44px
+  # The window's unified toolbar is tall and carries the OS window controls; a
+  # workbench's own toolbar sits inside the work area and stays compact.
+  titlebar: 52px
+  workbench-bar: 44px
+  statusbar: 28px
+  sidebar-width: 236px
+  sidebar-inset: 8px
   secondary-pane-width: 312px
   touch-target: 44px
 
@@ -298,13 +329,32 @@ components:
     backgroundColor: "{colors.workspace}"
     textColor: "{colors.text}"
     typography: "{typography.body}"
-  navigation-selected:
-    backgroundColor: "{colors.surface-selected}"
-    textColor: "{colors.primary}"
+  # A macOS source list, replacing the tinted-text-plus-leading-border model.
+  # The row is inset from the sidebar edge so its selection reads as a rounded
+  # row rather than a full-bleed band.
+  source-list-row:
+    backgroundColor: "transparent"
+    textColor: "{colors.text}"
     typography: "{typography.label}"
+    rounded: "{rounded.sm}"
+    padding: "0 {spacing.sm}"
+    marginInline: "{sizing.sidebar-inset}"
+    height: "{sizing.navigation-row}"
+  source-list-row-selected:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
     fontWeight: "{weights.semibold}"
+  source-list-row-selected-unfocused:
+    backgroundColor: "{colors.surface-selected}"
+    textColor: "{colors.text}"
+  status-bar:
+    backgroundColor: "{colors.statusbar}"
+    textColor: "{colors.text-muted}"
+    typography: "{typography.metadata}"
+    borderColor: "{colors.border}"
     rounded: "{rounded.none}"
-    padding: "{spacing.xs} {spacing.sm}"
+    padding: "0 {spacing.md}"
+    height: "{sizing.statusbar}"
   helper-text:
     backgroundColor: "{colors.surface-subtle}"
     textColor: "{colors.text-subtle}"
@@ -359,36 +409,63 @@ contract. Product semantics and information architecture remain owned by the
 relevant spec and implementation. This contract governs hierarchy, typography,
 color, density, component appearance, interaction states, and visual review.
 
-The `beta` token set replaces the `alpha` palette, type scale, and shape scale.
-The earlier values were structurally correct but rendered as an unfinished
-wireframe: near-identical dark grays separated only by solid mid-gray rules,
-2px radii on every control, and a single 32px display size above an otherwise
-12–14px page. The roles did not change; their values did. `packages/harness-studio`
-implements the `beta` set. Other surfaces — notably the standalone Harness
-Inspector report under `scripts/harness-inspector/ui/` — still carry `alpha`
-values and are migration targets, not evidence of alignment.
+The `macos` token set replaces the `beta` palette, type scale, shape scale, and
+density. `beta` had already replaced `alpha`, but it kept a flaw `alpha`
+introduced: its surface ramp was not perceptible. Measured, `canvas` to
+`sidebar` was 1.017:1, `sidebar` to `titlebar` 1.013:1, and the whole ramp spanned
+1.190:1 — while every text pair passed AA. The layout separates several regions
+with a ramp step and no rule, so an imperceptible ramp erased the structure and
+the workbench read as one unfinished slab. That is a measurable defect, not a
+matter of taste, and no contrast fix could reach it.
 
-## Reference model: a docked VS Code workbench
+`macos` re-anchors the ramp on graphite rather than near-black, separates chrome
+materials from the content ramp, and raises density to native control sizes. The
+same ramp now spans 1.596:1 and its tightest unruled boundary is 1.139:1. The
+roles did not change; their values and the model behind them did.
+`packages/harness-studio` implements the `macos` set, and
+`packages/harness-studio/test/design-tokens.test.ts` holds it to those measured
+floors so the ramp cannot quietly flatten again. Other surfaces — notably the
+standalone Harness Inspector report under `scripts/harness-inspector/ui/` — still
+carry earlier values and are migration targets, not evidence of alignment.
 
-Use the structure of the classic, docked VS Code workbench as the reference:
-an application title bar, a primary sidebar, one main editor/workspace, an
-optional secondary sidebar or bottom panel, and a status bar. These are
-edge-to-edge regions separated by 1px rules or resize sashes, not cards placed
-on a page canvas.
+## Reference model: a native macOS application window
 
-This is a structural reference, not a request to copy VS Code branding or every
-current experiment. VS Code's source now also contains optional floating-panel
-and shadow treatments. Better Harness deliberately follows the docked,
-no-shadow branch: fixed work regions stay flat; elevation is reserved for
-transient UI that actually floats above them.
+Use the structure of a native macOS document application as the reference: one
+unified toolbar that reaches the top of the window and carries the OS window
+controls, a source-list sidebar, one main content area, an optional inspector or
+secondary pane, and a status bar along the bottom. These are edge-to-edge
+regions separated by 1px hairlines or resize sashes, not cards placed on a page
+canvas.
+
+What this changes in practice:
+
+- The window is frameless, so the application's own toolbar reaches the top and
+  the OS controls are inlaid into it. There is no separate native title bar
+  strip above the app. In the browser the same shell renders without that
+  inlay, because a tab has no window controls to reserve room for.
+- A source list is one line per row, inset from the sidebar edge, and its
+  selected row is filled with the accent color and set in `on-primary` — not
+  marked by a 2px leading border and tinted text.
+- The status bar is a permanent region, not a transient message area. It gives
+  the shell a bottom boundary and reports the current scope and retained counts.
+- Controls take native metrics: 13px labels, 30px controls, 28px rows. Density
+  is part of looking like an application.
+
+This is a structural reference, not a request to imitate Apple's applications or
+to adopt macOS-only affordances. Studio also runs in a browser and on Windows and
+Linux, where the same regions render with that platform's window controls.
+Studio deliberately follows the docked, no-shadow branch of this model: fixed
+work regions stay flat, and elevation is reserved for transient UI that actually
+floats above them.
 
 Primary references:
 
-- [VS Code user interface](https://code.visualstudio.com/docs/editing/userinterface)
-- [VS Code UX Guidelines: containers and items](https://code.visualstudio.com/api/ux-guidelines/overview)
-- [VS Code theme color roles](https://code.visualstudio.com/api/references/theme-color)
-- [VS Code workbench layout source](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/layout.ts)
-- [VS Code accessibility and keyboard navigation](https://code.visualstudio.com/docs/configure/accessibility/accessibility)
+- [Apple HIG: The macOS windows and toolbars guidance](https://developer.apple.com/design/human-interface-guidelines/toolbars)
+- [Apple HIG: Sidebars, including source lists](https://developer.apple.com/design/human-interface-guidelines/sidebars)
+- [Apple HIG: Layout and standard control metrics](https://developer.apple.com/design/human-interface-guidelines/layout)
+- [Apple HIG: Color, including system accent and semantic roles](https://developer.apple.com/design/human-interface-guidelines/color)
+- [Electron frameless windows and window controls](https://www.electronjs.org/docs/latest/tutorial/custom-title-bar)
+- [WCAG 2.2 contrast requirements](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html)
 
 ## Product character
 
@@ -406,10 +483,17 @@ Primary references:
 
 ## Theme and visual direction
 
-- The default appearance is the dark technical-control-room theme. A supported
-  light theme maps the same semantic roles and remains available from a labelled
-  title-bar control. Theme choice is local presentation state, not server or
-  Session evidence.
+- Studio follows the host appearance. With no stored choice it takes the system's
+  light or dark setting, tracks a change to it while running, and falls back to
+  the dark technical-control-room theme when the host states no preference. An
+  explicit choice from the labelled title-bar control outranks the host and is
+  the only value stored; a resolved appearance is never written back, or the
+  application would stop following the system after one load. Theme choice is
+  local presentation state, not server or Session evidence.
+- Both themes map the same semantic roles, and neither is a tinted copy of the
+  other. Light puts content on white with the frame receding behind it; dark
+  rests on graphite, not near-black, because a ramp needs room to move in both
+  directions before a single step can be seen.
 - The visual style is minimal and grid-led: an ordered surface ramp, alpha
   hairlines, a blue interaction role, and semantic evidence colors. It may borrow
   the discipline of Swiss minimalism, but it must not turn Studio into a landing
@@ -526,11 +610,11 @@ occupy more attention than the active task.
   panels, rows, and sections with a background shift, a 1px divider, or a resize
   sash; do not place gutters around them to make them look like floating cards.
 - Docked panes, tables, list regions, and editor groups use `rounded.none`.
-  Controls use `xs` (5px) or `sm` (6px). `md` (10px) and `lg` (12px) are
-  reserved for floating dialogs, menus, quick picks, notifications, or
-  exceptional standalone objects. The control radius is a deliberate shape, not
-  a hairline chamfer: a 1–2px radius reads as an unstyled default and is below
-  this scale.
+  Controls and source-list rows use `xs` (6px) or `sm` (8px). `md` (10px) and
+  `lg` (14px) are reserved for floating dialogs, menus, quick picks,
+  notifications, or exceptional standalone objects. The control radius is a
+  deliberate shape, not a hairline chamfer: a 1–2px radius reads as an unstyled
+  default and is below this scale.
 - Depth is a two-step system and both steps belong to transient surfaces.
   `elevation.popover` lifts a menu, quick pick, or notification; `elevation.overlay`
   lifts a modal dialog above a dimmed workbench. `elevation.docked` is `none`,
@@ -543,10 +627,12 @@ occupy more attention than the active task.
   replaces itself with stable discovery progress until the workspace opens.
 - `full` radius is limited to a numeric count or circular target. Status text,
   evidence roles, filters, and navigation do not become pills by default.
-- Compact desktop text controls are 32px high and toolbar targets are at least
-  30px square. Pane headers are 36px, dense data rows 30px, navigation rows 46px,
-  and the title bar 44px. At narrow or touch-oriented layouts, targets are at
-  least 44px.
+- Compact desktop text controls are 30px high and toolbar targets are at least
+  28px square. Pane headers are 34px, dense data rows 28px, and source-list
+  navigation rows 30px on one line. The window's unified toolbar is 52px because
+  it carries the OS window controls; a workbench's own toolbar is 44px, and the
+  status bar is 28px. At narrow or touch-oriented layouts, targets — including
+  navigation rows — grow to at least 44px.
 - Focus is drawn outside the control, at `outlineOffset: 1px`, so it stays
   visible on a filled primary button and on a row whose own edge is a hairline.
   An inset focus ring that disappears into a filled control does not satisfy
@@ -572,6 +658,16 @@ occupy more attention than the active task.
 - Avoid fixed viewport-height layouts when they strand large empty regions or
   hide the decision below the fold. Prefer local scrolling only for panes whose
   headers and context remain visible.
+- The shell itself is a fixed frame: the toolbar, sidebar, and status bar hold
+  their positions and content scrolls inside its own region. The window does not
+  scroll as a page, and no region ends in bare canvas because its content ran
+  out — a pane either fills its height or the region reports why it is empty.
+- In a desktop shell the window is frameless, so the toolbar is also the window's
+  drag region and every interactive control inside it opts out of dragging. The
+  edge that carries the OS window controls reserves room for them: leading on
+  macOS, trailing on Windows and Linux. When the layout narrows and the toolbar
+  no longer has room to spare, that reserved space moves to the region that still
+  does, rather than pushing the application's own controls off-screen.
 
 ## Components
 
@@ -583,7 +679,17 @@ occupy more attention than the active task.
 - A segmented control is only for a small, mutually exclusive property switch;
   it is not top-level navigation and should not sit inside a pill-shaped shell.
 - Selection uses a filled or soft-blue state plus an `aria-current` or selected
-  semantic. Availability uses a labelled status, not a colored dot alone.
+  semantic. A focused source list fills its active row with `primary` and sets it
+  in `on-primary`; `surface-selected` is the unfocused selection. Do not mark
+  selection with a leading border and tinted text, and do not ask `primary` to
+  read as body text on `surface-selected` — it cannot reach AA there.
+- A source-list row is one line: icon, name, and one trailing slot. Prose that
+  needs a second line belongs in the tooltip, the status bar, or the view itself.
+  Availability uses a labelled status, not a colored dot alone; when a row shows
+  it, the word goes in the trailing slot.
+- The status bar is a permanent region along the bottom of the shell. It reports
+  the current scope, the active view's status, and retained counts. It is not a
+  transient message area, and it does not repeat the toolbar's navigation.
 - Date scope uses a compact calendar grid with weekday alignment, a visible
   month and time zone, and one active date. Follow meeting-calendar conventions:
   keep date cells numeric, mark activity with a subtle dot, and show explicit
@@ -731,6 +837,14 @@ occupy more attention than the active task.
 - Do not add one-off hex colors, font sizes, weights, radii, or shadows when an
   existing token expresses the role. Add or revise a token here only when a new
   semantic role is genuinely required.
+- The palette floors in `surface-ramp` are enforced by
+  `packages/harness-studio/test/design-tokens.test.ts`, which parses the token
+  file and measures the ratios. Revising a ramp value means revising that test
+  with the measurement that justifies it, not deleting the assertion.
+- A test asserting appearance names the token it depends on and resolves it in
+  the page. A literal `rgb(...)` pinned in a test restates one theme's palette,
+  so it fails on any legitimate revision while proving nothing about the
+  relationship the design actually requires.
 - Loading, empty, error, partial, running, paused, completed, and unavailable
   states must be visually and textually distinct without inventing product
   semantics absent from runtime evidence.

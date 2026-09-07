@@ -327,12 +327,20 @@ async function openArtifacts(page) {
 
 test("renders generated TSX in the sandbox and keeps its source reachable", async ({ page }, testInfo) => {
   const failures = watchFailures(page);
+  // Studio follows the host appearance, so the theme handshake exercised below
+  // needs a known starting point rather than the runner's own OS setting.
+  await page.emulateMedia({ colorScheme: "dark" });
   await openArtifacts(page);
   await page.getByRole("button", { name: /component\.canvas\.tsx/ }).click();
   const preview = page.frameLocator('iframe[title="Live artifact preview: component.canvas.tsx"]');
   await expect(preview.locator('[data-preview="current"]')).toHaveText("first render");
   await expect(preview.locator("body")).toHaveAttribute("data-module-evaluated", "yes");
-  await expect(preview.locator("html")).toHaveAttribute("data-artifact-theme", "dark");
+  // The sandbox mirrors whatever theme the host resolved to. Studio now follows
+  // the host appearance when the reader has expressed no preference, so this
+  // compares the two rather than pinning a value the OS decides.
+  const hostTheme = await page.locator("html").getAttribute("data-theme");
+  expect(hostTheme).toMatch(/^(dark|light)$/);
+  await expect(preview.locator("html")).toHaveAttribute("data-artifact-theme", hostTheme);
   const previewContrast = await preview.locator('[data-preview="current"]').evaluate((element) => {
     const channels = (value) => value.match(/[\d.]+/g).slice(0, 3).map(Number);
     const luminance = (value) => channels(value).map((channel) => {
@@ -1085,6 +1093,9 @@ test("gives artifact rows a visible keyboard focus ring", async ({ page }) => {
 
 test("persists the explicit Studio theme and keeps core contrast accessible", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
+  // A dark host gives the explicit-choice flow below a known starting point:
+  // with nothing stored, Studio follows the host appearance.
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.goto(studio.url);
   const contrast = async () => page.evaluate(() => {
     const parse = (value) => value.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [0, 0, 0];
@@ -1118,7 +1129,21 @@ test("persists the explicit Studio theme and keeps core contrast accessible", as
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByRole("button", { name: /Light theme active/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  // A stored choice outranks the host: flipping the host appearance underneath
+  // an explicit selection must not silently discard it.
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+});
+
+test("follows the host appearance until the reader chooses a theme", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto(studio.url);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
 test("opens a project workspace and compares Inspector-discovered Sessions", async ({ page }) => {

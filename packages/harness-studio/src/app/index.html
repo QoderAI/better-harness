@@ -5,10 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Harness Studio</title>
     <script>
+      // A desktop application follows the host appearance until the reader says
+      // otherwise, so an explicit stored choice wins and everything else defers
+      // to the system. Runs before first paint to avoid a theme flash.
       try {
-        document.documentElement.dataset.theme = localStorage.getItem("harness-studio-theme") === "light" ? "light" : "dark";
+        var stored = localStorage.getItem("harness-studio-theme");
+        var system = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.dataset.theme = stored === "light" || stored === "dark" ? stored : system;
       } catch {
         document.documentElement.dataset.theme = "dark";
+      }
+      // In the frameless desktop shell the app owns the top of the window, so the
+      // toolbar becomes the drag handle and reserves room for the OS window
+      // controls. The shell reports which edge those controls take, because macOS
+      // keeps them on the left while Windows and Linux overlay them on the right.
+      try {
+        var shell = new URLSearchParams(window.location.search);
+        if (shell.get("shell") === "desktop") {
+          document.documentElement.dataset.shell = "desktop";
+          document.documentElement.dataset.windowControls = shell.get("controls") === "right" ? "right" : "left";
+        }
+      } catch {
+        // A browser tab has a real title bar; leaving the attributes unset is correct.
       }
     </script>
     <link rel="stylesheet" href="./assets/tokens.css" />

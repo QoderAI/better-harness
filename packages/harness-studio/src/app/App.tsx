@@ -43,6 +43,7 @@ import {
   studioOverview,
   studioDestinations,
   type StudioArea,
+  type StudioAvailability,
   type StudioCompareSurface,
   type StudioConfig,
 } from "./studio-shell-model.js";
@@ -143,12 +144,41 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try {
-      globalThis.localStorage.setItem("harness-studio-theme", theme);
-    } catch {
-      // Theme preference remains usable for this page when storage is blocked.
-    }
   }, [theme]);
+
+  /**
+   * Only a choice made here is stored. Writing on every render would persist the
+   * appearance the host happened to have at first paint, and Studio would stop
+   * following the system after a single load.
+   */
+  function chooseTheme(next: StudioTheme): void {
+    setTheme(next);
+    try {
+      globalThis.localStorage.setItem("harness-studio-theme", next);
+    } catch {
+      // The choice remains usable for this page when storage is blocked.
+    }
+  }
+
+  // A desktop application tracks the host appearance while it runs, not only at
+  // launch, so an unattended window follows the system's own light/dark switch.
+  // A stored choice opts out.
+  useEffect(() => {
+    const media = globalThis.matchMedia?.("(prefers-color-scheme: light)");
+    if (media === undefined) return;
+    const follow = (event: MediaQueryListEvent): void => {
+      let stored: string | null = null;
+      try {
+        stored = globalThis.localStorage.getItem("harness-studio-theme");
+      } catch {
+        stored = null;
+      }
+      if (stored === "light" || stored === "dark") return;
+      setTheme(event.matches ? "light" : "dark");
+    };
+    media.addEventListener("change", follow);
+    return () => media.removeEventListener("change", follow);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -412,10 +442,9 @@ export function App(): React.JSX.Element {
         <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={navigationOpen ? t("workspace:gate.closeTitle") : t("workspace:gate.openTitle")} aria-label={navigationOpen ? t("workspace:gate.closeAria") : t("workspace:gate.openAria")} aria-expanded={navigationOpen} onClick={() => setNavigationOpen((value) => !value)}><SidebarSimple aria-hidden="true" size={17} /></button>
         <div className="studio-context-title"><small>{activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("contextBar.noProject"))}</small><h1>{t(`area.${area}`)}</h1></div>
         {contextNavigation && <div className="studio-context-navigation">{contextNavigation}</div>}
-        <ThemeToggle theme={theme} onChange={setTheme} />
+        <ThemeToggle theme={theme} onChange={chooseTheme} />
         <LanguageToggle />
         {sources.length > 0 && <SourceSwitcher sources={sources} onSelect={(source) => void selectSource(source)} />}
-        <div className="studio-context-state" role="status" aria-label={t("contextBar.viewStatus", { status: current.status })}><span className={`availability-dot availability-${current.availability}`} /><strong>{current.status}</strong></div>
         {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
       <div className={`studio-surface studio-surface-${area}`}>
@@ -430,6 +459,12 @@ export function App(): React.JSX.Element {
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} />}
       </div>
+      <StatusBar
+        scope={activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
+        status={current.status}
+        availability={current.availability}
+        config={config}
+      />
     </section>
   </div>
   {workspaceGateOpen && <WorkspaceGate onWorkspaceChanged={async () => {
@@ -450,6 +485,42 @@ function WorkspaceGate(props: { onWorkspaceChanged: () => Promise<void> }): Reac
       <footer><strong>{t("gate.footerTitle")}</strong><span>{t("gate.footerDetail")}</span></footer>
     </div>
   </section>;
+}
+
+/**
+ * The macOS status bar: current scope on the leading edge, retained counts on
+ * the trailing edge. It also gives the shell a bottom boundary, so a view whose
+ * content runs out no longer trails off into bare canvas.
+ *
+ * Availability is announced as a word beside its dot rather than by color
+ * alone, and the region keeps the `role="status"` and the view-status label that
+ * the title bar used to own.
+ */
+function StatusBar(props: {
+  scope: string;
+  status: string;
+  availability: StudioAvailability;
+  config: StudioConfig;
+}): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const counts = [
+    props.config.inputCount > 0 ? t("statusBar.inputs", { count: props.config.inputCount }) : undefined,
+    props.config.sessionCount > 0 ? t("statusBar.sessions", { count: props.config.sessionCount }) : undefined,
+    props.config.artifactCount !== undefined && props.config.artifactCount > 0
+      ? t("statusBar.artifacts", { count: props.config.artifactCount })
+      : undefined,
+  ].filter((entry): entry is string => entry !== undefined);
+
+  return <footer className="studio-status-bar" aria-label={t("statusBar.aria")}>
+    <div className="studio-status-scope" aria-label={t("statusBar.scopeAria")}>
+      <span className={`availability-dot availability-${props.availability}`} aria-hidden="true" />
+      <strong>{props.scope}</strong>
+      <span role="status" aria-label={t("contextBar.viewStatus", { status: props.status })}>{props.status}</span>
+    </div>
+    {counts.length > 0 && <div className="studio-status-counts" aria-label={t("statusBar.countsAria")}>
+      {counts.map((entry) => <span key={entry}>{entry}</span>)}
+    </div>}
+  </footer>;
 }
 
 function ThemeToggle(props: { theme: StudioTheme; onChange: (theme: StudioTheme) => void }): React.JSX.Element {
@@ -526,7 +597,10 @@ function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => v
         if (!response.ok) throw new Error(await studioApiError(response));
         const payload = await response.json() as { sessions: SessionSummary[] };
         if (cancelled) return;
-        setRecentSessions(payload.sessions.slice(0, 5));
+        // The pane scrolls locally and is as tall as the work area, so a handful
+        // of rows left most of it empty. This fills the pane and lets the reader
+        // scroll, rather than sending them to Sessions to see a sixth row.
+        setRecentSessions(payload.sessions.slice(0, 12));
         setRecentFailure(undefined);
       } catch (error) {
         if (cancelled) return;
@@ -538,25 +612,19 @@ function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => v
   }, [props.config.workspaceConnected, props.config.sessionCount]);
 
   const heading = model.title;
-  const context = model.mode === "workspace"
-    ? t("context.workspace")
-    : model.mode === "configured"
-      ? t("context.configured")
-      : model.mode === "workspace-required"
-        ? t("context.workspaceRequired")
-        : t("context.studio");
 
+  // The former eyebrow repeated the view name already shown in the title bar,
+  // and stacking it above the title and detail is the header the contract warns
+  // against. The title and one line of detail carry the decision instead.
   return <main className={`control-overview overview-mode-${model.mode}`}>
-    <section className="overview-summary">
-      <div className="overview-lead">
-        <small>{context}</small>
+    <header className="overview-header">
+      <div>
         <h1>{heading}</h1>
         <p>{model.detail}</p>
-        {model.primaryAction !== undefined && model.mode !== "workspace-required" && <button className="primary" type="button" onClick={() => props.onOpen(model.primaryAction!.area)}>{model.primaryAction.label}<ArrowRight aria-hidden="true" size={15} weight="bold" /></button>}
       </div>
-      {model.mode === "workspace" && <dl className="overview-facts" aria-label={t("panes.workspaceSummaryAria")}>{model.facts.map((fact) => <div key={fact.id}><dt>{fact.label}</dt><dd>{fact.value}</dd><small>{fact.detail}</small></div>)}</dl>}
-    </section>
-
+      {model.primaryAction !== undefined && model.mode !== "workspace-required" && <button className="primary" type="button" onClick={() => props.onOpen(model.primaryAction!.area)}>{model.primaryAction.label}<ArrowRight aria-hidden="true" size={14} weight="bold" /></button>}
+    </header>
+    {model.mode === "workspace" && <dl className="overview-facts" aria-label={t("panes.workspaceSummaryAria")}>{model.facts.map((fact) => <div key={fact.id}><dt>{fact.label}</dt><dd>{fact.value}</dd><small>{fact.detail}</small></div>)}</dl>}
     <div className="overview-workspace">
       {model.mode === "workspace" ? <section className="overview-pane overview-recent">
         <header><h2>{t("panes.recentSessions")}</h2><span>{props.config.sessionCount}</span></header>

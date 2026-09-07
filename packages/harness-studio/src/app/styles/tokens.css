@@ -1,36 +1,55 @@
 /* Studio design tokens. DESIGN.md owns the rationale; this file is its only
-   runtime source. Surface roles are an ordered elevation ramp: canvas sits
-   furthest back, surface sits closest to the reader. Structure comes from that
-   ramp plus alpha hairlines, so a divider reads correctly on every step
-   instead of being tuned against one background. */
+   runtime source, and test/design-tokens.test.ts holds it to the measured
+   contract.
+
+   Two axes, deliberately separate:
+
+   - The content ramp — canvas, sidebar, workspace, panel, surface — is an
+     ordered elevation ramp read back to front. Its steps must be perceptible,
+     because the layout separates several regions with a ramp step and no rule.
+     The previous palette spanned 1.19:1 across the whole ramp, which is why
+     every pane read as one unfinished slab.
+   - Chrome materials — titlebar, statusbar, surface-subtle — are not ramp
+     steps. A macOS toolbar is lighter than the content it sits above, so
+     forcing it onto a monotonic ramp misdescribes it. Each is measured against
+     the content it borders instead. */
 :root {
   color-scheme: dark;
 
-  /* Interaction. Blue is the only interaction hue: primary actions, selection,
-     links, and focus. */
-  --color-primary: #5a97ff;
-  --color-primary-hover: #7cadff;
-  --color-primary-soft: #12233f;
-  --color-on-primary: #061225;
-  --color-focus: #7fb4ff;
+  /* Interaction. Blue is the only interaction hue: primary actions, selection
+     fills, links, and focus. It must also read as text on every neutral bed,
+     so it is a step brighter than the macOS system blue. */
+  --color-primary: #63a8ff;
+  --color-primary-hover: #82baff;
+  --color-primary-soft: #1b3054;
+  --color-on-primary: #0a1524;
+  --color-focus: #77b4ff;
 
-  /* Text. Muted is supporting content and subtle is chrome; both are measured
-     against the busiest surface they land on, not against the canvas. */
-  --color-text: #e8ecf3;
-  --color-text-muted: #9ba6b7;
-  --color-text-subtle: #8c97a9;
+  /* Text. Muted is supporting content and subtle is chrome. Both are measured
+     against the busiest surface they land on — a hovered or pressed row — not
+     against the canvas. */
+  --color-text: #f2f2f5;
+  --color-text-muted: #bebec9;
+  --color-text-subtle: #b2b2bd;
 
-  /* Surface ramp, back to front. */
-  --color-canvas: #08090c;
-  --color-sidebar: #0a0c10;
-  --color-titlebar: #0c0e12;
-  --color-workspace: #101319;
-  --color-panel: #14181f;
-  --color-surface: #191e26;
-  --color-surface-subtle: #0e1116;
-  --color-surface-hover: #1f252f;
-  --color-surface-active: #272e3a;
-  --color-surface-selected: #14294a;
+  /* Content ramp, back to front. Graphite rather than near-black: a ramp needs
+     room to move in both directions before a single step can be seen. */
+  --color-canvas: #0f0f12;
+  --color-sidebar: #1d1d21;
+  --color-workspace: #28282d;
+  --color-panel: #2e2e34;
+  --color-surface: #36363d;
+
+  /* Chrome materials. */
+  --color-titlebar: #313137;
+  --color-statusbar: #1d1d21;
+  --color-surface-subtle: #191a1d;
+
+  /* Row states. `selected` is the unfocused list selection; a focused source
+     list fills its active row with `primary` and uses `on-primary` text. */
+  --color-surface-hover: #3c3c44;
+  --color-surface-active: #45454d;
+  --color-surface-selected: #3a3a43;
 
   /* Source-document colors are evidence, not Studio theme surfaces. They stay
      fixed so a white Office slide does not invert with the workbench theme. */
@@ -38,29 +57,29 @@
   --color-document-ink: #000000;
 
   /* Hairlines are alpha so one divider token works on every ramp step. */
-  --color-border: rgba(233, 240, 255, 0.09);
-  --color-border-strong: rgba(233, 240, 255, 0.18);
+  --color-border: rgba(233, 240, 255, 0.11);
+  --color-border-strong: rgba(233, 240, 255, 0.2);
 
   /* Evidence state. Always paired with text or an icon. */
-  --color-success: #46d3a3;
-  --color-success-surface: #0c2a21;
-  --color-warning: #f0b667;
-  --color-warning-surface: #33230f;
-  --color-danger: #ff7b87;
-  --color-danger-surface: #3a1620;
+  --color-success: #4fdca4;
+  --color-success-surface: #10352a;
+  --color-warning: #f7c46a;
+  --color-warning-surface: #3b2a14;
+  --color-danger: #ff929a;
+  --color-danger-surface: #421c26;
 
   /* The Candidate comparison lane, not a second action color. */
-  --color-candidate: #b99cff;
-  --color-candidate-surface: #241c3c;
+  --color-candidate: #c9adff;
+  --color-candidate-surface: #2b2246;
 
   /* Fixed ordered scale for dimensions that carry no judgement. */
-  --color-categorical-1: #6fb3e8;
-  --color-categorical-2: #a98cf5;
-  --color-categorical-3: #94a6bd;
-  --color-categorical-4: #5fd0bc;
-  --color-categorical-5: #e6a85e;
-  --color-categorical-6: #9dc46b;
-  --color-categorical-7: #c0a5b6;
+  --color-categorical-1: #7cbcec;
+  --color-categorical-2: #b298f7;
+  --color-categorical-3: #a0b1c6;
+  --color-categorical-4: #6ed7c4;
+  --color-categorical-5: #ecb36c;
+  --color-categorical-6: #a8cd78;
+  --color-categorical-7: #c9b0c0;
 
   /* Event kind is categorical identity, not runtime judgement. The visible
      label and timeline legend remain the authoritative meaning. */
@@ -72,112 +91,122 @@
   --event-response: var(--color-categorical-6);
   --event-tool: var(--color-categorical-7);
 
-  --color-overlay: rgba(3, 5, 9, 0.7);
-  --color-selection: rgba(90, 151, 255, 0.28);
-  --color-scrollbar: rgba(233, 240, 255, 0.16);
-  --color-scrollbar-hover: rgba(233, 240, 255, 0.3);
+  --color-overlay: rgba(6, 6, 9, 0.62);
+  --color-selection: rgba(99, 168, 255, 0.3);
+  --color-scrollbar: rgba(233, 240, 255, 0.2);
+  --color-scrollbar-hover: rgba(233, 240, 255, 0.34);
 
   /* Depth belongs to transient surfaces only. Docked regions stay flat and
-     separate with the ramp and hairlines. */
-  --shadow-overlay: 0 24px 56px -16px rgba(0, 0, 0, 0.72), 0 4px 12px -4px rgba(0, 0, 0, 0.56);
-  --shadow-popover: 0 12px 28px -10px rgba(0, 0, 0, 0.66), 0 2px 6px -2px rgba(0, 0, 0, 0.48);
+     separate with the ramp and hairlines. macOS shadows are wide and soft
+     rather than tight and dark. */
+  --shadow-overlay: 0 32px 64px -16px rgba(0, 0, 0, 0.66), 0 8px 20px -8px rgba(0, 0, 0, 0.48);
+  --shadow-popover: 0 12px 32px -8px rgba(0, 0, 0, 0.56), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --color-primary: #1b5cc8;
-  --color-primary-hover: #164ead;
-  --color-primary-soft: #eaf1fe;
+  --color-primary: #0a5fd0;
+  --color-primary-hover: #0850b0;
+  --color-primary-soft: #e8f1fe;
   --color-on-primary: #ffffff;
-  --color-focus: #1e6fe0;
+  --color-focus: #0a5fd0;
 
-  --color-text: #1b2430;
-  --color-text-muted: #5a6676;
-  --color-text-subtle: #5c687a;
+  --color-text: #1d1d20;
+  --color-text-muted: #54545c;
+  --color-text-subtle: #5e5e66;
 
-  --color-canvas: #f2f4f7;
-  --color-sidebar: #f7f9fb;
-  --color-titlebar: #ffffff;
+  /* Content is white and the frame recedes behind it, as in a macOS document
+     window. `panel` and `surface` are legitimately the same white here;
+     hairlines carry those boundaries, not a ramp step. */
+  --color-canvas: #dcdce1;
+  --color-sidebar: #eeeef2;
   --color-workspace: #ffffff;
   --color-panel: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-subtle: #f6f8fa;
-  --color-surface-hover: #eff2f6;
-  --color-surface-active: #e3e8ef;
-  --color-surface-selected: #e3edfd;
 
-  --color-border: rgba(15, 23, 42, 0.11);
-  --color-border-strong: rgba(15, 23, 42, 0.22);
+  --color-titlebar: #f0f0f4;
+  --color-statusbar: #eeeef2;
+  --color-surface-subtle: #efeff3;
 
-  --color-success: #0f7048;
-  --color-success-surface: #e6f6ee;
-  --color-warning: #85500e;
-  --color-warning-surface: #fdf0dc;
-  --color-danger: #b23640;
-  --color-danger-surface: #fdeaec;
+  --color-surface-hover: #e8e8ed;
+  --color-surface-active: #d9d9e0;
+  --color-surface-selected: #dfdfe6;
 
-  --color-candidate: #6941b8;
-  --color-candidate-surface: #f3effb;
+  --color-border: rgba(15, 23, 42, 0.13);
+  --color-border-strong: rgba(15, 23, 42, 0.24);
 
-  --color-categorical-1: #1c6699;
-  --color-categorical-2: #6b4bb0;
-  --color-categorical-3: #4a5b6e;
-  --color-categorical-4: #136b5e;
-  --color-categorical-5: #8a5710;
-  --color-categorical-6: #4f6e27;
-  --color-categorical-7: #665d6f;
+  --color-success: #0c6b44;
+  --color-success-surface: #e4f5ec;
+  --color-warning: #7a4900;
+  --color-warning-surface: #fcefda;
+  --color-danger: #b32b36;
+  --color-danger-surface: #fce9eb;
 
-  --color-overlay: rgba(20, 28, 40, 0.4);
-  --color-selection: rgba(27, 92, 200, 0.18);
-  --color-scrollbar: rgba(15, 23, 42, 0.24);
-  --color-scrollbar-hover: rgba(15, 23, 42, 0.4);
+  --color-candidate: #5f35b8;
+  --color-candidate-surface: #f2eefb;
 
-  --shadow-overlay: 0 24px 56px -16px rgba(15, 23, 42, 0.24), 0 4px 12px -4px rgba(15, 23, 42, 0.12);
-  --shadow-popover: 0 12px 28px -10px rgba(15, 23, 42, 0.18), 0 2px 6px -2px rgba(15, 23, 42, 0.1);
+  --color-categorical-1: #165f92;
+  --color-categorical-2: #63449f;
+  --color-categorical-3: #445466;
+  --color-categorical-4: #106355;
+  --color-categorical-5: #7f5009;
+  --color-categorical-6: #486522;
+  --color-categorical-7: #5f5768;
+
+  --color-overlay: rgba(20, 28, 40, 0.34);
+  --color-selection: rgba(10, 95, 208, 0.2);
+  --color-scrollbar: rgba(15, 23, 42, 0.26);
+  --color-scrollbar-hover: rgba(15, 23, 42, 0.42);
+
+  --shadow-overlay: 0 32px 64px -16px rgba(15, 23, 42, 0.22), 0 8px 20px -8px rgba(15, 23, 42, 0.12);
+  --shadow-popover: 0 12px 32px -8px rgba(15, 23, 42, 0.16), 0 2px 8px -2px rgba(15, 23, 42, 0.1);
 }
 
 :root {
   --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
-  /* Headings tighten as they grow so large type reads as one shape rather than
-     spaced letters. `meta` is the floor for meaningful text. */
-  --type-display-size: 30px;
-  --type-display-line: 38px;
-  --type-display-track: -0.022em;
-  --type-page-size: 22px;
-  --type-page-line: 30px;
+  /* Body sits at 13px, the size a macOS control label uses, so the workbench
+     reads as an application rather than a document. `meta` is the floor for
+     meaningful text. Headings tighten as they grow so large type reads as one
+     shape rather than spaced letters. */
+  --type-display-size: 26px;
+  --type-display-line: 32px;
+  --type-display-track: -0.021em;
+  --type-page-size: 20px;
+  --type-page-line: 26px;
   --type-page-track: -0.016em;
   --type-section-size: 17px;
-  --type-section-line: 24px;
+  --type-section-line: 23px;
   --type-section-track: -0.011em;
   --type-subhead-size: 15px;
-  --type-subhead-line: 22px;
-  --type-body-size: 14px;
-  --type-body-line: 20px;
+  --type-subhead-line: 20px;
+  --type-body-size: 13px;
+  --type-body-line: 18px;
   --type-label-size: 13px;
-  --type-label-line: 18px;
+  --type-label-line: 16px;
   --type-pane-size: 12px;
   --type-pane-line: 16px;
-  --type-pane-track: 0.01em;
+  --type-pane-track: 0.006em;
   --type-meta-size: 12px;
   --type-meta-line: 16px;
-  --type-code-size: 13px;
-  --type-code-line: 20px;
+  --type-code-size: 12px;
+  --type-code-line: 18px;
 
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
 
-  /* Docked regions use `none`. `xs`/`sm` are controls and menus; `md`/`lg` are
-     reserved for surfaces that actually float. */
+  /* Docked panes and tables use `none`. Controls, source-list rows, and tabs
+     use `xs`/`sm`; `md`/`lg` are reserved for surfaces that actually float.
+     macOS shapes controls more generously than a 5px chamfer. */
   --radius-none: 0;
-  --radius-xs: 5px;
-  --radius-sm: 6px;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
   --radius-md: 10px;
-  --radius-lg: 12px;
+  --radius-lg: 14px;
   --radius-full: 9999px;
 
   --space-xs: 4px;
@@ -188,19 +217,28 @@
   --space-xxl: 32px;
   --space-xxxl: 48px;
 
-  --control-height: 32px;
-  --toolbar-target: 30px;
-  --pane-header-height: 36px;
-  --row-height: 30px;
-  --titlebar-height: 44px;
-  --statusbar-height: 26px;
-  --sidebar-width: 248px;
+  /* A macOS unified title bar is tall and owns window-wide controls; the status
+     bar is short and reports scope. Source-list rows are single-line. */
+  --control-height: 30px;
+  --toolbar-target: 28px;
+  --pane-header-height: 34px;
+  --row-height: 28px;
+  --titlebar-height: 52px;
+  /* A workbench's own toolbar is not the window's title bar: it sits inside the
+     work area and stays compact, so it does not inherit the taller unified
+     toolbar that carries the OS window controls. */
+  --workbench-bar-height: 44px;
+  --statusbar-height: 28px;
+  --sidebar-width: 236px;
   --secondary-pane-width: 312px;
-  --navigation-row-height: 46px;
-  --session-row-height: 64px;
+  --navigation-row-height: 30px;
+  --session-row-height: 56px;
   --touch-target: 44px;
   --check-size: 16px;
   --sash-size: 1px;
+  /* Source-list rows are inset from the sidebar edge so the selection reads as
+     a rounded row rather than a full-bleed band. */
+  --sidebar-inset: var(--space-sm);
   --motion-press: 90ms;
   --motion-fast: 130ms;
   --motion-enter: 180ms;
@@ -260,7 +298,7 @@ summary,
 }
 
 button {
-  min-height: var(--toolbar-target);
+  min-height: var(--control-height);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-xs);
   padding: var(--space-xs) var(--space-md);
@@ -378,7 +416,7 @@ th,
 td {
   height: var(--row-height);
   border-bottom: 1px solid var(--color-border);
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-xs) var(--space-md);
   text-align: left;
 }
 
@@ -401,7 +439,7 @@ td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
 tbody tr:hover { background: var(--color-surface-hover); }
 
 @media (max-width: 760px) {
-  :root { --control-height: 44px; --toolbar-target: 44px; --row-height: 44px; --titlebar-height: 48px; }
+  :root { --control-height: 44px; --toolbar-target: 44px; --row-height: 44px; --navigation-row-height: 44px; --titlebar-height: 48px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

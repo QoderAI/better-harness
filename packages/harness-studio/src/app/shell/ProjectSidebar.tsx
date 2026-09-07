@@ -79,6 +79,32 @@ export function ProjectSidebar(props: {
     navigationRefs.current.get(nextId)?.focus();
   }
 
+  /**
+   * A macOS source-list row: one line of icon, name, and a trailing slot. The
+   * trailing slot names an availability that is not `ready`, so the state is
+   * carried by a word rather than by a colored dot. The former prose subtitle
+   * moves to the tooltip, where it no longer doubles the row height.
+   */
+  function renderView(destination: StudioDestination): React.JSX.Element {
+    const ViewIcon = VIEW_ICONS[destination.id];
+    const selected = props.current === destination.id;
+    const navigationId = `view:${destination.id}`;
+    return <button
+      key={destination.id}
+      ref={(node) => { if (node) navigationRefs.current.set(navigationId, node); else navigationRefs.current.delete(navigationId); }}
+      type="button"
+      tabIndex={tabStopId === navigationId ? 0 : -1}
+      aria-current={selected ? "page" : undefined}
+      title={destination.status}
+      onFocus={() => setFocusedNavigationId(navigationId)}
+      onClick={() => { setFocusedNavigationId(navigationId); props.onSelectView(destination.id); }}
+    >
+      <ViewIcon aria-hidden="true" size={15} weight={selected ? "fill" : "regular"} />
+      <strong>{destination.label}</strong>
+      {destination.availability !== "ready" && <small className={`availability-${destination.availability}`}>{t(`availability.${destination.availability}`)}</small>}
+    </button>;
+  }
+
   return <aside className="studio-primary-nav studio-project-sidebar" aria-label={t("sidebar.aria")}>
     <header className="studio-product-brand"><span><GitBranch aria-hidden="true" size={18} weight="bold" /></span><div><strong>{t("brand.product")}</strong><small>{t("brand.studio")}</small></div><button className="studio-project-close" type="button" aria-label={t("workspace:gate.closeAria")} onClick={props.onCloseNavigation}><X aria-hidden="true" size={15} /></button></header>
     <div className="studio-project-heading"><div><strong>{t("sidebar.projects")}</strong><span>{props.projects.length}</span></div><button type="button" disabled={props.opening || !props.canOpenProject} aria-label={props.opening ? t("sidebar.openingAria") : props.canOpenProject ? t("sidebar.openProject") : t("sidebar.openingUnavailable")} title={props.canOpenProject ? t("sidebar.openProject") : t("sidebar.noDiscovery")} onClick={props.onOpenProject}>{props.opening ? <span className="studio-project-spinner" aria-hidden="true" /> : <Plus aria-hidden="true" size={15} />}</button></div>
@@ -87,38 +113,32 @@ export function ProjectSidebar(props: {
         {props.projects.length === 0 && <p className="studio-project-empty"><FolderOpen aria-hidden="true" size={16} /><span>{t("sidebar.empty")}</span></p>}
         {props.projects.map((project) => {
           const active = project.id === props.activeProjectId;
+          // A trailing count, as a macOS source list uses. The kind and the full
+          // totals are already reported by the status bar and Overview facts, and
+          // spelling them out here truncated the Project's own name.
+          const projectMeta = project.availability === "unavailable"
+            ? t("sidebar.unavailable")
+            : String(project.sessionCount);
+          const projectDetail = t("sidebar.projectMeta", { count: project.sessionCount, kind: project.gitEnabled ? t("sidebar.git") : t("sidebar.folder") });
           return <div className={`studio-project-entry${active ? " active" : ""}${project.availability === "unavailable" ? " unavailable" : ""}`} key={project.id}>
             <div className="studio-project-row">
-              <button ref={(node) => { if (node) navigationRefs.current.set(`project:${project.id}`, node); else navigationRefs.current.delete(`project:${project.id}`); }} type="button" tabIndex={tabStopId === `project:${project.id}` ? 0 : -1} disabled={props.opening} aria-current={active ? "true" : undefined} aria-keyshortcuts="Delete" title={t("sidebar.projectTitle", { label: project.label })} onFocus={() => setFocusedNavigationId(`project:${project.id}`)} onKeyDown={(event) => { if (event.key === "Delete") { event.preventDefault(); props.onRemoveProject(project.id); } }} onClick={() => { setFocusedNavigationId(`project:${project.id}`); props.onActivateProject(project.id); }}>
+              <button ref={(node) => { if (node) navigationRefs.current.set(`project:${project.id}`, node); else navigationRefs.current.delete(`project:${project.id}`); }} type="button" tabIndex={tabStopId === `project:${project.id}` ? 0 : -1} disabled={props.opening} aria-current={active ? "true" : undefined} aria-keyshortcuts="Delete" title={`${projectDetail} — ${t("sidebar.projectTitle", { label: project.label })}`} onFocus={() => setFocusedNavigationId(`project:${project.id}`)} onKeyDown={(event) => { if (event.key === "Delete") { event.preventDefault(); props.onRemoveProject(project.id); } }} onClick={() => { setFocusedNavigationId(`project:${project.id}`); props.onActivateProject(project.id); }}>
                 <FolderOpen aria-hidden="true" size={15} weight={active ? "fill" : "regular"} />
-                <span><strong>{project.label}</strong><small>{project.availability === "unavailable" ? t("sidebar.unavailable") : t("sidebar.projectMeta", { count: project.sessionCount, kind: project.gitEnabled ? t("sidebar.git") : t("sidebar.folder") })}</small></span>
+                <strong>{project.label}</strong>
+                <small>{projectMeta}</small>
               </button>
               <button className="studio-project-remove" type="button" tabIndex={-1} disabled={props.opening} aria-label={t("sidebar.removeAria", { label: project.label })} title={t("sidebar.removeTitle", { label: project.label })} onClick={() => props.onRemoveProject(project.id)}><X aria-hidden="true" size={13} /></button>
             </div>
             {active && <section className="studio-project-views" aria-label={t("sidebar.viewsAria", { label: project.label })}>
               <h2>{t("sidebar.views")}</h2>
-              {props.destinations.map((destination) => {
-                const ViewIcon = VIEW_ICONS[destination.id];
-                return <button key={destination.id} ref={(node) => { if (node) navigationRefs.current.set(`view:${destination.id}`, node); else navigationRefs.current.delete(`view:${destination.id}`); }} type="button" tabIndex={tabStopId === `view:${destination.id}` ? 0 : -1} aria-current={props.current === destination.id ? "page" : undefined} onFocus={() => setFocusedNavigationId(`view:${destination.id}`)} onClick={() => { setFocusedNavigationId(`view:${destination.id}`); props.onSelectView(destination.id); }}>
-                  <ViewIcon aria-hidden="true" size={15} weight={props.current === destination.id ? "fill" : "regular"} />
-                  <span><strong>{destination.label}</strong><small>{destination.status}</small></span>
-                  <i className={`availability-dot availability-${destination.availability}`} aria-label={t(`availability.${destination.availability}`)} />
-                </button>;
-              })}
+              {props.destinations.map((destination) => renderView(destination))}
             </section>}
           </div>;
         })}
       </section>
       {showUnscopedViews && <section className="studio-project-views studio-configured-views" aria-label={t("sidebar.configuredViewsAria")}>
         <h2>{t("sidebar.views")}</h2>
-        {props.destinations.map((destination) => {
-          const ViewIcon = VIEW_ICONS[destination.id];
-          return <button key={destination.id} ref={(node) => { if (node) navigationRefs.current.set(`view:${destination.id}`, node); else navigationRefs.current.delete(`view:${destination.id}`); }} type="button" tabIndex={tabStopId === `view:${destination.id}` ? 0 : -1} aria-current={props.current === destination.id ? "page" : undefined} onFocus={() => setFocusedNavigationId(`view:${destination.id}`)} onClick={() => { setFocusedNavigationId(`view:${destination.id}`); props.onSelectView(destination.id); }}>
-            <ViewIcon aria-hidden="true" size={15} weight={props.current === destination.id ? "fill" : "regular"} />
-            <span><strong>{destination.label}</strong><small>{destination.status}</small></span>
-            <i className={`availability-dot availability-${destination.availability}`} aria-label={t(`availability.${destination.availability}`)} />
-          </button>;
-        })}
+        {props.destinations.map((destination) => renderView(destination))}
       </section>}
     </nav>
   </aside>;
