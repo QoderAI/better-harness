@@ -29,7 +29,8 @@
   "workspaces": [
     "packages/harness",
     "packages/harness-studio",
-    "packages/harness-ui"
+    "packages/harness-ui",
+    "packages/harness-desktop"
   ],
   "pi": {
     "skills": [
@@ -107,7 +108,11 @@
     "test": "vitest run",
     "test:ci": "vitest run --config vitest.ci.config.mjs",
     "test:dsh-configured-assets-native": "node scripts/dsh-configured-assets/native-smoke.mjs",
-    "test:dsh-native": "node scripts/dsh-skill-discovery/native-smoke.mjs"
+    "test:dsh-native": "node scripts/dsh-skill-discovery/native-smoke.mjs",
+    "harness-desktop:build": "npm run build -w @qoder-ai/harness-desktop",
+    "harness-desktop:dev": "npm start -w @qoder-ai/harness-desktop",
+    "harness-desktop:test": "npm test -w @qoder-ai/harness-desktop",
+    "harness-desktop:pack": "npm run pack -w @qoder-ai/harness-desktop"
   },
   "packageManager": "npm@10.9.3",
   "publishConfig": {

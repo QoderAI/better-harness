@@ -1,0 +1,66 @@
+{
+  "name": "@qoder-ai/harness-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron desktop shell for Harness Studio",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/main.mjs",
+  "engines": {
+    "node": ">=22.20.0 <25.0.0"
+  },
+  "scripts": {
+    "build": "npm run build -w @qoder-ai/harness && npm run build -w @qoder-ai/harness-studio",
+    "start": "electron .",
+    "test": "node --test test/*.test.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "stage": "node scripts/stage.mjs",
+    "pack": "npm run build && npm run stage && electron-builder --dir",
+    "dist": "npm run build && npm run stage && electron-builder"
+  },
+  "dependencies": {
+    "@qoder-ai/harness-studio": "0.1.1",
+    "oxc-parser": "0.147.0"
+  },
+  "devDependencies": {
+    "electron": "44.2.0",
+    "electron-builder": "26.15.3",
+    "@playwright/test": "^1.62.1"
+  },
+  "build": {
+    "appId": "com.qoder.harness-studio",
+    "productName": "Harness Studio",
+    "directories": {
+      "app": "dist/app",
+      "output": "dist/installers"
+    },
+    "files": [
+      "src/**",
+      "package.json",
+      "node_modules/**"
+    ],
+    "asarUnpack": [
+      "**/*.node",
+      "**/*.wasm"
+    ],
+    "npmRebuild": false,
+    "mac": {
+      "target": [
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development",
+      "executableName": "harness-studio"
+    }
+  }
+}

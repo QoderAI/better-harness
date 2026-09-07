@@ -1,0 +1,41 @@
+name: Harness Desktop
+on:
+  pull_request:
+    paths:
+      - 'packages/harness-desktop/**'
+      - 'packages/harness-studio/**'
+      - 'packages/harness/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/harness-desktop.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run harness-desktop:test
+      - run: npm run harness-desktop:pack
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - if: runner.os != 'Linux'
+        run: npm run smoke -w @qoder-ai/harness-desktop -- --packaged
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run smoke -w @qoder-ai/harness-desktop -- --packaged
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-smoke-${{ matrix.os }}
+          path: packages/harness-desktop/dist/smoke

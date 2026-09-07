@@ -50,3 +50,5 @@ export {
   loadArtifactProviderModules,
   providerModuleTarget,
 } from "./server/artifacts/registry/artifact-provider-modules.js";
+
+export { createBundledInspectorWorkspaceSessionProvider } from "./server/workspace/bundled-session-provider.js";

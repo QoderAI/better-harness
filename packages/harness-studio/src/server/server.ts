@@ -159,6 +159,10 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
     acpRuns: new Map(),
   };
   const server = createServer((request, response) => {
+    if (resolvedOptions.accessToken !== undefined && request.headers["x-harness-studio-token"] !== resolvedOptions.accessToken) {
+      respondJson(response, 401, { error: "Studio authorization required." });
+      return;
+    }
     void route(request, response, resolvedOptions, state, experimentRuns).catch((error: unknown) => {
       if (response.headersSent) {
         response.destroy(error instanceof Error ? error : new Error(String(error)));

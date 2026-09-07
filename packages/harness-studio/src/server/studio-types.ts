@@ -57,6 +57,8 @@ export interface StudioWorkspaceSessionProvider {
   discover(workspacePath: string): Promise<StudioWorkspaceDiscovery>;
 }
 export interface HarnessStudioServerOptions {
+  /** Optional per-launch desktop credential. Browser CLI leaves this unset. */
+  accessToken?: string;
   /** Directory holding the built React app (index.html + assets/). */
   appDir: string;
   /** Self-contained Harness Inspector HTML report mounted read-only at /inspector. */
