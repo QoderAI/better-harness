@@ -382,18 +382,7 @@ describe("harness-studio server", () => {
       kind: "HarnessInspectorReportV1",
       sessions: [{ sessionId: "session-structured" }],
     });
-    const inputTrace = await fetch(`${started.url}/api/inputs`);
-    expect(inputTrace.status).toBe(200);
-    expect(inputTrace.headers.get("cache-control")).toBe("no-store");
-    expect(await inputTrace.json()).toMatchObject({
-      kind: "UserInputTraceV1",
-      workspace: { label: "fixture-repository" },
-      summary: { inputCount: 1, readCount: 1, editTargetCount: 1, fileCount: 1 },
-      inputs: [{ text: "Trace this input", links: [
-        { path: "packages/harness-studio/src/server/server.ts", activity: "edit-targeted" },
-        { path: "packages/harness-studio/src/server/server.ts", activity: "read" },
-      ] }],
-    });
+    expect((await fetch(`${started.url}/api/inputs`)).status).toBe(404);
 
     const catalog = await (await fetch(`${started.url}/api/sessions`)).json() as { sessions: Array<{ id: string; provider: string }> };
     expect(catalog.sessions.map((session) => session.id)).toEqual(["qoder:run_qoder", "codex:run_codex"]);

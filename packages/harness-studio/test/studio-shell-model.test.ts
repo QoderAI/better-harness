@@ -9,8 +9,8 @@ import {
   sessionAgents,
   sessionCompareScope,
   studioProjectGateRequired,
-  studioOverview,
   studioDestinations,
+  STUDIO_DEFAULT_AREA,
   type StudioConfig,
 } from "../src/app/studio-shell-model.js";
 import { namespaces as enNamespaces } from "../src/app/i18n/en/index.js";
@@ -29,7 +29,6 @@ function englishT<N extends string>(defaultNS: N): TFunction<N> {
 }
 
 const commonT = englishT("common");
-const overviewT = englishT("overview");
 
 const EMPTY: StudioConfig = {
   runEnabled: false,
@@ -55,31 +54,26 @@ const EMPTY: StudioConfig = {
 };
 
 describe("Studio control-plane navigation", () => {
-  it("offers the eight workbenches with honest availability", () => {
+  it("offers the six workbenches with honest availability", () => {
     const destinations = studioDestinations(EMPTY, undefined, commonT);
 
     expect(destinations.map((destination) => destination.id)).toEqual([
-      "overview",
       "customizations",
-      "inputs",
       "sessions",
       "commits",
       "artifacts",
       "debugger",
       "compare",
     ]);
-    expect(destinations.find((destination) => destination.id === "overview")).toMatchObject({ availability: "ready" });
+    // The landing View must be one the shell can actually resolve.
+    expect(destinations.map((destination) => destination.id)).toContain(STUDIO_DEFAULT_AREA);
     expect(destinations.find((destination) => destination.id === "sessions")).toMatchObject({
       availability: "partial",
       status: "Project required",
     });
-    expect(destinations.find((destination) => destination.id === "inputs")).toMatchObject({
-      availability: "foundation",
-      status: "Project required",
-    });
     expect(destinations.find((destination) => destination.id === "artifacts")).toMatchObject({
-      availability: "foundation",
-      status: "Project required",
+      availability: "ready",
+      status: "No observed outputs",
     });
     expect(destinations.find((destination) => destination.id === "commits")).toMatchObject({
       availability: "foundation",
@@ -93,7 +87,7 @@ describe("Studio control-plane navigation", () => {
       availability: "foundation",
       status: "Project required",
     });
-    expect(capabilitySummary(EMPTY, commonT)).toEqual({ ready: 1, partial: 1, foundation: 6 });
+    expect(capabilitySummary(EMPTY, commonT)).toEqual({ ready: 1, partial: 1, foundation: 4 });
   });
 
   it("routes configured artifacts to Debugger, Compare, and Inspector surfaces", () => {
@@ -131,7 +125,7 @@ describe("Studio control-plane navigation", () => {
       availability: "ready",
       status: "12 definitions",
     });
-    expect(capabilitySummary(config, commonT)).toEqual({ ready: 8, partial: 0, foundation: 0 });
+    expect(capabilitySummary(config, commonT)).toEqual({ ready: 6, partial: 0, foundation: 0 });
   });
 
   it("treats an artifact directory as independent of every other input", () => {
@@ -159,11 +153,9 @@ describe("Studio control-plane navigation", () => {
     const config: StudioConfig = { ...EMPTY, artifactsEnabled: true, artifactCount: 0, workspaceConnected: true };
 
     expect(studioDestinations(config, undefined, commonT).find((destination) => destination.id === "artifacts")).toMatchObject({
-      availability: "partial",
+      availability: "ready",
       status: "No observed outputs",
     });
-    expect(studioOverview(config, overviewT).secondaryActions).not.toContainEqual({ area: "artifacts", label: "Open Artifacts" });
-    expect(studioOverview(config, overviewT).facts.find((fact) => fact.id === "artifacts")).toMatchObject({ value: "0", detail: "No observed outputs" });
   });
 
   it("labels Compare from its active surface", () => {
@@ -288,26 +280,6 @@ expect(studioDestinations(config, undefined, commonT).find((destination) => dest
     });
   });
 
-  it("does not offer a workspace command when directory discovery is unavailable", () => {
-    const overview = studioOverview({
-      ...EMPTY,
-      experimentEnabled: true,
-      experimentRunnable: true,
-      inspectorEnabled: true,
-      customizationAnalysisEnabled: true,
-    }, overviewT);
-
-    expect(overview).toMatchObject({
-      mode: "configured",
-      title: "Comparison setup is ready.",
-      primaryAction: { area: "compare", label: "Open Compare" },
-    });
-    expect(overview.facts.map((fact) => fact.id)).toEqual(["experiment", "inspector", "customizations"]);
-    expect(overview.secondaryActions).toEqual([
-      { area: "customizations", label: "Analyze Customizations" },
-    ]);
-  });
-
   it("does not call an unavailable experiment ready outside the Experiment workbench", () => {
     const config: StudioConfig = { ...EMPTY, experimentEnabled: true, experimentRunnable: false };
 
@@ -315,20 +287,12 @@ expect(studioDestinations(config, undefined, commonT).find((destination) => dest
       availability: "partial",
       status: "Comparison blocked",
     });
-    expect(studioOverview(config, overviewT)).toMatchObject({
-      title: "Comparison setup needs attention.",
-      facts: [expect.objectContaining({ id: "experiment", value: "Blocked" })],
-    });
   });
 
-  it("leaves workspace opening to the modal gate when discovery is available", () => {
-    const overview = studioOverview({ ...EMPTY, workspaceDiscoveryEnabled: true }, overviewT);
-
-    expect(overview).toMatchObject({
-      mode: "workspace-required",
-      secondaryActions: [],
-    });
-    expect(overview.primaryAction).toBeUndefined();
+  it("opens Artifacts without a Project or catalog while keeping other gates", () => {
+    const config = { ...EMPTY, workspaceDiscoveryEnabled: true };
+    expect(studioProjectGateRequired(config, false, "artifacts")).toBe(false);
+    expect(studioProjectGateRequired(config, false, "sessions")).toBe(true);
   });
 
   it("requires an initial Project only when no independent configured context is available", () => {
@@ -337,19 +301,6 @@ expect(studioDestinations(config, undefined, commonT).find((destination) => dest
     expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, artifactsEnabled: true }, false)).toBe(false);
     expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, artifactsEnabled: true, artifactCount: 0 }, false)).toBe(true);
     expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true, runEnabled: true, harnessMode: "configured" }, false)).toBe(false);
-  });
-
-  it("does not advertise the Project-default Debugger before a Project is active", () => {
-    const overview = studioOverview({
-      ...EMPTY,
-      runEnabled: true,
-      harnessMode: "workspace-default",
-      inspectorEnabled: true,
-    }, overviewT);
-
-    expect(overview.mode).toBe("configured");
-    expect(overview.facts.map((fact) => fact.id)).toEqual(["inspector"]);
-    expect(overview.secondaryActions).not.toContainEqual({ area: "debugger", label: "Open Debugger" });
   });
 
   it("keeps imported retained-run Projects out of the default execution path", () => {
@@ -365,43 +316,5 @@ expect(studioDestinations(config, undefined, commonT).find((destination) => dest
       availability: "foundation",
       status: "Read-only Project",
     });
-    expect(studioOverview(config, overviewT).secondaryActions).not.toContainEqual({ area: "debugger", label: "Open Debugger" });
-  });
-
-  it("summarizes connected workspace evidence without capability maturity totals", () => {
-    const overview = studioOverview({
-      ...EMPTY,
-      runEnabled: true,
-      artifactsEnabled: true,
-      artifactCount: 6,
-      gitEnabled: true,
-      harnessMode: "workspace-default",
-      projectExecutionEnabled: true,
-      workspaceWorkbenchEnabled: true,
-      workspaceDiscoveryEnabled: true,
-      workspaceConnected: true,
-      sessionCount: 12,
-      sessionAgents: [{ agent: "qoder", sessionCount: 7 }, { agent: "codex", sessionCount: 5 }],
-      inputCount: 34,
-    }, overviewT);
-
-    expect(overview).toMatchObject({
-      mode: "workspace",
-      primaryAction: { area: "sessions", label: "Open Sessions" },
-    });
-    expect(overview.facts.map(({ id, value }) => ({ id, value }))).toEqual([
-      { id: "inputs", value: "34" },
-      { id: "sessions", value: "12" },
-      { id: "agents", value: "2" },
-      { id: "artifacts", value: "6" },
-      { id: "repository", value: "Git" },
-    ]);
-    expect(overview.facts.find((fact) => fact.id === "agents")?.detail).toBe("Comparable across Agents");
-    expect(overview.secondaryActions).toEqual([
-      { area: "inputs", label: "Review Inputs" },
-      { area: "compare", label: "Open Compare" },
-      { area: "debugger", label: "Open Debugger" },
-      { area: "artifacts", label: "Open Artifacts" },
-    ]);
   });
 });

@@ -104,7 +104,7 @@ function fakeQoderSdk(
           return;
         }
         for await (const message of params.prompt) {
-          const text = message.message.content;
+          const text = message.message.content.map((block) => block.text).join("");
           state.prompts.push(text);
           yield* reply(text, state.prompts.length, state);
           if (endsAfterFirstReply) {

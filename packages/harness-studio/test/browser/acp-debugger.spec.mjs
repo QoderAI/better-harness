@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -22,9 +23,9 @@ async function runAcpPrompt(page, prompt) {
   await page.getByRole("button", { name: "New live run" }).click();
   // The composer names the Agent it is about to run, so the fixture is selected
   // by its own label rather than by an opaque runtime word.
-  await page.getByRole("combobox", { name: "Agent" }).selectOption({ label: "Fixture ACP" });
-  await page.getByRole("textbox", { name: "Task prompt for the harness run…" }).fill(prompt);
-  await page.getByRole("button", { name: "Run harness" }).click();
+  await expect(page.getByRole("combobox", { name: "Agent" }).locator("option:checked")).toHaveText("Fixture ACP");
+  await page.getByRole("textbox", { name: "Task", exact: true }).fill(prompt);
+  await page.getByRole("button", { name: "Run", exact: true }).click();
   await expect(page.locator(".live-inspector > header")).toContainText("Permission required");
   await page.getByRole("button", { name: "Allow once allow_once" }).click();
   await expect(page.getByText("fixture:allow-once", { exact: true })).toBeVisible();
@@ -86,6 +87,14 @@ test("runs ACP through the Debugger permission gate at wide, compact, and narrow
   for (const layout of layouts.slice(0, 2)) {
     await page.setViewportSize(layout);
     await expect(page.locator(".debugger-shell")).toBeVisible();
+    await expect(page.locator(".debugger-topbar")).toHaveCount(0);
+    await expect(page.locator(".studio-status-bar")).toHaveCount(1);
+    await expect(page.locator(".timeline-minimap")).toHaveCount(0);
+    const newRun = page.getByRole("button", { name: "New live run" });
+    await page.keyboard.press("Tab");
+    await newRun.focus();
+    await expect(newRun).toBeFocused();
+    expect(await newRun.evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe("none");
     const dimensions = await page.evaluate(() => ({
       innerWidth: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth,
@@ -103,7 +112,11 @@ test("runs ACP through the Debugger permission gate at wide, compact, and narrow
     documentWidth: document.documentElement.scrollWidth,
   }));
   expect(narrowDimensions.documentWidth).toBe(narrowDimensions.innerWidth);
+  await expect(page.getByRole("heading", { name: "Debugger", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("acp-debugger-narrow.png"), fullPage: true });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.setViewportSize(layouts[0]);
+  await page.screenshot({ path: testInfo.outputPath("acp-debugger-dark.png"), fullPage: true, animations: "disabled" });
   expect(errors).toEqual([]);
 });
 
@@ -134,8 +147,8 @@ test("starts a live run against the ACP Agent chosen by name", async ({ page }, 
   await expect(unavailable).toHaveAttribute("title", "pi-acp is not installed.");
 
   await agentSelect.selectOption({ label: "Qoder CLI" });
-  await page.getByRole("textbox", { name: "Task prompt for the harness run…" }).fill("Run the named Agent");
-  await page.getByRole("button", { name: "Run harness" }).click();
+  await page.getByRole("textbox", { name: "Task", exact: true }).fill("Run the named Agent");
+  await page.getByRole("button", { name: "Run", exact: true }).click();
   await expect(page.locator(".debugger-runtime-meta")).toContainText("Qoder CLI");
   await expect(page.locator(".live-inspector > header")).toContainText("Permission required");
   await page.getByRole("button", { name: "Allow once allow_once" }).click();
@@ -212,4 +225,125 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
     await page.screenshot({ path: testInfo.outputPath(`live-compare-${layout.name}.png`), fullPage: true });
   }
   expect(errors).toEqual([]);
+});
+
+test("keeps the compact run dialog bounded and restores keyboard focus", async ({ page }, testInfo) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  await page.goto(`${studio.url}/#/debugger`);
+  const choose = page.getByRole("button", { name: "Choose Project" });
+  if (await choose.isVisible()) await choose.click();
+  for (const layout of layouts) {
+    await page.setViewportSize(layout);
+    await page.emulateMedia({ colorScheme: layout.name === "compact" ? "light" : "dark" });
+    const launcher = page.getByRole("button", { name: "New live run" });
+    await launcher.click();
+    const dialog = page.getByRole("dialog", { name: "New run", exact: true });
+    const task = dialog.getByRole("textbox", { name: "Task", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(task).toBeFocused();
+    await task.fill("   ");
+    await expect(dialog.getByRole("button", { name: "Run", exact: true })).toBeDisabled();
+    await task.fill("hi");
+    await expect(dialog.getByRole("button", { name: "Run", exact: true })).toBeEnabled();
+    for (let index = 0; index < 6; index += 1) {
+      await page.keyboard.press("Tab");
+      expect(await dialog.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+    }
+    const bounds = await dialog.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(layout.width);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(layout.height);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(layout.width);
+    await page.screenshot({ path: testInfo.outputPath(`composer-${layout.name}.png`), animations: "disabled" });
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(launcher).toBeFocused();
+    await launcher.click();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(launcher).toBeFocused();
+  }
+  expect(errors).toEqual([]);
+});
+
+test("resizes both Debugger boundaries with pointer and keyboard", async ({ page }, testInfo) => {
+  await page.setViewportSize(layouts[0]);
+  await page.goto(`${studio.url}/#/debugger`);
+  const choose = page.getByRole("button", { name: "Choose Project" });
+  if (await choose.isVisible()) await choose.click();
+  await expect(page.getByTitle("Toggle Execution Tree")).toHaveCount(0);
+  await expect(page.getByTitle("Toggle State Inspector")).toHaveCount(0);
+  const tree = page.locator(".execution-tree");
+  const center = page.locator(".session-notebook");
+  const inspector = page.locator(".state-inspector");
+  const widths = async () => Promise.all([tree, center, inspector].map(async (pane) => (await pane.boundingBox()).width));
+  for (const name of ["Resize execution tree", "Resize state inspector"]) {
+    const sash = page.getByRole("separator", { name });
+    await expect(sash).toBeVisible();
+    const before = await widths();
+    const bounds = await sash.boundingBox();
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 60);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + 44, bounds.y + 60);
+    await page.mouse.up();
+    expect(await widths()).not.toEqual(before);
+    await sash.focus();
+    await page.keyboard.press("Home");
+    await expect(sash).toHaveAttribute("aria-valuenow", await sash.getAttribute("aria-valuemin"));
+    await page.keyboard.press("End");
+    await expect(sash).toHaveAttribute("aria-valuenow", await sash.getAttribute("aria-valuemax"));
+    await sash.dblclick();
+  }
+  for (const layout of layouts) {
+    await page.setViewportSize(layout);
+    await expect(center).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(layout.width);
+    await page.screenshot({ path: testInfo.outputPath(`resizable-${layout.name}.png`), animations: "disabled" });
+  }
+});
+
+test("shows shared assistant chunks in Debugger and Compare before completion", async ({ page }, testInfo) => {
+  const nativeHost = resolve(packageRoot, "../better-harness-desktop/dist/native", process.platform === "win32" ? "harness-acp-host.exe" : "harness-acp-host");
+  const agent = { command: process.execPath, args: [acpAgentFixture, "--stream-chunks"], label: "Streaming ACP" };
+  const server = await startHarnessStudioServer({
+    appDir: resolve(packageRoot, "dist/app"), runDirectory,
+    acpHostExecutable: nativeHost,
+    workspaceDirectoryPicker: async () => repositoryRoot,
+    workspaceSessionProvider: { discover: async () => ({ label: "Streaming fixture", sessions: [] }) },
+    acpAgent: agent,
+    acpAgents: [{ id: "first", label: "First", agent }, { id: "second", label: "Second", agent }],
+  });
+  try {
+    const config = await (await fetch(`${server.url}/api/config`)).json();
+    expect(config.acpRuntimeProfile).toBe(existsSync(nativeHost) ? "acp-v1-rust" : "acp-v1-stdio");
+    await testInfo.attach("stream-runtime", { body: config.acpRuntimeProfile, contentType: "text/plain" });
+    await page.setViewportSize(layouts[0]);
+    await page.goto(`${server.url}/#/debugger`);
+    await page.getByRole("button", { name: "Choose Project" }).click();
+    await page.getByRole("button", { name: "New live run" }).click();
+    await page.getByRole("textbox", { name: "Task", exact: true }).fill("stream in two chunks");
+    await page.getByRole("button", { name: "Run", exact: true }).click();
+    await page.getByRole("button", { name: "Allow once allow_once" }).click();
+    const message = page.locator(".streaming-message");
+    await expect(message).toContainText("fixture:stream-first");
+    await expect(message).not.toContainText("stream-last");
+    await expect(page.locator(".debugger-status")).not.toContainText("Run finished");
+    await page.getByRole("button", { name: "Continue stream allow_once" }).click();
+    await expect(message).toContainText("fixture:stream-first:stream-last");
+    await expect(page.locator(".debugger-status")).toContainText("Run finished");
+    await page.goto(`${server.url}/#/compare`);
+    await page.getByRole("textbox", { name: "What should both Agents do?" }).fill("stream in two lanes");
+    await page.getByRole("combobox", { name: "Left Agent" }).selectOption("first");
+    await page.getByRole("combobox", { name: "Right Agent" }).selectOption("second");
+    await page.getByRole("button", { name: "Run both", exact: true }).click();
+    for (const lane of await page.locator(".live-compare-lane").all()) {
+      await lane.getByRole("button", { name: "Allow once", exact: true }).click();
+      await expect(lane.locator(".streaming-message")).toContainText("fixture:stream-first");
+      await expect(lane.locator(".streaming-message")).not.toContainText("stream-last");
+      await lane.getByRole("button", { name: "Continue stream", exact: true }).click();
+      await expect(lane.locator(".streaming-message")).toContainText("fixture:stream-first:stream-last");
+    }
+  } finally { await server.close(); }
 });

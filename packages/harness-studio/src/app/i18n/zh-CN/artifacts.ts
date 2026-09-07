@@ -2,20 +2,13 @@ import type { artifacts as enArtifacts } from "../en/artifacts.js";
 
 export const artifacts: typeof enArtifacts = {
   empty: {
+    noArtifacts: "暂无产物。",
     eyebrow: "工作区产物",
-    noAvailableTitle: "没有可用的项目产物",
-    noAvailableDetail: "Studio 未找到由保留的变更或交付证据支持的当前文件。",
-    openWorkspaceTitle: "打开一个项目",
-    openWorkspaceDetail: "选择一次项目即可；产物将与会话和提交使用同一工作区。",
-    discoveryDetail: "先打开一次本地项目；产物、会话和提交将共享该项目的上下文。",
-    noDiscoveryDetail: "此 Studio 启动器不提供项目发现。",
-    unreadableTitle: "无法读取项目产物",
-    noChangedTitle: "此项目没有变更产物",
-    noChangedDetail: "没有当前常规文件被保留的变更或交付证据引用。只读和缺失的路径不会被提升到产物目录。",
+    unreadableTitle: "无法读取产物",
   },
-  indexing: "正在索引项目产物…",
-  workspaceAria: "项目产物",
-  panesAria: "产物项目面板",
+  indexing: "正在索引产物…",
+  workspaceAria: "产物",
+  panesAria: "产物面板",
   panes: {
     browse: "浏览",
     artifacts: "产物",

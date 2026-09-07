@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ReactNode } from "react";
 import { Play } from "@phosphor-icons/react/Play";
 import type { HarnessRunStreamEventV1 } from "@qoder-ai/harness/protocol";
 import {
@@ -8,13 +7,18 @@ import {
   initialRunState,
   timelineItems,
   type HarnessRunState,
+  type TimelineItem,
 } from "./run/run-store.js";
 import { streamRun } from "./run/stream-run.js";
+import { StreamingMessage } from "./run/StreamingMessage.js";
 import type { StudioAcpAgentOption } from "./studio-shell-model.js";
 
 type LaneId = "left" | "right";
 
 const LANES: readonly LaneId[] = ["left", "right"];
+
+/** Distance from the bottom that still counts as following the stream. */
+const FOLLOW_THRESHOLD_PX = 24;
 
 interface LaneRun {
   agentId: string;
@@ -36,7 +40,6 @@ function runIdentity(lane: LaneId): { threadId: string; runId: string } {
 }
 
 export function CompareLiveView(props: {
-  navigation: ReactNode;
   agents: readonly StudioAcpAgentOption[];
   project?: { id: string; label: string; revision: number };
 }): React.JSX.Element {
@@ -116,38 +119,33 @@ export function CompareLiveView(props: {
 
   const labelFor = (agentId: string): string => props.agents.find((agent) => agent.id === agentId)?.label ?? agentId;
 
-  return <main className="live-compare-workspace">
-    <header>
-      <div><small>{t("live.eyebrow")}</small><h1>{t("live.title")}</h1></div>
-      {props.navigation}
-    </header>
-
+  // No page title or eyebrow: the shell title bar and the sidebar already name
+  // this area, and the composer states the decision on its own.
+  return <main className="live-compare-workspace" aria-label={t("live.title")}>
     <form
       className="live-compare-composer"
       onSubmit={(event) => { event.preventDefault(); void launch(); }}
     >
-      <label className="live-compare-prompt">
-        <span>{t("live.promptLabel")}</span>
-        <textarea
-          value={prompt}
-          rows={3}
-          placeholder={t("live.promptPlaceholder")}
-          onChange={(event) => setPrompt(event.target.value)}
-        />
-      </label>
+      <textarea
+        className="live-compare-prompt"
+        value={prompt}
+        rows={2}
+        aria-label={t("live.promptLabel")}
+        placeholder={t("live.promptPlaceholder")}
+        onChange={(event) => setPrompt(event.target.value)}
+      />
       <div className="live-compare-agents">
-        {LANES.map((lane) => <label key={lane}>
-          <span>{t(`live.${lane}Agent`)}</span>
-          <select
-            value={agentIds[lane]}
-            onChange={(event) => setAgentIds((current) => ({ ...current, [lane]: event.target.value }))}
-          >
-            <option value="">{t("live.chooseAgent")}</option>
-            {props.agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available} title={agent.detail}>
-              {agent.available ? agent.label : t("live.agentUnavailable", { agent: agent.label })}
-            </option>)}
-          </select>
-        </label>)}
+        {LANES.map((lane) => <select
+          key={lane}
+          aria-label={t(`live.${lane}Agent`)}
+          value={agentIds[lane]}
+          onChange={(event) => setAgentIds((current) => ({ ...current, [lane]: event.target.value }))}
+        >
+          <option value="">{t("live.chooseAgent")}</option>
+          {props.agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available} title={agent.detail}>
+            {agent.available ? agent.label : t("live.agentUnavailable", { agent: agent.label })}
+          </option>)}
+        </select>)}
         <button className="primary" type="submit" disabled={!canRun}>
           <Play aria-hidden="true" size={14} />
           <span>{active ? t("live.running") : t("live.run")}</span>
@@ -155,43 +153,21 @@ export function CompareLiveView(props: {
       </div>
       {available.length === 0
         ? <p className="live-compare-boundary status-warning" role="alert">{t("live.noAgents")}</p>
-        : <p className="live-compare-boundary status-warning">{t("live.sharedWorkingTree")}</p>}
+        : <p className="live-compare-boundary">{t("live.sharedWorkingTree")}</p>}
     </form>
 
     {comparison === undefined
       ? <p className="artifact-status" role="status">{t("live.idle")}</p>
-      : <>
-          <p className="live-compare-boundary">
-            <strong>{t("live.noWinner")}</strong> {t("live.samePrompt", { prompt: comparison.prompt })}
-          </p>
-          <div className="live-compare-metrics" role="table" aria-label={t("live.metricsAria")}>
-            <div className="live-compare-columns" role="row">
-              <strong role="columnheader">{t("live.metricColumn")}</strong>
-              <strong role="columnheader">{labelFor(comparison.left.agentId)}</strong>
-              <strong role="columnheader">{labelFor(comparison.right.agentId)}</strong>
-            </div>
-            {([
-              ["status", (run: LaneRun) => t(`live.status.${run.state.status}`)],
-              ["toolCalls", (run: LaneRun) => String(run.state.toolCallCount)],
-              ["messages", (run: LaneRun) => String(timelineItems(run.state).filter((item) => item.kind === "message").length)],
-              ["warnings", (run: LaneRun) => String(run.state.warnings.length)],
-            ] as const).map(([metric, read]) => <div role="row" key={metric}>
-              <strong role="rowheader">{t(`live.metrics.${metric}`)}</strong>
-              <span role="cell">{read(comparison.left)}</span>
-              <span role="cell">{read(comparison.right)}</span>
-            </div>)}
-          </div>
-          <div className="live-compare-lanes">
-            {LANES.map((lane) => <LiveLane
-              key={lane}
-              side={t(`live.${lane}Agent`)}
-              label={labelFor(comparison[lane].agentId)}
-              run={comparison[lane]}
-              onCancel={() => void cancel(lane)}
-              onDecide={(requestId, optionId) => void decide(lane, requestId, optionId)}
-            />)}
-          </div>
-        </>}
+      : <div className="live-compare-lanes">
+          {LANES.map((lane) => <LiveLane
+            key={lane}
+            side={t(`live.${lane}Agent`)}
+            label={labelFor(comparison[lane].agentId)}
+            run={comparison[lane]}
+            onCancel={() => void cancel(lane)}
+            onDecide={(requestId, optionId) => void decide(lane, requestId, optionId)}
+          />)}
+        </div>}
   </main>;
 }
 
@@ -205,10 +181,32 @@ function LiveLane(props: {
   const { t } = useTranslation("compare");
   const items = timelineItems(props.run.state);
   const permission = props.run.state.pendingPermission;
+  const warnings = props.run.state.warnings.length;
+  const events = useRef<HTMLOListElement>(null);
+  const following = useRef(true);
+
+  // Follow the newest event only while the reader is already at the bottom.
+  // Scrolling up is a deliberate act of reading back; the stream must not undo
+  // it. Measured before paint so the check uses the pre-append position.
+  useEffect(() => {
+    const list = events.current;
+    if (list === null || !following.current) return;
+    list.scrollTop = list.scrollHeight;
+  });
+
   return <section className="live-compare-lane" aria-label={t("live.laneAria", { side: props.side, agent: props.label })}>
     <header>
-      <div><small>{props.side}</small><strong>{props.label}</strong></div>
+      <strong>{props.label}</strong>
       <span className={`run-badge status-${props.run.state.status}`}>{t(`live.status.${props.run.state.status}`)}</span>
+      {/* The counts the removed metric table carried, next to the evidence
+          they describe rather than in a separate grid above both lanes. */}
+      <small className="live-compare-counts">
+        {t("live.laneCounts", {
+          tools: props.run.state.toolCallCount,
+          messages: items.filter((item) => item.kind === "message").length,
+        })}
+        {warnings > 0 && ` · ${t("live.laneWarnings", { count: warnings })}`}
+      </small>
       {props.run.state.status === "running" && <button type="button" onClick={props.onCancel}>{t("live.cancel")}</button>}
     </header>
     {props.run.failure !== undefined && <p className="live-compare-boundary status-danger" role="alert">{props.run.failure}</p>}
@@ -222,11 +220,18 @@ function LiveLane(props: {
         onClick={() => props.onDecide(permission.requestId, option.optionId)}
       >{option.name}</button>)}</div>
     </div>}
-    <ol className="live-compare-events">
+    <ol
+      className="live-compare-events"
+      ref={events}
+      onScroll={(event) => {
+        const list = event.currentTarget;
+        following.current = list.scrollHeight - list.scrollTop - list.clientHeight <= FOLLOW_THRESHOLD_PX;
+      }}
+    >
       {items.length === 0
         ? <li className="live-compare-waiting">{t("live.waiting")}</li>
         : items.map((item) => item.kind === "message"
-          ? <li key={`message-${item.id}`} className="live-compare-message">{item.text}</li>
+          ? <LaneMessage key={`message-${item.id}`} item={item} />
           : <li key={`tool-${item.id}`} className={`live-compare-tool status-${item.status}`}>
               <strong>{item.name}</strong>
               <small>{t(`live.toolStatus.${item.status}`)}</small>
@@ -234,3 +239,16 @@ function LiveLane(props: {
     </ol>
   </section>;
 }
+
+/**
+ * One assistant message, revealed rather than repainted.
+ *
+ * An ACP Agent's text reaches the browser in coalesced bursts, so rendering the
+ * delta directly makes a live turn land as a block. Memoized so one lane's
+ * frames do not re-render the other's transcript.
+ */
+const LaneMessage = memo(function LaneMessage(
+  { item }: { item: Extract<TimelineItem, { kind: "message" }> },
+): React.JSX.Element {
+  return <li className="live-compare-message"><StreamingMessage item={item} /></li>;
+});

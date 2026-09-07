@@ -1,4 +1,4 @@
-import type { StudioArea } from "../studio-shell-model.js";
+import { STUDIO_DEFAULT_AREA, type StudioArea } from "../studio-shell-model.js";
 
 export interface StudioLocation {
   area: StudioArea;
@@ -10,11 +10,14 @@ const PROJECT_ID = /^project_[a-f0-9]{32}$/u;
 export function parseStudioLocation(hash: string | undefined, areas: ReadonlySet<string>): StudioLocation {
   const route = (hash ?? "").replace(/^#\/?/u, "");
   const parts = route.split("/").filter(Boolean);
-  if (parts[0] === "projects" && parts.length === 3 && PROJECT_ID.test(parts[1]!) && areas.has(parts[2]!)) {
-    return { projectId: parts[1], area: parts[2] as StudioArea };
+  // A retained hash can name a View this build no longer has. The Project is
+  // still the scope the reader asked for, so keep it and land on the default
+  // View rather than dropping back to a Project-less route.
+  if (parts[0] === "projects" && parts.length === 3 && PROJECT_ID.test(parts[1]!)) {
+    return { projectId: parts[1], area: areas.has(parts[2]!) ? parts[2] as StudioArea : STUDIO_DEFAULT_AREA };
   }
   const area = parts[0];
-  return { area: area !== undefined && areas.has(area) ? area as StudioArea : "overview" };
+  return { area: area !== undefined && areas.has(area) ? area as StudioArea : STUDIO_DEFAULT_AREA };
 }
 
 export function studioLocationHash(location: StudioLocation): string {

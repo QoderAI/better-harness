@@ -411,7 +411,6 @@
 }
 
 .studio-context-title { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: var(--space-sm); }
-.studio-context-title small { max-width: min(32vw, 320px); overflow: hidden; color: var(--color-text-muted); text-overflow: ellipsis; white-space: nowrap; }
 .studio-context-title h1 {
   overflow: hidden;
   margin: 0;
@@ -690,82 +689,6 @@
 .studio-tabs button.active { border-bottom-color: var(--color-primary); color: var(--color-primary); background: var(--color-surface); font-weight: var(--weight-semibold); }
 .studio-secondary-tabs { min-width: 276px; }
 
-/* Overview is an operational home: current context first, retained evidence in
-   the primary pane, and a bounded set of next actions in the secondary pane.
-   The last row is `1fr` so the panes reach the status bar instead of ending in
-   bare canvas. */
-.control-overview {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  background: var(--color-workspace);
-}
-
-/* A document header, not a hero: the title and its one-line detail sit on the
-   leading edge and the primary action on the trailing edge, on one band the
-   height of a toolbar rather than a landing-page band. */
-.overview-header {
-  min-width: 0;
-  padding: var(--space-md) var(--space-lg);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-lg);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-workspace);
-}
-
-.overview-header > div { min-width: 0; display: grid; gap: 2px; }
-.overview-header h1 { max-width: 60ch; margin: 0; font-size: var(--type-section-size); font-weight: var(--weight-semibold); line-height: var(--type-section-line); letter-spacing: var(--type-section-track); }
-.overview-header p { max-width: 84ch; margin: 0; color: var(--color-text-muted); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
-.overview-header > button { flex: none; min-height: var(--control-height); display: inline-flex; align-items: center; gap: var(--space-sm); }
-
-.overview-facts { margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
-.overview-facts > div { min-width: 0; padding: var(--space-sm) var(--space-lg); border-right: 1px solid var(--color-border); }
-.overview-facts > div:last-child { border-right: 0; }
-.overview-facts dt { color: var(--color-text-muted); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
-.overview-facts dd { margin: 0; font-size: var(--type-subhead-size); font-weight: var(--weight-semibold); line-height: var(--type-subhead-line); font-variant-numeric: tabular-nums; }
-.overview-facts small { display: block; overflow: hidden; color: var(--color-text-subtle); text-overflow: ellipsis; white-space: nowrap; }
-
-.overview-workspace { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 30%); background: var(--color-workspace); }
-.overview-pane { min-width: 0; min-height: 0; display: grid; grid-template-rows: var(--pane-header-height) minmax(0, 1fr); background: var(--color-panel); }
-.overview-pane + .overview-pane { border-left: 1px solid var(--color-border); }
-.overview-pane > header { min-height: var(--pane-header-height); padding: 0 var(--space-md); display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
-.overview-pane > header h2 { margin: 0; font-size: var(--type-label-size); line-height: var(--type-label-line); }
-.overview-pane > header span { color: var(--color-text-muted); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; }
-.overview-pane-status { max-width: 64ch; margin: 0; padding: var(--space-xl); color: var(--color-text-muted); }
-
-.overview-session-rows,
-.overview-actions ul { min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; }
-.overview-session-rows li,
-.overview-actions li { border-bottom: 1px solid var(--color-border); }
-.overview-session-rows button,
-.overview-actions li button { width: 100%; min-height: var(--navigation-row-height); border: 0; border-radius: var(--radius-none); background: transparent; text-align: left; }
-.overview-session-rows button { padding: var(--space-sm) var(--space-md); display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-md); }
-.overview-session-rows button:hover,
-.overview-actions li button:hover { background: var(--color-surface-hover); }
-.overview-session-rows button > span { min-width: 0; display: grid; gap: var(--space-xs); }
-.overview-session-rows button small { overflow: hidden; color: var(--color-text-muted); text-overflow: ellipsis; white-space: nowrap; }
-.overview-session-rows button strong { overflow: hidden; font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.overview-session-rows button em { color: var(--color-text-subtle); font-size: var(--type-meta-size); font-style: normal; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.overview-session-rows button > svg,
-.overview-actions button > svg { color: var(--color-text-subtle); }
-
-.overview-context-rows { min-height: 0; margin: 0; overflow: auto; }
-.overview-context-rows > div { min-height: var(--navigation-row-height); padding: var(--space-sm) var(--space-lg); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-md); border-bottom: 1px solid var(--color-border); }
-.overview-context-rows dt { min-width: 0; display: grid; gap: var(--space-xs); }
-.overview-context-rows dt strong { font-weight: var(--weight-medium); }
-.overview-context-rows dt small { overflow: hidden; color: var(--color-text-muted); text-overflow: ellipsis; white-space: nowrap; }
-.overview-context-rows dd { margin: 0; color: var(--color-text-subtle); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-.overview-actions li button { padding: 0 var(--space-md); display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
-.overview-actions li button span { font-weight: var(--weight-medium); }
-
 .empty-workspace > small,
 .evidence-results > header small,
 .decision-summary header small {
@@ -906,22 +829,6 @@
      and keeping both truncated the scope to a single letter. */
   .studio-status-counts { display: none; }
 
-  .overview-header { align-items: stretch; flex-direction: column; gap: var(--space-md); padding: var(--space-md); }
-  .overview-header > button { width: 100%; justify-content: center; }
-  .overview-facts { grid-template-columns: 1fr 1fr; }
-  .overview-facts > div:nth-child(2) { border-right: 0; }
-  .overview-facts > div:nth-child(-n + 2) { border-bottom: 1px solid var(--color-border); }
-  /* Stacking the panes makes the surface taller than the viewport, so the work
-     area scrolls while the toolbar and status bar stay put. */
-  .control-overview { overflow: auto; grid-template-rows: auto auto auto; }
-  .overview-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; overflow: visible; }
-  .overview-pane { grid-template-rows: var(--pane-header-height) auto; }
-  .overview-pane + .overview-pane { border-top: 1px solid var(--color-border); border-left: 0; }
-  .overview-session-rows,
-  .overview-actions ul,
-  .overview-context-rows { overflow: visible; }
-  .overview-session-rows button { grid-template-columns: minmax(0, 1fr) auto; }
-  .overview-session-rows button em { display: none; }
   .decision-summary > header { align-items: flex-start; flex-direction: column; }
   .decision-summary dl { grid-template-columns: 1fr 1fr; }
   .decision-summary dl > div:nth-child(2) { border-right: 0; }

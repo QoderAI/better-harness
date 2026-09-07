@@ -124,7 +124,7 @@ export type QoderToolPermissionCallback = (
 /** One user turn pushed into a live query's message stream. */
 export interface QoderSdkUserMessage {
   type: "user";
-  message: { role: "user"; content: string };
+  message: { role: "user"; content: Array<{ type: "text"; text: string }> };
   parent_tool_use_id: string | null;
 }
 
@@ -673,7 +673,7 @@ class QoderQuerySession implements HarnessAdapterSession {
     const messages = this.ensureQuery();
     this.queue?.push({
       type: "user",
-      message: { role: "user", content: text },
+      message: { role: "user", content: [{ type: "text", text }] },
       parent_tool_use_id: null,
     });
     return this.drainTurn(messages, emitter);

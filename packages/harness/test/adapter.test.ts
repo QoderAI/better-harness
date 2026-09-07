@@ -93,7 +93,7 @@ function conversationalQoderSdk(
   return {
     qodercliAuth: () => ({}),
     query: ({ prompt, options: queryOptions }: {
-      prompt: string | AsyncIterable<{ message: { content: string } }>;
+      prompt: string | AsyncIterable<{ message: { content: Array<{ type: "text"; text: string }> } }>;
       options: QoderSdkQueryOptions;
     }) => {
       sessions += 1;
@@ -113,7 +113,7 @@ function conversationalQoderSdk(
           throw new Error("this host only accepts a streamed multi-turn prompt");
         }
         for await (const message of prompt) {
-          const text = message.message.content;
+          const text = message.message.content.map((block) => block.text).join("");
           state.turns.push(text);
           memory.push(text);
           if (queryOptions.persistSession) {

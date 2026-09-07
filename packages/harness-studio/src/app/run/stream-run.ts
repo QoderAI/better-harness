@@ -54,20 +54,27 @@ export async function streamRun(
     pendingEvents = [];
     if (events.length > 0) onEvents(events);
   };
+  let terminal = false;
   const apply = (event: HarnessRunStreamEventV1): void => {
+    if (event.event.type === "run-finished" || event.event.type === "run-error") terminal = true;
     pendingEvents.push(event);
     frame ??= globalThis.requestAnimationFrame(flush);
   };
   const parser = createSseParser<unknown>((event) => apply(parseHarnessRunStreamEventV1(event)));
   const decoder = new TextDecoder();
   const reader = response.body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    parser.push(decoder.decode(value, { stream: true }));
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parser.push(decoder.decode(value, { stream: true }));
+    }
+    parser.push(decoder.decode());
+    parser.end();
+    if (!terminal) throw new Error("Run stream closed before completion. Try the run again.");
+  } finally {
+    if (frame !== undefined) globalThis.cancelAnimationFrame(frame);
+    flush();
+    reader.releaseLock();
   }
-  parser.push(decoder.decode());
-  parser.end();
-  if (frame !== undefined) globalThis.cancelAnimationFrame(frame);
-  flush();
 }

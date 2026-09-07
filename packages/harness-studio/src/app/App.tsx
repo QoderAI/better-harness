@@ -15,7 +15,6 @@ import { CompareLiveView } from "./CompareLiveView.js";
 import { CustomizationView } from "./CustomizationView.js";
 import { ExperimentView } from "./experiment/ExperimentView.js";
 import { GitHistoryView } from "./GitHistoryView.js";
-import { InputTraceView } from "./InputTraceView.js";
 import { RunView } from "./run/RunView.js";
 import {
   isArtifactCatalogResponse,
@@ -43,8 +42,8 @@ const InspectorWorkbench = lazy(async () => ({ default: (await import("./Inspect
 import {
   compareSurfaces,
   studioProjectGateRequired,
-  studioOverview,
   studioDestinations,
+  STUDIO_DEFAULT_AREA,
   type StudioArea,
   type StudioAvailability,
   type StudioCompareSurface,
@@ -52,9 +51,7 @@ import {
 } from "./studio-shell-model.js";
 
 const STUDIO_AREAS: readonly StudioArea[] = [
-  "overview",
   "customizations",
-  "inputs",
   "sessions",
   "commits",
   "artifacts",
@@ -465,7 +462,9 @@ export function App(): React.JSX.Element {
     ? compareSurface
     : availableCompareSurfaces[0] ?? compareSurface;
   const destinations = studioDestinations(config, effectiveCompareSurface, t);
-  const current = destinations.find((destination) => destination.id === area) ?? destinations[0]!;
+  const current = destinations.find((destination) => destination.id === area)
+    ?? destinations.find((destination) => destination.id === STUDIO_DEFAULT_AREA)
+    ?? destinations[0]!;
   const compareNavigation = (
     <SurfaceNavigation
       label={t("compare:surfaces.label")}
@@ -487,8 +486,7 @@ export function App(): React.JSX.Element {
   const projectDiscoveryDetail = config.workspaceDiscoveryEnabled
     ? t("project.discoveryChoose")
     : t("project.discoveryUnavailable");
-  const workspaceGateOpen = projects.length === 0 && studioProjectGateRequired(config, sources.length > 0);
-  const overviewConfig = workspaceGateOpen ? config : { ...config, workspaceDiscoveryEnabled: false };
+  const workspaceGateOpen = projects.length === 0 && studioProjectGateRequired(config, sources.length > 0, area);
 
   // Two regimes share one control. Wide windows dock the sidebar and collapse it
   // in place; narrow windows float it over the content, which is the existing
@@ -527,7 +525,7 @@ export function App(): React.JSX.Element {
     <section className="studio-area">
       <header className={`studio-context-bar${contextNavigation ? " has-surface-navigation" : ""}`}>
         <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={sidebarVisible ? t("workspace:gate.closeTitle") : t("workspace:gate.openTitle")} aria-label={sidebarVisible ? t("workspace:gate.closeAria") : t("workspace:gate.openAria")} aria-expanded={sidebarVisible} onClick={toggleSidebar}><SidebarSimple aria-hidden="true" size={17} /></button>
-        <div className="studio-context-title"><small>{activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("contextBar.noProject"))}</small><h1>{t(`area.${area}`)}</h1></div>
+        <div className="studio-context-title"><h1>{t(`area.${area}`)}</h1></div>
         {contextNavigation && <div className="studio-context-navigation">{contextNavigation}</div>}
         {/* The active View's primary action lands here, so a workbench does not
             open a second bar just to hold one button. */}
@@ -536,23 +534,21 @@ export function App(): React.JSX.Element {
         {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
       <div className={`studio-surface studio-surface-${area}`}>
-        {area === "overview" && <Overview key={`overview-${workspaceRevision}`} config={overviewConfig} onOpen={openArea} onOpenSession={(id) => { setSessionOpenId(id); openArea("sessions"); }} />}
         {area === "customizations" && (config.customizationAnalysisEnabled
           ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />
           : <EmptyWorkspace eyebrow={t("customize:empty.eyebrow")} title={t("customize:empty.titleConnected")} detail={t("customize:empty.detailConnected")} command="npx @qoder-ai/harness-studio" />)}
-        {area === "inputs" && (config.workspaceWorkbenchEnabled ? <InputTraceView key={`inputs-${workspaceRevision}`} intentAnalysisEnabled={config.intentAnalysisEnabled} /> : <EmptyWorkspace eyebrow={t("inputs:empty.eyebrow")} title={config.workspaceConnected ? t("inputs:empty.titleConnected") : t("inputs:empty.titleDisconnected")} detail={config.workspaceConnected ? t("inputs:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
-        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} openProjectAction={openProjectAction} />}
+        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
       </div>
-      <StatusBar
+      {area === "debugger" ? <footer className="studio-status-bar"><strong>{activeProject?.label}</strong><div id="studio-debugger-status" /></footer> : <StatusBar
         scope={activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
         status={current.status}
         availability={current.availability}
         config={config}
-      />
+      />}
     </section>
   </div>
   {workspaceGateOpen && <WorkspaceGate onWorkspaceChanged={async () => {
@@ -766,80 +762,6 @@ function sourceKindLabel(kind: StudioSourceKind, t: TFunction): string {
   if (kind === "inspector") return t("sources.inspector");
   if (kind === "evidence") return t("sources.evidence");
   return t("sources.bench");
-}
-
-function Overview(props: { config: StudioConfig; onOpen: (area: StudioArea) => void; onOpenSession: (id: string) => void }): React.JSX.Element {
-  const { t } = useTranslation("overview");
-  const model = studioOverview(props.config, t);
-  const [recentSessions, setRecentSessions] = useState<SessionSummary[]>();
-  const [recentFailure, setRecentFailure] = useState<string>();
-
-  useEffect(() => {
-    if (!props.config.workspaceConnected) {
-      setRecentSessions(undefined);
-      setRecentFailure(undefined);
-      return undefined;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("api/sessions");
-        if (!response.ok) throw new Error(await studioApiError(response));
-        const payload = await response.json() as { sessions: SessionSummary[] };
-        if (cancelled) return;
-        // The pane scrolls locally and is as tall as the work area, so a handful
-        // of rows left most of it empty. This fills the pane and lets the reader
-        // scroll, rather than sending them to Sessions to see a sixth row.
-        setRecentSessions(payload.sessions.slice(0, 12));
-        setRecentFailure(undefined);
-      } catch (error) {
-        if (cancelled) return;
-        setRecentFailure(error instanceof Error ? error.message : t("panes.recentUnavailable"));
-        setRecentSessions([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [props.config.workspaceConnected, props.config.sessionCount]);
-
-  const heading = model.title;
-
-  // The former eyebrow repeated the view name already shown in the title bar,
-  // and stacking it above the title and detail is the header the contract warns
-  // against. The title and one line of detail carry the decision instead.
-  return <main className={`control-overview overview-mode-${model.mode}`}>
-    <header className="overview-header">
-      <div>
-        <h1>{heading}</h1>
-        <p>{model.detail}</p>
-      </div>
-      {model.primaryAction !== undefined && model.mode !== "workspace-required" && <button className="primary" type="button" onClick={() => props.onOpen(model.primaryAction!.area)}>{model.primaryAction.label}<ArrowRight aria-hidden="true" size={14} weight="bold" /></button>}
-    </header>
-    {model.mode === "workspace" && <dl className="overview-facts" aria-label={t("panes.workspaceSummaryAria")}>{model.facts.map((fact) => <div key={fact.id}><dt>{fact.label}</dt><dd>{fact.value}</dd><small>{fact.detail}</small></div>)}</dl>}
-    <div className="overview-workspace">
-      {model.mode === "workspace" ? <section className="overview-pane overview-recent">
-        <header><h2>{t("panes.recentSessions")}</h2><span>{props.config.sessionCount}</span></header>
-        {recentFailure !== undefined
-          ? <p className="overview-pane-status" role="alert">{recentFailure}</p>
-          : recentSessions === undefined
-            ? <p className="overview-pane-status" role="status">{t("panes.loadingSessions")}</p>
-            : recentSessions.length === 0
-              ? <p className="overview-pane-status">{t("panes.noneRetained")}</p>
-              : <ol className="overview-session-rows">{recentSessions.map((session) => <li key={session.id}><button type="button" aria-label={t("panes.openSessionAria", { prompt: session.prompt })} onClick={() => props.onOpenSession(session.id)}><span><small>{session.provider ?? t("common:localAgent")} · {formatSessionTime(session.savedAt, studioLocale())}</small><strong>{session.prompt}</strong></span><em>{t("panes.calls", { count: session.toolCallCount })}</em><ArrowRight aria-hidden="true" size={14} /></button></li>)}</ol>}
-      </section> : <section className="overview-pane overview-context">
-        <header><h2>{model.mode === "configured" ? t("panes.loadedContext") : t("panes.gettingStarted")}</h2><span>{model.facts.length || undefined}</span></header>
-        {model.facts.length === 0
-          ? <p className="overview-pane-status">{model.detail}</p>
-          : <dl className="overview-context-rows">{model.facts.map((fact) => <div key={fact.id}><dt><strong>{fact.label}</strong><small>{fact.detail}</small></dt><dd>{fact.value}</dd></div>)}</dl>}
-      </section>}
-
-      <aside className="overview-pane overview-actions">
-        <header><h2>{t("panes.nextActions")}</h2><span>{model.secondaryActions.length}</span></header>
-        {model.secondaryActions.length === 0
-          ? <p className="overview-pane-status">{model.mode === "workspace" ? t("panes.openSessionsHint") : t("panes.loadContextHint")}</p>
-          : <ul>{model.secondaryActions.map((action) => <li key={action.area}><button type="button" onClick={() => props.onOpen(action.area)}><span>{action.label}</span><ArrowRight aria-hidden="true" size={14} /></button></li>)}</ul>}
-      </aside>
-    </div>
-  </main>;
 }
 
 interface SessionSummary {
@@ -1138,7 +1060,7 @@ function DebuggerWorkspace(props: { config: StudioConfig; openProjectAction?: { 
   if (props.config.harnessMode === "workspace-default" && !props.config.projectExecutionEnabled) {
     return <EmptyWorkspace eyebrow={t("debugger.projectScopedEyebrow")} title={props.project === undefined ? t("debugger.openProjectTitle") : t("debugger.readOnlyTitle")} detail={props.project === undefined ? (props.config.workspaceDiscoveryEnabled ? t("debugger.openProjectDetail") : t("debugger.noDiscoveryDetail")) : t("debugger.readOnlyDetail")} action={props.openProjectAction} />;
   }
-  return <div className="debugger-mode"><RunView runEndpoint="/api/runs/stream" acpEndpoint={props.config.acpEnabled ? "/api/acp/runs/stream" : undefined} acpAgentLabel={props.config.acpAgentLabel} acpAgents={props.config.acpAgents} localRunEnabled={props.config.runEnabled} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? t("debugger.workspaceDefaultQoder") : t("debugger.liveTrial")} project={props.project} /></div>;
+  return <div className="debugger-mode"><RunView embedded runEndpoint="/api/runs/stream" acpEndpoint={props.config.acpEnabled ? "/api/acp/runs/stream" : undefined} acpAgentLabel={props.config.acpAgentLabel} acpAgents={props.config.acpAgents} localRunEnabled={props.config.runEnabled} artifactEndpoint={props.config.artifactsEnabled ? "/api/artifacts" : undefined} harnessLabel={props.config.harnessMode === "workspace-default" ? t("debugger.workspaceDefaultQoder") : t("debugger.liveTrial")} project={props.project} /></div>;
 }
 
 function CompareWorkspace(props: {
@@ -1171,7 +1093,6 @@ function CompareWorkspace(props: {
   }
   if (props.surface === "live") {
     return <CompareLiveView
-      navigation={props.navigation}
       agents={props.config.acpAgents ?? []}
       {...(props.project === undefined ? {} : { project: props.project })}
     />;

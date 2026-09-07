@@ -1,17 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { isStudioProjectCatalog, MAX_STUDIO_PROJECTS, STUDIO_PROJECT_CATALOG_KIND } from "../src/contracts/studio-project.js";
 import { parseStudioLocation, studioLocationHash } from "../src/app/shell/project-routing.js";
+import { STUDIO_DEFAULT_AREA } from "../src/app/studio-shell-model.js";
 
 const PROJECT_ID = `project_${"a".repeat(32)}`;
-const AREAS = new Set(["overview", "sessions", "compare"]);
+const AREAS = new Set(["sessions", "compare"]);
 
 describe("Studio Project contracts", () => {
   it("round-trips opaque Project and View routes while preserving legacy routes", () => {
     expect(parseStudioLocation(`#/projects/${PROJECT_ID}/sessions`, AREAS)).toEqual({ projectId: PROJECT_ID, area: "sessions" });
     expect(studioLocationHash({ projectId: PROJECT_ID, area: "compare" })).toBe(`#/projects/${PROJECT_ID}/compare`);
     expect(parseStudioLocation("#/sessions", AREAS)).toEqual({ area: "sessions" });
-    expect(parseStudioLocation("#/projects/not-a-project/sessions", AREAS)).toEqual({ area: "overview" });
-    expect(parseStudioLocation(`#/projects/${PROJECT_ID}/sessions/extra`, AREAS)).toEqual({ area: "overview" });
+    expect(parseStudioLocation("#/projects/not-a-project/sessions", AREAS)).toEqual({ area: STUDIO_DEFAULT_AREA });
+    expect(parseStudioLocation(`#/projects/${PROJECT_ID}/sessions/extra`, AREAS)).toEqual({ area: STUDIO_DEFAULT_AREA });
+  });
+
+  it("lands a retired View route on the default View and keeps the Project scope", () => {
+    expect(parseStudioLocation(`#/projects/${PROJECT_ID}/overview`, AREAS)).toEqual({ projectId: PROJECT_ID, area: STUDIO_DEFAULT_AREA });
+    expect(parseStudioLocation("#/overview", AREAS)).toEqual({ area: STUDIO_DEFAULT_AREA });
+    expect(parseStudioLocation(undefined, AREAS)).toEqual({ area: STUDIO_DEFAULT_AREA });
   });
 
   it("accepts a bounded catalog and rejects inconsistent active Projects", () => {

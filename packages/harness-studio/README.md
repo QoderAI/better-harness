@@ -5,8 +5,8 @@ provide one shared scope for retained inputs, Sessions, commits, artifacts,
 live runs, and comparisons.
 
 - **Project-first workbench** — open and switch local Projects from the left
-  navigation while `Overview`, `Inputs`, `Sessions`, `Commits`, `Artifacts`,
-  `Debugger`, and `Compare` stay in one stable View shell.
+  navigation while `Customizations`, `Sessions`, `Commits`,
+  `Artifacts`, `Debugger`, and `Compare` stay in one stable View shell.
 
 - **Inspector workspace** — embeds an explicitly supplied, self-contained
   Harness Inspector report behind a sandboxed, read-only document boundary.

@@ -19,7 +19,8 @@
 //! for permission: it waits on a human. Permission therefore hands off to a
 //! detached task and answers from there, leaving the loop free.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::schema::ProtocolVersion;
@@ -105,6 +106,65 @@ impl EventSink {
     /// the established contract; the transcript never travels this way.
     pub fn try_send(&self, event: HostEvent) -> bool {
         self.sender.try_send(Outbound::Event(event)).is_ok()
+    }
+}
+
+/// Per-connection cap on retained Agent stderr lines.
+const MAX_DIAGNOSTIC_LINES: usize = 40;
+
+/// Per-connection cap on retained Agent stderr bytes.
+const MAX_DIAGNOSTIC_BYTES: usize = 4 * 1024;
+
+/// A bounded tail of the Agent's own stderr, kept for failure reporting.
+///
+/// The transport tap is the only place the crate exposes an Agent's diagnostics,
+/// and [`protocol_frame`] deliberately drops stderr because it is not protocol.
+/// Without this, an Agent that rejects its own configuration and exits leaves
+/// `open` reporting `Incoming transport closed`, which names the symptom and not
+/// the cause. Bounded and never emitted as an event: it decorates the error the
+/// caller already receives, matching what the Node executor does with the same
+/// stream.
+#[derive(Clone, Default)]
+pub struct AgentDiagnostics {
+    lines: Arc<Mutex<VecDeque<String>>>,
+}
+
+impl AgentDiagnostics {
+    /// Retain one stderr line, dropping the oldest once either bound is reached.
+    fn push(&self, line: &str) {
+        let line = line.trim_end();
+        if line.is_empty() {
+            return;
+        }
+        let mut lines = self.lines.lock().expect("agent diagnostics");
+        lines.push_back(line.to_owned());
+        while lines.len() > MAX_DIAGNOSTIC_LINES
+            || lines.iter().map(|line| line.len() + 1).sum::<usize>() > MAX_DIAGNOSTIC_BYTES
+        {
+            if lines.pop_front().is_none() {
+                break;
+            }
+        }
+    }
+
+    fn tail(&self) -> String {
+        self.lines
+            .lock()
+            .expect("agent diagnostics")
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Build an error that carries the Agent's own words when it wrote any.
+    fn explain(&self, message: impl Display) -> anyhow::Error {
+        let tail = self.tail();
+        if tail.is_empty() {
+            anyhow!("{message}")
+        } else {
+            anyhow!("{message}\n{tail}")
+        }
     }
 }
 
@@ -214,6 +274,7 @@ impl AgentConnection {
         let permissions = PermissionStore::default();
         let threads: SharedThreads = Arc::new(Mutex::new(HashMap::new()));
 
+        let diagnostics = AgentDiagnostics::default();
         let agent = AcpAgent::new(
             AcpAgentConfig::new(params.command.clone())
                 .args(params.args.clone())
@@ -225,7 +286,14 @@ impl AgentConnection {
             // evidence trace identical in shape to the Node executor's.
             let tap = events.clone();
             let tapped_connection = id.clone();
+            let tapped_diagnostics = diagnostics.clone();
             move |line: &str, direction: LineDirection| {
+                // Stderr is not protocol, so it never becomes a frame; it is the
+                // only channel that explains why a handshake died.
+                if matches!(direction, LineDirection::Stderr) {
+                    tapped_diagnostics.push(line);
+                    return;
+                }
                 if let Some(event) = protocol_frame(&tapped_connection, line, direction) {
                     tap.try_send(event);
                 }
@@ -425,9 +493,13 @@ impl AgentConnection {
                 .await;
         });
 
-        let connection = connection_rx
-            .await
-            .context("the ACP transport closed before it produced a connection")?;
+        let connection = match connection_rx.await {
+            Ok(connection) => connection,
+            Err(_) => {
+                return Err(diagnostics
+                    .explain("the ACP transport closed before it produced a connection"));
+            }
+        };
 
         connection
             .send_request(
@@ -443,7 +515,10 @@ impl AgentConnection {
             )
             .block_task()
             .await
-            .map_err(|error| anyhow!("ACP initialize failed: {error}"))?;
+            // An Agent that refuses its own configuration dies here, and the
+            // transport error alone only says the pipe closed. Its stderr is
+            // what names the file, line, and setting to fix.
+            .map_err(|error| diagnostics.explain(format!("ACP initialize failed: {error}")))?;
 
         Ok(Self {
             id,

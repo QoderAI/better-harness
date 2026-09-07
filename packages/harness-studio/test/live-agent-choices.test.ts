@@ -55,11 +55,12 @@ describe("live run Agent choices", () => {
     expect(resolveLiveAgentChoice(choices, LOCAL_AGENT_CHOICE)).toBeUndefined();
   });
 
-  it("resolves the requested Agent and defaults to the first that can run", () => {
+  it("resolves explicit choices and defaults to an available ACP Agent", () => {
     const choices = liveAgentChoices({ localRunEnabled: true, acpEnabled: true, agents: CATALOG, labels: LABELS });
     expect(resolveLiveAgentChoice(choices, "acp:codex-acp")?.label).toBe("Codex ACP");
-    expect(resolveLiveAgentChoice(choices, "")?.value).toBe(LOCAL_AGENT_CHOICE);
-    expect(resolveLiveAgentChoice(choices, "acp:unknown")?.value).toBe(LOCAL_AGENT_CHOICE);
+    expect(resolveLiveAgentChoice(choices, "")?.value).toBe("acp:qodercli");
+    expect(resolveLiveAgentChoice(choices, LOCAL_AGENT_CHOICE)?.value).toBe(LOCAL_AGENT_CHOICE);
+    expect(resolveLiveAgentChoice(choices, "acp:unknown")?.value).toBe("acp:qodercli");
   });
 
   it("names the selected Agent in the ACP stream request and leaves the local run untouched", () => {

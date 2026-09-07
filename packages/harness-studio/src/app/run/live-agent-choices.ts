@@ -54,7 +54,8 @@ export function resolveLiveAgentChoice(
 ): LiveAgentChoice | undefined {
   const chosen = choices.find((choice) => choice.value === requested);
   if (chosen?.available === true) return chosen;
-  return choices.find((choice) => choice.available);
+  return choices.find((choice) => choice.available && isAcpChoice(choice))
+    ?? choices.find((choice) => choice.available);
 }
 
 export function isAcpChoice(choice: LiveAgentChoice): boolean {

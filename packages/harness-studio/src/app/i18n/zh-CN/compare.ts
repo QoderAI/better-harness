@@ -9,7 +9,6 @@ export const compare: typeof enCompare = {
     results: "证据结果",
   },
   live: {
-    eyebrow: "一个需求，两个 Agent",
     title: "实时对比 Agent",
     promptLabel: "两个 Agent 要做什么？",
     promptPlaceholder: "描述两个 Agent 都要尝试的需求…",
@@ -23,16 +22,9 @@ export const compare: typeof enCompare = {
     noAgents: "本机没有可用的本地 ACP Agent，无法开始实时对比。",
     sharedWorkingTree: "两个 Agent 会同时在本项目的工作树上执行，可能互相覆盖。需要隔离工作树和结论时请用试验台。",
     idle: "输入一个需求并选定两个 Agent，即可开始实时对比。",
-    noWinner: "无法推断获胜方。",
-    samePrompt: "两个 Agent 收到的是：{{prompt}}",
-    metricsAria: "实时 Agent 对比指标",
-    metricColumn: "指标",
-    metrics: {
-      status: "状态",
-      toolCalls: "工具调用",
-      messages: "消息",
-      warnings: "警告",
-    },
+    laneCounts: "{{tools}} 个工具调用 · {{messages}} 条消息",
+    laneWarnings: "{{count}} 条警告",
+    laneWarnings_other: "{{count}} 条警告",
     status: {
       idle: "空闲",
       running: "运行中",

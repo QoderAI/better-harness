@@ -5,16 +5,13 @@ import { compare } from "./compare.js";
 import { customize } from "./customize.js";
 import { experiment } from "./experiment.js";
 import { git } from "./git.js";
-import { inputs } from "./inputs.js";
 import { inspector } from "./inspector.js";
-import { overview } from "./overview.js";
 import { run } from "./run.js";
 import { sessions } from "./sessions.js";
 import { workspace } from "./workspace.js";
 
 export const namespaces = {
   common,
-  overview,
   workspace,
   sessions,
   compare,
@@ -22,7 +19,6 @@ export const namespaces = {
   artifactViewers,
   customize,
   git,
-  inputs,
   inspector,
   run,
   experiment,

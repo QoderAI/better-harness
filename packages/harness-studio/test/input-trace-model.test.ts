@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildUserInputFileTree,
   isUserInputTrace,
   projectUserInputTrace,
 } from "../src/contracts/input-trace.js";
@@ -53,24 +52,6 @@ describe("UserInputTraceV1", () => {
       editTargetCount: 1,
       fileCount: 2,
       truncatedSessionCount: 0,
-    });
-  });
-
-  it("builds a deterministic repository tree with inherited input counts", () => {
-    const trace = projectUserInputTrace(report());
-    const tree = buildUserInputFileTree(trace.inputs);
-
-    expect(tree.map((node) => [node.name, node.kind])).toEqual([
-      ["packages", "directory"],
-      ["DESIGN.md", "file"],
-    ]);
-    expect(tree[0]).toMatchObject({ inputCount: 1, readCount: 2, editTargetCount: 1 });
-    expect(tree[0]?.children[0]?.children[0]?.children[0]?.children[0]).toMatchObject({
-      path: "packages/harness-studio/src/server/server.ts",
-      kind: "file",
-      inputCount: 1,
-      readCount: 2,
-      editTargetCount: 1,
     });
   });
 

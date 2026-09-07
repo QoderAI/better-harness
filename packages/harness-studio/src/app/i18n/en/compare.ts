@@ -7,7 +7,6 @@ export const compare = {
     results: "Evidence results",
   },
   live: {
-    eyebrow: "One prompt, two Agents",
     title: "Compare Agents live",
     promptLabel: "What should both Agents do?",
     promptPlaceholder: "Describe the requirement both Agents should attempt…",
@@ -21,16 +20,9 @@ export const compare = {
     noAgents: "No local ACP Agent is available on this host, so no live comparison can start.",
     sharedWorkingTree: "Both Agents run against this Project's working tree at the same time and can overwrite each other. Use Bench when you need isolated worktrees and a verdict.",
     idle: "Enter a requirement and choose two Agents to start a live comparison.",
-    noWinner: "No winner inferred.",
-    samePrompt: "Both Agents received: {{prompt}}",
-    metricsAria: "Live Agent comparison metrics",
-    metricColumn: "Metric",
-    metrics: {
-      status: "Status",
-      toolCalls: "Tool calls",
-      messages: "Messages",
-      warnings: "Warnings",
-    },
+    laneCounts: "{{tools}} tools · {{messages}} messages",
+    laneWarnings: "{{count}} warning",
+    laneWarnings_other: "{{count}} warnings",
     status: {
       idle: "idle",
       running: "running",

@@ -37,17 +37,6 @@ export interface UserInputTraceV1 {
   summary: UserInputTraceSummary;
 }
 
-export interface UserInputFileTreeNode {
-  id: string;
-  name: string;
-  path: string;
-  kind: "directory" | "file";
-  inputCount: number;
-  readCount: number;
-  editTargetCount: number;
-  children: UserInputFileTreeNode[];
-}
-
 const MAX_INPUTS = 6_000;
 const MAX_FILE_LINKS = 48_000;
 
@@ -137,52 +126,6 @@ function projectTurnLinks(value: unknown, sessionId: string, turnIndex: number):
   return [...aggregated.values()]
     .map((link) => ({ ...link, callIds: [...link.callIds].sort() }))
     .sort((left, right) => left.path.localeCompare(right.path) || left.activity.localeCompare(right.activity));
-}
-
-export function buildUserInputFileTree(inputs: readonly UserInputRecord[]): UserInputFileTreeNode[] {
-  interface MutableNode extends UserInputFileTreeNode { inputIds: Set<string>; childrenMap: Map<string, MutableNode> }
-  const roots = new Map<string, MutableNode>();
-  for (const input of inputs) {
-    for (const link of input.links) {
-      const segments = link.path.split("/");
-      let children = roots;
-      let currentPath = "";
-      for (const [index, name] of segments.entries()) {
-        currentPath = currentPath === "" ? name : `${currentPath}/${name}`;
-        const kind = index === segments.length - 1 ? "file" : "directory";
-        const node = children.get(name) ?? {
-          id: `${kind}:${currentPath}`,
-          name,
-          path: currentPath,
-          kind,
-          inputCount: 0,
-          readCount: 0,
-          editTargetCount: 0,
-          children: [],
-          inputIds: new Set<string>(),
-          childrenMap: new Map<string, MutableNode>(),
-        };
-        node.inputIds.add(input.id);
-        if (link.activity === "read") node.readCount += link.callCount;
-        else node.editTargetCount += link.callCount;
-        children.set(name, node);
-        children = node.childrenMap;
-      }
-    }
-  }
-  const freeze = (nodes: Map<string, MutableNode>): UserInputFileTreeNode[] => [...nodes.values()]
-    .sort((left, right) => Number(left.kind === "file") - Number(right.kind === "file") || left.name.localeCompare(right.name))
-    .map((node) => ({
-      id: node.id,
-      name: node.name,
-      path: node.path,
-      kind: node.kind,
-      inputCount: node.inputIds.size,
-      readCount: node.readCount,
-      editTargetCount: node.editTargetCount,
-      children: freeze(node.childrenMap),
-    }));
-  return freeze(roots);
 }
 
 export function isUserInputTrace(value: unknown): value is UserInputTraceV1 {

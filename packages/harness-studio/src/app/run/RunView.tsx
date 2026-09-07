@@ -1,3 +1,8 @@
+import { ResizableDebuggerPanes } from "./ResizableDebuggerPanes.js";
+import { StreamingMessage } from "./StreamingMessage.js";
+import { LiveRunComposer } from "./LiveRunComposer.js";
+import { ToolbarActions } from "../shell/ToolbarActions.js";
+import { createPortal } from "react-dom";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Icon } from "@phosphor-icons/react";
@@ -6,7 +11,6 @@ import { ArrowBendUpLeft } from "@phosphor-icons/react/ArrowBendUpLeft";
 import { ArrowRight } from "@phosphor-icons/react/ArrowRight";
 import { Binoculars } from "@phosphor-icons/react/Binoculars";
 import { BracketsCurly } from "@phosphor-icons/react/BracketsCurly";
-import { BugBeetle } from "@phosphor-icons/react/BugBeetle";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
 import { CaretLeft } from "@phosphor-icons/react/CaretLeft";
 import { CaretRight } from "@phosphor-icons/react/CaretRight";
@@ -31,7 +35,6 @@ import { Pause } from "@phosphor-icons/react/Pause";
 import { PencilSimple } from "@phosphor-icons/react/PencilSimple";
 import { Play } from "@phosphor-icons/react/Play";
 import { Plus } from "@phosphor-icons/react/Plus";
-import { SidebarSimple } from "@phosphor-icons/react/SidebarSimple";
 import { SkipForward } from "@phosphor-icons/react/SkipForward";
 import { SquaresFour } from "@phosphor-icons/react/SquaresFour";
 import {
@@ -40,7 +43,6 @@ import {
 } from "../../contracts/artifact.js";
 import { TerminalWindow } from "@phosphor-icons/react/TerminalWindow";
 import { TestTube } from "@phosphor-icons/react/TestTube";
-import { TreeStructure } from "@phosphor-icons/react/TreeStructure";
 import { UserCircle } from "@phosphor-icons/react/UserCircle";
 import { WarningCircle } from "@phosphor-icons/react/WarningCircle";
 import { Wrench } from "@phosphor-icons/react/Wrench";
@@ -95,8 +97,7 @@ import {
 import type { StudioAcpAgentOption } from "../studio-shell-model.js";
 import { SAMPLE_DEBUGGER_SESSION } from "./sample-debugger-session.js";
 import { describeToolPayload } from "./tool-call-model.js";
-import { nextStreamingText } from "./streaming-text.js";
-import { buildTimelineBins, groupLiveTimeline, semanticToolKind, type LiveTimelineGroup, type TimelineBin } from "./timeline-model.js";
+import { buildTimelineBins, groupLiveTimeline, semanticToolKind, type LiveTimelineGroup } from "./timeline-model.js";
 
 /** Post one Harness run and fold its native event stream into state updates. */
 async function streamRun(
@@ -156,52 +157,9 @@ const PLAN_ITEMS = [
   "Update timeline and event visualization",
 ];
 
-function useSmoothStreamingText(target: string, complete: boolean): string {
-  const [revealed, setRevealed] = useState(complete ? target : "");
-  const revealedRef = useRef(revealed);
-  const targetRef = useRef(target);
-  const frameRef = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    targetRef.current = target;
-    const replace = complete || !target.startsWith(revealedRef.current);
-    if (replace) {
-      if (frameRef.current !== undefined) cancelAnimationFrame(frameRef.current);
-      frameRef.current = undefined;
-      revealedRef.current = target;
-      setRevealed(target);
-      return;
-    }
-    const tick = (): void => {
-      const current = revealedRef.current;
-      const pending = targetRef.current.slice(current.length);
-      if (pending.length === 0) {
-        frameRef.current = undefined;
-        return;
-      }
-      // Match Zed's 16ms/200ms reveal target. Array.from splits by Unicode
-      // code point, so CJK and emoji are never cut at a UTF-16 surrogate.
-      const next = nextStreamingText(current, targetRef.current);
-      revealedRef.current = next;
-      setRevealed(next);
-      frameRef.current = requestAnimationFrame(tick);
-    };
-    if (frameRef.current === undefined && revealedRef.current !== target) {
-      frameRef.current = requestAnimationFrame(tick);
-    }
-    return () => {
-      if (frameRef.current !== undefined) cancelAnimationFrame(frameRef.current);
-      frameRef.current = undefined;
-    };
-  }, [complete, target]);
-
-  return revealed;
-}
-
 const MessageEntry = memo(function MessageEntry({ item }: { item: MessageTimelineItem }): React.JSX.Element {
   const { t } = useTranslation("run");
-  const text = useSmoothStreamingText(item.text, item.complete);
-  return <div className="entry message"><span className="entry-tag">{t("assistant")}</span><pre>{text}{item.complete ? "" : " ▌"}</pre></div>;
+  return <div className="entry message"><span className="entry-tag">{t("assistant")}</span><StreamingMessage item={item} /></div>;
 });
 
 const ToolCallEntry = memo(function ToolCallEntry({ item }: { item: ToolCallTimelineItem }): React.JSX.Element {
@@ -275,7 +233,9 @@ export function RunView({
   navigation,
   initialMode = "live",
   project,
+  embedded = false,
 }: {
+  embedded?: boolean;
   runEndpoint: string;
   acpEndpoint?: string;
   acpAgentLabel?: string;
@@ -288,8 +248,9 @@ export function RunView({
   project?: { id: string; label: string; revision: number };
 }): React.JSX.Element {
   const { t } = useTranslation("run");
+  const [statusHost, setStatusHost] = useState<HTMLElement | null>(null);
+  useEffect(() => { if (embedded) setStatusHost(document.getElementById("studio-debugger-status")); }, [embedded]);
   const agentLabel = acpAgentLabel ?? t("acpAgent");
-  const harnessName = harnessLabel ?? t("liveTrial");
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>(initialMode);
   const [prompt, setPrompt] = useState("");
   const [requestedAgent, setRequestedAgent] = useState("");
@@ -307,12 +268,19 @@ export function RunView({
   const [runsPanelOpen, setRunsPanelOpen] = useState(false);
   const [savedRun, setSavedRun] = useState<SavedRunRecord | null>(null);
   const [retainedSession, setRetainedSession] = useState<DebuggerSession>(SAMPLE_DEBUGGER_SESSION);
-  const [treeCollapsed, setTreeCollapsed] = useState(() => globalThis.matchMedia?.("(max-width: 900px)").matches ?? false);
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(() => globalThis.matchMedia?.("(max-width: 900px)").matches ?? false);
   const busy = useRef(false);
-  const permissionOpenedInspector = useRef(false);
   const firstCursorRender = useRef(true);
   const liveStateRef = useRef<HarnessRunState>(initialRunState());
+
+  const permissionWasPending = useRef(false);
+  useEffect(() => {
+    const pending = state.pendingPermission !== undefined;
+    if (document.querySelector('.debugger-grid[data-layout="stacked"]')) {
+      if (pending) document.querySelector(".live-inspector")?.scrollIntoView({ block: "nearest" });
+      else if (permissionWasPending.current) document.querySelector(".live-notebook")?.scrollIntoView({ block: "start" });
+    }
+    permissionWasPending.current = pending;
+  }, [state.pendingPermission]);
 
   const selectedEvent = eventForCursor(retainedSession, cursor);
   const agentChoices = useMemo(() => liveAgentChoices({
@@ -330,29 +298,6 @@ export function RunView({
     () => buildTimelineBins(liveTimeline, 64, (item) => item.kind === "message" ? "response" : semanticToolKind(item)),
     [liveTimeline],
   );
-
-  useEffect(() => {
-    const media = globalThis.matchMedia?.("(max-width: 900px)");
-    if (media === undefined) return;
-    const listener = (event: MediaQueryListEvent): void => {
-      setTreeCollapsed(event.matches);
-      setInspectorCollapsed(event.matches);
-    };
-    media.addEventListener("change", listener);
-    return () => media.removeEventListener("change", listener);
-  }, []);
-
-  useEffect(() => {
-    if (state.pendingPermission !== undefined && inspectorCollapsed) {
-      permissionOpenedInspector.current = true;
-      setInspectorCollapsed(false);
-      return;
-    }
-    if (state.pendingPermission === undefined && permissionOpenedInspector.current) {
-      permissionOpenedInspector.current = false;
-      setInspectorCollapsed(true);
-    }
-  }, [inspectorCollapsed, state.pendingPermission]);
 
   useEffect(() => {
     if (firstCursorRender.current) {
@@ -436,7 +381,7 @@ export function RunView({
     setRetainedSession(SAMPLE_DEBUGGER_SESSION);
     setRunsPanelOpen(false);
     setComposerOpen(false);
-    const fresh: HarnessRunState = { ...initialRunState(), status: "running" };
+    const fresh: HarnessRunState = { ...initialRunState(), status: "running", runId, threadId };
     liveStateRef.current = fresh;
     setState(fresh);
     try {
@@ -498,19 +443,15 @@ export function RunView({
 
   const live = surfaceMode === "live";
   const saved = savedRun !== null;
-  const sessionName = live ? (viewPrompt || t("newHarnessRun")) : retainedSession.name;
-  const connectionState = live ? viewState.status : retainedSession.connection;
-const ranWithProject = submittedPrompt === "" ? project : runProject;
   const runMode = saved ? t("mode.savedRun") : live ? t("mode.liveWithStatus", { status: liveRunStatusLabel(viewState, t) }) : retainedSession.mode;
   const liveObservation = liveObservationCopy(viewState, t);
 
-  return <section className={`debugger-shell${treeCollapsed ? " tree-collapsed" : ""}${inspectorCollapsed ? " inspector-collapsed" : ""}`}>
-    <header className="debugger-topbar">
-      <div className="debugger-brand"><span className="debugger-mark"><BugBeetle size={18} weight="fill" /></span><strong>{live ? t("title.liveRun") : t("labels.inspector")}</strong><span title={ranWithProject === undefined ? undefined : t("projectMeta", { label: ranWithProject.label, revision: ranWithProject.revision })}>{live ? `${harnessName}${ranWithProject === undefined ? "" : ` · ${ranWithProject.label}`}` : saved ? t("mode.retainedDebugger") : t("mode.demoDebugger")}</span></div>
-      <div className="debugger-session-meta"><span>{t("labels.session")}</span><strong title={sessionName}>{sessionName}</strong><em className={live ? "live" : "recorded"}>{runMode}</em></div>
-      <div className="debugger-runtime-meta"><span className={`connection-dot status-${connectionState}`} /><strong>{connectionState}</strong><i /><span>{t("labels.agent")}</span><strong>{live ? activeRuntime === "acp" ? activeAgentLabel ?? agentLabel : t("localHarness") : retainedSession.agent}</strong><i /><span>{t("labels.protocol")}</span><strong>{live ? activeRuntime === "acp" ? t("acpStream") : t("harnessStream") : retainedSession.protocol}</strong></div>
-      <div className="debugger-top-actions">{navigation}{live && activeRuntime === "acp" && state.status === "running" ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />{t("cancelRun")}</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>{t("savedRuns")}{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label={t("savedRuns")}>{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>{t("backToLive")}</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">{t("noSavedRuns")}</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{t("savedRunMeta", { count: run.toolCallCount, time: run.savedAt.slice(0, 19).replace("T", " ") })}</span></button>)}</div>}</div><button type="button" onClick={() => setTreeCollapsed((value) => !value)} aria-pressed={!treeCollapsed} title={t("toggleTree")}><TreeStructure size={15} /></button><button type="button" onClick={() => setInspectorCollapsed((value) => !value)} aria-pressed={!inspectorCollapsed} title={t("toggleInspector")}><SidebarSimple size={15} /></button><button type="button" className="new-run" onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" />{t("newLiveRun")}</button></div>
-    </header>
+  const actions = <div className="debugger-top-actions">{navigation}{live && activeRuntime === "acp" && state.status === "running" ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />{t("cancelRun")}</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-label={t("savedRuns")} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>{t("savedRuns")}{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label={t("savedRuns")}>{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>{t("backToLive")}</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">{t("noSavedRuns")}</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{t("savedRunMeta", { count: run.toolCallCount, time: run.savedAt.slice(0, 19).replace("T", " ") })}</span></button>)}</div>}</div><button type="button" className="new-run" aria-label={t("newLiveRun")} title={t("newLiveRun")} onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" /><span>{t("newLiveRun")}</span></button></div>;
+  const status = <div className="debugger-status" role="status"><span className={`status-dot status-${viewState.status}`} aria-hidden="true" /><span>{live ? liveObservation.title : runMode}</span><span>{t("live.retainedEvents", { count: live ? liveTimeline.length : retainedSession.events.length })}</span>{live && liveTimeline.length > 0 && <div className="debugger-status-track">{liveBins.map((bin) => <span key={bin.index} className={`timeline-segment kind-${bin.kind}`} title={t("live.binEvents", { count: bin.count })} />)}</div>}{embedded && !live && <nav className="debugger-status-cursor" aria-label={t("minimap.aria")}>{retainedSession.events.map((event, index) => <button key={event.id} type="button" aria-label={t("minimap.segmentAria", { phase: event.phase, title: event.title })} title={event.title} aria-current={event.id === cursor.eventId ? "true" : undefined} onClick={() => selectCursor({ eventId: event.id })}>{index + 1}</button>)}</nav>}</div>;
+  return <section className={`debugger-shell${embedded ? " embedded-debugger" : ""}${live ? " live-debugger" : ""}`}>
+    {embedded ? <ToolbarActions>{actions}</ToolbarActions> : <header className="debugger-topbar"><strong>{t("title.liveRun")}</strong>{actions}</header>}
+    {embedded && statusHost ? createPortal(status, statusHost) : null}
+
 
     {!live ? <nav className="debugger-toolbar" aria-label={t("controlsAria")}>
       <div className="step-controls">
@@ -525,17 +466,18 @@ const ranWithProject = submittedPrompt === "" ? project : runProject;
       </div>
 <fieldset className="stop-conditions" aria-label={stopConditionLabel(stopConditions, t)}><legend>{t("stopOnLabel")}</legend>{STOP_CONDITIONS.map((condition) => <label key={condition}><input type="checkbox" checked={stopConditions[condition]} onChange={(event) => setStopConditions((previous) => ({ ...previous, [condition]: event.target.checked }))} /><span>{t(`stopOn.${condition}`)}</span></label>)}</fieldset>
       <div className="pause-boundary"><Pause size={13} weight="fill" /><span>{t("evidenceCursor")}</span></div>
-    </nav> : <div className="live-observation-bar" role="status"><span><i className={`status-dot status-${viewState.status}`} aria-hidden="true" />{liveObservation.title}</span><strong>{liveObservation.detail}</strong></div>}
+    </nav> : null}
 
-    <div className="debugger-grid">
-      {live ? <LiveExecutionTree state={viewState} prompt={viewPrompt} /> : <ExecutionTree session={retainedSession} cursor={cursor} expanded={expandedNodes} onToggle={toggleExpanded} onSelect={selectNode} />}
-      {live ? <LiveNotebook state={viewState} prompt={viewPrompt} groups={liveGroups} /> : <SessionNotebook session={retainedSession} cursor={cursor} expanded={expandedNodes} onSelect={selectCursor} onToggle={toggleExpanded} />}
-      {live ? <LiveInspector state={viewState} runtime={activeRuntime} onPermission={decidePermission} /> : <StateInspector session={retainedSession} cursor={cursor} activeTab={inspectorTab} artifactEndpoint={artifactEndpoint} onTab={setInspectorTab} onPrevious={() => selectCursor(previousStateCursor(retainedSession, cursor))} />}
-    </div>
+    <ResizableDebuggerPanes
+      tree={live ? <LiveExecutionTree state={viewState} prompt={viewPrompt} /> : <ExecutionTree session={retainedSession} cursor={cursor} expanded={expandedNodes} onToggle={toggleExpanded} onSelect={selectNode} />}
+      activity={live ? <LiveNotebook state={viewState} prompt={viewPrompt} groups={liveGroups} /> : <SessionNotebook session={retainedSession} cursor={cursor} expanded={expandedNodes} onSelect={selectCursor} onToggle={toggleExpanded} />}
+      inspector={live ? <LiveInspector state={viewState} runtime={submittedPrompt ? activeRuntime : selectedAgent && isAcpChoice(selectedAgent) ? "acp" : "qoder"} agentLabel={activeAgentLabel ?? selectedAgent?.label ?? agentLabel} project={submittedPrompt ? runProject : project} onPermission={decidePermission} /> : <StateInspector session={retainedSession} cursor={cursor} activeTab={inspectorTab} artifactEndpoint={artifactEndpoint} onTab={setInspectorTab} onPrevious={() => selectCursor(previousStateCursor(retainedSession, cursor))} />}
+    />
 
-    {live ? <LiveTimeline state={viewState} bins={liveBins} eventCount={liveTimeline.length} /> : <TimelineMinimap session={retainedSession} cursor={cursor} onSelect={selectCursor} />}
+    {!embedded && !live && <TimelineMinimap session={retainedSession} cursor={cursor} onSelect={selectCursor} />}
+    {!embedded && status}
 
-{composerOpen && <div className="live-composer-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setComposerOpen(false); }}><section className="live-composer" role="dialog" aria-modal="true" aria-labelledby="live-composer-title"><header><div><small>{harnessName}</small><h2 id="live-composer-title">{t("composer.title")}</h2></div><button type="button" onClick={() => setComposerOpen(false)} aria-label={t("composer.closeAria")}><XCircle size={19} /></button></header><p>{t("composer.detail", { context: project === undefined ? t("composer.configuredContext") : t("composer.projectContext", { label: project.label, revision: project.revision }) })}</p>{agentChoices.length > 1 ? <label className="live-agent-select"><span>{t("composer.agent")}</span><select value={selectedAgent?.value ?? ""} onChange={(event) => setRequestedAgent(event.target.value)}>{agentChoices.map((choice) => <option key={choice.value} value={choice.value} disabled={!choice.available} title={choice.detail}>{choice.available ? choice.label : t("composer.agentUnavailable", { agent: choice.label })}</option>)}</select></label> : null}<textarea value={prompt} placeholder={t("composer.promptPlaceholder")} onChange={(event) => setPrompt(event.target.value)} rows={5} autoFocus /><footer><button type="button" onClick={() => setComposerOpen(false)}>{t("composer.cancel")}</button><button type="button" className="primary" onClick={() => void start()} disabled={state.status === "running" || prompt.trim().length === 0 || selectedAgent === undefined}><Play size={14} weight="fill" />{t("composer.run")}</button></footer></section></div>}
+{composerOpen && <LiveRunComposer projectLabel={project?.label} agents={agentChoices} selectedAgent={selectedAgent} prompt={prompt} running={state.status === "running"} onAgent={setRequestedAgent} onPrompt={setPrompt} onClose={() => setComposerOpen(false)} onRun={() => void start()} />}
   </section>;
 }
 
@@ -666,7 +608,7 @@ function StateInspector(props: { session: DebuggerSession; cursor: DebuggerCurso
   const previous = priorStopEvent(props.session, props.cursor);
   const tablist = useRovingTablist({ ids: INSPECTOR_TABS.map((tab) => tab.id), active: props.activeTab, onSelect: props.onTab, panelId: "state-inspector-panel" });
   return <aside className="state-inspector" aria-label={t("inspector.stateAria")}>
-    <header><div><small>{t("inspector.title")}</small><strong>{event.phase} · {event.timestamp}</strong></div><span>{props.cursor.toolCallId ? t("inspector.toolCallCursor") : t("inspector.evidenceCursor")}</span></header>
+    <header><div><strong>{event.phase} · {event.timestamp}</strong></div><span>{props.cursor.toolCallId ? t("inspector.toolCallCursor") : t("inspector.evidenceCursor")}</span></header>
     <nav className="inspector-tabs" aria-label={t("inspector.viewsAria")} {...tablist.tablistProps}>{INSPECTOR_TABS.map((tab) => { const TabIcon = tab.icon; return <button key={tab.id} type="button" {...tablist.getTabProps(tab.id)} onClick={() => props.onTab(tab.id)}><TabIcon size={14} /><span>{t(`inspectorTabs.${tab.id}`)}</span></button>; })}</nav>
     <div className="inspector-scroll" id="state-inspector-panel" role="tabpanel"><div className="inspector-comparison"><strong>{t("inspector.tabAt", { label: t(`inspectorTabs.${props.activeTab}`), timestamp: event.timestamp })}</strong><span>{t("inspector.comparedWith", { when: previous?.timestamp ?? t("inspector.sessionStart") })}</span></div><InspectorContent session={props.session} tab={props.activeTab} cursor={props.cursor} artifactEndpoint={props.artifactEndpoint} /></div>
     <footer><button type="button" onClick={props.onPrevious}><ClockCounterClockwise size={13} />{t("controls.previousState")}</button><button type="button"><Clock size={13} />{t("inspector.viewHistory")}</button></footer>
@@ -772,12 +714,12 @@ function TimelineMinimap(props: { session: DebuggerSession; cursor: DebuggerCurs
 
 function LiveExecutionTree({ state, prompt }: { state: HarnessRunState; prompt: string }): React.JSX.Element {
   const { t } = useTranslation("run");
-  return <aside className="execution-tree live-tree" aria-label={t("tree.title")}><header><div><small>{t("tree.title")}</small><strong>{t("tree.liveObservations")}</strong></div><span>{t("tree.eventCount", { count: state.timelineKeys.length })}</span></header><div className="execution-tree-scroll"><TreeRow nodeId="live-session" label={t("tree.session")} detail={state.runId ?? t("tree.starting")} icon={Database} selected={false} depth={0} expandable expanded onSelect={() => undefined} /><TreeRow nodeId="live-turn" label={t("tree.turn", { turn: 1 })} detail={prompt} icon={GitBranch} selected={false} depth={1} expandable expanded onSelect={() => undefined} /><TreeRow nodeId="live-prompt" label={t("tree.prompt")} detail={prompt} icon={UserCircle} selected={false} depth={2} onSelect={() => undefined} /><TreeRow nodeId="live-tools" label={t("tree.stages")} detail={t("tree.toolCallCount", { count: state.toolCallCount })} icon={Wrench} selected={false} depth={2} status={state.status} onSelect={() => undefined} /></div></aside>;
+  return <aside className="execution-tree live-tree" aria-label={t("tree.title")}><header><div><strong>{t("tree.title")}</strong></div><span>{t("tree.eventCount", { count: state.timelineKeys.length })}</span></header><div className="execution-tree-scroll"><TreeRow nodeId="live-session" label={t("tree.session")} detail={state.runId ?? t("tree.starting")} icon={Database} selected={false} depth={0} onSelect={() => undefined} /><TreeRow nodeId="live-turn" label={t("tree.turn", { turn: 1 })} detail={prompt} icon={GitBranch} selected={false} depth={1} onSelect={() => undefined} /><TreeRow nodeId="live-prompt" label={t("tree.prompt")} detail={prompt} icon={UserCircle} selected={false} depth={2} onSelect={() => undefined} /><TreeRow nodeId="live-tools" label={t("tree.stages")} detail={t("tree.toolCallCount", { count: state.toolCallCount })} icon={Wrench} selected={false} depth={2} status={state.status} onSelect={() => undefined} /></div></aside>;
 }
 
 function LiveNotebook({ state, prompt, groups }: { state: HarnessRunState; prompt: string; groups: LiveTimelineGroup[] }): React.JSX.Element {
   const { t } = useTranslation("run");
-  return <main className="session-notebook live-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><nav><button type="button" className="active"><ClipboardText size={13} />{t("live.notebookTitle")}</button></nav><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><div className="session-notebook-scroll"><article className="debugger-event event-prompt"><div className="event-rail"><span><UserCircle size={13} /></span></div><div className="debugger-event-card"><header><div><strong>{t("live.userRequest")}</strong></div><span>{t("event.prompt")}</span></header><section className="prompt-cell"><p>{prompt}</p></section></div></article><section className="live-session-stage"><p className="status-line run-status"><span className={`status-dot status-${state.status}`} aria-hidden="true" />{t("live.statusLabel")}<strong>{state.status}</strong>{state.runId ? <span>{t("live.runId", { id: state.runId })}</span> : null}</p>{state.warnings.map((warning, index) => <p className="warning" key={index}><WarningCircle size={14} />{warning}</p>)}{state.error ? <p className="error"><XCircle size={14} />{state.error}</p> : null}<section className="activity-panel" aria-label={t("live.agentActivity")}><header className="activity-panel-head"><div><small>{t("live.semanticStages")}</small><h2>{t("live.agentActivity")}</h2></div><span>{t("live.activitySummary", { calls: state.toolCallCount, groups: groups.length })}</span></header><VirtualLiveTimeline groups={groups} followLatest={state.status === "running"} /></section>{state.result !== undefined ? <details className="live-run-result"><summary>{t("live.runResult")}</summary><pre>{JSON.stringify(state.result, null, 2)}</pre></details> : null}</section></div></main>;
+  return <main className="session-notebook live-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><nav><button type="button" className="active"><ClipboardText size={13} />{t("live.notebookTitle")}</button></nav><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><div className="session-notebook-scroll"><article className="debugger-event event-prompt"><div className="event-rail"><span><UserCircle size={13} /></span></div><div className="debugger-event-card"><header><div><strong>{t("live.userRequest")}</strong></div><span>{t("event.prompt")}</span></header><section className="prompt-cell"><p>{prompt}</p></section></div></article><section className="live-session-stage">{state.warnings.map((warning, index) => <p className="warning" key={index}><WarningCircle size={14} />{warning}</p>)}{state.error ? <p className="error" role="alert"><XCircle size={14} />{state.error}</p> : null}<section className="activity-panel" aria-label={t("live.agentActivity")}><header className="activity-panel-head"><div><h2>{t("live.agentActivity")}</h2></div><span>{t("live.activitySummary", { calls: state.toolCallCount, groups: groups.length })}</span></header><VirtualLiveTimeline groups={groups} followLatest={state.status === "running"} /></section>{state.result !== undefined ? <details className="live-run-result"><summary>{t("live.runResult")}</summary><pre>{JSON.stringify(state.result, null, 2)}</pre></details> : null}</section></div></main>;
 }
 
 function VirtualLiveTimeline(props: { groups: LiveTimelineGroup[]; followLatest: boolean }): React.JSX.Element {
@@ -803,7 +745,7 @@ function VirtualLiveTimeline(props: { groups: LiveTimelineGroup[]; followLatest:
       virtualizer.scrollToIndex(props.groups.length - 1, { align: "end" });
     }
   }, [props.followLatest, props.groups, virtualizer]);
-  if (props.groups.length === 0) return <p className="activity-empty">{t("live.waiting")}</p>;
+  if (props.groups.length === 0) return props.followLatest ? <p className="activity-empty">{t("live.waiting")}</p> : <></>;
   return <div className="timeline virtual-live-timeline" ref={scrollRef} onScroll={handleScroll}><div className="virtual-live-spacer" style={{ height: virtualizer.getTotalSize() }}>{virtualizer.getVirtualItems().map((virtualItem) => { const group = props.groups[virtualItem.index]!; return <div className="virtual-live-row" data-index={virtualItem.index} key={group.key} ref={virtualizer.measureElement} style={{ transform: `translateY(${virtualItem.start}px)` }}><LiveGroupEntry group={group} /></div>; })}</div></div>;
 }
 
@@ -815,14 +757,9 @@ function LiveGroupEntry({ group }: { group: LiveTimelineGroup }): React.JSX.Elem
   return <details className={`live-tool-group kind-${group.kind}`}><summary><span>{group.kind}</span><strong>{tool.name} ×{group.items.length}</strong><em>{t("live.toolGroup")}</em></summary><div>{group.items.map((item) => <ToolCallEntry item={item as ToolCallTimelineItem} key={item.id} />)}</div></details>;
 }
 
-function LiveInspector({ state, runtime, onPermission }: { state: HarnessRunState; runtime: LiveRuntime; onPermission: (requestId: string, optionId: string) => Promise<void> }): React.JSX.Element {
+function LiveInspector({ state, runtime, agentLabel, project, onPermission }: { state: HarnessRunState; runtime: LiveRuntime; agentLabel: string; project?: { label: string; revision: number }; onPermission: (requestId: string, optionId: string) => Promise<void> }): React.JSX.Element {
 const { t } = useTranslation("run");
-  return <aside className="state-inspector live-inspector" aria-label={t("inspector.stateAria")}><header><div><small>{t("inspector.title")}</small><strong>{t("inspector.liveObservation")}</strong></div><span>{liveRunStatusLabel(state, t)}</span></header><div className="inspector-scroll"><InspectorSection title={t("inspector.runtimeBoundary")}><ul className="checkpoint-boundary"><li className="available"><CheckCircle size={13} weight="fill" /><span><strong>{t("inspector.evidenceStream")}</strong><small>{state.status}</small></span></li><li className={state.pendingPermission === undefined ? "" : "available"}>{state.pendingPermission === undefined ? <WarningCircle size={13} weight="fill" /> : <CheckCircle size={13} weight="fill" />}<span><strong>{t("inspector.gatePause")}</strong><small>{state.pendingPermission === undefined ? t("inspector.notReported") : t("inspector.permissionRequested")}</small></span></li><li><WarningCircle size={13} weight="fill" /><span><strong>{t("inspector.hardPause")}</strong><small>{t("inspector.notReported")}</small></span></li></ul></InspectorSection>{state.pendingPermission !== undefined ? <InspectorSection title={t("inspector.acpPermission")}><div className="acp-permission"><strong>{state.pendingPermission.title}</strong><small>{t("inspector.toolCall", { id: state.pendingPermission.toolCallId })}</small><div>{state.pendingPermission.options.map((option) => <button type="button" key={option.optionId} onClick={() => void onPermission(state.pendingPermission!.requestId, option.optionId)}>{option.name}<span>{option.kind}</span></button>)}</div></div></InspectorSection> : null}<InspectorSection title={t("inspector.observedState")}><dl className="fact-list"><div><dt>{t("inspector.runId")}</dt><dd>{state.runId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.threadId")}</dt><dd>{state.threadId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.toolCalls")}</dt><dd>{state.toolCallCount}</dd></div><div><dt>{t("inspector.warnings")}</dt><dd>{state.warnings.length}</dd></div>{runtime === "acp" ? <div><dt>{t("inspector.acpFrames")}</dt><dd>{state.protocolEvents.length}</dd></div> : null}</dl></InspectorSection>{runtime === "acp" ? <InspectorSection title={t("raw.rawAcp")}><div className="acp-protocol-list">{state.protocolEvents.length === 0 ? <p className="inspector-note">{t("raw.waiting")}</p> : state.protocolEvents.slice(-12).map((event, index) => <details key={`${event.direction}:${event.rpcId ?? index}:${index}`}><summary><span>{event.direction}</span><strong>{event.method}</strong></summary><pre>{JSON.stringify(event.payload, null, 2)}</pre></details>)}</div></InspectorSection> : null}{runtime === "acp" ? <InspectorSection title={t("inspector.meaning")}><p className="inspector-note">{t("inspector.acpMeaning")}</p></InspectorSection> : null}</div></aside>;
-}
-
-function LiveTimeline({ state, bins, eventCount }: { state: HarnessRunState; bins: TimelineBin<DebuggerEventKind>[]; eventCount: number }): React.JSX.Element {
-  const { t } = useTranslation("run");
-  return <footer className="timeline-minimap live-minimap"><div className="timeline-range"><span>{t("live.liveLabel")}</span><strong>{t("live.semanticTimeline")}</strong><span>{state.status}</span></div><div className="timeline-track">{bins.length === 0 ? <span className="live-track-empty">{t("live.waitingEvents")}</span> : bins.map((bin) => <span key={bin.index} className={`timeline-segment kind-${bin.kind}`} title={t("live.binEvents", { count: bin.count })} />)}</div><div className="timeline-footer"><strong>{t("live.retainedEvents", { count: eventCount })}</strong></div></footer>;
+  return <aside className="state-inspector live-inspector" aria-label={t("inspector.stateAria")}><header><div><strong>{t("inspector.liveObservation")}</strong></div><span>{liveRunStatusLabel(state, t)}</span></header><div className="inspector-scroll">{state.pendingPermission !== undefined ? <InspectorSection title={t("inspector.acpPermission")}><div className="acp-permission"><strong>{state.pendingPermission.title}</strong><small>{t("inspector.toolCall", { id: state.pendingPermission.toolCallId })}</small><div>{state.pendingPermission.options.map((option) => <button type="button" key={option.optionId} onClick={() => void onPermission(state.pendingPermission!.requestId, option.optionId)}>{option.name}<span>{option.kind}</span></button>)}</div></div></InspectorSection> : null}<div className="debugger-runtime-meta">{project && <span className="debugger-run-project" title={t("projectMeta", { label: project.label, revision: project.revision })}>{project.label}</span>}<strong>{agentLabel}</strong>{runtime === "acp" ? t("acpStream") : t("harnessStream")}</div><InspectorSection title={t("inspector.observedState")}><dl className="fact-list"><div><dt>{t("inspector.runId")}</dt><dd>{state.runId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.threadId")}</dt><dd>{state.threadId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.toolCalls")}</dt><dd>{state.toolCallCount}</dd></div><div><dt>{t("inspector.warnings")}</dt><dd>{state.warnings.length}</dd></div>{runtime === "acp" ? <div><dt>{t("inspector.acpFrames")}</dt><dd>{state.protocolEvents.length}</dd></div> : null}</dl></InspectorSection>{runtime === "acp" ? <InspectorSection title={t("raw.rawAcp")}><div className="acp-protocol-list">{state.protocolEvents.length === 0 ? <p className="inspector-note">{t("raw.waiting")}</p> : state.protocolEvents.slice(-12).map((event, index) => <details key={`${event.direction}:${event.rpcId ?? index}:${index}`}><summary><span>{event.direction}</span><strong>{event.method}</strong></summary><pre>{JSON.stringify(event.payload, null, 2)}</pre></details>)}</div></InspectorSection> : null}</div></aside>;
 }
 
 function liveRunStatusLabel(state: HarnessRunState, t: (key: string, options?: Record<string, unknown>) => string): string {

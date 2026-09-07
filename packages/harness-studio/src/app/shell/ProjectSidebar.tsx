@@ -4,7 +4,6 @@ import type { Icon } from "@phosphor-icons/react";
 import { Binoculars } from "@phosphor-icons/react/Binoculars";
 import { BugBeetle } from "@phosphor-icons/react/BugBeetle";
 import { CaretUpDown } from "@phosphor-icons/react/CaretUpDown";
-import { ChatText } from "@phosphor-icons/react/ChatText";
 import { Flask } from "@phosphor-icons/react/Flask";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { GitBranch } from "@phosphor-icons/react/GitBranch";
@@ -12,15 +11,12 @@ import { Package } from "@phosphor-icons/react/Package";
 import { Plus } from "@phosphor-icons/react/Plus";
 import { PuzzlePiece } from "@phosphor-icons/react/PuzzlePiece";
 import { SidebarSimple } from "@phosphor-icons/react/SidebarSimple";
-import { SquaresFour } from "@phosphor-icons/react/SquaresFour";
 import { X } from "@phosphor-icons/react/X";
 import type { StudioProjectDescriptor } from "../../contracts/studio-project.js";
 import type { StudioArea, StudioDestination } from "../studio-shell-model.js";
 
 const VIEW_ICONS: Record<StudioArea, Icon> = {
-  overview: SquaresFour,
   customizations: PuzzlePiece,
-  inputs: ChatText,
   sessions: Binoculars,
   commits: GitBranch,
   artifacts: Package,

@@ -79,6 +79,20 @@ const app = agent({ name: "better-harness-acp-fixture" })
       ],
       _meta: { authorization: "Bearer fixture-secret" },
     });
+    if (process.argv.includes("--stream-chunks")) {
+      await context.client.notify(methods.client.session.update, {
+        sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "fixture:stream-first" } },
+      });
+      await context.client.request(methods.client.session.requestPermission, {
+        sessionId,
+        toolCall: { toolCallId: "stream-gate", title: "Continue streamed response", kind: "read", status: "pending" },
+        options: [{ optionId: "continue", name: "Continue stream", kind: "allow_once" }],
+      });
+      await context.client.notify(methods.client.session.update, {
+        sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: ":stream-last" } },
+      });
+      return { stopReason: "end_turn" };
+    }
     let serviceResult;
     if (process.argv.includes("--exercise-client-services")) {
       const source = process.env.ACP_SERVICE_SOURCE;

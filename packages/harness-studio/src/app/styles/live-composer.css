@@ -1,0 +1,33 @@
+/* LiveRunComposer owns layout. Shared tokens own control and focus appearance. */
+.live-composer {
+  width: min(480px, calc(100% - 2 * var(--space-lg)));
+  max-height: calc(100dvh - 2 * var(--space-lg));
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  background: var(--color-panel);
+  box-shadow: var(--shadow-overlay);
+}
+.live-composer::backdrop { background: var(--color-overlay); }
+.live-composer form { display: grid; gap: var(--space-lg); padding: var(--space-lg); }
+.live-composer header,
+.live-composer footer { display: flex; align-items: center; gap: var(--space-sm); }
+.live-composer header { justify-content: space-between; }
+.live-composer h2 { margin: 0; font-size: var(--type-subhead-size); line-height: var(--type-subhead-line); }
+.live-composer header > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.live-composer-agent { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--space-md); color: var(--color-text-muted); }
+.live-composer :is(select, textarea) {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  padding: var(--space-sm);
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+.live-composer select { min-height: var(--control-height); padding-block: var(--space-xs); }
+.live-composer textarea { resize: vertical; max-height: 40dvh; }
+.live-composer footer { justify-content: flex-end; }

@@ -1,14 +1,19 @@
 import type { TFunction } from "i18next";
 
 export type StudioArea =
-  | "overview"
   | "customizations"
-  | "inputs"
   | "sessions"
   | "commits"
   | "artifacts"
   | "debugger"
   | "compare";
+
+/**
+ * The landing View. Sessions is the retained evidence a reader opens Studio for,
+ * so an unknown route and a fresh launch both resolve here rather than to
+ * whichever View happens to sort first in the sidebar.
+ */
+export const STUDIO_DEFAULT_AREA: StudioArea = "sessions";
 
 export type StudioCompareSurface = "live" | "sessions" | "bench" | "results";
 export type StudioInspectorSurface = "workbench";
@@ -76,29 +81,6 @@ export interface StudioDestination {
   status: string;
 }
 
-export type StudioOverviewMode = "workspace-required" | "workspace" | "configured" | "empty";
-
-export interface StudioOverviewAction {
-  area: StudioArea;
-  label: string;
-}
-
-export interface StudioOverviewFact {
-  id: string;
-  label: string;
-  value: string;
-  detail: string;
-}
-
-export interface StudioOverviewModel {
-  mode: StudioOverviewMode;
-  title: string;
-  detail: string;
-  primaryAction?: StudioOverviewAction;
-  secondaryActions: readonly StudioOverviewAction[];
-  facts: readonly StudioOverviewFact[];
-}
-
 export function studioDestinations(config: StudioConfig, activeCompareSurface: StudioCompareSurface | undefined, t: TFunction<"common">): readonly StudioDestination[] {
   const compareAvailable = config.experimentEnabled || config.evidenceEnabled;
   const compareScope = sessionCompareScope(config);
@@ -111,18 +93,11 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
   const sessionsStatus = (): string => config.workspaceConnected
     ? t("destination.sessions", { count: config.sessionCount })
     : t("destination.workspaceRequired");
-  const inputsStatus = (): string => config.workspaceWorkbenchEnabled
-    ? t("destination.inputs", { count: config.inputCount })
-    : config.workspaceConnected
-      ? t("destination.noRetainedTrace")
-      : t("destination.workspaceRequired");
   const artifactsStatus = (): string => artifactsReady
     ? config.artifactCount === undefined
       ? t("destination.compatibilityCatalog")
       : t("destination.artifacts", { count: config.artifactCount })
-    : config.workspaceConnected
-      ? t("destination.noObservedOutputs")
-      : t("destination.workspaceRequired");
+    : t("destination.noObservedOutputs");
   const debuggerStatus = (): string => debuggerReady
     ? config.harnessMode === "workspace-default" ? t("destination.localDefault") : t("destination.liveRuns")
     : config.harnessMode === "workspace-default"
@@ -143,7 +118,6 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
             : t("destination.singleAgentOnly");
 
   return [
-    { id: "overview", label: t("area.overview"), group: t("group.control"), availability: "ready", status: t("destination.overviewStatus") },
     {
       id: "customizations",
       label: t("area.customizations"),
@@ -154,13 +128,6 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
         : config.customizationAnalysisEnabled
           ? t("destination.analyzeHosts")
           : t("destination.collectorUnavailable"),
-    },
-    {
-      id: "inputs",
-      label: t("area.inputs"),
-      group: t("group.observe"),
-      availability: config.workspaceWorkbenchEnabled ? "ready" : config.workspaceConnected ? "partial" : "foundation",
-      status: inputsStatus(),
     },
     {
       id: "sessions",
@@ -180,7 +147,7 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
       id: "artifacts",
       label: t("area.artifacts"),
       group: t("group.observe"),
-      availability: artifactsReady ? "ready" : config.workspaceConnected ? "partial" : "foundation",
+      availability: "ready",
       status: artifactsStatus(),
     },
     {
@@ -246,131 +213,6 @@ export function inspectorSurfaces(config: StudioConfig): readonly StudioInspecto
   return config.inspectorEnabled ? ["workbench"] : [];
 }
 
-export function studioOverview(config: StudioConfig, t: TFunction<"overview">): StudioOverviewModel {
-  const artifactsReady = hasUsableArtifacts(config);
-  const agents = sessionAgents(config);
-  if (config.workspaceConnected) {
-    return {
-      mode: "workspace",
-      title: t("summary.workspaceEvidenceReady"),
-      detail: config.sessionCount === 0
-        ? t("summary.noSessionsYet")
-        : t("summary.sessionCount", { count: config.sessionCount }),
-      primaryAction: { area: "sessions", label: t("actions.openSessions") },
-      secondaryActions: [
-        ...(config.workspaceWorkbenchEnabled ? [{ area: "inputs" as const, label: t("actions.reviewInputs") }] : []),
-        ...(compareSurfaces(config).length > 0 ? [{ area: "compare" as const, label: t("actions.openCompare") }] : []),
-        ...(isDebuggerReady(config) ? [{ area: "debugger" as const, label: t("actions.openDebugger") }] : []),
-        ...(artifactsReady ? [{ area: "artifacts" as const, label: t("actions.openArtifacts") }] : []),
-      ],
-      facts: [
-        {
-          id: "inputs",
-          label: t("facts.inputs"),
-          value: config.workspaceWorkbenchEnabled ? String(config.inputCount) : "—",
-          detail: config.workspaceWorkbenchEnabled ? t("facts.retainedPrompts") : t("facts.noRetainedTrace"),
-        },
-        {
-          id: "sessions",
-          label: t("facts.sessions"),
-          value: String(config.sessionCount),
-          detail: t("facts.observedRuns"),
-        },
-        {
-          id: "agents",
-          label: t("facts.agents"),
-          value: String(agents.length),
-          detail: agents.length === 0
-            ? t("facts.noAgentEvidence")
-            : agents.length === 1
-              ? t("facts.singleAgentOnly", { agent: agents[0]!.agent })
-              : t("facts.crossAgentComparable"),
-        },
-        {
-          id: "artifacts",
-          label: t("facts.artifacts"),
-          value: config.artifactCount !== undefined ? String(config.artifactCount) : "—",
-          detail: artifactsReady ? t("facts.retainedOutputs") : t("facts.noObservedOutputs"),
-        },
-        {
-          id: "repository",
-          label: t("facts.repository"),
-          value: config.gitEnabled ? t("facts.gitValue") : t("facts.folderValue"),
-          detail: config.gitEnabled ? t("facts.historyAvailable") : t("facts.noGitHistory"),
-        },
-      ],
-    };
-  }
-
-  if (config.workspaceDiscoveryEnabled) {
-    return {
-      mode: "workspace-required",
-      title: t("summary.chooseWorkspace"),
-      detail: t("summary.chooseWorkspaceDetail"),
-      secondaryActions: [],
-      facts: [],
-    };
-  }
-
-  const configuredFacts: StudioOverviewFact[] = [
-    ...(config.experimentEnabled ? [{
-      id: "experiment",
-      label: t("facts.harnessBench"),
-      value: config.experimentRunnable ? t("facts.ready") : t("facts.blocked"),
-      detail: config.experimentRunnable ? t("facts.runnableExperiment") : t("facts.checkpointUnavailable"),
-    }] : []),
-    ...(config.evidenceEnabled ? [{ id: "evidence", label: t("facts.evidenceResults"), value: t("facts.ready"), detail: t("facts.manifestation") }] : []),
-    ...(isDebuggerReady(config) ? [{ id: "debugger", label: t("facts.debugger"), value: t("facts.ready"), detail: config.harnessMode === "workspace-default" ? t("facts.localDefaultHarness") : t("facts.harnessRuntimeLoaded") }] : []),
-    ...(artifactsReady ? [{ id: "artifacts", label: t("facts.artifacts"), value: config.artifactCount === undefined ? t("facts.ready") : String(config.artifactCount), detail: config.artifactCount === undefined ? t("facts.catalogLoaded") : t("facts.retainedOutputs") }] : []),
-    ...(config.inspectorEnabled ? [{ id: "inspector", label: t("facts.inspector"), value: t("facts.loaded"), detail: t("facts.readOnlySource") }] : []),
-    ...(config.customizationAnalysisEnabled ? [{ id: "customizations", label: t("facts.customizations"), value: config.customizationAnalyzed ? String(config.customizationDefinitionCount) : t("facts.available"), detail: config.customizationAnalyzed ? t("facts.definitionsDiscovered") : t("facts.collectorReady") }] : []),
-  ];
-
-  if (configuredFacts.length === 0) {
-    return {
-      mode: "empty",
-      title: t("summary.emptyTitle"),
-      detail: t("summary.emptyDetail"),
-      secondaryActions: [],
-      facts: [],
-    };
-  }
-
-  const primaryAction: StudioOverviewAction | undefined = config.experimentEnabled || config.evidenceEnabled
-    ? { area: "compare", label: t("actions.openCompare") }
-    : isDebuggerReady(config)
-      ? { area: "debugger", label: t("actions.openDebugger") }
-      : artifactsReady
-        ? { area: "artifacts", label: t("actions.openArtifacts") }
-        : config.customizationAnalysisEnabled
-          ? { area: "customizations", label: config.customizationAnalyzed ? t("actions.openCustomizations") : t("actions.analyzeCustomizations") }
-          : undefined;
-
-  return {
-    mode: "configured",
-    title: config.experimentEnabled
-      ? config.experimentRunnable ? t("summary.comparisonSetupReady") : t("summary.comparisonSetupNeedsAttention")
-      : config.evidenceEnabled
-        ? t("summary.evidenceResultsReady")
-        : isDebuggerReady(config)
-          ? t("summary.liveDebuggingReady")
-          : artifactsReady
-            ? t("summary.artifactEvidenceReady")
-            : config.customizationAnalysisEnabled
-              ? t("summary.customizationAvailable")
-              : t("summary.configuredLoaded"),
-    detail: t("summary.configuredDetail"),
-    ...(primaryAction === undefined ? {} : { primaryAction }),
-    secondaryActions: [
-      ...(config.experimentEnabled || config.evidenceEnabled ? [{ area: "compare" as const, label: t("actions.openCompare") }] : []),
-      ...(isDebuggerReady(config) ? [{ area: "debugger" as const, label: t("actions.openDebugger") }] : []),
-      ...(artifactsReady ? [{ area: "artifacts" as const, label: t("actions.openArtifacts") }] : []),
-      ...(config.customizationAnalysisEnabled ? [{ area: "customizations" as const, label: config.customizationAnalyzed ? t("actions.openCustomizations") : t("actions.analyzeCustomizations") }] : []),
-    ].filter((action) => action.area !== primaryAction?.area),
-    facts: configuredFacts,
-  };
-}
-
 function isDebuggerReady(config: StudioConfig): boolean {
   return (config.runEnabled || config.acpEnabled)
     && (config.harnessMode !== "workspace-default" || config.projectExecutionEnabled);
@@ -380,7 +222,8 @@ function hasUsableArtifacts(config: StudioConfig): boolean {
   return config.artifactsEnabled && (config.artifactCount === undefined || config.artifactCount > 0);
 }
 
-export function studioProjectGateRequired(config: StudioConfig, hasConfiguredSources: boolean): boolean {
+export function studioProjectGateRequired(config: StudioConfig, hasConfiguredSources: boolean, area: StudioArea = STUDIO_DEFAULT_AREA): boolean {
+  if (area === "artifacts") return false;
   const independentContext = hasConfiguredSources
     || config.inspectorEnabled
     || config.evidenceEnabled

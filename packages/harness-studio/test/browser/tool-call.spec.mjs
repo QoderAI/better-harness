@@ -348,12 +348,11 @@ test("organizes configured surfaces around the Harness control plane", async ({ 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(inspectorStudio.url);
 
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.locator(".studio-context-title h1")).toHaveText("Sessions");
   await expect(page.getByRole("navigation", { name: "Studio View navigation" })).toContainText("Sessions");
   await expect(page.getByRole("navigation", { name: "Studio View navigation" })).toContainText("Debugger");
   await expect(page.getByRole("navigation", { name: "Studio View navigation" })).toContainText("Compare");
   await expect(page.getByRole("button", { name: "Open Project", exact: true })).toHaveCount(0);
-  await openDestination(page, "Sessions");
   await expect(page.getByRole("heading", { name: "Open a Project" })).toBeVisible();
   await expect(page.getByText("This Studio launcher does not provide Project discovery.")).toBeVisible();
 });
@@ -596,12 +595,12 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
   await openDestination(page, "Debugger");
   await page.getByRole("button", { name: "New live run" }).click();
   await page.getByPlaceholder("Task prompt for the harness run…").fill("Run the scripted browser fixture");
-  await page.getByRole("button", { name: "Run harness" }).click();
+  await page.getByRole("button", { name: "Run", exact: true }).click();
 
   await expect(page.getByRole("navigation", { name: "Session debugger controls" })).toHaveCount(0);
   await expect(page.getByText("Run finished", { exact: true })).toBeVisible();
 
-  await expect(page.locator(".run-status strong")).toHaveText("finished");
+  await expect(page.locator(".studio-status-bar").getByRole("status")).toContainText("Run finished");
   const card = page.locator("details.tool-card");
   await expect(card.locator(".tool-status")).toHaveText("Failed");
   const colors = await page.evaluate(() => {
@@ -638,9 +637,9 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
   await expect(card.getByText(/Result truncated from [\d,]+ bytes/)).toBeVisible();
   // The native run stream folds host tool call ids without the AG-UI `<runId>:<id>`
   // namespacing, so the card footer identifies the call itself and the run id stays
-  // on the run status line.
+  // in the inspector.
   await expect(card.getByText("tu_failed", { exact: false })).toBeVisible();
-  await expect(page.locator(".run-status")).toContainText(/run run_/);
+  await expect(page.locator(".live-inspector .fact-list")).toContainText("run_");
   await page.screenshot({ path: testInfo.outputPath("tool-call-390.png"), fullPage: true });
 
   await page.keyboard.press("Enter");
@@ -682,11 +681,13 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
   expect(focused.content).toContain(focused.verb);
   await expect(page.locator(".debugger-event-card").filter({ hasText: "Bash tool call" })).toBeVisible();
   await expect(page.locator(".event-status.failed")).toContainText("failed");
-  await page.getByTitle("Toggle State Inspector").click();
+  await page.locator(".state-inspector").scrollIntoViewIfNeeded();
   await expect(page.locator(".state-inspector")).toBeVisible();
   await page.locator(".inspector-tabs button").nth(2).click();
   await expect(page.locator(".state-inspector")).toContainText("actual-run-output.json");
   await expect(page.locator(".state-inspector")).not.toContainText("acp-debugger-reference.png");
+  await expect(page.locator(".timeline-minimap")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("debugger-recorded-390.png"), fullPage: true });
   expect(browserErrors).toEqual([]);
 });
 
@@ -698,22 +699,22 @@ test("renders the shell, local workspace intake, and empty compare surfaces at a
   for (const layout of LAYOUTS) {
     await page.setViewportSize({ width: layout.width, height: layout.height });
     await page.goto(experimentStudio.url);
-    await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+    await expect(page.locator(".studio-context-title h1")).toHaveText("Sessions");
     await assertRenderedContract(page);
-    await page.screenshot({ path: testInfo.outputPath(`overview-${layout.name}.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`landing-${layout.name}.png`) });
 
     if (layout.name === "wide") {
-      const current = page.getByRole("button", { name: /^Overview/ });
+      const current = page.getByRole("button", { name: /^Customizations/ });
       await current.focus();
       await page.keyboard.press("ArrowDown");
-      await expect(page.getByRole("button", { name: /^Customizations/ })).toBeFocused();
+      await expect(page.getByRole("button", { name: /^Sessions/ })).toBeFocused();
     } else {
       await page.emulateMedia({ reducedMotion: "reduce" });
       await expect(page.locator(".studio-primary-nav")).toHaveCSS("transition-duration", "0s");
       await page.emulateMedia({ reducedMotion: "no-preference" });
       const toggle = page.getByRole("button", { name: "Open Studio navigation" });
       await toggle.click();
-      await expect(page.getByRole("button", { name: /^Overview/ })).toBeFocused();
+      await expect(page.getByRole("button", { name: /^Customizations/ })).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(toggle).toBeFocused();
     }
@@ -848,8 +849,8 @@ test("renders meaningful Live trial evidence at all layout modes", async ({ page
     await openDestination(page, "Debugger");
     await page.getByRole("button", { name: "New live run" }).click();
     await page.getByPlaceholder("Task prompt for the harness run…").fill(`Verify ${layout.name} live evidence`);
-    await page.getByRole("button", { name: "Run harness" }).click();
-    await expect(page.locator(".run-status strong")).toHaveText("finished");
+    await page.getByRole("button", { name: "Run", exact: true }).click();
+    await expect(page.locator(".studio-status-bar").getByRole("status")).toContainText("Run finished");
     await expect(page.locator("details.tool-card")).toHaveCount(1);
     await assertRenderedContract(page);
     const ratio = await page.evaluate(() => {

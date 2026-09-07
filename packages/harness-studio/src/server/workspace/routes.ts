@@ -1,5 +1,5 @@
 import { GitCommitDetail } from "../../contracts/git-history.js";
-import { isUserInputTrace, projectUserInputTrace } from "../../contracts/input-trace.js";
+import { projectUserInputTrace } from "../../contracts/input-trace.js";
 import { IntentCorrelationAnalysisV1, IntentCorrelationContractError, validateIntentCorrelationAnalysis } from "../../contracts/intent-correlation.js";
 import { MAX_STUDIO_PROJECTS, STUDIO_PROJECT_CATALOG_KIND, type StudioProjectDescriptor } from "../../contracts/studio-project.js";
 import { validateStudioCustomizationAnalysis } from "../customization-collector.js";
@@ -638,21 +638,6 @@ export async function serveWorkspaceSessions(response: ServerResponse, state: Ha
     sessions: [...state.workspace.sessions.values()].map((session) => session.summary)
       .sort((left, right) => right.savedAt.localeCompare(left.savedAt)),
   });
-}
-export function serveWorkspaceInputs(response: ServerResponse, state: HarnessStudioState): void {
-  if (state.workspace === undefined) {
-    respondJson(response, 404, { error: "No project workspace is open." });
-    return;
-  }
-  if (state.workspace.inputTrace === undefined) {
-    respondJson(response, 404, { error: "The current workspace has no retained user input trace." });
-    return;
-  }
-  if (!isUserInputTrace(state.workspace.inputTrace)) {
-    respondJson(response, 500, { error: "The current workspace input trace failed contract validation." });
-    return;
-  }
-  respondJson(response, 200, state.workspace.inputTrace, { "Cache-Control": "no-store" });
 }
 export function serveWorkspaceCustomizations(response: ServerResponse, state: HarnessStudioState): void {
   if (state.customizationAnalysis === undefined) {

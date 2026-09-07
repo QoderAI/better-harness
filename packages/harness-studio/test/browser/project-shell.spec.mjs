@@ -110,37 +110,40 @@ test("switches one shared View workbench between remembered Projects", async ({ 
   page.on("console", (message) => { if (message.type() === "error") errors.push(`console: ${message.text()}`); });
   page.on("pageerror", (error) => errors.push(`page: ${error.message}`));
   await page.setViewportSize(layouts[0]);
-  await page.goto(`${studio.url}/#/overview`);
+  await page.goto(`${studio.url}/#/sessions`);
 
   await expect(activeProjectName(page)).toHaveText(labelB);
-  await expect(page).toHaveURL(new RegExp(`#\/projects\/${descriptorB.id}\/overview$`, "u"));
+  await expect(page).toHaveURL(new RegExp(`#\/projects\/${descriptorB.id}\/sessions$`, "u"));
   await expect(page.getByLabel(`${labelB} Views`)).toBeVisible();
   await expect(page.getByLabel(`${labelA} Views`)).toHaveCount(0);
-  await expect(page.getByLabel("Workspace summary")).toContainText("Sessions2");
+  await expect(page.locator(".studio-status-scope")).toContainText("2 sessions");
 
   await selectProject(page, labelA);
   await expect(activeProjectName(page)).toHaveText(labelA);
-  await expect(page).toHaveURL(new RegExp(`#\/projects\/${descriptorA.id}\/overview$`, "u"));
+  await expect(page).toHaveURL(new RegExp(`#\/projects\/${descriptorA.id}\/sessions$`, "u"));
   await expect(page.getByLabel(`${labelA} Views`)).toBeVisible();
-  await expect(page.getByLabel("Workspace summary")).toContainText("Sessions1");
+  await expect(page.locator(".studio-status-scope")).toContainText("1 session");
 
   await page.goBack();
   await expect(activeProjectName(page)).toHaveText(labelB);
-  await expect(page.getByLabel("Workspace summary")).toContainText("Sessions2");
+  await expect(page.locator(".studio-status-scope")).toContainText("2 sessions");
   await page.goForward();
   await expect(activeProjectName(page)).toHaveText(labelA);
-  await expect(page.getByLabel("Workspace summary")).toContainText("Sessions1");
+  await expect(page.locator(".studio-status-scope")).toContainText("1 session");
 
   // The roving tab stop now covers Views only: the Project moved to the switcher,
   // which is a menu button with its own keyboard contract.
-  await viewNavigation(page).getByRole("button", { name: /^Overview/ }).focus();
+  await viewNavigation(page).getByRole("button", { name: /^Customizations/ }).focus();
   await page.keyboard.press("ArrowDown");
-  await expect(viewNavigation(page).getByRole("button", { name: /^Customizations/ })).toBeFocused();
+  await expect(viewNavigation(page).getByRole("button", { name: /^Sessions/ })).toBeFocused();
   await page.keyboard.press("End");
   await expect(viewNavigation(page).getByRole("button", { name: /^Compare/ })).toBeFocused();
   await page.keyboard.press("Home");
-  await expect(viewNavigation(page).getByRole("button", { name: /^Overview/ })).toBeFocused();
+  await expect(viewNavigation(page).getByRole("button", { name: /^Customizations/ })).toBeFocused();
   expect(await page.locator(".studio-primary-nav nav button").evaluateAll((buttons) => buttons.filter((button) => button.tabIndex === 0).length)).toBe(1);
+
+  await expect(viewNavigation(page).getByRole("button")).toHaveCount(6);
+  await expect(page.locator(".studio-context-title")).toHaveText("Sessions");
 
   for (const layout of layouts) {
     await page.setViewportSize({ width: layout.width, height: layout.height });
@@ -158,11 +161,13 @@ test("switches one shared View workbench between remembered Projects", async ({ 
       await selectProject(page, labelB);
       await expect(page.locator(".studio-primary-nav")).not.toBeInViewport();
       await expect(page.locator(".studio-nav-toggle")).toBeFocused();
-      await expect(page.locator(".studio-context-title > small")).toHaveText(labelB);
+      await expect(page.locator(".studio-context-title")).toHaveText("Sessions");
     } else if (layout.name !== "wide") {
       await page.locator(".studio-project-close").click();
       await expect(page.locator(".studio-primary-nav")).not.toBeInViewport();
     }
+    await expect(page.locator(".studio-context-title")).toHaveText("Sessions");
+    await page.screenshot({ path: testInfo.outputPath(`project-title-${layout.name}.png`) });
   }
   expect(errors).toEqual([]);
 });
@@ -178,10 +183,10 @@ test("recovers a failed workbench bootstrap without reloading the page", async (
     await route.continue();
   });
 
-  await page.goto(`${studio.url}/#/overview`);
+  await page.goto(`${studio.url}/#/sessions`);
   await expect(page.getByRole("alert")).toContainText("Cannot load Studio configuration");
   await page.getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.locator(".studio-context-title h1")).toHaveText("Sessions");
   expect(configRequests).toBeGreaterThanOrEqual(2);
 });
 
@@ -196,15 +201,15 @@ test("keeps a live run bound to its starting Project across a sidebar switch", a
   await expect(page.locator(".live-inspector > header")).toContainText("Ready");
   await expect(page.getByText(/Soft Pause|no Evidence Cursor/u)).toHaveCount(0);
   await page.getByRole("button", { name: "New live run" }).click();
-  await expect(page.getByRole("dialog", { name: "Start a live harness session" })).toContainText(`Project ${labelA}`);
+  await expect(page.getByRole("dialog", { name: "New run" })).toContainText(labelA);
   await page.getByPlaceholder("Task prompt for the harness run…").fill("prove the Project binding");
-  await page.getByRole("button", { name: "Run harness" }).click();
+  await page.getByRole("button", { name: "Run", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Live run in progress" })).toBeVisible();
-  await expect(page.locator(".debugger-brand")).toContainText(labelA);
+  await expect(page.locator(".debugger-run-project")).toContainText(labelA);
 
   await selectProject(page, labelB);
   await expect(activeProjectName(page)).toHaveText(labelB);
-  await expect(page.locator(".debugger-brand")).toContainText(labelA);
+  await expect(page.locator(".debugger-run-project")).toContainText(labelA);
   await expect(page.locator(".session-notebook")).toContainText(`bound project: ${labelA}`);
   expect(await realpath(observedRunCwd)).toBe(await realpath(projectA));
   await expect.poll(() => runCount(projectA)).toBe(beforeA + 1);
@@ -230,18 +235,19 @@ test("keeps configured Sources reachable without an active Project", async ({ pa
     await expect(page.getByLabel("Studio Views")).toBeVisible();
     // No Project is active, so the switcher names that state rather than a Project.
     await expect(activeProjectName(page)).toHaveText("No Project");
-    await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Evidence results are ready." })).toBeVisible();
+    await expect(page.locator(".studio-context-title h1")).toHaveText("Sessions");
 
-    await page.goto(`${sourceStudio.url}/#/sessions`);
     const openProject = page.getByRole("button", { name: "Open Project", exact: true });
     await expect(openProject).toBeVisible();
     await openProject.focus();
     await expect(openProject).toBeFocused();
 
+    await page.goto(`${sourceStudio.url}/#/compare`);
+    await expect(page.getByRole("heading", { name: "Evidence results", exact: true })).toBeVisible();
+
     await page.goto(sourceStudio.url);
     await page.setViewportSize(layouts[2]);
-    await expect(page.locator(".studio-context-title h1")).toHaveText("Overview");
+    await expect(page.locator(".studio-context-title h1")).toHaveText("Sessions");
     const sourceControl = page.getByRole("button", { name: "Data sources (1 active)" });
     await expect(sourceControl).toBeVisible();
     expect((await sourceControl.boundingBox())?.width).toBeLessThanOrEqual(44);
@@ -250,3 +256,54 @@ test("keeps configured Sources reachable without an active Project", async ({ pa
     await sourceStudio.close();
   }
 });
+
+test("keeps an empty Artifact catalog inside the open Project", async ({ page }) => {
+  await page.setViewportSize(layouts[0]);
+  await page.goto(`${studio.url}/#/projects/${descriptorA.id}/artifacts`);
+
+  await expect(page.locator(".artifact-workspace")).toBeVisible();
+  await expect(page.locator(".artifact-preview-pane")).toContainText("No artifacts yet.");
+  await expect(page.locator(".artifact-empty")).toHaveCount(0);
+  await expect(activeProjectName(page)).toHaveText(labelA);
+});
+
+test("retired Inputs routes retain project scope and fall back to Sessions", async ({ page }) => {
+  await page.goto(`${studio.url}/#/projects/${descriptorA.id}/inputs`);
+  await expect(page.locator(".studio-context-title")).toHaveText("Sessions");
+  await expect(activeProjectName(page)).toHaveText(labelA);
+  await page.goto(`${studio.url}/#/inputs`);
+  await expect(page.locator(".studio-context-title")).toHaveText("Sessions");
+});
+
+for (const layout of layouts) {
+  test(`opens Artifacts without selecting a Project at ${layout.name} width`, async ({ page }, testInfo) => {
+    let pickerCalls = 0;
+    const emptyStudio = await startHarnessStudioServer({
+      appDir: join(packageRoot, "dist", "app"), port: 0,
+      workspaceDirectoryPicker: async () => { pickerCalls += 1; return undefined; },
+    });
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+    try {
+      await page.setViewportSize(layout);
+      await page.goto(`${emptyStudio.url}/#/artifacts`);
+      await expect(page.locator(".artifact-workspace")).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "Open a Project to start" })).toHaveCount(0);
+      await expect(page.locator(".studio-context-title")).toHaveText("Artifacts");
+      if (layout.name === "narrow") {
+        const browse = page.getByRole("tab", { name: "Browse", exact: true });
+        await browse.focus();
+        await page.keyboard.press("ArrowRight");
+        await expect(page.getByRole("tab", { name: "Artifacts", exact: true })).toBeFocused();
+      }
+      await expect(page.getByPlaceholder("Search artifacts…")).toBeVisible();
+      await page.getByPlaceholder("Search artifacts…").fill("missing");
+      await expect(page.locator(".artifact-list-empty")).toContainText("missing");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+      await page.screenshot({ path: testInfo.outputPath(`artifacts-empty-${layout.name}.png`) });
+      expect(pickerCalls).toBe(0);
+      expect(errors).toEqual([]);
+    } finally { await emptyStudio.close(); }
+  });
+}

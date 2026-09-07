@@ -1209,7 +1209,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
 
   await expect(gate).toHaveCount(0);
   await expect(page.locator(".studio-control-plane")).not.toHaveAttribute("inert", "");
-  await expect(page).toHaveURL(/#\/projects\/project_[a-f0-9]{32}\/overview$/u);
+  await expect(page).toHaveURL(/#\/projects\/project_[a-f0-9]{32}\/sessions$/u);
   await page.getByRole("navigation", { name: "Studio View navigation" }).getByRole("button", { name: /^Sessions/ }).click();
   await expect(page).toHaveURL(/#\/projects\/project_[a-f0-9]{32}\/sessions$/u);
   const inspector = page.locator("[data-studio-native-inspector]");
@@ -1577,9 +1577,9 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await page.getByRole("navigation", { name: "Studio View navigation" }).getByRole("button", { name: /^Debugger/ }).click();
   await expect(page.getByText(/Project default · Qoder · fixture-project/u)).toBeVisible();
   await page.getByRole("button", { name: "New live run" }).click();
-  await expect(page.getByRole("dialog", { name: "Start a live harness session" })).toContainText("Project fixture-project");
+  await expect(page.getByRole("dialog", { name: "New run" })).toContainText("fixture-project");
   await page.getByPlaceholder("Task prompt for the harness run…").fill("verify the default workspace harness");
-  await page.getByRole("button", { name: "Run harness" }).click();
+  await page.getByRole("button", { name: "Run", exact: true }).click();
   await expect(page.locator(".session-notebook")).toContainText("default harness: verify the default workspace harness");
   await page.screenshot({ path: "test-results/default-workspace-debugger-wide.png", fullPage: true });
 
