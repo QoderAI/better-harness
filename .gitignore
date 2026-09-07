@@ -36,3 +36,11 @@ packages/harness-ui/*.tsbuildinfo
 /*.pptx.inspect.ndjson
 /Better-Harness-one-page-en/
 assets/motion
+.agents/skills/banner-design/
+.agents/skills/brand/
+.agents/skills/design-system/
+.agents/skills/design/
+.agents/skills/slides/
+.agents/skills/ui-styling/
+.agents/skills/ui-ux-pro-max/
+
