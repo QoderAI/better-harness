@@ -1,0 +1,213 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { compileHarness } from "../src/compiler/compile.js";
+import { AcpRustExecutor } from "../src/exec/acp-rust.js";
+import type { HarnessRunEvent } from "../src/exec/events.js";
+import { resolveHarness } from "../src/resolver/resolve.js";
+import { ACP_ADAPTER_DESCRIPTOR } from "../src/resolver/adapter-registry.js";
+
+/**
+ * These drive the staged `harness-acp-host` release executable, so they need
+ * `npm run build:rust -w @qoder-ai/better-harness-desktop` first and live outside
+ * the default suite. `vitest run` does not match `*.native.ts`, so a checkout
+ * without the binary is never asked to run them.
+ */
+
+const SOURCE = `
+  language 0.3
+  skill verify { description "Return verified evidence." }
+  workflow single { session coder }
+  harness live-acp {
+    workflow single
+    agent coder { use skill verify }
+  }
+  runtime acp { adapter "@harness/adapter-acp" }
+  deployment live-acp-run { harness live-acp runtime acp }
+`;
+
+const here = dirname(fileURLToPath(import.meta.url));
+const FIXTURE_AGENT = resolve(here, "fixtures/acp-agent.mjs");
+const HOST_EXECUTABLE = resolve(
+  here,
+  "../../better-harness-desktop/dist/native",
+  process.platform === "win32" ? "harness-acp-host.exe" : "harness-acp-host",
+);
+
+async function revisionUnderTest() {
+  const { bundle } = await compileHarness(SOURCE);
+  const { revision, report } = resolveHarness(bundle!, "live-acp", "acp", {
+    adapter: () => ACP_ADAPTER_DESCRIPTOR,
+  });
+  expect(report.errors).toEqual([]);
+  return { bundle: bundle!, revision: revision! };
+}
+
+function approveFirstOption() {
+  return async (request: { options: ReadonlyArray<{ optionId: string }> }) =>
+    request.options[0]?.optionId;
+}
+
+describe("AcpRustExecutor", () => {
+  it("runs a prompt session through the Rust host and reports the rust runtime profile", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const events: HarnessRunEvent[] = [];
+    const executor = new AcpRustExecutor({
+      hostExecutable: HOST_EXECUTABLE,
+      command: process.execPath,
+      args: [FIXTURE_AGENT],
+      onRunEvent: (event) => events.push(event),
+      requestPermission: approveFirstOption(),
+    });
+
+    const result = await executor.execute(revision, bundle, { prompt: "Prove the Rust host works" });
+
+    expect(result).toMatchObject({
+      // The revision declares host "acp", and preflight requires the executor to
+      // match it, so choosing the Rust host must not change the authored host.
+      host: "acp",
+      exitCode: 0,
+      output: "fixture:allow-once",
+      runtimeReceipt: {
+        executor: "harness-acp-host",
+        runtimeProfile: "acp-v1-rust",
+        permissionCallback: "configured",
+      },
+      metrics: { sessionId: "fixture-session", stopReason: "end_turn" },
+    });
+  });
+
+  it("emits each stretch of agent text once instead of resending the whole entry", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const events: HarnessRunEvent[] = [];
+    const executor = new AcpRustExecutor({
+      hostExecutable: HOST_EXECUTABLE,
+      command: process.execPath,
+      args: [FIXTURE_AGENT],
+      onRunEvent: (event) => events.push(event),
+      requestPermission: approveFirstOption(),
+    });
+
+    const result = await executor.execute(revision, bundle, { prompt: "Prove deltas are deltas" });
+
+    // The host reports a whole entry per update. If the client forwarded those
+    // verbatim, concatenating the deltas would repeat the text as it grew.
+    const streamed = events
+      .flatMap((event) => (event.type === "text-delta" ? [event.text] : []))
+      .join("");
+    expect(streamed).toBe(result.output);
+    expect(streamed).toBe("fixture:allow-once");
+  });
+
+  it("cancels a permission request when no handler is configured", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const executor = new AcpRustExecutor({
+      hostExecutable: HOST_EXECUTABLE,
+      command: process.execPath,
+      args: [FIXTURE_AGENT],
+    });
+
+    const result = await executor.execute(revision, bundle, { prompt: "No approver is present" });
+
+    // The turn still completes: the fixture treats a cancelled request as a
+    // declined action. What matters is that the Agent is never left waiting.
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toBe("fixture:cancelled");
+    expect(result.runtimeReceipt?.permissionCallback).toBe("none");
+  });
+
+  it("grants no filesystem tools unless roots were configured", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const withoutRoots = new AcpRustExecutor({
+      hostExecutable: HOST_EXECUTABLE,
+      command: process.execPath,
+      args: [FIXTURE_AGENT],
+      requestPermission: approveFirstOption(),
+    });
+    const closed = await withoutRoots.execute(revision, bundle, { prompt: "No roots" });
+    expect(closed.runtimeReceipt?.tools).toEqual([]);
+
+    const workspace = await mkdtemp(join(tmpdir(), "acp-rust-roots-"));
+    try {
+      const withRoots = new AcpRustExecutor({
+        hostExecutable: HOST_EXECUTABLE,
+        command: process.execPath,
+        args: [FIXTURE_AGENT],
+        allowRoots: [workspace],
+        requestPermission: approveFirstOption(),
+      });
+      const opened = await withRoots.execute(revision, bundle, { prompt: "One root" });
+      // The receipt must describe reach that was actually granted, so a reader
+      // cannot mistake a fenced run for an unfenced one.
+      expect(opened.runtimeReceipt?.tools).toEqual([
+        "fs/read_text_file",
+        "fs/write_text_file",
+      ]);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("applies a session option and fails the run when the agent refuses it", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const accepted = new AcpRustExecutor({
+      hostExecutable: HOST_EXECUTABLE,
+      command: process.execPath,
+      args: [FIXTURE_AGENT],
+      sessionConfig: { model: "fixture-candidate" },
+      requestPermission: approveFirstOption(),
+    });
+    const result = await accepted.execute(revision, bundle, { prompt: "Pick a model" });
+    expect(result.exitCode).toBe(0);
+    expect(result.runtimeReceipt).toMatchObject({
+      model: "fixture-candidate",
+      sessionConfig: { model: "fixture-candidate" },
+    });
+    expect(result.output).toBe("fixture:allow-once:fixture-candidate");
+
+    const refused = new AcpRustExecutor({
+      hostExecutable: HOST_EXECUTABLE,
+      command: process.execPath,
+      // The fixture drops the option instead of echoing it under this flag.
+      args: [FIXTURE_AGENT, "--reject-config"],
+      sessionConfig: { model: "fixture-candidate" },
+      requestPermission: approveFirstOption(),
+    });
+    const rejected = await refused.execute(revision, bundle, { prompt: "Pick a model" });
+    expect(rejected.exitCode).toBe(1);
+    expect(rejected.errorOutput).toContain("acknowledge");
+  });
+
+  it("leaves the run workspace removable after the host is closed", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const workspace = await mkdtemp(join(tmpdir(), "acp-rust-workspace-"));
+    const executor = new AcpRustExecutor({
+      hostExecutable: HOST_EXECUTABLE,
+      command: process.execPath,
+      args: [FIXTURE_AGENT],
+      requestPermission: approveFirstOption(),
+    });
+
+    await executor.execute(revision, bundle, { prompt: "Hold a cwd", cwd: workspace });
+
+    // A live agent keeps a handle on its cwd, so this is the behaviour that
+    // failed on Windows with EBUSY before the Node executor learned to reap.
+    await expect(rm(workspace, { recursive: true })).resolves.toBeUndefined();
+  });
+
+  it("fails fast with a directed message when the host executable is missing", async () => {
+    const { bundle, revision } = await revisionUnderTest();
+    const executor = new AcpRustExecutor({
+      hostExecutable: resolve(here, "fixtures/no-such-acp-host"),
+      command: process.execPath,
+      args: [FIXTURE_AGENT],
+    });
+
+    const result = await executor.execute(revision, bundle, { prompt: "Missing host" });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errorOutput).toContain("could not start");
+  });
+});

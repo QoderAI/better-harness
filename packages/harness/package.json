@@ -89,6 +89,7 @@
     "prepack": "npm test",
     "pretest": "npm run build",
     "test": "vitest run",
+    "test:native": "vitest run --config vitest.native.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {

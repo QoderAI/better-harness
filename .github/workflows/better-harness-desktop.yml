@@ -33,6 +33,10 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - run: npm run test:rust -w @qoder-ai/better-harness-desktop
       - run: npm run test:native -w @qoder-ai/better-harness-desktop
+      # Both native suites drive staged Rust executables, so they belong to the
+      # job that already has a toolchain and a completed build.
+      - run: npm run test:native -w @qoder-ai/harness
+      - run: npm run smoke:acp -w @qoder-ai/better-harness-desktop
       - if: runner.os != 'Linux'
         run: npm run smoke -w @qoder-ai/better-harness-desktop -- --packaged
       - if: runner.os == 'Linux'

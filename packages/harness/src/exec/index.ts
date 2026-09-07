@@ -79,6 +79,12 @@ export {
   type AcpSdkExecutorOptions,
 } from "./acp-sdk.js";
 export {
+  AcpRustExecutor,
+  type AcpRustExecutorOptions,
+  type AcpRustPermissionHandler,
+  type AcpRustPermissionRequest,
+} from "./acp-rust.js";
+export {
   PiSdkAdapter,
   PiSdkExecutor,
   materializePiPackage,
