@@ -24,5 +24,7 @@
 //! - Zed's unbounded foreground dispatch queue. Its own comments note the
 //!   missing backpressure; this host bounds the event channel instead.
 
+pub mod connection;
 pub mod fence;
+pub mod thread;
 pub mod wire;
