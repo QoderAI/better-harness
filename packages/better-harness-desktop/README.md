@@ -1,4 +1,4 @@
-# Harness Studio Desktop
+# Better Harness Desktop
 
 Electron distribution of Harness Studio. Install Rust 1.96.0 with rustup for
 the native OXC service (macOS also requires Xcode Command Line Tools), then build from the repository root:
@@ -6,14 +6,14 @@ the native OXC service (macOS also requires Xcode Command Line Tools), then buil
 ```sh
 rustup toolchain install 1.96.0 --profile minimal
 npm ci
-npm run harness-desktop:build
-npm run harness-desktop:dev
+npm run better-harness-desktop:build
+npm run better-harness-desktop:dev
 ```
 
-`npm run harness-desktop:pack` builds an unpacked application under
-`packages/harness-desktop/dist/installers`. Run it on the target OS/architecture
+`npm run better-harness-desktop:pack` builds an unpacked application under
+`packages/better-harness-desktop/dist/installers`. Run it on the target OS/architecture
 so Cargo produces the matching Rust executable. `npm run dist -w
-@qoder-ai/harness-desktop` creates the configured ZIP (macOS), NSIS (Windows),
+@qoder-ai/better-harness-desktop` creates the configured ZIP (macOS), NSIS (Windows),
 or AppImage (Linux). These are development packaging targets; signing,
 notarization and automatic updates are not configured.
 
@@ -60,10 +60,10 @@ worker, so the shared Studio package retains those dependencies.
 Validation:
 
 ```sh
-npm run harness-desktop:test
-npm run test:rust -w @qoder-ai/harness-desktop
-npm run test:native -w @qoder-ai/harness-desktop
-npm run smoke -w @qoder-ai/harness-desktop
+npm run better-harness-desktop:test
+npm run test:rust -w @qoder-ai/better-harness-desktop
+npm run test:native -w @qoder-ai/better-harness-desktop
+npm run smoke -w @qoder-ai/better-harness-desktop
 ```
 
 The smoke command launches a real Electron window with Playwright, verifies

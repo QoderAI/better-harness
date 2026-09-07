@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = join(root, 'dist', 'smoke');
-const userData = await mkdtemp(join(tmpdir(), 'harness-desktop-smoke-'));
+const userData = await mkdtemp(join(tmpdir(), 'better-harness-desktop-smoke-'));
 await mkdir(output, { recursive: true });
 const packagedExecutable = process.platform === 'darwin'
   ? join(root, 'dist', 'installers', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Harness Studio.app', 'Contents', 'MacOS', 'Harness Studio')
@@ -33,7 +33,7 @@ instance.process().stdout.on('data', (chunk) => {
     nativeLog = nativeLog.slice(end + 1);
     try {
       const value = JSON.parse(line);
-      if (value.kind === 'harness-desktop.oxc-proof') nativeProof = value;
+      if (value.kind === 'better-harness-desktop.oxc-proof') nativeProof = value;
     } catch { /* Other host diagnostics are not the native receipt. */ }
   }
   if (nativeLog.length > 64 * 1024) nativeLog = '';

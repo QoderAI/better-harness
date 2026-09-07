@@ -69,7 +69,7 @@ port.on('message', async (data) => {
       const nativeLibraries = process.report.getReport().sharedObjects;
       if (nativeLibraries.some((library) => /oxc[_-](parser|transform)/i.test(library))) throw new Error('OXC NAPI unexpectedly loaded in Studio');
       // Local diagnostic receipt, without source text or credentials.
-      console.info(JSON.stringify({ kind: 'harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false }));
+      console.info(JSON.stringify({ kind: 'better-harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false }));
       server = await startHarnessStudioServer({
         oxcCompilerFactory,
         appDir: defaultAppDir(), host: '127.0.0.1', port: 0, accessToken: data.token,

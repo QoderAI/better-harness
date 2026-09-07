@@ -30,7 +30,7 @@
     "packages/harness",
     "packages/harness-studio",
     "packages/harness-ui",
-    "packages/harness-desktop"
+    "packages/better-harness-desktop"
   ],
   "pi": {
     "skills": [
@@ -109,10 +109,10 @@
     "test:ci": "vitest run --config vitest.ci.config.mjs",
     "test:dsh-configured-assets-native": "node scripts/dsh-configured-assets/native-smoke.mjs",
     "test:dsh-native": "node scripts/dsh-skill-discovery/native-smoke.mjs",
-    "harness-desktop:build": "npm run build -w @qoder-ai/harness-desktop",
-    "harness-desktop:dev": "npm start -w @qoder-ai/harness-desktop",
-    "harness-desktop:test": "npm test -w @qoder-ai/harness-desktop",
-    "harness-desktop:pack": "npm run pack -w @qoder-ai/harness-desktop"
+    "better-harness-desktop:build": "npm run build -w @qoder-ai/better-harness-desktop",
+    "better-harness-desktop:dev": "npm start -w @qoder-ai/better-harness-desktop",
+    "better-harness-desktop:test": "npm test -w @qoder-ai/better-harness-desktop",
+    "better-harness-desktop:pack": "npm run pack -w @qoder-ai/better-harness-desktop"
   },
   "packageManager": "npm@10.9.3",
   "publishConfig": {

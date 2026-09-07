@@ -12,14 +12,14 @@ import { createSemanticOxcCompiler } from "../../src/agent-react/kernel/semantic
 import { compileAgentReactProduction } from "../../src/server/artifacts/registry/agent-react-production-runtime.js";
 import type { CompileModuleInput } from "../../src/agent-react/contracts/index.js";
 
-const stdioExecutable = resolve(dirname(fileURLToPath(import.meta.url)), '../../../harness-desktop/dist/native', process.platform === 'win32' ? 'harness-oxc-service.exe' : 'harness-oxc-service');
+const stdioExecutable = resolve(dirname(fileURLToPath(import.meta.url)), '../../../better-harness-desktop/dist/native', process.platform === 'win32' ? 'harness-oxc-service.exe' : 'harness-oxc-service');
 const source = `import { defineArtifactView } from "@studio/agent-react";
 function Orders() { return <h1 title="你好😀">Orders</h1>; }
 export default defineArtifactView({ id: "orders", component: Orders });`;
 const input = (text = source): CompileModuleInput => ({ module: { path: '/orders.tsx', text }, entry: true,
   allowedPackages: ['react', '@studio/agent-react', '@studio/agent-react/jsx-dev-runtime'] });
 
-const nativeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../harness-desktop/dist/native');
+const nativeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../better-harness-desktop/dist/native');
 const xpcExecutable = join(nativeRoot, 'Harness OXC.app', 'Contents', 'MacOS', 'harness-oxc-client');
 const transports = [
   { transport: 'stdio' as const, executable: stdioExecutable },

@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, Menu, session, utilityProcess } from 'electron';
+import { app, BrowserWindow, dialog, Menu, nativeTheme, session, utilityProcess } from 'electron';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { connectStudioService } from './service-host.mjs';
@@ -20,12 +20,41 @@ function fail(error) {
   app.quit();
 }
 
+/**
+ * The window is frameless so Studio's own unified toolbar reaches the top of the
+ * window, with the OS window controls inlaid into it.
+ *
+ * macOS keeps its traffic lights and only drops the title bar strip
+ * (`hiddenInset`), positioned to centre in Studio's 52px toolbar. Windows and
+ * Linux have no equivalent, so they take `titleBarOverlay`, which paints native
+ * minimise/maximise/close over the trailing edge instead. The two sides differ,
+ * so the renderer is told which edge to reserve rather than guessing from the
+ * user agent.
+ */
+function windowChrome() {
+  if (process.platform === 'darwin') {
+    return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 19 } };
+  }
+  return { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay() };
+}
+
+/** Mirrors the `titlebar` surface token so the overlay is not a foreign block. */
+function titleBarOverlay() {
+  const dark = nativeTheme.shouldUseDarkColors;
+  return {
+    color: dark ? '#313137' : '#f0f0f4',
+    symbolColor: dark ? '#bebec9' : '#54545c',
+    height: 52,
+  };
+}
+
 async function createWindow() {
   window = new BrowserWindow({
     width: 1440, height: 900, minWidth: 390, minHeight: 600,
     title: 'Harness Studio', show: false,
+    ...windowChrome(),
     webPreferences: {
-      partition: 'harness-desktop', nodeIntegration: false, contextIsolation: true,
+      partition: 'better-harness-desktop', nodeIntegration: false, contextIsolation: true,
       sandbox: true, webviewTag: false,
     },
   });
@@ -53,7 +82,18 @@ async function createWindow() {
   });
   window.once('ready-to-show', () => window?.show());
   window.on('closed', () => { window = undefined; });
-  await window.loadURL(origin);
+  // The renderer runs sandboxed with no preload, so the shell state travels in
+  // the URL. It carries no credentials: the access token stays in a request
+  // header added by the session, never in a URL.
+  await window.loadURL(studioUrl(origin));
+}
+
+/** Tells the app it is inside the desktop shell, and which edge the OS controls take. */
+function studioUrl(base) {
+  const url = new URL(base);
+  url.searchParams.set('shell', 'desktop');
+  url.searchParams.set('controls', process.platform === 'darwin' ? 'left' : 'right');
+  return url.toString();
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -63,6 +103,14 @@ else {
     window?.focus();
   });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+  // Windows and Linux paint the window controls themselves, so the overlay has to
+  // be repainted when the host appearance changes. macOS renders its own traffic
+  // lights and needs nothing here.
+  if (process.platform !== 'darwin') {
+    nativeTheme.on('updated', () => {
+      if (window && !window.isDestroyed()) window.setTitleBarOverlay(titleBarOverlay());
+    });
+  }
   app.on('activate', () => { if (!window && origin && !quitting) void createWindow().catch(fail); });
   app.on('before-quit', (event) => {
     if (quitting || !service) return;
@@ -71,7 +119,7 @@ else {
     void service.stop().finally(() => app.quit());
   });
   void app.whenReady().then(async () => {
-    const desktopSession = session.fromPartition('harness-desktop');
+    const desktopSession = session.fromPartition('better-harness-desktop');
     desktopSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     desktopSession.setPermissionCheckHandler(() => false);
     const child = utilityProcess.fork(fileURLToPath(new URL('./studio-service.mjs', import.meta.url)), [], {

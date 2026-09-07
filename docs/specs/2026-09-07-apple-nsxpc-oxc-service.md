@@ -47,22 +47,22 @@ semantics.
 Local validation on macOS arm64 with Xcode 26.6, Rust 1.96.0 and Electron
 44.2.0 (embedded Node 24.20.0):
 
-- AC-1/AC-4/AC-5: `npm run harness-desktop:pack` passed. Development
-  `npm run smoke -w @qoder-ai/harness-desktop` and packaged
-  `node packages/harness-desktop/scripts/smoke.mjs --packaged` passed.
+- AC-1/AC-4/AC-5: `npm run better-harness-desktop:pack` passed. Development
+  `npm run smoke -w @qoder-ai/better-harness-desktop` and packaged
+  `node packages/better-harness-desktop/scripts/smoke.mjs --packaged` passed.
   Packaged receipt: main PID 19616, Studio PID 19681, bridge PID 19684,
   NSXPC service PID 19685, transport `nsxpc`, OXC NAPI not loaded. Renderer
   isolation, authenticated HTTP, directory flow, three viewport screenshots,
   error-free page and host/bridge shutdown checks passed. Receipt and images
-  are generated under `packages/harness-desktop/dist/smoke`.
-- AC-2/AC-5: `npm run test:rust -w @qoder-ai/harness-desktop`: 5 passed.
+  are generated under `packages/better-harness-desktop/dist/smoke`.
+- AC-2/AC-5: `npm run test:rust -w @qoder-ai/better-harness-desktop`: 5 passed.
   Shared compiler behavior is preserved by moving it into the Rust library.
-- AC-2/AC-3/AC-4/AC-5: `npm run test:native -w @qoder-ai/harness-desktop`:
+- AC-2/AC-3/AC-4/AC-5: `npm run test:native -w @qoder-ai/better-harness-desktop`:
   16 passed, exercising stdio and NSXPC semantic parity, HTTP build/preview,
   concurrent correlation, malformed output, cancellation, deadlines, actual
   SIGSTOP/SIGKILL of the NSXPC service, reconnection, and refusal of stdio when
   NSXPC is required.
-- AC-4: `npm run harness-desktop:test`: 6 passed. `codesign --verify --strict`
+- AC-4: `npm run better-harness-desktop:test`: 6 passed. `codesign --verify --strict`
   passed for the packaged XPC bundle (ad-hoc signature).
 - Repository checks: `npm run preview`, `/health` and `/canvas-module.js` both
   HTTP 200; owned preview process stopped. Documentation routing regenerated

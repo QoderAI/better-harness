@@ -1,14 +1,14 @@
-name: Harness Desktop
+name: Better Harness Desktop
 on:
   pull_request:
     paths:
-      - 'packages/harness-desktop/**'
+      - 'packages/better-harness-desktop/**'
       - 'packages/harness-studio/**'
       - 'packages/harness/**'
       - 'scripts/**'
       - 'package.json'
       - 'package-lock.json'
-      - '.github/workflows/harness-desktop.yml'
+      - '.github/workflows/better-harness-desktop.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,18 +27,18 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@1.96.0
       - run: npm ci
-      - run: npm run harness-desktop:test
-      - run: npm run harness-desktop:pack
+      - run: npm run better-harness-desktop:test
+      - run: npm run better-harness-desktop:pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - run: npm run test:rust -w @qoder-ai/harness-desktop
-      - run: npm run test:native -w @qoder-ai/harness-desktop
+      - run: npm run test:rust -w @qoder-ai/better-harness-desktop
+      - run: npm run test:native -w @qoder-ai/better-harness-desktop
       - if: runner.os != 'Linux'
-        run: npm run smoke -w @qoder-ai/harness-desktop -- --packaged
+        run: npm run smoke -w @qoder-ai/better-harness-desktop -- --packaged
       - if: runner.os == 'Linux'
-        run: xvfb-run -a npm run smoke -w @qoder-ai/harness-desktop -- --packaged
+        run: xvfb-run -a npm run smoke -w @qoder-ai/better-harness-desktop -- --packaged
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: desktop-smoke-${{ matrix.os }}
-          path: packages/harness-desktop/dist/smoke
+          path: packages/better-harness-desktop/dist/smoke

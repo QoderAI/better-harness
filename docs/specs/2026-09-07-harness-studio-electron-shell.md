@@ -24,7 +24,7 @@ XPC here establishes cross-process ownership; Electron utilityProcess is the
 initial portable transport, not a claim of native macOS NSXPC support.
 
 ## Plan and Tasks
-1. Add private `packages/harness-desktop` workspace with Electron main, utility
+1. Add private `packages/better-harness-desktop` workspace with Electron main, utility
    entrypoint, bounded protocol, native menu and platform-neutral lifecycle.
 2. Export the existing bundled workspace provider through Studio's public API;
    add optional HTTP access token guarding desktop requests only.
@@ -46,13 +46,13 @@ Local macOS arm64 validation completed on 2026-09-07:
 | Visual | Packaged app screenshots at 1440x900, 1024x768 and 390x844 inspected; keyboard focus, bounded document overflow, no console/page errors. Existing Studio UI retained. |
 | Repository | Docs graph regenerated without tracked drift; 8 doc-link tests pass. Preview health and canvas-module.js both return 200. git diff --check passes. |
 
-Commands: `npm run harness-desktop:build`, `npm run harness-desktop:test`,
+Commands: `npm run better-harness-desktop:build`, `npm run better-harness-desktop:test`,
 `npx vitest run test/desktop-authorization.test.ts test/project-server.test.ts test/server.test.ts`
-(from Studio), `npm run stage -w @qoder-ai/harness-desktop`,
-`npm exec -w @qoder-ai/harness-desktop -- electron-builder --dir -c.mac.identity=null`,
-`npm run smoke -w @qoder-ai/harness-desktop -- --packaged`.
+(from Studio), `npm run stage -w @qoder-ai/better-harness-desktop`,
+`npm exec -w @qoder-ai/better-harness-desktop -- electron-builder --dir -c.mac.identity=null`,
+`npm run smoke -w @qoder-ai/better-harness-desktop -- --packaged`.
 
-Local generated evidence lives in `packages/harness-desktop/dist/smoke/`;
+Local generated evidence lives in `packages/better-harness-desktop/dist/smoke/`;
 application is `dist/installers/mac-arm64/Harness Studio.app` under that package
 (494 MiB reported by local du). Neither is committed. OS dialogs are stubbed in
 smoke; manual interaction with the native chooser is not claimed.

@@ -1,5 +1,5 @@
 {
-  "name": "@qoder-ai/harness-desktop",
+  "name": "@qoder-ai/better-harness-desktop",
   "version": "0.1.0",
   "private": true,
   "description": "Electron desktop shell for Harness Studio",

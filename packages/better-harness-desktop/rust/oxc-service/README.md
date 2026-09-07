@@ -1,7 +1,7 @@
 # Rust OXC Service
 
 OXC 0.147.0 parser/transformer hosted in a standalone Rust executable.
-Build through `npm run build:rust -w @qoder-ai/harness-desktop` at repository root.
+Build through `npm run build:rust -w @qoder-ai/better-harness-desktop` at repository root.
 The build uses Rust 1.96.0, Cargo.lock and the native host target. The output is
 copied to the desktop package's `dist/native/` directory.
 

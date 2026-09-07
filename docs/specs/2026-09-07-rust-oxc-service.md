@@ -53,12 +53,12 @@ Local macOS arm64 evidence on 2026-09-07:
 | AC-5 | Full desktop build/stage/pack and packaged macOS arm64 smoke pass. Binary ships outside ASAR. Cargo tests, native integration tests and packaged smoke are wired into the three-platform CI matrix. |
 | Regression | AgentReact/artifact/auth selection: 182 passing tests before adding the cache case. Final artifact/project/server selection: 70 passing tests including that new case. These overlap and are not additive. Six desktop lifecycle tests and eight docs-link tests also pass. |
 
-Commands: `npm run test:rust -w @qoder-ai/harness-desktop`,
-`npm run test:native -w @qoder-ai/harness-desktop`,
+Commands: `npm run test:rust -w @qoder-ai/better-harness-desktop`,
+`npm run test:native -w @qoder-ai/better-harness-desktop`,
 `npm exec -w @qoder-ai/harness-studio -- vitest run test/agent-react test/artifact-compile-runtime.test.ts test/desktop-authorization.test.ts`,
 `npm exec -w @qoder-ai/harness-studio -- vitest run test/artifact-compile-runtime.test.ts test/project-server.test.ts test/server.test.ts`,
-`CSC_IDENTITY_AUTO_DISCOVERY=false npm run harness-desktop:pack`,
-`npm run smoke -w @qoder-ai/harness-desktop -- --packaged`.
+`CSC_IDENTITY_AUTO_DISCOVERY=false npm run better-harness-desktop:pack`,
+`npm run smoke -w @qoder-ai/better-harness-desktop -- --packaged`.
 
 Generated native and screenshot/JSON receipts live under the desktop package's
 ignored `dist/`. Windows/Linux jobs have not run here; no signed release or
