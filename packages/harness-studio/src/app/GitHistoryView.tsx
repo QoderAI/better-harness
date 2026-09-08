@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { withinDateRange, type StudioDateRange } from "./date-range.js";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -32,10 +32,26 @@ import {
 } from "../contracts/git-history.js";
 import { ArtifactCodeView } from "./code/ArtifactCodeView.js";
 import { studioLocale } from "./i18n/index.js";
+import { PaneSash } from "./shell/PaneSash.js";
+import { ToolbarActions } from "./shell/ToolbarActions.js";
 
 const PAGE_SIZE = 40;
 const GIT_LANE_COLOR_TOKENS = [5, 4, 2, 1, 6, 7, 3] as const;
 type NarrowPane = "refs" | "history" | "detail";
+
+/** The width below which the panes stack behind tabs, matching the stylesheet. */
+const NARROW_QUERY = "(max-width: 760px)";
+/** The sash track's own thickness in the stylesheet's pane grids. */
+const SASH_SIZE = 6;
+/** Pane bounds, in px. The log keeps the majority of the height by default. */
+const REFS_WIDTH: { default: number; min: number } = { default: 220, min: 160 };
+const LOG_HEIGHT_RATIO = 0.58;
+const LOG_MIN_HEIGHT = 180;
+const DETAIL_MIN_HEIGHT = 200;
+const LOG_MIN_WIDTH = 360;
+/** The commit message opens as a caption over the file list, not as a band. */
+const MESSAGE_HEIGHT: { default: number; min: number } = { default: 132, min: 64 };
+const FILES_MIN_HEIGHT = 140;
 
 export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX.Element {
   const { t } = useTranslation("git");
@@ -46,7 +62,7 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
   const [nextCursor, setNextCursor] = useState<string>();
   const [searchTruncated, setSearchTruncated] = useState(false);
   const [historyTruncated, setHistoryTruncated] = useState(false);
-  const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
+  const [selectedRef, setSelectedRef] = useState<string>();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [selectedSha, setSelectedSha] = useState<string>();
@@ -66,6 +82,11 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
   const [refsRevision, setRefsRevision] = useState(-1);
   const [loadedLogKey, setLoadedLogKey] = useState<string>();
   const [narrowPane, setNarrowPane] = useState<NarrowPane>("history");
+  const [refsWidth, setRefsWidth] = useState(REFS_WIDTH.default);
+  const [logHeight, setLogHeight] = useState<number>();
+  const [frame, setFrame] = useState({ width: 0, height: 0 });
+  const [stacked, setStacked] = useState(() => globalThis.matchMedia?.(NARROW_QUERY).matches === true);
+  const workbench = useRef<HTMLElement>(null);
   const logRequest = useRef(0);
   const pageLoadRequest = useRef(false);
   const detailRequest = useRef(0);
@@ -75,6 +96,28 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
     const timer = globalThis.setTimeout(() => setSearch(searchInput.trim()), 300);
     return () => globalThis.clearTimeout(timer);
   }, [searchInput]);
+
+  // Sash bounds come from the pane area itself, so a dragged size cannot survive
+  // a window that no longer has room for it. The stacked regime is the same CSS
+  // breakpoint the stylesheet uses, rather than a second width guess.
+  useEffect(() => {
+    const element = workbench.current;
+    if (element === null) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const box = entry!.contentRect;
+      setFrame({ width: box.width, height: box.height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const media = globalThis.matchMedia?.(NARROW_QUERY);
+    if (media === undefined) return;
+    const sync = (event: MediaQueryListEvent): void => setStacked(event.matches);
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,7 +132,7 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
         if (!cancelled) {
           const available = new Set([payload.head?.id, ...payload.local.map((ref) => ref.id), ...payload.remote.map((ref) => ref.id), ...payload.tags.map((ref) => ref.id)].filter((id): id is string => id !== undefined));
           setRefs(payload);
-          setSelectedRefs((current) => current.filter((id) => available.has(id)));
+          setSelectedRef((current) => current !== undefined && available.has(current) ? current : undefined);
           setRefsRevision(revision);
         }
       } catch (error) {
@@ -101,7 +144,7 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
     return () => { cancelled = true; };
   }, [revision]);
 
-  const logQueryKey = `${revision}\0${selectedRefs.join("\0")}\0${search}`;
+  const logQueryKey = `${revision}\0${selectedRef ?? ""}\0${search}`;
   const loadLog = useCallback(async (append: boolean): Promise<void> => {
     if (append && (nextCursor === undefined || pageLoadRequest.current)) return;
     pageLoadRequest.current = append;
@@ -112,7 +155,7 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
       const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
       if (append && nextCursor !== undefined) params.set("cursor", nextCursor);
       if (search !== "") params.set("search", search);
-      selectedRefs.forEach((ref) => params.append("ref", ref));
+      if (selectedRef !== undefined) params.set("ref", selectedRef);
       const response = await fetch(`/api/git/log?${params}`, { cache: "no-store" });
       const payload: unknown = await response.json();
       if (!response.ok) throw new Error(apiError(payload, t("errors.historyUnavailable")));
@@ -143,11 +186,11 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
         pageLoadRequest.current = false;
       }
     }
-  }, [logQueryKey, nextCursor, search, selectedRefs]);
+  }, [logQueryKey, nextCursor, search, selectedRef]);
 
   useEffect(() => {
     if (refsRevision === revision) void loadLog(false);
-  }, [search, selectedRefs, revision, refsRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, selectedRef, revision, refsRevision]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function selectCommit(sha: string): Promise<void> {
     const requestId = ++detailRequest.current;
@@ -192,8 +235,11 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
     }
   }
 
-  function toggleRef(id: string): void {
-    setSelectedRefs((current) => current.includes(id) ? current.filter((candidate) => candidate !== id) : [...current, id]);
+  // One ref at a time: the log answers "what is reachable from here", and a set
+  // union of several refs is a question the reader cannot see the shape of.
+  // Clicking the selected ref again returns the log to every ref.
+  function selectRef(id: string): void {
+    setSelectedRef((current) => current === id ? undefined : id);
   }
 
   const activeCommit = useMemo(() => commits.find((commit) => commit.sha === selectedSha), [commits, selectedSha]);
@@ -205,37 +251,69 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
     () => commits.filter((commit) => withinDateRange(commit.authoredAt, props.dateRange)),
     [commits, props.dateRange],
   );
-  return <main className="git-history-workbench" data-narrow-pane={narrowPane}>
-    <header className="git-history-titlebar">
-      <div><GitCommit aria-hidden="true" size={18} weight="fill" /><span><strong>{t("titlebar.title")}</strong><small>{t("titlebar.evidence")}</small></span></div>
-      {refs !== undefined && <span className="git-current-branch"><GitBranch aria-hidden="true" size={14} /><strong>{refs.repository.currentBranch ?? t("titlebar.detachedHead")}</strong><code>{refs.repository.headSha?.slice(0, 8) ?? t("titlebar.noCommits")}</code></span>}
-      <button type="button" title={t("titlebar.refreshTitle")} aria-label={t("titlebar.refreshAria")} disabled={loading || refsLoading} onClick={() => setRevision((value) => value + 1)}><ArrowClockwise aria-hidden="true" size={15} className={loading || refsLoading ? "spin" : undefined} /></button>
-    </header>
+  const selectedRefLabel = useMemo(() => refDisplayName(refs, selectedRef), [refs, selectedRef]);
+  // Sizes are clamped to what the frame can hold rather than written back, so a
+  // narrowed window borrows space and a widened one returns the reader's choice.
+  // Before the frame is measured the stylesheet's own defaults stand, so the
+  // first paint is the docked layout rather than two collapsed panes.
+  const measured = frame.width > 0 && frame.height > 0;
+  const refsMax = measured ? Math.max(REFS_WIDTH.min, frame.width - LOG_MIN_WIDTH - SASH_SIZE) : REFS_WIDTH.default;
+  const fittedRefsWidth = Math.min(Math.max(refsWidth, REFS_WIDTH.min), refsMax);
+  const logMax = measured ? Math.max(LOG_MIN_HEIGHT, frame.height - DETAIL_MIN_HEIGHT - SASH_SIZE) : LOG_MIN_HEIGHT;
+  const logFallback = measured ? Math.round(frame.height * LOG_HEIGHT_RATIO) : LOG_MIN_HEIGHT;
+  const fittedLogHeight = Math.min(Math.max(logHeight ?? logFallback, LOG_MIN_HEIGHT), logMax);
+  const refreshing = loading || refsLoading;
+  return <main
+    ref={workbench}
+    className="git-history-workbench"
+    aria-label={t("titlebar.title")}
+    data-narrow-pane={narrowPane}
+    style={measured ? { "--git-refs-width": `${fittedRefsWidth}px`, "--git-log-height": `${fittedLogHeight}px` } as CSSProperties : undefined}
+  >
+    {/* The window toolbar already names this View, so the branch, the filter, and
+        Refresh join that title instead of opening a second bar to repeat it. */}
+    <ToolbarActions>
+      <div className="git-history-toolbar">
+        {refs !== undefined && <span className="git-current-branch"><GitBranch aria-hidden="true" size={14} /><strong>{refs.repository.currentBranch ?? t("titlebar.detachedHead")}</strong><code>{refs.repository.headSha?.slice(0, 8) ?? t("titlebar.noCommits")}</code></span>}
+        <label className="git-log-filter"><MagnifyingGlass aria-hidden="true" size={14} /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder={t("log.filterPlaceholder")} aria-label={t("log.filterAria")} />{searchInput !== "" && <button type="button" aria-label={t("log.clearFilterAria")} title={t("log.clearFilterTitle")} onClick={() => setSearchInput("")}><X aria-hidden="true" size={13} /></button>}</label>
+        <button className="git-refresh" type="button" title={t("titlebar.refreshTitle")} aria-label={t("titlebar.refreshAria")} disabled={refreshing} onClick={() => setRevision((value) => value + 1)}><ArrowClockwise aria-hidden="true" size={15} className={refreshing ? "spin" : undefined} /></button>
+      </div>
+    </ToolbarActions>
     <nav className="git-narrow-tabs" aria-label={t("panes.aria")}>
       {(["refs", "history", "detail"] as const).map((pane) => <button key={pane} type="button" aria-current={narrowPane === pane ? "page" : undefined} onClick={() => setNarrowPane(pane)}>{t(`panes.${pane}`)}</button>)}
     </nav>
     <aside className="git-refs-pane" aria-label={t("refs.aria")}>
-      <PaneHeader title={t("refs.title")} trailing={selectedRefs.length === 0 ? t("refs.all") : t("refs.selected", { count: selectedRefs.length })} />
+      <PaneHeader
+        title={t("refs.title")}
+        trailing={selectedRefLabel ?? t("refs.all")}
+        action={selectedRef !== undefined && <button type="button" className="git-clear-filter" title={t("refs.clearTitle")} aria-label={t("refs.clearAria")} onClick={() => setSelectedRef(undefined)}><X aria-hidden="true" size={12} /></button>}
+      />
       <div className="git-refs-scroll">
         {refsFailure !== undefined
           ? <ErrorState message={refsFailure} />
           : refs === undefined
           ? <LoadingState label={t("refs.loading")} />
-          : <RefsTree refs={refs} selected={selectedRefs} onToggle={toggleRef} />}
+          : <RefsTree refs={refs} selected={selectedRef} onSelect={selectRef} />}
       </div>
     </aside>
+    <PaneSash
+      orientation="vertical"
+      label={t("panes.resizeRefs")}
+      size={fittedRefsWidth}
+      min={REFS_WIDTH.min}
+      max={refsMax}
+      fallback={REFS_WIDTH.default}
+      disabled={stacked || !measured}
+      onSize={setRefsWidth}
+    />
     <section className="git-log-pane" aria-label={t("log.aria")}>
-      <div className="git-log-toolbar">
-        <label><MagnifyingGlass aria-hidden="true" size={14} /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder={t("log.filterPlaceholder")} aria-label={t("log.filterAria")} />{searchInput !== "" && <button type="button" aria-label={t("log.clearFilterAria")} title={t("log.clearFilterTitle")} onClick={() => setSearchInput("")}><X aria-hidden="true" size={13} /></button>}</label>
-        {selectedRefs.length > 0 && <button type="button" className="git-clear-filter" onClick={() => setSelectedRefs([])}>{t("log.clearRefs")}</button>}
-        <span>{t("log.count", { count: total })}</span>
-      </div>
+      <PaneHeader title={t("log.title")} trailing={t("log.count", { count: total })} />
       <div className="git-log-status">
         {searchTruncated && <p className="git-search-limit" role="status">{t("log.searchLimited")}</p>}
         {historyTruncated && <p className="git-search-limit" role="status">{t("log.historyLimited", { total })}</p>}
         {loadMoreFailure !== undefined && <p className="git-page-error" role="alert">{loadMoreFailure} {t("log.pageErrorSuffix")}</p>}
+        {datedCommits.length < commits.length && <p className="git-search-limit" role="status">{t("common:dateRange.filtered", { shown: datedCommits.length, total: commits.length })}</p>}
       </div>
-      {datedCommits.length < commits.length && <p className="git-search-limit" role="status">{t("common:dateRange.filtered", { shown: datedCommits.length, total: commits.length })}</p>}
       {failure !== undefined
         ? <ErrorState message={failure} />
         : loading && commits.length === 0
@@ -249,9 +327,19 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
         ? <span role="status"><SpinnerGap aria-hidden="true" className="spin" size={14} />{t("log.loadingMore")}</span>
         : loadMoreFailure !== undefined
           ? <button type="button" onClick={loadNextPage}>{t("log.retry")}</button>
-          : <span>{t("log.progress", { loaded: commits.length, total: Math.min(total, 5_000) })}</span>)}
+          : null)}
       </footer>
     </section>
+    <PaneSash
+      orientation="horizontal"
+      label={t("panes.resizeDetail")}
+      size={fittedLogHeight}
+      min={LOG_MIN_HEIGHT}
+      max={logMax}
+      fallback={logFallback}
+      disabled={stacked || !measured}
+      onSize={setLogHeight}
+    />
     <section className="git-detail-pane" aria-label={t("detail.aria")}>
       <PaneHeader title={t("detail.title")} trailing={activeCommit?.shortSha} />
       {detailLoading
@@ -260,23 +348,23 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
           ? <ErrorState message={detailFailure} />
           : detail === undefined
             ? <div className="git-detail-empty"><GitCommit aria-hidden="true" size={24} /><p>{t("detail.selectHint")}</p></div>
-            : <CommitDetail detail={detail} selectedFile={selectedFile} patch={patch} patchLoading={patchLoading} failure={detailFailure} onSelectFile={(file) => void selectFile(file)} />}
+            : <CommitDetail detail={detail} selectedFile={selectedFile} patch={patch} patchLoading={patchLoading} failure={detailFailure} stacked={stacked} onSelectFile={(file) => void selectFile(file)} />}
     </section>
   </main>;
 }
 
-function PaneHeader(props: { title: string; trailing?: string }): React.JSX.Element {
-  return <header className="git-pane-header"><strong>{props.title}</strong>{props.trailing !== undefined && <span>{props.trailing}</span>}</header>;
+function PaneHeader(props: { title: string; trailing?: string; action?: React.ReactNode }): React.JSX.Element {
+  return <header className="git-pane-header"><strong>{props.title}</strong>{props.trailing !== undefined && <span>{props.trailing}</span>}{props.action}</header>;
 }
 
-function RefsTree(props: { refs: GitRefsSnapshot; selected: string[]; onToggle: (id: string) => void }): React.JSX.Element {
+function RefsTree(props: { refs: GitRefsSnapshot; selected?: string; onSelect: (id: string) => void }): React.JSX.Element {
   const { t } = useTranslation("git");
   const remotes = groupRemotes(props.refs.remote);
   return <>
-    {props.refs.head !== null && <RefGroup label={t("refs.head")} icon={<MapPin aria-hidden="true" size={13} weight="fill" />} count={1} defaultOpen><RefRow gitRef={props.refs.head} selected={props.selected.includes(props.refs.head.id)} onToggle={props.onToggle} /></RefGroup>}
-    <RefGroup label={t("refs.localBranches")} icon={<GitBranch aria-hidden="true" size={13} />} count={props.refs.local.length} defaultOpen>{props.refs.local.map((ref) => <RefRow key={ref.id} gitRef={ref} selected={props.selected.includes(ref.id)} onToggle={props.onToggle} />)}</RefGroup>
-    <RefGroup label={t("refs.remoteBranches")} icon={<Globe aria-hidden="true" size={13} />} count={props.refs.remote.length}>{[...remotes.entries()].map(([remote, refs]) => <RefGroup key={remote} label={remote} icon={<Globe aria-hidden="true" size={12} />} count={refs.length}>{refs.map((ref) => <RefRow key={ref.id} gitRef={ref} selected={props.selected.includes(ref.id)} onToggle={props.onToggle} />)}</RefGroup>)}</RefGroup>
-    {props.refs.tags.length > 0 && <RefGroup label={t("refs.tags")} icon={<Tag aria-hidden="true" size={13} />} count={props.refs.tags.length}>{props.refs.tags.map((ref) => <RefRow key={ref.id} gitRef={ref} selected={props.selected.includes(ref.id)} onToggle={props.onToggle} />)}</RefGroup>}
+    {props.refs.head !== null && <RefGroup label={t("refs.head")} icon={<MapPin aria-hidden="true" size={13} weight="fill" />} count={1} defaultOpen><RefRow gitRef={props.refs.head} selected={props.selected === props.refs.head.id} onSelect={props.onSelect} /></RefGroup>}
+    <RefGroup label={t("refs.localBranches")} icon={<GitBranch aria-hidden="true" size={13} />} count={props.refs.local.length} defaultOpen>{props.refs.local.map((ref) => <RefRow key={ref.id} gitRef={ref} selected={props.selected === ref.id} onSelect={props.onSelect} />)}</RefGroup>
+    <RefGroup label={t("refs.remoteBranches")} icon={<Globe aria-hidden="true" size={13} />} count={props.refs.remote.length}>{[...remotes.entries()].map(([remote, refs]) => <RefGroup key={remote} label={remote} icon={<Globe aria-hidden="true" size={12} />} count={refs.length}>{refs.map((ref) => <RefRow key={ref.id} gitRef={ref} selected={props.selected === ref.id} onSelect={props.onSelect} />)}</RefGroup>)}</RefGroup>
+    {props.refs.tags.length > 0 && <RefGroup label={t("refs.tags")} icon={<Tag aria-hidden="true" size={13} />} count={props.refs.tags.length}>{props.refs.tags.map((ref) => <RefRow key={ref.id} gitRef={ref} selected={props.selected === ref.id} onSelect={props.onSelect} />)}</RefGroup>}
   </>;
 }
 
@@ -285,10 +373,9 @@ function RefGroup(props: { label: string; icon: React.ReactNode; count: number; 
   return <section className="git-ref-group"><button className="git-ref-group-toggle" type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{open ? <CaretDown aria-hidden="true" size={12} /> : <CaretRight aria-hidden="true" size={12} />}{props.icon}<strong>{props.label}</strong><span>{props.count}</span></button>{open && <div>{props.children}</div>}</section>;
 }
 
-function RefRow(props: { gitRef: GitHistoryRef; selected: boolean; onToggle: (id: string) => void }): React.JSX.Element {
+function RefRow(props: { gitRef: GitHistoryRef; selected: boolean; onSelect: (id: string) => void }): React.JSX.Element {
   const { t } = useTranslation("git");
-  const label = props.gitRef.remote === undefined ? props.gitRef.name : props.gitRef.name;
-  return <button className="git-ref-row" type="button" aria-pressed={props.selected} title={props.gitRef.id} onClick={() => props.onToggle(props.gitRef.id)}>{props.gitRef.isCurrent && <MapPin aria-label={t("refs.currentBranch")} size={11} weight="fill" />}<span>{label}</span><code>{props.gitRef.commitSha.slice(0, 7)}</code></button>;
+  return <button className="git-ref-row" type="button" aria-pressed={props.selected} title={props.gitRef.id} onClick={() => props.onSelect(props.gitRef.id)}>{props.gitRef.isCurrent && <MapPin aria-label={t("refs.currentBranch")} size={11} weight="fill" />}<span>{props.gitRef.name}</span><code>{props.gitRef.commitSha.slice(0, 7)}</code></button>;
 }
 
 function CommitTable(props: { commits: GitHistoryCommit[]; hasMore: boolean; loadingMore: boolean; loadMoreFailed: boolean; selectedSha?: string; onLoadMore: () => void; onSelect: (sha: string) => void }): React.JSX.Element {
@@ -356,18 +443,54 @@ function CommitGraph(props: { commit: GitHistoryCommit; laneCount: number }): Re
   </svg>;
 }
 
-function CommitDetail(props: { detail: GitCommitDetail; selectedFile?: string; patch?: GitFilePatch; patchLoading: boolean; failure?: string; onSelectFile: (file: GitCommitFileChange) => void }): React.JSX.Element {
+/**
+ * The commit's own text is a caption over its file list, not a band across the
+ * detail pane: the patch is what the reader came for, so it takes the full
+ * height of the pane and the message shares the file list's column.
+ */
+function CommitDetail(props: { detail: GitCommitDetail; selectedFile?: string; patch?: GitFilePatch; patchLoading: boolean; failure?: string; stacked: boolean; onSelectFile: (file: GitCommitFileChange) => void }): React.JSX.Element {
   const { t } = useTranslation("git");
   const { commit, files } = props.detail;
   const additions = files.reduce((sum, file) => sum + file.additions, 0);
   const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
-  return <div className="git-detail-grid">
-    <header className="git-commit-detail-header"><div><strong>{commit.summary}</strong>{commit.message !== commit.summary && <p>{commit.message.slice(commit.summary.length).trim()}</p>}</div><dl>
-      <div><dt><Hash aria-hidden="true" size={12} />{t("detail.commit")}</dt><dd><code>{commit.sha}</code></dd></div>
-      <div><dt><User aria-hidden="true" size={12} />{t("detail.author")}</dt><dd>{commit.authorName} <span>&lt;{commit.authorEmail}&gt;</span></dd></div>
-      <div><dt><Clock aria-hidden="true" size={12} />{t("detail.authored")}</dt><dd><time dateTime={commit.authoredAt}>{new Date(commit.authoredAt).toLocaleString(studioLocale())}</time></dd></div>
-      {commit.parents.length > 0 && <div><dt><GitCommit aria-hidden="true" size={12} />{t("detail.parents")}</dt><dd>{commit.parents.map((parent) => <code key={parent}>{parent.slice(0, 8)}</code>)}</dd></div>}
-    </dl></header>
+  const grid = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number>();
+  const [frameHeight, setFrameHeight] = useState(0);
+  useEffect(() => {
+    const element = grid.current;
+    if (element === null) return;
+    const observer = new ResizeObserver(([entry]) => setFrameHeight(entry!.contentRect.height));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const measured = frameHeight > 0;
+  const messageMax = measured ? Math.max(MESSAGE_HEIGHT.min, frameHeight - FILES_MIN_HEIGHT - SASH_SIZE) : MESSAGE_HEIGHT.default;
+  const messageHeight = Math.min(Math.max(height ?? MESSAGE_HEIGHT.default, MESSAGE_HEIGHT.min), messageMax);
+  return <div
+    ref={grid}
+    className="git-detail-grid"
+    style={measured ? { "--git-message-height": `${messageHeight}px` } as CSSProperties : undefined}
+  >
+    <div className="git-commit-message">
+      <strong>{commit.summary}</strong>
+      {commit.message !== commit.summary && <p>{commit.message.slice(commit.summary.length).trim()}</p>}
+      <dl>
+        <div><dt><Hash aria-hidden="true" size={12} />{t("detail.commit")}</dt><dd><code>{commit.sha}</code></dd></div>
+        <div><dt><User aria-hidden="true" size={12} />{t("detail.author")}</dt><dd>{commit.authorName} <span>&lt;{commit.authorEmail}&gt;</span></dd></div>
+        <div><dt><Clock aria-hidden="true" size={12} />{t("detail.authored")}</dt><dd><time dateTime={commit.authoredAt}>{new Date(commit.authoredAt).toLocaleString(studioLocale())}</time></dd></div>
+        {commit.parents.length > 0 && <div><dt><GitCommit aria-hidden="true" size={12} />{t("detail.parents")}</dt><dd>{commit.parents.map((parent) => <code key={parent}>{parent.slice(0, 8)}</code>)}</dd></div>}
+      </dl>
+    </div>
+    <PaneSash
+      orientation="horizontal"
+      label={t("panes.resizeMessage")}
+      size={messageHeight}
+      min={MESSAGE_HEIGHT.min}
+      max={messageMax}
+      fallback={MESSAGE_HEIGHT.default}
+      disabled={props.stacked || !measured}
+      onSize={setHeight}
+    />
     <aside className="git-changed-files"><header><strong>{t("detail.changedFiles")}</strong><span>{files.length} · <i>+{additions}</i> / <em>−{deletions}</em></span></header><div>{files.map((file) => <button key={`${file.previousPath ?? ""}:${file.path}`} type="button" aria-pressed={props.selectedFile === file.path} onClick={() => props.onSelectFile(file)}><b data-status={file.status}>{fileStatusLetter(file.status)}</b><span><strong>{file.path.split("/").at(-1)}</strong><small>{file.path}</small>{file.previousPath !== undefined && <small>{t("detail.from", { path: file.previousPath })}</small>}</span><code>{file.binary ? "binary" : `+${file.additions} / −${file.deletions}`}</code></button>)}</div></aside>
     <section className="git-file-diff" aria-label={t("detail.patchAria")}>
       {props.patchLoading
@@ -399,6 +522,20 @@ function groupRemotes(refs: GitHistoryRef[]): Map<string, GitHistoryRef[]> {
   const groups = new Map<string, GitHistoryRef[]>();
   for (const ref of refs) groups.set(ref.remote ?? "remote", [...(groups.get(ref.remote ?? "remote") ?? []), ref]);
   return groups;
+}
+
+/**
+ * The refs pane header names the selected ref, so the reader can see the filter
+ * without scrolling the tree back to the row that set it. A ref that the latest
+ * snapshot no longer carries falls back to its id rather than reading as cleared.
+ */
+function refDisplayName(snapshot: GitRefsSnapshot | undefined, id: string | undefined): string | undefined {
+  if (id === undefined) return undefined;
+  if (snapshot === undefined) return id;
+  const match = [...(snapshot.head === null ? [] : [snapshot.head]), ...snapshot.local, ...snapshot.remote, ...snapshot.tags]
+    .find((ref) => ref.id === id);
+  if (match === undefined) return id;
+  return match.remote === undefined ? match.name : `${match.remote}/${match.name}`;
 }
 
 function relativeTime(value: string): string {

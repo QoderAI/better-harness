@@ -84,6 +84,23 @@
 .studio-sidebar-sash.dragging::after { width: 2px; background: var(--color-primary); }
 .studio-sidebar-sash:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -1px; border-radius: var(--radius-xs); }
 
+/* The divider between two docked panes inside a workbench. It occupies a real
+   grid track, so the panes it separates never overlap it, and it stays quiet
+   until hover, focus, or a drag names it as the thing being moved. */
+.studio-pane-sash {
+  min-width: 0;
+  min-height: 0;
+  touch-action: none;
+  background: var(--color-border);
+  transition: background var(--motion-fast) ease;
+}
+
+.studio-pane-sash[data-orientation="vertical"] { cursor: col-resize; }
+.studio-pane-sash[data-orientation="horizontal"] { cursor: row-resize; }
+.studio-pane-sash:hover,
+.studio-pane-sash.dragging { background: var(--color-primary); }
+.studio-pane-sash:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
 /* Collapsing only applies where the sidebar is docked. Below the breakpoint it is
    already an overlay driven by `navigation-open`, and hiding it here would make
    that overlay unreachable. */
@@ -654,6 +671,7 @@
 [data-shell="desktop"] .studio-context-bar button,
 [data-shell="desktop"] .studio-context-bar a,
 [data-shell="desktop"] .studio-context-bar input,
+[data-shell="desktop"] .studio-context-bar label,
 [data-shell="desktop"] .studio-context-bar select,
 [data-shell="desktop"] .studio-context-bar [role="tablist"],
 [data-shell="desktop"] .studio-source-menu,

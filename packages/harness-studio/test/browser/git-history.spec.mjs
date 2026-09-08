@@ -104,7 +104,13 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   // starting point rather than whatever the runner's OS reports.
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto(`${studio.url}/#/commits`);
-  await expect(page.getByRole("main", { name: "" }).filter({ has: page.getByText("Commit history", { exact: true }) })).toBeVisible();
+  // One title: the window toolbar names the View, and the workbench opens with
+  // panes only. The branch, the filter, and Refresh join that toolbar.
+  await expect(page.getByRole("main", { name: "Commit history" })).toBeVisible();
+  await expect(page.locator(".studio-context-bar").getByRole("heading", { name: "Commits" })).toBeVisible();
+  await expect(page.locator(".studio-context-actions").getByLabel("Filter commit history")).toBeVisible();
+  await expect(page.locator(".studio-context-actions").getByRole("button", { name: "Refresh Git history" })).toBeVisible();
+  await expect(page.locator(".git-history-workbench").getByText("Repository evidence")).toHaveCount(0);
   await expect(page.getByText("main", { exact: true }).first()).toBeVisible();
   const mergeRow = page.getByRole("row", { name: /merge: history fixture/ });
   await expect(mergeRow).toBeVisible();
@@ -130,6 +136,16 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   await featureRow.click();
   await expectSelectedRowCarriesItsGraphNode(page, featureRow);
   await expect(page.getByText("Changed files", { exact: true })).toBeVisible();
+  // The message is a caption over the file list, not a band across the pane, so
+  // the patch owns the full height of the details column.
+  const messagePane = page.locator(".git-commit-message");
+  const diffPane = page.locator(".git-file-diff");
+  await expect(messagePane).toContainText("feat: add filtered branch commit");
+  expect(await messagePane.evaluate((element) => element.getBoundingClientRect().right <= element.parentElement.querySelector(".git-file-diff").getBoundingClientRect().left)).toBe(true);
+  expect(await diffPane.evaluate((element) => {
+    const grid = element.parentElement.getBoundingClientRect();
+    return Math.round(element.getBoundingClientRect().height) === Math.round(grid.height);
+  })).toBe(true);
   await page.getByRole("button", { name: /feature\.ts/ }).click();
   await expect(page.locator(".git-file-diff")).toContainText("export const feature");
   const diff = page.locator('.git-file-diff [data-artifact-code-view="diff"] [data-code-diff="pierre"]');
@@ -145,8 +161,43 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   await useStudioSetting(page, () => page.getByRole("button", { name: /Light theme active/ }).click());
   await useStudioSetting(page, () => expect(page.getByRole("button", { name: /Dark theme active/ })).toBeVisible());
 
+  // Both dividers are real separators: keyboard operable, bounded, and reset by
+  // double-click. The refs sash moves a width; the details sash moves a height.
+  const refsPane = page.locator(".git-refs-pane");
+  const refsSash = page.getByRole("separator", { name: "Resize the refs pane" });
+  await expect(refsSash).toHaveAttribute("aria-valuenow", "220");
+  await refsSash.press("Shift+ArrowRight");
+  await expect.poll(async () => Math.round((await refsPane.boundingBox())?.width ?? 0)).toBe(252);
+  await refsSash.press("Home");
+  await expect.poll(async () => Math.round((await refsPane.boundingBox())?.width ?? 0)).toBe(160);
+  await refsSash.dblclick();
+  await expect.poll(async () => Math.round((await refsPane.boundingBox())?.width ?? 0)).toBe(220);
+  const detailPane = page.locator(".git-detail-pane");
+  const detailSash = page.getByRole("separator", { name: "Resize the commit details pane" });
+  const detailHeight = Math.round((await detailPane.boundingBox())?.height ?? 0);
+  await detailSash.press("Shift+ArrowUp");
+  await expect.poll(async () => Math.round((await detailPane.boundingBox())?.height ?? 0)).toBe(detailHeight + 32);
+  await detailSash.press("Home");
+  await expect.poll(async () => Math.round((await refsPane.boundingBox())?.width ?? 0)).toBe(220);
+  await expect(page.locator(".git-log-pane")).toBeVisible();
+  await detailSash.dblclick();
+  await expect.poll(async () => Math.round((await detailPane.boundingBox())?.height ?? 0)).toBe(detailHeight);
+
+  // The message divider is bounded by the file list it sits above.
+  const messageSash = page.getByRole("separator", { name: "Resize the commit message" });
+  await expect(messageSash).toHaveAttribute("aria-valuenow", "132");
+  await messageSash.press("Shift+ArrowDown");
+  await expect.poll(async () => Math.round((await messagePane.boundingBox())?.height ?? 0)).toBe(164);
+  await messageSash.press("Home");
+  await expect.poll(async () => Math.round((await messagePane.boundingBox())?.height ?? 0)).toBe(64);
+  await messageSash.press("End");
+  await expect.poll(async () => Math.round((await page.locator(".git-changed-files").boundingBox())?.height ?? 0)).toBe(140);
+  await messageSash.dblclick();
+  await expect.poll(async () => Math.round((await messagePane.boundingBox())?.height ?? 0)).toBe(132);
+
   const commitTable = page.getByRole("table", { name: "Commits" });
-  await expect(page.getByText("40 of 45 · More loads automatically", { exact: true })).toBeVisible();
+  // Paging is silent: the log reports failure and retry, never a running count.
+  await expect(page.getByText(/More loads automatically/)).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Load more/ })).toHaveCount(0);
   let failNextPage = true;
   await page.route("**/api/git/log?*", async (route) => {
@@ -167,7 +218,6 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   const nextPage = page.waitForResponse((response) => response.url().includes("/git/log?") && response.url().includes("cursor="));
   await page.getByRole("button", { name: "Retry loading history" }).click();
   expect((await nextPage).ok()).toBe(true);
-  await expect(page.getByText(/More loads automatically/)).toHaveCount(0);
   await commitTable.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await expect(page.getByRole("row", { name: /docs: add commit view fixture/ })).toBeVisible();
   expect(await page.locator(".git-commit-rows > button").count()).toBeLessThan(45);
@@ -175,8 +225,31 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
 
   const localGroup = page.getByRole("button", { name: /Local branches/ });
   await expect(localGroup).toHaveAttribute("aria-expanded", "true");
-  await page.getByRole("button", { name: /feature\/history-filter/ }).click();
+  const featureRef = page.locator('.git-ref-row[title="refs/heads/feature/history-filter"]');
+  const mainRef = page.locator('.git-ref-row[title="refs/heads/main"]');
+  const refsTrailing = page.locator(".git-refs-pane .git-pane-header span");
+  await featureRef.click();
+  await expect(featureRef).toHaveAttribute("aria-pressed", "true");
+  await expect(refsTrailing).toHaveText("feature/history-filter");
   await expect(page.getByRole("row", { name: /docs: add main guide/ })).toHaveCount(0);
+  await expect(page.getByRole("row", { name: /feat: add filtered branch commit/ })).toBeVisible();
+  // Refs are single-select: choosing another ref replaces the filter instead of
+  // adding to it, so exactly one row stays pressed and the log follows that ref.
+  await mainRef.click();
+  await expect(mainRef).toHaveAttribute("aria-pressed", "true");
+  await expect(featureRef).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator('.git-ref-row[aria-pressed="true"]')).toHaveCount(1);
+  await expect(page.getByRole("row", { name: /docs: add main guide/ })).toBeVisible();
+  // Clicking the selected ref again returns the log to every ref, and so does
+  // the pane header's clear control.
+  await mainRef.click();
+  await expect(page.locator('.git-ref-row[aria-pressed="true"]')).toHaveCount(0);
+  await expect(refsTrailing).toHaveText("All");
+  await mainRef.click();
+  await page.getByRole("button", { name: "Show commits from all refs" }).click();
+  await expect(page.locator('.git-ref-row[aria-pressed="true"]')).toHaveCount(0);
+  await expect(refsTrailing).toHaveText("All");
+  await featureRef.click();
   await expect(page.getByRole("row", { name: /feat: add filtered branch commit/ })).toBeVisible();
   await page.getByLabel("Filter commit history").fill("browser@example.com");
   await expect(page.getByRole("row", { name: /feat: add filtered branch commit/ })).toBeVisible();
@@ -186,6 +259,9 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   await page.screenshot({ path: testInfo.outputPath("git-history-compact.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(250);
+  // Stacked panes have nothing to divide, so both sashes leave the layout.
+  await expect(refsSash).toBeHidden();
+  await expect(detailSash).toBeHidden();
   await expect(page.getByRole("navigation", { name: "Commit workbench panes" })).toBeVisible();
   await page.getByRole("button", { name: "Refs", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "Repository refs" })).toBeVisible();
