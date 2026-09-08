@@ -2,6 +2,8 @@ import type { inspector as enInspector } from "../en/inspector.js";
 
 export const inspector: typeof enInspector = {
   fallbackFailed: "React Inspector 加载失败。",
+  rangeSessions: "范围内的会话",
+  retry: "重试",
   loading: "正在加载 React Inspector 工作台…",
   workbenchAria: "React Harness Inspector 工作台",
   scopePickerAria: "范围选择器",

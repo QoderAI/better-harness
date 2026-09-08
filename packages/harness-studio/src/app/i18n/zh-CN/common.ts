@@ -125,7 +125,7 @@ export const common: typeof enCommon = {
       last7: "最近 7 天",
       last30: "最近 30 天",
       all: "全部时间",
-      custom: "选择一段时间…",
+      custom: "自定义范围",
     },
     from: "起",
     to: "至",

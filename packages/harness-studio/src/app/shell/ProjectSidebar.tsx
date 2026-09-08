@@ -30,7 +30,8 @@ export function ProjectSidebar(props: {
   projects: readonly StudioProjectDescriptor[];
   activeProjectId?: string;
   destinations: readonly StudioDestination[];
-  current: StudioArea;
+  /** Welcome belongs to the shell and does not select a project view. */
+  current: StudioArea | null;
   opening: boolean;
   canOpenProject: boolean;
   onOpenProject: () => void;
@@ -55,7 +56,7 @@ export function ProjectSidebar(props: {
   // rows only. Projects moved to the switcher, which is a menu button with its
   // own keyboard contract.
   const orderedIds = props.destinations.map((destination) => `view:${destination.id}`);
-  const selectedNavigationId = `view:${props.current}`;
+  const selectedNavigationId = props.current === null ? "" : `view:${props.current}`;
   const [focusedNavigationId, setFocusedNavigationId] = useState(selectedNavigationId);
   const tabStopId = orderedIds.includes(focusedNavigationId)
     ? focusedNavigationId
@@ -105,12 +106,7 @@ export function ProjectSidebar(props: {
     navigationRefs.current.get(nextId)?.focus();
   }
 
-  /**
-   * A macOS source-list row: one line of icon, name, and a trailing slot. The
-   * trailing slot names an availability that is not `ready`, so the state is
-   * carried by a word rather than by a colored dot. The former prose subtitle
-   * moves to the tooltip, where it no longer doubles the row height.
-   */
+  /** View navigation carries identity; evidence status belongs in its view. */
   function renderView(destination: StudioDestination): React.JSX.Element {
     const ViewIcon = VIEW_ICONS[destination.id];
     const selected = props.current === destination.id;
@@ -127,7 +123,6 @@ export function ProjectSidebar(props: {
     >
       <ViewIcon aria-hidden="true" size={15} weight={selected ? "fill" : "regular"} />
       <strong>{destination.label}</strong>
-      {destination.availability !== "ready" && <small className={`availability-${destination.availability}`}>{t(`availability.${destination.availability}`)}</small>}
     </button>;
   }
 

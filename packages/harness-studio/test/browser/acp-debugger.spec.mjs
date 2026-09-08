@@ -79,7 +79,7 @@ test("runs ACP through the Debugger permission gate at wide, compact, and narrow
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize(layouts[0]);
   await page.goto(`${studio.url}/#/debugger`);
-  await page.getByRole("button", { name: "Choose Project" }).click();
+  await page.getByRole("button", { name: "Open Project" }).click();
   await expect(page.getByRole("button", { name: "New live run" })).toBeVisible();
   await runAcpPrompt(page, "Verify the browser ACP bridge");
   await expect(page.locator(".debugger-runtime-meta")).toContainText("Fixture ACP");
@@ -132,7 +132,7 @@ test("starts a live run against the ACP Agent chosen by name", async ({ page }, 
   await page.goto(`${studio.url}/#/debugger`);
   // The Studio server keeps the Project it already opened, so this only picks one
   // when the Debugger still asks for it.
-  const chooseProject = page.getByRole("button", { name: "Choose Project" });
+  const chooseProject = page.getByRole("button", { name: "Open Project" });
   if (await chooseProject.isVisible().catch(() => false)) await chooseProject.click();
   await page.getByRole("button", { name: "New live run" }).click();
 
@@ -166,7 +166,7 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
 
   await page.setViewportSize(layouts[0]);
   await page.goto(`${liveCompareStudio.url}/#/compare`);
-  await page.getByRole("button", { name: "Choose Project" }).click();
+  await page.getByRole("button", { name: "Open Project" }).click();
   await expect(page.getByRole("textbox", { name: "What should these Agents do?" })).toBeVisible();
 
   const prompt = page.getByRole("textbox", { name: "What should these Agents do?" });
@@ -238,7 +238,7 @@ test("grows the comparison past two Agents and runs every chosen lane", async ({
 
   await page.setViewportSize(layouts[0]);
   await page.goto(`${liveCompareStudio.url}/#/compare`);
-  const chooseProject = page.getByRole("button", { name: "Choose Project" });
+  const chooseProject = page.getByRole("button", { name: "Open Project" });
   if (await chooseProject.isVisible().catch(() => false)) await chooseProject.click();
   await page.getByRole("textbox", { name: "What should these Agents do?" }).fill("Compare three Agents at once");
 
@@ -301,7 +301,7 @@ test("keeps the compact run dialog bounded and restores keyboard focus", async (
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   await page.goto(`${studio.url}/#/debugger`);
-  const choose = page.getByRole("button", { name: "Choose Project" });
+  const choose = page.getByRole("button", { name: "Open Project" });
   await expect(choose.or(page.getByRole("button", { name: "New live run" }))).toBeVisible();
   if (await choose.isVisible()) await choose.click();
   for (const layout of layouts) {
@@ -341,7 +341,7 @@ test("keeps the compact run dialog bounded and restores keyboard focus", async (
 test("resizes both Debugger boundaries with pointer and keyboard", async ({ page }, testInfo) => {
   await page.setViewportSize(layouts[0]);
   await page.goto(`${studio.url}/#/debugger`);
-  const choose = page.getByRole("button", { name: "Choose Project" });
+  const choose = page.getByRole("button", { name: "Open Project" });
   await expect(choose.or(page.getByRole("button", { name: "New live run" }))).toBeVisible();
   if (await choose.isVisible()) await choose.click();
   await expect(page.getByTitle("Toggle Execution Tree")).toHaveCount(0);
@@ -392,7 +392,7 @@ test("shows shared assistant chunks in Debugger and Compare before completion", 
     await testInfo.attach("stream-runtime", { body: config.acpRuntimeProfile, contentType: "text/plain" });
     await page.setViewportSize(layouts[0]);
     await page.goto(`${server.url}/#/debugger`);
-    await page.getByRole("button", { name: "Choose Project" }).click();
+    await page.getByRole("button", { name: "Open Project" }).click();
     await page.getByRole("button", { name: "New live run" }).click();
     await page.getByRole("textbox", { name: "Task", exact: true }).fill("stream in two chunks");
     await page.getByRole("button", { name: "Run", exact: true }).click();
@@ -446,7 +446,7 @@ test.describe("ACP over the macOS NSXPC service", () => {
 
       await page.setViewportSize(layouts[0]);
       await page.goto(`${server.url}/#/debugger`);
-      await page.getByRole("button", { name: "Choose Project" }).click();
+      await page.getByRole("button", { name: "Open Project" }).click();
       await page.getByRole("button", { name: "New live run" }).click();
       await page.getByRole("textbox", { name: "Task", exact: true }).fill("prove the NSXPC route");
       await page.getByRole("button", { name: "Run", exact: true }).click();

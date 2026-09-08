@@ -1,4 +1,12 @@
 export const workspace = {
+  welcome: {
+    title: "Welcome",
+    heading: "Your local agent workbench",
+    description: "Explore how your agents work: their customizations, sessions, and the artifacts they produce. Open a project when you’re ready.",
+    customizations: "Inspect the instructions and tools available to your agents.",
+    sessions: "Review agent activity and compare retained sessions.",
+    artifacts: "Browse and preview the files your agents produced.",
+  },
   sources: {
     button: "Data sources",
     buttonAria: "Data sources ({{count}} active)",
@@ -27,7 +35,7 @@ export const workspace = {
     chooseAnotherTitle: "Choose another project workspace",
   },
   folderControls: {
-    choose: "Choose Project",
+    choose: "Open Project",
     change: "Change workspace",
     opening: "Opening…",
     openingAria: "Opening Project",

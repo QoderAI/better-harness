@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CalendarBlank } from "@phosphor-icons/react/CalendarBlank";
-import { CaretDown } from "@phosphor-icons/react/CaretDown";
-import { CaretLeft } from "@phosphor-icons/react/CaretLeft";
 import { CaretRight } from "@phosphor-icons/react/CaretRight";
+import { CaretDown } from "@phosphor-icons/react/CaretDown";
 import { EyeSlash } from "@phosphor-icons/react/EyeSlash";
 import { File } from "@phosphor-icons/react/File";
 import { FileCode } from "@phosphor-icons/react/FileCode";
@@ -12,7 +10,6 @@ import { FilePpt } from "@phosphor-icons/react/FilePpt";
 import { Folder } from "@phosphor-icons/react/Folder";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
-import { TreeStructure } from "@phosphor-icons/react/TreeStructure";
 import { withinDateRange, type StudioDateRange } from "./date-range.js";
 
 import {
@@ -36,35 +33,16 @@ import type { StudioConfig } from "./studio-shell-model.js";
 
 type ArtifactScope =
   | { kind: "all" }
-  | { kind: "day"; value: string }
-  | { kind: "session"; value: string }
   | { kind: "folder"; value: string }
   | { kind: "file"; value: string };
 type ArtifactNarrowPane = "scope" | "artifacts" | "preview";
-type ArtifactScopeMode = "date" | "files";
-
-interface ArtifactSessionGroup {
-  id: string;
-  savedAt: string;
-  prompt: string;
-  provider?: string;
-  artifactIds: string[];
-}
-
-interface ArtifactDayGroup {
-  day: string;
-  observations: WorkspaceArtifactObservation[];
-  artifactIds: string[];
-  sessions: ArtifactSessionGroup[];
-}
-
 export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: StudioDateRange }): React.JSX.Element {
   const { t } = useTranslation("artifacts");
   const [catalog, setCatalog] = useState<StudioArtifactCatalogResponse>();
+  const [windowHidesArtifacts, setWindowHidesArtifacts] = useState(false);
   const [failure, setFailure] = useState<string>();
   const [selected, setSelected] = useState<string>();
   const [scope, setScope] = useState<ArtifactScope>({ kind: "all" });
-  const [scopeMode, setScopeMode] = useState<ArtifactScopeMode>("date");
   const [query, setQuery] = useState("");
   const [narrowPane, setNarrowPane] = useState<ArtifactNarrowPane>("scope");
   const [liveGeneration, setLiveGeneration] = useState(0);
@@ -93,6 +71,7 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
 
   useEffect(() => {
     if (!props.config.artifactsEnabled) return;
+    setFailure(undefined);
     let cancelled = false;
     let requestSequence = 0;
     const refreshCatalog = async (liveUpdate = false): Promise<void> => {
@@ -108,7 +87,13 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
         }
         if (cancelled || request !== requestSequence) return;
         setFailure(undefined);
-        setCatalog(candidate);
+        const observations = candidate.navigation?.observations;
+        const datedIds = new Set(observations?.map((observation) => observation.artifactId));
+        const inRange = observations?.filter((observation) => withinDateRange(observation.savedAt, props.dateRange));
+        const visibleIds = new Set(inRange?.map((observation) => observation.artifactId));
+        const artifacts = candidate.artifacts.filter((artifact) => !datedIds.has(artifact.id) || visibleIds.has(artifact.id));
+        setWindowHidesArtifacts(candidate.artifacts.length > 0 && artifacts.length === 0);
+        setCatalog({ ...candidate, artifacts, ...(candidate.navigation === undefined ? {} : { navigation: { ...candidate.navigation, observations: inRange! } }) });
         if (liveUpdate) setLiveGeneration((value) => value + 1);
       } catch (error) {
         if (!cancelled && request === requestSequence) setFailure(error instanceof Error ? error.message : String(error));
@@ -123,19 +108,8 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
       if (!cancelled && events.readyState === EventSource.CLOSED) setLiveUpdates(false);
     });
     return () => { cancelled = true; events.close(); };
-  }, [catalogRefresh, props.config.artifactsEnabled]);
+  }, [catalogRefresh, props.config.artifactsEnabled, props.dateRange]);
 
-  // Days come pre-narrowed by the sidebar's window, so this View lists what is
-  // in scope instead of offering a second calendar to pick a day from.
-  const allDays = useMemo(() => artifactDays(catalog?.navigation), [catalog?.navigation]);
-  const days = useMemo(
-    () => allDays.filter((day) => withinDateRange(day.observations[0]?.savedAt, props.dateRange)),
-    [allDays, props.dateRange],
-  );
-  // A catalog with nothing in it is not a window problem, so only a window that
-  // hid real days earns the "widen the range" hint.
-  const windowHidesDays = allDays.length > 0 && days.length === 0;
-  const effectiveMode: ArtifactScopeMode = catalog?.navigation === undefined ? "files" : scopeMode;
   const scopedArtifacts = useMemo(() => {
     if (catalog === undefined) return [];
     const ids = artifactIdsForScope(scope, catalog.navigation, catalog.artifacts);
@@ -145,20 +119,11 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
   }, [catalog, query, scope]);
 
   useEffect(() => {
-    if (catalog === undefined || catalog.artifacts.length === 0) return;
-    const selectedStillVisible = scopedArtifacts.some((artifact) => artifact.id === selected);
-    if (selectedStillVisible) return;
-    if (scope.kind === "all" && catalog.navigation !== undefined && days[0] !== undefined) {
-      const nextScope: ArtifactScope = { kind: "day", value: days[0].day };
-      const ids = artifactIdsForScope(nextScope, catalog.navigation, catalog.artifacts);
-      setScope(nextScope);
-      setSelected(catalog.artifacts.find((artifact) => ids.has(artifact.id))?.id);
-      return;
-    }
-    setSelected(scopedArtifacts[0]?.id ?? catalog.artifacts[0]?.id);
-  }, [catalog, days, scope, scopedArtifacts, selected]);
+    if (scopedArtifacts.some((artifact) => artifact.id === selected)) return;
+    setSelected(scopedArtifacts[0]?.id);
+  }, [scopedArtifacts, selected]);
 
-  const active = catalog?.artifacts.find((artifact) => artifact.id === selected);
+  const active = scopedArtifacts.find((artifact) => artifact.id === selected);
   const activeArtifactId = active?.id;
   const activeRevision = active?.revision.id;
   const activeBindingId = active?.renderer.bindingId;
@@ -189,8 +154,8 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
     onSelect: setNarrowPane,
   });
 
-  if (failure !== undefined) return <ArtifactEmpty title={t("empty.unreadableTitle")} detail={failure} />;
-  if (props.config.artifactsEnabled && catalog === undefined) return <p className="artifact-status" role="status">{t("indexing")}</p>;
+  if (failure !== undefined) return <ArtifactEmpty title={t("empty.unreadableTitle")} detail={failure} onRetry={() => setCatalogRefresh((value) => value + 1)} />;
+  if (props.config.artifactsEnabled && catalog === undefined) return <p className="artifact-status" role="status" aria-busy="true">{t("indexing")}</p>;
 
   const artifacts = catalog?.artifacts ?? [];
   const navigation = catalog?.navigation;
@@ -258,13 +223,8 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
 
     <aside className="artifact-scope-pane" id="artifact-scope-pane" role="tabpanel" aria-labelledby="artifact-tab-scope">
 <header><div><small>{navigation === undefined ? t("workspaceAria") : t("scopeHeader.projectScope")}</small><h2>{t("scopeHeader.browse")}</h2></div><span>{artifacts.length}</span></header>
-      <div className="artifact-scope-switch" role="tablist" aria-label={t("scopeModeAria")}>
-        <button type="button" role="tab" aria-selected={effectiveMode === "date"} disabled={navigation === undefined} onClick={() => setScopeMode("date")}><CalendarBlank aria-hidden="true" size={14} />{t("scopeMode.date")}</button>
-        <button type="button" role="tab" aria-selected={effectiveMode === "files"} onClick={() => setScopeMode("files")}><TreeStructure aria-hidden="true" size={14} />{t("scopeMode.files")}</button>
-      </div>
-      {effectiveMode === "date" && navigation !== undefined
-        ? <ArtifactDateNavigator days={days} windowHidesDays={windowHidesDays} scope={scope} onSelect={selectScope} />
-        : <ArtifactFileNavigator artifacts={artifacts} scope={scope} onSelect={selectScope} />}
+      <ArtifactFileNavigator artifacts={artifacts} scope={scope} onSelect={selectScope} />
+      {windowHidesArtifacts && <p className="artifact-pane-note">{t("common:dateRange.emptyWindow")}</p>}
       {!liveUpdates && <p className="artifact-pane-note" role="note">{t("liveUpdatesStopped")}</p>}
     </aside>
 
@@ -367,57 +327,6 @@ function ArtifactIntentPane(props: {
   </aside>;
 }
 
-function ArtifactDateNavigator(props: { days: ArtifactDayGroup[]; windowHidesDays: boolean; scope: ArtifactScope; onSelect: (scope: ArtifactScope) => void }): React.JSX.Element {
-  const { t } = useTranslation("artifacts");
-  const sessionScope = props.scope.kind === "session" ? props.scope.value : undefined;
-  const activeDay = props.scope.kind === "day"
-    ? props.scope.value
-    : sessionScope !== undefined
-      ? props.days.find((day) => day.sessions.some((session) => session.id === sessionScope))?.day
-      : props.days[0]?.day;
-  const initial = parseLocalDay(activeDay ?? props.days[0]?.day ?? localDay(new Date()));
-  const [month, setMonth] = useState(() => new Date(initial.getFullYear(), initial.getMonth(), 1));
-  useEffect(() => {
-    const selectedDate = parseLocalDay(activeDay ?? props.days[0]?.day ?? localDay(new Date()));
-    setMonth((current) => current.getFullYear() === selectedDate.getFullYear() && current.getMonth() === selectedDate.getMonth()
-      ? current
-      : new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
-  }, [activeDay, props.days]);
-  const selectedDay = props.days.find((day) => day.day === activeDay) ?? props.days[0];
-  const dayMap = new Map(props.days.map((day) => [day.day, day]));
-  const cells = calendarCells(month);
-  const locale = studioLocale();
-  const weekdays = t("date.weekdays", { returnObjects: true }) as string[];
-  const weekdayShorts = t("date.weekdaysShort", { returnObjects: true }) as string[];
-  const monthLabel = month.toLocaleDateString(locale, { month: "long", year: "numeric" });
-  return <div className="artifact-date-navigator">
-    <nav className="artifact-day-list" aria-label={t("date.daysAria")}>
-      {props.days.length === 0
-        ? props.windowHidesDays ? <p className="artifact-empty">{t("common:dateRange.emptyWindow")}</p> : null
-        : props.days.map((day) => <button
-          key={day.day}
-          type="button"
-          className={day.day === activeDay ? "selected" : undefined}
-          aria-current={day.day === activeDay ? "true" : undefined}
-          onClick={() => props.onSelect({ kind: "day", value: day.day })}
-        >
-          <strong>{formatDayHeading(day.day, locale)}</strong>
-          <small>{t("date.sessionsAndArtifacts", { sessions: day.sessions.length, artifacts: day.artifactIds.length })}</small>
-        </button>)}
-    </nav>
-    {selectedDay !== undefined && <section className="artifact-day-sessions" aria-label={t("date.sessionsOn", { day: selectedDay.day })}>
-      <header><strong>{formatDayHeading(selectedDay.day, locale)}</strong><span>{t("date.sessionsAndArtifacts", { sessions: selectedDay.sessions.length, artifacts: selectedDay.artifactIds.length })}</span></header>
-      {selectedDay.sessions.map((session) => <button
-        key={session.id}
-        type="button"
-        className={props.scope.kind === "session" && props.scope.value === session.id ? "selected" : undefined}
-        aria-current={props.scope.kind === "session" && props.scope.value === session.id ? "true" : undefined}
-        onClick={() => props.onSelect({ kind: "session", value: session.id })}
-      ><small>{session.provider ?? t("common:localAgent")} · {formatObservedTime(session.savedAt, locale)}</small><strong>{session.prompt}</strong><span>{t("date.sessionArtifactCount", { count: session.artifactIds.length })}</span></button>)}
-    </section>}
-  </div>;
-}
-
 function ArtifactFileNavigator(props: { artifacts: ArtifactDescriptor[]; scope: ArtifactScope; onSelect: (scope: ArtifactScope) => void }): React.JSX.Element {
   const { t } = useTranslation("artifacts");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
@@ -478,50 +387,16 @@ function ArtifactRow(props: { artifact: ArtifactDescriptor; selected: boolean; o
   </button>;
 }
 
-function ArtifactEmpty(props: { title: string; detail: string }): React.JSX.Element {
+function ArtifactEmpty(props: { title: string; detail: string; onRetry?: () => void }): React.JSX.Element {
   const { t } = useTranslation("artifacts");
-  return <main className="artifact-empty"><span><FolderOpen aria-hidden="true" size={22} /></span><small>{t("empty.eyebrow")}</small><h1>{props.title}</h1><p>{props.detail}</p></main>;
-}
-
-function artifactDays(navigation: WorkspaceArtifactNavigation | undefined): ArtifactDayGroup[] {
-  if (navigation === undefined) return [];
-  const rows = new Map<string, WorkspaceArtifactObservation[]>();
-  for (const observation of navigation.observations) {
-    const day = localDay(new Date(observation.savedAt));
-    const current = rows.get(day) ?? [];
-    current.push(observation);
-    rows.set(day, current);
-  }
-  return [...rows.entries()].sort(([left], [right]) => right.localeCompare(left)).map(([day, observations]) => {
-    const sessions = new Map<string, ArtifactSessionGroup>();
-    for (const observation of observations) {
-      const existing = sessions.get(observation.sessionId) ?? {
-        id: observation.sessionId,
-        savedAt: observation.savedAt,
-        prompt: observation.prompt,
-        ...(observation.provider === undefined ? {} : { provider: observation.provider }),
-        artifactIds: [],
-      };
-      if (!existing.artifactIds.includes(observation.artifactId)) existing.artifactIds.push(observation.artifactId);
-      sessions.set(observation.sessionId, existing);
-    }
-    return {
-      day,
-      observations,
-      artifactIds: [...new Set(observations.map((observation) => observation.artifactId))],
-      sessions: [...sessions.values()].sort((left, right) => right.savedAt.localeCompare(left.savedAt)),
-    };
-  });
+  return <main className="artifact-empty" role={props.onRetry ? "alert" : undefined}><span><FolderOpen aria-hidden="true" size={22} /></span><small>{t("empty.eyebrow")}</small><h1>{props.title}</h1><p>{props.detail}</p>{props.onRetry && <button type="button" onClick={props.onRetry}>{t("common:config.retry")}</button>}</main>;
 }
 
 function artifactIdsForScope(scope: ArtifactScope, navigation: WorkspaceArtifactNavigation | undefined, artifacts: ArtifactDescriptor[]): Set<string> {
   if (scope.kind === "all") return new Set(artifacts.map((artifact) => artifact.id));
   if (scope.kind === "file") return new Set([scope.value]);
   if (scope.kind === "folder") return new Set(artifacts.filter((artifact) => artifact.label.startsWith(`${scope.value}/`)).map((artifact) => artifact.id));
-  if (navigation === undefined) return new Set(artifacts.map((artifact) => artifact.id));
-  return new Set(navigation.observations
-    .filter((observation) => scope.kind === "session" ? observation.sessionId === scope.value : localDay(new Date(observation.savedAt)) === scope.value)
-    .map((observation) => observation.artifactId));
+  return new Set();
 }
 
 function observationsForArtifact(navigation: WorkspaceArtifactNavigation | undefined, artifactId: string): WorkspaceArtifactObservation[] {
@@ -531,10 +406,9 @@ function observationsForArtifact(navigation: WorkspaceArtifactNavigation | undef
 
 function scopeDescription(scope: ArtifactScope, navigation: WorkspaceArtifactNavigation | undefined, artifacts: ArtifactDescriptor[], t: (key: string, options?: Record<string, unknown>) => string): string {
   if (scope.kind === "all") return t("scopeDescription.all");
-  if (scope.kind === "day") return formatDayHeading(scope.value, studioLocale());
   if (scope.kind === "folder") return scope.value;
   if (scope.kind === "file") return artifacts.find((artifact) => artifact.id === scope.value)?.label ?? t("scopeDescription.selectedFile");
-  return navigation?.observations.find((observation) => observation.sessionId === scope.value)?.prompt ?? t("scopeDescription.selectedSession");
+  return t("scopeDescription.all");
 }
 
 function fileTreeFolders(artifacts: ArtifactDescriptor[]): ArtifactFolderNode[] {
@@ -562,32 +436,6 @@ function fileTreeFolders(artifacts: ArtifactDescriptor[]): ArtifactFolderNode[] 
 
 function folderArtifactCount(folder: ArtifactFolderNode): number {
   return folder.files.length + folder.folders.reduce((total, child) => total + folderArtifactCount(child), 0);
-}
-
-function calendarCells(month: Date): Array<{ day: string; date: Date } | undefined> {
-  const cells: Array<{ day: string; date: Date } | undefined> = Array.from({ length: month.getDay() }, () => undefined);
-  const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-  for (let day = 1; day <= count; day += 1) {
-    const date = new Date(month.getFullYear(), month.getMonth(), day);
-    cells.push({ day: localDay(date), date });
-  }
-  return cells;
-}
-
-function localDay(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseLocalDay(value: string): Date {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year!, month! - 1, day!);
-}
-
-function formatDayHeading(value: string, locale: string): string {
-  return parseLocalDay(value).toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" });
 }
 
 function formatObservedTime(value: string, locale: string): string {

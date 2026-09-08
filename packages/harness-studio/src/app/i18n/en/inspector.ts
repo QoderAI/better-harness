@@ -1,5 +1,7 @@
 export const inspector = {
   fallbackFailed: "React Inspector failed to load.",
+  rangeSessions: "Sessions in range",
+  retry: "Retry",
   loading: "Loading React Inspector workbench…",
   workbenchAria: "React Harness Inspector Workbench",
   scopePickerAria: "Scope picker",

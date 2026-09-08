@@ -1,6 +1,14 @@
 import type { workspace as enWorkspace } from "../en/workspace.js";
 
 export const workspace: typeof enWorkspace = {
+  welcome: {
+    title: "欢迎",
+    heading: "你的本地 Agent 工作台",
+    description: "查看 Agent 的配置、会话与产物。准备好后，打开一个项目即可开始。",
+    customizations: "检查 Agent 可用的指令和工具。",
+    sessions: "回顾 Agent 活动，对比已保留的会话。",
+    artifacts: "浏览并预览 Agent 生成的文件。",
+  },
   sources: {
     button: "数据源",
     buttonAria: "数据源（{{count}} 个启用）",
@@ -29,7 +37,7 @@ export const workspace: typeof enWorkspace = {
     chooseAnotherTitle: "选择另一个项目工作区",
   },
   folderControls: {
-    choose: "选择项目",
+    choose: "打开项目",
     change: "更换工作区",
     opening: "打开中…",
     openingAria: "正在打开项目",

@@ -1184,11 +1184,11 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   const requestedUrls = [];
   page.on("request", (request) => requestedUrls.push(request.url()));
   await page.goto(emptyStudio.url);
-  const gate = page.getByRole("dialog", { name: "Open a Project to start" });
+  const gate = page.locator(".studio-welcome");
   await expect(gate).toBeVisible();
-  await expect(page.locator(".studio-control-plane")).toHaveAttribute("inert", "");
-  await expect(page.locator(".studio-control-plane")).toHaveAttribute("aria-hidden", "true");
-  await expect(page.getByRole("button", { name: "Choose Project" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".studio-control-plane")).not.toHaveAttribute("inert", "");
+  await expect(page.getByRole("button", { name: "Open Project" })).toBeVisible();
 
   for (const layout of [
     { name: "wide", width: 1440, height: 900 },
@@ -1203,7 +1203,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   }
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole("button", { name: "Choose Project" }).click();
+  await page.getByRole("button", { name: "Open Project" }).click();
   await expect(page.getByRole("button", { name: "Opening Project" })).toBeDisabled();
   await expect(page.locator(".workspace-open-progress")).toContainText("Finding matching Project Sessions across local providers");
   await expect(page.locator(".workspace-open-progress > i")).toHaveCSS("animation-name", "workspace-progress-spin");
@@ -1217,14 +1217,9 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   const inspector = page.locator("[data-studio-native-inspector]");
   await expect(inspector).toBeVisible();
   await expect(inspector).toHaveAttribute("data-react-inspector-workbench", "true");
-  await expect(inspector.getByRole("tab", { name: "Date" })).toHaveAttribute("aria-selected", "true");
-  const inspectorCalendar = inspector.getByRole("group", { name: /evidence calendar/u });
-  await expect(inspectorCalendar).toBeVisible();
-  expect(await inspectorCalendar.locator(".date-cell").count()).toBeGreaterThanOrEqual(35);
-  expect(await inspectorCalendar.locator(".date-cell").count() % 7).toBe(0);
-  await expect(inspector.getByRole("button", { name: "Next month" })).toBeDisabled();
-  await expect(inspector.locator(".date-context-summary")).toContainText(/130 snapshot-token sum/u);
-  await expect(inspector.locator(".date-context-summary")).toContainText(/2\/2 Sessions observed · 2 compactions/u);
+  await expect(inspector.getByRole("tab", { name: "Sessions", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(inspector.getByRole("tab", { name: "Date", exact: true })).toHaveCount(0);
+  await expect(inspector.getByRole("navigation", { name: "Sessions in range" })).toBeVisible();
   await expect(inspector.locator(".date-session-token-summary")).toHaveCount(2);
   await expect(inspector.locator(".date-session-token-summary").first()).toHaveText(/40 current · 1\/1 comp snapshots · 25/u);
   await expect(inspector.locator(".workbench-token-summary").first()).toHaveText(/40 current · 1\/1 comp snapshots · 25/u);

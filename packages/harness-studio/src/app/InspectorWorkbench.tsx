@@ -27,6 +27,8 @@ function inspectorT(key: string, options?: Record<string, unknown>): string {
   return studioI18n.t(`inspector:${key}`, options);
 }
 
+import { withinDateRange, type StudioDateRange } from "./date-range.js";
+
 type Mode = "feature" | "date";
 type ViewMode = "trace" | "replay" | "usage";
 
@@ -73,10 +75,11 @@ interface Item {
   commitHashes?: string[];
 }
 
-export function InspectorWorkbench(props: { fallback: ReactNode; reportUrl?: string }): React.JSX.Element {
+export function InspectorWorkbench(props: { fallback: ReactNode; reportUrl?: string; dateRange?: StudioDateRange }): React.JSX.Element {
   const [loaded, setLoaded] = useState<{ report: Report; css: string }>();
   const [failure, setFailure] = useState<string>();
   const [shadow, setShadow] = useState<ShadowRoot>();
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,25 +96,34 @@ export function InspectorWorkbench(props: { fallback: ReactNode; reportUrl?: str
         const report = await reportResponse.json() as Report;
         if (report.kind !== "HarnessInspectorReportV1") throw new Error("Inspector report contract is unsupported.");
         const css = scopeCss(await cssResponse.text());
-        if (!cancelled) setLoaded({ report, css });
+        if (!cancelled) {
+          if (props.dateRange !== undefined) {
+            report.sessions = (report.sessions ?? []).filter((session) => withinDateRange(session.firstSeen ?? undefined, props.dateRange!));
+            report.commits = (report.commits ?? []).filter((commit) => withinDateRange(commit.committedAt ?? commit.authoredAt, props.dateRange!));
+          }
+          setLoaded({ report, css });
+        }
       } catch (error) {
         if (!cancelled) setFailure(error instanceof Error ? error.message : "React Inspector failed to load.");
       }
     })();
     return () => { cancelled = true; };
-  }, [props.reportUrl]);
+  }, [props.reportUrl, props.dateRange, retry]);
 
-  if (failure) return <div className="inspector-fallback-shell"><p className="inspector-fallback-message" role="status">{failure}</p>{props.fallback}</div>;
-  return <div className="inspector-native-shell">
-    {!loaded && <p className="inspector-native-status" role="status">Loading React Inspector workbench…</p>}
+  if (failure) return <div className="inspector-fallback-shell"><p className="inspector-fallback-message" role="status">{failure}</p><button type="button" onClick={() => setRetry((value) => value + 1)}>{inspectorT("retry")}</button>{props.fallback}</div>;
+  return <div className="inspector-native-shell" aria-busy={!loaded}>
+    {!loaded && <p className="inspector-native-status" role="status">{inspectorT("loading")}</p>}
     <div className="inspector-native-host" aria-label={inspectorT("workbenchAria")} ref={(host) => {
-      if (host && !shadow) setShadow(host.shadowRoot ?? host.attachShadow({ mode: "open" }));
+      if (host) {
+        const nextShadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+        if (nextShadow !== shadow) setShadow(nextShadow);
+      }
     }} />
-    {loaded && shadow ? createPortal(<><style>{loaded.css}{REACT_CSS}</style><ReactInspector report={loaded.report} /></>, shadow) : null}
+    {loaded && shadow ? createPortal(<><style>{loaded.css}{REACT_CSS}</style><ReactInspector report={loaded.report} sharedDateRange={props.dateRange !== undefined} /></>, shadow) : null}
   </div>;
 }
 
-function ReactInspector({ report }: { report: Report }): React.JSX.Element {
+function ReactInspector({ report, sharedDateRange = false }: { report: Report; sharedDateRange?: boolean }): React.JSX.Element {
   const { t } = useTranslation("inspector");
   const nodes = report.featureTree?.nodes ?? [];
   const stories = report.stories ?? [];
@@ -119,7 +131,7 @@ function ReactInspector({ report }: { report: Report }): React.JSX.Element {
   const sessions = report.sessions ?? [];
   const commits = report.commits ?? [];
   const hasFeatureEvidence = stories.some((story) => (story.sessionLinks?.length ?? 0) + (story.commitHashes?.length ?? 0) > 0);
-  const initialMode: Mode = nodes.length && hasFeatureEvidence ? "feature" : "date";
+  const initialMode: Mode = !sharedDateRange && nodes.length && hasFeatureEvidence ? "feature" : "date";
   const [mode, setMode] = useState<Mode>(initialMode);
   const [scope, setScope] = useState(initialMode === "feature" ? report.featureTree?.roots?.[0] ?? nodes[0]?.id ?? "" : days.at(-1)?.date ?? "");
   const [pickerCollapsed, setPickerCollapsed] = useState(false);
@@ -134,7 +146,11 @@ function ReactInspector({ report }: { report: Report }): React.JSX.Element {
   const byStory = useMemo(() => new Map(stories.map((story) => [story.id, story])), [stories]);
   const bySession = useMemo(() => new Map(sessions.map((session) => [session.sessionId, session])), [sessions]);
   const byCommit = useMemo(() => new Map(commits.map((commit) => [commit.hash, commit])), [commits]);
-  const items = useMemo(() => itemsForScope(mode, scope, days, byNode, byStory, bySession), [mode, scope, days, byNode, byStory, bySession]);
+  const items = useMemo(() => {
+    if (sharedDateRange && mode === "date") return sessions.map((session): Item => ({ session }));
+    const scoped = itemsForScope(mode, scope, days, byNode, byStory, bySession);
+    return sharedDateRange ? scoped.filter((item) => item.session !== undefined || commitsFor(item, byCommit).length > 0) : scoped;
+  }, [sharedDateRange, sessions, mode, scope, days, byNode, byStory, bySession, byCommit]);
   const itemSessions = [...new Map(items.filter((item) => item.session).map((item) => [item.session!.sessionId, item.session!])).values()];
   const itemCommits = new Set(items.flatMap((item) => commitsFor(item, byCommit).map((commit) => commit.hash)));
   const itemStories = new Set(items.flatMap((item) => item.story ? [item.story.id] : []));
@@ -207,13 +223,20 @@ function ReactInspector({ report }: { report: Report }): React.JSX.Element {
     >
       <aside className="scope-picker" aria-label={inspectorT("scopePickerAria")}>
         <div className="brand"><div className="brand-copy"><strong>Harness Inspector</strong><span>{workspaceName}</span></div><button className="picker-toggle" type="button" aria-expanded={!pickerCollapsed} aria-label={pickerCollapsed ? inspectorT("expandTree") : inspectorT("collapseTree")} onClick={() => setPickerCollapsed((value) => !value)}><span className="collapse-label">{inspectorT("hide")}</span><span className="expand-label">{inspectorT("showTree")}</span></button></div>
-        <div className="mode-tabs" role="tablist" aria-label={inspectorT("pickerModeAria")}><button role="tab" aria-selected={mode === "feature"} tabIndex={mode === "feature" ? 0 : -1} className={mode === "feature" ? "active" : undefined} onClick={() => changeMode("feature")} onKeyDown={(event) => moveInspectorTab(event, "date", changeMode)}>{t("capability")}</button><button role="tab" aria-selected={mode === "date"} tabIndex={mode === "date" ? 0 : -1} className={mode === "date" ? "active" : undefined} onClick={() => changeMode("date")} onKeyDown={(event) => moveInspectorTab(event, "feature", changeMode)}>{t("date")}</button></div>
+        <div className="mode-tabs" role="tablist" aria-label={inspectorT("pickerModeAria")}><button role="tab" aria-selected={mode === "feature"} tabIndex={mode === "feature" ? 0 : -1} className={mode === "feature" ? "active" : undefined} onClick={() => changeMode("feature")} onKeyDown={(event) => moveInspectorTab(event, "date", changeMode)}>{t("capability")}</button><button role="tab" aria-selected={mode === "date"} tabIndex={mode === "date" ? 0 : -1} className={mode === "date" ? "active" : undefined} onClick={() => changeMode("date")} onKeyDown={(event) => moveInspectorTab(event, "feature", changeMode)}>{sharedDateRange ? t("common:area.sessions") : t("date")}</button></div>
         <section className={`picker-panel${mode === "feature" ? " active" : ""}`} role="tabpanel" hidden={mode !== "feature"}><div className="picker-heading"><strong>{t("capabilityTree")}</strong><span>{t("nodeCount", { count: nodes.length })}</span></div>{nodes.length ? <FeatureTree roots={report.featureTree?.roots ?? []} byNode={byNode} selected={scope} collapsed={collapsedBranches} onSelect={setScope} onToggle={(id) => setCollapsedBranches(toggle(collapsedBranches, id))} /> : <p className="picker-empty">{t("noFeatureTree")}</p>}</section>
-        <section className={`picker-panel date-picker-panel${mode === "date" ? " active" : ""}`} role="tabpanel" hidden={mode !== "date"}><DatePicker days={days} bySession={bySession} selected={scope} onSelect={setScope} /></section>
+        <section className={`picker-panel date-picker-panel${mode === "date" ? " active" : ""}`} role="tabpanel" hidden={mode !== "date"}>{sharedDateRange ? <nav className="date-session-navigator" aria-label={t("rangeSessions")}>
+          <div className="date-session-heading"><strong>{t("rangeSessions")}</strong><span>{sessions.length}</span></div>
+          <div className="date-session-list">{sessions.map((session) => { const summary = sessionContextSnapshotPresentation(session, t); return <button type="button" className="date-session-row" key={session.sessionId} onClick={(event) => openSession(session, event.currentTarget)}>
+            <span className="date-session-row-meta"><strong>{session.platform}</strong><time>{session.firstSeen ? new Date(session.firstSeen).toLocaleString(studioLocale()) : ""}</time></span>
+            <span className="date-session-title">{sessionTitle(session)}</span>
+            {summary.compact && <span className="date-session-token-summary" title={summary.title}>{summary.compact}</span>}
+          </button>; })}{sessions.length === 0 && <p className="picker-empty">{t("common:dateRange.emptyWindow")}</p>}</div>
+        </nav> : <DatePicker days={days} bySession={bySession} selected={scope} onSelect={setScope} />}</section>
       </aside>
       <main className="workspace">
-        <header className="workspace-header"><nav className="workspace-breadcrumb" aria-label={t("breadcrumbAria")}><span>Harness Inspector</span><i>/</i><strong>{mode === "date" ? scope : byNode.get(scope)?.title ?? t("deliveryWorkbench")}</strong></nav><div className="workspace-header-meta"><div className="scope-metrics" aria-label={t("scopeMetricsAria")}><Metric value={itemStories.size} label={t("metrics.stories")} singular={t("metrics.story")} /><Metric value={itemSessions.length} label={t("metrics.sessions")} singular={t("metrics.session")} /><Metric value={itemSessions.reduce((sum, session) => sum + totalCalls(session), 0)} label={t("metrics.calls")} singular={t("metrics.call")} /><Metric value={itemCommits.size} label={t("metrics.commits")} singular={t("metrics.commit")} /></div><span className="window-badge">{platformBadge(report)} · {t("sessionCount", { count: sessions.length })}</span></div></header>
-        <div className="workspace-scroll">{(report.diagnostics?.length ?? 0) > 0 && <details className="react-diagnostics"><summary>{t("diagnostics", { count: report.diagnostics!.length })}</summary><ul>{report.diagnostics!.map((diagnostic) => <li key={diagnostic}>{diagnostic}</li>)}</ul></details>}<section className="workbench-list" aria-live="polite">{items.length ? items.map((item, index) => <WorkbenchCard key={`${item.session?.sessionId ?? item.story?.id ?? "commit"}-${index}`} item={item} commits={commitsFor(item, byCommit)} collapsed={collapsedCards.has(index)} onToggle={() => setCollapsedCards(toggleNumber(collapsedCards, index))} onOpen={openSession} />) : <div className="empty-state">{t("emptyScope")}</div>}</section></div>
+        <header className="workspace-header"><nav className="workspace-breadcrumb" aria-label={t("breadcrumbAria")}><span>Harness Inspector</span><i>/</i><strong>{mode === "date" ? (sharedDateRange ? t("rangeSessions") : scope) : byNode.get(scope)?.title ?? t("deliveryWorkbench")}</strong></nav><div className="workspace-header-meta"><div className="scope-metrics" aria-label={t("scopeMetricsAria")}><Metric value={itemStories.size} label={t("metrics.stories")} singular={t("metrics.story")} /><Metric value={itemSessions.length} label={t("metrics.sessions")} singular={t("metrics.session")} /><Metric value={itemSessions.reduce((sum, session) => sum + totalCalls(session), 0)} label={t("metrics.calls")} singular={t("metrics.call")} /><Metric value={itemCommits.size} label={t("metrics.commits")} singular={t("metrics.commit")} /></div><span className="window-badge">{platformBadge(report)} · {t("sessionCount", { count: sessions.length })}</span></div></header>
+        <div className="workspace-scroll">{(report.diagnostics?.length ?? 0) > 0 && <details className="react-diagnostics"><summary>{t("diagnostics", { count: report.diagnostics!.length })}</summary><ul>{report.diagnostics!.map((diagnostic) => <li key={diagnostic}>{diagnostic}</li>)}</ul></details>}<section className="workbench-list" aria-live="polite">{items.length ? items.map((item, index) => <WorkbenchCard key={`${item.session?.sessionId ?? item.story?.id ?? "commit"}-${index}`} item={item} commits={commitsFor(item, byCommit)} collapsed={collapsedCards.has(index)} onToggle={() => setCollapsedCards(toggleNumber(collapsedCards, index))} onOpen={openSession} />) : <div className="empty-state">{sharedDateRange ? t("common:dateRange.emptyWindow") : t("emptyScope")}</div>}</section></div>
       </main>
     </div>
     {selectedSession && <SessionView workspaceName={workspaceName} generatedAt={report.generatedAt} session={selectedSession} commits={commitsFor({ session: selectedSession }, byCommit)} onClose={closeSession} />}

@@ -95,7 +95,7 @@ test.afterAll(async () => {
   if (workspace) await rm(workspace, { recursive: true, force: true });
 });
 
-test("keeps Date, Files, Artifact selection, and Canvas reachable at all target widths", async ({ page }, testInfo) => {
+test("keeps file navigation, Artifact selection, and Canvas reachable at all target widths", async ({ page }, testInfo) => {
   const failures = [];
   page.on("console", (message) => { if (message.type() === "error") failures.push(message.text()); });
   page.on("pageerror", (error) => failures.push(error.message));
@@ -111,9 +111,8 @@ test("keeps Date, Files, Artifact selection, and Canvas reachable at all target 
     if (viewport.width <= 760) await workspaceRegion.getByRole("tab", { name: "Browse" }).click();
     await expect(page.locator(".studio-context-title")).toHaveText("Artifacts");
     await expect(workspaceRegion.locator(".artifact-scope-pane > header")).toContainText("Project scopeBrowse");
-    // The page no longer carries a calendar; the sidebar's window scopes it and
-    // this list names the days inside that window.
-    await expect(workspaceRegion.getByRole("button", { name: /Aug 24.*3 Artifacts/ })).toHaveAttribute("aria-current", "true");
+    await expect(workspaceRegion.getByRole("tree")).toBeVisible();
+    await expect(workspaceRegion.getByRole("tab", { name: "Date", exact: true })).toHaveCount(0);
     await expect(page.locator(".artifact-editor-header small")).toContainText("current ");
 
     if (viewport.width > 760) {
@@ -133,7 +132,7 @@ test("keeps Date, Files, Artifact selection, and Canvas reachable at all target 
 
     const overflow = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
     expect(overflow.scroll).toBeLessThanOrEqual(overflow.client);
-    const focusTarget = workspaceRegion.getByRole("tab", { name: viewport.width > 760 ? "Files" : "Preview" });
+    const focusTarget = viewport.width > 760 ? workspaceRegion.getByRole("treeitem").first() : workspaceRegion.getByRole("tab", { name: "Preview" });
     await page.keyboard.press("Tab");
     await focusTarget.focus();
     await expect(focusTarget).toBeFocused();
@@ -149,49 +148,32 @@ test("keeps Date, Files, Artifact selection, and Canvas reachable at all target 
   expect(failures).toEqual([]);
 });
 
-test("scopes the day list from the sidebar's one date window", async ({ page }) => {
+test("scopes file navigation, list and preview with the sidebar date window", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${studio.url}/#/artifacts`);
-  const workspaceRegion = page.getByRole("region", { name: "Artifacts" });
   const window = page.getByRole("combobox", { name: "Observation window" });
-  const days = workspaceRegion.locator(".artifact-day-list > button");
-
-  // The window lives with the Project, above the View list, because it scopes
-  // every View rather than belonging to this one.
-  await expect(page.locator(".studio-project-switcher + .studio-date-range")).toHaveCount(1);
+  const rows = page.locator(".artifact-rows > button");
   await expect(window).toHaveValue("all");
-  const openDays = await days.count();
-  expect(openDays).toBeGreaterThan(0);
-
-  // The fixture's Artifacts predate today, so narrowing empties the list and
-  // says why, instead of leaving the reader with an unexplained blank pane.
+  await expect(rows).toHaveCount(4);
   await window.selectOption("today");
-  await expect(window).toHaveValue("today");
-  await expect(days).toHaveCount(0);
-  await expect(workspaceRegion.locator(".artifact-empty")).toContainText("Widen the date range");
-
+  await expect(rows).toHaveCount(0);
+  await expect(page.locator(".artifact-scope-pane")).toContainText("Widen the date range");
+  await expect(page.locator(".artifact-editor-header")).toHaveCount(0);
   await window.selectOption("all");
-  await expect(days).toHaveCount(openDays);
-
-  // A custom span states its own ends and survives as the chosen preset.
+  await expect(rows).toHaveCount(4);
   await window.selectOption("custom");
   await page.getByLabel("From", { exact: true }).fill("2026-08-24");
   await page.getByLabel("To", { exact: true }).fill("2026-08-24");
-  await expect(days).toHaveCount(1);
-  await expect(days.first()).toContainText("Aug 24");
-  await expect(page.locator(".studio-date-range-summary")).toContainText("2026-08-24");
+  await expect(rows).toHaveCount(3);
+  await expect(page.locator(".artifact-file-tree")).not.toContainText("contract.md");
+  await expect(page.getByLabel("From", { exact: true })).toHaveValue("2026-08-24");
+  await expect(page.getByLabel("To", { exact: true })).toHaveValue("2026-08-24");
 });
 
-test("switches between Date and file-tree scopes without changing catalog authority", async ({ page }) => {
+test("narrows the shared range by folder without changing catalog authority", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${studio.url}/#/artifacts`);
-  const workspaceRegion = page.getByRole("region", { name: "Artifacts" });
-  await workspaceRegion.getByRole("button", { name: /Aug 23.*1 Artifacts/ }).click();
-  await expect(page.locator(".artifact-list-pane").getByRole("button", { name: /contract\.md/ })).toBeVisible();
-  await expect(page.locator(".artifact-list-pane").getByRole("button", { name: /report\.md/ })).toHaveCount(0);
-
-  await workspaceRegion.getByRole("tab", { name: "Files" }).click();
-  await expect(workspaceRegion.getByRole("tree")).toBeVisible();
+  await expect(page.getByRole("tree")).toBeVisible();
   await page.locator('.artifact-tree-folder:has-text("outputs") > button:last-child').click();
   await expect(page.locator(".artifact-list-pane").getByRole("button", { name: /diagram\.svg/ })).toBeVisible();
   await expect(page.locator(".artifact-list-pane").getByRole("button", { name: /report\.md/ })).toBeVisible();

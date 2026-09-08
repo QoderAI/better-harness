@@ -637,6 +637,10 @@ occupy more attention than the active task.
   visible on a filled primary button and on a row whose own edge is a hairline.
   An inset focus ring that disappears into a filled control does not satisfy
   this contract.
+- Neutral date-range fields use a single 2px inset focus edge, clearly visible
+  against the surface, to avoid doubling their enclosing frame. Keep the native
+  select and date inputs; place icons inside the preset and group From/To as two
+  aligned rows. Custom mode displays its values once, in those fields.
 
 ## Layout and density
 
@@ -690,6 +694,13 @@ occupy more attention than the active task.
 - The status bar is a permanent region along the bottom of the shell. It reports
   the current scope, the active view's status, and retained counts. It is not a
   transient message area, and it does not repeat the toolbar's navigation.
+- Studio owns the observation range in its primary sidebar. Sessions and Artifacts
+  consume that range and show loading, empty, or error feedback as evidence is
+  refreshed; they do not add a second calendar or Date tab. The calendar rules
+  below apply to the standalone Inspector. Studio starts inside its shell with
+  an inline welcome region when no project is connected, never a modal gate.
+- View rows display their names without implementation maturity badges; retain
+  real evidence coverage and error states in the view that owns them.
 - Date scope uses a compact calendar grid with weekday alignment, a visible
   month and time zone, and one active date. Follow meeting-calendar conventions:
   keep date cells numeric, mark activity with a subtle dot, and show explicit

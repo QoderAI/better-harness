@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarBlank } from "@phosphor-icons/react/CalendarBlank";
+import { CaretDown } from "@phosphor-icons/react/CaretDown";
 import {
   STUDIO_DATE_RANGE_PRESETS,
   dateRangeInverted,
@@ -22,6 +23,7 @@ export function DateRangeFilter(props: {
   const { t } = useTranslation("common");
   const fromId = useId();
   const toId = useId();
+  const errorId = useId();
   const resolved = resolveDateRange(props.range);
   const inverted = props.range.preset === "custom" && dateRangeInverted(props.range);
 
@@ -44,14 +46,17 @@ export function DateRangeFilter(props: {
           {t(`dateRange.preset.${preset}`)}
         </option>)}
       </select>
+      <CaretDown aria-hidden="true" size={13} />
     </label>
-    {props.range.preset === "custom" && <div className="studio-date-range-custom">
+    {props.range.preset === "custom" && <div className="studio-date-range-custom" role="group" aria-label={t("dateRange.preset.custom")}>
       <label htmlFor={fromId}>{t("dateRange.from")}</label>
       <input
         id={fromId}
         type="date"
         value={props.range.from ?? ""}
         max={props.range.to}
+        aria-invalid={inverted || undefined}
+        aria-describedby={inverted ? errorId : undefined}
         onChange={(event) => props.onChange({ ...props.range, from: event.target.value === "" ? undefined : event.target.value })}
       />
       <label htmlFor={toId}>{t("dateRange.to")}</label>
@@ -60,12 +65,14 @@ export function DateRangeFilter(props: {
         type="date"
         value={props.range.to ?? ""}
         min={props.range.from}
+        aria-invalid={inverted || undefined}
+        aria-describedby={inverted ? errorId : undefined}
         onChange={(event) => props.onChange({ ...props.range, to: event.target.value === "" ? undefined : event.target.value })}
       />
     </div>}
     {inverted
-      ? <p className="studio-date-range-summary status-warning" role="alert">{t("dateRange.inverted")}</p>
-      : <p className="studio-date-range-summary">{summary(resolved, t)}</p>}
+      ? <p id={errorId} className="studio-date-range-summary status-warning" role="alert">{t("dateRange.inverted")}</p>
+      : props.range.preset !== "custom" && <p className="studio-date-range-summary">{summary(resolved, t)}</p>}
   </div>;
 }
 

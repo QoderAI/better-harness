@@ -325,7 +325,7 @@ test("asks a single-Agent Project for a second Agent instead of a second Project
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(singleAgentStudio.url);
-  await page.getByRole("button", { name: "Choose Project" }).click();
+  await page.getByRole("button", { name: "Open Project" }).click();
   await expect(page.getByRole("dialog", { name: "Open a Project to start" })).toHaveCount(0);
 
   await openDestination(page, "Compare");
@@ -725,7 +725,7 @@ test("renders the shell, local workspace intake, and empty compare surfaces at a
     await openDestination(page, "Sessions");
     await expect(page.getByRole("heading", { name: "Open a Project" })).toBeVisible();
     await expect(page.getByText("This Studio launcher does not provide Project discovery.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Choose Project" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open Project" })).toHaveCount(0);
     await assertRenderedContract(page);
     await page.screenshot({ path: testInfo.outputPath(`foundation-${layout.name}.png`) });
 
@@ -737,7 +737,7 @@ test("renders the shell, local workspace intake, and empty compare surfaces at a
 
     await openDestination(page, "Sessions");
     await expect(page.getByRole("heading", { name: "Open a Project" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Choose Project" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open Project" })).toHaveCount(0);
     await assertRenderedContract(page);
     await page.screenshot({ path: testInfo.outputPath(`sessions-${layout.name}.png`) });
   }

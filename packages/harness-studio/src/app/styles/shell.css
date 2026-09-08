@@ -23,85 +23,23 @@
 .studio-loading p { margin: 0; }
 .studio-loading > button { margin-top: var(--space-sm); }
 
-.studio-workspace-gate {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
+.studio-welcome {
   min-width: 0;
-  padding: var(--space-lg);
+  height: 100%;
+  overflow: auto;
   display: grid;
   place-items: center;
-  background: var(--color-overlay);
+  padding: var(--space-xl);
 }
-
-.studio-workspace-gate-panel {
-  width: min(520px, 100%);
-  overflow: hidden;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-lg);
-  color: var(--color-text);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-overlay);
-}
-
-.studio-workspace-gate-panel > header {
-  padding: var(--space-xl) var(--space-xl) var(--space-md);
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-}
-
-.studio-workspace-gate-panel > header > span {
-  width: var(--space-xxxl);
-  height: var(--space-xxxl);
-  flex: none;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-xs);
-  color: var(--color-primary);
-  background: var(--color-primary-soft);
-}
-
-.studio-workspace-gate-panel > header small {
-  color: var(--color-primary);
-  font-weight: var(--weight-semibold);
-}
-
-.studio-workspace-gate-panel > header h1 {
-  margin: var(--space-xs) 0 0;
-  font-size: var(--type-page-size);
-  line-height: var(--type-page-line);
-}
-
-.studio-workspace-gate-panel > p {
-  margin: 0;
-  padding: 0 var(--space-xl);
-  color: var(--color-text-muted);
-}
-
-.studio-workspace-gate-panel > .workspace-folder-controls {
-  margin: var(--space-xl) 0;
-}
-
-.studio-workspace-gate-panel > footer {
-  padding: var(--space-md) var(--space-xl);
-  display: grid;
-  gap: var(--space-xs);
-  border-top: 1px solid var(--color-border);
-  background: var(--color-surface-subtle);
-}
-
-.studio-workspace-gate-panel > footer strong {
-  font-size: var(--type-meta-size);
-  line-height: var(--type-meta-line);
-}
-
-.studio-workspace-gate-panel > footer span {
-  color: var(--color-text-muted);
-  font-size: var(--type-meta-size);
-  line-height: var(--type-meta-line);
-}
+.studio-welcome-content { width: min(100%, 64ch); min-width: 0; }
+.studio-welcome-content > svg { color: var(--color-primary); }
+.studio-welcome h2 { font-size: var(--type-display-size); line-height: var(--type-display-line); letter-spacing: var(--type-display-track); margin: var(--space-lg) 0 var(--space-sm); }
+.studio-welcome p { color: var(--color-text-muted); }
+.studio-welcome .workspace-folder-controls { margin: var(--space-xl) 0; padding: 0; justify-items: start; }
+.studio-welcome dl { margin: var(--space-xxl) 0 0; }
+.studio-welcome dl > div { border-top: 1px solid var(--color-border); padding: var(--space-md) 0; }
+.studio-welcome dt { font-weight: var(--weight-semibold); }
+.studio-welcome dd { margin: var(--space-xs) 0 0; color: var(--color-text-muted); }
 
 /* The window: a source-list sidebar beside one content column. `canvas` shows
    only where a region has not claimed space, so it reads as window frame. */
@@ -236,17 +174,26 @@
 .studio-date-range-preset {
   min-width: 0;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-xs);
   color: var(--color-text-muted);
 }
 
+.studio-date-range-preset > svg {
+  grid-area: 1 / 1;
+  margin-inline: var(--space-sm);
+  pointer-events: none;
+  z-index: 1;
+}
+.studio-date-range-preset > svg:last-child { justify-self: end; }
+
 .studio-date-range-preset select {
+  grid-area: 1 / 1;
+  appearance: none;
   width: 100%;
   min-width: 0;
   height: var(--control-height);
-  padding: 0 var(--space-xs);
+  padding: 0 var(--space-xxl);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xs);
   color: var(--color-text);
@@ -259,10 +206,18 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-xxs) var(--space-xs);
+  gap: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface);
+  overflow: hidden;
 }
 
 .studio-date-range-custom label {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding-inline: var(--space-sm);
   color: var(--color-text-muted);
   font-size: var(--type-meta-size);
 }
@@ -272,12 +227,21 @@
   min-width: 0;
   height: var(--control-height);
   padding: 0 var(--space-xs);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xs);
+  border: 0;
+  border-radius: 0;
   color: var(--color-text);
   background: var(--color-surface);
   font: inherit;
+  font-variant-numeric: tabular-nums;
 }
+
+.studio-date-range-custom > :nth-child(-n + 2) { border-bottom: 1px solid var(--color-border); }
+.studio-date-range-preset select:hover,
+.studio-date-range-custom input:hover { background: var(--color-surface-hover); }
+/* Join the focus edge to these neutral fields instead of adding a second frame. */
+.studio-date-range-preset select:focus-visible,
+.studio-date-range-custom input:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.studio-date-range-custom input:focus-visible { border-radius: 0; }
 
 .studio-date-range-summary {
   margin: 0;
@@ -413,8 +377,6 @@
 /* The trailing slot: a named availability for a View. */
 .studio-project-views > button small { flex: none; color: var(--color-text-subtle); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .studio-project-views > button[aria-current="page"] small { color: currentColor; }
-.studio-project-views > button small.availability-partial { color: var(--color-warning); }
-.studio-project-views > button[aria-current="page"] small.availability-partial { color: currentColor; }
 
 .studio-project-remove { width: var(--toolbar-target); height: var(--toolbar-target); position: absolute; top: 50%; right: var(--space-xs); display: grid; place-items: center; border: 0; border-radius: var(--radius-xs); padding: 0; color: var(--color-text-subtle); background: transparent; opacity: 0; transform: translateY(-50%); }
 .studio-project-menu-row:hover .studio-project-remove,
@@ -870,12 +832,6 @@
 }
 
 @media (max-width: 760px) {
-  .studio-workspace-gate { padding: var(--space-sm); }
-  .studio-workspace-gate-panel > header { padding: var(--space-lg) var(--space-lg) var(--space-md); align-items: flex-start; }
-  .studio-workspace-gate-panel > header h1 { font-size: var(--type-section-size); line-height: var(--type-section-line); }
-  .studio-workspace-gate-panel > p { padding-inline: var(--space-lg); }
-  .studio-workspace-gate-panel > .workspace-folder-controls { margin: var(--space-lg) 0; padding-inline: var(--space-lg); }
-  .studio-workspace-gate-panel > footer { padding-inline: var(--space-lg); }
 
   .studio-context-bar { padding-inline: var(--space-xs); gap: var(--space-sm); }
   .studio-source-switcher > button { width: var(--toolbar-target); height: var(--toolbar-target); min-height: var(--toolbar-target); justify-content: center; padding: 0; }

@@ -51,7 +51,6 @@ import {
   studioDestinations,
   STUDIO_DEFAULT_AREA,
   type StudioArea,
-  type StudioAvailability,
   type StudioCompareSurface,
   type StudioConfig,
 } from "./studio-shell-model.js";
@@ -525,7 +524,8 @@ export function App(): React.JSX.Element {
   const projectDiscoveryDetail = config.workspaceDiscoveryEnabled
     ? t("project.discoveryChoose")
     : t("project.discoveryUnavailable");
-  const workspaceGateOpen = projects.length === 0 && studioProjectGateRequired(config, sources.length > 0, area);
+  const showWelcome = studioProjectGateRequired(config, sources.length > 0, area);
+  const dateScopeKey = JSON.stringify(dateRange);
 
   // Two regimes share one control. Wide windows dock the sidebar and collapse it
   // in place; narrow windows float it over the content, which is the existing
@@ -541,14 +541,12 @@ export function App(): React.JSX.Element {
     className={`studio-control-plane${navigationOpen ? " navigation-open" : ""}`}
     data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
     style={{ ["--sidebar-width" as string]: `${sidebarWidth}px` }}
-    inert={workspaceGateOpen ? true : undefined}
-    aria-hidden={workspaceGateOpen ? true : undefined}
   >
     <ProjectSidebar
       projects={projects}
       activeProjectId={activeProjectId}
       destinations={destinations}
-      current={area}
+      current={showWelcome ? null : area}
       opening={projectOpening}
       canOpenProject={config.workspaceDiscoveryEnabled}
       onOpenProject={() => void openProject()}
@@ -566,7 +564,7 @@ export function App(): React.JSX.Element {
     <section className="studio-area">
       <header className={`studio-context-bar${contextNavigation ? " has-surface-navigation" : ""}`}>
         <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={sidebarVisible ? t("workspace:gate.closeTitle") : t("workspace:gate.openTitle")} aria-label={sidebarVisible ? t("workspace:gate.closeAria") : t("workspace:gate.openAria")} aria-expanded={sidebarVisible} onClick={toggleSidebar}><SidebarSimple aria-hidden="true" size={17} /></button>
-        <div className="studio-context-title"><h1>{t(`area.${area}`)}</h1></div>
+        <div className="studio-context-title"><h1>{showWelcome ? t("workspace:welcome.title") : t(`area.${area}`)}</h1></div>
         {contextNavigation && <div className="studio-context-navigation">{contextNavigation}</div>}
         {/* The active View's primary action lands here, so a workbench does not
             open a second bar just to hold one button. */}
@@ -575,39 +573,41 @@ export function App(): React.JSX.Element {
         {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
       <div className={`studio-surface studio-surface-${area}`}>
+        {showWelcome ? <WorkspaceWelcome onWorkspaceChanged={async () => {
+          const projectId = await workspaceChanged();
+          globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
+        }} /> : <>
         {area === "customizations" && (config.customizationAnalysisEnabled
           ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />
           : <EmptyWorkspace eyebrow={t("customize:empty.eyebrow")} title={t("customize:empty.titleConnected")} detail={t("customize:empty.detailConnected")} command="npx @qoder-ai/harness-studio" />)}
         {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} dateRange={dateRange} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} dateRange={dateRange} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
-        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} dateRange={dateRange} config={config} />}
+        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}-${dateScopeKey}`} dateRange={dateRange} config={config} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
+        </>}
       </div>
       {area === "debugger" ? <footer className="studio-status-bar"><strong>{activeProject?.label}</strong><div id="studio-debugger-status" /></footer> : <StatusBar
         scope={activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
         status={current.status}
-        availability={current.availability}
         config={config}
       />}
     </section>
   </div>
-  {workspaceGateOpen && <WorkspaceGate onWorkspaceChanged={async () => {
-    const projectId = await workspaceChanged();
-    const nextHash = studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) });
-    if (globalThis.location.hash !== nextHash) globalThis.history.pushState(null, "", nextHash);
-  }} />}
   </StudioThemeContext.Provider>;
 }
 
-function WorkspaceGate(props: { onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
+function WorkspaceWelcome(props: { onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
   const { t } = useTranslation("workspace");
-  return <section className="studio-workspace-gate" role="dialog" aria-modal="true" aria-labelledby="workspace-gate-title" aria-describedby="workspace-gate-description">
-    <div className="studio-workspace-gate-panel">
-      <header><span><FolderOpen aria-hidden="true" size={22} /></span><div><small>{t("gate.eyebrow")}</small><h1 id="workspace-gate-title">{t("gate.title")}</h1></div></header>
-      <p id="workspace-gate-description">{t("gate.description")}</p>
-      <ProjectFolderControls autoFocus onWorkspaceChanged={props.onWorkspaceChanged} />
-      <footer><strong>{t("gate.footerTitle")}</strong><span>{t("gate.footerDetail")}</span></footer>
+  return <section className="studio-welcome" aria-labelledby="studio-welcome-title">
+    <div className="studio-welcome-content">
+      <GitBranch aria-hidden="true" size={32} />
+      <h2 id="studio-welcome-title">{t("welcome.heading")}</h2>
+      <p>{t("welcome.description")}</p>
+      <ProjectFolderControls onWorkspaceChanged={props.onWorkspaceChanged} />
+      <dl>{(["customizations", "sessions", "artifacts"] as const).map((view) => <div key={view}>
+        <dt>{t(`common:area.${view}`)}</dt><dd>{t(`welcome.${view}`)}</dd>
+      </div>)}</dl>
     </div>
   </section>;
 }
@@ -617,14 +617,12 @@ function WorkspaceGate(props: { onWorkspaceChanged: () => Promise<void> }): Reac
  * the trailing edge. It also gives the shell a bottom boundary, so a view whose
  * content runs out no longer trails off into bare canvas.
  *
- * Availability is announced as a word beside its dot rather than by color
- * alone, and the region keeps the `role="status"` and the view-status label that
- * the title bar used to own.
+ * The status describes the current evidence; implementation maturity is not
+ * part of the reader’s navigation.
  */
 function StatusBar(props: {
   scope: string;
   status: string;
-  availability: StudioAvailability;
   config: StudioConfig;
 }): React.JSX.Element {
   const { t } = useTranslation("common");
@@ -638,7 +636,6 @@ function StatusBar(props: {
 
   return <footer className="studio-status-bar" aria-label={t("statusBar.aria")}>
     <div className="studio-status-scope" aria-label={t("statusBar.scopeAria")}>
-      <span className={`availability-dot availability-${props.availability}`} aria-hidden="true" />
       <strong>{props.scope}</strong>
       <span role="status" aria-label={t("contextBar.viewStatus", { status: props.status })}>{props.status}</span>
     </div>
@@ -834,6 +831,7 @@ function SessionsWorkspace(props: {
   const [detail, setDetail] = useState<DebuggerSession>();
   const [sessionArtifacts, setSessionArtifacts] = useState<SessionArtifactContext | null>();
   const [failure, setFailure] = useState<string>();
+  const [retry, setRetry] = useState(0);
   const [detailFailure, setDetailFailure] = useState<string>();
   const sessionRowRefs = useRef(new Map<string, HTMLButtonElement>());
   const [focusedSessionId, setFocusedSessionId] = useState<string>();
@@ -845,6 +843,14 @@ function SessionsWorkspace(props: {
 
   useEffect(() => {
     if (!props.config.workspaceConnected) return;
+    setFailure(undefined);
+    setSessions(undefined);
+    setDetail(undefined);
+    setSelected(undefined);
+    setDetailFailure(undefined);
+    setCompareIds(new Set());
+    setAgentFilter("all");
+    detailRequest.current += 1;
     let cancelled = false;
     void (async () => {
       try {
@@ -854,21 +860,23 @@ function SessionsWorkspace(props: {
         if (cancelled) return;
         setOmittedCount(payload.workspace.omittedCount);
         setSessions(payload.sessions);
-        const initialSession = payload.sessions.find((session) => session.id === props.initialSessionId) ?? payload.sessions[0];
+        const inRange = payload.sessions.filter((session) => withinDateRange(session.savedAt, props.dateRange));
+        const initialSession = inRange.find((session) => session.id === props.initialSessionId) ?? inRange[0];
         if (initialSession !== undefined) await openSession(initialSession.id, () => cancelled);
       } catch (error) {
         if (!cancelled) setFailure(error instanceof Error ? error.message : String(error));
       }
     })();
     return () => { cancelled = true; };
-  }, [props.config.workspaceConnected, props.initialSessionId]);
+  }, [props.config.workspaceConnected, props.initialSessionId, props.dateRange, retry]);
 
   useEffect(() => {
-    if (sessions === undefined || sessions.length === 0) return;
-    setFocusedSessionId((current) => sessions.some((session) => session.id === current)
+    const visible = sessions?.filter((session) => withinDateRange(session.savedAt, props.dateRange)
+      && (agentFilter === "all" || (session.provider ?? t("common:localAgent")) === agentFilter)) ?? [];
+    setFocusedSessionId((current) => visible.some((session) => session.id === current)
       ? current
-      : sessions.find((session) => session.id === props.initialSessionId)?.id ?? selected ?? sessions[0]!.id);
-  }, [props.initialSessionId, selected, sessions]);
+      : visible.find((session) => session.id === selected)?.id ?? visible[0]?.id);
+  }, [agentFilter, props.dateRange, selected, sessions, t]);
 
   async function openSession(id: string, cancelled: () => boolean = () => false): Promise<void> {
     const request = ++detailRequest.current;
@@ -927,9 +935,9 @@ function SessionsWorkspace(props: {
     return <EmptyWorkspace eyebrow={t("empty.eyebrow")} title={t("empty.title")} detail={props.config.workspaceDiscoveryEnabled ? t("empty.discoveryDetail") : t("empty.noDiscoveryDetail")} action={props.openProjectAction} />;
   }
   if (failure !== undefined) {
-    return <EmptyWorkspace eyebrow={t("empty.eyebrow")} title={t("empty.discoveryFailed")} detail={failure} />;
+    return <EmptyWorkspace eyebrow={t("empty.eyebrow")} title={t("empty.discoveryFailed")} detail={failure} action={{ label: t("common:config.retry"), onClick: () => setRetry((value) => value + 1) }} />;
   }
-  if (sessions === undefined) return <p className="artifact-status" role="status">{t("indexing")}</p>;
+  if (sessions === undefined) return <p className="artifact-status" role="status" aria-busy="true">{t("indexing")}</p>;
 
   const pair = [...compareIds];
   const agentLabel = (session: SessionSummary): string => session.provider ?? t("common:localAgent");
@@ -977,7 +985,7 @@ function SessionsWorkspace(props: {
     <div id="session-workbench-panel" className="session-workbench-surface" role="tabpanel" aria-labelledby={surface === "inspector" ? "session-tab-inspector" : "session-tab-catalog"}>
       {surface === "inspector"
         ? <Suspense fallback={<p className="artifact-status" role="status">{t("loadingInspector")}</p>}>
-            <InspectorWorkbench reportUrl="api/workspace-inspector-report" fallback={catalog} />
+            <InspectorWorkbench reportUrl="api/workspace-inspector-report" dateRange={props.dateRange} fallback={catalog} />
           </Suspense>
         : catalog}
     </div>
