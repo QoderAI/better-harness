@@ -1873,17 +1873,88 @@
    title bar and the sidebar already name this area, so the surface carries no
    page header, prompt restatement, or metric grid above the evidence. */
 .live-compare-workspace { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--color-workspace); }
-.live-compare-composer { padding: var(--space-sm) var(--space-md); display: grid; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
-.live-compare-prompt { width: 100%; min-width: 0; padding: var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); font: inherit; resize: vertical; }
-/* The lane count is chosen by the reader, so the composer grows by wrapping
-   rather than by a fixed column template. */
-.live-compare-agents { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); }
-.live-compare-agent-slot { flex: 1 1 12rem; min-width: 0; display: flex; align-items: center; gap: var(--space-xs); }
-.live-compare-agents select { flex: 1 1 auto; width: 100%; min-width: 0; height: var(--control-height); padding: 0 var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); }
-.live-compare-agents button { display: inline-flex; align-items: center; gap: var(--space-xs); }
-.live-compare-drop-agent { flex: none; padding: 0 var(--space-xs); height: var(--control-height); color: var(--color-text-muted); }
-/* Add and Run stay together at the trailing edge however many slots wrap. */
-.live-compare-agent-actions { flex: none; margin-left: auto; display: flex; align-items: center; gap: var(--space-sm); }
+/* The composer is one control, so the shell owns the border and the focus ring
+   and the prompt inside it draws neither. Its band still spans the workspace, so
+   the outer padding keeps the control off the shell edges. */
+.live-compare-composer { margin: var(--space-sm) var(--space-md); padding: var(--space-xs) var(--space-sm) var(--space-sm); display: grid; gap: var(--space-xs); border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-surface); }
+.live-compare-composer:focus-within { border-color: var(--color-focus); box-shadow: 0 0 0 1px var(--color-focus); }
+.live-compare-prompt { width: 100%; min-width: 0; padding: var(--space-xs) var(--space-xs) 0; border: 0; color: var(--color-text); background: transparent; font: inherit; resize: vertical; }
+/* The prompt already carries the composer's ring, so a second ring inside the
+   same control would read as two focused fields. */
+.live-compare-prompt:focus-visible { outline: none; }
+/* One toolbar row for the Agent decision and Run. Chips wrap before they shrink,
+   so a fourth Agent lengthens the row rather than clipping a name. */
+.live-compare-bar { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-sm); }
+.live-compare-picker { position: relative; flex: none; }
+.live-compare-picker > button { height: var(--control-height); display: inline-flex; align-items: center; gap: var(--space-xs); padding: 0 var(--space-sm); }
+/* The composer is docked at the *top* of the workspace, so both of its pop-ups
+   open downward over the evidence. Opening upward would put them outside the
+   viewport. */
+.live-compare-menu {
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  left: 0;
+  z-index: 70;
+  width: min(320px, calc(100vw - var(--space-xxl)));
+  max-height: min(60vh, 320px);
+  overflow: auto;
+  display: grid;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popover);
+}
+.live-compare-menu button { width: 100%; min-height: var(--row-height); display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 0 var(--space-xs); justify-items: start; align-items: center; border: 0; border-radius: var(--radius-none); padding: var(--space-xs) var(--space-sm); color: var(--color-text); background: transparent; text-align: left; }
+.live-compare-menu button:hover:not(:disabled) { background: var(--color-surface-hover); }
+.live-compare-menu button.selected { background: var(--color-surface-selected); }
+/* The glyph is reserved in the column either way, so checking an Agent does not
+   shift its name sideways. */
+.live-compare-menu button > svg { grid-row: 1 / span 2; color: var(--color-primary); visibility: hidden; }
+.live-compare-menu button.selected > svg { visibility: visible; }
+.live-compare-menu strong { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-meta-size); }
+/* An unavailable Agent's reason is readable text here, which is what an
+   <option title> never reliably was. */
+.live-compare-menu span { grid-column: 2; min-width: 0; color: var(--color-text-muted); font-size: var(--type-meta-size); overflow-wrap: anywhere; }
+.live-compare-menu p { margin: 0; padding: var(--space-xs) var(--space-sm); border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+/* A chosen Agent is a removable value, so it reads as a chip rather than a
+   status badge, and it keeps the row's control height. */
+.live-compare-chip { flex: 0 1 auto; min-width: 0; height: var(--control-height); display: inline-flex; align-items: center; gap: var(--space-xs); padding: 0 var(--space-xs) 0 var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-full); color: var(--color-text); background: var(--color-surface-selected); font-size: var(--type-meta-size); }
+.live-compare-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-compare-chip > button { width: 24px; min-width: 24px; height: 24px; min-height: 24px; flex: none; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-full); color: var(--color-text-muted); background: transparent; }
+.live-compare-chip > button:hover { color: var(--color-text); background: var(--color-surface-hover); }
+/* Exactly one note sits between the chips and Run, and it is the row's only
+   flexible cell so Run stays pinned to the trailing edge. */
+.live-compare-note { min-width: 0; flex: 1 1 12rem; margin: 0; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.live-compare-note.status-warning { color: var(--color-warning); }
+.live-compare-shared-tree { position: relative; color: var(--color-warning); }
+.live-compare-shared-tree > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-compare-note-toggle { width: 24px; min-width: 24px; height: 24px; min-height: 24px; flex: none; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-full); color: var(--color-text-muted); background: transparent; }
+.live-compare-note-toggle:hover { color: var(--color-text); background: var(--color-surface-hover); }
+/* Hidden by opacity rather than by `visibility` or `display`, so the text stays
+   in the accessibility tree for the `aria-describedby` on the toggle in every
+   visual state instead of only while a pointer rests on it. */
+.live-compare-note-detail {
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  left: 0;
+  z-index: 70;
+  width: min(320px, calc(100vw - var(--space-xxl)));
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  color: var(--color-text);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) ease;
+}
+.live-compare-shared-tree:hover .live-compare-note-detail,
+.live-compare-note-toggle:focus-visible ~ .live-compare-note-detail,
+.live-compare-note-toggle[aria-expanded="true"] ~ .live-compare-note-detail { opacity: 1; }
+.live-compare-run { flex: none; height: var(--control-height); display: inline-flex; align-items: center; gap: var(--space-xs); }
 .live-compare-boundary { margin: 0; color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .live-compare-lane > .live-compare-boundary { padding: var(--space-xs) var(--space-md); border-bottom: 1px solid var(--color-border); }
 /* Lanes are however many the reader started. They share the width until a lane

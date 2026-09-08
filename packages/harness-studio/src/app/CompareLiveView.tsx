@@ -1,7 +1,10 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { CaretDown } from "@phosphor-icons/react/CaretDown";
+import { Check } from "@phosphor-icons/react/Check";
+import { Info } from "@phosphor-icons/react/Info";
 import { Play } from "@phosphor-icons/react/Play";
-import { Plus } from "@phosphor-icons/react/Plus";
+import { Warning } from "@phosphor-icons/react/Warning";
 import { X } from "@phosphor-icons/react/X";
 import type { HarnessRunStreamEventV1 } from "@qoder-ai/harness/protocol";
 import {
@@ -31,12 +34,6 @@ function laneKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-/** One chosen (or not yet chosen) Agent slot in the composer. */
-interface LaneSlot {
-  key: string;
-  agentId: string;
-}
-
 interface LaneRun {
   key: string;
   agentId: string;
@@ -62,19 +59,17 @@ export function CompareLiveView(props: {
 }): React.JSX.Element {
   const { t } = useTranslation("compare");
   const [prompt, setPrompt] = useState("");
-  // Every selection starts empty: the reader states which Agents answer the
-  // prompt rather than inheriting a default that hides the choice.
-  const [slots, setSlots] = useState<readonly LaneSlot[]>(
-    () => Array.from({ length: MIN_LANES }, () => ({ key: laneKey(), agentId: "" })),
-  );
+  // The chosen Agents are a set, in the order they were chosen. A set cannot
+  // express the same Agent twice, so the composer can no longer be pointed at a
+  // pair that is not a comparison.
+  const [chosen, setChosen] = useState<readonly string[]>([]);
   const [comparison, setComparison] = useState<LiveComparison>();
   const running = useRef(false);
 
   const available = props.agents.filter((agent) => agent.available);
-  const chosen = slots.every((slot) => slot.agentId !== "");
   const active = comparison !== undefined
     && comparison.lanes.some((lane) => lane.state.status === "running");
-  const canRun = prompt.trim() !== "" && chosen && !active;
+  const canRun = prompt.trim() !== "" && chosen.length >= MIN_LANES && !active;
 
   useEffect(() => () => { running.current = false; }, []);
 
@@ -88,12 +83,15 @@ export function CompareLiveView(props: {
   async function launch(): Promise<void> {
     if (!canRun) return;
     const task = prompt.trim();
-    const started = slots.map((slot) => ({ slot, ...runIdentity(slot.key) }));
+    const started = chosen.map((agentId) => {
+      const key = laneKey();
+      return { agentId, key, ...runIdentity(key) };
+    });
     setComparison({
       prompt: task,
-      lanes: started.map(({ slot, runId }) => ({
-        key: slot.key,
-        agentId: slot.agentId,
+      lanes: started.map(({ agentId, key, runId }) => ({
+        key,
+        agentId,
         runId,
         state: { ...initialRunState(), status: "running" },
       })),
@@ -101,21 +99,21 @@ export function CompareLiveView(props: {
     running.current = true;
     // Every lane is launched together and settles independently, so a slow or
     // failing Agent never withholds another lane's evidence.
-    await Promise.all(started.map(async ({ slot, threadId, runId }) => {
+    await Promise.all(started.map(async ({ agentId, key, threadId, runId }) => {
       try {
         await streamRun(
-          `api/acp/runs/stream?agent=${encodeURIComponent(slot.agentId)}`,
+          `api/acp/runs/stream?agent=${encodeURIComponent(agentId)}`,
           task,
           threadId,
           runId,
           props.project,
-          (events: HarnessRunStreamEventV1[]) => patchLane(slot.key, (run) => ({
+          (events: HarnessRunStreamEventV1[]) => patchLane(key, (run) => ({
             ...run,
             state: events.reduce(applyHarnessRunEvent, run.state),
           })),
         );
       } catch (error) {
-        patchLane(slot.key, (run) => ({
+        patchLane(key, (run) => ({
           ...run,
           failure: error instanceof Error ? error.message : String(error),
           state: { ...run.state, status: "error" },
@@ -149,6 +147,9 @@ export function CompareLiveView(props: {
   // No page title or eyebrow: the shell title bar and the sidebar already name
   // this area, and the composer states the decision on its own.
   return <main className="live-compare-workspace" aria-label={t("live.title")}>
+    {/* One control, not four regions: the shell owns the border and the focus
+        ring, the prompt sits inside it, and the Agent decision plus Run read as
+        the composer's own toolbar row. */}
     <form
       className="live-compare-composer"
       onSubmit={(event) => { event.preventDefault(); void launch(); }}
@@ -161,45 +162,40 @@ export function CompareLiveView(props: {
         placeholder={t("live.promptPlaceholder")}
         onChange={(event) => setPrompt(event.target.value)}
       />
-      <div className="live-compare-agents">
-        {slots.map((slot, index) => <div className="live-compare-agent-slot" key={slot.key}>
-          <select
-            aria-label={t("live.laneAgent", { index: index + 1 })}
-            value={slot.agentId}
-            onChange={(event) => setSlots((current) => current.map((candidate) =>
-              candidate.key === slot.key ? { ...candidate, agentId: event.target.value } : candidate))}
-          >
-            <option value="">{t("live.chooseAgent")}</option>
-            {props.agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available} title={agent.detail}>
-              {agent.available ? agent.label : t("live.agentUnavailable", { agent: agent.label })}
-            </option>)}
-          </select>
-          {/* Removing is offered only above the floor, so the control never
-              appears in a state where pressing it would be refused. */}
-          {slots.length > MIN_LANES && <button
-            className="live-compare-drop-agent"
+      <div className="live-compare-bar">
+        <AgentPicker
+          agents={props.agents}
+          chosen={chosen}
+          disabled={available.length === 0}
+          onToggle={(agentId) => setChosen((current) => current.includes(agentId)
+            ? current.filter((candidate) => candidate !== agentId)
+            : current.length < MAX_LANES ? [...current, agentId] : current)}
+        />
+        {/* Removal is named after the Agent it drops rather than a lane index,
+            so the control reads the same before and after the row reflows. */}
+        {chosen.map((agentId) => <span className="live-compare-chip" key={agentId}>
+          <span>{labelFor(agentId)}</span>
+          <button
             type="button"
-            aria-label={t("live.removeAgent", { index: index + 1 })}
-            onClick={() => setSlots((current) => current.filter((candidate) => candidate.key !== slot.key))}
-          ><X aria-hidden="true" size={12} /></button>}
-        </div>)}
-        <div className="live-compare-agent-actions">
-          {slots.length < MAX_LANES && <button
-            type="button"
-            onClick={() => setSlots((current) => [...current, { key: laneKey(), agentId: "" }])}
-          >
-            <Plus aria-hidden="true" size={12} />
-            <span>{t("live.addAgent")}</span>
-          </button>}
-          <button className="primary" type="submit" disabled={!canRun}>
-            <Play aria-hidden="true" size={14} />
-            <span>{active ? t("live.running") : t("live.run", { count: slots.length })}</span>
-          </button>
-        </div>
+            aria-label={t("live.removeChosenAgent", { agent: labelFor(agentId) })}
+            onClick={() => setChosen((current) => current.filter((candidate) => candidate !== agentId))}
+          ><X aria-hidden="true" size={11} /></button>
+        </span>)}
+        {/* Exactly one note, chosen by state. The overwrite consequence is only
+            true once two Agents will actually write, so below the floor the row
+            states the prerequisite for Run instead. */}
+        {available.length === 0
+          ? <p className="live-compare-note status-warning" role="alert">{t("live.noAgents")}</p>
+          : chosen.length < MIN_LANES
+            ? <p className="live-compare-note">{t("live.agentFloor", { count: MIN_LANES })}</p>
+            : <SharedTreeNote />}
+        <button className="primary live-compare-run" type="submit" disabled={!canRun}>
+          <Play aria-hidden="true" size={14} />
+          <span>{active
+            ? t("live.running")
+            : chosen.length < MIN_LANES ? t("live.runIdle") : t("live.run", { count: chosen.length })}</span>
+        </button>
       </div>
-      {available.length === 0
-        ? <p className="live-compare-boundary status-warning" role="alert">{t("live.noAgents")}</p>
-        : <p className="live-compare-boundary">{t("live.sharedWorkingTree")}</p>}
     </form>
 
     {comparison === undefined
@@ -215,6 +211,114 @@ export function CompareLiveView(props: {
           />)}
         </div>}
   </main>;
+}
+
+/**
+ * One popup over the whole bounded catalog, replacing a `<select>` per lane.
+ *
+ * Checkbox semantics are what make a duplicate pair unexpressible, and they let
+ * an unavailable Agent keep the server's reason as readable text instead of an
+ * `<option title>` no reader reliably sees.
+ */
+function AgentPicker(props: {
+  agents: readonly StudioAcpAgentOption[];
+  chosen: readonly string[];
+  disabled: boolean;
+  onToggle: (agentId: string) => void;
+}): React.JSX.Element {
+  const { t } = useTranslation("compare");
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const full = props.chosen.length >= MAX_LANES;
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (!(event.target instanceof Node)) return;
+      if (rootRef.current?.contains(event.target) === true) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      toggleRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return <div className="live-compare-picker" ref={rootRef}>
+    <button
+      ref={toggleRef}
+      type="button"
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-label={t("live.agentsAria", { count: props.chosen.length })}
+      disabled={props.disabled}
+      onClick={() => setOpen((value) => !value)}
+    >
+      <span>{t("live.agents")}</span>
+      <CaretDown aria-hidden="true" size={11} />
+    </button>
+    {open && <div className="live-compare-menu" role="menu" aria-label={t("live.agentsMenuAria")}>
+      {props.agents.map((agent) => {
+        const checked = props.chosen.includes(agent.id);
+        return <button
+          key={agent.id}
+          type="button"
+          role="menuitemcheckbox"
+          aria-checked={checked}
+          className={checked ? "selected" : ""}
+          // At the ceiling only the chosen stay operable, so the menu never
+          // offers a click it would refuse.
+          disabled={!agent.available || (full && !checked)}
+          onClick={() => props.onToggle(agent.id)}
+        >
+          {/* The check is what states the selection; the tinted row alone would
+              leave the state carried by colour. */}
+          <Check aria-hidden="true" size={12} weight="bold" />
+          <strong>{agent.available ? agent.label : t("live.agentUnavailable", { agent: agent.label })}</strong>
+          {agent.detail !== undefined && <span>{agent.detail}</span>}
+        </button>;
+      })}
+      {/* The prerequisite for choosing a fifth Agent is stated once, where the
+          disabled entries are, rather than as a banner over the composer. */}
+      {full && <p>{t("live.agentCeiling", { count: MAX_LANES })}</p>}
+    </div>}
+  </div>;
+}
+
+/**
+ * A labelled warning that keeps its consequence reachable.
+ *
+ * The scope fact stays on the row because losing another Agent's edits is not a
+ * detail. The full consequence and the Bench alternative are longer than the row
+ * can carry, so they are disclosed on hover, on focus, and on click-to-pin, and
+ * are bound to the control with `aria-describedby` so the text reaches assistive
+ * technology in every visual state rather than only while pointing at it.
+ */
+function SharedTreeNote(): React.JSX.Element {
+  const { t } = useTranslation("compare");
+  const [pinned, setPinned] = useState(false);
+  const detailId = useId();
+  return <p className="live-compare-note live-compare-shared-tree">
+    <Warning aria-hidden="true" size={12} />
+    <span>{t("live.sharedTree")}</span>
+    <button
+      type="button"
+      className="live-compare-note-toggle"
+      aria-expanded={pinned}
+      aria-describedby={detailId}
+      aria-label={t("live.sharedTreeAria")}
+      onClick={() => setPinned((value) => !value)}
+    ><Info aria-hidden="true" size={13} /></button>
+    <span className="live-compare-note-detail" id={detailId} role="note">{t("live.sharedTreeDetail")}</span>
+  </p>;
 }
 
 function LiveLane(props: {

@@ -47,10 +47,13 @@ test.beforeAll(async () => {
     ],
   });
   // A second Studio registers two launchable Agents so one prompt can be sent to
-  // two independently chosen Agents.
+  // two independently chosen Agents. Delta and Epsilon exist so the four-Agent
+  // ceiling can be reached and one entry is left over to prove it is refused.
   const alpha = { command: process.execPath, args: [acpAgentFixture], label: "Alpha ACP" };
   const beta = { command: process.execPath, args: [acpAgentFixture], label: "Beta ACP" };
   const gamma = { command: process.execPath, args: [acpAgentFixture], label: "Gamma ACP" };
+  const delta = { command: process.execPath, args: [acpAgentFixture], label: "Delta ACP" };
+  const epsilon = { command: process.execPath, args: [acpAgentFixture], label: "Epsilon ACP" };
   liveCompareStudio = await startHarnessStudioServer({
     appDir: resolve(packageRoot, "dist/app"),
     workspaceDirectoryPicker: async () => repositoryRoot,
@@ -60,6 +63,8 @@ test.beforeAll(async () => {
       { id: "alpha", label: "Alpha ACP", agent: alpha },
       { id: "beta", label: "Beta ACP", agent: beta },
       { id: "gamma", label: "Gamma ACP", agent: gamma },
+      { id: "delta", label: "Delta ACP", agent: delta },
+      { id: "epsilon", label: "Epsilon ACP", agent: epsilon },
       { id: "missing", label: "Missing ACP", unavailableReason: "bridge not installed" },
     ],
   });
@@ -170,31 +175,67 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
   await expect(page.getByRole("textbox", { name: "What should these Agents do?" })).toBeVisible();
 
   const prompt = page.getByRole("textbox", { name: "What should these Agents do?" });
-  const left = page.getByRole("combobox", { name: "Agent 1" });
-  const right = page.getByRole("combobox", { name: "Agent 2" });
-  const run = page.getByRole("button", { name: "Run 2 Agents" });
+  const picker = page.getByRole("button", { name: /^Choose Agents/ });
+  const run = page.getByRole("button", { name: "Run", exact: true });
 
-  // Nothing is preselected, so the reader must state both Agents before running.
-  await expect(left).toHaveValue("");
-  await expect(right).toHaveValue("");
+  // Nothing is preselected, so the reader states which Agents answer the prompt.
+  // Below the floor Run is refused and the row says what is missing, rather than
+  // naming a count it cannot start.
+  await expect(page.locator(".live-compare-chip")).toHaveCount(0);
   await expect(run).toBeDisabled();
+  await expect(page.locator(".live-compare-bar")).toContainText("Choose 2 Agents to compare");
   await prompt.fill("Compare two Agents on one requirement");
   await expect(run).toBeDisabled();
-  await left.selectOption("alpha");
-  await expect(run).toBeDisabled();
-  await right.selectOption("beta");
-  await expect(run).toBeEnabled();
-  // Two lanes are the floor, so neither can be removed at this size.
-  await expect(page.getByRole("button", { name: /^Remove Agent/ })).toHaveCount(0);
-  // An unavailable Agent is listed with its reason but marked unselectable. The
-  // launch refusal itself is enforced server-side, not by this attribute.
-  const unavailableOptions = page.locator('.live-compare-agents option[value="missing"]');
-  await expect(unavailableOptions).toHaveCount(2);
-  await expect(unavailableOptions.nth(0)).toHaveAttribute("disabled", "");
-  await expect(unavailableOptions.nth(1)).toHaveAttribute("disabled", "");
-  await expect(page.locator(".live-compare-composer")).toContainText("can overwrite each other");
 
-  await run.click();
+  await picker.click();
+  const menu = page.getByRole("menu", { name: "Available Agents" });
+  // An unavailable Agent stays listed with the server's reason as readable text
+  // and cannot be checked. The launch refusal itself is enforced server-side.
+  const missing = menu.getByRole("menuitemcheckbox", { name: /Missing ACP/ });
+  await expect(missing).toBeDisabled();
+  await expect(missing).toContainText("bridge not installed");
+
+  const alphaEntry = menu.getByRole("menuitemcheckbox", { name: /Alpha ACP/ });
+  await expect(alphaEntry).toHaveAttribute("aria-checked", "false");
+  await alphaEntry.click();
+  await expect(alphaEntry).toHaveAttribute("aria-checked", "true");
+  // One Agent is a Debugger run, not a comparison, so the floor still holds.
+  await expect(page.getByRole("button", { name: "Run", exact: true })).toBeDisabled();
+  await menu.getByRole("menuitemcheckbox", { name: /Beta ACP/ }).click();
+
+  // Checkbox semantics make a duplicate pair unexpressible: two chips are always
+  // two distinct Agents, and Run now names the count it will start.
+  await expect(page.locator(".live-compare-chip")).toHaveCount(2);
+  await expect(alphaEntry).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  const runTwo = page.getByRole("button", { name: "Run 2 Agents" });
+  await expect(runTwo).toBeEnabled();
+
+  // The overwrite consequence is only true once two Agents will write, so it
+  // replaces the floor prerequisite here. Its detail is reachable by keyboard,
+  // not only by pointing at it.
+  const note = page.locator(".live-compare-shared-tree");
+  await expect(note).toContainText("Shared working tree");
+  const detail = page.locator(".live-compare-note-detail");
+  await expect(detail).toHaveCSS("opacity", "0");
+  const disclose = page.getByRole("button", { name: "About the shared working tree" });
+  await expect(disclose).toHaveAttribute("aria-describedby", await detail.getAttribute("id"));
+  await disclose.focus();
+  await expect(detail).toHaveCSS("opacity", "1");
+  await expect(detail).toContainText("can overwrite each other");
+  await disclose.blur();
+
+  // A chip is removed by the Agent it names, not by a lane index.
+  await page.getByRole("button", { name: "Remove Beta ACP" }).click();
+  await expect(page.locator(".live-compare-chip")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Run", exact: true })).toBeDisabled();
+  await picker.click();
+  await menu.getByRole("menuitemcheckbox", { name: /Beta ACP/ }).click();
+  await page.keyboard.press("Escape");
+  await expect(runTwo).toBeEnabled();
+
+  await runTwo.click();
   const lanes = page.locator(".live-compare-lane");
   await expect(lanes).toHaveCount(2);
   await expect(lanes.nth(0)).toContainText("Alpha ACP");
@@ -242,27 +283,29 @@ test("grows the comparison past two Agents and runs every chosen lane", async ({
   if (await chooseProject.isVisible().catch(() => false)) await chooseProject.click();
   await page.getByRole("textbox", { name: "What should these Agents do?" }).fill("Compare three Agents at once");
 
-  const addAgent = page.getByRole("button", { name: "Add Agent" });
-  const slots = page.locator(".live-compare-agent-slot");
-  await expect(slots).toHaveCount(2);
-  // Growing to the ceiling hides the control rather than offering a click the
-  // composer would refuse.
-  for (const expected of [3, 4]) {
-    await addAgent.click();
-    await expect(slots).toHaveCount(expected);
+  const picker = page.getByRole("button", { name: /^Choose Agents/ });
+  const chips = page.locator(".live-compare-chip");
+  await picker.click();
+  const menu = page.getByRole("menu", { name: "Available Agents" });
+  for (const agent of ["Alpha ACP", "Beta ACP", "Gamma ACP"]) {
+    await menu.getByRole("menuitemcheckbox", { name: new RegExp(agent) }).click();
   }
-  await expect(addAgent).toHaveCount(0);
+  await expect(chips).toHaveCount(3);
+
+  // At the ceiling the unchosen entries are refused in place and the menu states
+  // the prerequisite once, rather than offering a click the composer would drop.
+  await menu.getByRole("menuitemcheckbox", { name: /Delta ACP/ }).click();
+  await expect(chips).toHaveCount(4);
+  await expect(menu.getByRole("menuitemcheckbox", { name: /Epsilon ACP/ })).toBeDisabled();
+  await expect(menu).toContainText("At most 4 Agents run at once");
+  await expect(menu.getByRole("menuitemcheckbox", { name: /Alpha ACP/ })).toBeEnabled();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Run 4 Agents" })).toBeVisible();
 
-  // Back to three, from the middle, so the remaining lanes are renumbered rather
-  // than keeping a hole where Agent 2 was.
-  await page.getByRole("button", { name: "Remove Agent 2" }).click();
-  await expect(slots).toHaveCount(3);
+  // Back to three by dropping the Agent itself, so no renumbering is involved.
+  await page.getByRole("button", { name: "Remove Delta ACP" }).click();
+  await expect(chips).toHaveCount(3);
   const run = page.getByRole("button", { name: "Run 3 Agents" });
-  await expect(run).toBeDisabled();
-  for (const [index, agent] of [["1", "alpha"], ["2", "beta"], ["3", "gamma"]]) {
-    await page.getByRole("combobox", { name: `Agent ${index}` }).selectOption(agent);
-  }
   await expect(run).toBeEnabled();
 
   await run.click();
