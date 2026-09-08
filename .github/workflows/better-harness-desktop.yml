@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@1.120.0
       - run: npm ci
       - run: npm run better-harness-desktop:test
       - run: npm run better-harness-desktop:pack
