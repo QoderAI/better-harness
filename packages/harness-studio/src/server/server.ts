@@ -1,3 +1,5 @@
+import { readAcpConversation, listAcpConversations } from "./acp-conversation-log.js";
+import { resolve } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { PiSdkExecutor, QoderSdkExecutor, type HarnessExecutorFactory } from "@qoder-ai/harness/exec";
@@ -28,6 +30,7 @@ import {
   acpRuntimeProfile,
   abortAcpRun,
   cancelAcpRun,
+  configureAcpRun,
   cancelAllAcpRuns,
   decideAcpPermission,
   ensureAcpRun,
@@ -601,6 +604,24 @@ async function route(
     await serveCanvasSdk(response, options, url.pathname.endsWith(".map"));
     return;
   }
+  if (request.method === "GET" && url.pathname.startsWith("/api/acp/conversations")) {
+    const directory = options.runDirectory ?? resolve(activeWorkspaceOptions(options, state).cwd ?? process.cwd(), ".harness-studio-runs");
+    if (url.pathname === "/api/acp/conversations") respondJson(response, 200, await listAcpConversations(directory));
+    else {
+      const match = url.pathname.match(/^\/api\/acp\/conversations\/([^/]+)$/);
+      const id = match ? decodeRouteComponent(response, match[1]!) : undefined;
+      if (id !== undefined) {
+        try { respondJson(response, 200, await readAcpConversation(directory, id)); }
+        catch { respondJson(response, 404, { error: "No saved conversation found." }); }
+      } else if (!match) respondJson(response, 404, { error: "No such conversation route." });
+    }
+    return;
+  }
+  const acpConfigMatch = url.pathname.match(/^\/api\/acp\/runs\/([^/]+)\/session$/);
+  if (request.method === "POST" && acpConfigMatch !== null) {
+    await configureAcpRun(request, response, state, acpConfigMatch[1]!);
+    return;
+  }
   const acpPermissionMatch = url.pathname.match(/^\/api\/acp\/runs\/([^/]+)\/permissions\/([^/]+)$/);
   if (request.method === "POST" && acpPermissionMatch !== null) {
     await decideAcpPermission(request, response, state, acpPermissionMatch[1]!, acpPermissionMatch[2]!);
@@ -625,8 +646,20 @@ async function route(
     // An explicit `agent` selects one catalog entry so two concurrent runs can
     // answer the same prompt with different Agents. Omitting it keeps the
     // single-Agent Debugger behaviour.
-    const requestedAgentId = url.searchParams.get("agent");
-    const acpAgent = requestedAgentId === null
+    let requestedAgentId = url.searchParams.get("agent");
+    const recoveryId = url.searchParams.get("recover");
+    let recovery: { sessionId: string } | undefined;
+    let turnOffset = 0;
+    if (recoveryId) {
+      try {
+        const record = await readAcpConversation(options.runDirectory ?? resolve(runtimeOptions.cwd ?? process.cwd(), ".harness-studio-runs"), recoveryId);
+        if (!record.agentId || !record.cwd || resolve(record.cwd) !== resolve(runtimeOptions.cwd ?? process.cwd())) throw new Error("Restore this conversation in its original Project.");
+        requestedAgentId = record.agentId;
+        recovery = { sessionId: record.snapshot.sessionId };
+        turnOffset = Number(record.snapshot.turns.at(-1)?.turnId.split(":").at(-1)) || record.snapshot.turns.length;
+      } catch (error) { respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); return; }
+    }
+    const acpAgent = requestedAgentId === null || requestedAgentId === "__default"
       ? options.acpAgent
         ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)!.agent!
       : resolveAcpAgent(options, requestedAgentId);
@@ -641,6 +674,13 @@ async function route(
       ...(runtimeOptions.cwd !== undefined ? { cwd: runtimeOptions.cwd } : {}),
       ...(runtimeOptions.sourceRoot !== undefined ? { sourceRoot: runtimeOptions.sourceRoot } : {}),
       executorFactory: acpExecutorFactory(acpAgent, state, {
+        prepare: url.searchParams.get("prepare") === "1",
+        conversation: url.searchParams.get("conversation") === "1",
+        agentId: requestedAgentId ?? "__default",
+        cwd: runtimeOptions.cwd ?? process.cwd(),
+        recovery,
+        turnOffset,
+        runDirectory: options.runDirectory ?? resolve(runtimeOptions.cwd ?? process.cwd(), ".harness-studio-runs"),
         ...(options.acpHostExecutable === undefined
           ? {}
           : { executable: options.acpHostExecutable }),

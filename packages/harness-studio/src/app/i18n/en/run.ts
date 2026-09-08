@@ -1,5 +1,36 @@
 export const run = {
+  conversation: {
+    recover: "Recover and send",
+    recoveryPrompt: "Message after recovery",
+    restored: "Agent session restored",
+    history: "Saved conversations (read-only)",
+    historyUnavailable: "This conversation is unavailable.",
+    searchSettings: "Search settings and models", followup: "Message this Agent…", send: "Send", queue: "Queue", sendNow: "Send now", stop: "Stop", close: "Close session", save: "Save message", edit: "Edit", remove: "Remove", resumeQueue: "Resume queue", queued: "Queued · {{count}}", commands: "Commands", attach: "Attach", loading: "Loading…", attachmentLimit: "Attachments must be smaller than 2 MB.", unsupportedAttachment: "This Agent does not support this attachment type.", removeAttachment: "Remove attachment {{index}}", turnStopped: "Turn stopped: {{reason}}", status: { connecting: "Connecting", generating: "Generating", cancelling: "Stopping…", idle: "Ready", closed: "Session closed" } },
   session: {
+    details: "Session details",
+    updatedAt: "Updated",
+    commandInput: "Input: {{hint}}",
+    planPriority: { high: "High priority", medium: "Medium priority", low: "Low priority" },
+    readyToSend: "Ready to send your prompt.",
+    settingsConnecting: "Connecting session controls…",
+    terminal: "Terminal {{id}}",
+    terminalPending: "Waiting for the Agent to report terminal output.",
+    terminalExit: "Exit code {{code}}",
+
+    diff: "Tool file changes",
+    image: "Agent image",
+    audio: "Agent audio",
+    resource: "Agent resource",
+    contentFallback: "{{type}} content · inspect retained data",
+
+    settings: "Session settings",
+    settingsReadOnly: "This run has ended. Settings show the last acknowledged values.",
+    unsupportedSetting: "Unsupported option type",
+    saving: "Applying…",
+    prepared: "Session ready. Configure this Agent before sending the prompt.",
+    sendingPrompt: "Sending…",
+    sendPrompt: "Send prompt",
+
     "transcript": "Session transcript",
     "title": "Session",
     "mode": "Mode",

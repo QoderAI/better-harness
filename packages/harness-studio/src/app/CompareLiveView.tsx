@@ -1,3 +1,6 @@
+import { AcpConversationHistory } from "./run/AcpConversationHistory.js";
+import { useSessionOwnedState } from "./run/session-view-store.js";
+import { createAcpSessionActions } from "./run/acp-session-actions.js";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
@@ -56,21 +59,20 @@ export function CompareLiveView(props: {
   project?: { id: string; label: string; revision: number };
 }): React.JSX.Element {
   const { t } = useTranslation("compare");
-  const [prompt, setPrompt] = useState("");
+  const owner = `compare:${props.project?.id ?? "default"}`;
+  const [prompt, setPrompt] = useSessionOwnedState(`${owner}:prompt`, "");
   // The chosen Agents are a set, in the order they were chosen. A set cannot
   // express the same Agent twice, so the composer can no longer be pointed at a
   // pair that is not a comparison.
-  const [chosen, setChosen] = useState<readonly string[]>([]);
-  const [comparison, setComparison] = useState<LiveComparison>();
-  const running = useRef(false);
-  const liveComparison = useRef<LiveComparison | undefined>(undefined);
+  const [chosen, setChosen] = useSessionOwnedState<readonly string[]>(`${owner}:chosen`, []);
+  const [comparison, setComparison, liveComparison] = useSessionOwnedState<LiveComparison | undefined>(`${owner}:comparison`, undefined);
+  const [, , running] = useSessionOwnedState(`${owner}:running`, false);
 
   const available = props.agents.filter((agent) => agent.available);
   const active = comparison !== undefined
     && comparison.lanes.some((lane) => lane.state.status === "running");
   const canRun = prompt.trim() !== "" && chosen.length >= MIN_LANES && chosen.every((id) => available.some((agent) => agent.id === id)) && !active;
 
-  useEffect(() => () => { running.current = false; }, []);
 
   function patchLane(key: string, update: (run: LaneRun) => LaneRun): void {
     const current = liveComparison.current;
@@ -80,7 +82,7 @@ export function CompareLiveView(props: {
     setComparison(next);
   }
 
-  async function launch(): Promise<void> {
+  async function launch(prepare = false): Promise<void> {
     if (!canRun || running.current) return;
     running.current = true;
     const task = prompt.trim();
@@ -104,7 +106,7 @@ export function CompareLiveView(props: {
     await Promise.all(started.map(async ({ agentId, key, threadId, runId }) => {
       try {
         await streamRun(
-          `api/acp/runs/stream?agent=${encodeURIComponent(agentId)}`,
+          `api/acp/runs/stream?conversation=1&agent=${encodeURIComponent(agentId)}${prepare ? "&prepare=1" : ""}`,
           task,
           threadId,
           runId,
@@ -140,6 +142,14 @@ export function CompareLiveView(props: {
     await postAcpRunAction(runId, { requestId, optionId });
   }
 
+  const [closeError, setCloseError] = useState<string>();
+  async function newComparison(): Promise<void> {
+    setCloseError(undefined);
+    try {
+      await Promise.all((comparison?.lanes ?? []).filter(lane => lane.state.status === "running").map(lane => createAcpSessionActions(lane.runId).execute({ action: "close" })));
+      running.current = false; liveComparison.current = undefined; setComparison(undefined);
+    } catch (error) { setCloseError(String(error)); }
+  }
   const labelFor = (agentId: string): string => props.agents.find((agent) => agent.id === agentId)?.label ?? agentId;
 
   // No page title or eyebrow: the shell title bar and the sidebar already name
@@ -148,7 +158,11 @@ export function CompareLiveView(props: {
     {/* One control, not four regions: the shell owns the border and the focus
         ring, the prompt sits inside it, and the Agent decision plus Run read as
         the composer's own toolbar row. */}
+    {closeError && <p role="alert">{closeError}</p>}
+    {!comparison && <AcpConversationHistory project={props.project} />}
+    {comparison && <div className="acp-compare-toolbar"><SharedTreeNote /><button type="button" onClick={() => void newComparison()}>{t("live.newComparison")}</button></div>}
     <form
+      hidden={comparison !== undefined}
       className="live-compare-composer"
       onSubmit={(event) => { event.preventDefault(); void launch(); }}
     >
@@ -187,10 +201,11 @@ export function CompareLiveView(props: {
           : chosen.length < MIN_LANES
             ? <p className="live-compare-note">{t("live.agentFloor", { count: MIN_LANES })}</p>
             : <SharedTreeNote />}
+        {!active && <button type="button" disabled={!canRun} onClick={() => void launch(true)}>{t("live.prepare")}</button>}
         <button className="primary live-compare-run" type="submit" disabled={!canRun}>
           <Play aria-hidden="true" size={14} />
           <span>{active
-            ? t("live.running")
+            ? t(comparison?.lanes.some((lane) => lane.state.acp.prepared) ? "live.configuring" : "live.running")
             : chosen.length < MIN_LANES ? t("live.runIdle") : t("live.run", { count: chosen.length })}</span>
         </button>
       </div>
@@ -336,7 +351,7 @@ function LiveLane(props: {
   const warnings = props.run.state.warnings.length;
   const counts = [
     t("live.laneTools", { count: props.run.state.toolCallCount }),
-    t("live.laneMessages", { count: items.filter((item) => item.kind === "message" && item.role !== "thought").length }),
+    t("live.laneMessages", { count: items.filter((item) => item.kind === "message" && item.role === undefined).length }),
     ...(warnings > 0 ? [t("live.laneWarnings", { count: warnings })] : []),
   ].join(" · ");
   async function cancel(): Promise<void> {
@@ -354,10 +369,10 @@ function LiveLane(props: {
   return <section className="live-compare-lane" aria-label={t("live.laneAria", { side: props.side, agent: props.label })}>
     <header>
       <strong>{props.label}</strong>
-      <span className={`run-badge status-${props.run.state.status}`} role="status">{t(`live.status.${props.run.state.status}`)}</span>
+      <span className={`run-badge status-${props.run.state.status}`} role="status">{t((props.run.state.acp.prepared || props.run.state.conversation?.status === "idle") ? "live.ready" : `live.status.${props.run.state.status}`)}</span>
       <small className="live-compare-counts">{counts}</small>
-      {props.run.state.status === "running" && <button type="button" disabled={cancelling} onClick={() => void cancel()}>{t(cancelling ? "live.cancelling" : "live.cancel")}</button>}
+      {props.run.state.status === "running" && !props.run.state.conversation && <button type="button" disabled={cancelling} onClick={() => void cancel()}>{t(cancelling ? "live.cancelling" : "live.cancel")}</button>}
     </header>
-    <AcpSessionStream state={props.run.state} prompt={props.prompt} failure={actionError ?? props.run.failure} onPermission={props.onDecide} permissionClassName="live-compare-permission" />
+    <AcpSessionStream actions={createAcpSessionActions(props.run.runId)} state={props.run.state} prompt={props.prompt} failure={actionError ?? props.run.failure} onPermission={props.onDecide} permissionClassName="live-compare-permission" />
   </section>;
 }

@@ -1,3 +1,6 @@
+import type { AcpConversation } from "@qoder-ai/harness/exec";
+import type { AcpSessionControl } from "@qoder-ai/harness/exec";
+import type { AcpConfigOption } from "../contracts/acp-session-config.js";
 import type { OxcCompilerFactory } from "../agent-react/host/index.js";
 import { DebuggerSession } from "../contracts/debugger-session.js";
 import { CheckpointSourcePreview, ExperimentLockReceipt } from "../contracts/experiment-setup.js";
@@ -294,6 +297,12 @@ export interface ArtifactInteractionProposalState {
   };
 }
 export interface AcpRunControl {
+  conversation?: AcpConversation;
+  session?: AcpSessionControl;
+  config?: AcpConfigOption[];
+  modes?: string[];
+  startPrompt?: () => void;
+  actionTail?: Promise<unknown>;
   abortController: AbortController;
   pendingPermissions: Map<string, AcpPendingPermission>;
 }

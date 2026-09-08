@@ -7,6 +7,11 @@ export const compare = {
     results: "Evidence results",
   },
   live: {
+    newComparison: "New comparison",
+    ready: "Ready",
+    configuring: "Configuring…",
+
+    prepare: "Configure Agents",
     title: "Compare Agents live",
     promptLabel: "What should these Agents do?",
     promptPlaceholder: "Describe the requirement every Agent should attempt…",

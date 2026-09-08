@@ -359,11 +359,53 @@ it.each([
     requestPermission: approveFirstOption(), onRunEvent: (event) => events.push(event),
   }).execute(revision, bundle, { prompt: "Inspect rich stream" });
   expect(result.exitCode).toBe(0);
-  expect(events.flatMap((event) => event.type === "message-started" ? [event.role ?? "assistant"] : event.type === "tool-call-started" ? ["tool"] : [])).toEqual(["assistant", "thought", "tool", "assistant"]);
-  expect(events.find((event) => event.type === "tool-call-started")).toMatchObject({ toolCallId: "read-stream" });
+  expect(events.flatMap((event) => event.type === "message-started" ? [event.role ?? "assistant"] : event.type === "tool-call-started" ? ["tool"] : [])).toEqual(["tool", "assistant", "thought", "tool", "assistant", "tool", "assistant"]);
+  expect(events.find((event) => event.type === "tool-call-started" && event.toolCallId === "read-stream")).toMatchObject({ toolCallId: "read-stream" });
   const output = events.find((event) => event.type === "tool-call-result");
   expect(output?.type === "tool-call-result" ? JSON.parse(output.content) : undefined).toEqual({ files: ["fixture.txt"], verified: true });
   expect(result.output).not.toContain("Inspecting the evidence.");
   expect(result.output).toContain("stream:complete");
   expect(events.some((event) => event.type === "protocol-event" && event.method === "session/request_permission" && event.permissionActionable === false)).toBe(true);
+});
+
+
+it.each([
+  { transport: "stdio" as const, executable: HOST_EXECUTABLE },
+  ...(process.platform === "darwin" ? [{ transport: "nsxpc" as const, executable: NSXPC_BRIDGE }] : []),
+])("applies full live session configuration before prompt through $transport", async ({ transport, executable }) => {
+  const { bundle, revision } = await revisionUnderTest();
+  const readiness: boolean[] = [];
+  const result = await new AcpRustExecutor({
+    hostExecutable: executable, transport, command: process.execPath,
+    args: [FIXTURE_AGENT, "--session-controls"], requestPermission: approveFirstOption(),
+    onSessionReady: async (control) => {
+      readiness.push(control !== undefined);
+      if (!control) return;
+      expect(await control.setConfigOption("model", "fixture-candidate")).toMatchObject({ configOptions: expect.arrayContaining([expect.objectContaining({ id: "effort", currentValue: "medium" })]) });
+      await control.setConfigOption("effort", "low");
+      await control.setConfigOption("fast", true);
+    },
+  }).execute(revision, bundle, { prompt: "Use the configured model" });
+  expect(result.exitCode).toBe(0);
+  expect(result.output).toContain("configured:fixture-candidate:low:true");
+  expect(readiness).toEqual([true, false]);
+});
+
+
+it.each([
+  { transport: "stdio" as const, executable: HOST_EXECUTABLE },
+  ...(process.platform === "darwin" ? [{ transport: "nsxpc" as const, executable: NSXPC_BRIDGE }] : []),
+])("preserves rich content and applies legacy mode through $transport", async ({ transport, executable }) => {
+  const { bundle, revision } = await revisionUnderTest();
+  const events: HarnessRunEvent[] = [];
+  const result = await new AcpRustExecutor({
+    hostExecutable: executable, transport, command: process.execPath,
+    args: [FIXTURE_AGENT, "--rich-content", "--legacy-modes"], requestPermission: approveFirstOption(),
+    onRunEvent: (event) => events.push(event), onSessionReady: async (control) => { await control?.setMode("plan"); },
+  }).execute(revision, bundle, { prompt: "Render rich evidence" });
+  expect(result.exitCode).toBe(0);
+  expect(events.filter((event) => event.type === "message-content")).toHaveLength(4);
+  expect(events.find((event) => event.type === "message-started" && event.role === "user")).toBeDefined();
+  expect(events.filter((event) => event.type === "tool-call-started")).toHaveLength(2);
+  expect(result.output).toContain("**Rich content**");
 });

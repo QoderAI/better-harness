@@ -1,4 +1,6 @@
-import { memo, useMemo, useState } from "react";
+import { useSessionOwnedState } from "./session-view-store.js";
+import { AcpContent } from "./AcpContent.js";
+import { memo, useMemo, useState, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { Wrench } from "@phosphor-icons/react/Wrench";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
@@ -12,19 +14,21 @@ type ToolCallTimelineItem = Extract<TimelineItem, { kind: "tool-call" }>;
 
 const MessageEntry = memo(function MessageEntry({ item }: { item: MessageTimelineItem }): React.JSX.Element {
   const { t } = useTranslation("run");
+  if (item.content?.length) return <div className="entry message"><span className="entry-tag">{t(item.role === "user" ? "live.userRequest" : item.role === "thought" ? "session.thinking" : "assistant")}</span>{item.content.map((content, index) => <AcpContent key={index} value={content} />)}</div>;
   if (item.role === "thought") return <details className="acp-thought"><summary>{t("session.thinking")}</summary><StreamingMessage item={item} /></details>;
   return <div className="entry message"><span className="entry-tag">{t("assistant")}</span><StreamingMessage item={item} /></div>;
 });
 
-export const ToolCallEntry = memo(function ToolCallEntry({ item }: { item: ToolCallTimelineItem }): React.JSX.Element {
+export const ToolCallEntry = memo(function ToolCallEntry({ item, children, richResult = false, persistenceKey }: { persistenceKey?: string; item: ToolCallTimelineItem; children?: React.ReactNode; richResult?: boolean }): React.JSX.Element {
   const { t } = useTranslation("run");
-  const [expanded, setExpanded] = useState(false);
+  const localId = useId();
+  const [expanded, setExpanded] = useSessionOwnedState(persistenceKey ?? localId, false);
   const argumentsView = useMemo(() => describeToolPayload(item.argsText, t("entry.noArguments")), [item.argsText]);
   const resultView = useMemo(
     () => item.resultText === undefined ? undefined : describeToolPayload(item.resultText, t("entry.emptyResult")),
     [item.resultText],
   );
-  return <details className={`tool-card status-${item.status}`} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+  return <details className={`tool-card status-${item.status}`} open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
     <summary>
       <span className="tool-icon" aria-hidden="true"><Wrench size={15} weight="bold" /></span>
       <span className="tool-title"><small>{t("toolCall")}</small><strong>{item.name}</strong><code>{argumentsView.summary}</code></span>
@@ -32,8 +36,9 @@ export const ToolCallEntry = memo(function ToolCallEntry({ item }: { item: ToolC
       <CaretDown className="tool-chevron" size={14} aria-hidden="true" />
     </summary>
     {expanded && <div className="tool-detail">
-      <section><h4>{t("entry.arguments")}</h4><ArtifactCodeView mode="source" content={argumentsView.formatted} sourceHint={argumentsView.structured ? "tool-input.json" : "tool-input.txt"} className={argumentsView.structured ? "structured" : ""} label={t("entry.argumentsLabel")} /></section>
-      <section><h4>{t("entry.result")}</h4>{resultView ? <>{item.resultTruncated ? <p className="tool-notice">{item.resultOriginalBytes === undefined ? t("entry.resultTruncated") : t("entry.resultTruncatedFrom", { bytes: item.resultOriginalBytes.toLocaleString(studioLocale()) })}</p> : null}<ArtifactCodeView mode="source" content={resultView.formatted} sourceHint={resultView.structured ? "tool-result.json" : "tool-result.txt"} className={resultView.structured ? "structured" : ""} label={t("entry.resultLabel")} /></> : <p className="tool-empty">{item.status === "running" || item.status === "preparing" ? t("entry.waitingForResult") : item.status === "result-unavailable" ? t("entry.noRetainedResult") : t("entry.noResultPayload")}</p>}</section>
+      {item.argsText && <section><h4>{t("entry.arguments")}</h4><ArtifactCodeView mode="source" content={argumentsView.formatted} sourceHint={argumentsView.structured ? "tool-input.json" : "tool-input.txt"} className={argumentsView.structured ? "structured" : ""} label={t("entry.argumentsLabel")} /></section>}
+      {!richResult && resultView && <section><h4>{t("entry.result")}</h4>{resultView ? <>{item.resultTruncated ? <p className="tool-notice">{item.resultOriginalBytes === undefined ? t("entry.resultTruncated") : t("entry.resultTruncatedFrom", { bytes: item.resultOriginalBytes.toLocaleString(studioLocale()) })}</p> : null}<ArtifactCodeView mode="source" content={resultView.formatted} sourceHint={resultView.structured ? "tool-result.json" : "tool-result.txt"} className={resultView.structured ? "structured" : ""} label={t("entry.resultLabel")} /></> : <p className="tool-empty">{item.status === "running" || item.status === "preparing" ? t("entry.waitingForResult") : item.status === "result-unavailable" ? t("entry.noRetainedResult") : t("entry.noResultPayload")}</p>}</section>}
+      {children}
       <footer><span>{t("entry.callId")}</span><code title={item.id}>{item.id}</code></footer>
     </div>}
   </details>;

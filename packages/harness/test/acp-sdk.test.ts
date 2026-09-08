@@ -266,3 +266,26 @@ it("preserves thought framing without mixing thoughts into the executor's final 
   expect(result.output).not.toContain("Inspecting the evidence.");
   expect(result.output).toContain("stream:complete");
 });
+
+
+it("exposes live config controls before prompting and revokes them after completion", async () => {
+  const { bundle } = await compileHarness(SOURCE);
+  const { revision } = resolveHarness(bundle!, "live-acp", "acp", { adapter: () => ACP_ADAPTER_DESCRIPTOR });
+  const readiness: boolean[] = [];
+  const executor = new AcpSdkExecutor({
+    command: process.execPath, args: [FIXTURE, "--session-controls"],
+    onSessionReady: async (control) => {
+      readiness.push(control !== undefined);
+      if (!control) return;
+      const response = await control.setConfigOption("model", "fixture-candidate");
+      expect(response).toMatchObject({ configOptions: expect.arrayContaining([expect.objectContaining({ id: "effort", currentValue: "medium" })]) });
+      await control.setConfigOption("effort", "low");
+      await control.setConfigOption("fast", true);
+    },
+    requestPermission: async (_id, request) => ({ outcome: { outcome: "selected", optionId: request.options[0]!.optionId } }),
+  });
+  const result = await executor.execute(revision!, bundle!, { prompt: "Use configured values" });
+  expect(result.exitCode).toBe(0);
+  expect(result.output).toContain("configured:fixture-candidate:low:true");
+  expect(readiness).toEqual([true, false]);
+});

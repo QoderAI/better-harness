@@ -1,3 +1,8 @@
+import { AcpEchoFilter } from "./acp-echo-filter.js";
+import { AcpConversation, type AcpPromptContent, type AcpOptionalAction, type AcpSessionRecovery } from "@qoder-ai/harness/exec";
+import { saveAcpConversation } from "./acp-conversation-log.js";
+import { parseAcpConfig, recordValue, acceptsAcpConfig } from "../contracts/acp-session-config.js";
+import type { HarnessRunEvent, AcpSessionControl } from "@qoder-ai/harness/exec";
 import {
   AcpPermissionHandler,
   AcpRustExecutor,
@@ -39,10 +44,72 @@ export function ensureAcpRun(state: HarnessStudioState, runId: string): AcpRunCo
 export function acpExecutorFactory(
   agent: StudioAcpAgentOptions,
   state: HarnessStudioState,
-  host: { executable?: string; transport?: "stdio" | "nsxpc"; allowRoots?: readonly string[] } = {},
+  host: { executable?: string; transport?: "stdio" | "nsxpc"; allowRoots?: readonly string[]; prepare?: boolean; conversation?: boolean; runDirectory?: string; agentId?: string; cwd?: string; recovery?: AcpSessionRecovery; turnOffset?: number } = {},
 ): HarnessExecutorFactory {
   return (context) => {
     const control = ensureAcpRun(state, context.runId);
+    const observed: Array<{ event: HarnessRunEvent; observedAt: string }> = [];
+    let truncated = false;
+    let retainedBytes = 0;
+    const echoes = new AcpEchoFilter();
+    const observe = (event: HarnessRunEvent): void => {
+      for (const accepted of echoes.accept(event)) retain(accepted);
+    };
+    const retain = (event: HarnessRunEvent): void => {
+      if (event.type !== "acp-conversation-state") {
+        if (observed.length < 20_000 && retainedBytes < 32 * 1024 * 1024) {
+          retainedBytes += Buffer.byteLength(JSON.stringify(event));
+          observed.push({ event, observedAt: new Date().toISOString() });
+        }
+        else truncated = true;
+      }
+      if (event.type === "protocol-event" && event.direction === "Agent → Client") {
+        const payload = recordValue(event.payload);
+        const result = recordValue(payload?.result);
+        const update = recordValue(recordValue(payload?.params)?.update);
+        const config = parseAcpConfig(result?.configOptions ?? update?.configOptions);
+        if (config !== undefined) control.config = config;
+        const modes = recordValue(result?.modes);
+        if (Array.isArray(modes?.availableModes)) control.modes = modes.availableModes.flatMap((raw) => {
+          const mode = recordValue(raw); return typeof mode?.id === "string" ? [mode.id] : [];
+        });
+      }
+      context.onRunEvent?.(event);
+    };
+    const conversation = host.conversation ? new AcpConversation({
+      turnOffset: host.turnOffset,
+      onChange: snapshot => observe({ type: "acp-conversation-state", snapshot }),
+      onPrompt: (prompt) => {
+        echoes.expect(prompt.content);
+        const messageId = `user:${prompt.id}`;
+        retain({ type: "message-started", messageId, role: "user" });
+        for (const content of prompt.content) retain({ type: "message-content", messageId, content });
+        retain({ type: "message-finished", messageId });
+      },
+      onTurnComplete: async () => {
+        for (const pending of control.pendingPermissions.values()) pending.settle({ outcome: { outcome: "cancelled" } });
+        if (host.runDirectory) await saveAcpConversation(host.runDirectory, {
+          version: 1, agentId: host.agentId, cwd: host.cwd, runId: context.runId, updatedAt: new Date().toISOString(),
+          snapshot: conversation!.snapshot(), events: observed, truncated,
+        });
+      },
+    }) : undefined;
+    control.conversation = conversation;
+    const onSessionReady = async (session: AcpSessionControl | undefined): Promise<void> => {
+      control.session = session;
+      if (session === undefined) return;
+      let resume: Promise<void> | undefined;
+      if (host.prepare && !control.abortController.signal.aborted) {
+        resume = new Promise<void>((resolve) => {
+          const release = (): void => { control.startPrompt = undefined; control.abortController.signal.removeEventListener("abort", release); resolve(); };
+          control.startPrompt = release;
+          control.abortController.signal.addEventListener("abort", release, { once: true });
+        });
+      }
+      observe({ type: "acp-session-ready", sessionId: session.sessionId, prepared: resume !== undefined });
+      await resume;
+      if (resume && !control.abortController.signal.aborted) observe({ type: "acp-session-ready", sessionId: session.sessionId, prepared: false });
+    };
     const rustHost = host.executable !== undefined && existsSync(host.executable)
       ? host.executable
       : undefined;
@@ -51,7 +118,10 @@ export function acpExecutorFactory(
           command: agent.command,
           args: agent.args,
           env: agent.env,
-          onRunEvent: context.onRunEvent,
+          onRunEvent: observe,
+          onSessionReady,
+          conversation,
+          recovery: host.recovery,
           abortSignal: control.abortController.signal,
           requestPermission: (requestId, request, signal) => waitForAcpPermission(
             control,
@@ -67,7 +137,10 @@ export function acpExecutorFactory(
           env: agent.env,
           ...(host.transport === undefined ? {} : { transport: host.transport }),
           ...(host.allowRoots === undefined ? {} : { allowRoots: host.allowRoots }),
-          onRunEvent: context.onRunEvent,
+          onRunEvent: observe,
+          onSessionReady,
+          conversation,
+          recovery: host.recovery,
           abortSignal: control.abortController.signal,
           requestPermission: (request, signal) => waitForAcpRustPermission(
             control,
@@ -267,4 +340,70 @@ export function cancelAllAcpRuns(state: HarnessStudioState): void {
     control.abortController.abort();
     finishAcpRun(state, runId);
   }
+}
+
+/** Controls stay bound to a live run; arbitrary RPC methods never cross HTTP. */
+export async function configureAcpRun(request: IncomingMessage, response: ServerResponse, state: HarnessStudioState, encodedRunId: string): Promise<void> {
+  if (!sameOriginRequest(request)) { respondJson(response, 403, { error: "Cross-origin ACP actions are not allowed." }); return; }
+  const control = state.acpRuns.get(decodeURIComponent(encodedRunId));
+  if (!control?.session || control.abortController.signal.aborted || control.conversation?.snapshot().status === "closed") { respondJson(response, 409, { error: "This ACP session is no longer available." }); return; }
+  const body = recordValue(await readJsonBody(request, 4 * 1024 * 1024 + 4096).catch(() => undefined));
+  const act = async (): Promise<unknown> => {
+    const session = control.session;
+    if (!session || control.abortController.signal.aborted) throw new Error("This ACP session is no longer available.");
+    const conversation = control.conversation;
+    if (conversation && ["send", "queue-edit", "queue-remove", "queue-resume", "stop", "close", "optional"].includes(String(body?.action))) {
+      const settlePermissions = (): void => {
+        for (const pending of control.pendingPermissions.values()) pending.settle({ outcome: { outcome: "cancelled" } });
+      };
+      switch (body!.action) {
+        case "send":
+        case "queue-edit": {
+          if (typeof body!.id !== "string" || !Array.isArray(body!.content)) throw new Error("A message id and content are required.");
+          const prompt = { id: body!.id, content: body!.content as AcpPromptContent };
+          if (body!.action === "queue-edit") conversation.editQueued(prompt);
+          else {
+            if (body!.immediately === true) settlePermissions();
+            await conversation.submit(prompt, body!.immediately === true);
+          }
+          break;
+        }
+        case "queue-remove":
+          if (typeof body!.id !== "string") throw new Error("A queued message id is required.");
+          conversation.removeQueued(body!.id); break;
+        case "queue-resume": conversation.resumeQueue(); break;
+        case "stop": settlePermissions(); await conversation.stop(); break;
+        case "close":
+          settlePermissions();
+          if (control.startPrompt) control.abortController.abort();
+          await conversation.close(); break;
+        case "optional": return { result: await conversation.perform(body!.name as AcpOptionalAction, body!.input) };
+      }
+      return { snapshot: conversation.snapshot() };
+    }
+    if (body?.action === "start") {
+      if (!control.startPrompt) throw new Error("This session has already started.");
+      control.startPrompt();
+      return { started: true };
+    }
+    if (body?.action === "mode" && typeof body.modeId === "string" && control.config === undefined && control.modes?.includes(body.modeId)) {
+      await session.setMode(body.modeId);
+      return { modeId: body.modeId };
+    }
+    if (body?.action === "config" && typeof body.configId === "string") {
+      const option = control.config?.find((option) => option.id === body.configId);
+      if (!option || !acceptsAcpConfig(option, body.value)) throw new Error("Select a value offered by this Agent.");
+      const result = recordValue(await session.setConfigOption(body.configId, body.value));
+      const config = parseAcpConfig(result?.configOptions);
+      if (!config || config.find((item) => item.id === body.configId)?.value !== body.value) throw new Error("The Agent did not acknowledge this setting; retry after refreshing its options.");
+      control.config = config;
+      return { configOptions: result!.configOptions };
+    }
+    throw new Error("Unsupported ACP session action.");
+  };
+  const urgent = body?.action === "stop" || body?.action === "close";
+  const result = urgent ? act() : (control.actionTail ?? Promise.resolve()).catch(() => undefined).then(act);
+  if (!urgent) control.actionTail = result;
+  try { respondJson(response, 200, await result); }
+  catch (error) { respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
 }

@@ -19,7 +19,7 @@ describe("ACP observation projection", () => {
     state = projectAcpSession(state, update({ sessionUpdate: "plan", entries: [] }));
     expect(state.plan).toEqual([]);
     state = projectAcpSession(state, update({ sessionUpdate: "config_option_update", configOptions: [{ id: "model", name: "Model", currentValue: "test" }] }));
-    expect(state.config).toEqual([{ id: "model", name: "Model", value: "test" }]);
+    expect(state.config).toEqual([{ id: "model", name: "Model", value: "test", type: "unknown", choices: [] }]);
     state = projectAcpSession(state, update({ sessionUpdate: "config_option_update", configOptions: [] }));
     expect(state.config).toEqual([]);
     state = projectAcpSession(state, update({ sessionUpdate: "session_info_update", title: "A" }));

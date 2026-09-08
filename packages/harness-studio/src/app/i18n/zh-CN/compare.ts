@@ -9,6 +9,11 @@ export const compare: typeof enCompare = {
     results: "证据结果",
   },
   live: {
+    newComparison: "新建比较",
+    ready: "已就绪",
+    configuring: "配置中…",
+
+    prepare: "配置 Agent",
     title: "实时对比 Agent",
     promptLabel: "这些 Agent 要做什么？",
     promptPlaceholder: "描述每个 Agent 都要尝试的需求…",

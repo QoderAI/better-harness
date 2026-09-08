@@ -1,3 +1,6 @@
+import type { AcpSessionRecovery } from "./acp-session-control.js";
+import { conversationCapabilities, type AcpConversation } from "./acp-conversation.js";
+import type { AcpSessionReadyHandler } from "./acp-session-control.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import type {
@@ -45,6 +48,9 @@ export interface AcpSdkExecutorOptions {
   onRunEvent?: HarnessRunEventListener;
   requestPermission?: AcpPermissionHandler;
   /** ACP session configuration applied after session/new and before prompt. */
+  conversation?: AcpConversation;
+  recovery?: AcpSessionRecovery;
+  onSessionReady?: AcpSessionReadyHandler;
   sessionConfig?: Readonly<Record<string, string | boolean>>;
   abortSignal?: AbortSignal;
   loadSdk?: () => Promise<AcpSdk>;
@@ -154,6 +160,7 @@ export class AcpSdkExecutor implements HarnessExecutor {
       const client = sdk.client({ name: "Better Harness Studio" })
         .onRequest(sdk.methods.client.session.requestPermission, async (context) => {
           const requestId = String(context.requestId);
+          ensureToolCall(emitter, { sessionUpdate: "tool_call_update", ...context.params.toolCall }, tools);
           if (abortSignal?.aborted === true || this.options.requestPermission === undefined) {
             return { outcome: { outcome: "cancelled" } };
           }
@@ -164,15 +171,25 @@ export class AcpSdkExecutor implements HarnessExecutor {
         });
 
       const connection = client.connectWith(stream, async (agent) => {
-        await requestWithAbort(() => agent.request(sdk.methods.agent.initialize, {
+        const initialized = await requestWithAbort(() => agent.request(sdk.methods.agent.initialize, {
           protocolVersion: sdk.PROTOCOL_VERSION,
           clientCapabilities: {},
           clientInfo: { name: "Better Harness Studio", version: "0.1.1" },
         }, abortSignal === undefined ? undefined : { cancellationSignal: abortSignal }), abortSignal, "initialize");
-        const created = await requestWithAbort(() => agent.request(sdk.methods.agent.session.new, {
-          cwd: task.cwd ?? process.cwd(),
-          mcpServers: [],
-        }, abortSignal === undefined ? undefined : { cancellationSignal: abortSignal }), abortSignal, "session/new");
+        const recovery = this.options.recovery;
+        const caps = initialized.agentCapabilities;
+        const canLoad = caps?.loadSession === true;
+        const canResume = caps?.sessionCapabilities?.resume != null;
+        if (recovery && !(recovery.method === "resume" ? canResume : canLoad || canResume)) throw new Error("This Agent cannot restore a previous session.");
+        const params = { cwd: task.cwd ?? process.cwd(), mcpServers: [] };
+        let created: { sessionId: string };
+        if (recovery) {
+          if (recovery.method === "resume" || !canLoad) await requestWithAbort(() => agent.request(sdk.methods.agent.session.resume, { ...params, sessionId: recovery.sessionId }), abortSignal, "session/resume");
+          else await requestWithAbort(() => agent.request(sdk.methods.agent.session.load, { ...params, sessionId: recovery.sessionId }), abortSignal, "session/load");
+          created = { sessionId: recovery.sessionId };
+        } else {
+          created = await requestWithAbort(() => agent.request(sdk.methods.agent.session.new, { cwd: params.cwd, mcpServers: [] }, abortSignal === undefined ? undefined : { cancellationSignal: abortSignal }), abortSignal, "session/new");
+        }
         sessionId = created.sessionId;
         acknowledgedSessionConfig = await applySessionConfig(
           agent,
@@ -181,6 +198,17 @@ export class AcpSdkExecutor implements HarnessExecutor {
           this.options.sessionConfig,
           abortSignal,
         );
+        const sessionControl = {
+          sessionId: created.sessionId,
+          setConfigOption: async (configId: string, value: string | boolean) => {
+            const response = await agent.request(sdk.methods.agent.session.setConfigOption,
+              typeof value === "boolean" ? { sessionId: created.sessionId, configId, value, type: "boolean" }
+                : { sessionId: created.sessionId, configId, value });
+            return response;
+          },
+          setMode: (modeId: string) => agent.request(sdk.methods.agent.session.setMode, { sessionId: created.sessionId, modeId }),
+        };
+        await this.options.onSessionReady?.(sessionControl);
         const cancel = async (): Promise<void> => {
           await agent.notify(sdk.methods.agent.session.cancel, { sessionId: created.sessionId });
         };
@@ -188,9 +216,17 @@ export class AcpSdkExecutor implements HarnessExecutor {
           await cancel();
           return { stopReason: "cancelled" as const };
         }
-        const notifyCancel = (): void => { void cancel(); };
+        const notifyCancel = (): void => { void cancel().catch(() => undefined); void this.options.conversation?.close().catch(() => undefined); };
         abortSignal?.addEventListener("abort", notifyCancel, { once: true });
         try {
+          if (this.options.conversation) return await this.options.conversation.run({
+            ...sessionControl, capabilities: conversationCapabilities(initialized.agentCapabilities), cancel,
+            close: caps?.sessionCapabilities?.close != null ? async () => { await agent.request(sdk.methods.agent.session.close, { sessionId: created.sessionId }); } : undefined,
+            prompt: async (content) => {
+              try { return await agent.request(sdk.methods.agent.session.prompt, { sessionId: created.sessionId, prompt: content }); }
+              finally { emitter.endMessage(); }
+            },
+          }, { id: "initial", content: [{ type: "text", text: task.prompt }] }, [{ type: "text", text: this.options.recovery ? task.prompt : prompt }]);
           return await requestWithAbort(() => agent.request(sdk.methods.agent.session.prompt, {
             sessionId: created.sessionId,
             prompt: [{ type: "text", text: prompt }],
@@ -207,7 +243,7 @@ export class AcpSdkExecutor implements HarnessExecutor {
       void stdinPipe;
       void stdoutPipe;
 
-      const exitCode = stopReason === "end_turn" ? 0 : 1;
+      const exitCode = this.options.conversation || stopReason === "end_turn" ? 0 : 1;
       if (exitCode !== 0) {
         emitter.error(`ACP Agent stopped with reason '${stopReason}'.`);
       }
@@ -282,6 +318,8 @@ export class AcpSdkExecutor implements HarnessExecutor {
         },
       };
     } finally {
+      await this.options.conversation?.close().catch(() => undefined);
+      await this.options.onSessionReady?.(undefined);
       await reapAgent(child);
     }
   }
@@ -409,15 +447,17 @@ function applyAcpSessionUpdate(
   tools: Map<string, { resultEmitted: boolean }>,
 ): void {
   const update = notification.update;
+  if (update.sessionUpdate === "user_message_chunk") { emitter.content(update.content, "user", update.messageId ?? undefined); return; }
   if (update.sessionUpdate === "agent_thought_chunk") {
-    if (update.content.type === "text") emitter.thought(update.content.text);
+    if (update.content.type === "text") emitter.thought(update.content.text, update.messageId ?? undefined);
+    else emitter.content(update.content, "thought", update.messageId ?? undefined);
     return;
   }
   if (update.sessionUpdate === "agent_message_chunk") {
     if (update.content.type === "text") {
       output.push(update.content.text);
-      emitter.text(update.content.text);
-    }
+      emitter.text(update.content.text, update.messageId ?? undefined);
+    } else emitter.content(update.content, undefined, update.messageId ?? undefined);
     return;
   }
   if (update.sessionUpdate === "tool_call") {

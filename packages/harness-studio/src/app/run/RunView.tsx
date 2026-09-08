@@ -1,3 +1,5 @@
+import { useSessionOwnedState } from "./session-view-store.js";
+import { createAcpSessionActions } from "./acp-session-actions.js";
 import { postAcpRunAction } from "./acp-run-actions.js";
 import { ResizableDebuggerPanes } from "./ResizableDebuggerPanes.js";
 import { TimelineEntry, ToolCallEntry } from "./TimelineEntry.js";
@@ -208,15 +210,16 @@ export function RunView({
   const { t } = useTranslation("run");
   const [statusHost, setStatusHost] = useState<HTMLElement | null>(null);
   useEffect(() => { if (embedded) setStatusHost(document.getElementById("studio-debugger-status")); }, [embedded]);
+  const owner = `debugger:${project?.id ?? "default"}`;
   const agentLabel = acpAgentLabel ?? t("acpAgent");
-  const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>(initialMode);
-  const [prompt, setPrompt] = useState("");
-  const [requestedAgent, setRequestedAgent] = useState("");
-  const [activeRuntime, setActiveRuntime] = useState<LiveRuntime>("qoder");
-  const [activeAgentLabel, setActiveAgentLabel] = useState<string>();
+  const [surfaceMode, setSurfaceMode] = useSessionOwnedState<SurfaceMode>(`${owner}:surfaceMode`, initialMode);
+  const [prompt, setPrompt] = useSessionOwnedState(`${owner}:prompt`, "");
+  const [requestedAgent, setRequestedAgent] = useSessionOwnedState(`${owner}:submittedPrompt`, "");
+  const [activeRuntime, setActiveRuntime] = useSessionOwnedState<LiveRuntime>(`${owner}:activeRuntime`, "qoder");
+  const [activeAgentLabel, setActiveAgentLabel] = useSessionOwnedState<string | undefined>(`${owner}:activeAgentLabel`, undefined);
   const [submittedPrompt, setSubmittedPrompt] = useState("");
   const [runProject, setRunProject] = useState(project);
-  const [state, setState] = useState<HarnessRunState>(initialRunState);
+  const [state, setState] = useSessionOwnedState<HarnessRunState>(`${owner}:state`, initialRunState);
   const [cursor, setCursor] = useState<DebuggerCursor>(DEFAULT_DEBUGGER_CURSOR);
   const [stopConditions, setStopConditions] = useState<StopConditionState>(DEFAULT_STOP_CONDITIONS);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set(["session", "turn"]));
@@ -226,9 +229,9 @@ export function RunView({
   const [runsPanelOpen, setRunsPanelOpen] = useState(false);
   const [savedRun, setSavedRun] = useState<SavedRunRecord | null>(null);
   const [retainedSession, setRetainedSession] = useState<DebuggerSession>(SAMPLE_DEBUGGER_SESSION);
-  const busy = useRef(false);
+  const [, , busy] = useSessionOwnedState(`${owner}:busy`, false);
   const firstCursorRender = useRef(true);
-  const liveStateRef = useRef<HarnessRunState>(initialRunState());
+  const [, , liveStateRef] = useSessionOwnedState<HarnessRunState>(`${owner}:stream-state`, initialRunState);
 
   const permissionWasPending = useRef(false);
   useEffect(() => {
@@ -343,7 +346,7 @@ export function RunView({
     liveStateRef.current = fresh;
     setState(fresh);
     try {
-      await streamRun(endpoint, promptText, threadId, runId, project, (events) => {
+      await streamRun(selectedRuntime === "acp" ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}conversation=1` : endpoint, promptText, threadId, runId, project, (events) => {
         // Fold outside any React updater: the run store mutates its keyed map
         // for O(1) deltas and sequence ids reject duplicate frames.
         liveStateRef.current = events.reduce(applyHarnessRunEvent, liveStateRef.current);
@@ -400,7 +403,7 @@ export function RunView({
   const runMode = saved ? t("mode.savedRun") : live ? t("mode.liveWithStatus", { status: liveRunStatusLabel(viewState, t) }) : retainedSession.mode;
   const liveObservation = liveObservationCopy(viewState, t);
 
-  const actions = <div className="debugger-top-actions">{navigation}{live && activeRuntime === "acp" && state.status === "running" ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />{t("cancelRun")}</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-label={t("savedRuns")} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>{t("savedRuns")}{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label={t("savedRuns")}>{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>{t("backToLive")}</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">{t("noSavedRuns")}</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{t("savedRunMeta", { count: run.toolCallCount, time: run.savedAt.slice(0, 19).replace("T", " ") })}</span></button>)}</div>}</div><button type="button" className="new-run" aria-label={t("newLiveRun")} title={t("newLiveRun")} onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" /><span>{t("newLiveRun")}</span></button></div>;
+  const actions = <div className="debugger-top-actions">{navigation}{live && activeRuntime === "acp" && state.status === "running" && !state.conversation ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />{t("cancelRun")}</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-label={t("savedRuns")} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>{t("savedRuns")}{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label={t("savedRuns")}>{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>{t("backToLive")}</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">{t("noSavedRuns")}</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{t("savedRunMeta", { count: run.toolCallCount, time: run.savedAt.slice(0, 19).replace("T", " ") })}</span></button>)}</div>}</div><button type="button" className="new-run" aria-label={t("newLiveRun")} title={t("newLiveRun")} onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" /><span>{t("newLiveRun")}</span></button></div>;
   const status = <div className="debugger-status" role="status"><span className={`status-dot status-${viewState.status}`} aria-hidden="true" /><span>{live ? liveObservation.title : runMode}</span><span>{t("live.retainedEvents", { count: live ? liveTimeline.length : retainedSession.events.length })}</span>{live && liveTimeline.length > 0 && <div className="debugger-status-track">{liveBins.map((bin) => <span key={bin.index} className={`timeline-segment kind-${bin.kind}`} title={t("live.binEvents", { count: bin.count })} />)}</div>}{embedded && !live && <nav className="debugger-status-cursor" aria-label={t("minimap.aria")}>{retainedSession.events.map((event, index) => <button key={event.id} type="button" aria-label={t("minimap.segmentAria", { phase: event.phase, title: event.title })} title={event.title} aria-current={event.id === cursor.eventId ? "true" : undefined} onClick={() => selectCursor({ eventId: event.id })}>{index + 1}</button>)}</nav>}</div>;
   return <section className={`debugger-shell${embedded ? " embedded-debugger" : ""}${live ? " live-debugger" : ""}`}>
     {embedded ? <ToolbarActions>{actions}</ToolbarActions> : <header className="debugger-topbar"><strong>{t("title.liveRun")}</strong>{actions}</header>}
@@ -673,7 +676,7 @@ function LiveExecutionTree({ state, prompt }: { state: HarnessRunState; prompt: 
 
 function LiveNotebook({ state, prompt, groups, acp }: { state: HarnessRunState; prompt: string; groups: LiveTimelineGroup[]; acp: boolean }): React.JSX.Element {
   const { t } = useTranslation("run");
-  if (acp) return <main className="session-notebook live-notebook acp-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><strong>{t("live.notebookTitle")}</strong><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><AcpSessionStream state={state} prompt={prompt} /></main>;
+  if (acp) return <main className="session-notebook live-notebook acp-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><strong>{t("live.notebookTitle")}</strong><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><AcpSessionStream actions={state.runId ? createAcpSessionActions(state.runId) : undefined} state={state} prompt={prompt} /></main>;
   return <main className="session-notebook live-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><nav><button type="button" className="active"><ClipboardText size={13} />{t("live.notebookTitle")}</button></nav><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><div className="session-notebook-scroll"><article className="debugger-event event-prompt"><div className="event-rail"><span><UserCircle size={13} /></span></div><div className="debugger-event-card"><header><div><strong>{t("live.userRequest")}</strong></div><span>{t("event.prompt")}</span></header><section className="prompt-cell"><p>{prompt}</p></section></div></article><section className="live-session-stage">{state.warnings.map((warning, index) => <p className="warning" key={index}><WarningCircle size={14} />{warning}</p>)}{state.error ? <p className="error" role="alert"><XCircle size={14} />{state.error}</p> : null}<section className="activity-panel" aria-label={t("live.agentActivity")}><header className="activity-panel-head"><div><h2>{t("live.agentActivity")}</h2></div><span>{t("live.activitySummary", { calls: state.toolCallCount, groups: groups.length })}</span></header><VirtualLiveTimeline groups={groups} followLatest={state.status === "running"} /></section>{state.result !== undefined ? <details className="live-run-result"><summary>{t("live.runResult")}</summary><pre>{JSON.stringify(state.result, null, 2)}</pre></details> : null}</section></div></main>;
 }
 
@@ -768,6 +771,7 @@ function AcpFrameList({ frames }: { frames: readonly ObservedProtocolEvent[] }):
 
 function liveRunStatusLabel(state: HarnessRunState, t: (key: string, options?: Record<string, unknown>) => string): string {
   if (state.pendingPermission !== undefined) return t("status.permissionRequired");
+  if (state.conversation?.status === "idle") return t("conversation.status.idle");
   if (state.status === "running") return t("status.running");
   if (state.status === "finished") return t("status.finished");
   if (state.status === "error") return t("status.failed");
@@ -775,6 +779,7 @@ function liveRunStatusLabel(state: HarnessRunState, t: (key: string, options?: R
 }
 
 function liveObservationCopy(state: HarnessRunState, t: (key: string, options?: Record<string, unknown>) => string): { title: string; detail: string } {
+  if (state.conversation?.status === "idle") return { title: t("conversation.status.idle"), detail: t("conversation.followup") };
   if (state.pendingPermission !== undefined) return { title: t("observation.permissionTitle"), detail: t("observation.permissionDetail") };
   if (state.status === "running") return { title: t("observation.runningTitle"), detail: t("observation.runningDetail") };
   if (state.status === "finished") return { title: t("observation.finishedTitle"), detail: t("observation.finishedDetail") };

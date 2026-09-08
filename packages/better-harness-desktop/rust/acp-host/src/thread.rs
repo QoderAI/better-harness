@@ -25,6 +25,7 @@ use serde::Serialize;
 pub enum Entry {
     /// A prompt the host submitted. Held so a reload can replay the turn.
     UserMessage { text: String },
+    ContentBlock { content: serde_json::Value, role: String, message_id: Option<String> },
     /// Agent output. `chunks` keeps message and thought text separate while
     /// letting them interleave in arrival order, matching how ACP sends them.
     AssistantMessage { chunks: Vec<Chunk> },
@@ -130,6 +131,11 @@ impl Thread {
 
     pub fn entry(&self, index: usize) -> Option<&Entry> {
         self.entries.get(index)
+    }
+
+    pub fn push_content(&mut self, content: serde_json::Value, role: &str, message_id: Option<&str>) -> Change {
+        self.entries.push(Entry::ContentBlock { content, role: role.to_owned(), message_id: message_id.map(str::to_owned) });
+        Change::Appended(self.entries.len() - 1)
     }
 
     /// Record the prompt the host is about to send.

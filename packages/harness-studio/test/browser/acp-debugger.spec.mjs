@@ -441,13 +441,14 @@ test("shows shared assistant chunks in Debugger and Compare before completion", 
     await page.getByRole("textbox", { name: "Task", exact: true }).fill("stream in two chunks");
     await page.getByRole("button", { name: "Run", exact: true }).click();
     await page.getByRole("button", { name: "Allow once allow_once" }).click();
-    const message = page.locator(".streaming-message");
+    const message = page.locator(".acp-session-stream");
     await expect(message).toContainText("fixture:stream-first");
     await expect(message).not.toContainText("stream-last");
     await expect(page.locator(".debugger-status")).not.toContainText("Run finished");
     await page.getByRole("button", { name: "Continue stream allow_once" }).click();
-    await expect(message).toContainText("fixture:stream-first:stream-last");
-    await expect(page.locator(".debugger-status")).toContainText("Run finished");
+    await expect(message.locator(".streaming-message")).toHaveText(["stream in two chunks", "fixture:stream-first", ":stream-last"]);
+    await expect(page.locator(".acp-turn-status")).toHaveText("Ready");
+    await page.getByRole("button", { name: "Close session", exact: true }).click();
     await page.goto(`${server.url}/#/compare`);
     await page.getByRole("textbox", { name: "What should these Agents do?" }).fill("stream in two lanes");
     await page.getByRole("button", { name: /^Choose Agents/ }).click();
@@ -457,10 +458,10 @@ test("shows shared assistant chunks in Debugger and Compare before completion", 
     await page.getByRole("button", { name: "Run 2 Agents", exact: true }).click();
     for (const lane of await page.locator(".live-compare-lane").all()) {
       await lane.getByRole("button", { name: "Allow once", exact: true }).click();
-      await expect(lane.locator(".streaming-message")).toContainText("fixture:stream-first");
-      await expect(lane.locator(".streaming-message")).not.toContainText("stream-last");
+      await expect(lane.locator(".acp-session-stream")).toContainText("fixture:stream-first");
+      await expect(lane.locator(".acp-session-stream")).not.toContainText("stream-last");
       await lane.getByRole("button", { name: "Continue stream", exact: true }).click();
-      await expect(lane.locator(".streaming-message")).toContainText("fixture:stream-first:stream-last");
+      await expect(lane.locator(".streaming-message")).toHaveText(["stream in two lanes", "fixture:stream-first", ":stream-last"]);
     }
   } finally { await server.close(); }
 });
@@ -498,7 +499,8 @@ test.describe("ACP over the macOS NSXPC service", () => {
       await page.getByRole("button", { name: "Run", exact: true }).click();
       await page.getByRole("button", { name: "Allow once allow_once" }).click();
       await expect(page.getByText("fixture:allow-once", { exact: true })).toBeVisible();
-      await expect(page.locator(".debugger-status")).toContainText("Run finished");
+      await expect(page.locator(".acp-turn-status")).toHaveText("Ready");
+    await page.getByRole("button", { name: "Close session", exact: true }).click();
       // The debugger's raw ACP panel is what proves frames crossed the XPC hop.
       await expect(page.getByText("session/prompt").first()).toBeVisible();
 
@@ -511,7 +513,7 @@ test.describe("ACP over the macOS NSXPC service", () => {
       await page.getByRole("button", { name: "Run 2 Agents", exact: true }).click();
       for (const lane of await page.locator(".live-compare-lane").all()) {
         await lane.getByRole("button", { name: "Allow once", exact: true }).click();
-        await expect(lane.locator(".streaming-message")).toContainText("fixture:allow-once");
+        await expect(lane.locator(".streaming-message").last()).toContainText("fixture:allow-once");
       }
     } finally { await server.close(); }
   });

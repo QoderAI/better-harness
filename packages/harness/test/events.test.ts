@@ -440,3 +440,29 @@ it("frames assistant/thought transitions in order and keeps metadata from splitt
   ]);
   expect(events.filter((event) => event.type === "message-finished")).toHaveLength(3);
 });
+
+
+it("honors distinct ACP message ids while adopting late ids for streamed text", () => {
+  const events: HarnessRunEvent[] = [];
+  const emitter = new HarnessRunEmitter((event) => events.push(event));
+  emitter.start({ revisionId: "r", host: "acp" });
+  emitter.text("early"); emitter.text("late", "one"); emitter.text("new", "two"); emitter.finish(0);
+  expect(events.filter((event) => event.type === "message-started")).toHaveLength(2);
+  expect(events.filter((event) => event.type === "text-delta").map((event) => event.messageId)).toEqual(["msg_1", "msg_1", "msg_2"]);
+});
+
+it("AC-07 keeps mixed blocks in one identity and separates different source ids", () => {
+  const events: HarnessRunEvent[] = [];
+  const emitter = new HarnessRunEmitter(event => events.push(event));
+  emitter.start({ revisionId: "revision", host: "acp" });
+  emitter.text("before", "first");
+  emitter.content({ type: "image", data: "aGVsbG8=", mimeType: "image/png" }, undefined, "first");
+  emitter.text("after", "first");
+  emitter.text("separate", "second");
+  emitter.finish(0);
+  const messages = events.filter(event => event.type === "message-started");
+  expect(messages).toHaveLength(2);
+  const blocks = events.filter(event => event.type === "text-delta" || event.type === "message-content");
+  expect(blocks.slice(0, 3).map(event => event.messageId)).toEqual([messages[0]!.messageId, messages[0]!.messageId, messages[0]!.messageId]);
+  expect(blocks[3]!.messageId).toBe(messages[1]!.messageId);
+});

@@ -101,8 +101,10 @@ pub enum Call {
     ConnectionClose(ConnectionCloseParams),
     /// Create a session on an open connection.
     SessionCreate(SessionCreateParams),
+    SessionClose(SessionCancelParams),
     /// Apply one session config option and verify the agent acknowledged it.
     SessionSetConfigOption(SessionSetConfigOptionParams),
+    SessionSetMode(SessionSetModeParams),
     /// Send one prompt turn. A connection may serve many of these in sequence.
     SessionPrompt(SessionPromptParams),
     /// Ask the agent to cancel the in-flight turn.
@@ -141,7 +143,13 @@ pub struct ConnectionCloseParams {
 pub struct SessionCreateParams {
     pub connection_id: String,
     pub cwd: PathBuf,
+    #[serde(default)]
+    pub recovery: Option<SessionRecovery>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionRecovery { pub session_id: String, pub method: Option<String> }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -150,6 +158,14 @@ pub struct SessionSetConfigOptionParams {
     pub session_id: String,
     pub config_id: String,
     pub value: ConfigOptionValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionSetModeParams {
+    pub connection_id: String,
+    pub session_id: String,
+    pub mode_id: String,
 }
 
 /// ACP distinguishes boolean options from string options on the wire, so the
@@ -167,6 +183,8 @@ pub struct SessionPromptParams {
     pub connection_id: String,
     pub session_id: String,
     pub prompt: String,
+    #[serde(default)]
+    pub content: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -200,6 +218,8 @@ impl Call {
             "connection.open" => Ok(Self::ConnectionOpen(typed_params(frame)?)),
             "connection.close" => Ok(Self::ConnectionClose(typed_params(frame)?)),
             "session.create" => Ok(Self::SessionCreate(typed_params(frame)?)),
+            "session.close" => Ok(Self::SessionClose(typed_params(frame)?)),
+            "session.setMode" => Ok(Self::SessionSetMode(typed_params(frame)?)),
             "session.setConfigOption" => Ok(Self::SessionSetConfigOption(typed_params(frame)?)),
             "session.prompt" => Ok(Self::SessionPrompt(typed_params(frame)?)),
             "session.cancel" => Ok(Self::SessionCancel(typed_params(frame)?)),

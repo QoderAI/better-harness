@@ -1,10 +1,11 @@
+import type { AcpConversationSnapshot } from "@qoder-ai/harness/exec";
 import type { HarnessProtocolEvent } from "@qoder-ai/harness/exec";
 import type { HarnessRunStreamEventV1 } from "@qoder-ai/harness/protocol";
 
 import { initialAcpSessionState, projectAcpSession, recordValue, type AcpSessionState } from "./acp-session-state.js";
 
 export type TimelineItem =
-  | { kind: "message"; id: string; text: string; complete: boolean; role?: "thought" }
+  | { kind: "message"; id: string; text: string; complete: boolean; role?: "thought" | "user"; content?: unknown[] }
   | {
       kind: "tool-call";
       id: string;
@@ -26,6 +27,7 @@ export type TimelineItem =
 export type ObservedProtocolEvent = HarnessProtocolEvent & { observedAt: number };
 
 export interface HarnessRunState {
+  conversation?: AcpConversationSnapshot;
   status: "idle" | "running" | "finished" | "error";
   threadId?: string;
   runId?: string;
@@ -90,12 +92,24 @@ export function applyHarnessRunEvent(
         runId: envelope.runId,
         lastSequence: envelope.sequence,
       };
+    case "acp-conversation-state": {
+      if (state.conversation && state.conversation.revision >= event.snapshot.revision) return sequenced;
+      const idle = ["idle", "closed", "cancelling"].includes(event.snapshot.status);
+      return { ...sequenced, conversation: event.snapshot, ...(idle ? {
+        timelineByKey: settleTimeline(state.timelineByKey, event.snapshot.status === "cancelling" || event.snapshot.turns.at(-1)?.stopReason === "cancelled" ? "interrupted" : "result-unavailable"),
+        timelineRevision: state.timelineRevision + 1,
+      } : {}) };
+    }
+    case "acp-session-ready":
+      return { ...sequenced, acp: { ...state.acp, sessionId: event.sessionId, controllable: true, prepared: event.prepared } };
     case "run-warning":
       return { ...sequenced, warnings: [...state.warnings, event.message] };
     case "message-started":
-      return appendItem(sequenced, { kind: "message", id: event.messageId, text: "", complete: false, ...(event.role === "thought" ? { role: "thought" } : {}) });
+      return appendItem(sequenced, { kind: "message", id: event.messageId, text: "", complete: false, ...((event.role === "thought" || event.role === "user") ? { role: event.role } : {}) });
+    case "message-content":
+      return patchItem(sequenced, "message", event.messageId, (item) => ({ ...item, content: [...(item.content ?? (item.text ? [{ type: "text", text: item.text }] : [])), event.content] }));
     case "text-delta":
-      return patchItem(sequenced, "message", event.messageId, (item) => ({ ...item, text: item.text + event.text }));
+      return patchItem(sequenced, "message", event.messageId, (item) => ({ ...item, text: item.text + event.text, ...(item.content ? { content: appendTextContent(item.content, event.text) } : {}) }));
     case "message-finished":
       return patchItem(sequenced, "message", event.messageId, (item) => ({ ...item, complete: true }));
     case "tool-call-started":
@@ -180,6 +194,8 @@ export function settleRunState(
     ...state,
     pendingPermission: undefined,
     pendingPermissions: [],
+    acp: { ...state.acp, controllable: false, prepared: false },
+    ...(state.conversation ? { conversation: { ...state.conversation, status: "closed" as const, queue: [] } } : {}),
     timelineRevision: state.timelineRevision + 1,
     timelineByKey: settleTimeline(state.timelineByKey, terminalStatus),
   };
@@ -226,4 +242,11 @@ function patchItem<Kind extends TimelineItem["kind"]>(
 
 function itemKey(kind: TimelineItem["kind"], id: string): string {
   return `${kind}:${id}`;
+}
+
+function appendTextContent(content: unknown[], text: string): unknown[] {
+  const last = recordValue(content.at(-1));
+  return last?.type === "text" && typeof last.text === "string"
+    ? [...content.slice(0, -1), { ...last, text: last.text + text }]
+    : [...content, { type: "text", text }];
 }

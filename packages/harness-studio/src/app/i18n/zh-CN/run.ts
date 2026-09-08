@@ -1,7 +1,38 @@
 import type { run as enRun } from "../en/run.js";
 
 export const run: typeof enRun = {
+  conversation: {
+    recover: "恢复会话并发送",
+    recoveryPrompt: "恢复后发送的消息",
+    restored: "已恢复 Agent 会话",
+    history: "已保存的会话（只读）",
+    historyUnavailable: "此会话记录不可用。",
+    searchSettings: "搜索设置与模型", followup: "继续与此 Agent 对话…", send: "发送", queue: "加入队列", sendNow: "立即发送", stop: "停止", close: "关闭会话", save: "保存消息", edit: "编辑", remove: "移除", resumeQueue: "继续队列", queued: "待发送 · {{count}}", commands: "命令", attach: "附件", loading: "正在加载…", attachmentLimit: "附件必须小于 2 MB。", unsupportedAttachment: "此 Agent 不支持这种附件类型。", removeAttachment: "移除附件 {{index}}", turnStopped: "本轮已停止：{{reason}}", status: { connecting: "连接中", generating: "生成中", cancelling: "正在停止…", idle: "就绪", closed: "会话已关闭" } },
   session: {
+    details: "会话详情",
+    updatedAt: "更新时间",
+    commandInput: "参数：{{hint}}",
+    planPriority: { high: "高优先级", medium: "中优先级", low: "低优先级" },
+    readyToSend: "已就绪，等待发送提示。",
+    settingsConnecting: "正在连接会话设置…",
+    terminal: "终端 {{id}}",
+    terminalPending: "等待 Agent 上报终端输出。",
+    terminalExit: "退出码 {{code}}",
+
+    diff: "工具文件变更",
+    image: "Agent 图片",
+    audio: "Agent 音频",
+    resource: "Agent 资源",
+    contentFallback: "{{type}} 内容 · 查看保留的数据",
+
+    settings: "会话设置",
+    settingsReadOnly: "本次运行已结束，显示最后确认的配置。",
+    unsupportedSetting: "暂不支持的配置类型",
+    saving: "正在应用…",
+    prepared: "会话已就绪，可先配置此 Agent 再发送提示。",
+    sendingPrompt: "正在发送…",
+    sendPrompt: "发送提示",
+
     "transcript": "会话内容",
     "title": "会话",
     "mode": "模式",

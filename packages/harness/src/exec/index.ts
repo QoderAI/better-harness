@@ -93,3 +93,7 @@ export {
   type PiSdkLike,
   type PiModelRuntimeLike,
 } from "./pi-sdk.js";
+
+export type { AcpSessionControl, AcpSessionRecovery, AcpSessionReadyHandler } from "./acp-session-control.js";
+
+export * from "./acp-conversation.js";

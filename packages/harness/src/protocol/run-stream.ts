@@ -1,3 +1,4 @@
+import { parseAcpConversationSnapshot } from "../exec/acp-conversation.js";
 import type { HarnessRunEvent } from "../exec/events.js";
 
 export const HARNESS_RUN_REQUEST_KIND = "HarnessRunRequestV1" as const;
@@ -57,10 +58,16 @@ function parseHarnessRunEvent(value: unknown): HarnessRunEvent {
     case "run-warning":
     case "run-error":
       return { type: event.type, message: stringValue(event.message, "message") };
+    case "acp-conversation-state":
+      return { type: event.type, snapshot: parseAcpConversationSnapshot(event.snapshot) };
+    case "acp-session-ready":
+      return { type: event.type, sessionId: stringValue(event.sessionId, "sessionId"), prepared: event.prepared === true };
     case "message-started":
-      return { type: event.type, messageId: stringValue(event.messageId, "messageId"), ...(event.role === "thought" ? { role: "thought" } : {}) };
+      return { type: event.type, messageId: stringValue(event.messageId, "messageId"), ...((event.role === "thought" || event.role === "user") ? { role: event.role } : {}) };
     case "message-finished":
       return { type: event.type, messageId: stringValue(event.messageId, "messageId") };
+    case "message-content":
+      return { type: event.type, messageId: stringValue(event.messageId, "messageId"), content: event.content };
     case "text-delta":
       return { type: event.type, messageId: stringValue(event.messageId, "messageId"), text: stringValue(event.text, "text") };
     case "tool-call-started":

@@ -80,7 +80,7 @@ function MarkdownOutline(props: {
   </ul>;
 }
 
-function MarkdownBlockView({ block, context }: { block: MarkdownBlock; context: RenderContext }): React.JSX.Element {
+export function MarkdownBlockView({ block, context }: { block: MarkdownBlock; context: RenderContext }): React.JSX.Element {
   if (block.kind === "heading") {
     const Heading = `h${block.level}` as "h1";
     return <Heading data-md-heading={block.id}>

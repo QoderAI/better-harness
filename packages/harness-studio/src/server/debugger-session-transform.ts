@@ -53,12 +53,12 @@ function retainedMessageEvent(record: RetainedRunRecord, item: Extract<RetainedR
   return {
     id: `message_${safeId(item.id, index)}`,
     kind: "response",
-    phase: item.role === "thought" ? "Thinking" : item.complete ? "Response" : "Message",
-    title: item.role === "thought" ? "Agent thought" : item.complete ? "Assistant response" : "Assistant message",
-    summary: item.text || "No message text retained.",
+    phase: item.role === "user" ? "Prompt" : item.role === "thought" ? "Thinking" : item.complete ? "Response" : "Message",
+    title: item.role === "user" ? "User message" : item.role === "thought" ? "Agent thought" : item.complete ? "Assistant response" : "Assistant message",
+    summary: item.text || (item.content?.length ? item.content.map(retainedContentSummary).join("\n") : "No message text retained."),
     timestamp: relativeRetainedTimestamp(record.savedAt, index),
     relativeTime: `+${index}s`,
-    stopConditions: item.complete && item.role !== "thought" ? ["responses"] : [],
+    stopConditions: item.complete && item.role === undefined ? ["responses"] : [],
     evidence: [{ level: "Exact", label: "Retained message", detail: "Message content is retained in the saved run timeline." }],
     rawAcp: retainedRaw("Agent → Client", "run/message", String(index + 1), sessionId, item),
   };
@@ -193,4 +193,15 @@ function relativeRetainedTimestamp(savedAt: string, offsetSeconds: number): stri
   const date = new Date(savedAt);
   if (Number.isNaN(date.valueOf())) return `+${offsetSeconds}s`;
   return new Date(date.valueOf() + offsetSeconds * 1000).toISOString().slice(11, 19);
+}
+
+function retainedContentSummary(value: unknown): string {
+  const block = value !== null && typeof value === "object" ? value as Record<string, unknown> : undefined;
+  if (typeof block?.text === "string") return block.text;
+  if (block?.type === "resource_link") return String(block.name ?? block.uri ?? "Resource link");
+  if (block?.type === "resource") {
+    const resource = block.resource as Record<string, unknown> | undefined;
+    if (typeof resource?.text === "string") return resource.text;
+  }
+  return `Retained ${String(block?.type ?? "unknown")} content; inspect the saved message payload.`;
 }

@@ -64,20 +64,29 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await expect(alpha.getByRole("button", { name: "Continue stream" })).toBeVisible();
   await expect(beta.getByRole("button", { name: "Allow once", exact: true })).toBeVisible();
   // The first lane progressed while the second lane is still gated.
-  await expect(alpha.locator(".acp-session-facts")).toContainText("stream-model");
+  await expect(alpha.getByRole("combobox", { name: "Model", exact: true })).toHaveValue("stream-model");
+
   await expect(alpha.locator(".acp-session-facts")).toContainText("1,200 / 32,000");
   const scroll = alpha.locator(".acp-session-scroll");
   await expect(alpha.locator(".streaming-message").last()).toContainText("Evidence row 50");
   const entries = alpha.locator(".acp-session-events > li");
-  await expect(entries.nth(0)).toContainText("Starting inspection.");
-  await expect(entries.nth(1).locator(".acp-thought")).toHaveCount(1);
-  await expect(entries.nth(2).locator(".tool-card")).toHaveCount(1);
+  await expect(entries.filter({ hasText: "Starting inspection." })).toHaveCount(1);
+  await expect(entries.locator(".acp-thought")).toHaveCount(1);
+  await expect(entries.locator(".tool-card").filter({ hasText: "Read stream fixture" })).toHaveCount(1);
   await expect.poll(() => scroll.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight)).toBeLessThanOrEqual(24);
   await scroll.evaluate((node) => { node.scrollTop = 0; });
   await expect(alpha.getByRole("button", { name: "Back to latest" })).toBeVisible();
+  await alpha.locator(".acp-session-metadata:not([open]) > summary").click();
+  await alpha.locator(".acp-session-info summary").click();
+  await expect(alpha.locator(".acp-session-info time")).toHaveAttribute("datetime", "2026-09-08T00:00:00Z");
+  await alpha.locator(".acp-session-info summary").click();
+  await expect(alpha.locator(".acp-session-plan")).toContainText("High priority");
+  await alpha.locator(".acp-session-commands summary").click();
+  await expect(alpha.locator(".acp-command-hint")).toContainText("Optional revision");
+  await alpha.locator(".acp-session-commands summary").click();
   await alpha.locator(".acp-thought summary").click();
   await expect(alpha.locator(".acp-thought")).toContainText("Inspecting the evidence.");
-  const tool = alpha.locator(".tool-card");
+  const tool = alpha.locator(".tool-card").filter({ hasText: "Read stream fixture" });
   await page.keyboard.press("Tab");
   await tool.locator("summary").focus();
   expect(await tool.locator("summary").evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe("none");
@@ -89,7 +98,7 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   // Keep the transcript parked at the top while a new chunk completes the turn.
   await scroll.evaluate((node) => { node.scrollTop = 0; });
   await alpha.getByRole("button", { name: "Continue stream" }).click();
-  await expect(alpha.locator(".run-badge")).toHaveText("finished");
+  await expect(alpha.locator(".run-badge")).toHaveText("Ready");
   await expect(alpha.locator(".acp-session-plan summary")).toHaveText("Plan · 2/2");
   expect(await scroll.evaluate((node) => node.scrollTop)).toBe(0);
   await alpha.getByRole("button", { name: "Back to latest" }).focus();
@@ -99,17 +108,18 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await expect.poll(() => scroll.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight)).toBeLessThanOrEqual(24);
   // A failed cancel is visible and retryable; the sibling stays finished.
   let cancels = 0;
-  await page.route("**/api/acp/runs/*/cancel", async (route) => {
+  await page.route("**/api/acp/runs/*/session", async (route) => {
     cancels += 1;
     if (cancels === 1) await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Cancel unavailable; retry" }) });
     else await route.continue();
   });
-  await beta.getByRole("button", { name: "Interrupt", exact: true }).click();
+  await beta.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(beta.getByRole("alert")).toContainText("Cancel unavailable; retry");
   await expect(beta.getByRole("alert")).toBeVisible();
-  await expect(beta.getByRole("button", { name: "Interrupt", exact: true })).toBeEnabled();
-  await beta.getByRole("button", { name: "Interrupt", exact: true }).click();
-  await expect(beta.locator(".run-badge")).toHaveText("error");
+  await expect(beta.getByRole("button", { name: "Close session", exact: true })).toBeEnabled();
+  await expect(beta.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
+  await beta.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(beta.locator(".run-badge")).toHaveText("Ready");
   await expect(beta.locator(".acp-permission-gate")).toHaveCount(0);
   for (const layout of layouts) {
     await page.setViewportSize(layout);
@@ -139,9 +149,9 @@ test("reuses the ACP stream and permission gate in Debugger", async ({ page }, i
   await page.getByRole("button", { name: "Run", exact: true }).click();
   await page.getByRole("button", { name: "Allow once allow_once" }).click();
   await expect(page.locator(".live-notebook .acp-session-stream")).toHaveCount(1);
-  await expect(page.locator(".acp-session-facts")).toContainText("stream-model");
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveValue("stream-model");
   await page.getByRole("button", { name: "Continue stream allow_once" }).click();
-  await expect(page.locator(".live-inspector > header")).toContainText("Finished");
+  await expect(page.locator(".live-inspector > header")).toContainText("Ready");
 
   // Observed state reads as one counter row plus complete identifiers, and the
   // frame list carries its own window and per-frame gaps.
@@ -171,6 +181,7 @@ test("reuses the ACP stream and permission gate in Debugger", async ({ page }, i
   expect(sectionBorder).toBe("0px");
   // The live tree reserves no disclosure column, so its root row starts at the edge.
   await expect(page.locator(".live-tree .tree-caret-spacer").first()).toBeHidden();
+
   for (const layout of layouts) {
     await page.setViewportSize(layout);
     await page.keyboard.press("Escape");

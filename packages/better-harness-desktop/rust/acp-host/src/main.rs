@@ -177,21 +177,34 @@ async fn run_call(
         }
         Call::SessionCreate(params) => {
             let connection = connection_for(registry, &params.connection_id).await?;
-            let session_id = connection.create_session(&params.cwd).await?;
+            let session_id = match &params.recovery { Some(recovery) => connection.recover_session(&params.cwd, recovery).await?, None => connection.create_session(&params.cwd).await? };
             Ok(json!({ "sessionId": session_id }))
+        }
+        Call::SessionClose(params) => {
+            let connection = connection_for(registry, &params.connection_id).await?;
+            connection.close_session(&params.session_id).await?;
+            Ok(json!({ "closed": true }))
         }
         Call::SessionSetConfigOption(params) => {
             let connection = connection_for(registry, &params.connection_id).await?;
-            connection
+            let mut result = connection
                 .set_config_option(&params.session_id, &params.config_id, &params.value)
                 .await?;
-            Ok(json!({ "configId": params.config_id, "acknowledged": true }))
+            result["configId"] = json!(params.config_id);
+            result["acknowledged"] = json!(true);
+            Ok(result)
+        }
+        Call::SessionSetMode(params) => {
+            let connection = connection_for(registry, &params.connection_id).await?;
+            connection.set_mode(&params.session_id, &params.mode_id).await
         }
         Call::SessionPrompt(params) => {
             let connection = connection_for(registry, &params.connection_id).await?;
-            let stop_reason = connection
-                .prompt(&params.session_id, &params.prompt, events)
-                .await?;
+            let stop_reason = if let Some(content) = params.content {
+                connection.prompt_content(&params.session_id, serde_json::from_value(content)?, events).await?
+            } else {
+                connection.prompt(&params.session_id, &params.prompt, events).await?
+            };
             Ok(json!({ "stopReason": stop_reason }))
         }
         Call::SessionCancel(params) => {

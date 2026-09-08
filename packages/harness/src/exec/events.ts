@@ -1,3 +1,4 @@
+import type { AcpConversationSnapshot } from "./acp-conversation.js";
 import type { HarnessRunMetrics } from "./executor.js";
 
 export const MAX_RETAINED_TOOL_RESULT_BYTES = 65_536;
@@ -41,9 +42,12 @@ export interface HarnessProtocolEvent {
  *    terminates the stream with the exit code.
  */
 export type HarnessRunEvent =
+  | { type: "acp-conversation-state"; snapshot: AcpConversationSnapshot }
+  | { type: "acp-session-ready"; sessionId: string; prepared: boolean }
   | { type: "run-started"; revisionId: string; host: string }
   | { type: "run-warning"; message: string }
-  | { type: "message-started"; messageId: string; role?: "thought" }
+  | { type: "message-started"; messageId: string; role?: "thought" | "user" }
+  | { type: "message-content"; messageId: string; content: unknown }
   | { type: "text-delta"; messageId: string; text: string }
   | { type: "message-finished"; messageId: string }
   | { type: "tool-call-started"; toolCallId: string; toolName: string; input?: unknown }
@@ -76,7 +80,8 @@ export type HarnessRunPhase = "idle" | "running" | "finished";
 export class HarnessRunEmitter {
   private currentPhase: HarnessRunPhase = "idle";
   private openMessageId: string | undefined;
-  private openMessageRole: "assistant" | "thought" = "assistant";
+  private openMessageSourceId: string | undefined;
+  private openMessageRole: "assistant" | "thought" | "user" = "assistant";
   private messageCount = 0;
   private toolCallCount = 0;
 
@@ -101,28 +106,41 @@ export class HarnessRunEmitter {
     this.deliver({ type: "run-warning", message });
   }
 
+  endMessage(): void { this.closeOpenMessage(); }
+
   /** Append assistant text, opening a message frame when none is open. */
-  text(text: string): void {
-    this.appendText(text, "assistant");
+  text(text: string, sourceId?: string): void {
+    this.appendText(text, "assistant", sourceId);
+  }
+
+  content(content: unknown, role?: "thought" | "user", sourceId?: string): void {
+    if (this.currentPhase !== "running") return;
+    this.ensureMessage(role ?? "assistant", sourceId);
+    this.deliver({ type: "message-content", messageId: this.openMessageId!, content });
   }
 
   /** Thoughts share ordered message framing without entering final output. */
-  thought(text: string): void {
-    this.appendText(text, "thought");
+  thought(text: string, sourceId?: string): void {
+    this.appendText(text, "thought", sourceId);
   }
 
-  private appendText(text: string, role: "assistant" | "thought"): void {
+  private appendText(text: string, role: "assistant" | "thought", sourceId?: string): void {
     if (this.currentPhase !== "running" || text.length === 0) {
       return;
     }
-    if (this.openMessageId !== undefined && this.openMessageRole !== role) this.closeOpenMessage();
+    this.ensureMessage(role, sourceId);
+    this.deliver({ type: "text-delta", messageId: this.openMessageId!, text });
+  }
+
+  private ensureMessage(role: "assistant" | "thought" | "user", sourceId?: string): void {
+    if (this.openMessageId !== undefined && (this.openMessageRole !== role || (sourceId !== undefined && this.openMessageSourceId !== undefined && sourceId !== this.openMessageSourceId))) this.closeOpenMessage();
     if (this.openMessageId === undefined) {
-      this.messageCount += 1;
-      this.openMessageId = `msg_${this.messageCount}`;
+      this.openMessageId = `msg_${++this.messageCount}`;
       this.openMessageRole = role;
-      this.deliver({ type: "message-started", messageId: this.openMessageId, ...(role === "thought" ? { role } : {}) });
+      this.openMessageSourceId = sourceId;
+      this.deliver({ type: "message-started", messageId: this.openMessageId, ...(role !== "assistant" ? { role } : {}) });
     }
-    this.deliver({ type: "text-delta", messageId: this.openMessageId, text });
+    if (this.openMessageSourceId === undefined) this.openMessageSourceId = sourceId;
   }
 
   /** Record one complete tool invocation, closing any open message frame first. */

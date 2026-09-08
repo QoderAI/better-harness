@@ -28,10 +28,10 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
     CancelNotification, ClientCapabilities, ContentBlock, CreateTerminalRequest,
     FileSystemCapabilities, Implementation, InitializeRequest, KillTerminalRequest,
-    NewSessionRequest, PromptRequest, ReadTextFileRequest, ReleaseTerminalRequest,
+    NewSessionRequest, LoadSessionRequest, ResumeSessionRequest, CloseSessionRequest, PromptRequest, ReadTextFileRequest, ReleaseTerminalRequest,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     SelectedPermissionOutcome, SessionConfigKind, SessionConfigOptionValue, SessionNotification,
-    SessionUpdate, SetSessionConfigOptionRequest, TerminalOutputRequest, TextContent,
+    SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest, TerminalOutputRequest, TextContent,
     WaitForTerminalExitRequest, WriteTextFileRequest,
 };
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, Client, ConnectionTo, LineDirection};
@@ -260,6 +260,7 @@ type SharedThreads = Arc<Mutex<HashMap<String, Thread>>>;
 
 /// One live ACP connection.
 pub struct AgentConnection {
+    capabilities: serde_json::Value,
     id: String,
     connection: ConnectionTo<Agent>,
     services: ClientServices,
@@ -544,7 +545,9 @@ impl AgentConnection {
                 .await);
         }
 
+        let capabilities = serde_json::to_value(initialized?.agent_capabilities)?;
         Ok(Self {
+            capabilities,
             id,
             connection,
             services,
@@ -570,6 +573,30 @@ impl AgentConnection {
         Ok(session_id)
     }
 
+    pub async fn recover_session(&self, cwd: &std::path::Path, recovery: &crate::wire::SessionRecovery) -> Result<String> {
+        let can_load = self.capabilities["loadSession"].as_bool() == Some(true);
+        let can_resume = self.capabilities["sessionCapabilities"]["resume"].is_object();
+        let resume = recovery.method.as_deref() == Some("resume") || !can_load;
+        if (resume && !can_resume) || (!resume && !can_load) { return Err(anyhow!("This Agent cannot restore a previous session.")); }
+        let id = recovery.session_id.clone();
+        self.threads.lock().expect("threads").insert(id.clone(), Thread::new());
+        let result = if resume {
+            self.connection.send_request(ResumeSessionRequest::new(id.clone(), cwd.to_path_buf())).block_task().await.map(|_| ())
+        } else {
+            self.connection.send_request(LoadSessionRequest::new(id.clone(), cwd.to_path_buf())).block_task().await.map(|_| ())
+        };
+        if let Err(error) = result { self.threads.lock().expect("threads").remove(&id); return Err(anyhow!("ACP session recovery failed: {error}")); }
+        Ok(id)
+    }
+
+    pub async fn close_session(&self, id: &str) -> Result<()> {
+        if self.capabilities["sessionCapabilities"]["close"].is_object() {
+            self.connection.send_request(CloseSessionRequest::new(id.to_owned())).block_task().await.map_err(|error| anyhow!("ACP session/close failed: {error}"))?;
+        }
+        self.threads.lock().expect("threads").remove(id);
+        Ok(())
+    }
+
     /// Run one prompt turn. A connection serves any number of these.
     pub async fn prompt(
         &self,
@@ -577,6 +604,11 @@ impl AgentConnection {
         prompt: &str,
         events: &EventSink,
     ) -> Result<String> {
+        self.prompt_content(session_id, vec![ContentBlock::Text(TextContent::new(prompt.to_owned()))], events).await
+    }
+
+    pub async fn prompt_content(&self, session_id: &str, content: Vec<ContentBlock>, events: &EventSink) -> Result<String> {
+        let prompt = content.iter().filter_map(|block| match block { ContentBlock::Text(text) => Some(text.text.as_str()), _ => None }).collect::<Vec<_>>().join("\n");
         // Scoped so the guard is released before the first await below. A
         // std::sync guard held across an await would make this future non-Send
         // and could deadlock a task that re-enters the same lock.
@@ -587,7 +619,7 @@ impl AgentConnection {
         if !known {
             return Err(anyhow!("unknown session"));
         }
-        let change = self.with_thread(session_id, |thread| thread.push_user_message(prompt));
+        let change = self.with_thread(session_id, |thread| thread.push_user_message(&prompt));
         self.announce(session_id, change, events).await;
         events
             .send(HostEvent::StatusChanged {
@@ -602,7 +634,7 @@ impl AgentConnection {
             .connection
             .send_request(PromptRequest::new(
                 session_id.to_owned(),
-                vec![ContentBlock::Text(TextContent::new(prompt.to_owned()))],
+                content,
             ))
             .block_task()
             .await;
@@ -654,6 +686,14 @@ impl AgentConnection {
         }
     }
 
+    pub async fn set_mode(&self, session_id: &str, mode_id: &str) -> Result<serde_json::Value> {
+        let response = self.connection
+            .send_request(SetSessionModeRequest::new(session_id.to_owned(), mode_id.to_owned()))
+            .block_task().await
+            .map_err(|error| anyhow!("ACP session/set_mode failed: {error}"))?;
+        Ok(serde_json::to_value(&response)?)
+    }
+
     /// Apply one session config option and confirm the agent took it.
     ///
     /// Acknowledgement is verified rather than assumed, preserving the contract
@@ -665,7 +705,7 @@ impl AgentConnection {
         session_id: &str,
         config_id: &str,
         value: &ConfigOptionValue,
-    ) -> Result<()> {
+    ) -> Result<serde_json::Value> {
         let requested = match value {
             ConfigOptionValue::Boolean(flag) => SessionConfigOptionValue::boolean(*flag),
             ConfigOptionValue::Text(text) => SessionConfigOptionValue::value_id(text.clone()),
@@ -703,7 +743,7 @@ impl AgentConnection {
             }
         };
         if observed == *value {
-            Ok(())
+            Ok(serde_json::to_value(&response)?)
         } else {
             Err(anyhow!(
                 "the agent did not acknowledge session option '{config_id}'"
@@ -809,25 +849,24 @@ async fn apply_session_notification(
             return;
         };
         match notification.update {
+            SessionUpdate::UserMessageChunk(chunk) => thread.push_content(serde_json::to_value(&chunk.content).unwrap_or_default(), "user", chunk.message_id.as_ref().map(|id| id.0.as_ref())),
             SessionUpdate::AgentMessageChunk(chunk) => {
-                let Some(text) = block_text(&chunk.content) else {
-                    return;
-                };
+                if let Some(text) = block_text(&chunk.content) {
                 thread.push_agent_text(
                     ChunkKind::Message,
                     chunk.message_id.as_ref().map(|id| id.0.as_ref()),
                     text,
                 )
+                } else { thread.push_content(serde_json::to_value(&chunk.content).unwrap_or_default(), "assistant", chunk.message_id.as_ref().map(|id| id.0.as_ref())) }
             }
             SessionUpdate::AgentThoughtChunk(chunk) => {
-                let Some(text) = block_text(&chunk.content) else {
-                    return;
-                };
+                if let Some(text) = block_text(&chunk.content) {
                 thread.push_agent_text(
                     ChunkKind::Thought,
                     chunk.message_id.as_ref().map(|id| id.0.as_ref()),
                     text,
                 )
+                } else { thread.push_content(serde_json::to_value(&chunk.content).unwrap_or_default(), "thought", chunk.message_id.as_ref().map(|id| id.0.as_ref())) }
             }
             SessionUpdate::ToolCall(call) => thread.upsert_tool_call(thread::ToolCallUpdate {
                 tool_call_id: call.tool_call_id.0.as_ref(),

@@ -1,3 +1,6 @@
+import type { AcpSessionRecovery } from "./acp-session-control.js";
+import { conversationCapabilities, type AcpConversation } from "./acp-conversation.js";
+import type { AcpSessionReadyHandler } from "./acp-session-control.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { HarnessIrBundle, HarnessRevision } from "../ir/index.js";
 import { ACP_ADAPTER_DESCRIPTOR } from "../resolver/adapter-registry.js";
@@ -77,6 +80,9 @@ export interface AcpRustExecutorOptions {
   onRunEvent?: HarnessRunEventListener;
   requestPermission?: AcpRustPermissionHandler;
   /** ACP session configuration applied after the session exists and before the prompt. */
+  conversation?: AcpConversation;
+  recovery?: AcpSessionRecovery;
+  onSessionReady?: AcpSessionReadyHandler;
   sessionConfig?: Readonly<Record<string, string | boolean>>;
   abortSignal?: AbortSignal;
   spawnHost?: typeof spawn;
@@ -170,6 +176,7 @@ export class AcpRustExecutor implements HarnessExecutor {
 
       const created = await client.call("session.create", {
         connectionId,
+        ...(this.options.recovery ? { recovery: this.options.recovery } : {}),
         cwd: task.cwd ?? process.cwd(),
       });
       sessionId = typeof created.sessionId === "string" ? created.sessionId : undefined;
@@ -191,15 +198,33 @@ export class AcpRustExecutor implements HarnessExecutor {
         acknowledgedSessionConfig[configId] = value;
       }
 
+      const liveClient = client;
+      const liveSessionId = sessionId;
+      const sessionControl = {
+        sessionId,
+        setConfigOption: (configId: string, value: string | boolean) => liveClient.call("session.setConfigOption", { connectionId, sessionId: liveSessionId, configId, value }),
+        setMode: (modeId: string) => liveClient.call("session.setMode", { connectionId, sessionId: liveSessionId, modeId }),
+      };
+      await this.options.onSessionReady?.(sessionControl);
       if (abortSignal?.aborted === true) {
         stopReason = "cancelled";
       } else {
         const cancel = (): void => {
           void client?.call("session.cancel", { connectionId, sessionId }).catch(() => undefined);
+          void this.options.conversation?.close().catch(() => undefined);
         };
         abortSignal?.addEventListener("abort", cancel, { once: true });
         try {
-          const finished = await client.call("session.prompt", {
+          const initialized = trace.map(event => (event.payload as { result?: { agentCapabilities?: unknown } })?.result?.agentCapabilities).find(value => value !== undefined);
+          const finished = this.options.conversation ? await this.options.conversation.run({
+            ...sessionControl, capabilities: conversationCapabilities(initialized),
+            close: async () => { await liveClient.call("session.close", { connectionId, sessionId: liveSessionId }); },
+            cancel: async () => { await liveClient.call("session.cancel", { connectionId, sessionId: liveSessionId }); },
+            prompt: async (content) => {
+              try { const result = await liveClient.call("session.prompt", { connectionId, sessionId: liveSessionId, prompt: "", content }); return { stopReason: String(result.stopReason) }; }
+              finally { emitter.endMessage(); }
+            },
+          }, { id: "initial", content: [{ type: "text", text: task.prompt }] }, [{ type: "text", text: this.options.recovery ? task.prompt : prompt }]) : await client.call("session.prompt", {
             connectionId,
             sessionId,
             prompt,
@@ -210,7 +235,7 @@ export class AcpRustExecutor implements HarnessExecutor {
         }
       }
 
-      const exitCode = stopReason === "end_turn" ? 0 : 1;
+      const exitCode = this.options.conversation || stopReason === "end_turn" ? 0 : 1;
       const errorOutput = exitCode === 0 ? "" : `ACP Agent stopped with reason '${stopReason}'.`;
       if (exitCode !== 0) emitter.error(errorOutput);
       emitter.finish(exitCode, metricsFor(sessionId, stopReason));
@@ -244,6 +269,8 @@ export class AcpRustExecutor implements HarnessExecutor {
         metrics: metricsFor(sessionId, stopReason),
       };
     } finally {
+      await this.options.conversation?.close().catch(() => undefined);
+      await this.options.onSessionReady?.(undefined);
       // Closing the host makes it drop its connections, which is what reaps the
       // Agent's process group. A caller that removes the run workspace right
       // after `execute` would otherwise hit EBUSY on Windows.
@@ -482,6 +509,10 @@ class HostClient {
         return;
       }
       case "permission-requested": {
+        if (typeof event.toolCallId === "string" && !this.emittedTools.has(event.toolCallId)) {
+          this.emittedTools.add(event.toolCallId);
+          this.emitter.toolCall(typeof event.title === "string" ? event.title : "Tool", { toolUseId: event.toolCallId });
+        }
         // Studio's existing permission projection reads requestId from a
         // protocol event rpcId. The host uses its own UUID to address the later
         // permission.decide call, while the raw ACP frame carries the Agent's
@@ -540,6 +571,14 @@ class HostClient {
   private applyEntry(event: HostEvent): void {
     const entry = event.entry as Record<string, unknown> | undefined;
     if (entry === undefined || typeof event.index !== "number") return;
+    if (entry.kind === "content-block") {
+      const key = `content:${event.index}`;
+      if (!this.emittedText.has(key)) {
+        this.emittedText.set(key, "emitted");
+        this.emitter.content(entry.content, entry.role === "user" || entry.role === "thought" ? entry.role : undefined, typeof entry.message_id === "string" ? entry.message_id : undefined);
+      }
+      return;
+    }
     if (entry.kind === "assistant-message") {
       const chunks = Array.isArray(entry.chunks) ? entry.chunks : [];
       for (const [chunkIndex, value] of chunks.entries()) {
@@ -550,10 +589,11 @@ class HostClient {
         if (chunk.text === already) continue;
         const suffix = chunk.text.startsWith(already) ? chunk.text.slice(already.length) : chunk.text;
         this.emittedText.set(key, chunk.text);
-        if (chunk.kind === "thought") this.emitter.thought(suffix);
+        const sourceId = typeof chunk.messageId === "string" ? chunk.messageId : undefined;
+        if (chunk.kind === "thought") this.emitter.thought(suffix, sourceId);
         else {
           this.output.push(suffix);
-          this.emitter.text(suffix);
+          this.emitter.text(suffix, sourceId);
         }
       }
       return;
