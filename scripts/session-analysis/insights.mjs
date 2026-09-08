@@ -31,7 +31,8 @@ const FRICTION_TYPE_PATTERNS = Object.freeze([
   { name: "aborted-event", pattern: /\b(?:abort|aborted|cancel|cancelled|interrupted)\b/i },
 ]);
 
-const EDIT_TOOL_NAMES = new Set(["Edit", "MultiEdit", "NotebookEdit", "Write"]);
+// Case-insensitive: providers differ in casing (Claude Code "Edit", pi "edit").
+const EDIT_TOOL_NAMES = new Set(["edit", "multiedit", "notebookedit", "write"]);
 
 const EDIT_COMMAND_PATTERNS = Object.freeze([
   { name: "apply_patch", pattern: /\bapply_patch\b|\*\*\*\s+Begin Patch/i },
@@ -724,7 +725,7 @@ function longSessionRows(rows = []) {
 }
 
 function isEditEvent(event) {
-  if (EDIT_TOOL_NAMES.has(event.toolName)) {
+  if (EDIT_TOOL_NAMES.has(String(event?.toolName ?? "").toLowerCase())) {
     return true;
   }
   const commandText = event.commandText ?? "";

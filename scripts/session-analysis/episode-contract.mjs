@@ -11,13 +11,16 @@ export const EVENT_SCHEMA_VERSION = 2;
 export const TASK_EPISODE_SCHEMA_VERSION = 3;
 export const DEFAULT_EPISODE_GAP_MS = 30 * 60 * 1000;
 
+// Tool-name matching is case-insensitive: providers differ in casing
+// (Claude Code emits "Edit"/"Write", pi emits "edit"/"write"), so entries
+// are stored lowercase and compared against the lowercased tool name.
 const EDIT_TOOL_NAMES = new Set([
-  "Edit",
-  "MultiEdit",
-  "NotebookEdit",
-  "NotebookWrite",
-  "SearchReplace",
-  "Write",
+  "edit",
+  "multiedit",
+  "notebookedit",
+  "notebookwrite",
+  "searchreplace",
+  "write",
 ]);
 const PATHLESS_EDIT_TOOL_NAMES = new Set(["apply_patch"]);
 const LIFECYCLE_USER_EVENT_TYPES = new Set(["user", "last-prompt", "UserPromptSubmit"]);
@@ -131,7 +134,7 @@ export function isEditEvent(event) {
   if (event?.type === "event.patch_apply_end") return true;
   if (PATHLESS_EDIT_TOOL_NAMES.has(String(event?.toolName ?? event?.functionCallName ?? "").toLowerCase())) return true;
   if (/^\s*apply_patch(?:\s|$)/u.test(String(event?.commandText ?? ""))) return true;
-  return targetPaths.length > 0 && EDIT_TOOL_NAMES.has(event?.toolName);
+  return targetPaths.length > 0 && EDIT_TOOL_NAMES.has(String(event?.toolName ?? "").toLowerCase());
 }
 
 export function validationCategory(event) {
