@@ -84,6 +84,17 @@ export function resolveDateRange(range: StudioDateRange, now: Date = new Date())
  * An unparseable or absent timestamp is kept rather than dropped: hiding a row
  * because its date could not be read would present a filter as a deletion.
  */
+/**
+ * The time a row should be judged by. Last activity wins, so a Session that
+ * started last year and moved today still belongs to "today".
+ */
+export function activityTimestamp(...candidates: Array<string | null | undefined>): string | undefined {
+  for (const value of candidates) {
+    if (typeof value === "string" && value !== "") return value;
+  }
+  return undefined;
+}
+
 export function withinDateRange(timestamp: string | undefined, range: StudioDateRange, now?: Date): boolean {
   // Resolve first: callers hold the preset form (`{ preset: "today" }`), whose
   // ends are implied rather than written down. Reading `from`/`to` off it
@@ -103,4 +114,28 @@ export function withinDateRange(timestamp: string | undefined, range: StudioDate
 /** A custom range with its ends crossed reads as a typo, not as an empty result. */
 export function dateRangeInverted(range: StudioDateRange): boolean {
   return range.from !== undefined && range.to !== undefined && range.from > range.to;
+}
+
+/**
+ * Keep a catalog row when it was observed inside the window.
+ *
+ * Workspace artifacts are dated only through Session observations. A file with
+ * no in-range observation is out of the window. Rows that were never dated at
+ * all stay visible: the window must not delete a file whose time could not be
+ * read.
+ */
+export function artifactsInDateRange<T extends { id: string }>(
+  artifacts: readonly T[],
+  observations: ReadonlyArray<{ artifactId: string; savedAt: string }> | undefined,
+  range: StudioDateRange,
+  now?: Date,
+): T[] {
+  if (observations === undefined || observations.length === 0) return [...artifacts];
+  const datedIds = new Set(observations.map((observation) => observation.artifactId));
+  const visibleIds = new Set(
+    observations
+      .filter((observation) => withinDateRange(observation.savedAt, range, now))
+      .map((observation) => observation.artifactId),
+  );
+  return artifacts.filter((artifact) => !datedIds.has(artifact.id) || visibleIds.has(artifact.id));
 }

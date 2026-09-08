@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   STUDIO_DEFAULT_DATE_RANGE,
+  activityTimestamp,
+  artifactsInDateRange,
   dateRangeInverted,
   localDayKey,
   resolveDateRange,
@@ -58,6 +60,24 @@ describe("studio date range", () => {
     const lateLocal = new Date(2026, 8, 8, 23, 30, 0);
     expect(localDayKey(lateLocal)).toBe("2026-09-08");
     expect(withinDateRange(lateLocal.toISOString(), resolveDateRange({ preset: "today" }, NOW))).toBe(true);
+  });
+
+  it("judges a Session by last activity rather than when it started", () => {
+    expect(activityTimestamp("2026-09-08T03:22:00.000Z", "2026-07-01T00:00:00.000Z"))
+      .toBe("2026-09-08T03:22:00.000Z");
+    const today = resolveDateRange({ preset: "today" }, NOW);
+    expect(withinDateRange(activityTimestamp("2026-09-08T03:22:00.000Z", "2026-07-01T00:00:00.000Z"), today, NOW)).toBe(true);
+    expect(withinDateRange("2026-07-01T00:00:00.000Z", today, NOW)).toBe(false);
+  });
+
+  it("hides Artifacts whose observations fall outside the window", () => {
+    const artifacts = [{ id: "recent" }, { id: "old" }, { id: "undated" }];
+    const observations = [
+      { artifactId: "recent", savedAt: "2026-09-08T03:22:00.000Z" },
+      { artifactId: "old", savedAt: "2026-06-01T00:00:00.000Z" },
+    ];
+    const visible = artifactsInDateRange(artifacts, observations, { preset: "today" }, NOW);
+    expect(visible.map((artifact) => artifact.id)).toEqual(["recent", "undated"]);
   });
 
   it("reports a crossed custom range instead of silently returning nothing", () => {

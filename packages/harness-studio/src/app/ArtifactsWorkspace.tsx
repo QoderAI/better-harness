@@ -10,7 +10,7 @@ import { FilePpt } from "@phosphor-icons/react/FilePpt";
 import { Folder } from "@phosphor-icons/react/Folder";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
-import { withinDateRange, type StudioDateRange } from "./date-range.js";
+import { artifactsInDateRange, withinDateRange, type StudioDateRange } from "./date-range.js";
 
 import {
   isArtifactCatalogResponse,
@@ -40,6 +40,7 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
   const { t } = useTranslation("artifacts");
   const [catalog, setCatalog] = useState<StudioArtifactCatalogResponse>();
   const [windowHidesArtifacts, setWindowHidesArtifacts] = useState(false);
+  const [windowTotal, setWindowTotal] = useState<number>();
   const [failure, setFailure] = useState<string>();
   const [selected, setSelected] = useState<string>();
   const [scope, setScope] = useState<ArtifactScope>({ kind: "all" });
@@ -88,12 +89,15 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
         if (cancelled || request !== requestSequence) return;
         setFailure(undefined);
         const observations = candidate.navigation?.observations;
-        const datedIds = new Set(observations?.map((observation) => observation.artifactId));
         const inRange = observations?.filter((observation) => withinDateRange(observation.savedAt, props.dateRange));
-        const visibleIds = new Set(inRange?.map((observation) => observation.artifactId));
-        const artifacts = candidate.artifacts.filter((artifact) => !datedIds.has(artifact.id) || visibleIds.has(artifact.id));
+        const artifacts = artifactsInDateRange(candidate.artifacts, observations, props.dateRange);
+        setWindowTotal(candidate.artifacts.length);
         setWindowHidesArtifacts(candidate.artifacts.length > 0 && artifacts.length === 0);
-        setCatalog({ ...candidate, artifacts, ...(candidate.navigation === undefined ? {} : { navigation: { ...candidate.navigation, observations: inRange! } }) });
+        setCatalog({
+          ...candidate,
+          artifacts,
+          ...(candidate.navigation === undefined ? {} : { navigation: { ...candidate.navigation, observations: inRange! } }),
+        });
         if (liveUpdate) setLiveGeneration((value) => value + 1);
       } catch (error) {
         if (!cancelled && request === requestSequence) setFailure(error instanceof Error ? error.message : String(error));
@@ -225,6 +229,8 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
 <header><div><small>{navigation === undefined ? t("workspaceAria") : t("scopeHeader.projectScope")}</small><h2>{t("scopeHeader.browse")}</h2></div><span>{artifacts.length}</span></header>
       <ArtifactFileNavigator artifacts={artifacts} scope={scope} onSelect={selectScope} />
       {windowHidesArtifacts && <p className="artifact-pane-note">{t("common:dateRange.emptyWindow")}</p>}
+      {!windowHidesArtifacts && props.dateRange.preset !== "all" && windowTotal !== undefined
+        && <p className="artifact-pane-note" role="status">{t("common:dateRange.filtered", { shown: artifacts.length, total: windowTotal })}</p>}
       {!liveUpdates && <p className="artifact-pane-note" role="note">{t("liveUpdatesStopped")}</p>}
     </aside>
 

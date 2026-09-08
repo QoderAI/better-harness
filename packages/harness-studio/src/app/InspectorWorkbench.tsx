@@ -30,7 +30,7 @@ function inspectorT(key: string, options?: Record<string, unknown>): string {
   return studioI18n.t(`inspector:${key}`, options);
 }
 
-import { withinDateRange, type StudioDateRange } from "./date-range.js";
+import { activityTimestamp, withinDateRange, type StudioDateRange } from "./date-range.js";
 
 type Mode = "feature" | "date";
 type ViewMode = "trace" | "replay" | "usage";
@@ -109,7 +109,7 @@ export function InspectorWorkbench(props: { fallback: ReactNode; reportUrl?: str
         const css = scopeCss(await cssResponse.text());
         if (!cancelled) {
           if (props.dateRange !== undefined) {
-            report.sessions = (report.sessions ?? []).filter((session) => withinDateRange(session.firstSeen ?? undefined, props.dateRange!));
+            report.sessions = (report.sessions ?? []).filter((session) => withinDateRange(activityTimestamp(session.lastSeen, session.firstSeen), props.dateRange!));
             report.commits = (report.commits ?? []).filter((commit) => withinDateRange(commit.committedAt ?? commit.authoredAt, props.dateRange!));
           }
           setLoaded({ report, css });

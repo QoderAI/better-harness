@@ -586,7 +586,7 @@ export function App(): React.JSX.Element {
           const projectId = await workspaceChanged();
           globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
         }} /> : <>
-        {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} dateRange={dateRange} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
+        {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}-${dateScopeKey}`} dateRange={dateRange} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} dateRange={dateRange} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}-${dateScopeKey}`} dateRange={dateRange} config={config} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
@@ -597,6 +597,7 @@ export function App(): React.JSX.Element {
         scope={activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
         status={current.status}
         config={config}
+        dateRange={dateRange}
       />}
     </section>
   </div>
@@ -630,12 +631,16 @@ function StatusBar(props: {
   scope: string;
   status: string;
   config: StudioConfig;
+  dateRange: StudioDateRange;
 }): React.JSX.Element {
   const { t } = useTranslation("common");
+  // Totals on /api/config are Project-wide. Repeating them while a date window
+  // is in force makes the sidebar control look like it did nothing.
+  const windowed = props.dateRange.preset !== "all";
   const counts = [
-    props.config.inputCount > 0 ? t("statusBar.inputs", { count: props.config.inputCount }) : undefined,
-    props.config.sessionCount > 0 ? t("statusBar.sessions", { count: props.config.sessionCount }) : undefined,
-    props.config.artifactCount !== undefined && props.config.artifactCount > 0
+    !windowed && props.config.inputCount > 0 ? t("statusBar.inputs", { count: props.config.inputCount }) : undefined,
+    !windowed && props.config.sessionCount > 0 ? t("statusBar.sessions", { count: props.config.sessionCount }) : undefined,
+    !windowed && props.config.artifactCount !== undefined && props.config.artifactCount > 0
       ? t("statusBar.artifacts", { count: props.config.artifactCount })
       : undefined,
   ]
