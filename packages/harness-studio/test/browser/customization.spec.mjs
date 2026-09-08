@@ -98,84 +98,133 @@ test.afterAll(async () => {
   if (workspace) await rm(workspace, { recursive: true, force: true });
 });
 
-test("analyzes Host customizations only after the explicit action across layouts", async ({ page }, testInfo) => {
-  const failures = [];
-  page.on("console", (message) => { if (message.type() === "error") failures.push(message.text()); });
-  page.on("pageerror", (error) => failures.push(error.message));
-
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`${studio.url}/#/customizations`);
-  await expect(page.getByRole("heading", { name: "Analysis starts only when requested" })).toBeVisible();
-  expect(calls).toBe(0);
-  await page.screenshot({ path: testInfo.outputPath("customizations-idle-wide.png"), fullPage: true });
-
-  await page.getByRole("button", { name: "Analyze customizations" }).click();
-  await expect(page.getByRole("table")).toContainText("review");
-  await expect(page.getByRole("table")).toContainText("Codex, Qoder");
-  await expect(page.getByRole("table")).toContainText("MCP Server");
-  await expect(page.getByRole("row").filter({ hasText: "schedule" })).toContainText("Qoder");
-  const hostFailure = page.getByRole("alert");
-  await expect(hostFailure).toContainText("Claude customization collection failed");
-  await expect(hostFailure).toContainText("collector runtime failed unexpectedly");
-  await expect(hostFailure).toContainText("use Analyze again to retry");
+test("category popup preserves the workbench and identifies Agents across layouts", async ({ page }, testInfo) => {
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('console', m => { if(m.type()==='error') errors.push(m.text()); });
+  await page.setViewportSize(layouts[0]);
+  let releaseInitialLoad;
+  const initialHeld = new Promise(resolve => { releaseInitialLoad = resolve; });
+  await page.route('**/api/customizations/analyze', async route => { await initialHeld; await route.continue(); });
+  await page.goto(`${studio.url}/#/sessions`);
+  const library = page.locator('.customization-library');
+  const dialog = page.getByRole('dialog', { name: 'Customizations' });
+  const category = dialog.getByLabel('Category', { exact: true });
+  const agent = dialog.getByLabel('Agent', { exact: true });
+  const entries = dialog.locator('.customization-entry-list');
+  await expect(page.locator('.studio-project-views')).not.toContainText('Customizations');
+  await expect(library).toHaveAttribute('aria-busy', 'true');
+  await expect(library.locator('small')).toHaveCount(0);
+  await expect(dialog).toHaveCount(0);
+  releaseInitialLoad();
+  await expect(library.getByRole('button', { name: /^Skills/ }).locator('small')).toHaveText('1');
   expect(calls).toBe(3);
-  expect(await page.locator("body").innerText()).not.toContain(workspace);
-  expect(await page.locator("body").innerText()).not.toContain("private-token");
-
-  const definitionsTab = page.getByRole("tab", { name: "Definitions" });
-  const installationsTab = page.getByRole("tab", { name: "Installations" });
-  await installationsTab.click();
-  await expect(installationsTab).toHaveAttribute("aria-selected", "true");
-  await expect(definitionsTab).toHaveAttribute("aria-selected", "false");
-  await expect(page.locator(".customization-detail-tabs")).toHaveAttribute("data-active", "installations");
-  const tabColors = await page.evaluate(() => {
-    const tabs = [...document.querySelectorAll(".customization-detail-tabs button")];
-    const root = getComputedStyle(document.documentElement);
-    return {
-      primary: root.getPropertyValue("--color-primary").trim(),
-      definitions: getComputedStyle(tabs[0]).borderBottomColor,
-      installations: getComputedStyle(tabs[1]).borderBottomColor,
-    };
-  });
-  expect(tabColors.installations).not.toBe("rgba(0, 0, 0, 0)");
-  expect(tabColors.definitions).toBe("rgba(0, 0, 0, 0)");
-  expect(tabColors.primary).not.toBe("");
-  const installationRow = page.getByRole("row").filter({ hasText: "Review Plugin" });
-  await expect(installationRow).toContainText("Codex");
-  await expect(installationRow).toContainText("project");
-  await expect(installationRow).toContainText("local");
-  await expect(installationRow).toContainText("enabled");
-  await expect(installationRow).toContainText("applicable");
-  await expect(installationRow).toContainText("Workspace/.codex/plugins/review-plugin/.codex-plugin/plugin.json");
-  await definitionsTab.click();
-
-  await useStudioSetting(page, () => page.locator(".studio-language-toggle").click());
-  // The workbench no longer prints its own title: the toolbar already names the
-  // View, so translation is proved by the controls and tabs it does render.
-  await expect(page.getByRole("button", { name: "再次分析" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "定义" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "安装" })).toBeVisible();
-  await expect(hostFailure).toContainText("Claude customization collection failed");
-  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-  await useStudioSetting(page, () => page.locator(".studio-language-toggle").click());
-  await expect(page.getByRole("button", { name: "Analyze again" })).toBeVisible();
-
-  for (const layout of layouts) {
-    await page.setViewportSize({ width: layout.width, height: layout.height });
-    await expect(page.getByRole("button", { name: "Analyze again" })).toBeVisible();
-    if (layout.width <= 1080) {
-      await expect(page.locator(".studio-primary-nav")).toHaveCSS("visibility", "hidden");
-      await expect(page.locator(".studio-primary-nav")).not.toBeInViewport();
+  await page.unroute('**/api/customizations/analyze');
+  await library.getByRole('button', { name: /^Skills/ }).click();
+  await expect(category).toHaveValue('skills');
+  await expect(dialog.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+  await expect(entries).toContainText('review');
+  await expect(dialog.locator('.customization-entry-agents')).toHaveText('Codex, Qoder');
+  await expect(dialog.getByRole('alert')).toContainText('Claude customization collection failed');
+  expect(calls).toBe(3);
+  expect(await dialog.innerText()).not.toContain(workspace);
+  expect(await dialog.innerText()).not.toContain('private-token');
+  await agent.selectOption('claude');
+  await expect(entries).toHaveCount(0);
+  await expect(dialog).toContainText('No entries in this category');
+  await agent.selectOption('qoder');
+  await expect(dialog.locator('.customization-entry-agents')).toHaveText('Codex, Qoder');
+  await category.selectOption('mcp');
+  await expect(entries).toContainText('schedule');
+  await expect(dialog.locator('.customization-entry-agents')).toHaveText('Qoder');
+  await category.selectOption('plugins');
+  await expect(entries).toHaveCount(0);
+  await agent.selectOption('codex');
+  await expect(entries).toContainText('Review Plugin');
+  await category.selectOption('tools');
+  await expect(dialog).toContainText('Retained MCP tool descriptors only');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(library.getByRole('button', { name: /^Skills/ })).toBeFocused();
+  await expect(page.locator('.studio-context-title')).toHaveText('Sessions');
+  await expect(library.getByRole('button', { name: /^Skills/ }).locator('small')).toHaveText('1');
+  for(const theme of ['light','dark']) {
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+    for(const layout of layouts) {
+      await page.setViewportSize(layout);
+      if(layout.width<=1080) await page.locator('.studio-nav-toggle').click();
+      await library.getByRole('button', { name: /^Overview/ }).click();
+      await category.selectOption('skills');
+      await expect(dialog.locator('.customization-entry-agents')).toHaveText('Codex, Qoder');
+      const close = dialog.getByRole('button', { name: 'Close customizations' });
+      await close.focus();
+      await page.keyboard.press('Shift+Tab');
+      await expect(dialog.locator('.customization-dialog-content')).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(close).toBeFocused();
+      expect(await close.evaluate(el => getComputedStyle(el).outlineStyle)).not.toBe('none');
+      const b = await dialog.boundingBox();
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.x+b.width).toBeLessThanOrEqual(layout.width);
+      expect(b.y+b.height).toBeLessThanOrEqual(layout.height);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`popup-${theme}-${layout.name}.png`), animations:'disabled' });
+      await page.keyboard.press('Escape');
+      const opener = library.getByRole('button', { name: /^Overview/ });
+      await expect(opener).toBeFocused();
+      await expect(opener).toHaveAttribute('aria-expanded', 'false');
+      const focus = () => opener.evaluate(el => {
+        const style = getComputedStyle(el);
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--color-on-primary)';
+        probe.style.backgroundColor = 'var(--color-primary)';
+        el.append(probe);
+        const expected = getComputedStyle(probe);
+        const result = { outline: style.outlineStyle, fill: style.backgroundColor === expected.backgroundColor, text: style.color === expected.color };
+        probe.remove();
+        return result;
+      });
+      await expect.poll(focus).toEqual({ outline: 'none', fill: true, text: true });
+      await page.screenshot({ path: testInfo.outputPath(`sidebar-${theme}-${layout.name}.png`), animations:'disabled' });
+      await library.getByRole('button', { name: 'Customizations', exact:true }).click();
+      await expect(library.getByRole('button', { name: /^Overview/ })).toHaveCount(0);
+      await expect(page.locator('.studio-settings-toggle')).toBeVisible();
+      await library.getByRole('button', { name: 'Customizations', exact:true }).click();
+      if(layout.width<=1080) await page.locator('.studio-project-close').click();
     }
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
-    expect(overflow, `${layout.name} layout has document overflow`).toBe(false);
-    await page.screenshot({ path: testInfo.outputPath(`customizations-result-${layout.name}.png`), fullPage: true });
-    await installationsTab.click();
-    await expect(installationsTab).toHaveAttribute("aria-selected", "true");
-    const installationOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
-    expect(installationOverflow, `${layout.name} installation layout has document overflow`).toBe(false);
-    await page.screenshot({ path: testInfo.outputPath(`customizations-installations-${layout.name}.png`), fullPage: true });
-    await definitionsTab.click();
   }
-  expect(failures).toEqual([]);
+  await page.setViewportSize(layouts[0]);
+  await page.goto(`${studio.url}/#/customizations`);
+  await expect(dialog).toBeVisible();
+  await expect(category).toHaveValue('overview');
+  await expect(entries).toContainText('review');
+  expect(calls).toBe(3); // Reload uses the cached catalog, without collecting again.
+  await page.mouse.click(1,1);
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.studio-context-title')).toHaveText('Sessions');
+  expect(errors).toEqual([]);
+});
+
+test('catalog loading failure can be retried explicitly', async ({ page }) => {
+  await page.request.post(`${studio.url}/api/customizations/analyze`);
+  await page.setViewportSize(layouts[0]);
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/customizations', async route => {
+    await held;
+    await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Catalog unavailable for test' }) });
+  });
+  await page.goto(`${studio.url}/#/sessions`);
+  await page.locator('.customization-library').getByRole('button', { name: 'Overview' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Customizations' });
+  await expect(dialog.locator('.customization-dialog-content')).toHaveAttribute('aria-busy','true');
+  release();
+  await expect(dialog.getByRole('alert')).toContainText('Catalog unavailable for test');
+  await expect(dialog.locator('.customization-dialog-content')).toHaveAttribute('aria-busy','false');
+  await page.unroute('**/api/customizations');
+  await dialog.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(dialog.locator('.customization-entry-list')).toContainText('review');
+  await dialog.getByRole('button', { name: 'Close customizations' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.customization-library').getByRole('button', { name: 'Overview' })).toBeFocused();
 });

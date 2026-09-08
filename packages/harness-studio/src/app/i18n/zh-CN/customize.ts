@@ -1,6 +1,54 @@
 import type { customize as enCustomize } from "../en/customize.js";
 
 export const customize: typeof enCustomize = {
+  library: {
+    "refresh": "刷新",
+    "retry": "重试",
+    "loadFailed": "自定义配置加载失败，打开任一类别可重试。",
+
+  "title": "自定义配置",
+  "category": "类别",
+  "agent": "Agent 来源",
+  "allAgents": "所有 Agent",
+  "unassigned": "尚未识别 Agent",
+  "close": "关闭自定义配置",
+  "entryCount": "{{count}} 项",
+  "entryCount_other": "{{count}} 项",
+  "noEntries": "所选 Agent 在此类别中没有条目。",
+  "toolsBoundary": "仅展示已保留的 MCP 工具描述。新鲜度不代表服务当前已连接。",
+  "categories": {
+    "overview": "概览",
+    "plugins": "插件",
+    "mcp": "MCP 服务",
+    "skills": "技能",
+    "instructions": "指令",
+    "agents": "Agents",
+    "hooks": "钩子",
+    "tools": "工具",
+    "commands": "命令"
+  },
+  "scopes": {
+    "user": "用户",
+    "project": "项目",
+    "plugin": "插件",
+    "local": "本地",
+    "bundled": "内置",
+    "managed": "托管",
+    "unknown": "未知"
+  },
+  "evidence": {
+    "valid": "有效",
+    "invalid": "无效",
+    "partial": "校验信息不完整",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "unspecified": "未指定",
+    "unknown": "未知",
+    "current": "当前",
+    "within-ttl": "有效期内",
+    "expired": "已过期"
+  }
+},
   empty: {
     eyebrow: "自定义目录",
     titleConnected: "自定义分析不可用",

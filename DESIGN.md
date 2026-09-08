@@ -711,6 +711,16 @@ occupy more attention than the active task.
   locates its Session in the workspace; do not duplicate the calendar or turn
   the workspace into a second schedule view.
 
+- Customizations lives in a collapsible lower sidebar library above Settings,
+  outside the main Views. Category rows open a modal without replacing the
+  workbench. The dialog identifies Coding Agent provenance per entry and offers
+  category and Agent filters. Shared entries retain all observed Agents; counts
+  remain absent while metadata loads automatically on entry. Refresh is optional.
+  Escape and Close return focus to the opener. Library rows use a neutral hover,
+  a soft selection while their dialog is open, and filled primary/on-primary for
+  keyboard focus, including counts and icons. Do not outline the entire row as a
+  floating form control; the filled source-list state is its focus indicator.
+
 ### Actions and forms
 
 - One primary action per task region. Secondary actions use neutral styling;

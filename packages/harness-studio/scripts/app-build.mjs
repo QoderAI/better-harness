@@ -77,7 +77,7 @@ async function copyStudioAppStaticAssets({ development = false, revision } = {})
       development ? injectStudioDevReload(sourceHtml) : sourceHtml,
       "utf8",
     ),
-    ...["tokens.css", "shell.css", "workbench.css", "live-composer.css"].map((file) =>
+    ...["tokens.css", "shell.css", "workbench.css", "customization-library.css", "live-composer.css"].map((file) =>
       copyFile(join(appStylesDir, file), join(appDir, "assets", file)),
     ),
     copyFile(join(inspectorAssetRoot, "workbench.css"), join(appDir, "assets", "inspector-workbench.css")),

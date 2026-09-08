@@ -133,16 +133,16 @@ test("switches one shared View workbench between remembered Projects", async ({ 
 
   // The roving tab stop now covers Views only: the Project moved to the switcher,
   // which is a menu button with its own keyboard contract.
-  await viewNavigation(page).getByRole("button", { name: /^Customizations/ }).focus();
+  await viewNavigation(page).getByRole("button", { name: /^Sessions/ }).focus();
   await page.keyboard.press("ArrowDown");
-  await expect(viewNavigation(page).getByRole("button", { name: /^Sessions/ })).toBeFocused();
+  await expect(viewNavigation(page).getByRole("button", { name: /^Commits/ })).toBeFocused();
   await page.keyboard.press("End");
   await expect(viewNavigation(page).getByRole("button", { name: /^Compare/ })).toBeFocused();
   await page.keyboard.press("Home");
-  await expect(viewNavigation(page).getByRole("button", { name: /^Customizations/ })).toBeFocused();
+  await expect(viewNavigation(page).getByRole("button", { name: /^Sessions/ })).toBeFocused();
   expect(await page.locator(".studio-primary-nav nav button").evaluateAll((buttons) => buttons.filter((button) => button.tabIndex === 0).length)).toBe(1);
 
-  await expect(viewNavigation(page).getByRole("button")).toHaveCount(6);
+  await expect(viewNavigation(page).getByRole("button")).toHaveCount(5);
   await expect(page.locator(".studio-context-title")).toHaveText("Sessions");
 
   for (const layout of layouts) {

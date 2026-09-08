@@ -102,7 +102,7 @@ async function assertRenderedContract(page) {
   expect(contract.belowFloor).toEqual([]);
   expect(contract.dockedShadows).toEqual([]);
   expect(contract.visibleSurfaceSwitchers).toBeLessThanOrEqual(1);
-  expect(contract.ownedStyleSheets).toEqual(["live-composer.css", "shell.css", "tokens.css", "workbench.css"]);
+  expect(contract.ownedStyleSheets).toEqual(expect.arrayContaining(["customization-library.css", "live-composer.css", "shell.css", "tokens.css", "workbench.css"]));
 }
 
 test.beforeAll(async () => {

@@ -45,6 +45,7 @@ export function ProjectSidebar(props: {
   onDateRangeChange: (range: StudioDateRange) => void;
   /** Rendered as the sidebar's last row: appearance and language live here. */
   settings: ReactNode;
+  customizations: ReactNode;
 }): React.JSX.Element {
   const { t } = useTranslation("common");
   const navigationRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -55,7 +56,8 @@ export function ProjectSidebar(props: {
   // The sidebar now carries one level, so the roving tab stop covers the View
   // rows only. Projects moved to the switcher, which is a menu button with its
   // own keyboard contract.
-  const orderedIds = props.destinations.map((destination) => `view:${destination.id}`);
+  const viewDestinations = props.destinations.filter((destination) => destination.id !== "customizations");
+  const orderedIds = viewDestinations.map((destination) => `view:${destination.id}`);
   const selectedNavigationId = props.current === null ? "" : `view:${props.current}`;
   const [focusedNavigationId, setFocusedNavigationId] = useState(selectedNavigationId);
   const tabStopId = orderedIds.includes(focusedNavigationId)
@@ -196,12 +198,13 @@ export function ProjectSidebar(props: {
         aria-label={activeProject === undefined ? t("sidebar.configuredViewsAria") : t("sidebar.viewsAria", { label: activeProject.label })}
       >
         <h2>{t("sidebar.views")}</h2>
-        {props.destinations.map((destination) => renderView(destination))}
+        {viewDestinations.map((destination) => renderView(destination))}
       </section>
     </nav>
 
     {/* Settings closes the sidebar's column: a full-width row pinned to the
         bottom, the position a macOS source list uses for library-wide controls. */}
+    <div className="studio-sidebar-customizations">{props.customizations}</div>
     <footer className="studio-sidebar-footer">{props.settings}</footer>
   </aside>;
 }

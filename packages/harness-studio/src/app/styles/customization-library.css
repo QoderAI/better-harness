@@ -1,0 +1,56 @@
+.studio-sidebar-customizations { flex: 0 1 auto; min-height: var(--pane-header-height); max-height: 48%; overflow: auto; border-top: 1px solid var(--color-border); padding: var(--space-xs) var(--sidebar-inset); }
+.customization-library-toggle, .customization-library-entries > button { width: 100%; min-height: var(--navigation-row-height); display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--color-text-muted); text-align: left; }
+.customization-library-toggle { position: sticky; top: 0; background: var(--color-sidebar); color: var(--color-text); z-index: 1; }
+.customization-library-toggle > strong { flex: 1; font-weight: var(--weight-semibold); }
+.customization-library-toggle[aria-expanded="false"] > svg { transform: rotate(-90deg); }
+.customization-library-entries > button > svg { flex: none; }
+.customization-library-entries > button > span { flex: 1; }
+.customization-library-entries small { color: var(--color-text-subtle); font-variant-numeric: tabular-nums; }
+.customization-library button:hover { background: var(--color-surface-hover); color: var(--color-text); }
+/* Source-list states stay inside the row; keyboard focus uses the same filled
+   selection treatment as the main navigation, not a floating control frame. */
+.customization-library-entries > button[aria-expanded="true"] { background: var(--color-surface-selected); color: var(--color-text); }
+.customization-library-entries > button:focus-visible { outline: none; background: var(--color-primary); color: var(--color-on-primary); }
+.customization-library-entries > button:focus-visible small { color: inherit; }
+.customization-dialog { width: min(900px, calc(100vw - var(--space-xl))); max-width: none; height: min(720px, calc(100dvh - var(--space-xl))); max-height: none; padding: 0; border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-overlay); overflow: hidden; }
+.customization-dialog[open] { display: flex; flex-direction: column; }
+.customization-dialog::backdrop { background: var(--color-overlay); }
+.customization-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--color-border); }
+.customization-dialog-header > div { min-width: 0; display: flex; gap: var(--space-md); align-items: baseline; }
+.customization-dialog-header h2 { margin: 0; font-size: var(--type-section-size); line-height: var(--type-section-line); }
+.customization-dialog-header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); }
+.customization-dialog-header button { flex: none; display: grid; place-items: center; width: var(--toolbar-target); height: var(--toolbar-target); padding: 0; }
+.customization-dialog-filters { display: flex; align-items: end; gap: var(--space-md); padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.customization-dialog-filters label { display: grid; min-width: 0; gap: var(--space-xs); flex: 1; color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.customization-dialog-filters select { min-width: 0; width: 100%; height: var(--control-height); font: inherit; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-xs); padding-inline: var(--space-sm); }
+.customization-dialog-filters > button { min-height: var(--control-height); display: flex; align-items: center; gap: var(--space-xs); }
+.customization-dialog-content { min-height: 0; flex: 1; overflow: auto; padding: var(--space-md) var(--space-lg); overflow-wrap: anywhere; }
+.customization-dialog-content > p, .customization-library-empty p { color: var(--color-text-muted); }
+.customization-dialog-content > [role="alert"] { color: var(--color-danger); }
+.customization-library-empty { padding-block: var(--space-xl); }
+.customization-library-empty h3 { font-size: var(--type-section-size); line-height: var(--type-section-line); }
+.customization-agent-overview > div { display: flex; flex-wrap: wrap; gap: var(--space-sm); padding-block: var(--space-sm); border-bottom: 1px solid var(--color-border); }
+.customization-agent-overview strong { margin-right: auto; }
+.customization-agent-overview small { color: var(--color-text-muted); }
+.customization-list-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--space-md); }
+.customization-list-heading h3 { font-size: var(--type-label-size); }
+.customization-list-heading > span { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.customization-entry-list { margin: 0; padding: 0; list-style: none; }
+.customization-entry-list > li { padding-block: var(--space-md); border-top: 1px solid var(--color-border); }
+.customization-entry-name { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md); }
+.customization-entry-agents { flex: none; max-width: 50%; font-weight: var(--weight-medium); }
+.customization-entry-list p { margin: var(--space-xs) 0; color: var(--color-text-muted); }
+.customization-entry-meta { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-block: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.customization-entry-list code { font-size: var(--type-meta-size); color: var(--color-text-subtle); white-space: normal; }
+@media (max-width: 760px) {
+  .customization-library button { min-height: var(--control-height); }
+  .customization-dialog { width: calc(100vw - var(--space-md)); height: calc(100dvh - var(--space-md)); }
+  .customization-dialog-header, .customization-dialog-filters, .customization-dialog-content { padding-inline: var(--space-md); }
+  .customization-dialog-filters { flex-wrap: wrap; }
+  .customization-dialog-filters > button { flex-basis: 100%; justify-content: center; }
+  .customization-dialog-header > div { display: block; }
+  .customization-entry-name { flex-wrap: wrap; gap: var(--space-xs); }
+  .customization-entry-agents { max-width: 100%; }
+}
+
+.customization-library-status { margin: var(--space-xs) var(--space-sm); color: var(--color-text-muted); font-size: var(--type-meta-size); overflow-wrap: anywhere; }

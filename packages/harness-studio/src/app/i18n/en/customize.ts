@@ -1,4 +1,52 @@
 export const customize = {
+  library: {
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "loadFailed": "Customizations could not load. Open a category to retry.",
+
+  "title": "Customizations",
+  "category": "Category",
+  "agent": "Agent",
+  "allAgents": "All Agents",
+  "unassigned": "Agent not identified",
+  "close": "Close customizations",
+  "entryCount": "{{count}} entry",
+  "entryCount_other": "{{count}} entries",
+  "noEntries": "No entries in this category for the selected Agent.",
+  "toolsBoundary": "Retained MCP tool descriptors only. Their freshness does not prove the server is currently connected.",
+  "categories": {
+    "overview": "Overview",
+    "plugins": "Plugins",
+    "mcp": "MCP Servers",
+    "skills": "Skills",
+    "instructions": "Instructions",
+    "agents": "Agents",
+    "hooks": "Hooks",
+    "tools": "Tools",
+    "commands": "Commands"
+  },
+  "scopes": {
+    "user": "User",
+    "project": "Project",
+    "plugin": "Plugin",
+    "local": "Local",
+    "bundled": "Bundled",
+    "managed": "Managed",
+    "unknown": "Unknown"
+  },
+  "evidence": {
+    "valid": "Valid",
+    "invalid": "Invalid",
+    "partial": "Validation incomplete",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "unspecified": "Unspecified",
+    "unknown": "Unknown",
+    "current": "Current",
+    "within-ttl": "Within Ttl",
+    "expired": "Expired"
+  }
+},
   empty: {
     eyebrow: "Customization catalog",
     titleConnected: "Customization analysis is unavailable",

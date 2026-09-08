@@ -183,7 +183,7 @@ function addHostFailure(
     hostId,
     status: "error",
     observedAt,
-    message: `${label} customization collection failed. ${reason} Other Host results remain available; use Analyze again to retry.`,
+    message: `${label} customization collection failed. ${reason} Other Host results remain available; use Refresh to retry.`,
     counts: { packages: 0, definitions: 0, registrations: 0 },
   };
   accumulator.runtimeObservations.set(observation.id, observation);

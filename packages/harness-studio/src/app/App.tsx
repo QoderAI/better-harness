@@ -208,7 +208,8 @@ export function App(): React.JSX.Element {
   const [sessionOpenId, setSessionOpenId] = useState<string>();
   const [configFailure, setConfigFailure] = useState<string | null>(null);
   const [bootstrapRevision, setBootstrapRevision] = useState(0);
-  const [area, setArea] = useState<StudioArea>(areaFromHash);
+  const [area, setArea] = useState<StudioArea>(() => areaFromHash() === "customizations" ? STUDIO_DEFAULT_AREA : areaFromHash());
+  const [customizationRequest, setCustomizationRequest] = useState(() => areaFromHash() === "customizations" ? 1 : 0);
   const [locationRevision, setLocationRevision] = useState(0);
   const [compareSurface, setCompareSurface] = useState<StudioCompareSurface>("sessions");
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -311,7 +312,9 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const onHashChange = (): void => {
-      setArea(studioLocationFromHash().area);
+      const next = studioLocationFromHash().area;
+      if (next === "customizations") setCustomizationRequest((value) => value + 1);
+      else setArea(next);
       setLocationRevision((revision) => revision + 1);
     };
     globalThis.addEventListener("hashchange", onHashChange);
@@ -324,7 +327,11 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     if (config === undefined || projectOpening) return;
-    const location = studioLocationFromHash();
+    let location = studioLocationFromHash();
+    if (location.area === "customizations") {
+      location = { ...location, area };
+      globalThis.history.replaceState(null, "", studioLocationHash({ ...location, area }));
+    }
     if (location.projectId !== undefined && location.projectId !== activeProjectId && projects.some((project) => project.id === location.projectId)) {
       void activateStudioProject(location.projectId, false);
       return;
@@ -557,6 +564,7 @@ export function App(): React.JSX.Element {
       onCloseNavigation={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }}
       dateRange={dateRange}
       onDateRangeChange={setDateRange}
+      customizations={<CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} enabled={config.customizationAnalysisEnabled} openRequest={customizationRequest} onOpenHandled={() => setCustomizationRequest(0)} onAnalyzed={customizationAnalyzed} />}
       settings={<SettingsMenu theme={theme} onTheme={chooseTheme} />}
     />
     <SidebarSash width={sidebarWidth} onWidth={setSidebarWidth} />
@@ -577,9 +585,6 @@ export function App(): React.JSX.Element {
           const projectId = await workspaceChanged();
           globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
         }} /> : <>
-        {area === "customizations" && (config.customizationAnalysisEnabled
-          ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />
-          : <EmptyWorkspace eyebrow={t("customize:empty.eyebrow")} title={t("customize:empty.titleConnected")} detail={t("customize:empty.detailConnected")} command="npx @qoder-ai/harness-studio" />)}
         {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} dateRange={dateRange} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} dateRange={dateRange} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}-${dateScopeKey}`} dateRange={dateRange} config={config} />}

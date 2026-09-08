@@ -149,7 +149,7 @@ describe("Studio customization collector", () => {
     expect(serialized).toContain("Workspace/.agents/skills/review/SKILL.md");
     expect(serialized).toContain("Claude customization collection failed");
     expect(serialized).toContain("collector runtime failed unexpectedly");
-    expect(serialized).toContain("Analyze again to retry");
+    expect(serialized).toContain("Refresh to retry");
     expect(serialized).not.toContain("private failure");
   });
 });
