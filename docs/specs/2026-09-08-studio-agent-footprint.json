@@ -1,0 +1,86 @@
+{
+  "kind": "studio.agent-footprint.v1",
+  "measuredAt": "2026-09-08T15:44:10.251Z",
+  "platform": "darwin",
+  "arch": "arm64",
+  "node": "v26.8.1",
+  "npm": "11.19.0",
+  "method": "Separate npm production installs with scripts disabled; logical regular-file bytes and npm-pack gzip tarballs with bundled dependency closures. Lockfiles and archives retained.",
+  "exclusions": [
+    "Node/Electron",
+    "Studio and its PTY/terminal bridge",
+    "package-manager cache",
+    "user profiles/sessions",
+    "postinstall downloads",
+    "filesystem block allocation",
+    "runtime memory"
+  ],
+  "results": [
+    {
+      "id": "pi",
+      "name": "@earendil-works/pi-coding-agent",
+      "version": "0.85.1",
+      "installedVersion": "0.85.1",
+      "closure": {
+        "bytes": 415235337,
+        "files": 13648
+      },
+      "archiveBytes": 141115802,
+      "archive": "pi/studio-footprint-pi-1.0.0.tgz",
+      "archiveSha256": "45474a53578dd4d1275341d34e68a67cc0e3e0af5afb91cd8c54f90523d0d8bf",
+      "lockSha256": "5f9c6b954f5a85c7b1252e4f9afa66ba75cdc95fb33f7cef16d2c204738b2aa8"
+    },
+    {
+      "id": "dsh",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.1.2-rc.1",
+      "installedVersion": "0.1.2-rc.1",
+      "closure": {
+        "bytes": 220391409,
+        "files": 24892
+      },
+      "archiveBytes": 45722785,
+      "archive": "dsh/studio-footprint-dsh-1.0.0.tgz",
+      "archiveSha256": "502081b4f4c0cd9fdc31693852b73931e41d38b14f56d67aa8124434b305b2d2",
+      "lockSha256": "99b29deceb35a30036adc56bf0c0e57895136d928d16302b86958f4bedb69c4a"
+    }
+  ],
+  "shared": [
+    {
+      "path": "node_modules/electron/dist",
+      "bytes": 321344223,
+      "files": 259
+    },
+    {
+      "path": "node_modules/node-pty",
+      "bytes": 64363742,
+      "files": 286
+    },
+    {
+      "path": "node_modules/node-addon-api",
+      "bytes": 396312,
+      "files": 19
+    },
+    {
+      "path": "node_modules/@xterm/xterm",
+      "bytes": 5921599,
+      "files": 161
+    },
+    {
+      "path": "node_modules/@xterm/addon-fit",
+      "bytes": 20727,
+      "files": 9
+    }
+  ],
+  "observations": {
+    "piEsbuildAllPlatformBytes": 296666027,
+    "piEsbuildDarwinArm64Bytes": 10574305,
+    "sharedElectronVersion": "44.2.0",
+    "bridgeVersions": {
+      "node-pty": "1.1.0",
+      "node-addon-api": "7.1.1",
+      "@xterm/xterm": "6.0.0",
+      "@xterm/addon-fit": "0.11.0"
+    }
+  }
+}

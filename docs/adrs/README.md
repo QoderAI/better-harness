@@ -19,6 +19,7 @@ deprecated.
 | `ADR-0006` | [Session Notebook Trace and Outcome Projection](session-notebook-evidence-projection.md) | Proposed | 2026-08-18 | Ordered Turn evidence, response availability, evidence-bounded outcomes, and session-scoped patch requirements |
 | `ADR-0007` | [Harness Studio Artifact Runtime and Provider Architecture](studio-artifact-runtime-and-providers.md) | Proposed | 2026-08-22 | Revision-bound data and code lifecycles, renderer surfaces, external providers, and retained trace boundaries |
 | `ADR-0008` | [Official DSH workspace and ACP comparison in Studio](studio-dsh-acp-workspace.md) | Proposed | 2026-09-08 | Official DSH Web workspace, managed runtime, and ACP comparison |
+| `ADR-0009` | [Preserve Pi's native terminal interface in Studio](studio-native-pi-terminal.md) | Proposed | 2026-09-08 | Native Pi PTY, minimal launch page, and distribution footprint boundaries |
 
 ## Lifecycle
 

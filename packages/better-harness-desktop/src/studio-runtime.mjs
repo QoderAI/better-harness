@@ -5,6 +5,7 @@ import { message, isMessage } from './protocol.mjs';
 import {
   startHarnessStudioServer, defaultAppDir, discoverAcpAgentProfiles,
   createDshWebHost, discoverDshWebCommand,
+  createPiTerminalHost, discoverPiCommand,
   createRustEvidenceHost, createRustEvidenceWorkspaceSessionProvider,
   createBundledAgentCustomizationCollector,
 } from '@qoder-ai/harness-studio';
@@ -82,8 +83,12 @@ port.on('message', async (data) => {
       const dshWebCommand = await discoverDshWebCommand();
       const dshWebHost = dshWebCommand ? createDshWebHost(dshWebCommand) : undefined;
       if (dshWebHost) compilers.add(dshWebHost);
+      const piCommand = await discoverPiCommand();
+      const piTerminalHost = piCommand ? createPiTerminalHost(piCommand) : undefined;
+      if (piTerminalHost) compilers.add(piTerminalHost);
       server = await startHarnessStudioServer({
         dshWebHost,
+        piTerminalHost,
         oxcCompilerFactory,
         acpHostExecutable: data.acpHostExecutable,
         acpHostTransport: data.acpHostTransport,

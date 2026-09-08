@@ -63,6 +63,7 @@ export interface StudioWorkspaceSessionProvider {
 export interface HarnessStudioServerOptions {
   /** Installed official DSH Web application lifecycle, supplied by the desktop host. */
   dshWebHost?: import("./dsh-web-host.js").DshWebHost;
+  piTerminalHost?: import("./pi-terminal-host.js").PiTerminalHost;
   /** Host-owned compiler transport; omitted in browser/CLI mode. */
   oxcCompilerFactory?: OxcCompilerFactory;
   /** Optional per-launch desktop credential. Browser CLI leaves this unset. */

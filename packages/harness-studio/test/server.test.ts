@@ -261,6 +261,7 @@ describe("harness-studio server", () => {
 
     expect(config).toEqual({
       dshWebEnabled: false,
+      piTerminalEnabled: false,
       acpAgentLabel: "ACP Agent",
       acpEnabled: false,
       acpRuntimeProfile: "acp-v1-stdio",

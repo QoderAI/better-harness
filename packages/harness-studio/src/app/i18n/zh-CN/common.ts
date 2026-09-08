@@ -29,12 +29,21 @@ export const common: typeof enCommon = {
   },
   area: {
     dsh: "DSH",
+    pi: "Pi",
     customizations: "自定义",
     sessions: "会话",
     commits: "提交",
     artifacts: "产物",
     debugger: "调试器",
     compare: "对比",
+  },
+  pi: {
+    inputBusy: "终端仍在处理输入，请稍后再粘贴。",
+    open: "启动 Pi", starting: "启动中…", failed: "无法打开 Pi 终端。",
+    terminal: "Pi 官方终端", keyboardHint: "Ctrl+Shift+F6 将焦点返回 Studio 导航。",
+    missingDetail: "Pi 不可用。请将已安装的 Pi 加入 Studio Desktop 的 PATH 并重启 Studio。",
+    projectDetail: "从侧栏打开本地项目后启动 Pi。", readOnlyDetail: "请选择本地项目以启动 Pi。",
+    status: { ready: "Pi 官方终端", missing: "需要配置 Pi", project: "需要项目", readOnly: "只读项目" },
   },
   dsh: {
     scope: "工作区由 DSH 选择",

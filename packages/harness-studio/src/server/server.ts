@@ -21,7 +21,7 @@ import {
 import { createCheckpointHistoryCatalogAdapter } from "./query/checkpoint-history.js";
 import { discoverArtifactProviderRuntime } from "./artifacts/registry/artifact-provider-discovery.js";
 import type { HarnessStudioServerOptions, HarnessStudioState } from "./studio-types.js";
-import { decodeRouteComponent, respondJson, sameOriginRequest } from "./http-utils.js";
+import { decodeRouteComponent, readJsonBody, respondJson, sameOriginRequest } from "./http-utils.js";
 import { assertStudioBindAddressAllowed } from "./bind-policy.js";
 import { streamHarnessRun } from "./run-stream.js";
 import {
@@ -192,6 +192,7 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
   });
   server.once("close", () => {
     void resolvedOptions.dshWebHost?.close();
+    void resolvedOptions.piTerminalHost?.close();
     cancelAllAcpRuns(state);
     cancelAllArtifactAgentRuns(state);
     state.artifactIntentAdmissions.clear();
@@ -254,6 +255,32 @@ async function route(
   experimentRuns: Map<string, AbortController>,
 ): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
+  if (url.pathname === "/api/pi/terminal") {
+    if (!sameOriginRequest(request)) { respondJson(response, 403, { error: "Cross-origin Pi control is not allowed." }); return; }
+    if (!options.piTerminalHost) { respondJson(response, 404, { error: "Pi terminal is not available." }); return; }
+    if (!acceptProjectBinding(request, response, state, true)) return;
+    const binding = JSON.stringify([request.headers["x-harness-project-id"], request.headers["x-harness-project-revision"]]);
+    const headers = { "Cache-Control": "no-store" };
+    if (request.method === "GET") {
+      const cursor = Number(url.searchParams.get("cursor") ?? 0);
+      if (!Number.isSafeInteger(cursor) || cursor < 0) { respondJson(response, 400, { error: "Invalid terminal cursor." }); return; }
+      respondJson(response, 200, options.piTerminalHost.state(binding, cursor), headers);
+    } else if (request.method === "POST") {
+      try {
+        const body = await readJsonBody(request) as { appearance?: unknown };
+        const appearance = body.appearance === "light" || body.appearance === "dark" ? body.appearance : undefined;
+        respondJson(response, 200, await options.piTerminalHost.open(binding, state.workspace!.localDirectory!, appearance), headers);
+      }
+      catch { respondJson(response, 503, { error: "Could not launch Pi. Check its executable and terminal runtime." }, headers); }
+    } else if (request.method === "PATCH") {
+      try {
+        const body = await readJsonBody(request) as { id: string; data?: string; cols?: number; rows?: number };
+        options.piTerminalHost.control(binding, body.id, body);
+        respondJson(response, 200, { ok: true }, headers);
+      } catch { respondJson(response, 409, { error: "Pi terminal input was rejected. Reopen its active Project." }, headers); }
+    } else respondJson(response, 405, { error: "Use GET, POST or PATCH." });
+    return;
+  }
   if (url.pathname === "/api/dsh/web") {
     if (!sameOriginRequest(request)) { respondJson(response, 403, { error: "Cross-origin DSH control is not allowed." }); return; }
     if (!options.dshWebHost) { respondJson(response, 404, { error: "The official DSH Web host is not available." }); return; }
@@ -280,6 +307,7 @@ async function route(
       // let a reader pick which two Agents answer one prompt.
       acpAgents: publicAcpAgentProfiles(options).agents,
       dshWebEnabled: options.dshWebHost !== undefined,
+      piTerminalEnabled: options.piTerminalHost !== undefined,
       artifactsEnabled: state.artifactDirectory !== undefined,
       artifactCount: state.artifactPaths?.length,
       evidenceEnabled: activeSourcePath(state.sourceCatalog, state.activeSources, "evidence") !== undefined,
@@ -833,6 +861,7 @@ export async function startHarnessStudioServer(
     url: `http://${host}:${address.port}`,
     close: async () => {
       await options.dshWebHost?.close();
+      await options.piTerminalHost?.close();
       return new Promise<void>((resolvePromise, rejectPromise) => {
         server.close((error) => (error ? rejectPromise(error) : resolvePromise()));
         server.closeAllConnections();

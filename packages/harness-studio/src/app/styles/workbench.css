@@ -2263,3 +2263,9 @@
 .dsh-launch { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-md); min-height: 0; padding: var(--space-md); overflow: auto; }
 .dsh-launch p { max-width: 42rem; margin: 0; text-align: center; overflow-wrap: anywhere; color: var(--color-text-muted); }
 .dsh-workspace button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+.pi-workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: hidden; }
+.pi-workspace[hidden] { display: none; }
+.pi-terminal { flex: 1; min-height: 0; min-width: 0; overflow: hidden; padding: var(--space-sm); background: var(--color-workspace); font-size: var(--type-code-size); }
+.pi-terminal:focus-within { outline: 1px solid var(--color-focus); outline-offset: -1px; }
+.pi-terminal-error { color: var(--color-danger); margin: var(--space-sm); }

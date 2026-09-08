@@ -62,3 +62,4 @@ export {
 } from "./server/workspace/rust-evidence-provider.js";
 
 export { createDshWebHost, discoverDshWebCommand, type DshWebHost, type DshWebState } from "./server/dsh-web-host.js";
+export { createPiTerminalHost, discoverPiCommand, type PiTerminalHost } from "./server/pi-terminal-host.js";

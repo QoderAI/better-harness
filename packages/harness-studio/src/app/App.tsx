@@ -12,6 +12,7 @@ import { ArtifactsWorkspace } from "./ArtifactsWorkspace.js";
 import { ArtifactView } from "./artifacts/ArtifactView.js";
 import { CompareView } from "./CompareView.js";
 import { CompareLiveView } from "./CompareLiveView.js";
+import { PiWorkspace } from "./PiWorkspace.js";
 import { DshWorkspace } from "./DshWorkspace.js";
 import { CustomizationView } from "./CustomizationView.js";
 import { ExperimentView } from "./experiment/ExperimentView.js";
@@ -64,6 +65,7 @@ const STUDIO_AREAS: readonly StudioArea[] = [
   "artifacts",
   "debugger",
   "dsh",
+  "pi",
   "compare",
 ];
 
@@ -592,6 +594,7 @@ export function App(): React.JSX.Element {
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} dateRange={dateRange} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}-${dateScopeKey}`} dateRange={dateRange} config={config} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
+        <PiWorkspace visible={area === "pi"} key={`pi-${activeProject?.id}-${config.projectRevision}`} config={config} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />
         <DshWorkspace visible={area === "dsh"} key="dsh-official" config={config} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />
         {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         </>}

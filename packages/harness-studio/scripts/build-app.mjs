@@ -1,5 +1,9 @@
 // Bundle the React app with the repo-conventional esbuild-wasm toolchain.
 import { appDir, buildStudioApp, buildStudioServerRuntime } from "./app-build.mjs";
+import { prepareTerminal } from "./prepare-terminal.mjs";
+import { fileURLToPath } from "node:url";
+
+await prepareTerminal(fileURLToPath(new URL('..', import.meta.url)));
 
 await buildStudioApp();
 // Studio owns the on-demand collection lifecycle, while the existing MJS
