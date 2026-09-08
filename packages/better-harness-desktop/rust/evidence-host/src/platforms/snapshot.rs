@@ -52,7 +52,7 @@ impl Snapshot {
     }
 
     pub fn prompt(&mut self, text: &str, timestamp: Option<String>) {
-        let prompt = truncate_prompt(text);
+        let prompt = truncate_prompt(&crate::privacy::prepare_prompt_text(text));
         if prompt.is_empty() {
             return;
         }
