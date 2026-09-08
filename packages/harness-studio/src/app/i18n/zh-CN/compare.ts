@@ -9,6 +9,7 @@ export const compare: typeof enCompare = {
     results: "证据结果",
   },
   live: {
+    chooseSession: "选择会话",
     newComparison: "新建比较",
     ready: "已就绪",
     configuring: "配置中…",

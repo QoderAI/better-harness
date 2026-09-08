@@ -323,7 +323,7 @@ export function RunView({
     }
   }, []);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (connect = false) => {
     if (busy.current || prompt.trim().length === 0 || selectedAgent === undefined) return;
     const endpoint = liveRunEndpoint(selectedAgent, { run: runEndpoint, ...(acpEndpoint === undefined ? {} : { acp: acpEndpoint }) });
     if (endpoint === undefined) return;
@@ -346,7 +346,7 @@ export function RunView({
     liveStateRef.current = fresh;
     setState(fresh);
     try {
-      await streamRun(selectedRuntime === "acp" ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}conversation=1` : endpoint, promptText, threadId, runId, project, (events) => {
+      await streamRun(selectedRuntime === "acp" ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}conversation=1${connect ? "&connect=1" : ""}` : endpoint, promptText, threadId, runId, project, (events) => {
         // Fold outside any React updater: the run store mutates its keyed map
         // for O(1) deltas and sequence ids reject duplicate frames.
         liveStateRef.current = events.reduce(applyHarnessRunEvent, liveStateRef.current);
@@ -403,7 +403,7 @@ export function RunView({
   const runMode = saved ? t("mode.savedRun") : live ? t("mode.liveWithStatus", { status: liveRunStatusLabel(viewState, t) }) : retainedSession.mode;
   const liveObservation = liveObservationCopy(viewState, t);
 
-  const actions = <div className="debugger-top-actions">{navigation}{live && activeRuntime === "acp" && state.status === "running" && !state.conversation ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />{t("cancelRun")}</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-label={t("savedRuns")} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>{t("savedRuns")}{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label={t("savedRuns")}>{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>{t("backToLive")}</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">{t("noSavedRuns")}</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{t("savedRunMeta", { count: run.toolCallCount, time: run.savedAt.slice(0, 19).replace("T", " ") })}</span></button>)}</div>}</div><button type="button" className="new-run" aria-label={t("newLiveRun")} title={t("newLiveRun")} onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" /><span>{t("newLiveRun")}</span></button></div>;
+  const actions = <div className="debugger-top-actions">{navigation}{live && activeRuntime === "acp" && state.status === "running" && !state.conversation && !state.connection ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />{t("cancelRun")}</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-label={t("savedRuns")} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>{t("savedRuns")}{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label={t("savedRuns")}>{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>{t("backToLive")}</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">{t("noSavedRuns")}</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{t("savedRunMeta", { count: run.toolCallCount, time: run.savedAt.slice(0, 19).replace("T", " ") })}</span></button>)}</div>}</div><button type="button" className="new-run" aria-label={t("newLiveRun")} title={t("newLiveRun")} onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" /><span>{t("newLiveRun")}</span></button></div>;
   const status = <div className="debugger-status" role="status"><span className={`status-dot status-${viewState.status}`} aria-hidden="true" /><span>{live ? liveObservation.title : runMode}</span><span>{t("live.retainedEvents", { count: live ? liveTimeline.length : retainedSession.events.length })}</span>{live && liveTimeline.length > 0 && <div className="debugger-status-track">{liveBins.map((bin) => <span key={bin.index} className={`timeline-segment kind-${bin.kind}`} title={t("live.binEvents", { count: bin.count })} />)}</div>}{embedded && !live && <nav className="debugger-status-cursor" aria-label={t("minimap.aria")}>{retainedSession.events.map((event, index) => <button key={event.id} type="button" aria-label={t("minimap.segmentAria", { phase: event.phase, title: event.title })} title={event.title} aria-current={event.id === cursor.eventId ? "true" : undefined} onClick={() => selectCursor({ eventId: event.id })}>{index + 1}</button>)}</nav>}</div>;
   return <section className={`debugger-shell${embedded ? " embedded-debugger" : ""}${live ? " live-debugger" : ""}`}>
     {embedded ? <ToolbarActions>{actions}</ToolbarActions> : <header className="debugger-topbar"><strong>{t("title.liveRun")}</strong>{actions}</header>}
@@ -434,7 +434,7 @@ export function RunView({
     {!embedded && !live && <TimelineMinimap session={retainedSession} cursor={cursor} onSelect={selectCursor} />}
     {!embedded && status}
 
-{composerOpen && <LiveRunComposer projectLabel={project?.label} agents={agentChoices} selectedAgent={selectedAgent} prompt={prompt} running={state.status === "running"} onAgent={setRequestedAgent} onPrompt={setPrompt} onClose={() => setComposerOpen(false)} onRun={() => void start()} />}
+{composerOpen && <LiveRunComposer projectLabel={project?.label} agents={agentChoices} selectedAgent={selectedAgent} prompt={prompt} running={state.status === "running"} onAgent={setRequestedAgent} onPrompt={setPrompt} onClose={() => setComposerOpen(false)} onRun={() => void start()} onChooseSession={selectedAgent && isAcpChoice(selectedAgent) ? () => void start(true) : undefined} />}
   </section>;
 }
 
@@ -771,6 +771,7 @@ function AcpFrameList({ frames }: { frames: readonly ObservedProtocolEvent[] }):
 
 function liveRunStatusLabel(state: HarnessRunState, t: (key: string, options?: Record<string, unknown>) => string): string {
   if (state.pendingPermission !== undefined) return t("status.permissionRequired");
+  if (state.connection) return t("connection.title");
   if (state.conversation?.status === "idle") return t("conversation.status.idle");
   if (state.status === "running") return t("status.running");
   if (state.status === "finished") return t("status.finished");
@@ -779,6 +780,7 @@ function liveRunStatusLabel(state: HarnessRunState, t: (key: string, options?: R
 }
 
 function liveObservationCopy(state: HarnessRunState, t: (key: string, options?: Record<string, unknown>) => string): { title: string; detail: string } {
+  if (state.connection) return { title: t("connection.title"), detail: t("connection.projectHistory") };
   if (state.conversation?.status === "idle") return { title: t("conversation.status.idle"), detail: t("conversation.followup") };
   if (state.pendingPermission !== undefined) return { title: t("observation.permissionTitle"), detail: t("observation.permissionDetail") };
   if (state.status === "running") return { title: t("observation.runningTitle"), detail: t("observation.runningDetail") };

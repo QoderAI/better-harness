@@ -97,3 +97,5 @@ export {
 export type { AcpSessionControl, AcpSessionRecovery, AcpSessionReadyHandler } from "./acp-session-control.js";
 
 export * from "./acp-conversation.js";
+
+export type { AcpConnectionControl, AcpConnectionReadyHandler, AcpAuthenticationMethod } from "./acp-connection-control.js";

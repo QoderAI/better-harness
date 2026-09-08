@@ -1,3 +1,4 @@
+import { createAcpConnectionControl, prepareAcpSession, type AcpConnectionReadyHandler } from "./acp-connection-control.js";
 import type { AcpSessionRecovery } from "./acp-session-control.js";
 import { conversationCapabilities, type AcpConversation } from "./acp-conversation.js";
 import type { AcpSessionReadyHandler } from "./acp-session-control.js";
@@ -51,6 +52,7 @@ export interface AcpSdkExecutorOptions {
   conversation?: AcpConversation;
   recovery?: AcpSessionRecovery;
   onSessionReady?: AcpSessionReadyHandler;
+  onConnectionReady?: AcpConnectionReadyHandler;
   sessionConfig?: Readonly<Record<string, string | boolean>>;
   abortSignal?: AbortSignal;
   loadSdk?: () => Promise<AcpSdk>;
@@ -94,6 +96,8 @@ export class AcpSdkExecutor implements HarnessExecutor {
     let child: ChildProcessWithoutNullStreams | undefined;
     let stopReason: string | undefined;
     let sessionId: string | undefined;
+    let effectiveRecovery = this.options.recovery;
+    let disposeConnection: (() => void) | undefined;
     let acknowledgedSessionConfig: Record<string, string | boolean> = {};
     let stderr = "";
     try {
@@ -176,20 +180,30 @@ export class AcpSdkExecutor implements HarnessExecutor {
           clientCapabilities: {},
           clientInfo: { name: "Better Harness Studio", version: "0.1.1" },
         }, abortSignal === undefined ? undefined : { cancellationSignal: abortSignal }), abortSignal, "initialize");
-        const recovery = this.options.recovery;
+        const connectionControl = createAcpConnectionControl(initialized, {
+          list: params => agent.request(sdk.methods.agent.session.list, params),
+          authenticate: methodId => agent.request(sdk.methods.agent.authenticate, { methodId }),
+        });
+        disposeConnection = connectionControl.dispose;
+        const setup = await prepareAcpSession(connectionControl.control, this.options.onConnectionReady, effectiveRecovery, async recovery => {
+          const caps = initialized.agentCapabilities;
+          const canLoad = caps?.loadSession === true;
+          const canResume = caps?.sessionCapabilities?.resume != null;
+          if (recovery && !(recovery.method === "resume" ? canResume : canLoad || canResume)) throw new Error("This Agent cannot restore a previous session.");
+          const params = { cwd: task.cwd ?? process.cwd(), mcpServers: [] };
+          let created: { sessionId: string };
+          if (recovery) {
+            if (recovery.method === "resume" || !canLoad) await requestWithAbort(() => agent.request(sdk.methods.agent.session.resume, { ...params, sessionId: recovery.sessionId }), abortSignal, "session/resume");
+            else await requestWithAbort(() => agent.request(sdk.methods.agent.session.load, { ...params, sessionId: recovery.sessionId }), abortSignal, "session/load");
+            created = { sessionId: recovery.sessionId };
+          } else {
+            created = await requestWithAbort(() => agent.request(sdk.methods.agent.session.new, { cwd: params.cwd, mcpServers: [] }, abortSignal === undefined ? undefined : { cancellationSignal: abortSignal }), abortSignal, "session/new");
+          }
+          return created;
+        });
+        effectiveRecovery = setup.recovery;
+        const created = setup.value;
         const caps = initialized.agentCapabilities;
-        const canLoad = caps?.loadSession === true;
-        const canResume = caps?.sessionCapabilities?.resume != null;
-        if (recovery && !(recovery.method === "resume" ? canResume : canLoad || canResume)) throw new Error("This Agent cannot restore a previous session.");
-        const params = { cwd: task.cwd ?? process.cwd(), mcpServers: [] };
-        let created: { sessionId: string };
-        if (recovery) {
-          if (recovery.method === "resume" || !canLoad) await requestWithAbort(() => agent.request(sdk.methods.agent.session.resume, { ...params, sessionId: recovery.sessionId }), abortSignal, "session/resume");
-          else await requestWithAbort(() => agent.request(sdk.methods.agent.session.load, { ...params, sessionId: recovery.sessionId }), abortSignal, "session/load");
-          created = { sessionId: recovery.sessionId };
-        } else {
-          created = await requestWithAbort(() => agent.request(sdk.methods.agent.session.new, { cwd: params.cwd, mcpServers: [] }, abortSignal === undefined ? undefined : { cancellationSignal: abortSignal }), abortSignal, "session/new");
-        }
         sessionId = created.sessionId;
         acknowledgedSessionConfig = await applySessionConfig(
           agent,
@@ -226,10 +240,10 @@ export class AcpSdkExecutor implements HarnessExecutor {
               try { return await agent.request(sdk.methods.agent.session.prompt, { sessionId: created.sessionId, prompt: content }); }
               finally { emitter.endMessage(); }
             },
-          }, { id: "initial", content: [{ type: "text", text: task.prompt }] }, [{ type: "text", text: this.options.recovery ? task.prompt : prompt }]);
+          }, { id: "initial", content: [{ type: "text", text: task.prompt }] }, [{ type: "text", text: effectiveRecovery ? task.prompt : prompt }]);
           return await requestWithAbort(() => agent.request(sdk.methods.agent.session.prompt, {
             sessionId: created.sessionId,
-            prompt: [{ type: "text", text: prompt }],
+            prompt: [{ type: "text", text: effectiveRecovery ? task.prompt : prompt }],
           }, abortSignal === undefined ? undefined : { cancellationSignal: abortSignal }), abortSignal, "session/prompt");
         } finally {
           abortSignal?.removeEventListener("abort", notifyCancel);
@@ -319,8 +333,12 @@ export class AcpSdkExecutor implements HarnessExecutor {
       };
     } finally {
       await this.options.conversation?.close().catch(() => undefined);
-      await this.options.onSessionReady?.(undefined);
-      await reapAgent(child);
+      disposeConnection?.();
+      try { await this.options.onConnectionReady?.(undefined); }
+      finally {
+        try { await this.options.onSessionReady?.(undefined); }
+        finally { await reapAgent(child); }
+      }
     }
   }
 }

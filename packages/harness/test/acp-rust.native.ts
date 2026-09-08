@@ -409,3 +409,32 @@ it.each([
   expect(events.filter((event) => event.type === "tool-call-started")).toHaveLength(2);
   expect(result.output).toContain("**Rich content**");
 });
+
+it.each([{ transport: "stdio" as const, executable: HOST_EXECUTABLE }, ...(process.platform === "darwin" ? [{ transport: "nsxpc" as const, executable: NSXPC_BRIDGE }] : [])])("discovers and authenticates before session creation through $transport", async ({ transport, executable }) => {
+  const { bundle, revision } = await revisionUnderTest();
+  let retained: import("../src/exec/acp-connection-control.js").AcpConnectionControl | undefined;
+  const states: boolean[] = [];
+  const result = await new AcpRustExecutor({
+    hostExecutable: executable, transport, command: process.execPath, args: [FIXTURE_AGENT, "--conversation", "--connection-actions"],
+    requestPermission: approveFirstOption(),
+    onConnectionReady: async control => {
+      states.push(control !== undefined);
+      if (!control) return;
+      retained = control;
+      expect(control.canListSessions).toBe(true);
+      const first = await control.listSessions({ cwd: process.cwd() });
+      expect(first.sessions[0]).toMatchObject({ sessionId: "fixture-recent", cwd: process.cwd(), _meta: { fixture: true } });
+      const next = await control.listSessions({ cwd: process.cwd(), cursor: first.nextCursor! });
+      expect(next.sessions[0]?.sessionId).toBe("fixture-older");
+      expect(next.nextCursor).toBeUndefined();
+      await expect(control.authenticate("unknown")).rejects.toThrow("not supported");
+      await control.authenticate("fixture-login");
+      return { sessionId: "fixture-older" };
+    },
+  }).execute(revision!, bundle!, { prompt: "Connection actions" });
+  expect(result.exitCode).toBe(0);
+  expect(result.output).toContain("turn:21 session:fixture-older");
+  expect(states).toEqual([true, false]);
+  await expect(retained!.listSessions()).rejects.toThrow("closed");
+  await expect(retained!.authenticate("fixture-login")).rejects.toThrow("closed");
+});

@@ -82,7 +82,7 @@ export function CompareLiveView(props: {
     setComparison(next);
   }
 
-  async function launch(prepare = false): Promise<void> {
+  async function launch(prepare = false, connect = false): Promise<void> {
     if (!canRun || running.current) return;
     running.current = true;
     const task = prompt.trim();
@@ -106,7 +106,7 @@ export function CompareLiveView(props: {
     await Promise.all(started.map(async ({ agentId, key, threadId, runId }) => {
       try {
         await streamRun(
-          `api/acp/runs/stream?conversation=1&agent=${encodeURIComponent(agentId)}${prepare ? "&prepare=1" : ""}`,
+          `api/acp/runs/stream?conversation=1&agent=${encodeURIComponent(agentId)}${prepare ? "&prepare=1" : ""}${connect ? "&connect=1" : ""}`,
           task,
           threadId,
           runId,
@@ -201,6 +201,7 @@ export function CompareLiveView(props: {
           : chosen.length < MIN_LANES
             ? <p className="live-compare-note">{t("live.agentFloor", { count: MIN_LANES })}</p>
             : <SharedTreeNote />}
+        {!active && <button type="button" disabled={!canRun} onClick={() => void launch(false, true)}>{t("live.chooseSession")}</button>}
         {!active && <button type="button" disabled={!canRun} onClick={() => void launch(true)}>{t("live.prepare")}</button>}
         <button className="primary live-compare-run" type="submit" disabled={!canRun}>
           <Play aria-hidden="true" size={14} />
@@ -369,9 +370,9 @@ function LiveLane(props: {
   return <section className="live-compare-lane" aria-label={t("live.laneAria", { side: props.side, agent: props.label })}>
     <header>
       <strong>{props.label}</strong>
-      <span className={`run-badge status-${props.run.state.status}`} role="status">{t((props.run.state.acp.prepared || props.run.state.conversation?.status === "idle") ? "live.ready" : `live.status.${props.run.state.status}`)}</span>
+      <span className={`run-badge status-${props.run.state.status}`} role="status">{t((props.run.state.connection || props.run.state.acp.prepared || props.run.state.conversation?.status === "idle") ? "live.ready" : `live.status.${props.run.state.status}`)}</span>
       <small className="live-compare-counts">{counts}</small>
-      {props.run.state.status === "running" && !props.run.state.conversation && <button type="button" disabled={cancelling} onClick={() => void cancel()}>{t(cancelling ? "live.cancelling" : "live.cancel")}</button>}
+      {props.run.state.status === "running" && !props.run.state.conversation && !props.run.state.connection && <button type="button" disabled={cancelling} onClick={() => void cancel()}>{t(cancelling ? "live.cancelling" : "live.cancel")}</button>}
     </header>
     <AcpSessionStream actions={createAcpSessionActions(props.run.runId)} state={props.run.state} prompt={props.prompt} failure={actionError ?? props.run.failure} onPermission={props.onDecide} permissionClassName="live-compare-permission" />
   </section>;

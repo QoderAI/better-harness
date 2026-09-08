@@ -1,3 +1,5 @@
+import { AcpConnectionPreparation } from "./acp-connection-preparation.js";
+import type { AcpConnectionControl } from "@qoder-ai/harness/exec";
 import { AcpEchoFilter } from "./acp-echo-filter.js";
 import { AcpConversation, type AcpPromptContent, type AcpOptionalAction, type AcpSessionRecovery } from "@qoder-ai/harness/exec";
 import { saveAcpConversation } from "./acp-conversation-log.js";
@@ -44,7 +46,7 @@ export function ensureAcpRun(state: HarnessStudioState, runId: string): AcpRunCo
 export function acpExecutorFactory(
   agent: StudioAcpAgentOptions,
   state: HarnessStudioState,
-  host: { executable?: string; transport?: "stdio" | "nsxpc"; allowRoots?: readonly string[]; prepare?: boolean; conversation?: boolean; runDirectory?: string; agentId?: string; cwd?: string; recovery?: AcpSessionRecovery; turnOffset?: number } = {},
+  host: { executable?: string; transport?: "stdio" | "nsxpc"; allowRoots?: readonly string[]; prepare?: boolean; connect?: boolean; conversation?: boolean; runDirectory?: string; agentId?: string; cwd?: string; recovery?: AcpSessionRecovery; turnOffset?: number } = {},
 ): HarnessExecutorFactory {
   return (context) => {
     const control = ensureAcpRun(state, context.runId);
@@ -95,6 +97,15 @@ export function acpExecutorFactory(
       },
     }) : undefined;
     control.conversation = conversation;
+    const onConnectionReady = async (connection: AcpConnectionControl | undefined, context?: { error: string }): Promise<AcpSessionRecovery | null | undefined> => {
+      if (!connection || (!host.connect && (!context?.error || connection.authMethods.length === 0))) return undefined;
+      const preparation = new AcpConnectionPreparation(connection, host.cwd ?? process.cwd(), control.abortController.signal);
+      control.preparation = preparation;
+      const pending = preparation.wait();
+      observe({ type: "acp-connection-ready", connection: { ...(context?.error ? { error: context.error } : {}), canListSessions: connection.canListSessions, recovery: connection.recovery, authMethods: connection.authMethods.map(method => ({ id: method.id, name: method.name, ...(method.description ? { description: method.description } : {}), ...(method.type ? { type: method.type } : {}) })) } });
+      try { return await pending ?? null; }
+      finally { control.preparation = undefined; observe({ type: "acp-connection-ready", connection: null }); }
+    };
     const onSessionReady = async (session: AcpSessionControl | undefined): Promise<void> => {
       control.session = session;
       if (session === undefined) return;
@@ -120,6 +131,7 @@ export function acpExecutorFactory(
           env: agent.env,
           onRunEvent: observe,
           onSessionReady,
+          onConnectionReady,
           conversation,
           recovery: host.recovery,
           abortSignal: control.abortController.signal,
@@ -139,6 +151,7 @@ export function acpExecutorFactory(
           ...(host.allowRoots === undefined ? {} : { allowRoots: host.allowRoots }),
           onRunEvent: observe,
           onSessionReady,
+          onConnectionReady,
           conversation,
           recovery: host.recovery,
           abortSignal: control.abortController.signal,
@@ -346,9 +359,14 @@ export function cancelAllAcpRuns(state: HarnessStudioState): void {
 export async function configureAcpRun(request: IncomingMessage, response: ServerResponse, state: HarnessStudioState, encodedRunId: string): Promise<void> {
   if (!sameOriginRequest(request)) { respondJson(response, 403, { error: "Cross-origin ACP actions are not allowed." }); return; }
   const control = state.acpRuns.get(decodeURIComponent(encodedRunId));
-  if (!control?.session || control.abortController.signal.aborted || control.conversation?.snapshot().status === "closed") { respondJson(response, 409, { error: "This ACP session is no longer available." }); return; }
+  if ((!control?.session && !control?.preparation) || control.abortController.signal.aborted || control.conversation?.snapshot().status === "closed") { respondJson(response, 409, { error: "This ACP session is no longer available." }); return; }
   const body = recordValue(await readJsonBody(request, 4 * 1024 * 1024 + 4096).catch(() => undefined));
   const act = async (): Promise<unknown> => {
+    if (control.preparation) {
+      if (body?.action === "close") { control.abortController.abort(); return { closed: true }; }
+      if (!body) throw new Error("An ACP connection action is required.");
+      return control.preparation.act(body);
+    }
     const session = control.session;
     if (!session || control.abortController.signal.aborted) throw new Error("This ACP session is no longer available.");
     const conversation = control.conversation;

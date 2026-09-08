@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ClientCapabilities, ContentBlock, CreateTerminalRequest,
+    AuthenticateRequest, ListSessionsRequest, CancelNotification, ClientCapabilities, ContentBlock, CreateTerminalRequest,
     FileSystemCapabilities, Implementation, InitializeRequest, KillTerminalRequest,
     NewSessionRequest, LoadSessionRequest, ResumeSessionRequest, CloseSessionRequest, PromptRequest, ReadTextFileRequest, ReleaseTerminalRequest,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
@@ -261,6 +261,7 @@ type SharedThreads = Arc<Mutex<HashMap<String, Thread>>>;
 /// One live ACP connection.
 pub struct AgentConnection {
     capabilities: serde_json::Value,
+    auth_methods: serde_json::Value,
     id: String,
     connection: ConnectionTo<Agent>,
     services: ClientServices,
@@ -545,9 +546,12 @@ impl AgentConnection {
                 .await);
         }
 
-        let capabilities = serde_json::to_value(initialized?.agent_capabilities)?;
+        let initialized = initialized?;
+        let auth_methods = serde_json::to_value(&initialized.auth_methods)?;
+        let capabilities = serde_json::to_value(initialized.agent_capabilities)?;
         Ok(Self {
             capabilities,
+            auth_methods,
             id,
             connection,
             services,
@@ -555,6 +559,26 @@ impl AgentConnection {
             threads,
             driver,
         })
+    }
+
+    pub fn initialization(&self) -> serde_json::Value {
+        serde_json::json!({ "agentCapabilities": self.capabilities, "authMethods": self.auth_methods })
+    }
+
+    pub async fn list_sessions(&self, cwd: Option<std::path::PathBuf>, cursor: Option<String>) -> Result<serde_json::Value> {
+        if !self.capabilities["sessionCapabilities"]["list"].is_object() { return Err(anyhow!("This Agent does not support session/list.")); }
+        if cwd.as_ref().is_some_and(|path| !path.is_absolute()) { return Err(anyhow!("Session cwd must be an absolute path.")); }
+        let result = self.connection.send_request(ListSessionsRequest::new().cwd(cwd).cursor(cursor)).block_task().await?;
+        Ok(serde_json::to_value(result)?)
+    }
+
+    pub async fn authenticate(&self, method_id: &str) -> Result<serde_json::Value> {
+        let offered = self.auth_methods.as_array().is_some_and(|methods| methods.iter().any(|method| {
+            method["id"].as_str() == Some(method_id) && (method.get("type").is_none() || method["type"].as_str() == Some("agent"))
+        }));
+        if !offered { return Err(anyhow!("This authentication method is not supported by this connection.")); }
+        let result = self.connection.send_request(AuthenticateRequest::new(method_id.to_owned())).block_task().await?;
+        Ok(serde_json::to_value(result)?)
     }
 
     /// Create a session and start tracking its transcript.

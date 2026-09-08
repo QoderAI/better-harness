@@ -102,6 +102,8 @@ pub enum Call {
     /// Create a session on an open connection.
     SessionCreate(SessionCreateParams),
     SessionClose(SessionCancelParams),
+    SessionList(SessionListParams),
+    ConnectionAuthenticate(ConnectionAuthenticateParams),
     /// Apply one session config option and verify the agent acknowledged it.
     SessionSetConfigOption(SessionSetConfigOptionParams),
     SessionSetMode(SessionSetModeParams),
@@ -136,6 +138,21 @@ pub struct ConnectionOpenParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectionCloseParams {
     pub connection_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionListParams {
+    pub connection_id: String,
+    pub cwd: Option<PathBuf>,
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ConnectionAuthenticateParams {
+    pub connection_id: String,
+    pub method_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -218,6 +235,8 @@ impl Call {
             "connection.open" => Ok(Self::ConnectionOpen(typed_params(frame)?)),
             "connection.close" => Ok(Self::ConnectionClose(typed_params(frame)?)),
             "session.create" => Ok(Self::SessionCreate(typed_params(frame)?)),
+            "session.list" => Ok(Self::SessionList(typed_params(frame)?)),
+            "connection.authenticate" => Ok(Self::ConnectionAuthenticate(typed_params(frame)?)),
             "session.close" => Ok(Self::SessionClose(typed_params(frame)?)),
             "session.setMode" => Ok(Self::SessionSetMode(typed_params(frame)?)),
             "session.setConfigOption" => Ok(Self::SessionSetConfigOption(typed_params(frame)?)),

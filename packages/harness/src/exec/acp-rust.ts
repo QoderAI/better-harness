@@ -1,3 +1,4 @@
+import { createAcpConnectionControl, prepareAcpSession, type AcpConnectionReadyHandler } from "./acp-connection-control.js";
 import type { AcpSessionRecovery } from "./acp-session-control.js";
 import { conversationCapabilities, type AcpConversation } from "./acp-conversation.js";
 import type { AcpSessionReadyHandler } from "./acp-session-control.js";
@@ -83,6 +84,7 @@ export interface AcpRustExecutorOptions {
   conversation?: AcpConversation;
   recovery?: AcpSessionRecovery;
   onSessionReady?: AcpSessionReadyHandler;
+  onConnectionReady?: AcpConnectionReadyHandler;
   sessionConfig?: Readonly<Record<string, string | boolean>>;
   abortSignal?: AbortSignal;
   spawnHost?: typeof spawn;
@@ -148,6 +150,8 @@ export class AcpRustExecutor implements HarnessExecutor {
 
     const acknowledgedSessionConfig: Record<string, string | boolean> = {};
     let sessionId: string | undefined;
+    let effectiveRecovery = this.options.recovery;
+    let disposeConnection: (() => void) | undefined;
     let stopReason: string | undefined;
     let client: HostClient | undefined;
     try {
@@ -163,7 +167,7 @@ export class AcpRustExecutor implements HarnessExecutor {
 
       const connectionId = `run-${revision.revisionId}`;
       client.bindPermissions(connectionId, abortSignal);
-      await client.call("connection.open", {
+      const opened = await client.call("connection.open", {
         connectionId,
         command: this.options.command,
         ...(this.options.args === undefined ? {} : { args: [...this.options.args] }),
@@ -174,11 +178,17 @@ export class AcpRustExecutor implements HarnessExecutor {
           : { allowRoots: [...this.options.allowRoots] }),
       });
 
-      const created = await client.call("session.create", {
-        connectionId,
-        ...(this.options.recovery ? { recovery: this.options.recovery } : {}),
-        cwd: task.cwd ?? process.cwd(),
+      const connectionClient = client;
+      const connectionControl = createAcpConnectionControl(opened, {
+        list: async params => await connectionClient.call("session.list", { connectionId, ...params }) as unknown as import("@agentclientprotocol/sdk").ListSessionsResponse,
+        authenticate: methodId => connectionClient.call("connection.authenticate", { connectionId, methodId }),
       });
+      disposeConnection = connectionControl.dispose;
+      const setup = await prepareAcpSession(connectionControl.control, this.options.onConnectionReady, effectiveRecovery, recovery => connectionClient.call("session.create", {
+        connectionId, ...(recovery ? { recovery } : {}), cwd: task.cwd ?? process.cwd(),
+      }));
+      effectiveRecovery = setup.recovery;
+      const created = setup.value;
       sessionId = typeof created.sessionId === "string" ? created.sessionId : undefined;
       if (sessionId === undefined) {
         throw new Error("The ACP host did not return a session id.");
@@ -215,7 +225,7 @@ export class AcpRustExecutor implements HarnessExecutor {
         };
         abortSignal?.addEventListener("abort", cancel, { once: true });
         try {
-          const initialized = trace.map(event => (event.payload as { result?: { agentCapabilities?: unknown } })?.result?.agentCapabilities).find(value => value !== undefined);
+          const initialized = opened.agentCapabilities;
           const finished = this.options.conversation ? await this.options.conversation.run({
             ...sessionControl, capabilities: conversationCapabilities(initialized),
             close: async () => { await liveClient.call("session.close", { connectionId, sessionId: liveSessionId }); },
@@ -224,10 +234,10 @@ export class AcpRustExecutor implements HarnessExecutor {
               try { const result = await liveClient.call("session.prompt", { connectionId, sessionId: liveSessionId, prompt: "", content }); return { stopReason: String(result.stopReason) }; }
               finally { emitter.endMessage(); }
             },
-          }, { id: "initial", content: [{ type: "text", text: task.prompt }] }, [{ type: "text", text: this.options.recovery ? task.prompt : prompt }]) : await client.call("session.prompt", {
+          }, { id: "initial", content: [{ type: "text", text: task.prompt }] }, [{ type: "text", text: effectiveRecovery ? task.prompt : prompt }]) : await client.call("session.prompt", {
             connectionId,
             sessionId,
-            prompt,
+            prompt: effectiveRecovery ? task.prompt : prompt,
           });
           stopReason = typeof finished.stopReason === "string" ? finished.stopReason : undefined;
         } finally {
@@ -270,11 +280,15 @@ export class AcpRustExecutor implements HarnessExecutor {
       };
     } finally {
       await this.options.conversation?.close().catch(() => undefined);
-      await this.options.onSessionReady?.(undefined);
-      // Closing the host makes it drop its connections, which is what reaps the
-      // Agent's process group. A caller that removes the run workspace right
-      // after `execute` would otherwise hit EBUSY on Windows.
-      await client?.close();
+      disposeConnection?.();
+      try { await this.options.onConnectionReady?.(undefined); }
+      finally {
+        try { await this.options.onSessionReady?.(undefined); }
+        finally {
+          // Reap the Agent even when a host observer fails during revocation.
+          await client?.close();
+        }
+      }
     }
   }
 

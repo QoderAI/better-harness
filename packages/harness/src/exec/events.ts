@@ -43,6 +43,7 @@ export interface HarnessProtocolEvent {
  */
 export type HarnessRunEvent =
   | { type: "acp-conversation-state"; snapshot: AcpConversationSnapshot }
+  | { type: "acp-connection-ready"; connection: { error?: string; canListSessions: boolean; recovery?: "load" | "resume"; authMethods: Array<{ id: string; name: string; description?: string; type?: string }> } | null }
   | { type: "acp-session-ready"; sessionId: string; prepared: boolean }
   | { type: "run-started"; revisionId: string; host: string }
   | { type: "run-warning"; message: string }

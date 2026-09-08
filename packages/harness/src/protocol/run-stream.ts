@@ -60,6 +60,15 @@ function parseHarnessRunEvent(value: unknown): HarnessRunEvent {
       return { type: event.type, message: stringValue(event.message, "message") };
     case "acp-conversation-state":
       return { type: event.type, snapshot: parseAcpConversationSnapshot(event.snapshot) };
+    case "acp-connection-ready": {
+      const connection = event.connection;
+      if (connection === null) return { type: "acp-connection-ready", connection: null };
+      if (!connection || typeof connection !== "object" || Array.isArray(connection)) throw new Error("Invalid ACP connection.");
+      const data = connection as Record<string, unknown>;
+      if (typeof data.canListSessions !== "boolean" || !Array.isArray(data.authMethods) || data.authMethods.some(m => !m || typeof m.id !== "string" || typeof m.name !== "string")) throw new Error("Invalid ACP connection metadata.");
+      if (data.recovery !== undefined && data.recovery !== "load" && data.recovery !== "resume") throw new Error("Invalid ACP recovery capability.");
+      return { type: "acp-connection-ready", connection: { ...(typeof data.error === "string" ? { error: data.error } : {}), canListSessions: data.canListSessions, recovery: data.recovery, authMethods: data.authMethods.map(m => ({ id: m.id, name: m.name, ...(typeof m.description === "string" ? { description: m.description } : {}), ...(typeof m.type === "string" ? { type: m.type } : {}) })) } };
+    }
     case "acp-session-ready":
       return { type: event.type, sessionId: stringValue(event.sessionId, "sessionId"), prepared: event.prepared === true };
     case "message-started":

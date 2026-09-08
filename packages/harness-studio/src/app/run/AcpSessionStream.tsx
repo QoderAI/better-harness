@@ -1,3 +1,4 @@
+import { AcpConnectionPanel } from "./AcpConnectionPanel.js";
 import type { AcpSessionActions } from "./acp-session-actions.js";
 import { AcpComposer } from "./AcpComposer.js";
 import { AcpContent, AcpTerminalContext } from "./AcpContent.js";
@@ -65,7 +66,9 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
     observer.observe(content.current);
     observer.observe(scroll.current);
     return () => observer.disconnect();
-  }, []);
+  }, [state.connection]);
+
+  if (state.connection && state.status === "running" && actions && state.runId) return <AcpConnectionPanel key={state.runId} runId={state.runId} connection={state.connection} actions={actions} />;
 
   return <AcpTerminalContext.Provider value={session.terminals}><div className="acp-session-stream">
     {onPermission !== undefined && <div className="acp-permission-list">{state.pendingPermissions.map(permission => <AcpPermissionGate

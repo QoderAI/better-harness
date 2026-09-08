@@ -675,6 +675,7 @@ async function route(
       ...(runtimeOptions.sourceRoot !== undefined ? { sourceRoot: runtimeOptions.sourceRoot } : {}),
       executorFactory: acpExecutorFactory(acpAgent, state, {
         prepare: url.searchParams.get("prepare") === "1",
+        connect: url.searchParams.get("connect") === "1",
         conversation: url.searchParams.get("conversation") === "1",
         agentId: requestedAgentId ?? "__default",
         cwd: runtimeOptions.cwd ?? process.cwd(),

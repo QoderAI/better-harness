@@ -129,3 +129,17 @@
 @media (max-width: 700px) {
   .live-compare-workspace .live-compare-lanes { grid-auto-rows: minmax(28rem, 70dvh); }
 }
+
+.acp-connection-panel { min-height: 0; overflow: auto; padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-md); }
+.acp-connection-panel header, .acp-connection-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-sm); }
+.acp-connection-panel p { margin: 0; color: var(--color-text-muted); }
+.acp-connection-panel [role="alert"] { color: var(--color-danger); }
+.acp-connection-auth { border-block: 1px solid var(--color-border); padding-block: var(--space-sm); }
+.acp-connection-auth > div { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); margin-block: var(--space-sm); }
+.acp-agent-sessions { list-style: none; margin: 0; padding: 0; }
+.acp-agent-sessions li { border-bottom: 1px solid var(--color-border); }
+.acp-agent-sessions button { width: 100%; text-align: left; display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-sm); border: 0; border-radius: 0; padding: var(--space-md); }
+.acp-agent-sessions button span { min-width: 0; overflow-wrap: anywhere; }
+.acp-agent-sessions time { color: var(--color-text-muted); font-size: var(--type-meta-size); }
+
+.acp-connection-panel :is(button, summary):focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }

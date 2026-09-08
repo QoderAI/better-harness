@@ -154,11 +154,14 @@ async fn run_call(
                 return Ok(json!({
                     "connectionId": existing.id(),
                     "reused": true,
+                    "agentCapabilities": existing.initialization()["agentCapabilities"],
+                    "authMethods": existing.initialization()["authMethods"],
                     "allowRoots": existing.fence().roots(),
                 }));
             }
             let connection = Arc::new(AgentConnection::open(&params, events.clone()).await?);
             let roots = connection.fence().roots().to_vec();
+            let initialized = connection.initialization();
             registry
                 .lock()
                 .await
@@ -166,6 +169,8 @@ async fn run_call(
             Ok(json!({
                 "connectionId": params.connection_id,
                 "reused": false,
+                "agentCapabilities": initialized["agentCapabilities"],
+                "authMethods": initialized["authMethods"],
                 "allowRoots": roots,
             }))
         }
@@ -174,6 +179,12 @@ async fn run_call(
             // transport and lets AcpAgent reap the child's process group.
             let removed = registry.lock().await.remove(&params.connection_id);
             Ok(json!({ "closed": removed.is_some() }))
+        }
+        Call::SessionList(params) => {
+            connection_for(registry, &params.connection_id).await?.list_sessions(params.cwd, params.cursor).await
+        }
+        Call::ConnectionAuthenticate(params) => {
+            connection_for(registry, &params.connection_id).await?.authenticate(&params.method_id).await
         }
         Call::SessionCreate(params) => {
             let connection = connection_for(registry, &params.connection_id).await?;

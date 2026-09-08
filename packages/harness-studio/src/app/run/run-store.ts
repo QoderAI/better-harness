@@ -27,6 +27,7 @@ export type TimelineItem =
 export type ObservedProtocolEvent = HarnessProtocolEvent & { observedAt: number };
 
 export interface HarnessRunState {
+  connection?: Extract<import("@qoder-ai/harness/exec").HarnessRunEvent, { type: "acp-connection-ready" }>["connection"];
   conversation?: AcpConversationSnapshot;
   status: "idle" | "running" | "finished" | "error";
   threadId?: string;
@@ -100,6 +101,8 @@ export function applyHarnessRunEvent(
         timelineRevision: state.timelineRevision + 1,
       } : {}) };
     }
+    case "acp-connection-ready":
+      return { ...sequenced, connection: event.connection };
     case "acp-session-ready":
       return { ...sequenced, acp: { ...state.acp, sessionId: event.sessionId, controllable: true, prepared: event.prepared } };
     case "run-warning":

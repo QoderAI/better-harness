@@ -1,6 +1,9 @@
 import type { AcpPromptContent, AcpOptionalAction } from "@qoder-ai/harness/exec";
 import { recordValue } from "../../contracts/acp-session-config.js";
 export type AcpSessionAction =
+  | { action: "connection-list"; cursor?: string }
+  | { action: "connection-authenticate"; methodId: string }
+  | { action: "connection-select"; sessionId?: string }
   | { action: "config"; configId: string; value: string | boolean }
   | { action: "mode"; modeId: string }
   | { action: "start" | "stop" | "close" | "queue-resume" }

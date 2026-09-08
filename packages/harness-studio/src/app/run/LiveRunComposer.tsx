@@ -13,6 +13,7 @@ export function LiveRunComposer(props: {
   onPrompt: (value: string) => void;
   onClose: () => void;
   onRun: () => void;
+  onChooseSession?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation("run");
   const dialog = useRef<HTMLDialogElement>(null);
@@ -49,7 +50,7 @@ export function LiveRunComposer(props: {
         </select>
       </label>
       <textarea ref={input} value={props.prompt} aria-label={t("composer.promptLabel")} placeholder={t("composer.promptPlaceholder")} onChange={(event) => props.onPrompt(event.target.value)} rows={4} />
-      <footer><button type="button" onClick={props.onClose}>{t("composer.cancel")}</button><button type="submit" className="primary" disabled={!canRun}>{t("composer.run")}</button></footer>
+      <footer>{props.onChooseSession && <button type="button" disabled={!canRun} onClick={props.onChooseSession}>{t("connection.title")}</button>}<button type="button" onClick={props.onClose}>{t("composer.cancel")}</button><button type="submit" className="primary" disabled={!canRun}>{t("composer.run")}</button></footer>
     </form>
   </dialog>;
 }

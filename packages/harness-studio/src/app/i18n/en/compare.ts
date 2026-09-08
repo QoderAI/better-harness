@@ -7,6 +7,7 @@ export const compare = {
     results: "Evidence results",
   },
   live: {
+    chooseSession: "Choose sessions",
     newComparison: "New comparison",
     ready: "Ready",
     configuring: "Configuring…",

@@ -2,6 +2,8 @@ import { Readable, Writable } from "node:stream";
 import { agent, methods, ndJsonStream } from "@agentclientprotocol/sdk";
 
 let cancelled = false;
+let authenticated = false;
+const connectionActions = process.argv.includes("--connection-actions");
 let turnCount = 0;
 const conversationHistory = [];
 const conversation = process.argv.includes("--conversation");
@@ -28,11 +30,22 @@ const app = agent({ name: "better-harness-acp-fixture" })
     }
     return {
       protocolVersion: context.params.protocolVersion,
-      agentCapabilities: { loadSession: conversation && !process.argv.includes("--no-recovery"), ...(conversation ? { sessionCapabilities: { resume: {}, close: {} } } : {}), ...(conversation ? { promptCapabilities: { image: true, audio: true, embeddedContext: true } } : {}) },
-      authMethods: [],
+      agentCapabilities: { loadSession: conversation && !process.argv.includes("--no-recovery"), ...(conversation ? { sessionCapabilities: { resume: {}, close: {}, ...(connectionActions ? { list: {} } : {}) } } : {}), ...(conversation ? { promptCapabilities: { image: true, audio: true, embeddedContext: true } } : {}) },
+      authMethods: connectionActions ? [{ id: "fixture-login", name: "Fixture login" }] : [],
     };
   })
+  .onRequest(methods.agent.authenticate, ({ params }) => {
+    if (params.methodId !== "fixture-login") throw new Error("unknown-auth-method");
+    authenticated = true;
+    return {};
+  })
+  .onRequest(methods.agent.session.list, ({ params }) => {
+    if (!connectionActions) throw new Error("unexpected-list");
+    if (params.cursor && params.cursor !== "opaque:+/next==") throw new Error("invalid-cursor");
+    return { sessions: [{ sessionId: params.cursor ? "fixture-older" : "fixture-recent", cwd: params.cwd ?? process.cwd(), title: params.cursor ? "Earlier project discussion" : "Recent project discussion", updatedAt: params.cursor ? "2026-09-07T08:00:00Z" : "2026-09-08T08:00:00Z", _meta: { fixture: true } }], ...(params.cursor ? {} : { nextCursor: "opaque:+/next==" }) };
+  })
   .onRequest(methods.agent.session.new, async () => {
+    if (connectionActions && !authenticated) throw new Error("auth-required");
     if (process.argv.includes("--delay-new")) {
       await new Promise((resolve) => setTimeout(resolve, 10_000));
     }
@@ -52,14 +65,14 @@ const app = agent({ name: "better-harness-acp-fixture" })
     };
   })
   .onRequest(methods.agent.session.load, async context => {
-    if (context.params.sessionId !== "fixture-session") throw new Error("Unknown fixture session");
+    if (!["fixture-session", ...(connectionActions ? ["fixture-recent", "fixture-older"] : [])].includes(context.params.sessionId)) throw new Error("Unknown fixture session");
     if (process.argv.includes("--reject-recovery")) throw new Error("Recovery rejected by fixture");
     turnCount = 20;
     await context.client.notify(methods.client.session.update, { sessionId: context.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Loaded fixture session\n" } } });
     return { configOptions: configOptions() };
   })
   .onRequest(methods.agent.session.resume, context => {
-    if (context.params.sessionId !== "fixture-session") throw new Error("Unknown fixture session");
+    if (!["fixture-session", ...(connectionActions ? ["fixture-recent", "fixture-older"] : [])].includes(context.params.sessionId)) throw new Error("Unknown fixture session");
     turnCount = 30; return { configOptions: configOptions() };
   })
   .onRequest(methods.agent.session.close, () => ({}))

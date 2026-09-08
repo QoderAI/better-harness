@@ -297,6 +297,7 @@ export interface ArtifactInteractionProposalState {
   };
 }
 export interface AcpRunControl {
+  preparation?: import("./acp-connection-preparation.js").AcpConnectionPreparation;
   conversation?: AcpConversation;
   session?: AcpSessionControl;
   config?: AcpConfigOption[];

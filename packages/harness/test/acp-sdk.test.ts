@@ -289,3 +289,33 @@ it("exposes live config controls before prompting and revokes them after complet
   expect(result.output).toContain("configured:fixture-candidate:low:true");
   expect(readiness).toEqual([true, false]);
 });
+
+it("discovers and authenticates before session creation", async () => {
+  const { bundle } = await compileHarness(SOURCE);
+  const { revision } = resolveHarness(bundle!, "live-acp", "acp", { adapter: () => ACP_ADAPTER_DESCRIPTOR });
+  let retained: import("../src/exec/acp-connection-control.js").AcpConnectionControl | undefined;
+  const states: boolean[] = [];
+  const result = await new AcpSdkExecutor({
+    command: process.execPath, args: [FIXTURE, "--conversation", "--connection-actions"],
+    requestPermission: async (_id, request) => ({ outcome: { outcome: "selected", optionId: request.options[0]!.optionId } }),
+    onConnectionReady: async control => {
+      states.push(control !== undefined);
+      if (!control) return;
+      retained = control;
+      expect(control.canListSessions).toBe(true);
+      const first = await control.listSessions({ cwd: process.cwd() });
+      expect(first.sessions[0]).toMatchObject({ sessionId: "fixture-recent", cwd: process.cwd(), _meta: { fixture: true } });
+      const next = await control.listSessions({ cwd: process.cwd(), cursor: first.nextCursor! });
+      expect(next.sessions[0]?.sessionId).toBe("fixture-older");
+      expect(next.nextCursor).toBeUndefined();
+      await expect(control.authenticate("unknown")).rejects.toThrow("not supported");
+      await control.authenticate("fixture-login");
+      return { sessionId: "fixture-older" };
+    },
+  }).execute(revision!, bundle!, { prompt: "Connection actions" });
+  expect(result.exitCode).toBe(0);
+  expect(result.output).toContain("turn:21 session:fixture-older");
+  expect(states).toEqual([true, false]);
+  await expect(retained!.listSessions()).rejects.toThrow("closed");
+  await expect(retained!.authenticate("fixture-login")).rejects.toThrow("closed");
+});
