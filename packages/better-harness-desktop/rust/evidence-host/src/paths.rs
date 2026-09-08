@@ -57,6 +57,14 @@ mod urlencoding {
     }
 }
 
+pub fn env_home(var: &str, default_name: &str) -> PathBuf {
+    std::env::var(var)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join(default_name))
+}
+
 pub fn qoder_slug_variants(workspace: &Path) -> Vec<String> {
     let text = workspace.to_string_lossy().replace('\\', "/");
     let slashy = text.replace(':', "-").replace('/', "-");
@@ -95,17 +103,129 @@ pub fn cwd_matches(workspace: &Path, candidate: &str) -> bool {
     &resolved == workspace || resolved.starts_with(workspace)
 }
 
+/// Qwen `sanitizeCwd`: every non-alphanumeric char becomes `-`. Windows also
+/// lowercases; emit both so a POSIX host can still find a Windows-written tree.
+pub fn qwen_slug_variants(workspace: &Path) -> Vec<String> {
+    let text = workspace.to_string_lossy();
+    let slug: String = text
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+        .collect();
+    let mut values = vec![slug.clone(), slug.to_ascii_lowercase()];
+    values.sort();
+    values.dedup();
+    values
+}
+
+/// Pi default tree: `--<cwd with /\: folded to ->>--`. OMP also writes a
+/// home-relative `-<rel>--` form when the workspace sits under `$HOME`.
+pub fn pi_session_dir_variants(workspace: &Path) -> Vec<String> {
+    let text = workspace.to_string_lossy().replace('\\', "/");
+    let body = text
+        .trim_start_matches(['/', '\\'])
+        .replace(['/', '\\', ':'], "-");
+    let mut values = vec![format!("--{body}--")];
+    if let Ok(relative) = workspace.strip_prefix(home_dir()) {
+        let home_body = relative.to_string_lossy().replace(['/', '\\', ':'], "-");
+        if !home_body.is_empty() && !home_body.starts_with("..") {
+            values.push(format!("-{home_body}"));
+        }
+    }
+    values.sort();
+    values.dedup();
+    values
+}
+
+/// WorkBuddy project dirs: strip one leading separator, fold `/\:` to `-`.
+pub fn workbuddy_slug_variants(workspace: &Path) -> Vec<String> {
+    let text = workspace.to_string_lossy().replace('\\', "/");
+    let body = text.trim_start_matches('/').replace(['/', '\\', ':'], "-");
+    vec![body]
+}
+
+pub fn encode_dsh_session_id(raw: &str) -> String {
+    if raw == "." {
+        return "~002E".into();
+    }
+    if raw == ".." {
+        return "~002E~002E".into();
+    }
+    let mut encoded = String::new();
+    for ch in raw.chars() {
+        if ch != '~' && (ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-')) {
+            encoded.push(ch);
+        } else {
+            encoded.push_str(&format!("~{:04X}", u32::from(ch)));
+        }
+    }
+    encoded
+}
+
+pub fn dsh_project_key(cwd: &str) -> String {
+    let mut readable = String::new();
+    let mut separator_run = false;
+    for ch in cwd.chars() {
+        if matches!(ch, '/' | '\\' | ':') {
+            if !separator_run {
+                readable.push('-');
+            }
+            separator_run = true;
+        } else if ch != '~' && (ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-')) {
+            readable.push(ch);
+            separator_run = false;
+        } else {
+            readable.push_str(&format!("~{:04X}", u32::from(ch)));
+            separator_run = false;
+        }
+    }
+    let body = readable.trim_start_matches('-');
+    let clipped: String = if body.is_empty() {
+        "root".into()
+    } else {
+        body.chars().take(251).collect()
+    };
+    format!("--{clipped}--")
+}
+
 pub fn walk_jsonl(root: &Path, max_depth: usize, limit: usize) -> Vec<PathBuf> {
+    walk_matching(root, max_depth, limit, &|path| {
+        path.extension().and_then(|ext| ext.to_str()) == Some("jsonl")
+    })
+}
+
+pub fn walk_json(root: &Path, max_depth: usize, limit: usize) -> Vec<PathBuf> {
+    walk_matching(root, max_depth, limit, &|path| {
+        path.extension().and_then(|ext| ext.to_str()) == Some("json")
+            && !path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".tmp"))
+    })
+}
+
+pub fn walk_named(root: &Path, max_depth: usize, limit: usize, file_name: &str) -> Vec<PathBuf> {
+    walk_matching(root, max_depth, limit, &|path| {
+        path.file_name().and_then(|name| name.to_str()) == Some(file_name)
+    })
+}
+
+fn walk_matching(
+    root: &Path,
+    max_depth: usize,
+    limit: usize,
+    matches: &dyn Fn(&Path) -> bool,
+) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    walk_jsonl_rec(root, 0, max_depth, limit, &mut out);
+    walk_matching_rec(root, 0, max_depth, limit, matches, &mut out);
     out
 }
 
-fn walk_jsonl_rec(
+fn walk_matching_rec(
     dir: &Path,
     depth: usize,
     max_depth: usize,
     limit: usize,
+    matches: &dyn Fn(&Path) -> bool,
     out: &mut Vec<PathBuf>,
 ) {
     if out.len() >= limit || depth > max_depth {
@@ -123,10 +243,8 @@ fn walk_jsonl_rec(
             continue;
         };
         if file_type.is_dir() {
-            walk_jsonl_rec(&path, depth + 1, max_depth, limit, out);
-        } else if file_type.is_file()
-            && path.extension().and_then(|ext| ext.to_str()) == Some("jsonl")
-        {
+            walk_matching_rec(&path, depth + 1, max_depth, limit, matches, out);
+        } else if file_type.is_file() && matches(&path) {
             out.push(path);
         }
     }
@@ -327,20 +445,50 @@ mod tests {
     #[test]
     fn qoder_slug_uses_leading_dash_for_posix_root() {
         let variants = qoder_slug_variants(Path::new("/Users/phodal/workspace/better-harness"));
-        assert!(
-            variants
-                .iter()
-                .any(|value| value == "-Users-phodal-workspace-better-harness")
-        );
+        assert!(variants
+            .iter()
+            .any(|value| value == "-Users-phodal-workspace-better-harness"));
     }
 
     #[test]
     fn claude_slug_folds_dot_and_slash() {
         let variants = claude_slug_variants(Path::new("/Users/phodal/workspace/better-harness"));
-        assert!(
-            variants
-                .iter()
-                .any(|value| value == "-Users-phodal-workspace-better-harness")
+        assert!(variants
+            .iter()
+            .any(|value| value == "-Users-phodal-workspace-better-harness"));
+    }
+
+    #[test]
+    fn qwen_slug_replaces_non_alnum() {
+        let variants = qwen_slug_variants(Path::new("/Users/phodal/workspace/better-harness"));
+        assert!(variants
+            .iter()
+            .any(|value| value == "-Users-phodal-workspace-better-harness"));
+    }
+
+    #[test]
+    fn pi_session_dir_wraps_cwd_slug() {
+        let variants = pi_session_dir_variants(Path::new("/Users/phodal/workspace/better-harness"));
+        assert!(variants
+            .iter()
+            .any(|value| value == "--Users-phodal-workspace-better-harness--"));
+    }
+
+    #[test]
+    fn workbuddy_slug_strips_leading_separator() {
+        assert_eq!(
+            workbuddy_slug_variants(Path::new("/Users/phodal/workspace/better-harness")),
+            vec!["Users-phodal-workspace-better-harness".to_string()]
         );
+    }
+
+    #[test]
+    fn dsh_project_key_and_session_id_match_js_fold() {
+        assert_eq!(
+            dsh_project_key("/Users/phodal/workspace/better-harness"),
+            "--Users-phodal-workspace-better-harness--"
+        );
+        assert_eq!(encode_dsh_session_id("ses_ab-cd"), "ses_ab-cd");
+        assert_eq!(encode_dsh_session_id("a/b"), "a~002Fb");
     }
 }

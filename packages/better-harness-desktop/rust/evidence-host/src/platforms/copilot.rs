@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::model::{
-    Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall, truncate_prompt, tool_family,
+    tool_family, truncate_prompt, Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall,
 };
 use crate::paths::{cwd_matches, home_dir, paths_from_value};
 use crate::time::normalize_timestamp;
@@ -21,13 +21,20 @@ pub fn discover(workspace: &Path, max_sessions: usize) -> Result<Vec<SessionSumm
     discover_from(&copilot_home(), workspace, max_sessions)
 }
 
-pub fn discover_from(home: &Path, workspace: &Path, max_sessions: usize) -> Result<Vec<SessionSummary>, String> {
+pub fn discover_from(
+    home: &Path,
+    workspace: &Path,
+    max_sessions: usize,
+) -> Result<Vec<SessionSummary>, String> {
     let root = home.join("session-state");
     if !root.is_dir() {
         return Ok(vec![]);
     }
     let mut sessions = Vec::new();
-    for entry in fs::read_dir(&root).map_err(|error| error.to_string())?.flatten() {
+    for entry in fs::read_dir(&root)
+        .map_err(|error| error.to_string())?
+        .flatten()
+    {
         if !entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
             continue;
         }
@@ -50,15 +57,21 @@ fn read_session(workspace: &Path, dir: &Path) -> Option<SessionSummary> {
         return None;
     }
     let text = fs::read_to_string(&events_path).ok()?;
-    let mut session_id = yaml_id
-        .unwrap_or_else(|| dir.file_name().and_then(|name| name.to_str()).unwrap_or("session").to_string());
+    let mut session_id = yaml_id.unwrap_or_else(|| {
+        dir.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("session")
+            .to_string()
+    });
     let mut first_seen = None;
     let mut last_seen = None;
     let mut prompts: Vec<Prompt> = Vec::new();
     let mut assistant_count = 0u32;
     let mut calls = Vec::new();
     let mut last_response = None;
-    let mut matched = yaml_cwd.as_deref().is_some_and(|cwd| cwd_matches(workspace, cwd));
+    let mut matched = yaml_cwd
+        .as_deref()
+        .is_some_and(|cwd| cwd_matches(workspace, cwd));
     for line in text.lines() {
         let Ok(record) = serde_json::from_str::<Value>(line) else {
             continue;
@@ -85,7 +98,10 @@ fn read_session(workspace: &Path, dir: &Path) -> Option<SessionSummary> {
         if kind == "user.message" {
             if let Some(content) = data.get("content").and_then(Value::as_str) {
                 let prompt = truncate_prompt(content);
-                if !prompt.is_empty() && prompts.len() < 8 && !prompts.iter().any(|item| item.text == prompt) {
+                if !prompt.is_empty()
+                    && prompts.len() < 8
+                    && !prompts.iter().any(|item| item.text == prompt)
+                {
                     prompts.push(Prompt {
                         text: prompt,
                         timestamp: stamp.clone(),
@@ -115,7 +131,7 @@ fn read_session(workspace: &Path, dir: &Path) -> Option<SessionSummary> {
                 file_path: paths.first().cloned(),
                 file_paths: paths,
                 started_at: stamp,
-                    ..ToolCall::default()
+                ..ToolCall::default()
             });
         }
     }

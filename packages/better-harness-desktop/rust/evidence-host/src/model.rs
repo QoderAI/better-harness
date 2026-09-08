@@ -122,9 +122,13 @@ pub fn tool_family(name: &str) -> String {
     }
 }
 
-pub const PORTED: &[&str] = &["qoder", "codex", "claude", "cursor", "copilot", "grok"];
-
-pub const UNPORTED: &[&str] = &[
+pub const PORTED: &[&str] = &[
+    "qoder",
+    "codex",
+    "claude",
+    "cursor",
+    "copilot",
+    "grok",
     "augment",
     "qwen",
     "pi",
@@ -133,6 +137,8 @@ pub const UNPORTED: &[&str] = &[
     "dsh",
     "harness-run",
 ];
+
+pub const UNPORTED: &[&str] = &[];
 
 /// Discovery is a bounded snapshot. Divide the text budget fairly across every
 /// retained request/result rather than dropping the oldest calls or turns.

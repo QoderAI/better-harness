@@ -1,6 +1,14 @@
+pub mod augment;
 pub mod claude;
 pub mod codex;
 pub mod copilot;
 pub mod cursor;
+pub mod dsh;
 pub mod grok;
+pub mod harness_run;
+pub mod kimi;
+pub mod pi;
 pub mod qoder;
+pub mod qwen;
+mod snapshot;
+pub mod workbuddy;

@@ -1,10 +1,13 @@
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::artifacts::observe;
-use crate::model::{PORTED, ProviderStatus, SessionSummary, UNPORTED};
+use crate::model::{ProviderStatus, SessionSummary, PORTED, UNPORTED};
 use crate::paths::normalize_workspace;
-use crate::platforms::{claude, codex, copilot, cursor, grok, qoder};
+use crate::platforms::{
+    augment, claude, codex, copilot, cursor, dsh, grok, harness_run, kimi, pi, qoder, qwen,
+    workbuddy,
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +37,13 @@ pub fn discover(params: DiscoverParams) -> Result<Value, String> {
             "cursor" => cursor::discover(&workspace, max_sessions),
             "copilot" => copilot::discover(&workspace, max_sessions),
             "grok" => grok::discover(&workspace, max_sessions),
+            "augment" => augment::discover(&workspace, max_sessions),
+            "qwen" => qwen::discover(&workspace, max_sessions),
+            "pi" => pi::discover(&workspace, max_sessions),
+            "kimi" => kimi::discover(&workspace, max_sessions),
+            "workbuddy" => workbuddy::discover(&workspace, max_sessions),
+            "dsh" => dsh::discover(&workspace, max_sessions),
+            "harness-run" => harness_run::discover(&workspace, max_sessions),
             _ => Ok(Vec::new()),
         };
         match result {
@@ -110,13 +120,9 @@ pub fn observe_params(params: &Value) -> Result<Value, String> {
         .get("workspace")
         .and_then(Value::as_str)
         .ok_or_else(|| "workspace is required".to_string())?;
-    let sessions: Vec<SessionSummary> = serde_json::from_value(
-        params
-            .get("sessions")
-            .cloned()
-            .unwrap_or_else(|| json!([])),
-    )
-    .map_err(|error| error.to_string())?;
+    let sessions: Vec<SessionSummary> =
+        serde_json::from_value(params.get("sessions").cloned().unwrap_or_else(|| json!([])))
+            .map_err(|error| error.to_string())?;
     let observations = observe(&normalize_workspace(workspace), &sessions);
     Ok(json!({ "observations": observations }))
 }

@@ -67,8 +67,8 @@ without going through the JS adapter bundle.
 ## Non-goals
 
 - Porting all thirteen `scripts/session-analysis` adapters in this slice.
-  Ported hosts are Grok, Qoder, Codex, Claude, Cursor, and Copilot. Others stay
-  `no-evidence` until a later spec ports them.
+  The first six hosts landed here; the remaining seven are
+  `docs/specs/2026-09-08-rust-evidence-host-remaining-adapters.md`.
 - Replacing `scripts/session-analysis` as the CLI owner. The JS analyzers remain
   canonical for `better-harness session-analysis` until a tested parity migration.
 - Moving Inspector report construction, Feature Tree parsing, git correlation,

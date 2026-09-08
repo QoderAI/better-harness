@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::model::{
-    Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall, truncate_prompt, tool_family,
+    tool_family, truncate_prompt, Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall,
 };
 use crate::paths::{claude_slug_variants, cwd_matches, home_dir, paths_from_value};
 use crate::time::normalize_timestamp;
@@ -17,7 +17,11 @@ pub fn discover(workspace: &Path, max_sessions: usize) -> Result<Vec<SessionSumm
     discover_from(&claude_home(), workspace, max_sessions)
 }
 
-pub fn discover_from(home: &Path, workspace: &Path, max_sessions: usize) -> Result<Vec<SessionSummary>, String> {
+pub fn discover_from(
+    home: &Path,
+    workspace: &Path,
+    max_sessions: usize,
+) -> Result<Vec<SessionSummary>, String> {
     let mut sessions = Vec::new();
     for slug in claude_slug_variants(workspace) {
         let root = home.join("projects").join(slug);
@@ -44,7 +48,10 @@ pub fn discover_from(home: &Path, workspace: &Path, max_sessions: usize) -> Resu
 
 fn read_session(workspace: &Path, path: &Path) -> Option<SessionSummary> {
     let text = fs::read_to_string(path).ok()?;
-    let fallback_id = path.file_stem().and_then(|name| name.to_str()).unwrap_or("session");
+    let fallback_id = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("session");
     let mut session_id = fallback_id.to_string();
     let mut first_seen = None;
     let mut last_seen = None;
@@ -97,7 +104,11 @@ fn read_session(workspace: &Path, path: &Path) -> Option<SessionSummary> {
                         continue;
                     }
                     let name = part.get("name").and_then(Value::as_str).unwrap_or("tool");
-                    let id = part.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                    let id = part
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
                     let input = part.get("input").cloned().unwrap_or(Value::Null);
                     let paths = paths_from_value(workspace, &input);
                     calls.push(ToolCall {
@@ -113,7 +124,7 @@ fn read_session(workspace: &Path, path: &Path) -> Option<SessionSummary> {
                         file_path: paths.first().cloned(),
                         file_paths: paths,
                         started_at: stamp.clone(),
-                    ..ToolCall::default()
+                        ..ToolCall::default()
                     });
                 }
             }

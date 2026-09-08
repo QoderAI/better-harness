@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::model::{
-    Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall, evidence_excerpt, tool_family,
+    evidence_excerpt, tool_family, Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall,
 };
 use crate::paths::{cwd_matches, home_dir, paths_from_text, tool_paths, walk_jsonl};
 use crate::time::normalize_timestamp;

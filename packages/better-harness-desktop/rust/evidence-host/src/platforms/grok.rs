@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::model::{
-    Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall, truncate_prompt, tool_family,
+    tool_family, truncate_prompt, Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall,
 };
 use crate::paths::{grok_group_name, home_dir, repo_relative};
 use crate::time::normalize_timestamp;
@@ -21,10 +21,12 @@ pub fn discover(workspace: &Path, max_sessions: usize) -> Result<Vec<SessionSumm
     discover_from(&grok_home(), workspace, max_sessions)
 }
 
-pub fn discover_from(home: &Path, workspace: &Path, max_sessions: usize) -> Result<Vec<SessionSummary>, String> {
-    let group = home
-        .join("sessions")
-        .join(grok_group_name(workspace));
+pub fn discover_from(
+    home: &Path,
+    workspace: &Path,
+    max_sessions: usize,
+) -> Result<Vec<SessionSummary>, String> {
+    let group = home.join("sessions").join(grok_group_name(workspace));
     if !group.is_dir() {
         return Ok(vec![]);
     }
@@ -158,7 +160,9 @@ fn parse_updates(
             "tool_call_update" => {
                 if let Some(title) = update.get("title").and_then(Value::as_str) {
                     let id = update.get("toolCallId").and_then(Value::as_str);
-                    if let Some(call) = id.and_then(|id| calls.iter_mut().find(|call| call.id == id)) {
+                    if let Some(call) =
+                        id.and_then(|id| calls.iter_mut().find(|call| call.id == id))
+                    {
                         let extra = backtick_paths(workspace, title);
                         for path in extra {
                             if !call.file_paths.contains(&path) {

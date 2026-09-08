@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::model::{Prompt, SessionSummary, ToolActivity, ToolCall, evidence_excerpt, tool_family};
+use crate::model::{evidence_excerpt, tool_family, Prompt, SessionSummary, ToolActivity, ToolCall};
 use crate::paths::{home_dir, qoder_slug_variants, tool_paths};
 use crate::time::{millis, normalize_timestamp};
 
