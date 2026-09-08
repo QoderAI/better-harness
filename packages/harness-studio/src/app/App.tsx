@@ -595,7 +595,7 @@ export function App(): React.JSX.Element {
       </div>
       {area === "debugger" ? <footer className="studio-status-bar"><strong>{activeProject?.label}</strong><div id="studio-debugger-status" /></footer> : <StatusBar
         scope={activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
-        status={current.status}
+        status={dateRange.preset !== "all" && (area === "sessions" || area === "artifacts") ? "" : current.status}
         config={config}
         dateRange={dateRange}
       />}
@@ -652,7 +652,7 @@ function StatusBar(props: {
   return <footer className="studio-status-bar" aria-label={t("statusBar.aria")}>
     <div className="studio-status-scope" aria-label={t("statusBar.scopeAria")}>
       <strong>{props.scope}</strong>
-      <span role="status" aria-label={t("contextBar.viewStatus", { status: props.status })}>{props.status}</span>
+      {props.status !== "" && <span role="status" aria-label={t("contextBar.viewStatus", { status: props.status })}>{props.status}</span>}
     </div>
     {counts.length > 0 && <div className="studio-status-counts" aria-label={t("statusBar.countsAria")}>
       {counts.map((entry) => <span key={entry}>{entry}</span>)}

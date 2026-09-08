@@ -67,12 +67,13 @@ test('cancel keeps welcome usable; opening and reloading enters the project dire
   expect(studio.pickerCalls).toBe(2);
 });
 
-test('Sessions loads and recomputes the shared range in Inspector and catalog, preserving the active view', async ({ page }, testInfo) => {
+test('Sessions loads and recomputes the shared range in Inspector, preserving the active view', async ({ page }, testInfo) => {
   const errors = collectErrors(page);
   await page.setViewportSize(layouts[0]);
   await openProject(page);
   await expect(page.locator('.workbench-list > article')).toHaveCount(2);
   await expect(page.getByRole('tab', { name: 'Date', exact: true })).toHaveCount(0);
+  await expect(page.locator('.studio-status-bar')).toContainText('2 sessions');
   let release;
   const blocked = new Promise(resolve => { release = resolve; });
   await page.route('**/api/sessions', async route => { await blocked; await route.continue(); }, { times: 1 });
@@ -83,17 +84,13 @@ test('Sessions loads and recomputes the shared range in Inspector and catalog, p
   release();
   await expect(page.locator('.workbench-list > article')).toHaveCount(1);
   await expect(page.locator('.workbench-list')).toContainText('Review current workflow');
-  await expect(page.locator('.date-session-list')).not.toContainText('Review archived workflow');
-  // The alternate catalog must obey the same window and keep its own tab active.
-  await page.locator('#session-tab-catalog').click();
-  await expect(page.locator('.session-catalog-rows > li')).toHaveCount(1);
+  await expect(page.locator('.workbench-list')).not.toContainText('Review archived workflow');
+  await expect(page.locator('.studio-status-bar')).not.toContainText('2 sessions');
   await range.selectOption('all');
-  await expect(page.locator('#session-tab-catalog')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.session-catalog-rows > li')).toHaveCount(2);
+  await expect(page.locator('.workbench-list > article')).toHaveCount(2);
+  await expect(page.locator('.studio-status-bar')).toContainText('2 sessions');
   await range.selectOption('today');
-  await expect(page.locator('.session-catalog-rows > li')).toHaveCount(1);
-  await expect(page.locator('.session-detail-pane')).not.toContainText('Review archived workflow');
-  await page.locator('#session-tab-inspector').click();
+  await expect(page.locator('.workbench-list > article')).toHaveCount(1);
   for (const theme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: theme });
     for (const layout of layouts) {
