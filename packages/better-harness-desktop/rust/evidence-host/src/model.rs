@@ -106,8 +106,8 @@ pub fn tool_family(name: &str) -> String {
     }
 }
 
-pub const PORTED: &[&str] = &["qoder", "codex", "claude", "grok"];
+pub const PORTED: &[&str] = &["qoder", "codex", "claude", "cursor", "copilot", "grok"];
 
 pub const UNPORTED: &[&str] = &[
-    "augment", "cursor", "qwen", "copilot", "pi", "kimi", "workbuddy", "dsh", "harness-run",
+    "augment", "qwen", "pi", "kimi", "workbuddy", "dsh", "harness-run",
 ];

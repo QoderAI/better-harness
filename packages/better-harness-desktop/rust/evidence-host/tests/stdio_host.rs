@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use harness_evidence_host::paths::{claude_slug_variants, grok_group_name};
-use harness_evidence_host::platforms::{claude, codex, grok};
+use harness_evidence_host::platforms::{claude, codex, copilot, cursor, grok};
 use harness_evidence_host::wire::HOST_PROTOCOL_VERSION;
 use serde_json::{Value, json};
 
@@ -111,6 +111,67 @@ fn claude_fixture_is_discovered() {
     assert_eq!(sessions[0].platform, "claude");
     assert_eq!(sessions[0].prompts[0].text, "Review lib.rs");
     assert_eq!(sessions[0].tool_activity.as_ref().unwrap().calls[0].file_path.as_deref(), Some("lib.rs"));
+}
+
+#[test]
+fn cursor_fixture_is_discovered() {
+    let workspace = unique_dir("evidence-cursor-workspace");
+    fs::write(workspace.join("main.rs"), "fn main() {}").unwrap();
+    let workspace = fs::canonicalize(&workspace).unwrap();
+    let home = unique_dir("evidence-cursor-home");
+    let slug = cursor::cursor_slug_variants(&workspace)[0].clone();
+    let dir = home
+        .join("projects")
+        .join(&slug)
+        .join("agent-transcripts")
+        .join("cursor-session");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("cursor-session.jsonl"),
+        format!(
+            "{}\n{}\n",
+            json!({"role":"user","message":{"content":[{"type":"text","text":"<user_query>Review main.rs</user_query>"}]}}),
+            json!({"role":"assistant","message":{"content":[{"type":"text","text":"Looking."},{"type":"tool_use","name":"Read","input":{"path": workspace.join("main.rs").to_string_lossy()}}]}})
+        ),
+    )
+    .unwrap();
+    let sessions = cursor::discover_from(&home, &workspace, 10).unwrap();
+    fs::remove_dir_all(&workspace).ok();
+    fs::remove_dir_all(&home).ok();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].platform, "cursor");
+    assert_eq!(sessions[0].prompts[0].text, "Review main.rs");
+    assert_eq!(sessions[0].tool_activity.as_ref().unwrap().calls[0].file_path.as_deref(), Some("main.rs"));
+}
+
+#[test]
+fn copilot_fixture_is_discovered() {
+    let workspace = unique_dir("evidence-copilot-workspace");
+    fs::write(workspace.join("app.ts"), "export {}").unwrap();
+    let workspace = fs::canonicalize(&workspace).unwrap();
+    let home = unique_dir("evidence-copilot-home");
+    let dir = home.join("session-state").join("copilot-session");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("workspace.yaml"),
+        format!("id: copilot-session\ncwd: {}\n", workspace.display()),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("events.jsonl"),
+        format!(
+            "{}\n{}\n",
+            json!({"type":"session.start","timestamp":"2026-09-08T03:00:00.000Z","data":{"sessionId":"copilot-session","context":{"cwd": workspace.to_string_lossy()}}}),
+            json!({"type":"user.message","timestamp":"2026-09-08T03:00:01.000Z","data":{"content":"Ship the app"}})
+        ),
+    )
+    .unwrap();
+    let sessions = copilot::discover_from(&home, &workspace, 10).unwrap();
+    fs::remove_dir_all(&workspace).ok();
+    fs::remove_dir_all(&home).ok();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].platform, "copilot");
+    assert_eq!(sessions[0].prompts[0].text, "Ship the app");
 }
 
 #[test]

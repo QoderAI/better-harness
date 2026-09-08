@@ -28,12 +28,12 @@ without going through the JS adapter bundle.
 ## Acceptance Scenarios
 
 - **AC-1** Given the Rust evidence driver and a Project directory that has
-  retained Grok, Qoder, Codex, and Claude Sessions, when `sessions.discover`
-  runs over stdio, then it returns those Sessions with `provider` statuses `ok`
-  for `grok`, `qoder`, `codex`, and `claude`, each Session has `sessionId`,
-  `platform`, and a usable `firstSeen` or `lastSeen`, and the count is greater
-  than zero. Remaining hosts report `no-evidence` rather than failing the whole
-  discovery.
+  retained Grok, Qoder, Codex, Claude, Cursor, and Copilot Sessions, when
+  `sessions.discover` runs over stdio, then those hosts report `ok` when
+  evidence exists (or `no-evidence` when the home is empty), each Session has
+  `sessionId`, `platform`, and a usable `firstSeen` or `lastSeen`, and the count
+  is greater than zero when any host matched. Remaining hosts report
+  `no-evidence` rather than failing the whole discovery.
 - **AC-2** Given a discovered Session whose tool calls name workspace files that
   still exist, when `artifacts.observe` (or the equivalent observation list on
   `sessions.discover`) runs, then it returns only regular files confined to the
@@ -67,8 +67,8 @@ without going through the JS adapter bundle.
 ## Non-goals
 
 - Porting all thirteen `scripts/session-analysis` adapters in this slice.
-  Ported hosts are Grok, Qoder, Codex, and Claude. Others stay `no-evidence`
-  until a later spec ports them.
+  Ported hosts are Grok, Qoder, Codex, Claude, Cursor, and Copilot. Others stay
+  `no-evidence` until a later spec ports them.
 - Replacing `scripts/session-analysis` as the CLI owner. The JS analyzers remain
   canonical for `better-harness session-analysis` until a tested parity migration.
 - Moving Inspector report construction, Feature Tree parsing, git correlation,
@@ -131,6 +131,11 @@ and Debugger events; `collectWorkspaceArtifactObservations` keeps working from
   cwd match; only the newest `maxSessions` matching files are fully parsed.
 - **Claude**: `~/.claude/projects/<slug>/*.jsonl` using Claude's `/._` slug fold.
   Prompts from `type: user`; tools from `tool_use` in assistant content.
+- **Cursor**: `~/.cursor/projects/<slug>/agent-transcripts/**/*.jsonl`. Slug
+  variants drop a leading `-`. Prompts from `<user_query>`; tools from
+  `tool_use`.
+- **Copilot**: `~/.copilot/session-state/<id>/workspace.yaml` + `events.jsonl`.
+  Workspace match is `cwd` on the yaml or `session.start`.
 
 Prompt text is truncated to 200 characters. Absolute paths in tool resources
 are rebased to the Project root or dropped.
@@ -163,7 +168,7 @@ Local macOS arm64, Rust 1.96.0, 2026-09-08:
 
 | AC | Evidence |
 | --- | --- |
-| AC-1 | `cargo +1.96.0 test` in `rust/evidence-host`: lib + stdio fixtures for Grok, Qoder, Codex, and Claude. Release stdio discover of this repository in 4.3s: 100 sessions (qoder 68, codex 26, grok 3, claude 3), 161 confined observations. |
+| AC-1 | `cargo +1.96.0 test` in `rust/evidence-host`: fixtures for Grok, Qoder, Codex, Claude, Cursor, and Copilot. Release stdio discover of this repository in 3.6s: 100 sessions (qoder 68, codex 26, grok 3, claude 3); Cursor discovered 8 (older than the recency cap); Copilot none for this exact cwd. |
 | AC-2 | `artifacts::tests::drops_missing_and_keeps_real_files` keeps `docs/kept.md` and drops `../escape`. |
 | AC-3 | Node client test refuses a stdio describe when `transport: "nsxpc"`. `transport_proof` JSON names distinct pids. Live launchd hop uses the ACP-identical client/xpc/driver split; `Harness Evidence.app` is staged by `scripts/rust.mjs`. |
 | AC-4 | `harness-evidence-client` / `harness-evidence-xpc` are `cfg(target_os = "macos")` and exit 2 otherwise. `rust.mjs` stages `harness-evidence-host` on every platform. |

@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use crate::artifacts::observe;
 use crate::model::{PORTED, ProviderStatus, SessionSummary, UNPORTED};
 use crate::paths::normalize_workspace;
-use crate::platforms::{claude, codex, grok, qoder};
+use crate::platforms::{claude, codex, copilot, cursor, grok, qoder};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +31,8 @@ pub fn discover(params: DiscoverParams) -> Result<Value, String> {
             "qoder" => qoder::discover(&workspace, max_sessions),
             "codex" => codex::discover(&workspace, max_sessions),
             "claude" => claude::discover(&workspace, max_sessions),
+            "cursor" => cursor::discover(&workspace, max_sessions),
+            "copilot" => copilot::discover(&workspace, max_sessions),
             "grok" => grok::discover(&workspace, max_sessions),
             _ => Ok(Vec::new()),
         };
