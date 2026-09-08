@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, normalize, posix, resolve, win32 } from "node:path";
 import { IMPORT_SESSION_TTL_MS, MAX_IMPORT_BYTES, MAX_IMPORT_SESSIONS, respondJson, sameOriginRequest } from "../http-utils.js";
 import { HarnessStudioServerOptions, HarnessStudioState, StoredStudioProject, StoredWorkspaceSession, StudioWorkspace, StudioWorkspaceSession, WorkspaceImportSession } from "../studio-types.js";
+import { saveStoredProjects } from "./project-store.js";
 
 export const MAX_WORKSPACE_FILES = 512;
 export const MAX_WORKSPACE_SESSIONS = 200;
@@ -106,6 +107,7 @@ export async function openWorkspace(
     };
     state.projects.set(projectId, project);
     activateWorkspace(state, options, projectId, workspace);
+    rememberProjects(options, state);
     respondJson(response, 200, {
       opened: true,
       project: project.descriptor,
@@ -228,6 +230,42 @@ export function serveProjectCatalog(response: ServerResponse, state: HarnessStud
   }, { "Cache-Control": "no-store" });
 }
 
+/**
+ * Re-activate the Project that was active when Studio last exited.
+ *
+ * Called once at boot, off the request path, so the reader lands back in their
+ * Project instead of on the open-a-Project gate. A directory that has moved or
+ * gone is marked unavailable and left inactive: a stale catalog must not be able
+ * to stop Studio from starting.
+ */
+/**
+ * Remember the catalog after it changed. Fire-and-forget on purpose: a failed
+ * cache write must not fail the request that changed the catalog.
+ */
+function rememberProjects(options: HarnessStudioServerOptions, state: HarnessStudioState): void {
+  if (options.projectStateRoot === undefined) return;
+  void saveStoredProjects(options.projectStateRoot, state).catch(() => undefined);
+}
+
+export async function restoreActiveProject(
+  options: HarnessStudioServerOptions,
+  state: HarnessStudioState,
+  projectId: string,
+): Promise<boolean> {
+  const project = projectForId(state, projectId);
+  if (project?.kind !== "local" || project.localDirectory === undefined) return false;
+  try {
+    const workspacePath = await realpath(project.localDirectory);
+    if (!sameNativePath(workspacePath, project.localDirectory)) return false;
+    if (!(await stat(workspacePath)).isDirectory()) return false;
+    activateWorkspace(state, options, projectId, await discoverWorkspace(options, workspacePath));
+    return true;
+  } catch {
+    project.descriptor = { ...project.descriptor, availability: "unavailable" };
+    return false;
+  }
+}
+
 export async function activateProject(
   request: IncomingMessage,
   response: ServerResponse,
@@ -261,6 +299,7 @@ export async function activateProject(
     }
     if (workspace === undefined) throw new Error("The Project workspace is no longer available.");
     activateWorkspace(state, options, projectId, workspace);
+    rememberProjects(options, state);
     respondJson(response, 200, { activated: true, project: project.descriptor, revision: state.projectRevision });
   } catch {
     project.descriptor = { ...project.descriptor, availability: "unavailable" };
@@ -304,6 +343,7 @@ export async function removeProject(
       state.artifactPaths = options.artifactPaths;
       state.customizationAnalysis = undefined;
     }
+    rememberProjects(options, state);
     respondJson(response, 200, { removed: true, revision: state.projectRevision });
   } catch {
     respondJson(response, 500, { error: "Studio could not remove the imported Project materialization." });

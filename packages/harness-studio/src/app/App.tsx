@@ -23,6 +23,12 @@ import {
 import type { DebuggerSession } from "../contracts/debugger-session.js";
 import { isStudioProjectCatalog, type StudioProjectCatalog, type StudioProjectDescriptor } from "../contracts/studio-project.js";
 import { ProjectSidebar } from "./shell/ProjectSidebar.js";
+import {
+  STUDIO_DATE_RANGE_PRESETS,
+  STUDIO_DEFAULT_DATE_RANGE,
+  withinDateRange,
+  type StudioDateRange,
+} from "./date-range.js";
 import { TOOLBAR_ACTIONS_ID } from "./shell/ToolbarActions.js";
 import { parseStudioLocation, studioLocationHash } from "./shell/project-routing.js";
 import {
@@ -97,6 +103,7 @@ function initialStudioTheme(): StudioTheme {
 
 const SIDEBAR_WIDTH_KEY = "harness-studio-sidebar-width";
 const SIDEBAR_COLLAPSED_KEY = "harness-studio-sidebar-collapsed";
+const DATE_RANGE_KEY = "harness-studio-date-range";
 /** Below this width the sidebar is an overlay, so a stored width does not apply. */
 const SIDEBAR_OVERLAY_QUERY = "(max-width: 1080px)";
 
@@ -136,6 +143,29 @@ function storedSidebarCollapsed(): boolean {
     return globalThis.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
   } catch {
     return false;
+  }
+}
+
+/**
+ * The observation window survives a reload, because a reader who narrowed to
+ * "today" is mid-investigation and should not be widened back out by a refresh.
+ * A stored value that no longer parses falls back rather than throwing.
+ */
+function storedDateRange(): StudioDateRange {
+  try {
+    const raw = globalThis.localStorage.getItem(DATE_RANGE_KEY);
+    if (raw === null) return STUDIO_DEFAULT_DATE_RANGE;
+    const parsed = JSON.parse(raw) as Partial<StudioDateRange>;
+    if (!STUDIO_DATE_RANGE_PRESETS.includes(parsed.preset as StudioDateRange["preset"])) {
+      return STUDIO_DEFAULT_DATE_RANGE;
+    }
+    return {
+      preset: parsed.preset as StudioDateRange["preset"],
+      ...(typeof parsed.from === "string" ? { from: parsed.from } : {}),
+      ...(typeof parsed.to === "string" ? { to: parsed.to } : {}),
+    };
+  } catch {
+    return STUDIO_DEFAULT_DATE_RANGE;
   }
 }
 
@@ -185,6 +215,7 @@ export function App(): React.JSX.Element {
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storedSidebarCollapsed);
   const [sidebarWidth, setSidebarWidth] = useState(storedSidebarWidth);
+  const [dateRange, setDateRange] = useState<StudioDateRange>(storedDateRange);
   const [overlaySidebar, setOverlaySidebar] = useState(() => globalThis.matchMedia?.(SIDEBAR_OVERLAY_QUERY).matches === true);
   const [theme, setTheme] = useState<StudioTheme>(initialStudioTheme);
   const navigationToggleRef = useRef<HTMLButtonElement>(null);
@@ -211,6 +242,14 @@ export function App(): React.JSX.Element {
       // The layout stays usable for this page when storage is blocked.
     }
   }, [sidebarWidth, sidebarCollapsed]);
+
+  useEffect(() => {
+    try {
+      globalThis.localStorage.setItem(DATE_RANGE_KEY, JSON.stringify(dateRange));
+    } catch {
+      // The window still applies to this page when storage is blocked.
+    }
+  }, [dateRange]);
 
   /**
    * Only a choice made here is stored. Writing on every render would persist the
@@ -518,6 +557,8 @@ export function App(): React.JSX.Element {
       onSelectView={openArea}
       onCollapseSidebar={() => { setSidebarCollapsed(true); navigationToggleRef.current?.focus(); }}
       onCloseNavigation={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }}
+      dateRange={dateRange}
+      onDateRangeChange={setDateRange}
       settings={<SettingsMenu theme={theme} onTheme={chooseTheme} />}
     />
     <SidebarSash width={sidebarWidth} onWidth={setSidebarWidth} />
@@ -537,9 +578,9 @@ export function App(): React.JSX.Element {
         {area === "customizations" && (config.customizationAnalysisEnabled
           ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />
           : <EmptyWorkspace eyebrow={t("customize:empty.eyebrow")} title={t("customize:empty.titleConnected")} detail={t("customize:empty.detailConnected")} command="npx @qoder-ai/harness-studio" />)}
-        {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
-        {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
-        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} config={config} />}
+        {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}`} dateRange={dateRange} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
+        {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} dateRange={dateRange} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
+        {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}`} dateRange={dateRange} config={config} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
       </div>
@@ -780,6 +821,7 @@ interface SessionArtifactContext {
 
 function SessionsWorkspace(props: {
   config: StudioConfig;
+  dateRange: StudioDateRange;
   initialSessionId?: string;
   openProjectAction?: { label: string; onClick: () => void };
   onCompare: (ids: [string, string]) => void;
@@ -865,7 +907,8 @@ function SessionsWorkspace(props: {
   function moveSessionFocus(event: ReactKeyboardEvent<HTMLButtonElement>, id: string): void {
     if (sessions === undefined || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const rows = sessions.filter((session) => agentFilter === "all" || (session.provider ?? t("common:localAgent")) === agentFilter);
+    const rows = sessions.filter((session) => (agentFilter === "all" || (session.provider ?? t("common:localAgent")) === agentFilter)
+      && withinDateRange(session.savedAt, props.dateRange));
     if (rows.length === 0) return;
     const index = Math.max(0, rows.findIndex((session) => session.id === id));
     const nextIndex = event.key === "Home"
@@ -892,14 +935,21 @@ function SessionsWorkspace(props: {
   const agentLabel = (session: SessionSummary): string => session.provider ?? t("common:localAgent");
   // Sessions are the Agent-dimension entry point for Compare, so the catalog can
   // be narrowed to one Agent and always reports how many Agents it observed.
-  const agentCounts = sessions.reduce<Map<string, number>>((counts, session) => counts.set(agentLabel(session), (counts.get(agentLabel(session)) ?? 0) + 1), new Map());
+  const agentCounts = sessions.filter((session) => withinDateRange(session.savedAt, props.dateRange))
+    .reduce<Map<string, number>>((counts, session) => counts.set(agentLabel(session), (counts.get(agentLabel(session)) ?? 0) + 1), new Map());
   const agents = [...agentCounts.keys()].sort((left, right) => left.localeCompare(right));
-  const visibleSessions = agentFilter === "all" ? sessions : sessions.filter((session) => agentLabel(session) === agentFilter);
+  // The sidebar's window narrows before the Agent filter does, so the Agent
+  // counts beside each option describe the same span the list shows.
+  const datedSessions = sessions.filter((session) => withinDateRange(session.savedAt, props.dateRange));
+  const visibleSessions = agentFilter === "all" ? datedSessions : datedSessions.filter((session) => agentLabel(session) === agentFilter);
   const catalog = <section className="session-browser-workspace" aria-label={t("workspaceAria")}>
     <aside className="session-catalog-pane">
       <header><div><small>{t("evidenceEyebrow")}</small><h2>{t("common:area.sessions")}</h2></div><span>{visibleSessions.length}</span></header>
       {agents.length > 1 && <div className="session-agent-filter"><label><span>{t("agentFilterLabel")}</span><select aria-label={t("agentFilterAria")} value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)}><option value="all">{t("allAgents")}</option>{agents.map((agent) => <option key={agent} value={agent}>{t("agentSessionCount", { agent, sessions: agentCounts.get(agent) })}</option>)}</select></label></div>}
       {omittedCount > 0 && <p className="session-omissions">{t("omitted", { count: omittedCount })}</p>}
+      {sessions.length > 0 && datedSessions.length === 0
+        ? <p className="session-omissions">{t("common:dateRange.emptyWindow")}</p>
+        : datedSessions.length < sessions.length && <p className="session-omissions">{t("common:dateRange.filtered", { shown: datedSessions.length, total: sessions.length })}</p>}
       <ul className="session-catalog-rows">{visibleSessions.map((session) => <li key={session.id}>
         <label title={t("selectTitle", { prompt: session.prompt })}><input type="checkbox" aria-label={t("selectAria", { prompt: session.prompt, provider: agentLabel(session), time: formatSessionTime(session.savedAt, studioLocale()) })} checked={compareIds.has(session.id)} disabled={!compareIds.has(session.id) && compareIds.size >= 2} onChange={() => toggleCompare(session.id)} /></label>
         <button ref={(node) => { if (node) sessionRowRefs.current.set(session.id, node); else sessionRowRefs.current.delete(session.id); }} type="button" tabIndex={focusedSessionId === session.id ? 0 : -1} className={selected === session.id ? "selected" : undefined} onFocus={() => setFocusedSessionId(session.id)} onKeyDown={(event) => moveSessionFocus(event, session.id)} onClick={() => { setFocusedSessionId(session.id); void openSession(session.id); }}><small>{agentLabel(session)} · {formatSessionTime(session.savedAt, studioLocale())}</small><strong>{session.prompt}</strong><small>{t("status", { status: session.status, count: session.toolCallCount })}</small></button>

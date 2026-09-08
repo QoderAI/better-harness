@@ -43,6 +43,7 @@ export const artifacts = {
   currentRevision: "current",
   previewUnavailable: "Preview unavailable",
   date: {
+    daysAria: "Days in the selected window",
     previousMonth: "Previous month",
     nextMonth: "Next month",
     activityAria: "{{month}} Artifact activity",

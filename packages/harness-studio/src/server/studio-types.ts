@@ -114,6 +114,12 @@ export interface HarnessStudioServerOptions {
    * shell; unused by the CLI/browser.
    */
   acpHostTransport?: "stdio" | "nsxpc";
+  /**
+   * Directory for Studio's own small caches, currently the remembered Project
+   * catalog. Absent means Projects are not remembered across restarts, which is
+   * what the browser CLI wants and what the desktop shell overrides.
+   */
+  projectStateRoot?: string;
   /** Server-owned selectable ACP Agent catalog, including unavailable known presets. */
   acpAgents?: readonly StudioAcpAgentProfile[];
   /** `harness-experiment.v1` manifest; enables the live three-lane trace view. */

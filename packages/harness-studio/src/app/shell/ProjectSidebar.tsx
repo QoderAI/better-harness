@@ -13,6 +13,8 @@ import { PuzzlePiece } from "@phosphor-icons/react/PuzzlePiece";
 import { SidebarSimple } from "@phosphor-icons/react/SidebarSimple";
 import { X } from "@phosphor-icons/react/X";
 import type { StudioProjectDescriptor } from "../../contracts/studio-project.js";
+import type { StudioDateRange } from "../date-range.js";
+import { DateRangeFilter } from "./DateRangeFilter.js";
 import type { StudioArea, StudioDestination } from "../studio-shell-model.js";
 
 const VIEW_ICONS: Record<StudioArea, Icon> = {
@@ -37,6 +39,9 @@ export function ProjectSidebar(props: {
   onSelectView: (area: StudioArea) => void;
   onCollapseSidebar: () => void;
   onCloseNavigation: () => void;
+  /** The Studio-wide observation window every "observe" View reads. */
+  dateRange: StudioDateRange;
+  onDateRangeChange: (range: StudioDateRange) => void;
   /** Rendered as the sidebar's last row: appearance and language live here. */
   settings: ReactNode;
 }): React.JSX.Element {
@@ -185,6 +190,10 @@ export function ProjectSidebar(props: {
         </button>
       </div>}
     </div>
+
+    {/* The Project says where to look; this says when. Both scope every View
+        below, which is why neither is one of the rows. */}
+    <DateRangeFilter range={props.dateRange} onChange={props.onDateRangeChange} />
 
     <nav aria-label={t("sidebar.navAria")} onKeyDown={onNavigationKeyDown}>
       <section

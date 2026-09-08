@@ -45,6 +45,7 @@ export const artifacts: typeof enArtifacts = {
   currentRevision: "当前",
   previewUnavailable: "预览不可用",
   date: {
+    daysAria: "所选时间窗内的日期",
     previousMonth: "上个月",
     nextMonth: "下个月",
     activityAria: "{{month}} 产物活动",

@@ -45,6 +45,7 @@ import {
   importWorkspaceFile,
   openWorkspace,
   removeProject,
+  restoreActiveProject,
   serveProjectCatalog,
   serveSessionComparison,
   sessionAgentBreakdown,
@@ -52,6 +53,7 @@ import {
   serveWorkspaceSession,
   serveWorkspaceSessions,
 } from "./workspace/routes.js";
+import { loadStoredProjects } from "./workspace/project-store.js";
 import { serveGitCommit, serveGitFilePatch, serveGitLog, serveGitRefs } from "./git/routes.js";
 import {
   abortArtifactImport,
@@ -102,6 +104,15 @@ import {
   serveInspectorReportJson,
   serveStatic,
 } from "./content-routes.js";
+
+/**
+ * Carries the boot-time Project restore from `createHarnessStudioServer` to
+ * `startHarnessStudioServer`, which awaits it before it starts listening. A
+ * symbol keeps it off the public `Server` surface.
+ */
+const STUDIO_RESTORE = Symbol("harness-studio-project-restore");
+
+type RestorableServer = Server & { [STUDIO_RESTORE]?: Promise<void> };
 
 const builtInExecutorFactory: HarnessExecutorFactory = (context) => {
   if (context.runtimeId === "qoder") {
@@ -159,6 +170,10 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
     customizationAnalysisRunning: false,
     acpRuns: new Map(),
   };
+  // Remembered Projects are restored before the first request can arrive, so a
+  // relaunch opens on the reader's Project instead of the open-a-Project gate.
+  const restored = restoreRememberedProjects(resolvedOptions, state);
+
   const server = createServer((request, response) => {
     if (resolvedOptions.accessToken !== undefined && request.headers["x-harness-studio-token"] !== resolvedOptions.accessToken) {
       respondJson(response, 401, { error: "Studio authorization required." });
@@ -179,7 +194,30 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
     state.artifactInteractionProposals.clear();
     void Promise.all([cleanupArtifactImports(state), cleanupWorkspaceImports(state)]);
   });
-  return server;
+  return Object.assign(server, { [STUDIO_RESTORE]: restored });
+}
+
+/**
+ * Repopulate the Project catalog from the remembered file and re-activate the
+ * Project that was last active. Never rejects: a launch must not depend on a
+ * cache, so an unreadable catalog simply leaves Studio with no Projects.
+ */
+async function restoreRememberedProjects(
+  options: HarnessStudioServerOptions,
+  state: HarnessStudioState,
+): Promise<void> {
+  if (options.projectStateRoot === undefined) return;
+  try {
+    const stored = await loadStoredProjects(options.projectStateRoot);
+    for (const [id, project] of stored.projects) {
+      if (!state.projects.has(id)) state.projects.set(id, project);
+    }
+    if (stored.activeProjectId !== undefined && state.activeProjectId === undefined) {
+      await restoreActiveProject(options, state, stored.activeProjectId);
+    }
+  } catch {
+    // A launch must not depend on a cache.
+  }
 }
 
 function resolveStudioServerOptions(options: HarnessStudioServerOptions): HarnessStudioServerOptions {
@@ -725,6 +763,9 @@ export async function startHarnessStudioServer(
   const server = createHarnessStudioServer(options);
   const host = options.host ?? "127.0.0.1";
   assertStudioBindAddressAllowed(host, options.allowRemote === true);
+  // Remembered Projects land before the port opens, so the first `/api/config`
+  // already reports the restored Project rather than an empty catalog.
+  await (server as RestorableServer)[STUDIO_RESTORE];
   await new Promise<void>((resolvePromise, rejectPromise) => {
     server.once("error", rejectPromise);
     server.listen(options.port ?? 0, host, resolvePromise);

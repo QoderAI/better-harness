@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { withinDateRange, type StudioDateRange } from "./date-range.js";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
@@ -36,7 +37,7 @@ const PAGE_SIZE = 40;
 const GIT_LANE_COLOR_TOKENS = [5, 4, 2, 1, 6, 7, 3] as const;
 type NarrowPane = "refs" | "history" | "detail";
 
-export function GitHistoryView(): React.JSX.Element {
+export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX.Element {
   const { t } = useTranslation("git");
   const [refs, setRefs] = useState<GitRefsSnapshot>();
   const [commits, setCommits] = useState<GitHistoryCommit[]>([]);
@@ -198,6 +199,12 @@ export function GitHistoryView(): React.JSX.Element {
   const activeCommit = useMemo(() => commits.find((commit) => commit.sha === selectedSha), [commits, selectedSha]);
   const loadNextPage = useCallback(() => { void loadLog(true); }, [loadLog]);
   const canLoadMore = hasMore && !loading && loadedLogKey === logQueryKey;
+  // The window narrows what is already loaded. Paging stays available, because a
+  // page that falls entirely outside the window is not the end of the history.
+  const datedCommits = useMemo(
+    () => commits.filter((commit) => withinDateRange(commit.authoredAt, props.dateRange)),
+    [commits, props.dateRange],
+  );
   return <main className="git-history-workbench" data-narrow-pane={narrowPane}>
     <header className="git-history-titlebar">
       <div><GitCommit aria-hidden="true" size={18} weight="fill" /><span><strong>{t("titlebar.title")}</strong><small>{t("titlebar.evidence")}</small></span></div>
@@ -228,13 +235,16 @@ export function GitHistoryView(): React.JSX.Element {
         {historyTruncated && <p className="git-search-limit" role="status">{t("log.historyLimited", { total })}</p>}
         {loadMoreFailure !== undefined && <p className="git-page-error" role="alert">{loadMoreFailure} {t("log.pageErrorSuffix")}</p>}
       </div>
+      {datedCommits.length < commits.length && <p className="git-search-limit" role="status">{t("common:dateRange.filtered", { shown: datedCommits.length, total: commits.length })}</p>}
       {failure !== undefined
         ? <ErrorState message={failure} />
         : loading && commits.length === 0
           ? <LoadingState label={t("log.loading")} />
           : commits.length === 0
             ? <EmptyState search={search} />
-            : <CommitTable key={logQueryKey} commits={commits} hasMore={canLoadMore} loadingMore={loadingMore} loadMoreFailed={loadMoreFailure !== undefined} selectedSha={selectedSha} onLoadMore={loadNextPage} onSelect={(sha) => void selectCommit(sha)} />}
+            : datedCommits.length === 0
+              ? <p className="git-empty-window" role="status">{t("common:dateRange.emptyWindow")}</p>
+              : <CommitTable key={logQueryKey} commits={datedCommits} hasMore={canLoadMore} loadingMore={loadingMore} loadMoreFailed={loadMoreFailure !== undefined} selectedSha={selectedSha} onLoadMore={loadNextPage} onSelect={(sha) => void selectCommit(sha)} />}
       <footer className="git-page-progress">{canLoadMore && (loadingMore
         ? <span role="status"><SpinnerGap aria-hidden="true" className="spin" size={14} />{t("log.loadingMore")}</span>
         : loadMoreFailure !== undefined

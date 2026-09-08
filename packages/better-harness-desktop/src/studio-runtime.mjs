@@ -82,6 +82,9 @@ port.on('message', async (data) => {
         runDirectory: join(data.dataDirectory, 'runs'),
         artifactProviderStateRoot: join(data.dataDirectory, 'providers'),
         walnutCacheRoot: join(data.dataDirectory, 'cache'),
+        // Remembered Projects: a relaunch resumes the reader's Project instead
+        // of opening on the empty gate.
+        projectStateRoot: join(data.dataDirectory, 'state'),
         workspaceSessionProvider: createBundledInspectorWorkspaceSessionProvider(),
         customizationCollector: createBundledAgentCustomizationCollector(),
         workspaceDirectoryPicker: pickDirectory,

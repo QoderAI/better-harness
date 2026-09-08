@@ -13,6 +13,7 @@ import { Folder } from "@phosphor-icons/react/Folder";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
 import { TreeStructure } from "@phosphor-icons/react/TreeStructure";
+import { withinDateRange, type StudioDateRange } from "./date-range.js";
 
 import {
   isArtifactCatalogResponse,
@@ -57,7 +58,7 @@ interface ArtifactDayGroup {
   sessions: ArtifactSessionGroup[];
 }
 
-export function ArtifactsWorkspace(props: { config: StudioConfig }): React.JSX.Element {
+export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: StudioDateRange }): React.JSX.Element {
   const { t } = useTranslation("artifacts");
   const [catalog, setCatalog] = useState<StudioArtifactCatalogResponse>();
   const [failure, setFailure] = useState<string>();
@@ -124,7 +125,16 @@ export function ArtifactsWorkspace(props: { config: StudioConfig }): React.JSX.E
     return () => { cancelled = true; events.close(); };
   }, [catalogRefresh, props.config.artifactsEnabled]);
 
-  const days = useMemo(() => artifactDays(catalog?.navigation), [catalog?.navigation]);
+  // Days come pre-narrowed by the sidebar's window, so this View lists what is
+  // in scope instead of offering a second calendar to pick a day from.
+  const allDays = useMemo(() => artifactDays(catalog?.navigation), [catalog?.navigation]);
+  const days = useMemo(
+    () => allDays.filter((day) => withinDateRange(day.observations[0]?.savedAt, props.dateRange)),
+    [allDays, props.dateRange],
+  );
+  // A catalog with nothing in it is not a window problem, so only a window that
+  // hid real days earns the "widen the range" hint.
+  const windowHidesDays = allDays.length > 0 && days.length === 0;
   const effectiveMode: ArtifactScopeMode = catalog?.navigation === undefined ? "files" : scopeMode;
   const scopedArtifacts = useMemo(() => {
     if (catalog === undefined) return [];
@@ -253,7 +263,7 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
         <button type="button" role="tab" aria-selected={effectiveMode === "files"} onClick={() => setScopeMode("files")}><TreeStructure aria-hidden="true" size={14} />{t("scopeMode.files")}</button>
       </div>
       {effectiveMode === "date" && navigation !== undefined
-        ? <ArtifactDateNavigator days={days} scope={scope} onSelect={selectScope} />
+        ? <ArtifactDateNavigator days={days} windowHidesDays={windowHidesDays} scope={scope} onSelect={selectScope} />
         : <ArtifactFileNavigator artifacts={artifacts} scope={scope} onSelect={selectScope} />}
       {!liveUpdates && <p className="artifact-pane-note" role="note">{t("liveUpdatesStopped")}</p>}
     </aside>
@@ -357,7 +367,7 @@ function ArtifactIntentPane(props: {
   </aside>;
 }
 
-function ArtifactDateNavigator(props: { days: ArtifactDayGroup[]; scope: ArtifactScope; onSelect: (scope: ArtifactScope) => void }): React.JSX.Element {
+function ArtifactDateNavigator(props: { days: ArtifactDayGroup[]; windowHidesDays: boolean; scope: ArtifactScope; onSelect: (scope: ArtifactScope) => void }): React.JSX.Element {
   const { t } = useTranslation("artifacts");
   const sessionScope = props.scope.kind === "session" ? props.scope.value : undefined;
   const activeDay = props.scope.kind === "day"
@@ -381,25 +391,20 @@ function ArtifactDateNavigator(props: { days: ArtifactDayGroup[]; scope: Artifac
   const weekdayShorts = t("date.weekdaysShort", { returnObjects: true }) as string[];
   const monthLabel = month.toLocaleDateString(locale, { month: "long", year: "numeric" });
   return <div className="artifact-date-navigator">
-    <header className="artifact-calendar-header">
-      <button type="button" aria-label={t("date.previousMonth")} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><CaretLeft aria-hidden="true" size={14} /></button>
-      <strong>{monthLabel}</strong>
-      <button type="button" aria-label={t("date.nextMonth")} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><CaretRight aria-hidden="true" size={14} /></button>
-    </header>
-    <div className="artifact-calendar" role="grid" aria-label={t("date.activityAria", { month: monthLabel })}>
-      {weekdayShorts.map((label, index) => <span key={`${label}-${index}`} role="columnheader" aria-label={weekdays[index]}>{label}</span>)}
-      {cells.map((cell, index) => cell === undefined
-        ? <i key={`empty-${index}`} aria-hidden="true" />
-        : <button
-          key={cell.day}
+    <nav className="artifact-day-list" aria-label={t("date.daysAria")}>
+      {props.days.length === 0
+        ? props.windowHidesDays ? <p className="artifact-empty">{t("common:dateRange.emptyWindow")}</p> : null
+        : props.days.map((day) => <button
+          key={day.day}
           type="button"
-          role="gridcell"
-          aria-selected={cell.day === activeDay}
-          aria-label={`${cell.date.toLocaleDateString(locale, { dateStyle: "long" })}${dayMap.has(cell.day) ? `, ${t("date.activitySummary", { count: dayMap.get(cell.day)!.artifactIds.length })}` : `, ${t("date.noActivity")}`}`}
-          disabled={!dayMap.has(cell.day)}
-          onClick={() => props.onSelect({ kind: "day", value: cell.day })}
-        ><span>{cell.date.getDate()}</span>{dayMap.has(cell.day) && <small aria-hidden="true" />}</button>)}
-    </div>
+          className={day.day === activeDay ? "selected" : undefined}
+          aria-current={day.day === activeDay ? "true" : undefined}
+          onClick={() => props.onSelect({ kind: "day", value: day.day })}
+        >
+          <strong>{formatDayHeading(day.day, locale)}</strong>
+          <small>{t("date.sessionsAndArtifacts", { sessions: day.sessions.length, artifacts: day.artifactIds.length })}</small>
+        </button>)}
+    </nav>
     {selectedDay !== undefined && <section className="artifact-day-sessions" aria-label={t("date.sessionsOn", { day: selectedDay.day })}>
       <header><strong>{formatDayHeading(selectedDay.day, locale)}</strong><span>{t("date.sessionsAndArtifacts", { sessions: selectedDay.sessions.length, artifacts: selectedDay.artifactIds.length })}</span></header>
       {selectedDay.sessions.map((session) => <button

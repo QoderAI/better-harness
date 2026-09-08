@@ -223,6 +223,71 @@
   background: var(--color-sidebar);
 }
 
+/* The observation window sits with the Project, above the View list: together
+   they scope every View, which is why neither is one of the rows. */
+.studio-date-range {
+  flex: none;
+  padding: 0 var(--sidebar-inset) var(--space-sm);
+  display: grid;
+  gap: var(--space-xs);
+  background: var(--color-sidebar);
+}
+
+.studio-date-range-preset {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-text-muted);
+}
+
+.studio-date-range-preset select {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+}
+
+.studio-date-range-custom {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-xxs) var(--space-xs);
+}
+
+.studio-date-range-custom label {
+  color: var(--color-text-muted);
+  font-size: var(--type-meta-size);
+}
+
+.studio-date-range-custom input {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+}
+
+.studio-date-range-summary {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--type-meta-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-date-range-summary.status-warning { color: var(--color-warning); }
+
 .studio-project-switcher > button {
   width: 100%;
   min-width: 0;
