@@ -4,7 +4,8 @@ import { parentPort } from 'node:worker_threads';
 import { message, isMessage } from './protocol.mjs';
 import {
   startHarnessStudioServer, defaultAppDir, discoverAcpAgentProfiles,
-  createBundledInspectorWorkspaceSessionProvider, createBundledAgentCustomizationCollector,
+  createRustEvidenceHost, createRustEvidenceWorkspaceSessionProvider,
+  createBundledAgentCustomizationCollector,
 } from '@qoder-ai/harness-studio';
 
 const port = parentPort;
@@ -45,7 +46,7 @@ async function stop() {
 port.on('message', async (data) => {
   try {
     if (isMessage(data, 'start') && !starting && !stopping) {
-      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || typeof data.oxcExecutable !== 'string' || typeof data.acpHostExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport) || !['stdio', 'nsxpc'].includes(data.acpHostTransport)) {
+      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || typeof data.oxcExecutable !== 'string' || typeof data.acpHostExecutable !== 'string' || typeof data.evidenceHostExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport) || !['stdio', 'nsxpc'].includes(data.acpHostTransport) || !['stdio', 'nsxpc'].includes(data.evidenceHostTransport)) {
         throw new Error('Invalid Studio startup contract');
       }
       starting = true;
@@ -69,8 +70,14 @@ port.on('message', async (data) => {
       const nativeLibraries = process.report.getReport().sharedObjects;
       if (nativeLibraries.some((library) => /oxc[_-](parser|transform)/i.test(library))) throw new Error('OXC NAPI unexpectedly loaded in Studio');
       // Local diagnostic receipt, without source text or credentials.
-      console.info(JSON.stringify({ kind: 'better-harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false, acpTransport: data.acpHostTransport, acpRuntime: data.acpHostTransport === 'nsxpc' ? 'acp-v1-nsxpc' : 'acp-v1-rust' }));
+      console.info(JSON.stringify({ kind: 'better-harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false, acpTransport: data.acpHostTransport, acpRuntime: data.acpHostTransport === 'nsxpc' ? 'acp-v1-nsxpc' : 'acp-v1-rust', evidenceTransport: data.evidenceHostTransport, evidenceRuntime: data.evidenceHostTransport === 'nsxpc' ? 'evidence-v1-nsxpc' : 'evidence-v1-rust' }));
       const acpAgents = await discoverAcpAgentProfiles();
+      const evidenceHost = createRustEvidenceHost({
+        executable: data.evidenceHostExecutable,
+        transport: data.evidenceHostTransport,
+      });
+      compilers.add({ close: () => evidenceHost.close() });
+      await evidenceHost.describe();
       server = await startHarnessStudioServer({
         oxcCompilerFactory,
         acpHostExecutable: data.acpHostExecutable,
@@ -85,7 +92,7 @@ port.on('message', async (data) => {
         // Remembered Projects: a relaunch resumes the reader's Project instead
         // of opening on the empty gate.
         projectStateRoot: join(data.dataDirectory, 'state'),
-        workspaceSessionProvider: createBundledInspectorWorkspaceSessionProvider(),
+        workspaceSessionProvider: createRustEvidenceWorkspaceSessionProvider(evidenceHost),
         customizationCollector: createBundledAgentCustomizationCollector(),
         workspaceDirectoryPicker: pickDirectory,
       });

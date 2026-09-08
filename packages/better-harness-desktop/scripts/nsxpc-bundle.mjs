@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 export const serviceId = 'com.qoder.harness-studio.oxc';
 export const acpServiceId = 'com.qoder.harness-studio.acp';
+export const evidenceServiceId = 'com.qoder.harness-studio.evidence';
 const plist = (body) => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>${body}</dict></plist>\n`;
@@ -53,6 +54,32 @@ export async function installAcpXpc(appPath, binaryDirectory, { development = fa
   if (development) await writeFile(join(contents, 'Info.plist'), plist(`
 <key>CFBundleIdentifier</key><string>com.qoder.harness-studio.acp-development</string>
 <key>CFBundleExecutable</key><string>harness-acp-client</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSUIElement</key><true/>`));
+}
+
+/**
+ * Evidence NSXPC service: one unmodified `harness-evidence-host` driver per
+ * connection, same shape as ACP. The bridge goes in Contents/MacOS.
+ */
+export async function installEvidenceXpc(appPath, binaryDirectory, { development = false } = {}) {
+  const contents = join(appPath, 'Contents');
+  const service = join(contents, 'XPCServices', `${evidenceServiceId}.xpc`, 'Contents');
+  await mkdir(join(contents, 'MacOS'), { recursive: true });
+  await mkdir(join(service, 'MacOS'), { recursive: true });
+  await cp(join(binaryDirectory, 'harness-evidence-client'), join(contents, 'MacOS', 'harness-evidence-client'));
+  await cp(join(binaryDirectory, 'harness-evidence-xpc'), join(service, 'MacOS', 'harness-evidence-xpc'));
+  await cp(join(binaryDirectory, 'harness-evidence-host'), join(service, 'MacOS', 'harness-evidence-host'));
+  await writeFile(join(service, 'Info.plist'), plist(`
+<key>CFBundleIdentifier</key><string>${evidenceServiceId}</string>
+<key>CFBundleExecutable</key><string>harness-evidence-xpc</string>
+<key>CFBundlePackageType</key><string>XPC!</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>XPCService</key><dict><key>ServiceType</key><string>Application</string></dict>`));
+  if (development) await writeFile(join(contents, 'Info.plist'), plist(`
+<key>CFBundleIdentifier</key><string>com.qoder.harness-studio.evidence-development</string>
+<key>CFBundleExecutable</key><string>harness-evidence-client</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSUIElement</key><true/>`));

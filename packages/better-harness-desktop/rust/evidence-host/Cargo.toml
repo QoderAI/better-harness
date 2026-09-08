@@ -1,0 +1,34 @@
+[package]
+name = "harness-evidence-host"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+publish = false
+
+[[bin]]
+name = "harness-evidence-host"
+path = "src/main.rs"
+
+[[bin]]
+name = "harness-evidence-xpc"
+path = "src/bin/harness-evidence-xpc.rs"
+
+[[bin]]
+name = "harness-evidence-client"
+path = "src/bin/harness-evidence-client.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "libc", "NSXPCConnection", "NSObject", "NSString", "NSData", "NSError", "NSSet", "NSRunLoop", "block2"] }
+block2 = "0.6.2"
+
+[build-dependencies]
+cc = "1"

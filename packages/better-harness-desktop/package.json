@@ -63,7 +63,8 @@
           "to": "native",
           "filter": [
             "harness-oxc-service*",
-            "harness-acp-host*"
+            "harness-acp-host*",
+            "harness-evidence-host*"
           ]
         }
       ]
@@ -80,7 +81,8 @@
           "to": "native",
           "filter": [
             "harness-oxc-service*",
-            "harness-acp-host*"
+            "harness-acp-host*",
+            "harness-evidence-host*"
           ]
         }
       ]

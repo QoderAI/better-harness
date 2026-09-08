@@ -140,6 +140,10 @@ else {
       acpHostExecutable: process.platform === 'darwin'
         ? join(app.isPackaged ? join(process.resourcesPath, '..') : fileURLToPath(new URL('../dist/native/Harness ACP.app/Contents', import.meta.url)), 'MacOS', 'harness-acp-client')
         : join(app.isPackaged ? process.resourcesPath : fileURLToPath(new URL('../dist', import.meta.url)), 'native', process.platform === 'win32' ? 'harness-acp-host.exe' : 'harness-acp-host'),
+      evidenceHostTransport: process.platform === 'darwin' ? 'nsxpc' : 'stdio',
+      evidenceHostExecutable: process.platform === 'darwin'
+        ? join(app.isPackaged ? join(process.resourcesPath, '..') : fileURLToPath(new URL('../dist/native/Harness Evidence.app/Contents', import.meta.url)), 'MacOS', 'harness-evidence-client')
+        : join(app.isPackaged ? process.resourcesPath : fileURLToPath(new URL('../dist', import.meta.url)), 'native', process.platform === 'win32' ? 'harness-evidence-host.exe' : 'harness-evidence-host'),
       async pickDirectory() {
         if (!window || window.isDestroyed()) throw new Error('No active Studio window');
         const result = await dialog.showOpenDialog(window, { title: 'Open a Project in Harness Studio', properties: ['openDirectory'] });

@@ -45,6 +45,10 @@ the same newline contract as the plain driver, so Studio spawns it the same way;
 it emits a leading `transport` frame carrying the service and bridge pids, and
 the Node client refuses to run if that proof is missing — NSXPC never silently
 downgrades to stdio. Windows/Linux keep the `harness-acp-host` stdio driver.
+Session discovery and Artifact observations use the same shape:
+`com.qoder.harness-studio.evidence` + `harness-evidence-client`, spawning
+`harness-evidence-host` per connection. Windows/Linux spawn that driver over
+stdio.
 
 A compiler belongs to one artifact build. Parse/transform requests carry source
 text and portable module names; Rust never opens those names as files. Profile,
@@ -58,14 +62,17 @@ replayed automatically. There is no desktop fallback to NAPI or from NSXPC to st
 
 macOS packages each Rust service in `Contents/XPCServices/<id>.xpc` and its
 client/bridge in `Contents/MacOS`: `com.qoder.harness-studio.oxc.xpc` +
-`harness-oxc-client`, and `com.qoder.harness-studio.acp.xpc` (which also carries
-the `harness-acp-host` driver it spawns) + `harness-acp-client`. Development uses
-the same services inside `dist/native/Harness OXC.app` and
-`dist/native/Harness ACP.app`, so service discovery works without modifying
-Electron.app. Local bundles receive ad-hoc code signatures; this is not a
-notarized release or an App Sandbox entitlement configuration.
-Windows/Linux package `Resources/native/harness-oxc-service` and
-`Resources/native/harness-acp-host` (with `.exe` on Windows), outside ASAR. The
+`harness-oxc-client`, `com.qoder.harness-studio.acp.xpc` (which also carries
+the `harness-acp-host` driver it spawns) + `harness-acp-client`, and
+`com.qoder.harness-studio.evidence.xpc` + `harness-evidence-client`. Development
+uses the same services inside `dist/native/Harness OXC.app`,
+`dist/native/Harness ACP.app`, and `dist/native/Harness Evidence.app`, so
+service discovery works without modifying Electron.app. Local bundles receive
+ad-hoc code signatures; this is not a notarized release or an App Sandbox
+entitlement configuration.
+Windows/Linux package `Resources/native/harness-oxc-service`,
+`Resources/native/harness-acp-host`, and `Resources/native/harness-evidence-host`
+(with `.exe` on Windows), outside ASAR. The
 browser CLI still uses its existing NAPI worker, so the shared Studio package
 retains those dependencies.
 

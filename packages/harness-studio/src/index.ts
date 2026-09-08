@@ -53,3 +53,10 @@ export {
 } from "./server/artifacts/registry/artifact-provider-modules.js";
 
 export { createBundledInspectorWorkspaceSessionProvider } from "./server/workspace/bundled-session-provider.js";
+export {
+  createRustEvidenceHost,
+  createRustEvidenceWorkspaceSessionProvider,
+  EVIDENCE_HOST_PROTOCOL_VERSION,
+  type RustEvidenceHost,
+  type RustEvidenceHostOptions,
+} from "./server/workspace/rust-evidence-provider.js";
