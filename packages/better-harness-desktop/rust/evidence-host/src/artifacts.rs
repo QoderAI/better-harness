@@ -121,9 +121,11 @@ mod tests {
                     file_path: Some("docs/kept.md".into()),
                     file_paths: vec!["docs/kept.md".into(), "../escape".into()],
                     started_at: None,
+                    ..ToolCall::default()
                 }],
             }),
             dialogue: None,
+            ..SessionSummary::default()
         };
         let observed = observe(&root, &[session]);
         fs::remove_dir_all(&root).ok();

@@ -61,6 +61,9 @@ pub fn discover(params: DiscoverParams) -> Result<Value, String> {
         sessions.truncate(max_sessions);
     }
 
+    for session in &mut sessions {
+        crate::model::bound_session_text(session, 64 * 1024);
+    }
     recount_included(&mut providers, &sessions);
     let observations = observe(&workspace, &sessions);
     Ok(json!({

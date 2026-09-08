@@ -121,13 +121,15 @@ describe("Inspector workspace provider", () => {
         firstSeen: "2026-08-20T09:00:00.000Z",
         lastSeen: "2026-08-20T09:05:00.000Z",
         prompts: [{ text: "Review the workspace", timestamp: "2026-08-20T09:00:00.000Z" }],
+        models: ["fixture-model"],
+        tokenUsage: { inputTokens: 100, outputTokens: 0 },
         promptCount: 1,
         assistantMessageCount: 1,
         toolCallCount: 2,
         toolActivity: {
           calls: [
             { id: "A1", family: "inspect", actionLabel: "Read files", toolName: "Read", status: "observed", filePath: "README.md" },
-            { id: "A2", family: "deliver", actionLabel: "Deliver outputs", toolName: "Write", status: "observed", filePaths: ["outputs/report.md", "outputs/diagram.svg"] },
+            { id: "A2", family: "deliver", actionLabel: "Deliver outputs", toolName: "Write", status: "observed", filePaths: ["outputs/report.md", "outputs/diagram.svg"], detail: '{"command":"run","api_key":"confidential"}' , output: "Wrote two files", durationMs: 15 },
           ],
         },
         dialogue: { turns: [{ response: "Workspace reviewed." }] },
@@ -186,11 +188,14 @@ describe("Inspector workspace provider", () => {
       expect.objectContaining({ kind: "prompt", summary: "Review the workspace" }),
       expect.objectContaining({ kind: "explore", toolCalls: [expect.objectContaining({ name: "Read", resource: "README.md" })] }),
       expect.objectContaining({ kind: "change", toolCalls: [
-        expect.objectContaining({ name: "Write", resource: "outputs/report.md" }),
+        expect.objectContaining({ name: "Write", sourceCallId: "A2", resource: "outputs/report.md", duration: "15 ms", output: "Wrote two files" }),
         expect.objectContaining({ name: "Write", resource: "outputs/diagram.svg" }),
       ] }),
       expect.objectContaining({ kind: "response", summary: "Workspace reviewed." }),
     ]));
+    expect(result.sessions[0].debugger.models).toEqual(["fixture-model"]);
+    expect(result.sessions[0].debugger.tokenUsage).toEqual({ inputTokens: 100, outputTokens: 0 });
+    expect(JSON.stringify(result)).not.toContain("confidential");
     expect(JSON.stringify(result)).not.toContain("/private/repository");
   });
 });

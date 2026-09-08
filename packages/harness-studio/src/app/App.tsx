@@ -1233,6 +1233,13 @@ interface SessionComparisonSide {
   messageCount: number;
   warningCount: number;
   toolSequence: string[];
+  models: string[];
+  tokenUsage: Record<string, number>;
+  startedAt: string;
+  finishedAt: string;
+  tools: { id: string; name: string; input: string; output: string; status: string; duration: string; timestamp: string; resources: string[] }[];
+  messages: { id: string; role: string; text: string; timestamp: string }[];
+  files: string[];
 }
 
 interface SessionComparison {
@@ -1312,7 +1319,17 @@ function SessionCompareView(props: { navigation: ReactNode; initialIds?: [string
         <div role="row"><strong role="rowheader">{t("compare.agentRow")}</strong><span role="cell">{comparison.left.agent}</span><span role="cell">{comparison.right.agent}</span></div>
         {(["retainedEventCount", "toolCallCount", "messageCount", "warningCount"] as const).map((metric) => <div role="row" key={metric}><strong role="rowheader">{sessionMetricLabel(metric, t)}</strong><span role="cell">{comparison.left[metric]}</span><span role="cell">{comparison.right[metric]}</span></div>)}
       </div>
-      <div className="session-tool-sequences"><section><header>{t("compare.leftToolSequence")}</header><ol>{comparison.left.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section><section><header>{t("compare.rightToolSequence")}</header><ol>{comparison.right.toolSequence.map((tool, index) => <li key={`${tool}-${index}`}>{tool}</li>)}</ol></section></div>
+      <div className="session-tool-sequences">{([comparison.left, comparison.right] as const).map((side, index) => <section key={side.id} aria-label={`${index === 0 ? t("compare.leftSide") : t("compare.rightSide")} · ${side.agent}`}>
+        <header>{index === 0 ? t("compare.leftToolSequence") : t("compare.rightToolSequence")}</header>
+        <p className="session-compare-timing">{side.startedAt} – {side.finishedAt}</p>
+        <p className="session-compare-timing">{t("compare.models")}: {side.models.join(", ") || t("compare.unavailable")}</p>
+        <details className="session-compare-evidence"><summary>{t("compare.tokens")}</summary><dl className="session-compare-usage">{(["inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens", "totalTokens"] as const).map((key) => <div key={key}><dt>{t(`compare.${key}`)}</dt><dd>{side.tokenUsage[key]?.toLocaleString() ?? "—"}</dd></div>)}</dl></details>
+        <details className="session-compare-evidence"><summary>{t("compare.dialogue")} ({side.messages.length})</summary>
+          {side.messages.length === 0 ? <p>{t("compare.unavailable")}</p> : side.messages.map((message) => <details key={message.id} className="session-compare-message"><summary><time>{message.timestamp}</time> · {t(message.role === "user" ? "compare.user" : "compare.assistant")} · {message.text.slice(0, 160)}</summary><pre>{message.text}</pre></details>)}
+        </details>
+        <details className="session-compare-evidence"><summary>{t("compare.files")} ({side.files.length})</summary>{side.files.length === 0 ? <p>{t("compare.unavailable")}</p> : <ul>{side.files.map((file) => <li key={file}><code>{file}</code></li>)}</ul>}</details>
+        <ol className="session-compare-calls">{side.tools.map((tool) => <li key={tool.id}><details><summary><strong>{tool.name}</strong><span>{tool.status} · {tool.duration}</span><span className="session-compare-call-preview">{tool.input.slice(0, 160)}</span></summary><time>{tool.timestamp}</time><h3>{t("compare.input")}</h3><pre>{tool.input}</pre><h3>{t("compare.output")}</h3><pre>{tool.output}</pre>{tool.resources.map((file) => <p key={file}><code>{file}</code></p>)}</details></li>)}</ol>
+      </section>)}</div>
     </>}
   </main>;
 }

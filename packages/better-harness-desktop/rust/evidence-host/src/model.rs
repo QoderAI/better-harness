@@ -30,6 +30,10 @@ pub struct SessionSummary {
     pub tool_activity: Option<ToolActivity>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dialogue: Option<Dialogue>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<String>,
+    #[serde(rename = "tokenUsage", skip_serializing_if = "Option::is_none")]
+    pub token_usage: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,7 +48,7 @@ pub struct ToolActivity {
     pub calls: Vec<ToolCall>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ToolCall {
     pub id: String,
     pub family: String,
@@ -53,6 +57,12 @@ pub struct ToolCall {
     #[serde(rename = "toolName")]
     pub tool_name: String,
     pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(rename = "durationMs", skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<i64>,
     #[serde(rename = "filePath", skip_serializing_if = "Option::is_none")]
     pub file_path: Option<String>,
     #[serde(rename = "filePaths", skip_serializing_if = "Vec::is_empty")]
@@ -68,6 +78,8 @@ pub struct Dialogue {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Turn {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response: Option<String>,
 }
@@ -95,10 +107,14 @@ pub fn truncate_prompt(text: &str) -> String {
 
 pub fn tool_family(name: &str) -> String {
     let lower = name.to_ascii_lowercase();
-    if ["read", "read_file", "grep", "glob", "search", "list", "ls"].iter().any(|item| lower.contains(item))
+    if ["read", "read_file", "grep", "glob", "search", "list", "ls"]
+        .iter()
+        .any(|item| lower.contains(item))
     {
         "inspect".into()
-    } else if ["write", "edit", "apply", "patch", "create", "delete"].iter().any(|item| lower.contains(item))
+    } else if ["write", "edit", "apply", "patch", "create", "delete"]
+        .iter()
+        .any(|item| lower.contains(item))
     {
         "deliver".into()
     } else {
@@ -109,5 +125,130 @@ pub fn tool_family(name: &str) -> String {
 pub const PORTED: &[&str] = &["qoder", "codex", "claude", "cursor", "copilot", "grok"];
 
 pub const UNPORTED: &[&str] = &[
-    "augment", "qwen", "pi", "kimi", "workbuddy", "dsh", "harness-run",
+    "augment",
+    "qwen",
+    "pi",
+    "kimi",
+    "workbuddy",
+    "dsh",
+    "harness-run",
 ];
+
+/// Discovery is a bounded snapshot. Divide the text budget fairly across every
+/// retained request/result rather than dropping the oldest calls or turns.
+pub fn bound_session_text(session: &mut SessionSummary, budget: usize) {
+    let mut lengths: Vec<usize> = session
+        .prompts
+        .iter()
+        .map(|prompt| prompt.text.len())
+        .collect();
+    if let Some(activity) = &session.tool_activity {
+        for call in &activity.calls {
+            for text in [&call.detail, &call.output].into_iter().flatten() {
+                lengths.push(text.len());
+            }
+        }
+    }
+    if let Some(dialogue) = &session.dialogue {
+        for turn in &dialogue.turns {
+            if let Some(text) = &turn.response {
+                lengths.push(text.len());
+            }
+        }
+    }
+    if lengths.iter().sum::<usize>() <= budget {
+        return;
+    }
+    let (mut low, mut high) = (0, lengths.iter().copied().max().unwrap_or(0));
+    while low < high {
+        let mid = (low + high + 1) / 2;
+        if lengths
+            .iter()
+            .map(|length| (*length).min(mid))
+            .sum::<usize>()
+            <= budget
+        {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    fn bound(text: &mut String, limit: usize) {
+        if text.len() <= limit {
+            return;
+        }
+        let suffix = "… [truncated]";
+        if limit < suffix.len() {
+            text.clear();
+            text.push_str(&"..."[..limit.min(3)]);
+            return;
+        }
+        let mut end = limit - suffix.len();
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+        text.push_str(suffix);
+    }
+    for prompt in &mut session.prompts {
+        bound(&mut prompt.text, low);
+    }
+    if let Some(activity) = &mut session.tool_activity {
+        for call in &mut activity.calls {
+            for text in [&mut call.detail, &mut call.output].into_iter().flatten() {
+                bound(text, low);
+            }
+        }
+    }
+    if let Some(dialogue) = &mut session.dialogue {
+        for turn in &mut dialogue.turns {
+            if let Some(text) = &mut turn.response {
+                bound(text, low);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod evidence_tests {
+    use super::*;
+    #[test]
+    fn snapshot_budget_keeps_call_identity_and_marks_unicode_excerpts() {
+        let mut session = SessionSummary {
+            tool_call_count: 20,
+            tool_activity: Some(ToolActivity {
+                calls: (0..20)
+                    .map(|index| ToolCall {
+                        id: index.to_string(),
+                        detail: Some("详细输入".repeat(100)),
+                        output: Some("结果".repeat(100)),
+                        ..ToolCall::default()
+                    })
+                    .collect(),
+            }),
+            ..SessionSummary::default()
+        };
+        bound_session_text(&mut session, 2000);
+        let calls = &session.tool_activity.unwrap().calls;
+        assert_eq!(calls.len(), 20);
+        assert_eq!(session.tool_call_count, 20);
+        assert_eq!(calls[19].id, "19");
+        assert!(calls[0].detail.as_ref().unwrap().ends_with("… [truncated]"));
+        assert!(
+            calls
+                .iter()
+                .map(|c| c.detail.as_ref().unwrap().len() + c.output.as_ref().unwrap().len())
+                .sum::<usize>()
+                <= 2000
+        );
+    }
+}
+
+pub fn evidence_excerpt(text: &str) -> String {
+    let mut characters = text.trim().chars();
+    let mut result: String = characters.by_ref().take(8000).collect();
+    if characters.next().is_some() {
+        result.push_str("… [truncated]");
+    }
+    result
+}

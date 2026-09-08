@@ -46,6 +46,22 @@ export const sessions = {
     selectFileDetail: "Choose a retained file, press Enter, or double-click it to open the exact current revision here.",
   },
   compare: {
+    models: "Observed models",
+    tokens: "Observed token usage",
+    inputTokens: "Input",
+    outputTokens: "Output",
+    cacheReadInputTokens: "Cache read",
+    cacheCreationInputTokens: "Cache write",
+    totalTokens: "Provider total",
+
+    dialogue: "Retained conversation",
+    files: "Referenced files",
+    unavailable: "No detail retained.",
+    user: "User",
+    assistant: "Assistant",
+    input: "Input (bounded excerpt)",
+    output: "Output (bounded excerpt)",
+
     aria: "Observed Session differences",
     eyebrow: "Observed retained evidence",
     title: "Compare Agents",

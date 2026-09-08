@@ -101,7 +101,13 @@ pub fn walk_jsonl(root: &Path, max_depth: usize, limit: usize) -> Vec<PathBuf> {
     out
 }
 
-fn walk_jsonl_rec(dir: &Path, depth: usize, max_depth: usize, limit: usize, out: &mut Vec<PathBuf>) {
+fn walk_jsonl_rec(
+    dir: &Path,
+    depth: usize,
+    max_depth: usize,
+    limit: usize,
+    out: &mut Vec<PathBuf>,
+) {
     if out.len() >= limit || depth > max_depth {
         return;
     }
@@ -118,7 +124,9 @@ fn walk_jsonl_rec(dir: &Path, depth: usize, max_depth: usize, limit: usize, out:
         };
         if file_type.is_dir() {
             walk_jsonl_rec(&path, depth + 1, max_depth, limit, out);
-        } else if file_type.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
+        } else if file_type.is_file()
+            && path.extension().and_then(|ext| ext.to_str()) == Some("jsonl")
+        {
             out.push(path);
         }
     }
@@ -153,6 +161,74 @@ pub fn paths_from_text(workspace: &Path, text: &str) -> Vec<String> {
         }
     }
     paths
+}
+
+pub fn tool_paths(workspace: &Path, value: &serde_json::Value) -> Vec<String> {
+    let mut paths = Vec::new();
+    if let Some(text) = value.as_str() {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
+            return tool_paths(workspace, &parsed);
+        }
+        return paths_from_text(workspace, text);
+    }
+    if let Some(map) = value.as_object() {
+        for (key, value) in map {
+            let found = if [
+                "path",
+                "file",
+                "file_path",
+                "filePath",
+                "file_paths",
+                "filePaths",
+                "files",
+            ]
+            .contains(&key.as_str())
+            {
+                declared_tool_paths(workspace, value)
+            } else {
+                tool_paths(workspace, value)
+            };
+            for path in found {
+                if !paths.contains(&path) {
+                    paths.push(path);
+                }
+            }
+        }
+    } else if let Some(items) = value.as_array() {
+        for item in items {
+            for path in tool_paths(workspace, item) {
+                if !paths.contains(&path) {
+                    paths.push(path);
+                }
+            }
+        }
+    }
+    paths
+}
+
+fn declared_tool_paths(workspace: &Path, value: &serde_json::Value) -> Vec<String> {
+    if let Some(text) = value.as_str() {
+        if text.trim().is_empty() {
+            return Vec::new();
+        }
+        let candidate = if Path::new(text).is_absolute() {
+            PathBuf::from(text)
+        } else {
+            workspace.join(text)
+        };
+        return repo_relative(workspace, &candidate.to_string_lossy())
+            .into_iter()
+            .collect();
+    }
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .flat_map(|item| declared_tool_paths(workspace, item))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn paths_from_value(workspace: &Path, value: &serde_json::Value) -> Vec<String> {
@@ -201,7 +277,8 @@ pub fn repo_relative(root: &Path, candidate: &str) -> Option<String> {
         return None;
     }
     // Bare tokens like "function_call" are not files.
-    if !Path::new(candidate).is_absolute() && !candidate.contains('/') && !candidate.contains('\\') {
+    if !Path::new(candidate).is_absolute() && !candidate.contains('/') && !candidate.contains('\\')
+    {
         return None;
     }
     let path = if Path::new(candidate).is_absolute() {
@@ -227,6 +304,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn explicit_file_arguments_keep_root_files_without_treating_programs_as_paths() {
+        let root = std::env::temp_dir().join("tool-path-fixture");
+        let parsed = tool_paths(
+            &root,
+            &serde_json::json!({
+                "arguments": "{\"file_paths\":[\"README.md\",\"src/my file.rs\",\"../escape\"],\"command\":\"echo src/generated.rs\"}"
+            }),
+        );
+        assert_eq!(parsed, vec!["README.md", "src/my file.rs"]);
+    }
+
+    #[test]
     fn grok_group_matches_encode_uri_component() {
         let path = Path::new("/Users/phodal/workspace/better-harness");
         assert_eq!(
@@ -238,12 +327,20 @@ mod tests {
     #[test]
     fn qoder_slug_uses_leading_dash_for_posix_root() {
         let variants = qoder_slug_variants(Path::new("/Users/phodal/workspace/better-harness"));
-        assert!(variants.iter().any(|value| value == "-Users-phodal-workspace-better-harness"));
+        assert!(
+            variants
+                .iter()
+                .any(|value| value == "-Users-phodal-workspace-better-harness")
+        );
     }
 
     #[test]
     fn claude_slug_folds_dot_and_slash() {
         let variants = claude_slug_variants(Path::new("/Users/phodal/workspace/better-harness"));
-        assert!(variants.iter().any(|value| value == "-Users-phodal-workspace-better-harness"));
+        assert!(
+            variants
+                .iter()
+                .any(|value| value == "-Users-phodal-workspace-better-harness")
+        );
     }
 }

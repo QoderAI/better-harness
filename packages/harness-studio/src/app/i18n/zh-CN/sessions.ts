@@ -48,6 +48,22 @@ export const sessions: typeof enSessions = {
     selectFileDetail: "选择一个保留的文件、按回车或双击，即可在此处打开其精确的当前版本。",
   },
   compare: {
+    models: "观测到的模型",
+    tokens: "观测到的 Token 用量",
+    inputTokens: "输入",
+    outputTokens: "输出",
+    cacheReadInputTokens: "缓存读取",
+    cacheCreationInputTokens: "缓存写入",
+    totalTokens: "供应商总计",
+
+    dialogue: "保留的对话",
+    files: "引用的文件",
+    unavailable: "未保留详细内容。",
+    user: "用户",
+    assistant: "助手",
+    input: "输入（有限摘录）",
+    output: "输出（有限摘录）",
+
     aria: "观测到的会话差异",
     eyebrow: "观测到的保留证据",
     title: "对比 Agent",

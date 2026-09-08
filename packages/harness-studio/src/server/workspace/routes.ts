@@ -842,7 +842,21 @@ export async function serveSessionComparison(
   });
 }
 function sessionComparisonSide(session: StoredWorkspaceSession): Record<string, unknown> {
-  const tools = session.debugger.events.flatMap((event) => event.toolCalls ?? []);
+  const calls = new Map<string, { id: string; name: string; summary: string; input: string; output: string; duration: string; status: string; timestamp: string; resources: string[] }>();
+  for (const event of session.debugger.events) {
+    for (const tool of event.toolCalls ?? []) {
+      const id = tool.sourceCallId ?? `${event.id}:${tool.id}`;
+      const existing = calls.get(id);
+      if (existing) {
+        if (tool.resource && !existing.resources.includes(tool.resource)) existing.resources.push(tool.resource);
+      } else {
+        calls.set(id, { id, name: tool.name, summary: tool.summary, input: tool.input, output: tool.output,
+          duration: tool.duration, status: tool.status ?? "observed", timestamp: event.timestamp,
+          resources: tool.resource ? [tool.resource] : [] });
+      }
+    }
+  }
+  const tools = [...calls.values()];
   const messages = session.summary.messageCount
     ?? session.debugger.events.filter((event) => event.kind === "prompt" || event.kind === "response").length;
   return {
@@ -856,5 +870,13 @@ function sessionComparisonSide(session: StoredWorkspaceSession): Record<string, 
     messageCount: messages,
     warningCount: session.summary.warningCount ?? 0,
     toolSequence: tools.map((tool) => tool.name),
+    tools,
+    models: session.debugger.models ?? [],
+    tokenUsage: session.debugger.tokenUsage ?? {},
+    startedAt: session.debugger.startedAt,
+    finishedAt: session.debugger.finishedAt,
+    messages: session.debugger.events.filter((event) => event.kind === "prompt" || event.kind === "response")
+      .map((event) => ({ id: event.id, role: event.kind === "prompt" ? "user" : "assistant", text: event.summary, timestamp: event.timestamp })),
+    files: [...new Set(tools.flatMap((tool) => tool.resources))],
   };
 }

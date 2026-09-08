@@ -115,6 +115,7 @@ fn read_session(workspace: &Path, dir: &Path) -> Option<SessionSummary> {
                 file_path: paths.first().cloned(),
                 file_paths: paths,
                 started_at: stamp,
+                    ..ToolCall::default()
             });
         }
     }
@@ -133,9 +134,11 @@ fn read_session(workspace: &Path, dir: &Path) -> Option<SessionSummary> {
         tool_activity: Some(ToolActivity { calls }),
         dialogue: last_response.map(|response| Dialogue {
             turns: vec![crate::model::Turn {
+                timestamp: None,
                 response: Some(response),
             }],
         }),
+        ..SessionSummary::default()
     })
 }
 

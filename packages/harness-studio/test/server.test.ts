@@ -347,6 +347,15 @@ describe("harness-studio server", () => {
               agent: index === 0 ? "qoder" : "codex",
               protocol: "Inspector normalized local evidence",
               connection: "observed",
+              ...(index === 0 ? {
+                models: ["fixture-model"], tokenUsage: { inputTokens: 100, outputTokens: 0 },
+                events: sessionFromRetainedRun(record).events.map((event) => ({ ...event,
+                  ...(event.toolCalls ? { toolCalls: event.toolCalls.flatMap((tool) => ["src/parser.ts", "src/main.ts"].map((resource, resourceIndex) => ({
+                    ...tool, id: `${tool.id}_${resourceIndex}`, sourceCallId: tool.id, resource,
+                    status: "returned", input: "Inspect two files", output: "Two files read", duration: "12 ms",
+                  }))) } : {}),
+                })),
+              } : {}),
             },
           })),
           selected,
@@ -410,7 +419,13 @@ describe("harness-studio server", () => {
     const comparison = await (await fetch(`${started.url}/api/session-compare?left=${encodeURIComponent("qoder:run_qoder")}&right=${encodeURIComponent("codex:run_codex")}`)).json();
     expect(comparison).toMatchObject({
       crossAgent: true,
-      left: { agent: "qoder", prompt: "Inspect Qoder session", status: "observed", toolSequence: ["Read", "Bash"] },
+      left: { agent: "qoder", prompt: "Inspect Qoder session", status: "observed", toolSequence: ["Read", "Bash"],
+        tools: [
+          expect.objectContaining({ name: "Read", status: "returned", input: "Inspect two files", output: "Two files read", duration: "12 ms", resources: ["src/parser.ts", "src/main.ts"] }),
+          expect.objectContaining({ name: "Bash" }),
+        ],
+        files: ["src/parser.ts", "src/main.ts"], models: ["fixture-model"], tokenUsage: { inputTokens: 100, outputTokens: 0 },
+      },
       right: { agent: "codex", prompt: "Inspect Codex session", status: "observed", toolSequence: ["Read"] },
     });
   });
@@ -905,7 +920,11 @@ describe("harness-studio server", () => {
     expect(comparison).toMatchObject({
       kind: "observational-session-compare.v1",
       boundary: expect.stringMatching(/no winner/i),
-      left: { prompt: "Repair parser", toolCallCount: 3, toolSequence: ["Read", "Edit", "Bash"] },
+      left: { prompt: "Repair parser", toolCallCount: 3, toolSequence: ["Read", "Edit", "Bash"],
+        tools: [expect.objectContaining({ name: "Read", input: expect.any(String), output: expect.any(String), status: "observed" }), expect.any(Object), expect.any(Object)],
+        messages: expect.arrayContaining([expect.objectContaining({ role: "user", text: "Repair parser" })]),
+        models: [], tokenUsage: {},
+      },
       right: { prompt: "Repair renderer", toolCallCount: 2, toolSequence: ["Read", "Bash"] },
     });
 

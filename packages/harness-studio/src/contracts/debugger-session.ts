@@ -5,6 +5,8 @@ export type DebuggerEventKind = "prompt" | "plan" | "explore" | "change" | "veri
 export type EvidenceLevel = "Exact" | "Correlated" | "Inferred";
 
 export interface DebuggerToolCall {
+  sourceCallId?: string;
+  status?: string;
   id: string;
   name: string;
   summary: string;
@@ -71,6 +73,8 @@ export interface DebuggerEvent {
 }
 
 export interface DebuggerSession {
+  models?: string[];
+  tokenUsage?: Record<string, number>;
   id: string;
   name: string;
   agent: string;

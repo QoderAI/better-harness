@@ -16,6 +16,14 @@ import {
   parseFeatureTreeMarkdown,
 } from "../../../scripts/harness-inspector/index.mjs";
 
+import { sanitizePrivateReviewText } from "../../../scripts/session-analysis/privacy-safe-text.mjs";
+
+function safeDetail(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).replace(/(["'](?:api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)["']\s*:\s*)(["'])[^"']*\2/giu, '$1"<redacted>"');
+  return sanitizePrivateReviewText(text, { limit: 8000 });
+}
+
 const MAX_SESSIONS = 100;
 const MAX_COMMITS = 50;
 
@@ -60,7 +68,7 @@ export function createInspectorWorkspaceSessionProvider({
         includeToolTrace: true,
         includeDialogue: true,
       });
-      const sessionsWithCheckpoints = attachCheckpointFactsToSessions(sessions, checkpointResolution.checkpoints);
+      const sessionsWithCheckpoints = attachCheckpointFactsToSessions(sessions.map(privacySafeSession), checkpointResolution.checkpoints);
       const correlated = correlate(commits, sessionsWithCheckpoints);
       const filesByCommit = new Map(commits.map((commit) => [commit.hash, commit.files]));
       const correlation = {
@@ -127,10 +135,25 @@ async function loadWorkspaceFeatureTree(repoRoot) {
   }
 }
 
+// Native collectors retain bounded source text. Apply the same privacy boundary
+// before either the Inspector report or Debugger/Compare projection consumes it.
+function privacySafeSession(session) {
+  return {
+    ...session,
+    prompts: (session.prompts ?? []).map((prompt) => ({ ...prompt, text: safeDetail(prompt.text) })),
+    ...(session.toolActivity ? { toolActivity: { ...session.toolActivity, calls: (session.toolActivity.calls ?? []).map((call) => ({
+      ...call, detail: safeDetail(call.detail), output: safeDetail(call.output),
+    })) } } : {}),
+    ...(session.dialogue ? { dialogue: { ...session.dialogue, turns: (session.dialogue.turns ?? []).map((turn) => ({
+      ...turn, response: safeDetail(turn.response),
+    })) } } : {}),
+  };
+}
+
 function projectInspectorSession(summary) {
   const savedAt = validTimestamp(summary.lastSeen) ?? validTimestamp(summary.firstSeen);
   if (!savedAt || !summary.sessionId || !summary.platform) return null;
-  const prompt = summary.prompts?.[0]?.text?.trim() || `${summary.platform} Session ${String(summary.sessionId).slice(0, 12)}`;
+  const prompt = safeDetail(summary.prompts?.[0]?.text)?.trim() || `${summary.platform} Session ${String(summary.sessionId).slice(0, 12)}`;
   const id = `${summary.platform}:${summary.sessionId}`;
   return {
     summary: {
@@ -159,7 +182,7 @@ function debuggerProjection(summary, identity) {
       kind: "prompt",
       phase: "Prompt",
       title: "User request",
-      summary: prompt.text,
+      summary: safeDetail(prompt.text),
       timestamp: prompt.timestamp ?? identity.savedAt,
       sessionId,
       rpcId: `p${index + 1}`,
@@ -175,10 +198,12 @@ function debuggerProjection(summary, identity) {
     ].filter((value) => typeof value === "string" && value.trim() !== ""))];
     const projectedCalls = (resources.length === 0 ? [undefined] : resources).map((resource, resourceIndex) => ({
       id: resourceIndex === 0 ? call.id || `tool_${index + 1}` : `${call.id || `tool_${index + 1}`}_${resourceIndex + 1}`,
+      sourceCallId: call.id || `tool_${index + 1}`,
+      status: call.status || "observed",
       name: call.toolName || "Unknown tool",
       summary: call.actionLabel || "Observed tool call",
-      input: call.detail || "Input not retained in the privacy-safe Inspector projection.",
-      output: call.status === "failed" ? "Inspector observed a failed call." : "Result payload not retained in the summary projection.",
+      input: safeDetail(call.detail) || "Input not retained in the privacy-safe Inspector projection.",
+      output: safeDetail(call.output) || (call.status === "failed" ? "Inspector observed a failed call." : "Result payload not retained in the summary projection."),
       duration: Number.isFinite(call.durationMs) ? `${call.durationMs} ms` : "not retained",
       ...(resource === undefined ? {} : { resource }),
     }));
@@ -187,7 +212,7 @@ function debuggerProjection(summary, identity) {
       kind,
       phase: phaseForKind(kind),
       title: call.actionLabel || `${call.toolName} tool call`,
-      summary: call.detail || `${call.toolName} observed by Inspector`,
+      summary: safeDetail(call.detail) || `${call.toolName} observed by Inspector`,
       timestamp: call.startedAt ? new Date(call.startedAt).toISOString() : identity.savedAt,
       sessionId,
       rpcId: `t${index + 1}`,
@@ -202,8 +227,8 @@ function debuggerProjection(summary, identity) {
       kind: "response",
       phase: "Response",
       title: "Assistant response",
-      summary: turn.response,
-      timestamp: Number.isFinite(turn.endMs) ? new Date(turn.endMs).toISOString() : identity.savedAt,
+      summary: safeDetail(turn.response),
+      timestamp: turn.timestamp ?? (Number.isFinite(turn.endMs) ? new Date(turn.endMs).toISOString() : identity.savedAt),
       sessionId,
       rpcId: `r${index + 1}`,
       direction: "Agent → Client",
@@ -231,6 +256,10 @@ function debuggerProjection(summary, identity) {
     protocol: "Inspector normalized local evidence",
     connection: "observed",
     mode: "Retained run",
+    models: (summary.models ?? []).map((model) => safeDetail(model)).filter(Boolean),
+    tokenUsage: Object.fromEntries(["inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens", "totalTokens"]
+      .filter((key) => Number.isFinite(summary.tokenUsage?.[key]) && summary.tokenUsage[key] >= 0)
+      .map((key) => [key, summary.tokenUsage[key]])),
     startedAt: clock(summary.firstSeen ?? identity.savedAt),
     finishedAt: clock(summary.lastSeen ?? identity.savedAt),
     events: events

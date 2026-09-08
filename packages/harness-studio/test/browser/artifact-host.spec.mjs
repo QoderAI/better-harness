@@ -1601,6 +1601,14 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(page.locator(".session-compare-workspace")).not.toContainText("Open Another Project");
   await expect(page.locator(".session-compare-workspace")).toContainText("Repair parser");
   await expect(page.locator(".session-compare-workspace")).toContainText("Repair renderer");
+  const callDetails = page.locator(".session-compare-calls details").first();
+  await callDetails.locator("summary").focus();
+  await expect(callDetails.locator("summary")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(callDetails).toHaveAttribute("open", "");
+  await expect(callDetails.getByRole("heading", { name: "Input (bounded excerpt)" })).toBeVisible();
+  await expect(callDetails.locator("pre").first()).not.toBeEmpty();
+  await expect(page.locator(".session-compare-message").first()).toContainText("Repair");
   for (const layout of [
     { name: "wide", width: 1440, height: 900 },
     { name: "compact", width: 1024, height: 768 },

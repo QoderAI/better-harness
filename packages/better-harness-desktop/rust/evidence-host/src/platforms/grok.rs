@@ -79,9 +79,11 @@ fn read_session(workspace: &Path, session_dir: &Path, session_id: &str) -> Optio
         tool_activity: Some(ToolActivity { calls }),
         dialogue: response.map(|text| Dialogue {
             turns: vec![crate::model::Turn {
+                timestamp: None,
                 response: Some(text),
             }],
         }),
+        ..SessionSummary::default()
     })
 }
 
@@ -150,6 +152,7 @@ fn parse_updates(
                     file_path: paths.first().cloned(),
                     file_paths: paths,
                     started_at: timestamp,
+                    ..ToolCall::default()
                 });
             }
             "tool_call_update" => {
