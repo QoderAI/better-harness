@@ -142,6 +142,35 @@ test("reuses the ACP stream and permission gate in Debugger", async ({ page }, i
   await expect(page.locator(".acp-session-facts")).toContainText("stream-model");
   await page.getByRole("button", { name: "Continue stream allow_once" }).click();
   await expect(page.locator(".live-inspector > header")).toContainText("Finished");
+
+  // Observed state reads as one counter row plus complete identifiers, and the
+  // frame list carries its own window and per-frame gaps.
+  const counters = page.locator(".live-inspector .observed-counters > li");
+  await expect(counters).toHaveCount(3);
+  await expect(counters.nth(2)).toContainText("ACP frames");
+  const ids = page.locator(".live-inspector .fact-list-ids > div");
+  await expect(ids).toHaveCount(2);
+  await expect(ids.nth(0)).toContainText("run_");
+  await expect(ids.nth(1)).toContainText("thread_");
+  const frameWindow = page.locator(".acp-observation-span");
+  await expect(frameWindow.locator("time")).toHaveCount(2);
+  await expect(frameWindow.locator("time").nth(0)).toHaveText(/^\d{2}:\d{2}:\d{2}$/u);
+  await expect(frameWindow.locator("strong")).toHaveText(/^\d/u);
+  const retained = Number(await counters.nth(2).locator("strong").innerText());
+  const frames = page.locator(".live-inspector .acp-protocol-list > details");
+  await expect(frames).toHaveCount(Math.min(retained, 12));
+  await expect(frames.nth(1).locator(".acp-frame-delta")).toHaveText(/^\+\d/u);
+  // The run's first frame has no predecessor; a tail whose predecessor is
+  // off-screen still reports its true gap.
+  if (retained <= 12) await expect(frames.nth(0).locator(".acp-frame-delta")).toHaveCount(0);
+  else await expect(frames.nth(0).locator(".acp-frame-delta")).toHaveText(/^\+\d/u);
+  // Neither the frame list nor the last section draws a box the pane repeats.
+  const listBorder = await page.locator(".live-inspector .acp-protocol-list").evaluate((node) => getComputedStyle(node).borderTopWidth);
+  expect(listBorder).toBe("0px");
+  const sectionBorder = await page.locator(".live-inspector .inspector-section").last().evaluate((node) => getComputedStyle(node).borderBottomWidth);
+  expect(sectionBorder).toBe("0px");
+  // The live tree reserves no disclosure column, so its root row starts at the edge.
+  await expect(page.locator(".live-tree .tree-caret-spacer").first()).toBeHidden();
   for (const layout of layouts) {
     await page.setViewportSize(layout);
     await page.keyboard.press("Escape");

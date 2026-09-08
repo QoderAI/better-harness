@@ -55,7 +55,8 @@ import {
   type HarnessRunStreamEventV1,
 } from "@qoder-ai/harness/protocol";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { applyHarnessRunEvent, initialRunState, settleRunState, timelineItems, type HarnessRunState, type TimelineItem } from "./run-store.js";
+import { applyHarnessRunEvent, initialRunState, settleRunState, timelineItems, type HarnessRunState, type ObservedProtocolEvent, type TimelineItem } from "./run-store.js";
+import { acpFrameTimings, acpObservationSpan, formatObservedClock, formatObservedElapsed } from "./acp-frame-timing.js";
 import { streamRun as streamHarnessRunRequest } from "./stream-run.js";
 import { ArtifactCodeView } from "../code/ArtifactCodeView.js";
 import { studioLocale } from "../i18n/index.js";
@@ -712,8 +713,57 @@ function LiveGroupEntry({ group }: { group: LiveTimelineGroup }): React.JSX.Elem
 }
 
 function LiveInspector({ state, runtime, agentLabel, project, onPermission }: { state: HarnessRunState; runtime: LiveRuntime; agentLabel: string; project?: { label: string; revision: number }; onPermission: (requestId: string, optionId: string) => Promise<void> }): React.JSX.Element {
-const { t } = useTranslation("run");
-  return <aside className="state-inspector live-inspector" aria-label={t("inspector.stateAria")}><header><div><strong>{t("inspector.liveObservation")}</strong></div><span>{liveRunStatusLabel(state, t)}</span></header><div className="inspector-scroll">{state.pendingPermission !== undefined ? <InspectorSection title={t("inspector.acpPermission")}><AcpPermissionGate key={state.pendingPermission.requestId} permission={state.pendingPermission} onPermission={onPermission} className="acp-permission" showKind /></InspectorSection> : null}<div className="debugger-runtime-meta">{project && <span className="debugger-run-project" title={t("projectMeta", { label: project.label, revision: project.revision })}>{project.label}</span>}<strong>{agentLabel}</strong>{runtime === "acp" ? t("acpStream") : t("harnessStream")}</div><InspectorSection title={t("inspector.observedState")}><dl className="fact-list"><div><dt>{t("inspector.runId")}</dt><dd>{state.runId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.threadId")}</dt><dd>{state.threadId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.toolCalls")}</dt><dd>{state.toolCallCount}</dd></div><div><dt>{t("inspector.warnings")}</dt><dd>{state.warnings.length}</dd></div>{runtime === "acp" ? <div><dt>{t("inspector.acpFrames")}</dt><dd>{state.protocolEvents.length}</dd></div> : null}</dl></InspectorSection>{runtime === "acp" ? <InspectorSection title={t("raw.rawAcp")}><div className="acp-protocol-list">{state.protocolEvents.length === 0 ? <p className="inspector-note">{t("raw.waiting")}</p> : state.protocolEvents.slice(-12).map((event, index) => <details key={`${event.direction}:${event.rpcId ?? index}:${index}`}><summary><span>{event.direction}</span><strong>{event.method}</strong></summary><pre>{JSON.stringify(event.payload, null, 2)}</pre></details>)}</div></InspectorSection> : null}</div></aside>;
+  const { t } = useTranslation("run");
+  const acp = runtime === "acp";
+  return <aside className="state-inspector live-inspector" aria-label={t("inspector.stateAria")}>
+    <header><div><strong>{t("inspector.liveObservation")}</strong></div><span>{liveRunStatusLabel(state, t)}</span></header>
+    <div className="inspector-scroll">
+      {state.pendingPermission !== undefined ? <InspectorSection title={t("inspector.acpPermission")}><AcpPermissionGate key={state.pendingPermission.requestId} permission={state.pendingPermission} onPermission={onPermission} className="acp-permission" showKind /></InspectorSection> : null}
+      <InspectorSection title={t("inspector.observedState")}>
+        {/* The bound Project is the run's own, not the sidebar's: a sidebar switch
+            during a live run leaves this the only place naming what it ran in. */}
+        <p className="live-observation-identity">{project && <span className="debugger-run-project" title={t("projectMeta", { label: project.label, revision: project.revision })}>{project.label}</span>}<strong>{agentLabel}</strong><span>{acp ? t("acpStream") : t("harnessStream")}</span></p>
+        <ul className="observed-counters">
+          <li><strong>{state.toolCallCount}</strong><span>{t("inspector.toolCalls")}</span></li>
+          <li><strong>{state.warnings.length}</strong><span>{t("inspector.warnings")}</span></li>
+          {acp ? <li><strong>{state.protocolEvents.length}</strong><span>{t("inspector.acpFrames")}</span></li> : null}
+        </ul>
+        <dl className="fact-list fact-list-ids">
+          <div><dt>{t("inspector.runId")}</dt><dd><code>{state.runId ?? t("inspector.pending")}</code></dd></div>
+          <div><dt>{t("inspector.threadId")}</dt><dd><code>{state.threadId ?? t("inspector.pending")}</code></dd></div>
+        </dl>
+      </InspectorSection>
+      {acp ? <InspectorSection title={t("raw.rawAcp")}><AcpFrameList frames={state.protocolEvents} /></InspectorSection> : null}
+    </div>
+  </aside>;
+}
+
+/**
+ * Retained wire frames read as a sequence, so each row carries the gap since the
+ * frame before it and the section states the window those gaps add up to. The
+ * deltas are computed over every retained frame, not over the rendered tail, so
+ * the first visible row still reports its true gap.
+ */
+function AcpFrameList({ frames }: { frames: readonly ObservedProtocolEvent[] }): React.JSX.Element {
+  const { t } = useTranslation("run");
+  const timings = useMemo(() => acpFrameTimings(frames), [frames]);
+  const span = useMemo(() => acpObservationSpan(frames), [frames]);
+  if (span === undefined) return <p className="inspector-note">{t("raw.waiting")}</p>;
+  const shown = Math.min(frames.length, 12);
+  return <>
+    <div className="acp-observation-span" aria-label={t("raw.frameWindow")}>
+      <span><time title={t("raw.firstFrame")}>{formatObservedClock(span.firstAt, studioLocale())}</time><ArrowRight size={11} aria-hidden="true" /><time title={t("raw.latestFrame")}>{formatObservedClock(span.lastAt, studioLocale())}</time></span>
+      <strong title={t("raw.totalSpan")}>{formatObservedElapsed(span.totalMs)}</strong>
+    </div>
+    <div className="acp-protocol-list">{frames.slice(-shown).map((event, index) => {
+      const timing = timings[frames.length - shown + index]!;
+      const elapsed = timing.sincePreviousMs === undefined ? undefined : formatObservedElapsed(timing.sincePreviousMs);
+      return <details key={`${event.direction}:${event.rpcId ?? index}:${index}`}>
+        <summary><span>{event.direction}</span><strong>{event.method}</strong>{elapsed !== undefined && <em className="acp-frame-delta" title={t("raw.sincePrevious", { duration: elapsed })}>+{elapsed}</em>}</summary>
+        <pre>{JSON.stringify(event.payload, null, 2)}</pre>
+      </details>;
+    })}</div>
+  </>;
 }
 
 function liveRunStatusLabel(state: HarnessRunState, t: (key: string, options?: Record<string, unknown>) => string): string {

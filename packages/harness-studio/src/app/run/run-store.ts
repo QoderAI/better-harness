@@ -17,6 +17,14 @@ export type TimelineItem =
       resultOriginalBytes?: number;
     };
 
+/**
+ * A retained wire frame plus the Studio clock reading taken as it was folded.
+ *
+ * The protocol contract carries no timestamp, so observation time is the
+ * Studio's own and is labelled as such wherever it is shown.
+ */
+export type ObservedProtocolEvent = HarnessProtocolEvent & { observedAt: number };
+
 export interface HarnessRunState {
   status: "idle" | "running" | "finished" | "error";
   threadId?: string;
@@ -27,7 +35,7 @@ export interface HarnessRunState {
   timelineRevision: number;
   toolCallCount: number;
   warnings: string[];
-  protocolEvents: HarnessProtocolEvent[];
+  protocolEvents: ObservedProtocolEvent[];
   pendingPermission?: AcpPendingPermission;
   pendingPermissions: AcpPendingPermission[];
   acp: AcpSessionState;
@@ -116,7 +124,7 @@ export function applyHarnessRunEvent(
       if (pendingPermission !== undefined && !permissions.some((request) => request.requestId === pendingPermission.requestId)) permissions.push(pendingPermission);
       return {
         ...sequenced,
-        protocolEvents: [...state.protocolEvents, event].slice(-2_000),
+        protocolEvents: [...state.protocolEvents, { ...event, observedAt: Date.now() }].slice(-2_000),
         pendingPermissions: permissions,
         pendingPermission: permissions[0],
         acp: projectAcpSession(state.acp, event),

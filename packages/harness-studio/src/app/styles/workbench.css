@@ -286,11 +286,15 @@
 .acp-permission button { min-width: 0; padding: var(--space-xs) var(--space-sm); display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); text-align: left; }
 .acp-permission button:hover { background: var(--color-surface-hover); }
 .acp-permission button span { color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.acp-protocol-list { display: grid; gap: 1px; border: 1px solid var(--color-border); background: var(--color-border); }
+.acp-protocol-list { display: grid; gap: 1px; background: var(--color-border); }
 .acp-protocol-list details { min-width: 0; background: var(--color-surface); }
-.acp-protocol-list summary { min-width: 0; padding: var(--space-xs) var(--space-sm); display: grid; gap: 2px; cursor: pointer; }
-.acp-protocol-list summary span { color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.acp-protocol-list summary strong { overflow: hidden; font-family: var(--font-code); font-size: var(--type-meta-size); text-overflow: ellipsis; white-space: nowrap; }
+.acp-protocol-list summary { min-width: 0; padding: var(--space-xs) var(--space-sm); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 var(--space-sm); cursor: pointer; }
+.acp-protocol-list summary span { grid-area: 1 / 1; color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.acp-protocol-list summary strong { grid-area: 2 / 1; overflow: hidden; font-family: var(--font-code); font-size: var(--type-meta-size); text-overflow: ellipsis; white-space: nowrap; }
+.acp-frame-delta { grid-area: 1 / 2 / span 2 / 2; align-self: center; color: var(--color-text-muted); font-size: var(--type-meta-size); font-style: normal; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.acp-observation-span { min-height: var(--row-height); display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); color: var(--color-text-muted); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; }
+.acp-observation-span > span { display: flex; align-items: center; gap: var(--space-xs); }
+.acp-observation-span strong { color: var(--color-text); }
 .acp-protocol-list pre { max-height: 220px; margin: 0; padding: var(--space-sm); overflow: auto; border-top: 1px solid var(--color-border); color: var(--color-text-muted); background: var(--color-workspace); font-size: var(--type-meta-size); white-space: pre-wrap; word-break: break-word; }
 
 .builder-topbar,
@@ -714,14 +718,10 @@
 .debugger-mark { width: var(--toolbar-target); height: var(--toolbar-target); display: grid; place-items: center; border-radius: var(--radius-xs); color: var(--color-on-primary); background: var(--color-text); }
 .debugger-brand strong { font-size: var(--type-label-size); }
 .debugger-brand > span:last-child { color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.debugger-session-meta,
-.debugger-runtime-meta { min-width: 0; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); }
-.debugger-session-meta { overflow: hidden; }
+.debugger-session-meta { min-width: 0; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); overflow: hidden; }
 .debugger-session-meta strong { min-width: 4ch; overflow: hidden; max-width: 28ch; color: var(--color-text); text-overflow: ellipsis; white-space: nowrap; }
 .debugger-session-meta em { min-width: 0; overflow: hidden; border-left: 1px solid var(--color-border); padding-left: var(--space-sm); font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .debugger-session-meta em.live { color: var(--color-success); }
-.debugger-runtime-meta i { height: var(--type-label-size); border-left: 1px solid var(--color-border); }
-.debugger-runtime-meta strong { color: var(--color-text); font-size: var(--type-meta-size); white-space: nowrap; }
 .connection-dot { width: var(--space-sm); height: var(--space-sm); border-radius: var(--radius-full); background: var(--color-text-subtle); }
 .connection-dot.status-connected,
 .connection-dot.status-finished { background: var(--color-success); }
@@ -837,7 +837,7 @@
 .execution-tree > header > div,
 .state-inspector > header > div { min-width: 0; display: grid; }
 .execution-tree > header small,
-.state-inspector > header small { color: var(--color-text-muted); }
+.state-inspector > header small { overflow: hidden; color: var(--color-text-muted); text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
 .execution-tree > header span,
 .state-inspector > header span { color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .execution-tree-scroll,
@@ -846,6 +846,10 @@
 .execution-tree > footer span { display: flex; align-items: center; gap: var(--space-xs); }
 
 .execution-tree-row { --tree-depth: 0; min-height: var(--row-height); display: grid; grid-template-columns: var(--space-xl) minmax(0, 1fr); padding-left: calc(var(--tree-depth) * var(--space-sm)); }
+/* Nothing in the live tree discloses children, so it reserves no caret column
+   and its root row starts at the pane edge instead of one caret width inside. */
+.live-tree .execution-tree-row { grid-template-columns: minmax(0, 1fr); padding-left: calc(var(--space-xs) + var(--tree-depth) * var(--space-sm)); }
+.live-tree .tree-caret-spacer { display: none; }
 .tree-caret,
 .tree-caret-spacer { width: var(--space-xl); min-height: var(--row-height); display: grid; place-items: center; border: 0; border-radius: var(--radius-none); padding: 0; background: transparent; }
 .tree-node { min-width: 0; min-height: var(--row-height); display: grid; grid-template-columns: var(--type-label-size) minmax(0, 1fr) auto; gap: var(--space-xs); align-items: center; border: 0; border-left: 2px solid transparent; border-radius: var(--radius-none); padding: var(--space-xs); background: transparent; text-align: left; font-weight: var(--weight-regular); }
@@ -937,6 +941,7 @@
 .inspector-comparison { padding: var(--space-sm); display: grid; border-bottom: 1px solid var(--color-border); }
 .inspector-comparison span { color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .inspector-section { border-bottom: 1px solid var(--color-border); }
+.inspector-section:last-child { border-bottom: 0; }
 .inspector-section > header { min-height: var(--pane-header-height); padding: 0 var(--space-sm); display: flex; align-items: center; justify-content: space-between; background: var(--color-surface-subtle); }
 .inspector-section > header span { min-width: var(--type-section-size); text-align: right; color: var(--color-text-muted); }
 .inspector-section > :not(header) { margin-inline: var(--space-sm); }
@@ -950,6 +955,17 @@
 .raw-acp dt { color: var(--color-text-muted); }
 .fact-list dd,
 .raw-acp dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+/* A 27-character identifier cannot share a row with its label inside a 248px
+   pane without breaking mid-token, so the label sits above the value and the
+   value keeps the full pane width. */
+.fact-list-ids > div { min-height: 0; padding-block: var(--space-xs); grid-template-columns: minmax(0, 1fr); gap: 0; }
+.fact-list-ids dd code { font-size: var(--type-meta-size); overflow-wrap: anywhere; }
+/* Single-digit counters share one row instead of each taking a fact row whose
+   weight would match a 30-character identifier. */
+.observed-counters { margin: 0; padding: var(--space-xs) 0; display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-lg); list-style: none; border-bottom: 1px solid var(--color-border); }
+.observed-counters li { display: flex; align-items: baseline; gap: var(--space-xs); }
+.observed-counters strong { font-variant-numeric: tabular-nums; }
+.observed-counters span { color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .raw-acp { padding-bottom: var(--space-sm); }
 .raw-acp .highlighted-code { max-height: 280px; margin-top: var(--space-sm); padding: var(--space-sm); border: 1px solid var(--color-border); }
 
@@ -1079,11 +1095,6 @@
 .live-run-result pre { max-height: 280px; margin: 0; padding: var(--space-sm); overflow: auto; border-top: 1px solid var(--color-border); }
 
 
-@media (max-width: 1320px) {
-  .debugger-runtime-meta > span:not(.connection-dot),
-  .debugger-runtime-meta > i { display: none; }
-}
-
 @media (max-width: 1080px) {
   .simple-compare-composer { grid-template-columns: minmax(160px, 220px) minmax(0, 1fr); }
   .simple-compare-composer.has-agent-catalog .simple-project-control { grid-column: 1; }
@@ -1107,7 +1118,6 @@
     box-shadow: var(--shadow-overlay);
   }
   .debugger-topbar { grid-template-columns: auto minmax(160px, 1fr) auto; }
-  .debugger-runtime-meta { display: none; }
   .stop-conditions label:nth-of-type(n + 4) { display: none; }
 }
 
@@ -2177,7 +2187,14 @@
 .debugger-status-track { display: flex; width: 96px; height: var(--space-sm); overflow: hidden; }
 .debugger-status-track > span { flex: 1; min-width: 0; }
 .studio-context-actions .debugger-top-actions { flex-wrap: nowrap; min-width: 0; }
-.live-inspector .debugger-runtime-meta { display: flex; padding: var(--space-sm); gap: var(--space-sm); flex-wrap: wrap; }
+/* The section already draws its own hairlines, so frames run to the pane edges
+   rather than sitting in a second box inside an inset one. */
+.live-inspector .acp-protocol-list { margin-inline: 0; }
+/* Identity wraps instead of hiding: at 200px the run's Agent, protocol, and
+   bound Project are the pane's provenance, so none of them may be dropped. */
+.live-observation-identity { margin-block: var(--space-xs); display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-sm); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.live-observation-identity strong { color: var(--color-text); font-size: var(--type-meta-size); }
+.live-observation-identity .debugger-run-project { overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .studio-context-actions .saved-runs > button span { display: none; }
   .studio-context-actions .debugger-top-actions { gap: var(--space-xs); }

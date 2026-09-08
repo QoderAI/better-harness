@@ -240,6 +240,11 @@ export const run = {
     jsonLabel: "Raw ACP JSON",
     rawAcp: "Raw ACP",
     waiting: "Waiting for ACP protocol frames.",
+    frameWindow: "Observed frame window",
+    firstFrame: "First observed frame",
+    latestFrame: "Latest observed frame",
+    totalSpan: "Total observed span between the first and latest frame",
+    sincePrevious: "{{duration}} since the previous observed frame",
   },
   changes: {
     sincePreviousStop: "Changed since previous stop",

@@ -88,7 +88,7 @@ test("runs ACP through the Debugger permission gate at wide, compact, and narrow
   await page.getByRole("button", { name: "Open Project" }).click();
   await expect(page.getByRole("button", { name: "New live run" })).toBeVisible();
   await runAcpPrompt(page, "Verify the browser ACP bridge");
-  await expect(page.locator(".debugger-runtime-meta")).toContainText("Fixture ACP");
+  await expect(page.locator(".live-observation-identity")).toContainText("Fixture ACP");
   await expect(page.getByText("session/request_permission", { exact: true })).toBeVisible();
   await expect(page.getByText("session/prompt:response", { exact: true })).toBeVisible();
 
@@ -157,7 +157,7 @@ test("starts a live run against the ACP Agent chosen by name", async ({ page }, 
   await agentSelect.selectOption({ label: "Qoder CLI" });
   await page.getByRole("textbox", { name: "Task", exact: true }).fill("Run the named Agent");
   await page.getByRole("button", { name: "Run", exact: true }).click();
-  await expect(page.locator(".debugger-runtime-meta")).toContainText("Qoder CLI");
+  await expect(page.locator(".live-observation-identity")).toContainText("Qoder CLI");
   await expect(page.locator(".live-inspector > header")).toContainText("Permission required");
   await page.getByRole("button", { name: "Allow once allow_once" }).click();
   await expect(page.getByText("fixture:allow-once", { exact: true })).toBeVisible();

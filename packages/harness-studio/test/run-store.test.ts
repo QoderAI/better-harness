@@ -94,4 +94,21 @@ describe("applyHarnessRunEvent", () => {
     }], 3)[0]!);
     expect(state.pendingPermission).toBeUndefined();
   });
+
+  it("stamps every retained frame with the observation clock and never restamps a replay", () => {
+    const frame: HarnessRunEvent = {
+      type: "protocol-event",
+      protocol: "acp",
+      direction: "Agent → Client",
+      method: "session/update",
+      payload: {},
+    };
+    const [replayable] = stream([frame], 2);
+    let state = reduce([{ type: "run-started", revisionId: "sha256:one", host: "acp" }, frame]);
+    const stamped = state.protocolEvents[0]!.observedAt;
+    expect(Number.isFinite(stamped)).toBe(true);
+    state = applyHarnessRunEvent(state, replayable!);
+    expect(state.protocolEvents).toHaveLength(1);
+    expect(state.protocolEvents[0]!.observedAt).toBe(stamped);
+  });
 });

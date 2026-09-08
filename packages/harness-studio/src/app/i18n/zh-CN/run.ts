@@ -242,6 +242,11 @@ export const run: typeof enRun = {
     jsonLabel: "原始 ACP JSON",
     rawAcp: "原始 ACP",
     waiting: "正在等待 ACP 协议帧。",
+    frameWindow: "观测到的帧时间窗口",
+    firstFrame: "首个观测到的帧",
+    latestFrame: "最新观测到的帧",
+    totalSpan: "首帧到最新帧之间的观测总时长",
+    sincePrevious: "距上一个观测帧 {{duration}}",
   },
   changes: {
     sincePreviousStop: "自上一个停止点以来的变更",
