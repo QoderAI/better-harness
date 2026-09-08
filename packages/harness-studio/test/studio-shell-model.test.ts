@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createInstance, type TFunction } from "i18next";
 import {
   capabilitySummary,
+  dshWorkspaceStatus,
   compareSurfaces,
   inspectorSurfaces,
   liveCompareReady,
@@ -54,7 +55,7 @@ const EMPTY: StudioConfig = {
 };
 
 describe("Studio control-plane navigation", () => {
-  it("offers the six workbenches with honest availability", () => {
+  it("offers the workbenches and dedicated DSH route with honest availability", () => {
     const destinations = studioDestinations(EMPTY, undefined, commonT);
 
     expect(destinations.map((destination) => destination.id)).toEqual([
@@ -63,6 +64,7 @@ describe("Studio control-plane navigation", () => {
       "commits",
       "artifacts",
       "debugger",
+      "dsh",
       "compare",
     ]);
     // The landing View must be one the shell can actually resolve.
@@ -87,7 +89,17 @@ describe("Studio control-plane navigation", () => {
       availability: "foundation",
       status: "Project required",
     });
-    expect(capabilitySummary(EMPTY, commonT)).toEqual({ ready: 1, partial: 1, foundation: 4 });
+    expect(capabilitySummary(EMPTY, commonT)).toEqual({ ready: 1, partial: 1, foundation: 5 });
+  });
+
+  it("gates DSH by its own Agent and an executable Project", () => {
+    const configured = { ...EMPTY, acpEnabled: true, acpAgents: [{ id: "dsh", label: "DSH ACP", available: true, detail: "Detected" }] };
+    expect(dshWorkspaceStatus(EMPTY)).toBe("missing");
+    expect(dshWorkspaceStatus({ ...configured, dshWebEnabled: false, acpAgents: [{ id: "other", label: "Other", available: true, detail: "" }] })).toBe("missing");
+    expect(dshWorkspaceStatus({ ...configured, dshWebEnabled: true })).toBe("project");
+    expect(dshWorkspaceStatus({ ...configured, dshWebEnabled: true, workspaceConnected: true })).toBe("readOnly");
+    expect(dshWorkspaceStatus({ ...configured, dshWebEnabled: true, workspaceConnected: true, projectExecutionEnabled: true })).toBe("ready");
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true }, false, "dsh")).toBe(false);
   });
 
   it("routes configured artifacts to Debugger, Compare, and Inspector surfaces", () => {
@@ -125,7 +137,7 @@ describe("Studio control-plane navigation", () => {
       availability: "ready",
       status: "12 definitions",
     });
-    expect(capabilitySummary(config, commonT)).toEqual({ ready: 6, partial: 0, foundation: 0 });
+    expect(capabilitySummary(config, commonT)).toEqual({ ready: 6, partial: 0, foundation: 1 });
   });
 
   it("treats an artifact directory as independent of every other input", () => {

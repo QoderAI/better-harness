@@ -61,6 +61,8 @@ export interface StudioWorkspaceSessionProvider {
   discover(workspacePath: string): Promise<StudioWorkspaceDiscovery>;
 }
 export interface HarnessStudioServerOptions {
+  /** Installed official DSH Web application lifecycle, supplied by the desktop host. */
+  dshWebHost?: import("./dsh-web-host.js").DshWebHost;
   /** Host-owned compiler transport; omitted in browser/CLI mode. */
   oxcCompilerFactory?: OxcCompilerFactory;
   /** Optional per-launch desktop credential. Browser CLI leaves this unset. */

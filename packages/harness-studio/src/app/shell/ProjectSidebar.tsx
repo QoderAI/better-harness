@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { Icon } from "@phosphor-icons/react";
 import { Binoculars } from "@phosphor-icons/react/Binoculars";
 import { BugBeetle } from "@phosphor-icons/react/BugBeetle";
+import { ChatCircleText } from "@phosphor-icons/react/ChatCircleText";
 import { CaretUpDown } from "@phosphor-icons/react/CaretUpDown";
 import { Flask } from "@phosphor-icons/react/Flask";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
@@ -23,6 +24,7 @@ const VIEW_ICONS: Record<StudioArea, Icon> = {
   commits: GitBranch,
   artifacts: Package,
   debugger: BugBeetle,
+  dsh: ChatCircleText,
   compare: Flask,
 };
 

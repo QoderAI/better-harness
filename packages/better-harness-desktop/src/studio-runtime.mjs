@@ -4,6 +4,7 @@ import { parentPort } from 'node:worker_threads';
 import { message, isMessage } from './protocol.mjs';
 import {
   startHarnessStudioServer, defaultAppDir, discoverAcpAgentProfiles,
+  createDshWebHost, discoverDshWebCommand,
   createRustEvidenceHost, createRustEvidenceWorkspaceSessionProvider,
   createBundledAgentCustomizationCollector,
 } from '@qoder-ai/harness-studio';
@@ -78,7 +79,11 @@ port.on('message', async (data) => {
       });
       compilers.add({ close: () => evidenceHost.close() });
       await evidenceHost.describe();
+      const dshWebCommand = await discoverDshWebCommand();
+      const dshWebHost = dshWebCommand ? createDshWebHost(dshWebCommand) : undefined;
+      if (dshWebHost) compilers.add(dshWebHost);
       server = await startHarnessStudioServer({
+        dshWebHost,
         oxcCompilerFactory,
         acpHostExecutable: data.acpHostExecutable,
         acpHostTransport: data.acpHostTransport,

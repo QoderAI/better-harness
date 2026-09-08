@@ -63,7 +63,9 @@ async function createWindow() {
     if (!isSameOrigin(url, origin)) event.preventDefault();
   });
   window.webContents.on('will-redirect', (event, url) => {
-    if (!isSameOrigin(url, origin)) event.preventDefault();
+    // The official DSH subframe exchanges its launch token for a cookie and
+    // redirects on its own origin. Only top-level redirects can replace Studio.
+    if (event.isMainFrame && !isSameOrigin(url, origin)) event.preventDefault();
   });
   window.webContents.setWindowOpenHandler(({ url }) => {
     // External links require an explicit native confirmation; no protocol handlers.

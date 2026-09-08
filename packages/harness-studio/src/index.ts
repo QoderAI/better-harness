@@ -60,3 +60,5 @@ export {
   type RustEvidenceHost,
   type RustEvidenceHostOptions,
 } from "./server/workspace/rust-evidence-provider.js";
+
+export { createDshWebHost, discoverDshWebCommand, type DshWebHost, type DshWebState } from "./server/dsh-web-host.js";

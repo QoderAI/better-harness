@@ -191,6 +191,7 @@ export function createHarnessStudioServer(options: HarnessStudioServerOptions): 
     });
   });
   server.once("close", () => {
+    void resolvedOptions.dshWebHost?.close();
     cancelAllAcpRuns(state);
     cancelAllArtifactAgentRuns(state);
     state.artifactIntentAdmissions.clear();
@@ -253,6 +254,20 @@ async function route(
   experimentRuns: Map<string, AbortController>,
 ): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
+  if (url.pathname === "/api/dsh/web") {
+    if (!sameOriginRequest(request)) { respondJson(response, 403, { error: "Cross-origin DSH control is not allowed." }); return; }
+    if (!options.dshWebHost) { respondJson(response, 404, { error: "The official DSH Web host is not available." }); return; }
+    if (!acceptProjectBinding(request, response, state, true)) return;
+    if (request.method === "GET") respondJson(response, 200, options.dshWebHost.state(), { "Cache-Control": "no-store" });
+    else if (request.method === "POST") {
+      const result = await options.dshWebHost.open(state.workspace!.localDirectory!);
+      respondJson(response, 200, result, { "Cache-Control": "no-store" });
+    } else if (request.method === "DELETE") {
+      await options.dshWebHost.stop();
+      respondJson(response, 200, { status: "stopped" }, { "Cache-Control": "no-store" });
+    } else respondJson(response, 405, { error: "Use GET, POST or DELETE." });
+    return;
+  }
   if (request.method === "GET" && url.pathname === "/api/config") {
     const defaultAcpAgent = options.acpAgent
       ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)?.agent;
@@ -264,6 +279,7 @@ async function route(
       // The browser needs the whole bounded catalog, not just the default, to
       // let a reader pick which two Agents answer one prompt.
       acpAgents: publicAcpAgentProfiles(options).agents,
+      dshWebEnabled: options.dshWebHost !== undefined,
       artifactsEnabled: state.artifactDirectory !== undefined,
       artifactCount: state.artifactPaths?.length,
       evidenceEnabled: activeSourcePath(state.sourceCatalog, state.activeSources, "evidence") !== undefined,
@@ -815,10 +831,12 @@ export async function startHarnessStudioServer(
   return {
     server,
     url: `http://${host}:${address.port}`,
-    close: () =>
-      new Promise<void>((resolvePromise, rejectPromise) => {
+    close: async () => {
+      await options.dshWebHost?.close();
+      return new Promise<void>((resolvePromise, rejectPromise) => {
         server.close((error) => (error ? rejectPromise(error) : resolvePromise()));
         server.closeAllConnections();
-      }),
+      });
+    },
   };
 }
