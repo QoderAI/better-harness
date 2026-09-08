@@ -706,18 +706,20 @@ test("renders the shell, local workspace intake, and empty compare surfaces at a
     await assertRenderedContract(page);
     await page.screenshot({ path: testInfo.outputPath(`landing-${layout.name}.png`) });
 
+    // Customizations is the sidebar's library row, not a View row, so the roving
+    // tab stop covers the View list and starts at Sessions.
+    const views = page.getByRole("navigation", { name: "Studio View navigation" });
     if (layout.name === "wide") {
-      const current = page.getByRole("button", { name: /^Customizations/ });
-      await current.focus();
+      await views.getByRole("button", { name: /^Sessions/ }).focus();
       await page.keyboard.press("ArrowDown");
-      await expect(page.getByRole("button", { name: /^Sessions/ })).toBeFocused();
+      await expect(views.getByRole("button", { name: /^Commits/ })).toBeFocused();
     } else {
       await page.emulateMedia({ reducedMotion: "reduce" });
       await expect(page.locator(".studio-primary-nav")).toHaveCSS("transition-duration", "0s");
       await page.emulateMedia({ reducedMotion: "no-preference" });
       const toggle = page.getByRole("button", { name: "Open Studio navigation" });
       await toggle.click();
-      await expect(page.getByRole("button", { name: /^Customizations/ })).toBeFocused();
+      await expect(views.getByRole("button", { name: /^Sessions/ })).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(toggle).toBeFocused();
     }
