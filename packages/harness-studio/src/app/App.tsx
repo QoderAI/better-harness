@@ -854,9 +854,6 @@ function SessionsWorkspace(props: {
   const sessionRowRefs = useRef(new Map<string, HTMLButtonElement>());
   const [focusedSessionId, setFocusedSessionId] = useState<string>();
   const detailRequest = useRef(0);
-  const [surface, setSurface] = useState<"inspector" | "catalog">(
-    props.config.workspaceWorkbenchEnabled ? "inspector" : "catalog",
-  );
   const [agentFilter, setAgentFilter] = useState("all");
   const [catalogWidth, setCatalogWidth] = useState(SESSION_CATALOG_WIDTH.default);
   const [catalogFrame, setCatalogFrame] = useState(0);
@@ -872,7 +869,7 @@ function SessionsWorkspace(props: {
     const observer = new ResizeObserver(([entry]) => setCatalogFrame(entry!.contentRect.width));
     observer.observe(element);
     return () => observer.disconnect();
-  }, [surface]);
+  }, [props.config.workspaceWorkbenchEnabled]);
 
   useEffect(() => {
     const media = globalThis.matchMedia?.(SESSION_NARROW_QUERY);
@@ -1037,24 +1034,11 @@ function SessionsWorkspace(props: {
   </section>;
 
   if (!props.config.workspaceWorkbenchEnabled) return catalog;
-  // The window toolbar already names this View, so the surface switcher travels
-  // up into it rather than opening a second bar below it to restate the same
-  // scope in prose.
-  return <>
-    <ToolbarActions>
-      <div className="session-surface-tabs" role="tablist" aria-label={t("viewsTablist")}>
-        <button id="session-tab-inspector" type="button" role="tab" aria-controls="session-workbench-panel" aria-selected={surface === "inspector"} tabIndex={surface === "inspector" ? 0 : -1} className={surface === "inspector" ? "selected" : undefined} onClick={() => setSurface("inspector")} onKeyDown={(event) => { if (event.key === "ArrowRight") { event.preventDefault(); setSurface("catalog"); (event.currentTarget.nextElementSibling as HTMLButtonElement | null)?.focus(); } }}>{t("inspectorTab")}</button>
-        <button id="session-tab-catalog" type="button" role="tab" aria-controls="session-workbench-panel" aria-selected={surface === "catalog"} tabIndex={surface === "catalog" ? 0 : -1} className={surface === "catalog" ? "selected" : undefined} onClick={() => setSurface("catalog")} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setSurface("inspector"); (event.currentTarget.previousElementSibling as HTMLButtonElement | null)?.focus(); } }}>{t("catalogTab")}</button>
-      </div>
-    </ToolbarActions>
-    <div id="session-workbench-panel" className="session-workbench-surface" role="tabpanel" aria-labelledby={surface === "inspector" ? "session-tab-inspector" : "session-tab-catalog"}>
-      {surface === "inspector"
-        ? <Suspense fallback={<p className="artifact-status" role="status">{t("loadingInspector")}</p>}>
-            <InspectorWorkbench reportUrl="api/workspace-inspector-report" dateRange={props.dateRange} fallback={catalog} />
-          </Suspense>
-        : catalog}
-    </div>
-  </>;
+  return <div className="session-workbench-surface">
+    <Suspense fallback={<p className="artifact-status" role="status">{t("loadingInspector")}</p>}>
+      <InspectorWorkbench reportUrl="api/workspace-inspector-report" dateRange={props.dateRange} fallback={catalog} />
+    </Suspense>
+  </div>;
 }
 
 function SessionDetail({ session, artifactContext }: { session: DebuggerSession; artifactContext?: SessionArtifactContext | null }): React.JSX.Element {

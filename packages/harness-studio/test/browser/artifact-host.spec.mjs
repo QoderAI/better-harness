@@ -1225,11 +1225,48 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspector.locator(".workbench-token-summary").first()).toHaveText(/40 current · 1\/1 comp snapshots · 25/u);
   await expect(inspector.getByRole("button", { name: "Open session" }).first()).toBeVisible();
   expect(requestedUrls.some((url) => url.endsWith("/assets/inspector-workbench.js"))).toBe(false);
+  await expect(inspector.locator(".react-diagnostics")).toHaveCount(0);
+  await expect(inspector.locator(".workspace-footer")).toContainText("2");
+  await page.setViewportSize({ width: 1728, height: 1000 });
+  const card = inspector.locator(".workbench").first();
+  for (const [label, lane] of [["Resize prompts lane", ".prompt-lane"], ["Resize activity lane", ".activity-lane"]]) {
+    const sash = card.getByRole("separator", { name: label });
+    const before = (await card.locator(lane).boundingBox()).width;
+    await sash.focus();
+    await sash.press("ArrowRight");
+    await expect.poll(async () => (await card.locator(lane).boundingBox()).width).toBeGreaterThan(before);
+    const handle = await sash.boundingBox();
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2 + 24, handle.y + 30);
+    await page.mouse.up();
+    await expect.poll(async () => (await card.locator(lane).boundingBox()).width).toBeGreaterThan(before + 16);
+    await sash.dblclick();
+    await expect.poll(async () => (await card.locator(lane).boundingBox()).width).toBeCloseTo(before, 0);
+  }
+  await card.locator(".activity-details > summary").click();
+  const graph = card.getByRole("group", { name: "Tool activity graph" });
+  await expect(graph).toBeVisible();
+  const points = graph.getByRole("button");
+  await points.nth(1).click();
+  await expect(points.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await points.nth(1).press("ArrowRight");
+  await expect(points.nth(2)).toHaveAttribute("aria-pressed", "true");
+  await expect(card.locator(".action-graph-selection")).toContainText("Bash");
+  await expect(card.getByRole("button", { name: "Zoom in" })).toBeDisabled();
+  await expect(card.getByRole("button", { name: "Zoom out" })).toBeDisabled();
+  await page.screenshot({ path: "test-results/session-actions-graph-wide.png", fullPage: true });
+  await card.locator(".activity-details > summary").click();
+  await page.setViewportSize({ width: 1440, height: 900 });
   const openSessionButton = inspector.getByRole("button", { name: "Open session" }).first();
   await openSessionButton.click();
   await expect(inspector.locator(".session-view")).toBeVisible();
-  await expect(inspector.getByRole("dialog")).toContainText(/Repair (parser|renderer)/);
-  await expect(inspector.getByRole("button", { name: "Close" })).toBeFocused();
+  await expect(inspector.locator(".session-view")).toContainText(/Repair (parser|renderer)/);
+  await expect(inspector.getByRole("button", { name: "Back to Sessions" })).toBeFocused();
+  const backBox = await inspector.getByRole("button", { name: "Back to Sessions" }).boundingBox();
+  const viewBox = await inspector.locator(".session-view").boundingBox();
+  expect(backBox.x - viewBox.x).toBeLessThan(24);
+  await expect(inspector.locator(".session-notebook-brand")).toHaveCount(0);
   await expect(inspector.locator("[data-harness-inspector]")).toHaveAttribute("inert", "");
   await expect(inspector.locator("[data-harness-inspector]")).toHaveAttribute("aria-hidden", "true");
   await expect(page).toHaveURL(/inspector-session=/u);
@@ -1358,25 +1395,12 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(usageReport).not.toContainText("Usage and Context Report");
   await expect(usageReport).not.toContainText("Read-only evidence");
   await expect(usageReport).not.toContainText("Unique model responses, absolute context progression");
-  await expect(usageReport).toContainText(/Net vs baseline\s*\+15/u);
-  await expect(usageReport).toContainText(/Model calls\s*2/u);
-  await expect(usageReport).toContainText(/Provider reported 1 compaction boundary\./u);
-  await expect(usageReport.locator(".usage-report-occupancy .usage-summary-compactions")).toHaveText("1 compaction");
-  await expect(usageReport.locator(".usage-report-occupancy")).toContainText("Current + historical compaction snapshots");
-  await expect(usageReport.locator(".usage-report-occupancy .usage-context-current")).toHaveText("40");
-  await expect(usageReport.locator(".usage-report-occupancy .usage-context-history")).toHaveText("25");
-  await expect(usageReport.getByRole("heading", { name: "Usage report" })).toBeVisible();
-  await expect(usageReport.locator(".usage-report-occupancy .usage-report-freshness")).toHaveText(/Static snapshot · observed through 2026-08-20 (10|11):00:02 UTC/u);
-  await expect(usageReport.locator(".usage-report-occupancy .usage-context-bar")).toBeVisible();
-  await expect(usageReport.locator(".usage-report-reuse-tile")).toContainText(/Input reused\s*rate unavailable\s*90 cached/u);
-  await expect(usageReport.locator(".usage-reuse-section")).toHaveCount(0);
-  await expect(usageReport.getByRole("heading", { name: "Current context composition" })).toHaveCount(0);
-  await expect(usageReport.locator(".usage-overview, .usage-window-toolbar")).toHaveCount(0);
+  await expect(usageReport.locator(".usage-report-lead, .usage-report-evidence, .usage-report-columns")).toHaveCount(0);
   const focusChart = usageReport.getByRole("group", { name: /Focused context progression for responses 1 through 2/u });
   await expect(focusChart).toBeVisible();
   await expect(usageReport.locator(".usage-linked-explorer")).toHaveClass(/short-session/u);
-  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 2/u);
   const inspectStrip = usageReport.locator("[data-usage-inspect-strip]");
+  await expect(usageReport.locator(".usage-response-detail")).toHaveCount(0);
   const focusPoints = usageReport.locator("[data-usage-focus-point]");
   await expect(inspectStrip).toHaveAttribute("data-usage-inspect-mode", "selected");
   await expect(inspectStrip).toContainText(/Selected\s*Response 2/u);
@@ -1386,47 +1410,19 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspectStrip).toHaveAttribute("data-usage-inspect-mode", "hover");
   await expect(inspectStrip).toContainText(/Hover\s*Response 1/u);
   await expect(inspectStrip).toContainText(/Context\s*25/u);
-  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 2/u);
   await focusPoints.first().click();
   await page.mouse.move(0, 0);
-  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 1/u);
-  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Context\s*25/u);
   await expect(inspectStrip).toHaveAttribute("data-usage-inspect-mode", "selected");
   await expect(inspectStrip).toContainText(/Selected\s*Response 1/u);
   await expect(usageReport.locator(".usage-response-table, .usage-response-head, .usage-response-row")).toHaveCount(0);
   await expect(usageReport.locator(".usage-chart-legend")).not.toContainText("User turn");
   await focusChart.focus();
   await focusChart.press("ArrowDown");
-  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 2/u);
-  await expect(usageReport.locator(".usage-response-prompt")).toContainText(/Linked user prompt · T1\s*Repair (parser|renderer)/u);
   await expect(inspectStrip).toContainText(/Selected\s*Response 2/u);
   await focusChart.press("Escape");
-  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Select a chart point/u);
   await expect(inspectStrip).not.toHaveAttribute("data-usage-inspect-position");
   await focusChart.press("ArrowLeft");
-  await expect(usageReport.locator(".usage-response-detail")).toContainText(/Response 1/u);
   await expect(inspectStrip).toContainText(/Selected\s*Response 1/u);
-  await expect(usageReport.locator(".usage-report-occupancy .usage-context-bar i")).toHaveCount(3);
-  await expect(usageReport.locator(".usage-report-summary > .usage-report-occupancy")).toHaveCount(1);
-  await expect(usageReport.locator(".usage-report-summary > .usage-report-lead-facts > div")).toHaveCount(5);
-  const evidenceDetails = usageReport.locator(":scope > .usage-report-evidence");
-  await expect(evidenceDetails).toBeVisible();
-  await expect(evidenceDetails.locator("header, .usage-evidence-status")).toHaveCount(0);
-  await expect(evidenceDetails.locator("summary")).toContainText("Evidence & methodology");
-  await expect(evidenceDetails.locator(".usage-evidence-groups")).not.toBeVisible();
-  await evidenceDetails.locator("summary").click();
-  await expect(evidenceDetails.locator(".usage-evidence-groups")).toBeVisible();
-  await expect(evidenceDetails.locator(".usage-evidence-group")).toHaveCount(4);
-  await expect(evidenceDetails).toContainText(/Coverage\s*observed/u);
-  await expect(evidenceDetails).toContainText(/Snapshot\s*observed through 2026-08-20 (10|11):00:02 UTC/u);
-  await expect(evidenceDetails).toContainText(/Observability[\s\S]*Runtime[\s\S]*Accounting[\s\S]*Provenance/u);
-  await expect(evidenceDetails).toContainText(/Raw context\s*omitted/u);
-  await expect(usageReport.locator(".usage-structure-bar")).toHaveCount(0);
-  await expect(usageReport.locator(".usage-structure-list")).toBeVisible();
-  await expect(usageReport.locator(".usage-structure-list")).toContainText(/developer-message\s*×2/u);
-  await expect(usageReport.locator(".usage-structure-list")).toContainText(/skills\s*×1/u);
-  await expect(usageReport.locator(".usage-structure-section")).toContainText("token sizes unavailable");
-  await expect(usageReport.locator(".usage-structure-list")).not.toContainText("%");
   for (const layout of [
     { name: "wide", width: 1440, height: 900 },
     { name: "compact", width: 1024, height: 768 },
@@ -1456,7 +1452,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   ]) {
     await page.setViewportSize({ width: layout.width, height: layout.height });
     if (layout.width <= 1080) await expect(page.locator(".studio-primary-nav")).not.toBeInViewport();
-    await expect(inspector.getByRole("button", { name: "Close" })).toBeVisible();
+    await expect(inspector.getByRole("button", { name: "Back to Sessions" })).toBeVisible();
     await expect(inspector.locator(".replay-transport")).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
     expect(overflow, `${layout.name} Session detail overflows horizontally`).toBe(false);
@@ -1482,7 +1478,70 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   }
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole("tab", { name: "Catalog & Compare" }).click();
+  await expect(page.getByRole("tab", { name: "Catalog & Compare" })).toHaveCount(0);
+  // A long, untimed trace stays bounded and keeps unassigned records accessible.
+  await page.route("**/api/workspace-inspector-report", async (route) => {
+    const response = await route.fetch();
+    const report = await response.json();
+    const session = report.sessions[0];
+    const examples = session.toolActivity.calls;
+    session.toolActivity.calls = Array.from({ length: 287 }, (_, index) => ({ ...examples[index % examples.length], id: `long-${index}`, startedAt: null }));
+    session.toolActivity.totalCalls = 287;
+    session.dialogue = { turns: [] };
+    session.prompts = [];
+    await route.fulfill({ response, json: report });
+  });
+  await page.reload();
+  await page.setViewportSize({ width: 1728, height: 1000 });
+  const longCard = inspector.locator(".workbench").first();
+  await longCard.locator(".activity-details > summary").click();
+  const longGraph = longCard.locator(".action-graph");
+  await expect(longGraph).toContainText("Call order · 1–60 / 287");
+  await expect(longGraph.locator(".action-graph-track button")).toHaveCount(60);
+  await longGraph.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(longGraph).toContainText("Call order · 61–120 / 287");
+  await expect(longGraph.locator(".action-graph-selection")).toContainText("long-60");
+  await longGraph.getByRole("button", { name: "Zoom in" }).click();
+  await expect(longGraph.locator(".action-graph-track button")).toHaveCount(30);
+  await longGraph.getByRole("button", { name: "Zoom out" }).click();
+  await expect(longGraph.locator(".action-graph-track button")).toHaveCount(60);
+  for (const layout of [
+    { name: "wide", width: 1728, height: 1000 },
+    { name: "compact", width: 1024, height: 768 },
+    { name: "narrow", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(layout);
+    if (layout.width <= 1080) await expect(page.locator(".studio-primary-nav")).not.toBeInViewport();
+    await expect.poll(() => longGraph.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+    await longGraph.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `test-results/session-actions-long-${layout.name}.png`, animations: "disabled" });
+  }
+  await page.setViewportSize({ width: 1728, height: 1000 });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  const selectedPoint = longGraph.locator('[aria-pressed="true"]');
+  await selectedPoint.focus();
+  await expect(selectedPoint).toBeFocused();
+  await expect(selectedPoint).toHaveCSS("outline-style", "solid");
+  await page.screenshot({ path: "test-results/session-actions-long-dark.png", animations: "disabled" });
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "no-preference" });
+  await longCard.getByRole("button", { name: "Open session", exact: true }).first().click();
+  const otherRecords = inspector.locator(".session-other-records");
+  await expect(otherRecords).not.toHaveAttribute("open", "");
+  await otherRecords.locator(":scope > summary").click();
+  await expect(otherRecords).toHaveAttribute("open", "");
+  await expect(otherRecords.getByText("These records belong to this session but have no retained turn association.")).toBeVisible();
+  await expect(otherRecords.locator(".session-call-list")).toBeVisible();
+  await inspector.getByRole("button", { name: "Back to Sessions" }).click();
+  await expect(inspector.locator(".session-view")).toHaveCount(0);
+  await page.unroute("**/api/workspace-inspector-report");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // The legacy catalog remains available to hosts without workspace inspection.
+  await page.route("**/api/config", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), workspaceWorkbenchEnabled: false } });
+  });
+  await page.reload();
   await expect(page.getByRole("button", { name: /Repair renderer/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Repair renderer" })).toBeVisible();
   await expect(page.locator(".session-event-rows")).toContainText("Bash");
@@ -1581,6 +1640,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(page.locator(".session-notebook")).toContainText("default harness: verify the default workspace harness");
   await page.screenshot({ path: "test-results/default-workspace-debugger-wide.png", fullPage: true });
 
+  await page.unroute("**/api/config");
   const config = await page.evaluate(async () => await (await fetch("api/config")).json());
   expect(config).toMatchObject({ runEnabled: true, harnessMode: "workspace-default", workspaceConnected: true, workspaceWorkbenchEnabled: true, sessionCount: 2 });
   expect(config.sessionAgents).toEqual([{ agent: "claude-code", sessionCount: 1 }, { agent: "qoder", sessionCount: 1 }]);
