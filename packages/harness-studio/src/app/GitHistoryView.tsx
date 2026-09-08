@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { localDayKey, resolveDateRange, withinDateRange, type StudioDateRange } from "./date-range.js";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -94,9 +94,11 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
   const [narrowPane, setNarrowPane] = useState<NarrowPane>("history");
   const [refsWidth, setRefsWidth] = useState(REFS_WIDTH.default);
   const [logHeight, setLogHeight] = useState<number>();
+  const [logFixedHeight, setLogFixedHeight] = useState<number>();
   const [frame, setFrame] = useState({ width: 0, height: 0 });
   const [stacked, setStacked] = useState(() => globalThis.matchMedia?.(NARROW_QUERY).matches === true);
   const workbench = useRef<HTMLElement>(null);
+  const logPane = useRef<HTMLElement>(null);
   const logRequest = useRef(0);
   const pageLoadRequest = useRef(false);
   const detailRequest = useRef(0);
@@ -262,6 +264,8 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
     [commits, props.dateRange],
   );
   const remainingCommits = Math.max(total - commits.length, 1);
+  /** Is the log itself on screen, rather than a loading, empty, or failed state? */
+  const showsTable = failure === undefined && datedCommits.length > 0;
   /**
    * Has paging not yet reached the window?
    *
@@ -288,6 +292,26 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
   }, [canLoadMore, loadMoreFailure, loadNextPage, loadingMore, windowUnreached]);
 
   const selectedRefLabel = useMemo(() => refDisplayName(refs, selectedRef), [refs, selectedRef]);
+  /**
+   * The log pane's height that is not virtualized rows: its header, the status
+   * band, the paging footer, the sticky column head, and the paging control.
+   *
+   * It is measured rather than restated from the stylesheet, and it does not move
+   * when the pane's own height does, so the natural height derived from it below
+   * settles in one pass. Reading it after every render is what keeps it right
+   * when the status band gains or loses a line.
+   */
+  useLayoutEffect(() => {
+    const pane = logPane.current;
+    const table = pane?.querySelector(".git-commit-table");
+    if (pane === null || pane === undefined || table === null || table === undefined) return;
+    const head = pane.querySelector(".git-commit-table-head");
+    const control = pane.querySelector(".git-load-older");
+    const fixed = pane.clientHeight - table.clientHeight
+      + (head?.getBoundingClientRect().height ?? 0)
+      + (control?.getBoundingClientRect().height ?? 0);
+    setLogFixedHeight((current) => Math.abs((current ?? -1) - fixed) < 1 ? current : fixed);
+  });
   // Sizes are clamped to what the frame can hold rather than written back, so a
   // narrowed window borrows space and a widened one returns the reader's choice.
   // Before the frame is measured the stylesheet's own defaults stand, so the
@@ -297,7 +321,14 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
   const fittedRefsWidth = Math.min(Math.max(refsWidth, REFS_WIDTH.min), refsMax);
   const logMax = measured ? Math.max(LOG_MIN_HEIGHT, frame.height - DETAIL_MIN_HEIGHT - SASH_SIZE) : LOG_MIN_HEIGHT;
   const logFallback = measured ? Math.round(frame.height * LOG_HEIGHT_RATIO) : LOG_MIN_HEIGHT;
-  const fittedLogHeight = Math.min(Math.max(logHeight ?? logFallback, LOG_MIN_HEIGHT), logMax);
+  // A pane never holds a void open: a log shorter than its share of the frame
+  // hands the rest to the details pane. The row count is the stylesheet's own row
+  // height rather than the virtualizer's running total, so the height does not
+  // depend on a measurement that lags a window change.
+  const naturalLogHeight = showsTable && logFixedHeight !== undefined
+    ? logFixedHeight + COMMIT_ROW_HEIGHT * datedCommits.length
+    : Number.POSITIVE_INFINITY;
+  const fittedLogHeight = Math.min(Math.min(Math.max(logHeight ?? logFallback, LOG_MIN_HEIGHT), logMax), naturalLogHeight);
   const refreshing = loading || refsLoading;
   return <main
     ref={workbench}
@@ -342,7 +373,7 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
       disabled={stacked || !measured}
       onSize={setRefsWidth}
     />
-    <section className="git-log-pane" aria-label={t("log.aria")}>
+    <section className="git-log-pane" ref={logPane} aria-label={t("log.aria")}>
       <PaneHeader title={t("log.title")} trailing={t("log.count", { count: total })} />
       <div className="git-log-status">
         {searchTruncated && <p className="git-search-limit" role="status">{t("log.searchLimited")}</p>}
