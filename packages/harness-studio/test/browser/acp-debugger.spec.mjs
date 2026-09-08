@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 import { startHarnessStudioServer } from "../../dist/server/server.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const testAppDir = process.env.STUDIO_TEST_APP_DIR ?? resolve(packageRoot, "dist/app");
 const repositoryRoot = resolve(packageRoot, "../..");
 const acpAgentFixture = resolve(packageRoot, "../harness/test/fixtures/acp-agent.mjs");
 const layouts = [
@@ -34,7 +35,7 @@ async function runAcpPrompt(page, prompt) {
 test.beforeAll(async () => {
   runDirectory = await mkdtemp(join(tmpdir(), "studio-acp-browser-runs-"));
   studio = await startHarnessStudioServer({
-    appDir: resolve(packageRoot, "dist/app"),
+    appDir: testAppDir,
     runDirectory,
     workspaceDirectoryPicker: async () => repositoryRoot,
     workspaceSessionProvider: { discover: async () => ({ label: "ACP browser fixture", sessions: [] }) },
@@ -55,7 +56,7 @@ test.beforeAll(async () => {
   const delta = { command: process.execPath, args: [acpAgentFixture], label: "Delta ACP" };
   const epsilon = { command: process.execPath, args: [acpAgentFixture], label: "Epsilon ACP" };
   liveCompareStudio = await startHarnessStudioServer({
-    appDir: resolve(packageRoot, "dist/app"),
+    appDir: testAppDir,
     workspaceDirectoryPicker: async () => repositoryRoot,
     workspaceSessionProvider: { discover: async () => ({ label: "Live compare fixture", sessions: [] }) },
     acpAgent: alpha,
@@ -422,7 +423,7 @@ test("shows shared assistant chunks in Debugger and Compare before completion", 
   const nativeHost = resolve(packageRoot, "../better-harness-desktop/dist/native", process.platform === "win32" ? "harness-acp-host.exe" : "harness-acp-host");
   const agent = { command: process.execPath, args: [acpAgentFixture, "--stream-chunks"], label: "Streaming ACP" };
   const server = await startHarnessStudioServer({
-    appDir: resolve(packageRoot, "dist/app"), runDirectory,
+    appDir: testAppDir, runDirectory,
     acpHostExecutable: nativeHost,
     workspaceDirectoryPicker: async () => repositoryRoot,
     workspaceSessionProvider: { discover: async () => ({ label: "Streaming fixture", sessions: [] }) },
@@ -449,8 +450,10 @@ test("shows shared assistant chunks in Debugger and Compare before completion", 
     await expect(page.locator(".debugger-status")).toContainText("Run finished");
     await page.goto(`${server.url}/#/compare`);
     await page.getByRole("textbox", { name: "What should these Agents do?" }).fill("stream in two lanes");
-    await page.getByRole("combobox", { name: "Agent 1" }).selectOption("first");
-    await page.getByRole("combobox", { name: "Agent 2" }).selectOption("second");
+    await page.getByRole("button", { name: /^Choose Agents/ }).click();
+    await page.getByRole("menuitemcheckbox", { name: /^First/ }).click();
+    await page.getByRole("menuitemcheckbox", { name: /^Second/ }).click();
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Run 2 Agents", exact: true }).click();
     for (const lane of await page.locator(".live-compare-lane").all()) {
       await lane.getByRole("button", { name: "Allow once", exact: true }).click();
@@ -474,7 +477,7 @@ test.describe("ACP over the macOS NSXPC service", () => {
   test("Debugger and Compare stream a run through the launchd service", async ({ page }, testInfo) => {
     const agent = { command: process.execPath, args: [acpAgentFixture], label: "NSXPC ACP" };
     const server = await startHarnessStudioServer({
-      appDir: resolve(packageRoot, "dist/app"), runDirectory,
+      appDir: testAppDir, runDirectory,
       acpHostExecutable: nsxpcBridge,
       acpHostTransport: "nsxpc",
       workspaceDirectoryPicker: async () => repositoryRoot,
@@ -501,8 +504,10 @@ test.describe("ACP over the macOS NSXPC service", () => {
 
       await page.goto(`${server.url}/#/compare`);
       await page.getByRole("textbox", { name: "What should these Agents do?" }).fill("prove NSXPC in two lanes");
-      await page.getByRole("combobox", { name: "Agent 1" }).selectOption("first");
-      await page.getByRole("combobox", { name: "Agent 2" }).selectOption("second");
+      await page.getByRole("button", { name: /^Choose Agents/ }).click();
+      await page.getByRole("menuitemcheckbox", { name: /^First/ }).click();
+      await page.getByRole("menuitemcheckbox", { name: /^Second/ }).click();
+      await page.keyboard.press("Escape");
       await page.getByRole("button", { name: "Run 2 Agents", exact: true }).click();
       for (const lane of await page.locator(".live-compare-lane").all()) {
         await lane.getByRole("button", { name: "Allow once", exact: true }).click();

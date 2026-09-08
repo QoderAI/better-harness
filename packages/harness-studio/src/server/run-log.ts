@@ -5,7 +5,7 @@ const RUN_ID_PATTERN = /^run_[A-Za-z0-9_-]+$/;
 const TOOL_STATUSES = new Set(["preparing", "running", "completed", "failed", "result-unavailable", "interrupted"]);
 
 export type SavedRunTimelineItem =
-  | { kind: "message"; id: string; text: string; complete: boolean }
+  | { kind: "message"; id: string; text: string; complete: boolean; role?: "thought" }
   | {
       kind: "tool-call";
       id: string;
@@ -92,7 +92,7 @@ function parseTimelineItem(value: unknown): SavedRunTimelineItem {
   const item = value as Record<string, unknown>;
   if (typeof item.id !== "string") throw new Error("Run timeline entries require a string id.");
   if (item.kind === "message") {
-    return { kind: "message", id: item.id, text: typeof item.text === "string" ? item.text : "", complete: item.complete === true };
+    return { kind: "message", id: item.id, text: typeof item.text === "string" ? item.text : "", complete: item.complete === true, ...(item.role === "thought" ? { role: "thought" } : {}) };
   }
   if (item.kind === "tool-call") {
     const status = typeof item.status === "string" && TOOL_STATUSES.has(item.status) ? item.status : "result-unavailable";

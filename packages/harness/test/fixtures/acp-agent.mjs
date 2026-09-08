@@ -79,6 +79,31 @@ const app = agent({ name: "better-harness-acp-fixture" })
       ],
       _meta: { authorization: "Bearer fixture-secret" },
     });
+    if (process.argv.includes("--session-stream")) {
+      const notify = (update) => context.client.notify(methods.client.session.update, { sessionId, update });
+      await notify({ sessionUpdate: "session_info_update", title: "Inspect the session stream" });
+      await notify({ sessionUpdate: "current_mode_update", currentModeId: "plan" });
+      await notify({ sessionUpdate: "config_option_update", configOptions: [{ id: "model", name: "Model", type: "select", currentValue: "stream-model", options: [{ name: "Stream model", value: "stream-model" }] }] });
+      await notify({ sessionUpdate: "available_commands_update", availableCommands: [{ name: "review", description: "Review workspace changes" }] });
+      await notify({ sessionUpdate: "usage_update", used: 1200, size: 32000, cost: { amount: 0.02, currency: "USD" } });
+      await notify({ sessionUpdate: "plan", entries: [{ content: "Inspect the workspace", status: "completed", priority: "high" }, { content: "Verify streamed evidence", status: "in_progress", priority: "medium" }] });
+      await notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Starting inspection." } });
+      await notify({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Inspecting " } });
+      await notify({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "the evidence." } });
+      await notify({ sessionUpdate: "tool_call", toolCallId: "read-stream", title: "Read workspace", kind: "read", status: "pending" });
+      await notify({ sessionUpdate: "tool_call_update", toolCallId: "read-stream", title: "Read stream fixture", status: "in_progress", rawInput: { path: "fixture.txt", limit: 20 } });
+      await notify({ sessionUpdate: "tool_call_update", toolCallId: "read-stream", status: "completed", rawOutput: { files: ["fixture.txt"], verified: true } });
+      await notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: Array.from({ length: 50 }, (_, i) => `Evidence row ${i + 1}: retained session content.\n`).join("") } });
+      const second = await context.client.request(methods.client.session.requestPermission, {
+        sessionId,
+        toolCall: { toolCallId: "stream-gate", title: "Continue streamed response", kind: "read", status: "pending" },
+        options: [{ optionId: "continue", name: "Continue stream", kind: "allow_once" }],
+      });
+      if (second.outcome.outcome !== "selected") return { stopReason: "cancelled" };
+      await notify({ sessionUpdate: "plan", entries: [{ content: "Inspect the workspace", status: "completed", priority: "high" }, { content: "Verify streamed evidence", status: "completed", priority: "medium" }] });
+      await notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "stream:complete" } });
+      return { stopReason: "end_turn" };
+    }
     if (process.argv.includes("--stream-chunks")) {
       await context.client.notify(methods.client.session.update, {
         sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "fixture:stream-first" } },

@@ -24,6 +24,7 @@ export const compare: typeof enCompare = {
     run: "{{count}} 个一起跑",
     run_other: "{{count}} 个一起跑",
     running: "运行中…",
+    cancelling: "正在中断…",
     cancel: "中断",
     noAgents: "本机没有可用的本地 ACP Agent，无法开始实时对比。",
     sharedTree: "共享工作树",

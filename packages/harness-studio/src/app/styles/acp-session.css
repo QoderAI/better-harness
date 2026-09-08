@@ -1,0 +1,44 @@
+.acp-session-stream { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
+.acp-session-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; overflow-anchor: none; }
+.acp-session-stream :is(summary, button, [tabindex]):focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.acp-session-content { min-width: 0; padding-bottom: var(--space-xl); }
+.acp-session-prompt, .acp-session-facts, .acp-session-plan, .acp-session-commands, .acp-session-notice, .acp-session-error { margin: 0; padding: var(--space-sm) var(--space-md); overflow-wrap: anywhere; }
+.acp-session-prompt, .acp-session-facts, .acp-session-plan, .acp-session-commands { border-bottom: 1px solid var(--color-border); }
+.acp-session-prompt p { margin: var(--space-xs) 0 0; white-space: pre-wrap; }
+.acp-session-prompt strong { font-size: var(--type-meta-size); color: var(--color-text-muted); }
+.acp-session-facts { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md); font-size: var(--type-meta-size); }
+.acp-session-facts > div { display: flex; gap: var(--space-xs); min-width: 0; }
+.acp-session-facts dt, .acp-session-commands > p { color: var(--color-text-muted); }
+.acp-session-facts dd, .acp-session-commands dd { margin: 0; }
+.acp-session-plan summary, .acp-session-commands summary, .acp-thought summary, .acp-session-notice summary { cursor: pointer; min-height: var(--control-height); align-content: center; }
+.acp-session-plan ol { list-style: none; padding: 0; margin: var(--space-xs) 0 0; }
+.acp-session-plan li { display: flex; align-items: baseline; gap: var(--space-sm); padding-block: var(--space-xs); }
+.acp-session-plan li > span { flex: none; color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.acp-session-plan li[data-status="in_progress"] > span { color: var(--color-warning); }
+.acp-session-plan li[data-status="completed"] > span { color: var(--color-success); }
+.acp-session-plan li p { margin: 0; }
+.acp-session-commands dl > div + div { margin-top: var(--space-sm); }
+.acp-session-notice { color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.acp-session-error { color: var(--color-danger); }
+.acp-session-stream > .acp-session-error { flex: none; max-height: 30%; overflow: auto; border-bottom: 1px solid var(--color-border); }
+.acp-session-events { list-style: none; padding: 0; margin: 0; }
+.acp-session-events > li { min-width: 0; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
+.acp-session-events .entry { margin: 0; }
+.acp-session-events .tool-card { border: 0; border-radius: 0; margin: 0; background: transparent; }
+.acp-session-events .tool-card > summary { padding: var(--space-xs) 0; }
+.acp-session-events .tool-title { min-width: 0; }
+.acp-session-events .tool-title code { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.acp-session-events .tool-detail { padding: var(--space-sm) 0; min-width: 0; }
+.acp-session-events .tool-detail > section { min-width: 0; }
+.acp-thought { color: var(--color-text-muted); }
+.acp-thought .streaming-message { margin-top: var(--space-sm); }
+.acp-session-latest { position: absolute; bottom: var(--space-sm); left: 50%; transform: translateX(-50%); max-width: calc(100% - var(--space-md)); background: var(--color-panel); border: 1px solid var(--color-border-strong); white-space: nowrap; }
+.acp-permission-gate { flex: none; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-warning-surface); overflow-wrap: anywhere; max-height: 45%; overflow: auto; }
+.acp-permission-gate > div { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-sm); }
+.acp-permission-gate p { margin: var(--space-xs) 0; }
+.acp-notebook { display: flex; flex-direction: column; min-height: 0; }
+.acp-notebook > .acp-session-stream { flex: 1; }
+@media (max-width: 700px) {
+  .live-compare-lanes { grid-auto-rows: minmax(24rem, 70dvh); }
+  .acp-notebook > .acp-session-stream { height: 65dvh; flex: auto; }
+}

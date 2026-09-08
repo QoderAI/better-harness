@@ -1,3 +1,4 @@
+import { parseSavedRunRecord } from "../src/server/run-log.js";
 import { describe, expect, it } from "vitest";
 import { sessionFromRetainedRun } from "../src/server/debugger-session-transform.js";
 import { defaultCursorForSession } from "../src/app/run/debugger-cursor.js";
@@ -29,4 +30,15 @@ describe("debugger session transform", () => {
       stopConditions: ["tests", "failures"],
     });
   });
+});
+
+
+it("retains thought identity in saved records without treating it as a response stop", () => {
+  const record = parseSavedRunRecord({
+    id: "run_thought", savedAt: "2026-09-08T00:00:00Z", prompt: "Inspect", status: "finished", warnings: [],
+    timeline: [{ kind: "message", id: "m1", role: "thought", text: "Inspecting", complete: true }],
+  });
+  expect(record.timeline[0]).toMatchObject({ role: "thought", text: "Inspecting" });
+  const session = sessionFromRetainedRun(record);
+  expect(session.events[1]).toMatchObject({ phase: "Thinking", title: "Agent thought", stopConditions: [] });
 });

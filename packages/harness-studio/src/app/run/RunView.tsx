@@ -1,9 +1,11 @@
+import { postAcpRunAction } from "./acp-run-actions.js";
 import { ResizableDebuggerPanes } from "./ResizableDebuggerPanes.js";
-import { StreamingMessage } from "./StreamingMessage.js";
+import { TimelineEntry, ToolCallEntry } from "./TimelineEntry.js";
+import { AcpSessionStream, AcpPermissionGate } from "./AcpSessionStream.js";
 import { LiveRunComposer } from "./LiveRunComposer.js";
 import { ToolbarActions } from "../shell/ToolbarActions.js";
 import { createPortal } from "react-dom";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Icon } from "@phosphor-icons/react";
 import { ArrowBendDownRight } from "@phosphor-icons/react/ArrowBendDownRight";
@@ -53,7 +55,7 @@ import {
   type HarnessRunStreamEventV1,
 } from "@qoder-ai/harness/protocol";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { applyHarnessRunEvent, initialRunState, timelineItems, type HarnessRunState, type TimelineItem } from "./run-store.js";
+import { applyHarnessRunEvent, initialRunState, settleRunState, timelineItems, type HarnessRunState, type TimelineItem } from "./run-store.js";
 import { streamRun as streamHarnessRunRequest } from "./stream-run.js";
 import { ArtifactCodeView } from "../code/ArtifactCodeView.js";
 import { studioLocale } from "../i18n/index.js";
@@ -96,7 +98,6 @@ import {
 } from "./live-agent-choices.js";
 import type { StudioAcpAgentOption } from "../studio-shell-model.js";
 import { SAMPLE_DEBUGGER_SESSION } from "./sample-debugger-session.js";
-import { describeToolPayload } from "./tool-call-model.js";
 import { buildTimelineBins, groupLiveTimeline, semanticToolKind, type LiveTimelineGroup } from "./timeline-model.js";
 
 /** Post one Harness run and fold its native event stream into state updates. */
@@ -111,7 +112,6 @@ async function streamRun(
   await streamHarnessRunRequest(endpoint, prompt, threadId, runId, project, onEvents);
 }
 
-type MessageTimelineItem = Extract<TimelineItem, { kind: "message" }>;
 type ToolCallTimelineItem = Extract<TimelineItem, { kind: "tool-call" }>;
 type InspectorTab = "changes" | "files" | "artifacts" | "tests" | "terminal" | "plan" | "evidence" | "raw";
 type SurfaceMode = "recorded" | "live";
@@ -156,49 +156,6 @@ const PLAN_ITEMS = [
   "Implement Harness Studio UI improvements",
   "Update timeline and event visualization",
 ];
-
-const MessageEntry = memo(function MessageEntry({ item }: { item: MessageTimelineItem }): React.JSX.Element {
-  const { t } = useTranslation("run");
-  return <div className="entry message"><span className="entry-tag">{t("assistant")}</span><StreamingMessage item={item} /></div>;
-});
-
-const ToolCallEntry = memo(function ToolCallEntry({ item }: { item: ToolCallTimelineItem }): React.JSX.Element {
-  const { t } = useTranslation("run");
-  const [expanded, setExpanded] = useState(false);
-  const argumentsView = useMemo(() => describeToolPayload(item.argsText, t("entry.noArguments")), [item.argsText]);
-  const resultView = useMemo(
-    () => item.resultText === undefined ? undefined : describeToolPayload(item.resultText, t("entry.emptyResult")),
-    [item.resultText],
-  );
-  return <details className={`tool-card status-${item.status}`} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-    <summary>
-      <span className="tool-icon" aria-hidden="true"><Wrench size={15} weight="bold" /></span>
-      <span className="tool-title"><small>{t("toolCall")}</small><strong>{item.name}</strong><code>{argumentsView.summary}</code></span>
-      <span className="tool-status" aria-live="polite">{toolStatusLabel(item.status, t)}</span>
-      <CaretDown className="tool-chevron" size={14} aria-hidden="true" />
-    </summary>
-    {expanded && <div className="tool-detail">
-      <section><h4>{t("entry.arguments")}</h4><ArtifactCodeView mode="source" content={argumentsView.formatted} sourceHint={argumentsView.structured ? "tool-input.json" : "tool-input.txt"} className={argumentsView.structured ? "structured" : ""} label={t("entry.argumentsLabel")} /></section>
-      <section><h4>{t("entry.result")}</h4>{resultView ? <>{item.resultTruncated ? <p className="tool-notice">{item.resultOriginalBytes === undefined ? t("entry.resultTruncated") : t("entry.resultTruncatedFrom", { bytes: item.resultOriginalBytes.toLocaleString(studioLocale()) })}</p> : null}<ArtifactCodeView mode="source" content={resultView.formatted} sourceHint={resultView.structured ? "tool-result.json" : "tool-result.txt"} className={resultView.structured ? "structured" : ""} label={t("entry.resultLabel")} /></> : <p className="tool-empty">{item.status === "running" || item.status === "preparing" ? t("entry.waitingForResult") : item.status === "result-unavailable" ? t("entry.noRetainedResult") : t("entry.noResultPayload")}</p>}</section>
-      <footer><span>{t("entry.callId")}</span><code title={item.id}>{item.id}</code></footer>
-    </div>}
-  </details>;
-});
-
-const TimelineEntry = memo(function TimelineEntry({ item }: { item: TimelineItem }): React.JSX.Element {
-  return item.kind === "message" ? <MessageEntry item={item} /> : <ToolCallEntry item={item} />;
-});
-
-function toolStatusLabel(status: ToolCallTimelineItem["status"], t: (key: string) => string): string {
-  switch (status) {
-    case "preparing": return t("toolStatus.preparing");
-    case "running": return t("toolStatus.running");
-    case "completed": return t("toolStatus.completed");
-    case "failed": return t("toolStatus.failed");
-    case "result-unavailable": return t("toolStatus.resultUnavailable");
-    case "interrupted": return t("toolStatus.interrupted");
-  }
-}
 
 /**
  * A step control is an icon target, the way a debug transport is drawn in a
@@ -392,7 +349,7 @@ export function RunView({
         setState(liveStateRef.current);
       });
     } catch (error) {
-      liveStateRef.current = { ...liveStateRef.current, status: "error", error: error instanceof Error ? error.message : String(error) };
+      liveStateRef.current = settleRunState({ ...liveStateRef.current, status: "error", error: error instanceof Error ? error.message : String(error) }, "interrupted");
       setState(liveStateRef.current);
     } finally {
       busy.current = false;
@@ -434,11 +391,7 @@ export function RunView({
 
   const decidePermission = useCallback(async (requestId: string, optionId: string): Promise<void> => {
     if (state.runId === undefined) return;
-    await fetch(`/api/acp/runs/${encodeURIComponent(state.runId)}/permissions/${encodeURIComponent(requestId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ optionId }),
-    });
+    await postAcpRunAction(state.runId, { requestId, optionId });
   }, [state.runId]);
 
   const live = surfaceMode === "live";
@@ -470,7 +423,7 @@ export function RunView({
 
     <ResizableDebuggerPanes
       tree={live ? <LiveExecutionTree state={viewState} prompt={viewPrompt} /> : <ExecutionTree session={retainedSession} cursor={cursor} expanded={expandedNodes} onToggle={toggleExpanded} onSelect={selectNode} />}
-      activity={live ? <LiveNotebook state={viewState} prompt={viewPrompt} groups={liveGroups} /> : <SessionNotebook session={retainedSession} cursor={cursor} expanded={expandedNodes} onSelect={selectCursor} onToggle={toggleExpanded} />}
+      activity={live ? <LiveNotebook state={viewState} prompt={viewPrompt} groups={liveGroups} acp={activeRuntime === "acp"} /> : <SessionNotebook session={retainedSession} cursor={cursor} expanded={expandedNodes} onSelect={selectCursor} onToggle={toggleExpanded} />}
       inspector={live ? <LiveInspector state={viewState} runtime={submittedPrompt ? activeRuntime : selectedAgent && isAcpChoice(selectedAgent) ? "acp" : "qoder"} agentLabel={activeAgentLabel ?? selectedAgent?.label ?? agentLabel} project={submittedPrompt ? runProject : project} onPermission={decidePermission} /> : <StateInspector session={retainedSession} cursor={cursor} activeTab={inspectorTab} artifactEndpoint={artifactEndpoint} onTab={setInspectorTab} onPrevious={() => selectCursor(previousStateCursor(retainedSession, cursor))} />}
     />
 
@@ -717,8 +670,9 @@ function LiveExecutionTree({ state, prompt }: { state: HarnessRunState; prompt: 
   return <aside className="execution-tree live-tree" aria-label={t("tree.title")}><header><div><strong>{t("tree.title")}</strong></div><span>{t("tree.eventCount", { count: state.timelineKeys.length })}</span></header><div className="execution-tree-scroll"><TreeRow nodeId="live-session" label={t("tree.session")} detail={state.runId ?? t("tree.starting")} icon={Database} selected={false} depth={0} onSelect={() => undefined} /><TreeRow nodeId="live-turn" label={t("tree.turn", { turn: 1 })} detail={prompt} icon={GitBranch} selected={false} depth={1} onSelect={() => undefined} /><TreeRow nodeId="live-prompt" label={t("tree.prompt")} detail={prompt} icon={UserCircle} selected={false} depth={2} onSelect={() => undefined} /><TreeRow nodeId="live-tools" label={t("tree.stages")} detail={t("tree.toolCallCount", { count: state.toolCallCount })} icon={Wrench} selected={false} depth={2} status={state.status} onSelect={() => undefined} /></div></aside>;
 }
 
-function LiveNotebook({ state, prompt, groups }: { state: HarnessRunState; prompt: string; groups: LiveTimelineGroup[] }): React.JSX.Element {
+function LiveNotebook({ state, prompt, groups, acp }: { state: HarnessRunState; prompt: string; groups: LiveTimelineGroup[]; acp: boolean }): React.JSX.Element {
   const { t } = useTranslation("run");
+  if (acp) return <main className="session-notebook live-notebook acp-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><strong>{t("live.notebookTitle")}</strong><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><AcpSessionStream state={state} prompt={prompt} /></main>;
   return <main className="session-notebook live-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><nav><button type="button" className="active"><ClipboardText size={13} />{t("live.notebookTitle")}</button></nav><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><div className="session-notebook-scroll"><article className="debugger-event event-prompt"><div className="event-rail"><span><UserCircle size={13} /></span></div><div className="debugger-event-card"><header><div><strong>{t("live.userRequest")}</strong></div><span>{t("event.prompt")}</span></header><section className="prompt-cell"><p>{prompt}</p></section></div></article><section className="live-session-stage">{state.warnings.map((warning, index) => <p className="warning" key={index}><WarningCircle size={14} />{warning}</p>)}{state.error ? <p className="error" role="alert"><XCircle size={14} />{state.error}</p> : null}<section className="activity-panel" aria-label={t("live.agentActivity")}><header className="activity-panel-head"><div><h2>{t("live.agentActivity")}</h2></div><span>{t("live.activitySummary", { calls: state.toolCallCount, groups: groups.length })}</span></header><VirtualLiveTimeline groups={groups} followLatest={state.status === "running"} /></section>{state.result !== undefined ? <details className="live-run-result"><summary>{t("live.runResult")}</summary><pre>{JSON.stringify(state.result, null, 2)}</pre></details> : null}</section></div></main>;
 }
 
@@ -759,7 +713,7 @@ function LiveGroupEntry({ group }: { group: LiveTimelineGroup }): React.JSX.Elem
 
 function LiveInspector({ state, runtime, agentLabel, project, onPermission }: { state: HarnessRunState; runtime: LiveRuntime; agentLabel: string; project?: { label: string; revision: number }; onPermission: (requestId: string, optionId: string) => Promise<void> }): React.JSX.Element {
 const { t } = useTranslation("run");
-  return <aside className="state-inspector live-inspector" aria-label={t("inspector.stateAria")}><header><div><strong>{t("inspector.liveObservation")}</strong></div><span>{liveRunStatusLabel(state, t)}</span></header><div className="inspector-scroll">{state.pendingPermission !== undefined ? <InspectorSection title={t("inspector.acpPermission")}><div className="acp-permission"><strong>{state.pendingPermission.title}</strong><small>{t("inspector.toolCall", { id: state.pendingPermission.toolCallId })}</small><div>{state.pendingPermission.options.map((option) => <button type="button" key={option.optionId} onClick={() => void onPermission(state.pendingPermission!.requestId, option.optionId)}>{option.name}<span>{option.kind}</span></button>)}</div></div></InspectorSection> : null}<div className="debugger-runtime-meta">{project && <span className="debugger-run-project" title={t("projectMeta", { label: project.label, revision: project.revision })}>{project.label}</span>}<strong>{agentLabel}</strong>{runtime === "acp" ? t("acpStream") : t("harnessStream")}</div><InspectorSection title={t("inspector.observedState")}><dl className="fact-list"><div><dt>{t("inspector.runId")}</dt><dd>{state.runId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.threadId")}</dt><dd>{state.threadId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.toolCalls")}</dt><dd>{state.toolCallCount}</dd></div><div><dt>{t("inspector.warnings")}</dt><dd>{state.warnings.length}</dd></div>{runtime === "acp" ? <div><dt>{t("inspector.acpFrames")}</dt><dd>{state.protocolEvents.length}</dd></div> : null}</dl></InspectorSection>{runtime === "acp" ? <InspectorSection title={t("raw.rawAcp")}><div className="acp-protocol-list">{state.protocolEvents.length === 0 ? <p className="inspector-note">{t("raw.waiting")}</p> : state.protocolEvents.slice(-12).map((event, index) => <details key={`${event.direction}:${event.rpcId ?? index}:${index}`}><summary><span>{event.direction}</span><strong>{event.method}</strong></summary><pre>{JSON.stringify(event.payload, null, 2)}</pre></details>)}</div></InspectorSection> : null}</div></aside>;
+  return <aside className="state-inspector live-inspector" aria-label={t("inspector.stateAria")}><header><div><strong>{t("inspector.liveObservation")}</strong></div><span>{liveRunStatusLabel(state, t)}</span></header><div className="inspector-scroll">{state.pendingPermission !== undefined ? <InspectorSection title={t("inspector.acpPermission")}><AcpPermissionGate key={state.pendingPermission.requestId} permission={state.pendingPermission} onPermission={onPermission} className="acp-permission" showKind /></InspectorSection> : null}<div className="debugger-runtime-meta">{project && <span className="debugger-run-project" title={t("projectMeta", { label: project.label, revision: project.revision })}>{project.label}</span>}<strong>{agentLabel}</strong>{runtime === "acp" ? t("acpStream") : t("harnessStream")}</div><InspectorSection title={t("inspector.observedState")}><dl className="fact-list"><div><dt>{t("inspector.runId")}</dt><dd>{state.runId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.threadId")}</dt><dd>{state.threadId ?? t("inspector.pending")}</dd></div><div><dt>{t("inspector.toolCalls")}</dt><dd>{state.toolCallCount}</dd></div><div><dt>{t("inspector.warnings")}</dt><dd>{state.warnings.length}</dd></div>{runtime === "acp" ? <div><dt>{t("inspector.acpFrames")}</dt><dd>{state.protocolEvents.length}</dd></div> : null}</dl></InspectorSection>{runtime === "acp" ? <InspectorSection title={t("raw.rawAcp")}><div className="acp-protocol-list">{state.protocolEvents.length === 0 ? <p className="inspector-note">{t("raw.waiting")}</p> : state.protocolEvents.slice(-12).map((event, index) => <details key={`${event.direction}:${event.rpcId ?? index}:${index}`}><summary><span>{event.direction}</span><strong>{event.method}</strong></summary><pre>{JSON.stringify(event.payload, null, 2)}</pre></details>)}</div></InspectorSection> : null}</div></aside>;
 }
 
 function liveRunStatusLabel(state: HarnessRunState, t: (key: string, options?: Record<string, unknown>) => string): string {

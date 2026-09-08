@@ -504,6 +504,9 @@ class HostClient {
           method: String(event.method ?? "response"),
           ...(typeof event.rpcId === "string" ? { rpcId: event.rpcId } : {}),
           ...(typeof event.sessionId === "string" ? { sessionId: event.sessionId } : {}),
+          // The native host emits permission-requested with its own request id.
+          // Preserve the raw RPC evidence without creating a second UI decision.
+          ...(event.method === "session/request_permission" ? { permissionActionable: false as const } : {}),
           payload: event.payload,
         };
         if (this.trace.length < MAX_PROTOCOL_EVENTS) this.trace.push(retained);
@@ -539,29 +542,33 @@ class HostClient {
     if (entry === undefined || typeof event.index !== "number") return;
     if (entry.kind === "assistant-message") {
       const chunks = Array.isArray(entry.chunks) ? entry.chunks : [];
-      const text = chunks
-        .flatMap((chunk) => {
-          const record = chunk as Record<string, unknown>;
-          return record.kind === "message" && typeof record.text === "string" ? [record.text] : [];
-        })
-        .join("");
-      const already = this.emittedText.get(event.index) ?? "";
-      if (text === already) return;
-      // A pure extension is a delta; anything else means the host replaced the
-      // entry, and re-emitting the whole text is the only honest option.
-      const suffix = text.startsWith(already) ? text.slice(already.length) : text;
-      this.emittedText.set(event.index, text);
-      this.output.push(suffix);
-      this.emitter.text(suffix);
+      for (const [chunkIndex, value] of chunks.entries()) {
+        const chunk = value as Record<string, unknown>;
+        if ((chunk.kind !== "message" && chunk.kind !== "thought") || typeof chunk.text !== "string") continue;
+        const key = `${event.index}:${chunkIndex}`;
+        const already = this.emittedText.get(key) ?? "";
+        if (chunk.text === already) continue;
+        const suffix = chunk.text.startsWith(already) ? chunk.text.slice(already.length) : chunk.text;
+        this.emittedText.set(key, chunk.text);
+        if (chunk.kind === "thought") this.emitter.thought(suffix);
+        else {
+          this.output.push(suffix);
+          this.emitter.text(suffix);
+        }
+      }
       return;
     }
-    if (entry.kind === "tool-call" && typeof entry.toolCallId === "string") {
-      const toolCallId = entry.toolCallId;
+    // Entry is a serde enum: rename_all names the variants, while its fields
+    // retain snake_case. Accept camelCase too for earlier client fixtures.
+    const toolCallId = entry.tool_call_id ?? entry.toolCallId;
+    const rawInput = entry.raw_input ?? entry.rawInput;
+    const rawOutput = entry.raw_output ?? entry.rawOutput;
+    if (entry.kind === "tool-call" && typeof toolCallId === "string") {
       if (!this.emittedTools.has(toolCallId)) {
         this.emittedTools.add(toolCallId);
         this.emitter.toolCall(typeof entry.title === "string" ? entry.title : "Tool", {
           toolUseId: toolCallId,
-          ...(entry.rawInput === undefined ? {} : { input: entry.rawInput }),
+          ...(rawInput === undefined ? {} : { input: rawInput }),
         });
       }
       const status = entry.status;
@@ -569,14 +576,14 @@ class HostClient {
         this.settledTools.add(toolCallId);
         this.emitter.toolResult(
           toolCallId,
-          entry.rawOutput === undefined ? "" : stringify(entry.rawOutput),
+          rawOutput === undefined ? "" : stringify(rawOutput),
           { isError: status === "failed" },
         );
       }
     }
   }
 
-  private readonly emittedText = new Map<number, string>();
+  private readonly emittedText = new Map<string, string>();
   private readonly emittedTools = new Set<string>();
   private readonly settledTools = new Set<string>();
 

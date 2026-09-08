@@ -1,4 +1,26 @@
 export const run = {
+  session: {
+    "transcript": "Session transcript",
+    "title": "Session",
+    "mode": "Mode",
+    "context": "Context tokens",
+    "cost": "Reported cost",
+    "thinking": "Thinking",
+    "plan": "Plan · {{completed}}/{{total}}",
+    "planStatus": {
+        "pending": "Pending",
+        "in_progress": "In progress",
+        "completed": "Completed"
+    },
+    "commands": "Available commands · {{count}}",
+    "observedOnly": "Commands reported by this Agent. This run does not offer command execution.",
+    "partial": "Some ACP content is incomplete or cannot be displayed. The protocol trace may contain more detail.",
+    "unsupported": "Updates without a session view",
+    "empty": "No response retained.",
+    "latest": "Back to latest",
+    "sending": "Sending decision…",
+    "decisionSent": "Decision sent; waiting for Agent…"
+},
   acpAgent: "ACP Agent",
   liveTrial: "Live Trial",
   assistant: "Assistant",

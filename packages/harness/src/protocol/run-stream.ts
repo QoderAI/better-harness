@@ -58,6 +58,7 @@ function parseHarnessRunEvent(value: unknown): HarnessRunEvent {
     case "run-error":
       return { type: event.type, message: stringValue(event.message, "message") };
     case "message-started":
+      return { type: event.type, messageId: stringValue(event.messageId, "messageId"), ...(event.role === "thought" ? { role: "thought" } : {}) };
     case "message-finished":
       return { type: event.type, messageId: stringValue(event.messageId, "messageId") };
     case "text-delta":
@@ -92,6 +93,7 @@ function parseHarnessRunEvent(value: unknown): HarnessRunEvent {
         method: stringValue(event.method, "method"),
         ...(typeof event.rpcId === "string" ? { rpcId: event.rpcId } : {}),
         ...(typeof event.sessionId === "string" ? { sessionId: event.sessionId } : {}),
+        ...(event.permissionActionable === false ? { permissionActionable: false } : {}),
         payload: event.payload,
       };
     case "run-finished":

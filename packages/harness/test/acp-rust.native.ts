@@ -346,3 +346,24 @@ describe.skipIf(process.platform !== "darwin")("AcpRustExecutor over NSXPC", () 
     expect(result.errorOutput).toContain("stdio fallback");
   });
 });
+
+it.each([
+  { transport: "stdio" as const, executable: HOST_EXECUTABLE },
+  ...(process.platform === "darwin" ? [{ transport: "nsxpc" as const, executable: NSXPC_BRIDGE }] : []),
+])("preserves rich transcript order and native tool fields through $transport", async ({ transport, executable }) => {
+  const { bundle, revision } = await revisionUnderTest();
+  const events: HarnessRunEvent[] = [];
+  const result = await new AcpRustExecutor({
+    hostExecutable: executable, transport, command: process.execPath,
+    args: [FIXTURE_AGENT, "--session-stream"],
+    requestPermission: approveFirstOption(), onRunEvent: (event) => events.push(event),
+  }).execute(revision, bundle, { prompt: "Inspect rich stream" });
+  expect(result.exitCode).toBe(0);
+  expect(events.flatMap((event) => event.type === "message-started" ? [event.role ?? "assistant"] : event.type === "tool-call-started" ? ["tool"] : [])).toEqual(["assistant", "thought", "tool", "assistant"]);
+  expect(events.find((event) => event.type === "tool-call-started")).toMatchObject({ toolCallId: "read-stream" });
+  const output = events.find((event) => event.type === "tool-call-result");
+  expect(output?.type === "tool-call-result" ? JSON.parse(output.content) : undefined).toEqual({ files: ["fixture.txt"], verified: true });
+  expect(result.output).not.toContain("Inspecting the evidence.");
+  expect(result.output).toContain("stream:complete");
+  expect(events.some((event) => event.type === "protocol-event" && event.method === "session/request_permission" && event.permissionActionable === false)).toBe(true);
+});

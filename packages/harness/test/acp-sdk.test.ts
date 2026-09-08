@@ -246,3 +246,23 @@ describe("AcpSdkExecutor", () => {
     expect(result.metrics).toMatchObject({ sessionId: "fixture-session", stopReason: "end_turn" });
   });
 });
+
+it("preserves thought framing without mixing thoughts into the executor's final output", async () => {
+  const { bundle } = await compileHarness(SOURCE);
+  const { revision } = resolveHarness(bundle!, "live-acp", "acp", { adapter: () => ACP_ADAPTER_DESCRIPTOR });
+  const messages: Array<{ role?: "thought"; text: string }> = [];
+  const executor = new AcpSdkExecutor({
+    command: process.execPath,
+    args: [FIXTURE, "--session-stream"],
+    onRunEvent: (event) => {
+      if (event.type === "message-started") messages.push({ role: event.role, text: "" });
+      if (event.type === "text-delta") messages[messages.length - 1]!.text += event.text;
+    },
+    requestPermission: async (_id, request) => ({ outcome: { outcome: "selected", optionId: request.options[0]!.optionId } }),
+  });
+  const result = await executor.execute(revision!, bundle!, { prompt: "Inspect session stream" });
+  expect(result.exitCode).toBe(0);
+  expect(messages.slice(0, 2)).toEqual([{ role: undefined, text: "Starting inspection." }, { role: "thought", text: "Inspecting the evidence." }]);
+  expect(result.output).not.toContain("Inspecting the evidence.");
+  expect(result.output).toContain("stream:complete");
+});

@@ -416,3 +416,27 @@ describe("PiSdkExecutor run events", () => {
     ]);
   });
 });
+
+it("frames assistant/thought transitions in order and keeps metadata from splitting text", () => {
+  const events: HarnessRunEvent[] = [];
+  const emitter = new HarnessRunEmitter((event) => events.push(event));
+  emitter.start({ revisionId: "r1", host: "acp" });
+  emitter.text("First response");
+  emitter.thought("Inspect ");
+  emitter.protocol({ protocol: "acp", direction: "Agent → Client", method: "session/update", payload: { params: { update: { sessionUpdate: "usage_update", used: 100, size: 1000 } } } });
+  emitter.thought("files");
+  emitter.text("Final response");
+  emitter.finish(0);
+  expect(events.filter((event) => event.type === "message-started")).toEqual([
+    { type: "message-started", messageId: "msg_1" },
+    { type: "message-started", messageId: "msg_2", role: "thought" },
+    { type: "message-started", messageId: "msg_3" },
+  ]);
+  expect(events.filter((event) => event.type === "text-delta")).toEqual([
+    { type: "text-delta", messageId: "msg_1", text: "First response" },
+    { type: "text-delta", messageId: "msg_2", text: "Inspect " },
+    { type: "text-delta", messageId: "msg_2", text: "files" },
+    { type: "text-delta", messageId: "msg_3", text: "Final response" },
+  ]);
+  expect(events.filter((event) => event.type === "message-finished")).toHaveLength(3);
+});

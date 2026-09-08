@@ -1,8 +1,10 @@
 import type { HarnessProtocolEvent } from "@qoder-ai/harness/exec";
 import type { HarnessRunStreamEventV1 } from "@qoder-ai/harness/protocol";
 
+import { initialAcpSessionState, projectAcpSession, recordValue, type AcpSessionState } from "./acp-session-state.js";
+
 export type TimelineItem =
-  | { kind: "message"; id: string; text: string; complete: boolean }
+  | { kind: "message"; id: string; text: string; complete: boolean; role?: "thought" }
   | {
       kind: "tool-call";
       id: string;
@@ -27,6 +29,8 @@ export interface HarnessRunState {
   warnings: string[];
   protocolEvents: HarnessProtocolEvent[];
   pendingPermission?: AcpPendingPermission;
+  pendingPermissions: AcpPendingPermission[];
+  acp: AcpSessionState;
   error?: string;
   result?: unknown;
 }
@@ -49,6 +53,8 @@ export function initialRunState(): HarnessRunState {
     toolCallCount: 0,
     warnings: [],
     protocolEvents: [],
+    pendingPermissions: [],
+    acp: initialAcpSessionState(),
   };
 }
 
@@ -79,7 +85,7 @@ export function applyHarnessRunEvent(
     case "run-warning":
       return { ...sequenced, warnings: [...state.warnings, event.message] };
     case "message-started":
-      return appendItem(sequenced, { kind: "message", id: event.messageId, text: "", complete: false });
+      return appendItem(sequenced, { kind: "message", id: event.messageId, text: "", complete: false, ...(event.role === "thought" ? { role: "thought" } : {}) });
     case "text-delta":
       return patchItem(sequenced, "message", event.messageId, (item) => ({ ...item, text: item.text + event.text }));
     case "message-finished":
@@ -106,20 +112,21 @@ export function applyHarnessRunEvent(
     case "protocol-event": {
       const pendingPermission = permissionFromProtocolEvent(event);
       const resolvedPermission = event.method === "session/request_permission:response" ? event.rpcId : undefined;
+      const permissions = (state.pendingPermissions ?? []).filter((request) => request.requestId !== resolvedPermission);
+      if (pendingPermission !== undefined && !permissions.some((request) => request.requestId === pendingPermission.requestId)) permissions.push(pendingPermission);
       return {
         ...sequenced,
         protocolEvents: [...state.protocolEvents, event].slice(-2_000),
-        ...(pendingPermission === undefined ? {} : { pendingPermission }),
-        ...(resolvedPermission !== undefined && state.pendingPermission?.requestId === resolvedPermission
-          ? { pendingPermission: undefined }
-          : {}),
+        pendingPermissions: permissions,
+        pendingPermission: permissions[0],
+        acp: projectAcpSession(state.acp, event),
       };
     }
     case "run-error":
-      return settleTools({ ...sequenced, status: "error", error: event.message }, "interrupted");
+      return settleRunState({ ...sequenced, status: "error", error: event.message }, "interrupted");
     case "run-finished": {
       const failed = state.status === "error" || event.exitCode !== 0;
-      return settleTools({
+      return settleRunState({
         ...sequenced,
         status: failed ? "error" : "finished",
         result: {
@@ -135,6 +142,7 @@ export function applyHarnessRunEvent(
 }
 
 function permissionFromProtocolEvent(event: HarnessProtocolEvent): AcpPendingPermission | undefined {
+  if (event.permissionActionable === false) return undefined;
   if (event.method !== "session/request_permission" || event.direction !== "Agent → Client" || event.rpcId === undefined) return undefined;
   const envelope = recordValue(event.payload);
   const params = recordValue(envelope?.params);
@@ -156,18 +164,14 @@ function permissionFromProtocolEvent(event: HarnessProtocolEvent): AcpPendingPer
   };
 }
 
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-}
-
-function settleTools(
+export function settleRunState(
   state: HarnessRunState,
   terminalStatus: "result-unavailable" | "interrupted",
 ): HarnessRunState {
   return {
     ...state,
+    pendingPermission: undefined,
+    pendingPermissions: [],
     timelineRevision: state.timelineRevision + 1,
     timelineByKey: settleTimeline(state.timelineByKey, terminalStatus),
   };
@@ -179,6 +183,7 @@ function settleTimeline(
 ): Map<string, TimelineItem> {
   const next = new Map(current);
   for (const [key, item] of current) {
+    if (item.kind === "message" && !item.complete) next.set(key, { ...item, complete: true });
     if (item.kind === "tool-call" && (item.status === "preparing" || item.status === "running")) {
       next.set(key, { ...item, status: terminalStatus });
     }

@@ -22,6 +22,7 @@ export const compare = {
     run: "Run {{count}} Agent",
     run_other: "Run {{count}} Agents",
     running: "Running…",
+    cancelling: "Interrupting…",
     cancel: "Interrupt",
     noAgents: "No local ACP Agent is available on this host, so no live comparison can start.",
     sharedTree: "Shared working tree",

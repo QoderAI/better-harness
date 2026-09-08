@@ -16,14 +16,23 @@ import { nextStreamingText } from "./streaming-text.js";
  * Agent never said.
  */
 export function useStreamingText(target: string, complete: boolean): string {
-  const [revealed, setRevealed] = useState(complete ? target : "");
+  const [reducedMotion, setReducedMotion] = useState(() => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+  const [revealed, setRevealed] = useState(complete || reducedMotion ? target : "");
   const revealedRef = useRef(revealed);
   const targetRef = useRef(target);
   const frameRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
+    const query = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (query === undefined) return;
+    const change = (): void => setReducedMotion(query.matches);
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+
+  useEffect(() => {
     targetRef.current = target;
-    const replace = complete || !target.startsWith(revealedRef.current);
+    const replace = complete || reducedMotion || !target.startsWith(revealedRef.current);
     if (replace) {
       if (frameRef.current !== undefined) cancelAnimationFrame(frameRef.current);
       frameRef.current = undefined;
@@ -52,7 +61,7 @@ export function useStreamingText(target: string, complete: boolean): string {
       if (frameRef.current !== undefined) cancelAnimationFrame(frameRef.current);
       frameRef.current = undefined;
     };
-  }, [complete, target]);
+  }, [complete, reducedMotion, target]);
 
   return revealed;
 }

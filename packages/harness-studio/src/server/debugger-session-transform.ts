@@ -53,12 +53,12 @@ function retainedMessageEvent(record: RetainedRunRecord, item: Extract<RetainedR
   return {
     id: `message_${safeId(item.id, index)}`,
     kind: "response",
-    phase: item.complete ? "Response" : "Message",
-    title: item.complete ? "Assistant response" : "Assistant message",
+    phase: item.role === "thought" ? "Thinking" : item.complete ? "Response" : "Message",
+    title: item.role === "thought" ? "Agent thought" : item.complete ? "Assistant response" : "Assistant message",
     summary: item.text || "No message text retained.",
     timestamp: relativeRetainedTimestamp(record.savedAt, index),
     relativeTime: `+${index}s`,
-    stopConditions: item.complete ? ["responses"] : [],
+    stopConditions: item.complete && item.role !== "thought" ? ["responses"] : [],
     evidence: [{ level: "Exact", label: "Retained message", detail: "Message content is retained in the saved run timeline." }],
     rawAcp: retainedRaw("Agent → Client", "run/message", String(index + 1), sessionId, item),
   };

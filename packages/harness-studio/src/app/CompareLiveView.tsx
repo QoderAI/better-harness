@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
 import { Check } from "@phosphor-icons/react/Check";
@@ -11,11 +11,12 @@ import {
   applyHarnessRunEvent,
   initialRunState,
   timelineItems,
+  settleRunState,
   type HarnessRunState,
-  type TimelineItem,
 } from "./run/run-store.js";
 import { streamRun } from "./run/stream-run.js";
-import { StreamingMessage } from "./run/StreamingMessage.js";
+import { AcpSessionStream } from "./run/AcpSessionStream.js";
+import { postAcpRunAction } from "./run/acp-run-actions.js";
 import type { StudioAcpAgentOption } from "./studio-shell-model.js";
 
 /** A comparison needs a second opinion; one lane is a Debugger run, not a compare. */
@@ -26,9 +27,6 @@ const MIN_LANES = 2;
  * the widths this shell targets and bounds what a single click can start.
  */
 const MAX_LANES = 4;
-
-/** Distance from the bottom that still counts as following the stream. */
-const FOLLOW_THRESHOLD_PX = 24;
 
 function laneKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -65,38 +63,42 @@ export function CompareLiveView(props: {
   const [chosen, setChosen] = useState<readonly string[]>([]);
   const [comparison, setComparison] = useState<LiveComparison>();
   const running = useRef(false);
+  const liveComparison = useRef<LiveComparison | undefined>(undefined);
 
   const available = props.agents.filter((agent) => agent.available);
   const active = comparison !== undefined
     && comparison.lanes.some((lane) => lane.state.status === "running");
-  const canRun = prompt.trim() !== "" && chosen.length >= MIN_LANES && !active;
+  const canRun = prompt.trim() !== "" && chosen.length >= MIN_LANES && chosen.every((id) => available.some((agent) => agent.id === id)) && !active;
 
   useEffect(() => () => { running.current = false; }, []);
 
   function patchLane(key: string, update: (run: LaneRun) => LaneRun): void {
-    setComparison((current) => current === undefined ? current : {
-      ...current,
-      lanes: current.lanes.map((lane) => lane.key === key ? update(lane) : lane),
-    });
+    const current = liveComparison.current;
+    if (current === undefined) return;
+    const next = { ...current, lanes: current.lanes.map((lane) => lane.key === key ? update(lane) : lane) };
+    liveComparison.current = next;
+    setComparison(next);
   }
 
   async function launch(): Promise<void> {
-    if (!canRun) return;
+    if (!canRun || running.current) return;
+    running.current = true;
     const task = prompt.trim();
     const started = chosen.map((agentId) => {
       const key = laneKey();
       return { agentId, key, ...runIdentity(key) };
     });
-    setComparison({
+    const next: LiveComparison = {
       prompt: task,
       lanes: started.map(({ agentId, key, runId }) => ({
         key,
         agentId,
         runId,
-        state: { ...initialRunState(), status: "running" },
+        state: { ...initialRunState(), runId, status: "running" },
       })),
-    });
-    running.current = true;
+    };
+    liveComparison.current = next;
+    setComparison(next);
     // Every lane is launched together and settles independently, so a slow or
     // failing Agent never withholds another lane's evidence.
     await Promise.all(started.map(async ({ agentId, key, threadId, runId }) => {
@@ -116,7 +118,7 @@ export function CompareLiveView(props: {
         patchLane(key, (run) => ({
           ...run,
           failure: error instanceof Error ? error.message : String(error),
-          state: { ...run.state, status: "error" },
+          state: settleRunState({ ...run.state, status: "error" }, "interrupted"),
         }));
       }
     }));
@@ -129,17 +131,13 @@ export function CompareLiveView(props: {
   async function cancel(key: string): Promise<void> {
     const runId = runIdFor(key);
     if (runId === undefined) return;
-    await fetch(`api/acp/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }).catch(() => undefined);
+    await postAcpRunAction(runId, "cancel");
   }
 
   async function decide(key: string, requestId: string, optionId: string): Promise<void> {
     const runId = runIdFor(key);
-    if (runId === undefined) return;
-    await fetch(`api/acp/runs/${encodeURIComponent(runId)}/permissions/${encodeURIComponent(requestId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ optionId }),
-    }).catch(() => undefined);
+    if (runId === undefined) throw new Error("ACP run is no longer available.");
+    await postAcpRunAction(runId, { requestId, optionId });
   }
 
   const labelFor = (agentId: string): string => props.agents.find((agent) => agent.id === agentId)?.label ?? agentId;
@@ -206,8 +204,9 @@ export function CompareLiveView(props: {
             side={t("live.laneAgent", { index: index + 1 })}
             label={labelFor(lane.agentId)}
             run={lane}
-            onCancel={() => void cancel(lane.key)}
-            onDecide={(requestId, optionId) => void decide(lane.key, requestId, optionId)}
+            prompt={comparison.prompt}
+            onCancel={() => cancel(lane.key)}
+            onDecide={(requestId, optionId) => decide(lane.key, requestId, optionId)}
           />)}
         </div>}
   </main>;
@@ -324,81 +323,41 @@ function SharedTreeNote(): React.JSX.Element {
 function LiveLane(props: {
   side: string;
   label: string;
+  prompt: string;
   run: LaneRun;
-  onCancel: () => void;
-  onDecide: (requestId: string, optionId: string) => void;
+  onCancel: () => Promise<void>;
+  onDecide: (requestId: string, optionId: string) => Promise<void>;
 }): React.JSX.Element {
   const { t } = useTranslation("compare");
+  const [cancelling, setCancelling] = useState(false);
+  const cancelBusy = useRef(false);
+  const [actionError, setActionError] = useState<string>();
   const items = timelineItems(props.run.state);
-  const permission = props.run.state.pendingPermission;
   const warnings = props.run.state.warnings.length;
-  // The counts the removed metric table carried, next to the evidence they
-  // describe rather than in a separate grid above every lane. A warning count of
-  // zero is not a fact worth spending a lane header on.
   const counts = [
     t("live.laneTools", { count: props.run.state.toolCallCount }),
-    t("live.laneMessages", { count: items.filter((item) => item.kind === "message").length }),
+    t("live.laneMessages", { count: items.filter((item) => item.kind === "message" && item.role !== "thought").length }),
     ...(warnings > 0 ? [t("live.laneWarnings", { count: warnings })] : []),
   ].join(" · ");
-  const events = useRef<HTMLOListElement>(null);
-  const following = useRef(true);
-
-  // Follow the newest event only while the reader is already at the bottom.
-  // Scrolling up is a deliberate act of reading back; the stream must not undo
-  // it. Measured before paint so the check uses the pre-append position.
-  useEffect(() => {
-    const list = events.current;
-    if (list === null || !following.current) return;
-    list.scrollTop = list.scrollHeight;
-  });
-
+  async function cancel(): Promise<void> {
+    if (cancelBusy.current) return;
+    cancelBusy.current = true;
+    setCancelling(true);
+    setActionError(undefined);
+    try { await props.onCancel(); }
+    catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+      setCancelling(false);
+      cancelBusy.current = false;
+    }
+  }
   return <section className="live-compare-lane" aria-label={t("live.laneAria", { side: props.side, agent: props.label })}>
     <header>
       <strong>{props.label}</strong>
-      <span className={`run-badge status-${props.run.state.status}`}>{t(`live.status.${props.run.state.status}`)}</span>
+      <span className={`run-badge status-${props.run.state.status}`} role="status">{t(`live.status.${props.run.state.status}`)}</span>
       <small className="live-compare-counts">{counts}</small>
-      {props.run.state.status === "running" && <button type="button" onClick={props.onCancel}>{t("live.cancel")}</button>}
+      {props.run.state.status === "running" && <button type="button" disabled={cancelling} onClick={() => void cancel()}>{t(cancelling ? "live.cancelling" : "live.cancel")}</button>}
     </header>
-    {props.run.failure !== undefined && <p className="live-compare-boundary status-danger" role="alert">{props.run.failure}</p>}
-    {props.run.state.error !== undefined && props.run.failure === undefined
-      && <p className="live-compare-boundary status-danger" role="alert">{props.run.state.error}</p>}
-    {permission !== undefined && <div className="live-compare-permission" role="alertdialog" aria-label={t("live.permissionAria")}>
-      <strong>{permission.title}</strong>
-      <div>{permission.options.map((option) => <button
-        key={option.optionId}
-        type="button"
-        onClick={() => props.onDecide(permission.requestId, option.optionId)}
-      >{option.name}</button>)}</div>
-    </div>}
-    <ol
-      className="live-compare-events"
-      ref={events}
-      onScroll={(event) => {
-        const list = event.currentTarget;
-        following.current = list.scrollHeight - list.scrollTop - list.clientHeight <= FOLLOW_THRESHOLD_PX;
-      }}
-    >
-      {items.length === 0
-        ? <li className="live-compare-waiting">{t("live.waiting")}</li>
-        : items.map((item) => item.kind === "message"
-          ? <LaneMessage key={`message-${item.id}`} item={item} />
-          : <li key={`tool-${item.id}`} className={`live-compare-tool status-${item.status}`}>
-              <strong>{item.name}</strong>
-              <small>{t(`live.toolStatus.${item.status}`)}</small>
-            </li>)}
-    </ol>
+    <AcpSessionStream state={props.run.state} prompt={props.prompt} failure={actionError ?? props.run.failure} onPermission={props.onDecide} permissionClassName="live-compare-permission" />
   </section>;
 }
-
-/**
- * One assistant message, revealed rather than repainted.
- *
- * An ACP Agent's text reaches the browser in coalesced bursts, so rendering the
- * delta directly makes a live turn land as a block. Memoized so one lane's
- * frames do not re-render another's transcript.
- */
-const LaneMessage = memo(function LaneMessage(
-  { item }: { item: Extract<TimelineItem, { kind: "message" }> },
-): React.JSX.Element {
-  return <li className="live-compare-message"><StreamingMessage item={item} /></li>;
-});

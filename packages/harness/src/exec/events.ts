@@ -13,6 +13,8 @@ export interface HarnessProtocolEvent {
   method: string;
   rpcId?: string;
   sessionId?: string;
+  /** False for wire evidence whose permission is addressed by a separate host-owned request. */
+  permissionActionable?: false;
   payload: unknown;
 }
 
@@ -41,7 +43,7 @@ export interface HarnessProtocolEvent {
 export type HarnessRunEvent =
   | { type: "run-started"; revisionId: string; host: string }
   | { type: "run-warning"; message: string }
-  | { type: "message-started"; messageId: string }
+  | { type: "message-started"; messageId: string; role?: "thought" }
   | { type: "text-delta"; messageId: string; text: string }
   | { type: "message-finished"; messageId: string }
   | { type: "tool-call-started"; toolCallId: string; toolName: string; input?: unknown }
@@ -74,6 +76,7 @@ export type HarnessRunPhase = "idle" | "running" | "finished";
 export class HarnessRunEmitter {
   private currentPhase: HarnessRunPhase = "idle";
   private openMessageId: string | undefined;
+  private openMessageRole: "assistant" | "thought" = "assistant";
   private messageCount = 0;
   private toolCallCount = 0;
 
@@ -100,13 +103,24 @@ export class HarnessRunEmitter {
 
   /** Append assistant text, opening a message frame when none is open. */
   text(text: string): void {
+    this.appendText(text, "assistant");
+  }
+
+  /** Thoughts share ordered message framing without entering final output. */
+  thought(text: string): void {
+    this.appendText(text, "thought");
+  }
+
+  private appendText(text: string, role: "assistant" | "thought"): void {
     if (this.currentPhase !== "running" || text.length === 0) {
       return;
     }
+    if (this.openMessageId !== undefined && this.openMessageRole !== role) this.closeOpenMessage();
     if (this.openMessageId === undefined) {
       this.messageCount += 1;
       this.openMessageId = `msg_${this.messageCount}`;
-      this.deliver({ type: "message-started", messageId: this.openMessageId });
+      this.openMessageRole = role;
+      this.deliver({ type: "message-started", messageId: this.openMessageId, ...(role === "thought" ? { role } : {}) });
     }
     this.deliver({ type: "text-delta", messageId: this.openMessageId, text });
   }

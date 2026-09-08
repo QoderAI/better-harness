@@ -83,7 +83,7 @@ export interface DebuggerSession {
 }
 
 export type RetainedRunTimelineItem =
-  | { kind: "message"; id: string; text: string; complete: boolean }
+  | { kind: "message"; id: string; text: string; complete: boolean; role?: "thought" }
   | {
       kind: "tool-call";
       id: string;

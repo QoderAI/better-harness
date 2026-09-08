@@ -409,6 +409,10 @@ function applyAcpSessionUpdate(
   tools: Map<string, { resultEmitted: boolean }>,
 ): void {
   const update = notification.update;
+  if (update.sessionUpdate === "agent_thought_chunk") {
+    if (update.content.type === "text") emitter.thought(update.content.text);
+    return;
+  }
   if (update.sessionUpdate === "agent_message_chunk") {
     if (update.content.type === "text") {
       output.push(update.content.text);

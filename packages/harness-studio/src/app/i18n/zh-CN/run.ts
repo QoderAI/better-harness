@@ -1,6 +1,28 @@
 import type { run as enRun } from "../en/run.js";
 
 export const run: typeof enRun = {
+  session: {
+    "transcript": "会话内容",
+    "title": "会话",
+    "mode": "模式",
+    "context": "上下文 Token",
+    "cost": "上报费用",
+    "thinking": "思考过程",
+    "plan": "计划 · {{completed}}/{{total}}",
+    "planStatus": {
+        "pending": "待处理",
+        "in_progress": "进行中",
+        "completed": "已完成"
+    },
+    "commands": "可用命令 · {{count}}",
+    "observedOnly": "Agent 上报的命令。当前运行暂不支持执行命令。",
+    "partial": "部分 ACP 内容不完整或无法展示，协议记录中可能保留了更多信息。",
+    "unsupported": "尚无会话视图的更新",
+    "empty": "尚无保留的回复。",
+    "latest": "回到最新",
+    "sending": "正在发送决定…",
+    "decisionSent": "决定已发送，等待 Agent…"
+},
   acpAgent: "ACP Agent",
   liveTrial: "实时试验",
   assistant: "助手",

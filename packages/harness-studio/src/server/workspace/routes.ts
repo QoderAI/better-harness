@@ -529,7 +529,7 @@ async function commitWorkspaceImportSession(
           status: record.status,
           toolCallCount: record.toolCallCount,
           provider: "Harness Studio",
-          messageCount: record.timeline.filter((item) => item.kind === "message").length,
+          messageCount: record.timeline.filter((item) => item.kind === "message" && item.role !== "thought").length,
           warningCount: record.warnings.length,
         },
         debugger: sessionFromRetainedRun(record),
