@@ -63,11 +63,11 @@
     "i18next": "^26.4.1",
     "oxc-parser": "0.147.0",
     "oxc-transform": "0.147.0",
-    "pdfjs-dist": "^6.2.108",
+    "pdfjs-dist": "^6.3.289",
     "react": "19.2.8",
     "react-arborist": "^3.16.0",
     "react-dom": "19.2.8",
-    "react-i18next": "^17.0.12"
+    "react-i18next": "^17.0.13"
   },
   "peerDependencies": {
     "@homology/integration-harness-notebook-provider": "0.1.0"
