@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { startHarnessStudioServer } from "../../dist/server/server.js";
@@ -35,10 +36,10 @@ test.beforeAll(async () => {
   git("config", "user.email", "browser@example.com");
   await writeFile(join(workspace, "README.md"), "# Commit view\n", "utf8");
   git("add", "README.md");
-  git("commit", "-m", "docs: add commit view fixture", "-m", "The full body remains visible in details.");
+  authoredLongAgo("commit", "-m", "docs: add commit view fixture", "-m", "The full body remains visible in details.");
   git("tag", "v1.0.0");
   for (let index = 1; index <= 41; index += 1) {
-    git("commit", "--allow-empty", "-m", `chore: history page ${index}`);
+    authoredLongAgo("commit", "--allow-empty", "-m", `chore: history page ${index}`);
   }
   git("switch", "-c", "feature/history-filter");
   await writeFile(join(workspace, "feature.ts"), "export const feature = true;\n", "utf8");
@@ -195,7 +196,7 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   await messageSash.dblclick();
   await expect.poll(async () => Math.round((await messagePane.boundingBox())?.height ?? 0)).toBe(132);
 
-  const commitTable = page.getByRole("table", { name: "Commits" });
+  const commitTable = page.getByRole("grid", { name: "Commits" });
   // Paging is silent: the log reports failure and retry, never a running count.
   await expect(page.getByText(/More loads automatically/)).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Load more/ })).toHaveCount(0);
@@ -272,7 +273,7 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   await expect(page.getByRole("button", { name: "Details", exact: true })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(page.getByRole("region", { name: "Commit history" })).toBeVisible();
   await expect(page.locator(".git-commit-rows > button").first()).toContainText("feat: add filtered branch commit");
-  const narrowTable = page.getByRole("table", { name: "Commits" });
+  const narrowTable = page.getByRole("grid", { name: "Commits" });
   expect(await narrowTable.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("git-history-narrow.png"), fullPage: true });
   const expectedPageFailures = failures.filter((message) => message.includes("422 (Unprocessable Entity)"));
@@ -280,11 +281,253 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   expect(failures.filter((message) => !expectedPageFailures.includes(message))).toEqual([]);
 });
 
+/**
+ * Paging follows the reader, focus travels the log, and a short log hands its
+ * unused height to the details pane.
+ *
+ * The fixture's older commits are backdated, so narrowing the window to `Today`
+ * leaves a handful of rows over a history that still has pages left — the shape
+ * that used to drain the whole log on mount.
+ */
+test("pages on the reader's request, travels by keyboard, and holds no dead height", async ({ page }, testInfo) => {
+  const failures = [];
+  page.on("console", (message) => { if (message.type() === "error") failures.push(message.text()); });
+  page.on("pageerror", (error) => failures.push(error.message));
+  const pages = [];
+  page.on("request", (request) => { if (request.url().includes("/api/git/log?")) pages.push(request.url()); });
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto(`${studio.url}/#/commits`);
+  const grid = page.getByRole("grid", { name: "Commits" });
+  const rows = page.locator(".git-commit-rows > button");
+  await expect(rows.first()).toContainText("merge: history fixture");
+
+  // One page on entry, and nothing more until the reader asks.
+  expect(pages).toHaveLength(1);
+  await page.waitForTimeout(400);
+  expect(pages).toHaveLength(1);
+
+  // Arriving at the end of a scrollable log buys exactly one page, not the rest
+  // of the history.
+  const scrolledPage = page.waitForResponse((response) => response.url().includes("/api/git/log?") && response.url().includes("cursor="));
+  await grid.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  expect((await scrolledPage).ok()).toBe(true);
+  await page.waitForTimeout(400);
+  expect(pages).toHaveLength(2);
+
+  // The list is one tab stop, and arrows travel it without selecting.
+  await page.reload();
+  await expect(rows.first()).toContainText("merge: history fixture");
+  await page.keyboard.press("Tab");
+  await expect(rows.locator('[tabindex="0"]')).toHaveCount(0);
+  await expect(page.locator('.git-commit-rows > button[tabindex="0"]')).toHaveCount(1);
+  await rows.first().focus();
+  // The virtualizer scrolls before the target row can take focus, so each step
+  // is polled rather than read in the same tick as the key press.
+  const focusedIndex = () => expect.poll(async () => page.evaluate(() => document.activeElement?.dataset.index));
+  const detailRequests = [];
+  page.on("request", (request) => { if (/\/api\/git\/commits\//.test(request.url())) detailRequests.push(request.url()); });
+  await page.keyboard.press("ArrowDown");
+  await focusedIndex().toBe("1");
+  await page.keyboard.press("ArrowDown");
+  await focusedIndex().toBe("2");
+  await page.keyboard.press("ArrowUp");
+  await focusedIndex().toBe("1");
+  await page.keyboard.press("PageDown");
+  await focusedIndex().toBe("11");
+  await page.keyboard.press("Home");
+  await focusedIndex().toBe("0");
+  await page.keyboard.press("ArrowUp");
+  await focusedIndex().toBe("0");
+  await page.keyboard.press("End");
+  await focusedIndex().toBe("39");
+  await expect(page.locator('.git-commit-rows > button[tabindex="0"]')).toHaveCount(1);
+  // Travelling never selects, so no commit detail was fetched on the way.
+  expect(detailRequests).toEqual([]);
+  await expect(page.locator('.git-commit-rows > button[aria-selected="true"]')).toHaveCount(0);
+
+  // ArrowDown at the loaded end asks for the next page instead of wrapping.
+  const keyboardPage = page.waitForResponse((response) => response.url().includes("/api/git/log?") && response.url().includes("cursor="));
+  await page.keyboard.press("ArrowDown");
+  expect((await keyboardPage).ok()).toBe(true);
+  await expect.poll(async () => rows.count()).toBeGreaterThan(0);
+
+  // Enter selects the focused row and loads its details.
+  await page.keyboard.press("Home");
+  await focusedIndex().toBe("0");
+  await page.keyboard.press("Enter");
+  await expect(page.locator('.git-commit-rows > button[aria-selected="true"]')).toHaveCount(1);
+  await expect(page.locator(".git-commit-message")).toContainText("merge: history fixture");
+
+  // A window-narrowed log keeps whatever the loaded page held, offers the rest
+  // as a control, and does not fetch page after page on its own.
+  await page.reload();
+  await expect(rows.first()).toContainText("merge: history fixture");
+  pages.length = 0;
+  await page.getByLabel("Observation window").selectOption("today");
+  await expect.poll(async () => rows.count()).toBe(3);
+  await page.waitForTimeout(600);
+  expect(pages).toHaveLength(0);
+  expect(await grid.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(160);
+  const loadOlder = page.getByRole("button", { name: /Load older commits/ });
+  await expect(loadOlder).toBeVisible();
+  const requestedPage = page.waitForResponse((response) => response.url().includes("/api/git/log?") && response.url().includes("cursor="));
+  await loadOlder.click();
+  expect((await requestedPage).ok()).toBe(true);
+  // The history is exhausted, so the control leaves rather than lingering.
+  await expect(loadOlder).toHaveCount(0);
+  await expect(page.locator(".git-page-progress")).toBeEmpty();
+
+  // A log that cannot fill its share of the frame gives the rest to details.
+  const geometry = await page.evaluate(() => {
+    const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+    const lastRow = [...document.querySelectorAll(".git-commit-rows > button")].at(-1).getBoundingClientRect();
+    return { log: box(".git-log-pane"), detail: box(".git-detail-pane"), frame: box(".git-history-workbench"), lastRow };
+  });
+  expect(geometry.log.height).toBeLessThan(geometry.frame.height * 0.4);
+  expect(geometry.detail.height).toBeGreaterThan(geometry.frame.height * 0.5);
+  // The details header sits within a sash of the last commit row, not a band below it.
+  expect(geometry.detail.top - geometry.lastRow.bottom).toBeLessThanOrEqual(48);
+  await page.screenshot({ path: testInfo.outputPath("git-history-short-window.png"), fullPage: true });
+
+  // Restoring the window restores a scrollable log at its sash height.
+  await page.getByLabel("Observation window").selectOption("all");
+  await expect.poll(async () => rows.count()).toBeGreaterThan(3);
+  expect(await page.evaluate(() => {
+    const log = document.querySelector(".git-log-pane").getBoundingClientRect().height;
+    const frame = document.querySelector(".git-history-workbench").getBoundingClientRect().height;
+    return Math.abs(log - Math.round(frame * 0.58)) <= 2;
+  })).toBe(true);
+
+  expect(failures).toEqual([]);
+});
+
+/**
+ * A window that excludes the loaded page is not the end of the log.
+ *
+ * Switching Project remounts the View, so it opens on one page of the new
+ * repository's newest commits. When the shared window excludes them the pane used
+ * to end at "Nothing in this window" with no way forward, which is what a reader
+ * hits after switching to a Project whose work is older than the window. The
+ * window is reached by paging when it sits deeper, and named honestly when it
+ * does not.
+ */
+test("reaches a window that sits deeper in the history, and names one it cannot reach", async ({ page }, testInfo) => {
+  // Two repositories of ~50 commits each are built with one `git` process per
+  // commit, which alone outlasts the default per-test budget.
+  test.setTimeout(180_000);
+  const failures = [];
+  page.on("console", (message) => { if (message.type() === "error") failures.push(message.text()); });
+  page.on("pageerror", (error) => failures.push(error.message));
+  const fresh = await mkdtemp(join(tmpdir(), "studio-git-fresh-"));
+  const stale = await mkdtemp(join(tmpdir(), "studio-git-stale-"));
+  // `fresh` keeps a full page of commits newer than a middle band, so a window on
+  // that band sits one page deeper than the first request returns. `stale` has no
+  // commit newer than 2020, so `Today` is a window it can never reach.
+  for (let index = 1; index <= 6; index += 1) commitInto(stale, `chore: stale ${index}`, "2020-06-15T04:05:06+00:00");
+  for (let index = 1; index <= 46; index += 1) commitInto(stale, `chore: archived ${index}`, "2020-01-02T03:04:05+00:00");
+  for (let index = 1; index <= 6; index += 1) commitInto(fresh, `chore: middle band ${index}`, "2020-06-15T04:05:06+00:00");
+  for (let index = 1; index <= 45; index += 1) commitInto(fresh, `chore: recent ${index}`);
+  const pickers = [fresh, stale];
+  const paged = await startHarnessStudioServer({
+    appDir: join(packageRoot, "dist", "app"),
+    port: 0,
+    workspaceDirectoryPicker: async () => pickers.shift(),
+    // The Project label comes from discovery, so it names the fixture directory
+    // and the switcher can be driven by which repository a row points at.
+    workspaceSessionProvider: { discover: async (directory) => ({ label: basename(directory), sessions: [] }) },
+  });
+  try {
+    for (const label of ["fresh", "stale"]) {
+      const opened = await fetch(`${paged.url}/api/workspace/open`, { method: "POST" });
+      if (!opened.ok) throw new Error(`Could not open the ${label} fixture: ${await opened.text()}`);
+    }
+    const pages = [];
+    page.on("request", (request) => { if (request.url().includes("/api/git/log?")) pages.push(request.url()); });
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto(`${paged.url}/#/commits`);
+    const rows = page.locator(".git-commit-rows > button");
+    const emptyWindow = page.locator(".git-empty-window");
+    const window = page.getByLabel("Observation window");
+    await expect(rows.first()).toContainText("chore: archived 46");
+
+    // The active Project's whole history predates `Today`. The window cannot be
+    // reached by paging, so the pane says what it loaded instead of paging on.
+    pages.length = 0;
+    await window.selectOption("today");
+    await expect(emptyWindow).toBeVisible();
+    await expect(emptyWindow).toContainText(/None of the 40 commits loaded so far/);
+    await expect(emptyWindow).toContainText(/The newest is from/);
+    await page.waitForTimeout(700);
+    expect(pages).toHaveLength(0);
+    // The deeper history is still reachable rather than a dead end.
+    await expect(page.getByRole("button", { name: /Load older commits/ })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("git-history-window-unreachable.png"), fullPage: true });
+
+    // Switching Project under the same window finds that Project's commits.
+    await page.locator(".studio-project-switcher > button").click();
+    await page.getByRole("menuitemradio", { name: /fresh/ }).click();
+    await expect.poll(async () => rows.count()).toBeGreaterThan(0);
+    await expect(rows.first()).toContainText("chore: recent 45");
+    await expect(emptyWindow).toHaveCount(0);
+
+    // A window one page deeper than the first request is paged to, not reported
+    // as empty: exactly one further page, and then the band appears.
+    pages.length = 0;
+    await window.selectOption("custom");
+    await page.getByLabel("From", { exact: true }).fill("2020-06-14");
+    await page.getByLabel("To", { exact: true }).fill("2020-06-16");
+    await expect.poll(async () => rows.count()).toBe(6);
+    await expect(rows.first()).toContainText("chore: middle band 6");
+    await expect(emptyWindow).toHaveCount(0);
+    await page.waitForTimeout(700);
+    expect(pages).toHaveLength(1);
+
+    expect(failures).toEqual([]);
+  } finally {
+    await paged.close();
+    await rm(fresh, { recursive: true, force: true });
+    await rm(stale, { recursive: true, force: true });
+  }
+});
+
+/** Commits an empty change into a fixture repository, initialising it on demand. */
+function commitInto(directory, message, authoredAt) {
+  const run = (...args) => execFileSync("git", args, {
+    cwd: directory,
+    encoding: "utf8",
+    env: { ...process.env, LC_ALL: "C", ...(authoredAt === undefined ? {} : { GIT_AUTHOR_DATE: authoredAt }) },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (!existsSync(join(directory, ".git"))) {
+    run("init", "-b", "main");
+    run("config", "user.name", "Studio Browser");
+    run("config", "user.email", "browser@example.com");
+    run("config", "commit.gpgsign", "false");
+  }
+  run("commit", "--allow-empty", "--no-verify", "-m", message);
+}
+
 function git(...args) {
+  return runGit(args, {});
+}
+
+/**
+ * Backdates a commit's author date while leaving its committer date at now.
+ *
+ * The date window filters on the author date the log displays, so this is how a
+ * fixture reproduces the reader's situation: a full page of history of which
+ * only the newest few commits fall inside `Today`. The committer date is left
+ * alone so `--date-order` keeps the order the other assertions rely on.
+ */
+function authoredLongAgo(...args) {
+  return runGit(args, { GIT_AUTHOR_DATE: "2020-01-02T03:04:05+00:00" });
+}
+
+function runGit(args, env) {
   return execFileSync("git", args, {
     cwd: workspace,
     encoding: "utf8",
-    env: { ...process.env, LC_ALL: "C" },
+    env: { ...process.env, LC_ALL: "C", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 }

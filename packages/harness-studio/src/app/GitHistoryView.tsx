@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { withinDateRange, type StudioDateRange } from "./date-range.js";
+import { localDayKey, resolveDateRange, withinDateRange, type StudioDateRange } from "./date-range.js";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
@@ -52,6 +52,16 @@ const LOG_MIN_WIDTH = 360;
 /** The commit message opens as a caption over the file list, not as a band. */
 const MESSAGE_HEIGHT: { default: number; min: number } = { default: 132, min: 64 };
 const FILES_MIN_HEIGHT = 140;
+/** The commit row's own height in the stylesheet, which the virtualizer mirrors. */
+const COMMIT_ROW_HEIGHT = 32;
+/**
+ * How close to the end of the loaded rows a scroll must land to buy the next
+ * page, and — below it — how much scroll range makes scrolling a usable request
+ * for one at all. A list that cannot travel this far offers a control instead.
+ */
+const PREFETCH_MARGIN = 160;
+/** Rows a `PageDown` or `PageUp` travels, matching the sidebar's coarse step. */
+const KEYBOARD_PAGE_ROWS = 10;
 
 export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX.Element {
   const { t } = useTranslation("git");
@@ -251,6 +261,32 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
     () => commits.filter((commit) => withinDateRange(commit.authoredAt, props.dateRange)),
     [commits, props.dateRange],
   );
+  const remainingCommits = Math.max(total - commits.length, 1);
+  /**
+   * Has paging not yet reached the window?
+   *
+   * The log is newest-first, so a window can only sit deeper in the history
+   * while the oldest loaded commit is still newer than the window's last day.
+   * Once the loaded range has passed that day, an empty window is the answer —
+   * paging further would walk the whole repository to find nothing.
+   */
+  const windowUnreached = useMemo(() => {
+    if (datedCommits.length > 0) return false;
+    const end = resolveDateRange(props.dateRange).to;
+    const oldest = commits.at(-1)?.authoredAt;
+    if (end === undefined || oldest === undefined) return false;
+    const authored = new Date(oldest);
+    if (Number.isNaN(authored.getTime())) return false;
+    return localDayKey(authored) > end;
+  }, [commits, datedCommits.length, props.dateRange]);
+
+  // Switching Project or narrowing to a past window can leave the first page
+  // entirely outside it. Advancing to the window is the reader's intent, so it
+  // happens without a click — and it stops the moment the window is behind us.
+  useEffect(() => {
+    if (windowUnreached && canLoadMore && !loadingMore && loadMoreFailure === undefined) loadNextPage();
+  }, [canLoadMore, loadMoreFailure, loadNextPage, loadingMore, windowUnreached]);
+
   const selectedRefLabel = useMemo(() => refDisplayName(refs, selectedRef), [refs, selectedRef]);
   // Sizes are clamped to what the frame can hold rather than written back, so a
   // narrowed window borrows space and a widened one returns the reader's choice.
@@ -321,8 +357,14 @@ export function GitHistoryView(props: { dateRange: StudioDateRange }): React.JSX
           : commits.length === 0
             ? <EmptyState search={search} />
             : datedCommits.length === 0
-              ? <p className="git-empty-window" role="status">{t("common:dateRange.emptyWindow")}</p>
-              : <CommitTable key={logQueryKey} commits={datedCommits} hasMore={canLoadMore} loadingMore={loadingMore} loadMoreFailed={loadMoreFailure !== undefined} selectedSha={selectedSha} onLoadMore={loadNextPage} onSelect={(sha) => void selectCommit(sha)} />}
+              ? <EmptyWindowState
+                  loaded={commits.length}
+                  newest={commits[0]?.authoredAt}
+                  advancing={windowUnreached}
+                  remaining={canLoadMore && !loadingMore && loadMoreFailure === undefined ? remainingCommits : undefined}
+                  onLoadMore={loadNextPage}
+                />
+              : <CommitTable key={logQueryKey} commits={datedCommits} remaining={remainingCommits} hasMore={canLoadMore} loadingMore={loadingMore} loadMoreFailed={loadMoreFailure !== undefined} selectedSha={selectedSha} onLoadMore={loadNextPage} onSelect={(sha) => void selectCommit(sha)} />}
       <footer className="git-page-progress">{canLoadMore && (loadingMore
         ? <span role="status"><SpinnerGap aria-hidden="true" className="spin" size={14} />{t("log.loadingMore")}</span>
         : loadMoreFailure !== undefined
@@ -378,33 +420,132 @@ function RefRow(props: { gitRef: GitHistoryRef; selected: boolean; onSelect: (id
   return <button className="git-ref-row" type="button" aria-pressed={props.selected} title={props.gitRef.id} onClick={() => props.onSelect(props.gitRef.id)}>{props.gitRef.isCurrent && <MapPin aria-label={t("refs.currentBranch")} size={11} weight="fill" />}<span>{props.gitRef.name}</span><code>{props.gitRef.commitSha.slice(0, 7)}</code></button>;
 }
 
-function CommitTable(props: { commits: GitHistoryCommit[]; hasMore: boolean; loadingMore: boolean; loadMoreFailed: boolean; selectedSha?: string; onLoadMore: () => void; onSelect: (sha: string) => void }): React.JSX.Element {
+/**
+ * The window emptied the log, so the pane says what it actually knows.
+ *
+ * "Nothing in this window" on its own leaves the reader guessing whether the
+ * repository is empty, whether the window is wrong, or whether the history
+ * simply has not been paged that far yet. Naming what was loaded and how recent
+ * it is answers all three, and the paging control keeps the deeper history
+ * reachable instead of ending the pane here.
+ */
+function EmptyWindowState(props: { loaded: number; newest?: string; advancing: boolean; remaining?: number; onLoadMore: () => void }): React.JSX.Element {
+  const { t } = useTranslation("git");
+  const newestDay = props.newest === undefined ? undefined : new Date(props.newest);
+  return <div className="git-empty-window">
+    <Clock aria-hidden="true" size={22} />
+    <p role="status">{newestDay === undefined || Number.isNaN(newestDay.getTime())
+      ? t("log.emptyWindow", { count: props.loaded })
+      : t("log.emptyWindowNewest", { count: props.loaded, date: newestDay.toLocaleDateString(studioLocale()) })}</p>
+    {props.advancing
+      ? <p role="status"><SpinnerGap aria-hidden="true" className="spin" size={13} />{t("log.emptyWindowAdvancing")}</p>
+      : <p>{t("log.emptyWindowHint")}</p>}
+    {props.remaining !== undefined && !props.advancing && <LoadOlderCommits remaining={props.remaining} onLoadMore={props.onLoadMore} />}
+  </div>;
+}
+
+/** The one paging affordance for a log that cannot be scrolled for the next page. */
+function LoadOlderCommits(props: { remaining: number; onLoadMore: () => void }): React.JSX.Element {
+  const { t } = useTranslation("git");
+  return <button className="git-load-older" type="button" onClick={props.onLoadMore}>{t("log.loadOlder", { count: props.remaining })}</button>;
+}
+
+/**
+ * The commit log pages for the reader, not at them.
+ *
+ * The rendered rows are the loaded history narrowed by the date window, while a
+ * page is fetched from the unnarrowed history, so "the end of the list is in
+ * view" is not on its own a request for more: a window that admits a dozen
+ * commits keeps the end permanently in view and would drain the whole history
+ * without the reader touching anything. Paging therefore follows the scroll
+ * gesture — one arrival at the end buys one page — and a list with nothing to
+ * scroll offers the page as a control instead of taking it silently.
+ */
+function CommitTable(props: { commits: GitHistoryCommit[]; remaining: number; hasMore: boolean; loadingMore: boolean; loadMoreFailed: boolean; selectedSha?: string; onLoadMore: () => void; onSelect: (sha: string) => void }): React.JSX.Element {
   const { t } = useTranslation("git");
   const { commits, hasMore, loadingMore, loadMoreFailed, onLoadMore } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const [focusIndex, setFocusIndex] = useState(0);
+  const [scrollRange, setScrollRange] = useState(0);
+  const pendingFocus = useRef(false);
   const laneCount = Math.max(2, ...commits.flatMap((commit) => [commit.lane + 1, ...commit.activeLanes.map((lane) => lane + 1), ...commit.graphEdges.map((edge) => Math.max(edge.fromLane, edge.toLane) + 1)]));
   const rows = useVirtualizer({
     count: commits.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 32,
+    estimateSize: () => COMMIT_ROW_HEIGHT,
     overscan: 10,
     getItemKey: (index) => commits[index]!.sha,
   });
   rows.shouldAdjustScrollPositionOnItemSizeChange = () => false;
+  const virtualRows = rows.getVirtualItems();
+  const lastIndex = commits.length - 1;
+  const focused = Math.min(focusIndex, lastIndex);
+  // A virtualized list can lose the focused row to the recycler, so the tab stop
+  // falls back to a rendered row: the list must never stop being reachable.
+  const tabStop = virtualRows.some((row) => row.index === focused) ? focused : virtualRows[0]?.index ?? 0;
+  const canPrefetch = hasMore && !loadingMore && !loadMoreFailed;
+  const scrollable = scrollRange > PREFETCH_MARGIN;
+  const renderedRange = `${virtualRows[0]?.index ?? -1}:${virtualRows.length}`;
+
   useEffect(() => {
-    const root = scrollRef.current;
-    const target = loadMoreRef.current;
-    if (root === null || target === null || !hasMore || loadingMore || loadMoreFailed) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) onLoadMore();
-    }, { root, rootMargin: "0px 0px 160px 0px" });
-    observer.observe(target);
+    const element = scrollRef.current;
+    if (element === null) return;
+    const sync = (): void => setScrollRange(element.scrollHeight - element.clientHeight);
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(element);
     return () => observer.disconnect();
-  }, [commits.length, hasMore, loadMoreFailed, loadingMore, onLoadMore]);
-  return <div ref={scrollRef} className="git-commit-table" role="table" aria-label={t("table.aria")} aria-rowcount={commits.length + 1}>
-    <div className="git-commit-table-head" role="row"><span style={{ width: laneCount * 16 + 8 }} /><strong>{t("table.message")}</strong><strong>{t("table.author")}</strong><strong>{t("table.date")}</strong><strong>{t("table.hash")}</strong></div>
-    <div className="git-commit-rows" role="rowgroup" style={{ height: rows.getTotalSize() }}>{rows.getVirtualItems().map((virtualRow) => {
+  }, [commits.length]);
+
+  // Focus lands only once the virtualizer has rendered the target row, so the
+  // effect re-checks whenever the rendered range changes rather than assuming
+  // the scroll and the paint happened in the same tick.
+  useEffect(() => {
+    if (!pendingFocus.current) return;
+    const node = scrollRef.current?.querySelector<HTMLButtonElement>(`.git-commit-rows > button[data-index="${focused}"]`);
+    if (node === null || node === undefined) return;
+    pendingFocus.current = false;
+    node.focus();
+  }, [focused, renderedRange]);
+
+  function prefetchOnScroll(event: React.UIEvent<HTMLDivElement>): void {
+    if (!canPrefetch || !scrollable) return;
+    const element = event.currentTarget;
+    if (element.scrollHeight - element.clientHeight - element.scrollTop > PREFETCH_MARGIN) return;
+    onLoadMore();
+  }
+
+  // Focus travel does not wrap. The Sessions list wraps because it is a closed
+  // set; this log is a paged timeline, so its last loaded row leads to the next
+  // page rather than back to HEAD.
+  function moveFocus(event: React.KeyboardEvent<HTMLButtonElement>, index: number): void {
+    if (!["ArrowDown", "ArrowUp", "Home", "End", "PageDown", "PageUp"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "ArrowDown" && index === lastIndex) {
+      if (canPrefetch) onLoadMore();
+      return;
+    }
+    const target = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? lastIndex
+        : event.key === "ArrowDown"
+          ? index + 1
+          : event.key === "ArrowUp"
+            ? index - 1
+            : event.key === "PageDown"
+              ? index + KEYBOARD_PAGE_ROWS
+              : index - KEYBOARD_PAGE_ROWS;
+    const next = Math.min(Math.max(target, 0), lastIndex);
+    if (next === index) return;
+    pendingFocus.current = true;
+    setFocusIndex(next);
+    rows.scrollToIndex(next);
+  }
+
+  return <div ref={scrollRef} className="git-commit-table" role="grid" aria-label={t("table.aria")} aria-rowcount={commits.length + 1} onScroll={prefetchOnScroll}>
+    <div className="git-commit-table-head" role="row"><span role="columnheader" aria-label={t("table.graph")} style={{ width: laneCount * 16 + 8 }} /><strong role="columnheader">{t("table.message")}</strong><strong role="columnheader">{t("table.author")}</strong><strong role="columnheader">{t("table.date")}</strong><strong role="columnheader">{t("table.hash")}</strong></div>
+    <div className="git-commit-rows" role="rowgroup" style={{ height: rows.getTotalSize() }}>{virtualRows.map((virtualRow) => {
       const commit = commits[virtualRow.index]!;
       return <button
         key={commit.sha}
@@ -413,18 +554,21 @@ function CommitTable(props: { commits: GitHistoryCommit[]; hasMore: boolean; loa
         style={{ transform: `translateY(${virtualRow.start}px)` }}
         type="button"
         role="row"
+        tabIndex={virtualRow.index === tabStop ? 0 : -1}
         aria-rowindex={virtualRow.index + 2}
         aria-selected={props.selectedSha === commit.sha}
+        onFocus={() => setFocusIndex(virtualRow.index)}
+        onKeyDown={(event) => moveFocus(event, virtualRow.index)}
         onClick={() => props.onSelect(commit.sha)}
       >
         <CommitGraph commit={commit} laneCount={laneCount} />
-        <span className="git-commit-subject" role="cell"><span>{commit.refs.map((ref) => <i key={ref.id} data-kind={ref.kind}>{ref.kind === "tag" ? <Tag aria-hidden="true" size={10} /> : <GitBranch aria-hidden="true" size={10} />}{ref.remote === undefined ? ref.name : `${ref.remote}/${ref.name}`}</i>)}</span><strong title={commit.summary}>{commit.summary}</strong></span>
-        <span className="git-commit-author" role="cell" title={commit.authorEmail}>{commit.authorName}</span>
-        <time role="cell" dateTime={commit.authoredAt} title={new Date(commit.authoredAt).toLocaleString(studioLocale())}>{relativeTime(commit.authoredAt)}</time>
-        <code role="cell">{commit.shortSha}</code>
+        <span className="git-commit-subject" role="gridcell"><span>{commit.refs.map((ref) => <i key={ref.id} data-kind={ref.kind}>{ref.kind === "tag" ? <Tag aria-hidden="true" size={10} /> : <GitBranch aria-hidden="true" size={10} />}{ref.remote === undefined ? ref.name : `${ref.remote}/${ref.name}`}</i>)}</span><strong title={commit.summary}>{commit.summary}</strong></span>
+        <span className="git-commit-author" role="gridcell" title={commit.authorEmail}>{commit.authorName}</span>
+        <time role="gridcell" dateTime={commit.authoredAt} title={new Date(commit.authoredAt).toLocaleString(studioLocale())}>{relativeTime(commit.authoredAt)}</time>
+        <code role="gridcell">{commit.shortSha}</code>
       </button>;
     })}</div>
-    <div ref={loadMoreRef} className="git-auto-load-sentinel" aria-hidden="true" />
+    {canPrefetch && !scrollable && <LoadOlderCommits remaining={props.remaining} onLoadMore={onLoadMore} />}
   </div>;
 }
 
