@@ -19,6 +19,9 @@ pub struct Snapshot {
     pub calls: Vec<ToolCall>,
     pub last_response: Option<String>,
     pub matched: bool,
+    pub models: Vec<String>,
+    pub usage: serde_json::Map<String, Value>,
+    call_index: std::collections::HashMap<String, usize>,
 }
 
 impl Snapshot {
@@ -33,6 +36,9 @@ impl Snapshot {
             calls: Vec::new(),
             last_response: None,
             matched: false,
+            models: Vec::new(),
+            usage: serde_json::Map::new(),
+            call_index: std::collections::HashMap::new(),
         }
     }
 
@@ -76,17 +82,21 @@ impl Snapshot {
         started_at: Option<String>,
     ) {
         let paths = paths_from_value(workspace, input);
+        let call_id = if id.is_empty() {
+            format!(
+                "{}-{}-{}",
+                self.platform,
+                self.session_id,
+                self.calls.len() + 1
+            )
+        } else {
+            id.to_string()
+        };
+        if !id.is_empty() {
+            self.call_index.insert(id.to_string(), self.calls.len());
+        }
         self.calls.push(ToolCall {
-            id: if id.is_empty() {
-                format!(
-                    "{}-{}-{}",
-                    self.platform,
-                    self.session_id,
-                    self.calls.len() + 1
-                )
-            } else {
-                id.to_string()
-            },
+            id: call_id,
             family: tool_family(name),
             action_label: name.to_string(),
             tool_name: name.to_string(),
@@ -102,11 +112,62 @@ impl Snapshot {
         });
     }
 
+    pub fn tool_result(&mut self, id: &str, output: &str, failed: bool) {
+        let Some(index) = self.call_index.get(id).copied() else {
+            return;
+        };
+        let call = &mut self.calls[index];
+        if !output.trim().is_empty() {
+            call.output = Some(truncate_prompt(output));
+        }
+        call.status = if failed { "failed" } else { "completed" }.into();
+    }
+
+    pub fn observe_model(&mut self, model: &str) {
+        let model = model.trim();
+        if model.is_empty() || self.models.iter().any(|item| item == model) {
+            return;
+        }
+        self.models.push(model.to_string());
+    }
+
+    pub fn observe_usage(&mut self, raw: &Value) {
+        let Some(map) = raw.as_object() else {
+            return;
+        };
+        for (source, target) in [
+            ("inputTokens", "inputTokens"),
+            ("input_tokens", "inputTokens"),
+            ("input", "inputTokens"),
+            ("promptTokenCount", "inputTokens"),
+            ("inputOther", "inputTokens"),
+            ("outputTokens", "outputTokens"),
+            ("output_tokens", "outputTokens"),
+            ("output", "outputTokens"),
+            ("candidatesTokenCount", "outputTokens"),
+            ("cacheReadInputTokens", "cacheReadInputTokens"),
+            ("cache_read_input_tokens", "cacheReadInputTokens"),
+            ("cacheRead", "cacheReadInputTokens"),
+            ("cacheReadTokens", "cacheReadInputTokens"),
+            ("inputCacheRead", "cacheReadInputTokens"),
+            ("cachedContentTokenCount", "cacheReadInputTokens"),
+            ("cacheCreationInputTokens", "cacheCreationInputTokens"),
+            ("cache_creation_input_tokens", "cacheCreationInputTokens"),
+            ("cacheWrite", "cacheCreationInputTokens"),
+            ("cacheWriteTokens", "cacheCreationInputTokens"),
+            ("inputCacheCreation", "cacheCreationInputTokens"),
+        ] {
+            if let Some(value) = finite_non_negative(map.get(source)) {
+                self.usage.insert(target.into(), value.into());
+            }
+        }
+    }
+
     pub fn finish(self) -> Option<SessionSummary> {
         if !self.matched && self.prompts.is_empty() {
             return None;
         }
-        Some(SessionSummary {
+        let mut session = SessionSummary {
             session_id: self.session_id,
             platform: self.platform.into(),
             last_seen: self.last_seen.or(self.first_seen.clone()),
@@ -122,15 +183,43 @@ impl Snapshot {
                     response: Some(response),
                 }],
             }),
-            ..SessionSummary::default()
-        })
+            models: self.models,
+            token_usage: (!self.usage.is_empty()).then_some(Value::Object(self.usage)),
+        };
+        crate::privacy::redact_session(&mut session);
+        Some(session)
     }
 }
 
+fn finite_non_negative(value: Option<&Value>) -> Option<u64> {
+    let value = value?;
+    let number = value.as_u64().or_else(|| {
+        value
+            .as_f64()
+            .filter(|raw| raw.is_finite() && *raw >= 0.0)
+            .map(|raw| raw as u64)
+    })?;
+    Some(number)
+}
+
 pub fn read_jsonl(path: &Path) -> Vec<Value> {
-    let Ok(text) = fs::read_to_string(path) else {
+    parse_jsonl(&fs::read_to_string(path).unwrap_or_default())
+}
+
+pub fn read_zstd_jsonl(path: &Path) -> Vec<Value> {
+    let Ok(bytes) = fs::read(path) else {
         return Vec::new();
     };
+    let Ok(decoded) = zstd::decode_all(bytes.as_slice()) else {
+        return Vec::new();
+    };
+    let Ok(text) = String::from_utf8(decoded) else {
+        return Vec::new();
+    };
+    parse_jsonl(&text)
+}
+
+fn parse_jsonl(text: &str) -> Vec<Value> {
     text.lines()
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect()

@@ -76,6 +76,20 @@ fn read_session(workspace: &Path, path: &Path) -> Option<SessionSummary> {
             snap.prompt(&text_of(parts), stamp);
         } else if kind == "assistant" {
             snap.assistant(&text_of(parts));
+            if let Some(model) = record
+                .get("model")
+                .or_else(|| record.pointer("/message/model"))
+                .and_then(Value::as_str)
+            {
+                snap.observe_model(model);
+            }
+            if let Some(usage) = record
+                .get("usageMetadata")
+                .or_else(|| record.pointer("/message/usageMetadata"))
+                .or_else(|| record.get("usage"))
+            {
+                snap.observe_usage(usage);
+            }
             if let Some(Value::Array(items)) = parts {
                 for part in items {
                     let Some(call) = part.get("functionCall") else {
@@ -87,6 +101,29 @@ fn read_session(workspace: &Path, path: &Path) -> Option<SessionSummary> {
                     snap.tool(workspace, id, name, &input, stamp.clone());
                 }
             }
+        } else if kind == "tool_result" {
+            let tcr = record.get("toolCallResult").unwrap_or(&Value::Null);
+            let fr = parts.and_then(|value| {
+                value
+                    .as_array()?
+                    .iter()
+                    .find_map(|part| part.get("functionResponse"))
+            });
+            let id = tcr
+                .get("callId")
+                .or_else(|| fr.and_then(|value| value.get("id")))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let failed = tcr.get("errorType").is_some()
+                || tcr
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .is_some_and(|status| matches!(status, "error" | "failed" | "cancelled"));
+            let output = tcr
+                .get("resultDisplay")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            snap.tool_result(id, output, failed);
         }
     }
     snap.finish()

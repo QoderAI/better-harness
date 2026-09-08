@@ -22,7 +22,13 @@ pub fn observe(workspace: &Path, sessions: &[SessionSummary]) -> Vec<ArtifactObs
             .prompts
             .first()
             .map(|prompt| prompt.text.clone())
-            .unwrap_or_else(|| format!("{} Session {}", session.platform, &session.session_id[..session.session_id.len().min(12)]));
+            .unwrap_or_else(|| {
+                format!(
+                    "{} Session {}",
+                    session.platform,
+                    &session.session_id[..session.session_id.len().min(12)]
+                )
+            });
         let Some(activity) = &session.tool_activity else {
             continue;
         };
@@ -66,7 +72,10 @@ pub fn observe(workspace: &Path, sessions: &[SessionSummary]) -> Vec<ArtifactObs
 }
 
 fn confined_regular_file(root: &Path, relative: &str) -> bool {
-    if relative.is_empty() || relative.contains('\0') || relative == ".git" || relative.starts_with(".git/")
+    if relative.is_empty()
+        || relative.contains('\0')
+        || relative == ".git"
+        || relative.starts_with(".git/")
     {
         return false;
     }
@@ -98,7 +107,10 @@ mod tests {
 
     #[test]
     fn drops_missing_and_keeps_real_files() {
-        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let root = std::env::temp_dir().join(format!("evidence-obs-{stamp}"));
         fs::create_dir_all(root.join("docs")).unwrap();
         fs::write(root.join("docs/kept.md"), "ok").unwrap();

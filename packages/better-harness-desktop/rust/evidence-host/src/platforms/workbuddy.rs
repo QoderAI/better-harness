@@ -74,6 +74,19 @@ fn read_session(workspace: &Path, path: &Path, exact_dir: bool) -> Option<Sessio
         snap.stamp(stamp.clone());
         let kind = record.get("type").and_then(Value::as_str).unwrap_or("");
         let role = record.get("role").and_then(Value::as_str).unwrap_or("");
+        if let Some(model) = record
+            .pointer("/providerData/model")
+            .or_else(|| record.pointer("/providerData/requestModelId"))
+            .and_then(Value::as_str)
+        {
+            snap.observe_model(model);
+        }
+        if let Some(usage) = record
+            .pointer("/providerData/usage")
+            .or_else(|| record.pointer("/message/usage"))
+        {
+            snap.observe_usage(usage);
+        }
         if kind == "message" && role == "user" {
             snap.prompt(&text_of(record.get("content")), stamp);
         } else if kind == "message" && role == "assistant" {
@@ -83,6 +96,17 @@ fn read_session(workspace: &Path, path: &Path, exact_dir: bool) -> Option<Sessio
             let id = record.get("callId").and_then(Value::as_str).unwrap_or("");
             let input = parse_args(record.get("arguments"));
             snap.tool(workspace, id, name, &input, stamp);
+        } else if kind == "function_call_result" {
+            let id = record.get("callId").and_then(Value::as_str).unwrap_or("");
+            let failed = record
+                .get("status")
+                .and_then(Value::as_str)
+                .is_some_and(|status| status != "completed");
+            let output = match record.get("output") {
+                Some(Value::String(text)) => text.clone(),
+                other => text_of(other),
+            };
+            snap.tool_result(id, &output, failed);
         }
     }
     if cwd_observed {

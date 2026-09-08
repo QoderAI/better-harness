@@ -424,6 +424,123 @@ fn dsh_fixture_is_discovered() {
 }
 
 #[test]
+fn dsh_zstd_fixture_is_discovered() {
+    let workspace = unique_dir("evidence-dsh-zstd-workspace");
+    fs::write(workspace.join("mod.rs"), "ok").unwrap();
+    let workspace = fs::canonicalize(&workspace).unwrap();
+    let home = unique_dir("evidence-dsh-zstd-home");
+    let cwd = workspace.to_string_lossy().into_owned();
+    let dir = home
+        .join("sessions")
+        .join(dsh_project_key(&cwd))
+        .join(encode_dsh_session_id("dsh-zstd"));
+    fs::create_dir_all(&dir).unwrap();
+    let jsonl = format!(
+        "{}\n{}\n",
+        json!({"type":"session","version":0,"id":"dsh-zstd","cwd": cwd, "createdAt": 1757300000000i64, "delegationDepth": 0}),
+        json!({"type":"user/message","seq":1,"time":1757300001000i64,"data":{"id":"m1","role":"user","content":[{"type":"text","text":"Compressed review"}],"source":{"kind":"user"}},"surfaceOp":"append"})
+    );
+    fs::write(
+        dir.join("session.jsonl.zstd"),
+        zstd::encode_all(jsonl.as_bytes(), 0).unwrap(),
+    )
+    .unwrap();
+    let sessions = dsh::discover_from(&home, &workspace, 10).unwrap();
+    fs::remove_dir_all(&workspace).ok();
+    fs::remove_dir_all(&home).ok();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].session_id, "dsh-zstd");
+    assert_eq!(sessions[0].prompts[0].text, "Compressed review");
+}
+
+#[test]
+fn pi_custom_session_dir_and_fork_cutoff() {
+    let workspace = unique_dir("evidence-pi-custom-workspace");
+    fs::write(workspace.join("main.rs"), "fn main() {}").unwrap();
+    let workspace = fs::canonicalize(&workspace).unwrap();
+    let home = unique_dir("evidence-pi-custom-home");
+    let custom = unique_dir("evidence-pi-custom-sessions");
+    fs::create_dir_all(workspace.join(".pi")).unwrap();
+    fs::write(
+        workspace.join(".pi").join("settings.json"),
+        json!({"sessionDir": custom.to_string_lossy()}).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        custom.join("1_parent.jsonl"),
+        format!(
+            "{}\n{}\n",
+            json!({"type":"session","id":"parent","cwd": workspace.to_string_lossy(),"timestamp":"2026-09-08T04:00:00.000Z"}),
+            json!({"type":"message","timestamp":"2026-09-08T04:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Parent request"}]}})
+        ),
+    )
+    .unwrap();
+    fs::write(
+        custom.join("2_fork.jsonl"),
+        format!(
+            "{}\n{}\n{}\n",
+            json!({"type":"session","id":"fork","cwd": workspace.to_string_lossy(),"parentSession":"parent","timestamp":"2026-09-08T05:00:00.000Z"}),
+            json!({"type":"message","timestamp":"2026-09-08T04:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Parent request"}]}}),
+            json!({"type":"message","timestamp":"2026-09-08T05:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Fork request"}]}})
+        ),
+    )
+    .unwrap();
+    let sessions = pi::discover_from(&home, &workspace, 10).unwrap();
+    fs::remove_dir_all(&workspace).ok();
+    fs::remove_dir_all(&home).ok();
+    fs::remove_dir_all(&custom).ok();
+    let fork = sessions
+        .iter()
+        .find(|session| session.session_id == "fork")
+        .unwrap();
+    let parent = sessions
+        .iter()
+        .find(|session| session.session_id == "parent")
+        .unwrap();
+    assert_eq!(parent.prompts.len(), 1);
+    assert_eq!(
+        fork.prompts
+            .iter()
+            .map(|prompt| prompt.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Fork request"]
+    );
+}
+
+#[test]
+fn snapshot_redacts_secrets_keeps_paths_and_pairs_results() {
+    let workspace = unique_dir("evidence-qwen-privacy-workspace");
+    fs::write(workspace.join("app.ts"), "export {}").unwrap();
+    let workspace = fs::canonicalize(&workspace).unwrap();
+    let home = unique_dir("evidence-qwen-privacy-home");
+    let slug = qwen_slug_variants(&workspace)[0].clone();
+    let chats = home.join("projects").join(&slug).join("chats");
+    fs::create_dir_all(&chats).unwrap();
+    fs::write(
+        chats.join("session-qwen.jsonl"),
+        format!(
+            "{}\n{}\n{}\n",
+            json!({"type":"user","sessionId":"session-qwen","cwd": workspace.to_string_lossy(),"timestamp":"2026-09-08T04:00:00.000Z","message":{"parts":[{"text":"Use api_key=super-secret-value on app.ts"}]}}),
+            json!({"type":"assistant","model":"qwen-fixture","usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":3},"timestamp":"2026-09-08T04:00:01.000Z","message":{"parts":[{"functionCall":{"id":"c1","name":"Read","args":{"file_path": workspace.join("app.ts").to_string_lossy()}}}]}}),
+            json!({"type":"tool_result","toolCallResult":{"callId":"c1","resultDisplay":"export {}","status":"ok"}})
+        ),
+    )
+    .unwrap();
+    let sessions = qwen::discover_from(&home, &workspace, 10).unwrap();
+    fs::remove_dir_all(&workspace).ok();
+    fs::remove_dir_all(&home).ok();
+    assert_eq!(sessions.len(), 1);
+    assert!(sessions[0].prompts[0].text.contains("api_key=<redacted>"));
+    assert!(!sessions[0].prompts[0].text.contains("super-secret-value"));
+    assert_eq!(sessions[0].models, vec!["qwen-fixture"]);
+    assert_eq!(sessions[0].token_usage.as_ref().unwrap()["inputTokens"], 11);
+    let call = &sessions[0].tool_activity.as_ref().unwrap().calls[0];
+    assert_eq!(call.file_path.as_deref(), Some("app.ts"));
+    assert_eq!(call.status, "completed");
+    assert_eq!(call.output.as_deref(), Some("export {}"));
+}
+
+#[test]
 fn harness_run_fixture_is_discovered() {
     let workspace = unique_dir("evidence-hr-workspace");
     fs::write(workspace.join("README.md"), "hello").unwrap();

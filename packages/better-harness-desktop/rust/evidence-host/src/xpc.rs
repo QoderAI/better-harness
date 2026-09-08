@@ -14,15 +14,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use block2::RcBlock;
-use objc2::rc::{Retained, autoreleasepool};
+use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::{AnyObject, AnyProtocol, ProtocolObject};
-use objc2::{AnyThread, DefinedClass, Message, define_class, msg_send};
+use objc2::{define_class, msg_send, AnyThread, DefinedClass, Message};
 use objc2_foundation::{
     NSData, NSObject, NSObjectProtocol, NSString, NSXPCConnection, NSXPCInterface, NSXPCListener,
     NSXPCListenerDelegate,
 };
 
-use crate::wire::{MAX_FRAME_BYTES, MAX_REQUEST_BYTES, transport_proof};
+use crate::wire::{transport_proof, MAX_FRAME_BYTES, MAX_REQUEST_BYTES};
 
 const SERVICE: &str = "com.qoder.harness-studio.evidence";
 const DRIVER_BIN: &str = "harness-evidence-host";
@@ -158,7 +158,10 @@ fn accept_connection(connection: &NSXPCConnection) -> io::Result<()> {
         .stderr(Stdio::inherit())
         .spawn()
         .map_err(|error| {
-            io::Error::new(error.kind(), format!("spawning {}: {error}", driver_path.display()))
+            io::Error::new(
+                error.kind(),
+                format!("spawning {}: {error}", driver_path.display()),
+            )
         })?;
     let stdin = child.stdin.take().expect("stdin was piped");
     let stdout = child.stdout.take().expect("stdout was piped");
@@ -297,7 +300,8 @@ pub fn bridge() -> std::process::ExitCode {
 
         let interrupted = RcBlock::new(|| bridge_die("the evidence service was interrupted"));
         connection.setInterruptionHandler(Some(&interrupted));
-        let invalidated = RcBlock::new(|| bridge_die("the evidence service connection was invalidated"));
+        let invalidated =
+            RcBlock::new(|| bridge_die("the evidence service connection was invalidated"));
         connection.setInvalidationHandler(Some(&invalidated));
         connection.resume();
 

@@ -143,6 +143,7 @@ pub const UNPORTED: &[&str] = &[];
 /// Discovery is a bounded snapshot. Divide the text budget fairly across every
 /// retained request/result rather than dropping the oldest calls or turns.
 pub fn bound_session_text(session: &mut SessionSummary, budget: usize) {
+    crate::privacy::redact_session(session);
     let mut lengths: Vec<usize> = session
         .prompts
         .iter()

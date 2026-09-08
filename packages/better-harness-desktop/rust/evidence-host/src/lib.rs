@@ -3,16 +3,19 @@ pub mod discover;
 pub mod model;
 pub mod paths;
 pub mod platforms;
+pub mod privacy;
 pub mod time;
 pub mod wire;
 
 #[cfg(target_os = "macos")]
 pub mod xpc;
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
-use crate::discover::{DiscoverParams, discover, observe_params};
-use crate::wire::{HOST_PROTOCOL_VERSION, RequestFrame, encode_error, encode_ok, parse_request_frame};
+use crate::discover::{discover, observe_params, DiscoverParams};
+use crate::wire::{
+    encode_error, encode_ok, parse_request_frame, RequestFrame, HOST_PROTOCOL_VERSION,
+};
 
 pub fn handle_line(line: &str) -> Result<String, String> {
     let frame = parse_request_frame(line).map_err(|error| error.to_string())?;
@@ -42,7 +45,11 @@ fn dispatch(frame: &RequestFrame) -> Result<String, String> {
             Err(message) => encode_error(frame.id, "observe-failed", message),
         },
         "shutdown" => encode_ok(frame.id, json!({ "status": "shutting-down" })),
-        other => encode_error(frame.id, "unknown-method", format!("unknown method {other}")),
+        other => encode_error(
+            frame.id,
+            "unknown-method",
+            format!("unknown method {other}"),
+        ),
     }
 }
 
@@ -51,9 +58,9 @@ pub fn handle_value(value: &Value) -> Value {
         return json!({"version":1,"id":null,"error":{"code":"malformed"}});
     };
     match dispatch(&frame) {
-        Ok(line) => serde_json::from_str(line.trim_end()).unwrap_or_else(|_| {
-            json!({"version":1,"id":frame.id,"error":{"code":"encode-failed"}})
-        }),
+        Ok(line) => serde_json::from_str(line.trim_end()).unwrap_or_else(
+            |_| json!({"version":1,"id":frame.id,"error":{"code":"encode-failed"}}),
+        ),
         Err(_) => json!({"version":1,"id":frame.id,"error":{"code":"encode-failed"}}),
     }
 }
@@ -65,24 +72,23 @@ mod tests {
 
     #[test]
     fn unknown_method_is_a_call_error_not_a_process_fault() {
-        let reply = handle_line(
-            r#"{"version":1,"id":3,"method":"nope","params":{}}"#,
-        )
-        .unwrap();
+        let reply = handle_line(r#"{"version":1,"id":3,"method":"nope","params":{}}"#).unwrap();
         assert!(reply.contains("unknown-method"));
         assert!(reply.contains("\"id\":3"));
     }
 
     #[test]
     fn unknown_fields_fail_the_envelope() {
-        let error = parse_request_frame(r#"{"version":1,"id":1,"method":"host.describe","extra":true}"#)
-            .unwrap_err();
+        let error =
+            parse_request_frame(r#"{"version":1,"id":1,"method":"host.describe","extra":true}"#)
+                .unwrap_err();
         assert!(error.to_string().contains("malformed"));
     }
 
     #[test]
     fn describe_reports_protocol() {
-        let reply = handle_line(r#"{"version":1,"id":1,"method":"host.describe","params":{}}"#).unwrap();
+        let reply =
+            handle_line(r#"{"version":1,"id":1,"method":"host.describe","params":{}}"#).unwrap();
         assert!(reply.contains(HOST_PROTOCOL_VERSION));
         assert!(reply.contains("grok"));
     }

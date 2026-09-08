@@ -77,6 +77,14 @@ fn read_session(workspace: &Path, trace: &Path) -> Option<SessionSummary> {
                 &input,
                 stamp_of(&record, &["timestamp"]),
             );
+        } else if kind == "tool-call-result" {
+            let id = record
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let failed = record.get("isError").and_then(Value::as_bool) == Some(true);
+            let output = record.get("content").and_then(Value::as_str).unwrap_or("");
+            snap.tool_result(id, output, failed);
         }
     }
     snap.finish()

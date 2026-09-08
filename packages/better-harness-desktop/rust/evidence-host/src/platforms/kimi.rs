@@ -179,11 +179,29 @@ fn read_session(workspace: &Path, session_dir: &Path, session_id: &str) -> Optio
                         .unwrap_or("");
                     let input = event.get("args").cloned().unwrap_or(Value::Null);
                     snap.tool(workspace, id, name, &input, stamp);
+                } else if event.get("type").and_then(Value::as_str) == Some("tool.result") {
+                    let id = event
+                        .get("toolCallId")
+                        .or_else(|| event.get("parentUuid"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let result = event.get("result").unwrap_or(&Value::Null);
+                    let failed = result.get("isError").and_then(Value::as_bool) == Some(true)
+                        || result.get("error").is_some();
+                    let output = result.get("output").and_then(Value::as_str).unwrap_or("");
+                    snap.tool_result(id, output, failed);
                 } else if event.get("type").and_then(Value::as_str) == Some("content.part") {
                     let part = event.get("part").unwrap_or(&Value::Null);
                     if part.get("type").and_then(Value::as_str) == Some("text") {
                         snap.assistant(&text_of(part.get("text")));
                     }
+                }
+            } else if kind == "usage.record" {
+                if let Some(model) = record.get("model").and_then(Value::as_str) {
+                    snap.observe_model(model);
+                }
+                if let Some(usage) = record.get("usage") {
+                    snap.observe_usage(usage);
                 }
             }
         }

@@ -52,7 +52,11 @@ impl DateTimeLite {
         let second_raw = time_parts.next().unwrap_or("0");
         let (second_text, frac) = second_raw.split_once('.').unwrap_or((second_raw, "0"));
         let second: u32 = second_text.parse().ok()?;
-        let mut frac_digits: String = frac.chars().filter(|ch| ch.is_ascii_digit()).take(3).collect();
+        let mut frac_digits: String = frac
+            .chars()
+            .filter(|ch| ch.is_ascii_digit())
+            .take(3)
+            .collect();
         while frac_digits.len() < 3 {
             frac_digits.push('0');
         }
@@ -102,7 +106,10 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> Option<i64> {
 
 fn format_millis(seconds: i64, nanos: u32) -> String {
     let (year, month, day, hour, minute, second) = civil_from_seconds(seconds);
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{nanos:03}000Z", nanos = nanos / 1_000_000)
+    format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{nanos:03}000Z",
+        nanos = nanos / 1_000_000
+    )
 }
 
 fn civil_from_seconds(seconds: i64) -> (i32, u32, u32, u32, u32, u32) {

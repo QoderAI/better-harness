@@ -87,6 +87,22 @@ fn read_session(workspace: &Path, path: &Path) -> Option<SessionSummary> {
                         .and_then(|value| normalize_timestamp(value));
                     snap.tool(workspace, id, name, &input, started);
                 }
+                if let Some(usage) = node.get("token_usage") {
+                    snap.observe_usage(usage);
+                }
+            }
+        }
+        if let Some(nodes) = request {
+            for node in nodes {
+                if let Some(result) = node.get("tool_result_node") {
+                    let id = result
+                        .get("tool_use_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let failed = result.get("is_error").and_then(Value::as_bool) == Some(true);
+                    let output = result.get("content").and_then(Value::as_str).unwrap_or("");
+                    snap.tool_result(id, output, failed);
+                }
             }
         }
     }

@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::model::SessionSummary;
 use crate::paths::{cwd_matches, dsh_project_key, encode_dsh_session_id, env_home};
-use crate::platforms::snapshot::{read_jsonl, text_of, Snapshot};
+use crate::platforms::snapshot::{read_jsonl, read_zstd_jsonl, text_of, Snapshot};
 use crate::time::normalize_timestamp;
 
 pub fn dsh_home() -> PathBuf {
@@ -53,10 +53,13 @@ pub fn discover_from(
             {
                 continue;
             }
-            let artifact = session_dir.path().join("session.jsonl");
-            if !artifact.is_file() {
-                continue;
-            }
+            let jsonl = session_dir.path().join("session.jsonl");
+            let zstd = session_dir.path().join("session.jsonl.zstd");
+            let artifact = match (jsonl.is_file(), zstd.is_file()) {
+                (true, false) => jsonl,
+                (false, true) => zstd,
+                _ => continue,
+            };
             if let Some(session) = read_session(
                 workspace,
                 &artifact,
@@ -78,7 +81,11 @@ fn read_session(
     project_segment: &str,
     session_segment: &str,
 ) -> Option<SessionSummary> {
-    let records = read_jsonl(path);
+    let records = if path.extension().and_then(|ext| ext.to_str()) == Some("zstd") {
+        read_zstd_jsonl(path)
+    } else {
+        read_jsonl(path)
+    };
     let header = records.first()?;
     if header.get("type").and_then(Value::as_str) != Some("session") {
         return None;
@@ -117,6 +124,15 @@ fn read_session(
             }
             "assistant/message" => {
                 snap.assistant(&text_of(record.pointer("/data/message/content")));
+                if let Some(model) = record
+                    .pointer("/data/message/source/model")
+                    .and_then(Value::as_str)
+                {
+                    snap.observe_model(model);
+                }
+                if let Some(usage) = record.get("data").and_then(|data| data.get("usage")) {
+                    snap.observe_usage(usage);
+                }
             }
             "tool/call" => {
                 let name = record
@@ -133,6 +149,18 @@ fn read_session(
                     .and_then(|text| serde_json::from_str(text).ok())
                     .unwrap_or(Value::Null);
                 snap.tool(workspace, id, name, &input, stamp);
+            }
+            "tool/result" => {
+                let id = record
+                    .pointer("/data/message/source/callId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let failed = record
+                    .pointer("/data/message/content/0/isError")
+                    .and_then(Value::as_bool)
+                    == Some(true);
+                let output = text_of(record.pointer("/data/message/content/0/content"));
+                snap.tool_result(id, &output, failed);
             }
             _ => {}
         }
