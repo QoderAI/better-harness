@@ -1875,12 +1875,20 @@
 .live-compare-workspace { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--color-workspace); }
 .live-compare-composer { padding: var(--space-sm) var(--space-md); display: grid; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
 .live-compare-prompt { width: 100%; min-width: 0; padding: var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); font: inherit; resize: vertical; }
-.live-compare-agents { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: var(--space-sm); }
-.live-compare-agents select { width: 100%; min-width: 0; height: var(--control-height); padding: 0 var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); }
+/* The lane count is chosen by the reader, so the composer grows by wrapping
+   rather than by a fixed column template. */
+.live-compare-agents { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); }
+.live-compare-agent-slot { flex: 1 1 12rem; min-width: 0; display: flex; align-items: center; gap: var(--space-xs); }
+.live-compare-agents select { flex: 1 1 auto; width: 100%; min-width: 0; height: var(--control-height); padding: 0 var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-surface); }
 .live-compare-agents button { display: inline-flex; align-items: center; gap: var(--space-xs); }
+.live-compare-drop-agent { flex: none; padding: 0 var(--space-xs); height: var(--control-height); color: var(--color-text-muted); }
+/* Add and Run stay together at the trailing edge however many slots wrap. */
+.live-compare-agent-actions { flex: none; margin-left: auto; display: flex; align-items: center; gap: var(--space-sm); }
 .live-compare-boundary { margin: 0; color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .live-compare-lane > .live-compare-boundary { padding: var(--space-xs) var(--space-md); border-bottom: 1px solid var(--color-border); }
-.live-compare-lanes { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+/* Lanes are however many the reader started. They share the width until a lane
+   would be too narrow to read, and only then does the row scroll sideways. */
+.live-compare-lanes { min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(17rem, 1fr); overflow-x: auto; }
 .live-compare-lane { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
 .live-compare-lane + .live-compare-lane { border-left: 1px solid var(--color-border); }
 .live-compare-lane > header { min-height: var(--pane-header-height); padding: 0 var(--space-md); display: flex; align-items: center; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
@@ -2234,10 +2242,11 @@
   .session-compare-picker label + label,
   .session-compare-heads article + article,
   .session-tool-sequences section + section { border-left: 0; border-top: 1px solid var(--color-border); }
-  /* Narrow keeps both Agent lanes, stacked, so the comparison never loses a side. */
-  .live-compare-agents,
-  .live-compare-lanes { grid-template-columns: minmax(0, 1fr); }
-  .live-compare-lanes { grid-template-rows: minmax(220px, auto) minmax(220px, auto); overflow-y: auto; }
+  /* Narrow keeps every Agent lane, stacked, so the comparison never loses one. */
+  .live-compare-agent-slot { flex-basis: 100%; }
+  .live-compare-agent-actions { margin-left: 0; width: 100%; }
+  .live-compare-agent-actions button:last-child { flex: 1 1 auto; justify-content: center; }
+  .live-compare-lanes { grid-auto-flow: row; grid-auto-columns: auto; grid-auto-rows: minmax(220px, auto); overflow-x: hidden; overflow-y: auto; }
   .live-compare-lane + .live-compare-lane { border-left: 0; border-top: 1px solid var(--color-border); }
   /* One stacked column cannot hold label, counts, status, and Interrupt on one
      row, and the status badge is the fact the reader scans for. */

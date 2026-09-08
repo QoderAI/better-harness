@@ -50,6 +50,7 @@ test.beforeAll(async () => {
   // two independently chosen Agents.
   const alpha = { command: process.execPath, args: [acpAgentFixture], label: "Alpha ACP" };
   const beta = { command: process.execPath, args: [acpAgentFixture], label: "Beta ACP" };
+  const gamma = { command: process.execPath, args: [acpAgentFixture], label: "Gamma ACP" };
   liveCompareStudio = await startHarnessStudioServer({
     appDir: resolve(packageRoot, "dist/app"),
     workspaceDirectoryPicker: async () => repositoryRoot,
@@ -58,6 +59,7 @@ test.beforeAll(async () => {
     acpAgents: [
       { id: "alpha", label: "Alpha ACP", agent: alpha },
       { id: "beta", label: "Beta ACP", agent: beta },
+      { id: "gamma", label: "Gamma ACP", agent: gamma },
       { id: "missing", label: "Missing ACP", unavailableReason: "bridge not installed" },
     ],
   });
@@ -165,12 +167,12 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
   await page.setViewportSize(layouts[0]);
   await page.goto(`${liveCompareStudio.url}/#/compare`);
   await page.getByRole("button", { name: "Choose Project" }).click();
-  await expect(page.getByRole("textbox", { name: "What should both Agents do?" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "What should these Agents do?" })).toBeVisible();
 
-  const prompt = page.getByRole("textbox", { name: "What should both Agents do?" });
-  const left = page.getByRole("combobox", { name: "Left Agent" });
-  const right = page.getByRole("combobox", { name: "Right Agent" });
-  const run = page.getByRole("button", { name: "Run both" });
+  const prompt = page.getByRole("textbox", { name: "What should these Agents do?" });
+  const left = page.getByRole("combobox", { name: "Agent 1" });
+  const right = page.getByRole("combobox", { name: "Agent 2" });
+  const run = page.getByRole("button", { name: "Run 2 Agents" });
 
   // Nothing is preselected, so the reader must state both Agents before running.
   await expect(left).toHaveValue("");
@@ -182,6 +184,8 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
   await expect(run).toBeDisabled();
   await right.selectOption("beta");
   await expect(run).toBeEnabled();
+  // Two lanes are the floor, so neither can be removed at this size.
+  await expect(page.getByRole("button", { name: /^Remove Agent/ })).toHaveCount(0);
   // An unavailable Agent is listed with its reason but marked unselectable. The
   // launch refusal itself is enforced server-side, not by this attribute.
   const unavailableOptions = page.locator('.live-compare-agents option[value="missing"]');
@@ -223,6 +227,71 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
     }));
     expect(dimensions.documentWidth, `${layout.name} live compare overflows horizontally`).toBe(dimensions.innerWidth);
     await page.screenshot({ path: testInfo.outputPath(`live-compare-${layout.name}.png`), fullPage: true });
+  }
+  expect(errors).toEqual([]);
+});
+
+test("grows the comparison past two Agents and runs every chosen lane", async ({ page }, testInfo) => {
+  const errors = [];
+  page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await page.setViewportSize(layouts[0]);
+  await page.goto(`${liveCompareStudio.url}/#/compare`);
+  const chooseProject = page.getByRole("button", { name: "Choose Project" });
+  if (await chooseProject.isVisible().catch(() => false)) await chooseProject.click();
+  await page.getByRole("textbox", { name: "What should these Agents do?" }).fill("Compare three Agents at once");
+
+  const addAgent = page.getByRole("button", { name: "Add Agent" });
+  const slots = page.locator(".live-compare-agent-slot");
+  await expect(slots).toHaveCount(2);
+  // Growing to the ceiling hides the control rather than offering a click the
+  // composer would refuse.
+  for (const expected of [3, 4]) {
+    await addAgent.click();
+    await expect(slots).toHaveCount(expected);
+  }
+  await expect(addAgent).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run 4 Agents" })).toBeVisible();
+
+  // Back to three, from the middle, so the remaining lanes are renumbered rather
+  // than keeping a hole where Agent 2 was.
+  await page.getByRole("button", { name: "Remove Agent 2" }).click();
+  await expect(slots).toHaveCount(3);
+  const run = page.getByRole("button", { name: "Run 3 Agents" });
+  await expect(run).toBeDisabled();
+  for (const [index, agent] of [["1", "alpha"], ["2", "beta"], ["3", "gamma"]]) {
+    await page.getByRole("combobox", { name: `Agent ${index}` }).selectOption(agent);
+  }
+  await expect(run).toBeEnabled();
+
+  await run.click();
+  const lanes = page.locator(".live-compare-lane");
+  await expect(lanes).toHaveCount(3);
+  await expect(lanes.nth(0)).toContainText("Alpha ACP");
+  await expect(lanes.nth(1)).toContainText("Beta ACP");
+  await expect(lanes.nth(2)).toContainText("Gamma ACP");
+  // Every lane raises and answers its own permission gate, so a third Agent is a
+  // real run rather than a duplicated view of the first two.
+  await expect(page.locator(".live-compare-permission")).toHaveCount(3);
+  for (const index of [0, 1, 2]) {
+    await lanes.nth(index).locator(".live-compare-permission").getByRole("button", { name: "Allow once" }).click();
+  }
+  for (const index of [0, 1, 2]) {
+    await expect(lanes.nth(index)).toContainText("fixture:allow-once");
+  }
+
+  for (const layout of layouts) {
+    await page.setViewportSize(layout);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".studio-control-plane.navigation-open")).toHaveCount(0);
+    await expect(lanes).toHaveCount(3);
+    const dimensions = await page.evaluate(() => ({
+      innerWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    }));
+    expect(dimensions.documentWidth, `${layout.name} three-lane compare overflows horizontally`).toBe(dimensions.innerWidth);
+    await page.screenshot({ path: testInfo.outputPath(`live-compare-three-${layout.name}.png`), fullPage: true });
   }
   expect(errors).toEqual([]);
 });
@@ -336,10 +405,10 @@ test("shows shared assistant chunks in Debugger and Compare before completion", 
     await expect(message).toContainText("fixture:stream-first:stream-last");
     await expect(page.locator(".debugger-status")).toContainText("Run finished");
     await page.goto(`${server.url}/#/compare`);
-    await page.getByRole("textbox", { name: "What should both Agents do?" }).fill("stream in two lanes");
-    await page.getByRole("combobox", { name: "Left Agent" }).selectOption("first");
-    await page.getByRole("combobox", { name: "Right Agent" }).selectOption("second");
-    await page.getByRole("button", { name: "Run both", exact: true }).click();
+    await page.getByRole("textbox", { name: "What should these Agents do?" }).fill("stream in two lanes");
+    await page.getByRole("combobox", { name: "Agent 1" }).selectOption("first");
+    await page.getByRole("combobox", { name: "Agent 2" }).selectOption("second");
+    await page.getByRole("button", { name: "Run 2 Agents", exact: true }).click();
     for (const lane of await page.locator(".live-compare-lane").all()) {
       await lane.getByRole("button", { name: "Allow once", exact: true }).click();
       await expect(lane.locator(".streaming-message")).toContainText("fixture:stream-first");
@@ -388,10 +457,10 @@ test.describe("ACP over the macOS NSXPC service", () => {
       await expect(page.getByText("session/prompt").first()).toBeVisible();
 
       await page.goto(`${server.url}/#/compare`);
-      await page.getByRole("textbox", { name: "What should both Agents do?" }).fill("prove NSXPC in two lanes");
-      await page.getByRole("combobox", { name: "Left Agent" }).selectOption("first");
-      await page.getByRole("combobox", { name: "Right Agent" }).selectOption("second");
-      await page.getByRole("button", { name: "Run both", exact: true }).click();
+      await page.getByRole("textbox", { name: "What should these Agents do?" }).fill("prove NSXPC in two lanes");
+      await page.getByRole("combobox", { name: "Agent 1" }).selectOption("first");
+      await page.getByRole("combobox", { name: "Agent 2" }).selectOption("second");
+      await page.getByRole("button", { name: "Run 2 Agents", exact: true }).click();
       for (const lane of await page.locator(".live-compare-lane").all()) {
         await lane.getByRole("button", { name: "Allow once", exact: true }).click();
         await expect(lane.locator(".streaming-message")).toContainText("fixture:allow-once");

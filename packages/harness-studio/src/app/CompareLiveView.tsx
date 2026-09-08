@@ -1,6 +1,8 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Play } from "@phosphor-icons/react/Play";
+import { Plus } from "@phosphor-icons/react/Plus";
+import { X } from "@phosphor-icons/react/X";
 import type { HarnessRunStreamEventV1 } from "@qoder-ai/harness/protocol";
 import {
   applyHarnessRunEvent,
@@ -13,30 +15,45 @@ import { streamRun } from "./run/stream-run.js";
 import { StreamingMessage } from "./run/StreamingMessage.js";
 import type { StudioAcpAgentOption } from "./studio-shell-model.js";
 
-type LaneId = "left" | "right";
-
-const LANES: readonly LaneId[] = ["left", "right"];
+/** A comparison needs a second opinion; one lane is a Debugger run, not a compare. */
+const MIN_LANES = 2;
+/**
+ * Every lane is one more Agent writing to the *same* working tree at the same
+ * time, and one more ACP host process. Four keeps the side-by-side readable at
+ * the widths this shell targets and bounds what a single click can start.
+ */
+const MAX_LANES = 4;
 
 /** Distance from the bottom that still counts as following the stream. */
 const FOLLOW_THRESHOLD_PX = 24;
 
+function laneKey(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/** One chosen (or not yet chosen) Agent slot in the composer. */
+interface LaneSlot {
+  key: string;
+  agentId: string;
+}
+
 interface LaneRun {
+  key: string;
   agentId: string;
   runId: string;
   state: HarnessRunState;
   failure?: string;
 }
 
-/** One prompt dispatched to two independently selected Agents. */
+/** One prompt dispatched to every independently selected Agent. */
 interface LiveComparison {
   prompt: string;
-  left: LaneRun;
-  right: LaneRun;
+  lanes: readonly LaneRun[];
 }
 
-function runIdentity(lane: LaneId): { threadId: string; runId: string } {
-  const seed = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return { threadId: `live-compare-${seed}`, runId: `live-${lane}-${seed}` };
+function runIdentity(key: string): { threadId: string; runId: string } {
+  const seed = laneKey();
+  return { threadId: `live-compare-${seed}`, runId: `live-${key}-${seed}` };
 }
 
 export function CompareLiveView(props: {
@@ -45,53 +62,60 @@ export function CompareLiveView(props: {
 }): React.JSX.Element {
   const { t } = useTranslation("compare");
   const [prompt, setPrompt] = useState("");
-  // Both selections start empty: the reader states which two Agents answer the
+  // Every selection starts empty: the reader states which Agents answer the
   // prompt rather than inheriting a default that hides the choice.
-  const [agentIds, setAgentIds] = useState<Record<LaneId, string>>({ left: "", right: "" });
+  const [slots, setSlots] = useState<readonly LaneSlot[]>(
+    () => Array.from({ length: MIN_LANES }, () => ({ key: laneKey(), agentId: "" })),
+  );
   const [comparison, setComparison] = useState<LiveComparison>();
   const running = useRef(false);
 
   const available = props.agents.filter((agent) => agent.available);
-  const chosen = LANES.every((lane) => agentIds[lane] !== "");
+  const chosen = slots.every((slot) => slot.agentId !== "");
   const active = comparison !== undefined
-    && LANES.some((lane) => comparison[lane].state.status === "running");
+    && comparison.lanes.some((lane) => lane.state.status === "running");
   const canRun = prompt.trim() !== "" && chosen && !active;
 
   useEffect(() => () => { running.current = false; }, []);
 
-  function patchLane(lane: LaneId, update: (run: LaneRun) => LaneRun): void {
-    setComparison((current) => current === undefined ? current : { ...current, [lane]: update(current[lane]) });
+  function patchLane(key: string, update: (run: LaneRun) => LaneRun): void {
+    setComparison((current) => current === undefined ? current : {
+      ...current,
+      lanes: current.lanes.map((lane) => lane.key === key ? update(lane) : lane),
+    });
   }
 
   async function launch(): Promise<void> {
     if (!canRun) return;
     const task = prompt.trim();
-    const identities = { left: runIdentity("left"), right: runIdentity("right") };
-    const lane = (id: LaneId): LaneRun => ({
-      agentId: agentIds[id],
-      runId: identities[id].runId,
-      state: { ...initialRunState(), status: "running" },
+    const started = slots.map((slot) => ({ slot, ...runIdentity(slot.key) }));
+    setComparison({
+      prompt: task,
+      lanes: started.map(({ slot, runId }) => ({
+        key: slot.key,
+        agentId: slot.agentId,
+        runId,
+        state: { ...initialRunState(), status: "running" },
+      })),
     });
-    setComparison({ prompt: task, left: lane("left"), right: lane("right") });
     running.current = true;
-    // Both lanes are launched together and settle independently, so a slow or
-    // failing Agent never withholds the other lane's evidence.
-    await Promise.all(LANES.map(async (id) => {
-      const { threadId, runId } = identities[id];
+    // Every lane is launched together and settles independently, so a slow or
+    // failing Agent never withholds another lane's evidence.
+    await Promise.all(started.map(async ({ slot, threadId, runId }) => {
       try {
         await streamRun(
-          `api/acp/runs/stream?agent=${encodeURIComponent(agentIds[id])}`,
+          `api/acp/runs/stream?agent=${encodeURIComponent(slot.agentId)}`,
           task,
           threadId,
           runId,
           props.project,
-          (events: HarnessRunStreamEventV1[]) => patchLane(id, (run) => ({
+          (events: HarnessRunStreamEventV1[]) => patchLane(slot.key, (run) => ({
             ...run,
             state: events.reduce(applyHarnessRunEvent, run.state),
           })),
         );
       } catch (error) {
-        patchLane(id, (run) => ({
+        patchLane(slot.key, (run) => ({
           ...run,
           failure: error instanceof Error ? error.message : String(error),
           state: { ...run.state, status: "error" },
@@ -101,14 +125,17 @@ export function CompareLiveView(props: {
     running.current = false;
   }
 
-  async function cancel(lane: LaneId): Promise<void> {
-    const runId = comparison?.[lane].runId;
+  const runIdFor = (key: string): string | undefined =>
+    comparison?.lanes.find((lane) => lane.key === key)?.runId;
+
+  async function cancel(key: string): Promise<void> {
+    const runId = runIdFor(key);
     if (runId === undefined) return;
     await fetch(`api/acp/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }).catch(() => undefined);
   }
 
-  async function decide(lane: LaneId, requestId: string, optionId: string): Promise<void> {
-    const runId = comparison?.[lane].runId;
+  async function decide(key: string, requestId: string, optionId: string): Promise<void> {
+    const runId = runIdFor(key);
     if (runId === undefined) return;
     await fetch(`api/acp/runs/${encodeURIComponent(runId)}/permissions/${encodeURIComponent(requestId)}`, {
       method: "POST",
@@ -135,21 +162,40 @@ export function CompareLiveView(props: {
         onChange={(event) => setPrompt(event.target.value)}
       />
       <div className="live-compare-agents">
-        {LANES.map((lane) => <select
-          key={lane}
-          aria-label={t(`live.${lane}Agent`)}
-          value={agentIds[lane]}
-          onChange={(event) => setAgentIds((current) => ({ ...current, [lane]: event.target.value }))}
-        >
-          <option value="">{t("live.chooseAgent")}</option>
-          {props.agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available} title={agent.detail}>
-            {agent.available ? agent.label : t("live.agentUnavailable", { agent: agent.label })}
-          </option>)}
-        </select>)}
-        <button className="primary" type="submit" disabled={!canRun}>
-          <Play aria-hidden="true" size={14} />
-          <span>{active ? t("live.running") : t("live.run")}</span>
-        </button>
+        {slots.map((slot, index) => <div className="live-compare-agent-slot" key={slot.key}>
+          <select
+            aria-label={t("live.laneAgent", { index: index + 1 })}
+            value={slot.agentId}
+            onChange={(event) => setSlots((current) => current.map((candidate) =>
+              candidate.key === slot.key ? { ...candidate, agentId: event.target.value } : candidate))}
+          >
+            <option value="">{t("live.chooseAgent")}</option>
+            {props.agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.available} title={agent.detail}>
+              {agent.available ? agent.label : t("live.agentUnavailable", { agent: agent.label })}
+            </option>)}
+          </select>
+          {/* Removing is offered only above the floor, so the control never
+              appears in a state where pressing it would be refused. */}
+          {slots.length > MIN_LANES && <button
+            className="live-compare-drop-agent"
+            type="button"
+            aria-label={t("live.removeAgent", { index: index + 1 })}
+            onClick={() => setSlots((current) => current.filter((candidate) => candidate.key !== slot.key))}
+          ><X aria-hidden="true" size={12} /></button>}
+        </div>)}
+        <div className="live-compare-agent-actions">
+          {slots.length < MAX_LANES && <button
+            type="button"
+            onClick={() => setSlots((current) => [...current, { key: laneKey(), agentId: "" }])}
+          >
+            <Plus aria-hidden="true" size={12} />
+            <span>{t("live.addAgent")}</span>
+          </button>}
+          <button className="primary" type="submit" disabled={!canRun}>
+            <Play aria-hidden="true" size={14} />
+            <span>{active ? t("live.running") : t("live.run", { count: slots.length })}</span>
+          </button>
+        </div>
       </div>
       {available.length === 0
         ? <p className="live-compare-boundary status-warning" role="alert">{t("live.noAgents")}</p>
@@ -159,13 +205,13 @@ export function CompareLiveView(props: {
     {comparison === undefined
       ? <p className="artifact-status" role="status">{t("live.idle")}</p>
       : <div className="live-compare-lanes">
-          {LANES.map((lane) => <LiveLane
-            key={lane}
-            side={t(`live.${lane}Agent`)}
-            label={labelFor(comparison[lane].agentId)}
-            run={comparison[lane]}
-            onCancel={() => void cancel(lane)}
-            onDecide={(requestId, optionId) => void decide(lane, requestId, optionId)}
+          {comparison.lanes.map((lane, index) => <LiveLane
+            key={lane.key}
+            side={t("live.laneAgent", { index: index + 1 })}
+            label={labelFor(lane.agentId)}
+            run={lane}
+            onCancel={() => void cancel(lane.key)}
+            onDecide={(requestId, optionId) => void decide(lane.key, requestId, optionId)}
           />)}
         </div>}
   </main>;
@@ -183,7 +229,7 @@ function LiveLane(props: {
   const permission = props.run.state.pendingPermission;
   const warnings = props.run.state.warnings.length;
   // The counts the removed metric table carried, next to the evidence they
-  // describe rather than in a separate grid above both lanes. A warning count of
+  // describe rather than in a separate grid above every lane. A warning count of
   // zero is not a fact worth spending a lane header on.
   const counts = [
     t("live.laneTools", { count: props.run.state.toolCallCount }),
@@ -245,7 +291,7 @@ function LiveLane(props: {
  *
  * An ACP Agent's text reaches the browser in coalesced bursts, so rendering the
  * delta directly makes a live turn land as a block. Memoized so one lane's
- * frames do not re-render the other's transcript.
+ * frames do not re-render another's transcript.
  */
 const LaneMessage = memo(function LaneMessage(
   { item }: { item: Extract<TimelineItem, { kind: "message" }> },
