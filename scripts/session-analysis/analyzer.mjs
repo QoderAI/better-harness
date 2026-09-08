@@ -242,20 +242,27 @@ function platformFromArgs(argv) {
 
 // Single platform registry: adding a host adapter means adding one entry here
 // and creating scripts/session-analysis/platforms/<host>.mjs.
+//
+// Each entry loads its adapter through a thunk holding a *literal* specifier.
+// A computed specifier (`import(entry.specifier)`) is invisible to a bundler,
+// so a bundled copy of this registry resolved `./platforms/<host>.mjs` against
+// the bundle's own directory at runtime and every adapter failed to load. The
+// thunk keeps the load lazy for direct source consumers while letting a bundler
+// follow the edge.
 const PLATFORM_MODULES = Object.freeze({
-  qoder: { specifier: "./platforms/qoder.mjs", analyzer: "QoderSessionAnalyzer" },
-  codex: { specifier: "./platforms/codex.mjs", analyzer: "CodexSessionAnalyzer" },
-  claude: { specifier: "./platforms/claude.mjs", analyzer: "ClaudeSessionAnalyzer" },
-  augment: { specifier: "./platforms/augment.mjs", analyzer: "AugmentSessionAnalyzer" },
-  cursor: { specifier: "./platforms/cursor.mjs", analyzer: "CursorSessionAnalyzer" },
-  qwen: { specifier: "./platforms/qwen.mjs", analyzer: "QwenSessionAnalyzer" },
-  copilot: { specifier: "./platforms/copilot.mjs", analyzer: "CopilotSessionAnalyzer" },
-  pi: { specifier: "./platforms/pi.mjs", analyzer: "PiSessionAnalyzer" },
-  kimi: { specifier: "./platforms/kimi.mjs", analyzer: "KimiSessionAnalyzer" },
-  workbuddy: { specifier: "./platforms/workbuddy.mjs", analyzer: "WorkbuddySessionAnalyzer" },
-  grok: { specifier: "./platforms/grok.mjs", analyzer: "GrokSessionAnalyzer" },
-  dsh: { specifier: "./platforms/dsh.mjs", analyzer: "DshSessionAnalyzer" },
-  "harness-run": { specifier: "./platforms/harness-run.mjs", analyzer: "HarnessRunSessionAnalyzer" },
+  qoder: { load: () => import("./platforms/qoder.mjs"), analyzer: "QoderSessionAnalyzer" },
+  codex: { load: () => import("./platforms/codex.mjs"), analyzer: "CodexSessionAnalyzer" },
+  claude: { load: () => import("./platforms/claude.mjs"), analyzer: "ClaudeSessionAnalyzer" },
+  augment: { load: () => import("./platforms/augment.mjs"), analyzer: "AugmentSessionAnalyzer" },
+  cursor: { load: () => import("./platforms/cursor.mjs"), analyzer: "CursorSessionAnalyzer" },
+  qwen: { load: () => import("./platforms/qwen.mjs"), analyzer: "QwenSessionAnalyzer" },
+  copilot: { load: () => import("./platforms/copilot.mjs"), analyzer: "CopilotSessionAnalyzer" },
+  pi: { load: () => import("./platforms/pi.mjs"), analyzer: "PiSessionAnalyzer" },
+  kimi: { load: () => import("./platforms/kimi.mjs"), analyzer: "KimiSessionAnalyzer" },
+  workbuddy: { load: () => import("./platforms/workbuddy.mjs"), analyzer: "WorkbuddySessionAnalyzer" },
+  grok: { load: () => import("./platforms/grok.mjs"), analyzer: "GrokSessionAnalyzer" },
+  dsh: { load: () => import("./platforms/dsh.mjs"), analyzer: "DshSessionAnalyzer" },
+  "harness-run": { load: () => import("./platforms/harness-run.mjs"), analyzer: "HarnessRunSessionAnalyzer" },
 });
 
 export const SUPPORTED_SESSION_PROVIDERS = Object.freeze(Object.keys(PLATFORM_MODULES));
@@ -268,7 +275,7 @@ async function loadPlatform(platform = "qoder") {
   if (!entry) {
     throw new Error(`Unsupported session provider: ${platform}. Supported providers: ${SUPPORTED_SESSION_PROVIDERS.join(", ")}.`);
   }
-  const module = await import(entry.specifier);
+  const module = await entry.load();
   return {
     Analyzer: module[entry.analyzer],
     main: module.main,

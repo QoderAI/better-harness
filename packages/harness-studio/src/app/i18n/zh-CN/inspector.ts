@@ -14,6 +14,7 @@ export const inspector: typeof enInspector = {
   hide: "隐藏",
   showTree: "显示树",
   pickerModeAria: "选择器模式",
+  resizePickerAria: "调整范围选择器宽度",
   capability: "能力",
   date: "日期",
   capabilityTree: "能力树",

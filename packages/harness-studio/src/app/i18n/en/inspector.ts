@@ -12,6 +12,7 @@ export const inspector = {
   hide: "Hide",
   showTree: "Show tree",
   pickerModeAria: "Picker mode",
+  resizePickerAria: "Resize the scope picker",
   capability: "Capability",
   date: "Date",
   capabilityTree: "Capability tree",

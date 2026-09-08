@@ -1678,19 +1678,16 @@
 .pptx-slide-element.selected { outline: 2px solid var(--color-primary); outline-offset: 1px; }
 .artifact-omissions { margin: 0; padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: var(--type-meta-size); }
 
-/* Project workspace: selected repo -> discovered sessions -> detail. */
-.session-workbench-stack { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: var(--pane-header-height) minmax(0, 1fr); background: var(--color-workspace); }
-.session-workbench-toolbar { min-width: 0; padding: 0 var(--space-sm) 0 var(--space-md); display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
-.session-workbench-toolbar > div:first-child { min-width: 0; display: flex; align-items: baseline; gap: var(--space-sm); }
-.session-workbench-toolbar strong,
-.session-workbench-toolbar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-workbench-toolbar span { color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.session-surface-tabs { height: 100%; flex: 0 0 auto; display: flex; align-items: stretch; }
-.session-surface-tabs button { min-height: var(--pane-header-height); border: 0; border-bottom: 2px solid transparent; border-radius: var(--radius-none); padding: 0 var(--space-sm); color: var(--color-text-muted); background: transparent; font-size: var(--type-meta-size); }
+/* Project workspace: selected repo -> discovered sessions -> detail.
+
+   The surface switcher rides the window toolbar, so this View has no bar of its
+   own and the workbench surface fills the whole content area. */
+.session-surface-tabs { min-width: 0; flex: none; display: flex; align-items: stretch; align-self: stretch; }
+.session-surface-tabs button { min-height: var(--toolbar-target); flex: none; border: 0; border-bottom: 2px solid transparent; border-radius: var(--radius-none); padding: 0 var(--space-sm); color: var(--color-text-muted); background: transparent; font-size: var(--type-meta-size); white-space: nowrap; }
 .session-surface-tabs button:hover { color: var(--color-text); background: var(--color-surface-hover); }
 .session-surface-tabs button.selected { border-bottom-color: var(--color-primary); color: var(--color-primary); background: var(--color-surface-selected); }
 .session-surface-tabs button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
-.session-workbench-surface { min-width: 0; min-height: 0; overflow: hidden; }
+.session-workbench-surface { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
 .workspace-intake { min-width: 0; place-content: center stretch; }
 .workspace-intake > span,
 .workspace-intake > small,
@@ -1721,13 +1718,15 @@
   .workspace-open-progress > i { animation: none; }
 }
 
-.session-browser-workspace { width: 100%; height: 100%; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); }
-.session-catalog-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--color-border); background: var(--color-sidebar); }
+/* Two docked panes with a real sash between them, so the list can be widened for
+   long prompts and narrowed when the detail pane is doing the work. */
+.session-browser-workspace { width: 100%; height: 100%; min-height: 0; overflow: hidden; display: grid; grid-template-columns: var(--session-catalog-width, 300px) 6px minmax(0, 1fr); }
+.session-catalog-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--color-sidebar); }
 .session-catalog-pane > header { min-height: var(--pane-header-height); padding: var(--space-xs) var(--space-md); display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
 .session-catalog-pane > header > div { min-width: 0; }
 .session-catalog-pane > header small { display: block; color: var(--color-text-muted); }
-.session-catalog-pane > header h2 { margin: 0; overflow: hidden; font-size: var(--type-label-size); text-overflow: ellipsis; white-space: nowrap; }
-.session-catalog-pane > header > span { color: var(--color-text-muted); }
+.session-catalog-pane > header h2 { min-width: 0; margin: 0; overflow: hidden; font-size: var(--type-pane-size); font-weight: var(--weight-semibold); line-height: var(--type-pane-line); letter-spacing: var(--type-pane-track); text-overflow: ellipsis; white-space: nowrap; }
+.session-catalog-pane > header > span { flex: none; color: var(--color-text-muted); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; }
 .session-omissions { margin: 0; padding: var(--space-xs) var(--space-md); border-bottom: 1px solid var(--color-border); color: var(--color-warning); background: var(--color-warning-surface); font-size: var(--type-meta-size); }
 /* The Agent selector is the Session catalog's Agent-dimension control, so it
    reads as a toolbar row under the pane header rather than a floating field. */
@@ -2146,10 +2145,11 @@
   .pptx-slide-rail { padding: var(--space-xs); }
   .pptx-slide-rail button { min-height: 58px; }
   .pptx-stage-scroll { padding: var(--space-sm); }
-  .session-workbench-toolbar > div:first-child { display: none; }
-  .session-surface-tabs { width: 100%; }
   .session-surface-tabs button { flex: 1; padding-inline: var(--space-xs); }
+  /* Stacked: the sash has no docked edge to drag, so it leaves the grid entirely
+     rather than sitting between two rows as an inert line. */
   .session-browser-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(240px, 42vh) minmax(0, 1fr); }
+  .session-browser-workspace > .studio-pane-sash { display: none; }
   .session-catalog-pane { border-right: 0; border-bottom: 1px solid var(--color-border); }
   .session-detail > dl { grid-template-columns: 1fr 1fr; }
   .session-detail > dl > div:nth-child(2) { border-right: 0; }

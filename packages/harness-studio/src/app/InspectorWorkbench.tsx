@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { studioI18n, studioLocale } from "./i18n/index.js";
+import { PaneSash } from "./shell/PaneSash.js";
 import {
   filteredCallCount,
   groupToolRuns,
@@ -31,6 +32,14 @@ import { withinDateRange, type StudioDateRange } from "./date-range.js";
 
 type Mode = "feature" | "date";
 type ViewMode = "trace" | "replay" | "usage";
+
+/** The width below which the picker stacks above the workbench, per the stylesheet. */
+const PICKER_NARROW_QUERY = "(max-width: 760px)";
+/** The sash track's own thickness in the embedded workbench's pane grid. */
+const PICKER_SASH_SIZE = 6;
+/** Scope-picker bounds, in px. The workbench keeps the majority of the width. */
+const PICKER_WIDTH: { default: number; min: number } = { default: 270, min: 200 };
+const WORKBENCH_MIN_WIDTH = 400;
 
 interface FeatureNode {
   id: string;
@@ -135,13 +144,14 @@ function ReactInspector({ report, sharedDateRange = false }: { report: Report; s
   const [mode, setMode] = useState<Mode>(initialMode);
   const [scope, setScope] = useState(initialMode === "feature" ? report.featureTree?.roots?.[0] ?? nodes[0]?.id ?? "" : days.at(-1)?.date ?? "");
   const [pickerCollapsed, setPickerCollapsed] = useState(false);
+  const [pickerWidth, setPickerWidth] = useState(PICKER_WIDTH.default);
+  const [pickerFrame, setPickerFrame] = useState(0);
+  const [pickerStacked, setPickerStacked] = useState(() => globalThis.matchMedia?.(PICKER_NARROW_QUERY).matches === true);
   const [collapsedBranches, setCollapsedBranches] = useState<Set<string>>(new Set());
   const [collapsedCards, setCollapsedCards] = useState<Set<number>>(new Set());
   const [selectedSession, setSelectedSession] = useState<Session>();
   const sessionTrigger = useRef<HTMLElement | null>(null);
   const inspectorRoot = useRef<HTMLDivElement>(null);
-  const workbenchScrollTop = useRef(0);
-  const sessionWasOpen = useRef(false);
   const byNode = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const byStory = useMemo(() => new Map(stories.map((story) => [story.id, story])), [stories]);
   const bySession = useMemo(() => new Map(sessions.map((session) => [session.sessionId, session])), [sessions]);
@@ -196,17 +206,14 @@ function ReactInspector({ report, sharedDateRange = false }: { report: Report; s
     if (trigger?.isConnected) globalThis.requestAnimationFrame(() => trigger.focus());
   }, [selectedSession]);
 
+  // The Session View overlay owns its own scroller, and the workbench keeps its
+  // own, so opening a Session no longer has to park and restore a shared scroll
+  // offset. Below the stacked breakpoint the root scrolls, so the overlay is
+  // brought into view rather than left below the fold.
   useEffect(() => {
     const root = inspectorRoot.current;
-    if (!root) return;
-    if (selectedSession !== undefined && !sessionWasOpen.current) {
-      workbenchScrollTop.current = root.scrollTop;
-      root.scrollTop = 0;
-      sessionWasOpen.current = true;
-    } else if (selectedSession === undefined && sessionWasOpen.current) {
-      sessionWasOpen.current = false;
-      globalThis.requestAnimationFrame(() => { root.scrollTop = workbenchScrollTop.current; });
-    }
+    if (!root || selectedSession === undefined) return;
+    root.scrollTop = 0;
   }, [selectedSession]);
 
   function changeMode(next: Mode): void {
@@ -214,16 +221,51 @@ function ReactInspector({ report, sharedDateRange = false }: { report: Report; s
     setScope(next === "feature" ? report.featureTree?.roots?.[0] ?? nodes[0]?.id ?? "" : days.at(-1)?.date ?? "");
   }
 
+  // The sash bounds come from the pane area itself, so a dragged width cannot
+  // survive a window that no longer has room for it. The stacked regime is the
+  // same breakpoint the embedded stylesheet uses.
+  useEffect(() => {
+    const element = inspectorRoot.current;
+    if (element === null) return;
+    const observer = new ResizeObserver(([entry]) => setPickerFrame(entry!.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const media = globalThis.matchMedia?.(PICKER_NARROW_QUERY);
+    if (media === undefined) return;
+    const sync = (event: MediaQueryListEvent): void => setPickerStacked(event.matches);
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  const pickerMeasured = pickerFrame > 0;
+  const pickerMax = pickerMeasured
+    ? Math.max(PICKER_WIDTH.min, pickerFrame - WORKBENCH_MIN_WIDTH - PICKER_SASH_SIZE)
+    : PICKER_WIDTH.default;
+  const fittedPickerWidth = Math.min(Math.max(pickerWidth, PICKER_WIDTH.min), pickerMax);
+  // The shell toolbar names the View and the shell sidebar states the window, so
+  // the workbench header only names a scope the reader chose here.
+  const scopeLabel = mode === "feature"
+    ? byNode.get(scope)?.title ?? t("deliveryWorkbench")
+    : sharedDateRange ? undefined : scope;
+
   return <div ref={inspectorRoot} className={`native-inspector-root${selectedSession ? " session-open" : ""}`} data-studio-native-inspector data-react-inspector-workbench>
     <div
       className={`app${pickerCollapsed ? " picker-collapsed" : ""}`}
       data-harness-inspector
       inert={selectedSession ? true : undefined}
       aria-hidden={selectedSession ? true : undefined}
+      style={pickerMeasured && !pickerCollapsed ? { "--inspector-picker-width": `${fittedPickerWidth}px` } as CSSProperties : undefined}
     >
       <aside className="scope-picker" aria-label={inspectorT("scopePickerAria")}>
-        <div className="brand"><div className="brand-copy"><strong>Harness Inspector</strong><span>{workspaceName}</span></div><button className="picker-toggle" type="button" aria-expanded={!pickerCollapsed} aria-label={pickerCollapsed ? inspectorT("expandTree") : inspectorT("collapseTree")} onClick={() => setPickerCollapsed((value) => !value)}><span className="collapse-label">{inspectorT("hide")}</span><span className="expand-label">{inspectorT("showTree")}</span></button></div>
-        <div className="mode-tabs" role="tablist" aria-label={inspectorT("pickerModeAria")}><button role="tab" aria-selected={mode === "feature"} tabIndex={mode === "feature" ? 0 : -1} className={mode === "feature" ? "active" : undefined} onClick={() => changeMode("feature")} onKeyDown={(event) => moveInspectorTab(event, "date", changeMode)}>{t("capability")}</button><button role="tab" aria-selected={mode === "date"} tabIndex={mode === "date" ? 0 : -1} className={mode === "date" ? "active" : undefined} onClick={() => changeMode("date")} onKeyDown={(event) => moveInspectorTab(event, "feature", changeMode)}>{sharedDateRange ? t("common:area.sessions") : t("date")}</button></div>
+        {/* No brand block: the shell already names the product and the Project,
+            so repeating both above the mode tabs only pushed the scopes down. */}
+        <div className="picker-modes">
+          <div className="mode-tabs" role="tablist" aria-label={inspectorT("pickerModeAria")}><button role="tab" aria-selected={mode === "feature"} tabIndex={mode === "feature" ? 0 : -1} className={mode === "feature" ? "active" : undefined} onClick={() => changeMode("feature")} onKeyDown={(event) => moveInspectorTab(event, "date", changeMode)}>{t("capability")}</button><button role="tab" aria-selected={mode === "date"} tabIndex={mode === "date" ? 0 : -1} className={mode === "date" ? "active" : undefined} onClick={() => changeMode("date")} onKeyDown={(event) => moveInspectorTab(event, "feature", changeMode)}>{sharedDateRange ? t("common:area.sessions") : t("date")}</button></div>
+          <button className="picker-toggle" type="button" aria-expanded={!pickerCollapsed} aria-label={pickerCollapsed ? inspectorT("expandTree") : inspectorT("collapseTree")} onClick={() => setPickerCollapsed((value) => !value)}><span className="collapse-label">{inspectorT("hide")}</span><span className="expand-label">{inspectorT("showTree")}</span></button>
+        </div>
         <section className={`picker-panel${mode === "feature" ? " active" : ""}`} role="tabpanel" hidden={mode !== "feature"}><div className="picker-heading"><strong>{t("capabilityTree")}</strong><span>{t("nodeCount", { count: nodes.length })}</span></div>{nodes.length ? <FeatureTree roots={report.featureTree?.roots ?? []} byNode={byNode} selected={scope} collapsed={collapsedBranches} onSelect={setScope} onToggle={(id) => setCollapsedBranches(toggle(collapsedBranches, id))} /> : <p className="picker-empty">{t("noFeatureTree")}</p>}</section>
         <section className={`picker-panel date-picker-panel${mode === "date" ? " active" : ""}`} role="tabpanel" hidden={mode !== "date"}>{sharedDateRange ? <nav className="date-session-navigator" aria-label={t("rangeSessions")}>
           <div className="date-session-heading"><strong>{t("rangeSessions")}</strong><span>{sessions.length}</span></div>
@@ -234,8 +276,18 @@ function ReactInspector({ report, sharedDateRange = false }: { report: Report; s
           </button>; })}{sessions.length === 0 && <p className="picker-empty">{t("common:dateRange.emptyWindow")}</p>}</div>
         </nav> : <DatePicker days={days} bySession={bySession} selected={scope} onSelect={setScope} />}</section>
       </aside>
+      <PaneSash
+        orientation="vertical"
+        label={inspectorT("resizePickerAria")}
+        size={fittedPickerWidth}
+        min={PICKER_WIDTH.min}
+        max={pickerMax}
+        fallback={PICKER_WIDTH.default}
+        disabled={pickerCollapsed || pickerStacked || !pickerMeasured}
+        onSize={setPickerWidth}
+      />
       <main className="workspace">
-        <header className="workspace-header"><nav className="workspace-breadcrumb" aria-label={t("breadcrumbAria")}><span>Harness Inspector</span><i>/</i><strong>{mode === "date" ? (sharedDateRange ? t("rangeSessions") : scope) : byNode.get(scope)?.title ?? t("deliveryWorkbench")}</strong></nav><div className="workspace-header-meta"><div className="scope-metrics" aria-label={t("scopeMetricsAria")}><Metric value={itemStories.size} label={t("metrics.stories")} singular={t("metrics.story")} /><Metric value={itemSessions.length} label={t("metrics.sessions")} singular={t("metrics.session")} /><Metric value={itemSessions.reduce((sum, session) => sum + totalCalls(session), 0)} label={t("metrics.calls")} singular={t("metrics.call")} /><Metric value={itemCommits.size} label={t("metrics.commits")} singular={t("metrics.commit")} /></div><span className="window-badge">{platformBadge(report)} · {t("sessionCount", { count: sessions.length })}</span></div></header>
+        <header className="workspace-header">{scopeLabel !== undefined && <nav className="workspace-breadcrumb" aria-label={t("breadcrumbAria")}><strong>{scopeLabel}</strong></nav>}<div className="workspace-header-meta"><div className="scope-metrics" aria-label={t("scopeMetricsAria")}><Metric value={itemStories.size} label={t("metrics.stories")} singular={t("metrics.story")} /><Metric value={itemSessions.length} label={t("metrics.sessions")} singular={t("metrics.session")} /><Metric value={itemSessions.reduce((sum, session) => sum + totalCalls(session), 0)} label={t("metrics.calls")} singular={t("metrics.call")} /><Metric value={itemCommits.size} label={t("metrics.commits")} singular={t("metrics.commit")} /></div><span className="window-badge">{platformBadge(report)}</span></div></header>
         <div className="workspace-scroll">{(report.diagnostics?.length ?? 0) > 0 && <details className="react-diagnostics"><summary>{t("diagnostics", { count: report.diagnostics!.length })}</summary><ul>{report.diagnostics!.map((diagnostic) => <li key={diagnostic}>{diagnostic}</li>)}</ul></details>}<section className="workbench-list" aria-live="polite">{items.length ? items.map((item, index) => <WorkbenchCard key={`${item.session?.sessionId ?? item.story?.id ?? "commit"}-${index}`} item={item} commits={commitsFor(item, byCommit)} collapsed={collapsedCards.has(index)} onToggle={() => setCollapsedCards(toggleNumber(collapsedCards, index))} onOpen={openSession} />) : <div className="empty-state">{sharedDateRange ? t("common:dateRange.emptyWindow") : t("emptyScope")}</div>}</section></div>
       </main>
     </div>
@@ -1238,8 +1290,55 @@ const NARROW_METRIC_CSS = ".workspace-header-meta{min-width:0}.scope-metrics{min
 // reaches keyboard focus with no visible ring.
 const LINK_FOCUS_CSS = ".date-session-row:focus-visible{outline:2px solid var(--color-focus);outline-offset:2px}";
 
+// Embedded, the picker is a docked pane the reader can size, so the workbench
+// takes a three-track grid with a real sash between the two panes. The standalone
+// report keeps its own two-track grid: it has no shell around it to dock into.
+// The sash lives inside the shadow root, so `shell.css` cannot reach it and its
+// rules ship here against the same tokens.
+const DOCKED_PANE_CSS = `
+/* Bounded to the pane, not to the viewport: the standalone report lets the page
+   scroll and pins the picker with \`position:sticky\`, which inside a docked pane
+   stretched the picker column and the sash to the full height of the card list.
+   Docked, each pane owns its own scroller, so the divider spans exactly the two
+   panes it separates. */
+.native-inspector-root{overflow:hidden}
+.native-inspector-root .app{min-height:0;height:100%;grid-template-columns:var(--inspector-picker-width,${PICKER_WIDTH.default}px) ${PICKER_SASH_SIZE}px minmax(0,1fr)}
+.native-inspector-root .app.picker-collapsed{grid-template-columns:38px 0 minmax(0,1fr)}
+.native-inspector-root .app.picker-collapsed .studio-pane-sash{display:none}
+.native-inspector-root .scope-picker{position:static;height:100%;min-height:0;overflow:hidden;border-right:0}
+.native-inspector-root .workspace{height:100%;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+.native-inspector-root .workspace-scroll{min-height:0;overflow:auto}
+.native-inspector-root .studio-pane-sash{min-width:0;min-height:0;touch-action:none;background:var(--color-border);border:0;padding:0;transition:background var(--motion-fast) ease}
+.native-inspector-root .studio-pane-sash[data-orientation="vertical"]{cursor:col-resize}
+.native-inspector-root .studio-pane-sash:hover,.native-inspector-root .studio-pane-sash.dragging{background:var(--color-primary)}
+.native-inspector-root .studio-pane-sash:focus-visible{outline:2px solid var(--color-focus);outline-offset:-2px}
+/* The mode tabs are now the picker's first row, so the collapse control shares
+   that row instead of needing a brand block to sit in. It is set apart from the
+   tabs it sits beside: a third element on a tab row otherwise reads as a third
+   tab that selects a "Hide" scope. */
+.native-inspector-root .picker-modes{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;border-bottom:1px solid var(--color-border)}
+.native-inspector-root .picker-modes .mode-tabs{border-bottom:0}
+.native-inspector-root .picker-modes .picker-toggle{position:static;display:grid;align-items:center;padding:0 var(--space-sm);border-left:1px solid var(--color-border);color:var(--color-text-subtle);font-weight:400;white-space:nowrap}
+.native-inspector-root .picker-modes .picker-toggle:hover{color:var(--color-text);background:var(--color-surface-hover)}
+.native-inspector-root .app.picker-collapsed .picker-modes{grid-template-columns:minmax(0,1fr);border-bottom:0}
+.native-inspector-root .app.picker-collapsed .picker-modes .picker-toggle{width:26px;min-height:104px;margin:var(--space-sm) auto 0;writing-mode:vertical-rl}
+/* Without the breadcrumb prefix the header may hold metrics alone, so the meta
+   block keeps the trailing edge rather than centring in an empty row. */
+.native-inspector-root .workspace-header{gap:var(--space-md)}
+.native-inspector-root .workspace-header-meta{margin-left:auto}
+@media (max-width:760px){
+.native-inspector-root{overflow:auto}
+.native-inspector-root .app,.native-inspector-root .app.picker-collapsed{height:auto;min-height:100%;grid-template-columns:minmax(0,1fr)}
+.native-inspector-root .studio-pane-sash{display:none}
+.native-inspector-root .scope-picker{height:auto;max-height:45vh;overflow:auto;border-bottom:1px solid var(--color-border)}
+.native-inspector-root .workspace{height:auto;grid-template-rows:auto auto}
+.native-inspector-root .workspace-scroll{overflow:visible}
+}
+`;
+
 const REACT_CSS = `
   ${NARROW_METRIC_CSS}
   ${LINK_FOCUS_CSS}
+  ${DOCKED_PANE_CSS}
   :host,.native-inspector-root{display:block;width:100%;height:100%;min-height:0}.native-inspector-root{position:relative}.native-inspector-root .session-view{position:absolute;inset:0;width:100%;height:100%}.date-session-row{text-decoration:none}.react-action-list{display:grid;max-height:280px;overflow:auto;border-top:1px solid var(--color-border)}.react-action-list .session-tool-row{grid-template-columns:52px minmax(100px,1fr) 74px}.workbench-unevidenced .workbench-head{border-bottom:0}.workbench-unevidenced-note{margin:0;padding:0 12px 10px 12px;color:var(--color-text-muted);font-size:12px;line-height:16px}.react-diagnostics{margin:10px 12px 0;border:1px solid var(--color-border);border-radius:var(--radius-lg);color:var(--color-text-muted);background:var(--color-surface-subtle);font-size:12px}.react-diagnostics summary{padding:7px 9px;cursor:pointer;font-weight:700}.react-diagnostics ul{margin:0;padding:0 26px 9px}.react-session-axis{position:relative;height:52px;margin:4px 0 10px;border-bottom:1px solid var(--color-border);background:linear-gradient(to right,var(--color-border) 1px,transparent 1px);background-size:25% 100%}.react-session-axis>i{position:absolute;bottom:0;width:2px;min-height:12px;height:58%;transform:translateX(-1px);border-radius:1px}.react-session-axis>span{display:grid;height:100%;place-items:center;color:var(--color-text-muted);font-size:12px}.replay-transport{background:var(--color-surface);box-shadow:var(--shadow-popover)}.react-replay-rail{position:relative;height:30px;margin:4px 8px 10px;border-bottom:2px solid var(--color-border-strong)}.react-replay-rail .replay-rail-mark{position:absolute;bottom:-4px;width:7px;height:14px;transform:translateX(-50%);border:0;border-radius:2px;background:var(--color-categorical-2);cursor:pointer}.react-replay-rail .replay-rail-mark.prompt{background:var(--color-categorical-1)}.react-replay-rail .replay-rail-mark.response{background:var(--color-success)}.react-replay-rail .replay-rail-mark.commit{background:var(--color-warning)}.react-replay-rail .replay-rail-mark.failed{box-shadow:0 0 0 2px var(--color-danger)}.react-replay-cursor{position:absolute;top:0;bottom:-5px;width:2px;transform:translateX(-1px);background:var(--color-primary);pointer-events:none}.session-view button:focus-visible,.session-view summary:focus-visible,.session-view select:focus-visible{outline:2px solid var(--color-focus);outline-offset:2px}.session-tool-copy .family-dot{flex:none}.session-process-stream>.session-process-facts{padding:10px}.session-markdown{display:block}
 `;

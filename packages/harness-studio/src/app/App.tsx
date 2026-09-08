@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { ArrowRight } from "@phosphor-icons/react/ArrowRight";
@@ -29,7 +29,8 @@ import {
   withinDateRange,
   type StudioDateRange,
 } from "./date-range.js";
-import { TOOLBAR_ACTIONS_ID } from "./shell/ToolbarActions.js";
+import { TOOLBAR_ACTIONS_ID, ToolbarActions } from "./shell/ToolbarActions.js";
+import { PaneSash } from "./shell/PaneSash.js";
 import { parseStudioLocation, studioLocationHash } from "./shell/project-routing.js";
 import {
   isWorkspaceArtifactNavigation,
@@ -637,7 +638,11 @@ function StatusBar(props: {
     props.config.artifactCount !== undefined && props.config.artifactCount > 0
       ? t("statusBar.artifacts", { count: props.config.artifactCount })
       : undefined,
-  ].filter((entry): entry is string => entry !== undefined);
+  ]
+    // The current View's status already states one of these counts whenever the
+    // reader is looking at that View, and reporting it twice in one bar reads as
+    // two separate facts.
+    .filter((entry): entry is string => entry !== undefined && entry !== props.status);
 
   return <footer className="studio-status-bar" aria-label={t("statusBar.aria")}>
     <div className="studio-status-scope" aria-label={t("statusBar.scopeAria")}>
@@ -821,6 +826,14 @@ interface SessionArtifactContext {
   artifacts: ArtifactDescriptor[];
 }
 
+/** The width below which the Session panes stack, matching the stylesheet. */
+const SESSION_NARROW_QUERY = "(max-width: 760px)";
+/** The sash track's own thickness in the Session catalog's pane grid. */
+const SESSION_SASH_SIZE = 6;
+/** Catalog pane bounds, in px. The detail pane keeps the majority of the width. */
+const SESSION_CATALOG_WIDTH: { default: number; min: number } = { default: 300, min: 240 };
+const SESSION_DETAIL_MIN_WIDTH = 320;
+
 function SessionsWorkspace(props: {
   config: StudioConfig;
   dateRange: StudioDateRange;
@@ -845,6 +858,29 @@ function SessionsWorkspace(props: {
     props.config.workspaceWorkbenchEnabled ? "inspector" : "catalog",
   );
   const [agentFilter, setAgentFilter] = useState("all");
+  const [catalogWidth, setCatalogWidth] = useState(SESSION_CATALOG_WIDTH.default);
+  const [catalogFrame, setCatalogFrame] = useState(0);
+  const [catalogStacked, setCatalogStacked] = useState(() => globalThis.matchMedia?.(SESSION_NARROW_QUERY).matches === true);
+  const catalogRoot = useRef<HTMLElement>(null);
+
+  // The sash bounds come from the pane area itself, so a dragged width cannot
+  // survive a window that no longer has room for it. The stacked regime is the
+  // same CSS breakpoint the stylesheet uses rather than a second width guess.
+  useEffect(() => {
+    const element = catalogRoot.current;
+    if (element === null) return;
+    const observer = new ResizeObserver(([entry]) => setCatalogFrame(entry!.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [surface]);
+
+  useEffect(() => {
+    const media = globalThis.matchMedia?.(SESSION_NARROW_QUERY);
+    if (media === undefined) return;
+    const sync = (event: MediaQueryListEvent): void => setCatalogStacked(event.matches);
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     if (!props.config.workspaceConnected) return;
@@ -955,9 +991,21 @@ function SessionsWorkspace(props: {
   // counts beside each option describe the same span the list shows.
   const datedSessions = sessions.filter((session) => withinDateRange(session.savedAt, props.dateRange));
   const visibleSessions = agentFilter === "all" ? datedSessions : datedSessions.filter((session) => agentLabel(session) === agentFilter);
-  const catalog = <section className="session-browser-workspace" aria-label={t("workspaceAria")}>
+  // Sizes are clamped to what the frame can hold rather than written back, so a
+  // narrowed window borrows space and a widened one returns the reader's choice.
+  const catalogMeasured = catalogFrame > 0;
+  const catalogMax = catalogMeasured
+    ? Math.max(SESSION_CATALOG_WIDTH.min, catalogFrame - SESSION_DETAIL_MIN_WIDTH - SESSION_SASH_SIZE)
+    : SESSION_CATALOG_WIDTH.default;
+  const fittedCatalogWidth = Math.min(Math.max(catalogWidth, SESSION_CATALOG_WIDTH.min), catalogMax);
+  const catalog = <section
+    ref={catalogRoot}
+    className="session-browser-workspace"
+    aria-label={t("workspaceAria")}
+    style={catalogMeasured ? { "--session-catalog-width": `${fittedCatalogWidth}px` } as CSSProperties : undefined}
+  >
     <aside className="session-catalog-pane">
-      <header><div><small>{t("evidenceEyebrow")}</small><h2>{t("common:area.sessions")}</h2></div><span>{visibleSessions.length}</span></header>
+      <header><h2>{t("common:area.sessions")}</h2><span>{visibleSessions.length}</span></header>
       {agents.length > 1 && <div className="session-agent-filter"><label><span>{t("agentFilterLabel")}</span><select aria-label={t("agentFilterAria")} value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)}><option value="all">{t("allAgents")}</option>{agents.map((agent) => <option key={agent} value={agent}>{t("agentSessionCount", { agent, sessions: agentCounts.get(agent) })}</option>)}</select></label></div>}
       {omittedCount > 0 && <p className="session-omissions">{t("omitted", { count: omittedCount })}</p>}
       {sessions.length > 0 && datedSessions.length === 0
@@ -969,6 +1017,16 @@ function SessionsWorkspace(props: {
       </li>)}</ul>
       <footer><button type="button" className="primary" disabled={pair.length !== 2} onClick={() => props.onCompare(pair as [string, string])}>{t("compareButton", { pair: pair.length })}</button></footer>
     </aside>
+    <PaneSash
+      orientation="vertical"
+      label={t("resizeCatalogAria")}
+      size={fittedCatalogWidth}
+      min={SESSION_CATALOG_WIDTH.min}
+      max={catalogMax}
+      fallback={SESSION_CATALOG_WIDTH.default}
+      disabled={catalogStacked || !catalogMeasured}
+      onSize={setCatalogWidth}
+    />
     <main className="session-detail-pane">
       {detailFailure !== undefined
         ? <p className="artifact-status" role="alert">{detailFailure}</p>
@@ -979,14 +1037,16 @@ function SessionsWorkspace(props: {
   </section>;
 
   if (!props.config.workspaceWorkbenchEnabled) return catalog;
-  return <section className="session-workbench-stack" aria-label={t("workbenchAria")}>
-    <header className="session-workbench-toolbar">
-      <div><strong>{t("workbenchTitle")}</strong><span>{t("workbenchDetail")}</span></div>
+  // The window toolbar already names this View, so the surface switcher travels
+  // up into it rather than opening a second bar below it to restate the same
+  // scope in prose.
+  return <>
+    <ToolbarActions>
       <div className="session-surface-tabs" role="tablist" aria-label={t("viewsTablist")}>
         <button id="session-tab-inspector" type="button" role="tab" aria-controls="session-workbench-panel" aria-selected={surface === "inspector"} tabIndex={surface === "inspector" ? 0 : -1} className={surface === "inspector" ? "selected" : undefined} onClick={() => setSurface("inspector")} onKeyDown={(event) => { if (event.key === "ArrowRight") { event.preventDefault(); setSurface("catalog"); (event.currentTarget.nextElementSibling as HTMLButtonElement | null)?.focus(); } }}>{t("inspectorTab")}</button>
         <button id="session-tab-catalog" type="button" role="tab" aria-controls="session-workbench-panel" aria-selected={surface === "catalog"} tabIndex={surface === "catalog" ? 0 : -1} className={surface === "catalog" ? "selected" : undefined} onClick={() => setSurface("catalog")} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setSurface("inspector"); (event.currentTarget.previousElementSibling as HTMLButtonElement | null)?.focus(); } }}>{t("catalogTab")}</button>
       </div>
-    </header>
+    </ToolbarActions>
     <div id="session-workbench-panel" className="session-workbench-surface" role="tabpanel" aria-labelledby={surface === "inspector" ? "session-tab-inspector" : "session-tab-catalog"}>
       {surface === "inspector"
         ? <Suspense fallback={<p className="artifact-status" role="status">{t("loadingInspector")}</p>}>
@@ -994,7 +1054,7 @@ function SessionsWorkspace(props: {
           </Suspense>
         : catalog}
     </div>
-  </section>;
+  </>;
 }
 
 function SessionDetail({ session, artifactContext }: { session: DebuggerSession; artifactContext?: SessionArtifactContext | null }): React.JSX.Element {

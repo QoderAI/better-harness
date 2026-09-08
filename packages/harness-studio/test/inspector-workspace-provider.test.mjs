@@ -1,8 +1,58 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild-wasm";
 import { describe, expect, it, vi } from "vitest";
 
 import { createInspectorWorkspaceSessionProvider } from "../scripts/inspector-workspace-provider.mjs";
 
+const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
 describe("Inspector workspace provider", () => {
+  /**
+   * The desktop shell reaches Session discovery through an esbuild bundle of
+   * this provider, not through these source files. A host-adapter registry that
+   * loads its analyzers with a computed specifier survives a source run and
+   * fails only once bundled, because the bundler cannot follow the edge and the
+   * output resolves `./platforms/<host>.mjs` against its own directory — which
+   * reported every provider as `error` and left the workbench with no Sessions.
+   *
+   * So this bundles the registry the way the shipped runtime does and loads the
+   * result, rather than asserting anything about how the source is written.
+   */
+  it("loads every supported host adapter from a bundled copy of the registry", async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), "harness-adapter-bundle-"));
+    const outfile = join(outputDir, "registry.mjs");
+    try {
+      await build({
+        stdin: {
+          contents: "export { SUPPORTED_SESSION_PROVIDERS, createAnalyzer } from \"./scripts/session-analysis/analyzer.mjs\";\n",
+          resolveDir: repositoryRoot,
+          sourcefile: "adapter-registry-probe.mjs",
+        },
+        outfile,
+        bundle: true,
+        format: "esm",
+        platform: "node",
+        target: "node22",
+        logLevel: "silent",
+        banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
+      });
+
+      const bundled = await import(pathToFileURL(outfile).href);
+      const loaded = await Promise.all(bundled.SUPPORTED_SESSION_PROVIDERS
+        .map(async (platform) => [platform, await bundled.createAnalyzer(platform)]));
+
+      expect(loaded.length).toBeGreaterThan(1);
+      for (const [platform, analyzer] of loaded) {
+        expect(analyzer, `bundled ${platform} adapter`).toBeTypeOf("object");
+      }
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  }, 120_000);
+
   it("keeps Session discovery available for a Project without Git history", async () => {
     const collect = vi.fn(async () => ({ providers: [], sessions: [] }));
     const collectCommits = vi.fn();
