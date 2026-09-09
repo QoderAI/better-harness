@@ -1,0 +1,116 @@
+/* The Customizations View: a docked three-region workbench. The filter dimensions
+   are source-list rows on the leading edge, the catalog is the central evidence
+   surface, and provenance for the selected entry is the trailing pane. Every value
+   here resolves to a token in tokens.css; DESIGN.md owns the rationale. */
+
+.customization-workbench {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: var(--customization-nav-width, 200px) 6px minmax(0, 1fr) minmax(0, var(--secondary-pane-width));
+  grid-template-rows: minmax(0, 1fr);
+  background: var(--color-workspace);
+}
+.customization-workbench > .studio-pane-sash { grid-column: 2; grid-row: 1 / -1; }
+
+/* Filter pane. Two sections, one keyboard ring: the categories that exist and the
+   Agents that were observed, each with its retained count. */
+.customization-nav { grid-column: 1; grid-row: 1 / -1; min-width: 0; min-height: 0; overflow: auto; padding: 0 var(--sidebar-inset) var(--space-lg); border-right: 1px solid var(--color-border); background: var(--color-sidebar); }
+.customization-nav h2 { min-height: var(--pane-header-height); margin: 0; padding: var(--space-sm) var(--space-sm) var(--space-xs); display: flex; align-items: flex-end; color: var(--color-text-muted); font-size: var(--type-pane-size); font-weight: var(--weight-semibold); line-height: var(--type-pane-line); letter-spacing: var(--type-pane-track); }
+.customization-nav button { width: 100%; min-height: var(--navigation-row-height); display: flex; align-items: center; gap: var(--space-sm); border: 0; border-radius: var(--radius-xs); padding: var(--space-xs) var(--space-sm); background: transparent; color: var(--color-text-muted); font-weight: var(--weight-regular); text-align: left; }
+.customization-nav button > svg { flex: none; color: var(--color-text-muted); }
+.customization-nav button > span { min-width: 0; flex: 1; overflow: hidden; color: inherit; font-size: var(--type-label-size); text-overflow: ellipsis; white-space: nowrap; }
+.customization-nav small { flex: none; color: var(--color-text-subtle); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.customization-nav-status { color: var(--color-warning); }
+.customization-nav button:hover { color: var(--color-text); background: var(--color-surface-hover); }
+.customization-nav button:active { background: var(--color-surface-active); }
+/* The unfocused selection is the soft fill; a focused row takes the filled
+   source-list state instead of a detached control outline. */
+.customization-nav button[aria-current] { color: var(--color-text); background: var(--color-surface-selected); }
+.customization-nav button[aria-current] > span { font-weight: var(--weight-semibold); }
+.customization-nav button[aria-current] > svg { color: currentColor; }
+.customization-nav button:focus-visible { outline: none; color: var(--color-on-primary); background: var(--color-primary); }
+.customization-nav button:focus-visible > svg,
+.customization-nav button:focus-visible small { color: inherit; }
+
+/* Entries pane: the central evidence surface. */
+.customization-entries { grid-column: 3; grid-row: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: var(--pane-header-height) auto minmax(0, 1fr); overflow: hidden; background: var(--color-workspace); }
+.customization-entries > header { min-width: 0; display: flex; align-items: center; gap: var(--space-md); padding: 0 var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.customization-entries > header h2 { flex: none; margin: 0; font-size: var(--type-label-size); font-weight: var(--weight-semibold); line-height: var(--type-label-line); white-space: nowrap; }
+.customization-entries > header > span { min-width: 0; flex: 1; overflow: hidden; color: var(--color-text-muted); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.customization-search { flex: 0 1 240px; min-width: 0; height: var(--toolbar-target); display: flex; align-items: center; gap: var(--space-xs); padding-inline: var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-xs); background: var(--color-surface); color: var(--color-text-subtle); }
+.customization-search input { min-width: 0; flex: 1; border: 0; background: transparent; color: var(--color-text); font: inherit; }
+.customization-search input::placeholder { color: var(--color-text-subtle); }
+.customization-search input:focus-visible { outline: none; }
+.customization-search:focus-within { border-color: var(--color-focus); }
+.customization-notices:empty { display: none; }
+.customization-notices p { margin: 0; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); font-size: var(--type-meta-size); line-height: var(--type-meta-line); overflow-wrap: anywhere; }
+.customization-notices [role="alert"] { color: var(--color-danger); background: var(--color-danger-surface); }
+.customization-entries-empty { margin: 0; padding: var(--space-lg) var(--space-md); color: var(--color-text-muted); overflow-wrap: anywhere; }
+
+/* The catalog rows come from the shared DataTable, so only the two cells that
+   carry more than a value are described here. */
+.customization-name-cell { min-width: 0; width: 100%; display: grid; border: 0; border-radius: var(--radius-xs); padding: 0; background: transparent; color: var(--color-text); text-align: left; }
+.customization-name-cell > strong,
+.customization-name-cell > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.customization-name-cell > strong { color: inherit; font-size: var(--type-label-size); font-weight: var(--weight-medium); line-height: var(--type-label-line); }
+.customization-name-cell > small { color: var(--color-text-muted); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
+.customization-name-cell:hover { background: transparent; }
+.customization-name-cell:hover > strong { color: var(--color-primary); }
+.customization-name-cell:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+/* A logical path is distinguished by its tail, so it clips at the head. */
+.customization-source-cell {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  direction: rtl;
+  color: var(--color-text-muted);
+  font-family: var(--font-code);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Provenance pane: definition-list facts for the selected entry. */
+.customization-detail { grid-column: 4; grid-row: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: var(--pane-header-height) minmax(0, 1fr); overflow: hidden; border-left: 1px solid var(--color-border); background: var(--color-panel); }
+.customization-detail > header { display: flex; align-items: center; padding: 0 var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.customization-detail > header h2 { margin: 0; color: var(--color-text-muted); font-size: var(--type-pane-size); font-weight: var(--weight-semibold); line-height: var(--type-pane-line); letter-spacing: var(--type-pane-track); }
+.customization-detail-empty { margin: 0; padding: var(--space-lg) var(--space-md); color: var(--color-text-muted); }
+.customization-detail-scroll { min-height: 0; overflow: auto; padding: var(--space-md); }
+.customization-detail-scroll h3 { margin: 0; font-size: var(--type-subhead-size); font-weight: var(--weight-semibold); line-height: var(--type-subhead-line); overflow-wrap: anywhere; }
+.customization-detail-scroll > p { margin: var(--space-sm) 0 0; color: var(--color-text-muted); overflow-wrap: anywhere; }
+.customization-detail-scroll dl { margin: var(--space-lg) 0 0; }
+.customization-detail-scroll dl > div { display: grid; grid-template-columns: minmax(0, 88px) minmax(0, 1fr); gap: var(--space-sm); padding-block: var(--space-sm); border-top: 1px solid var(--color-border); }
+.customization-detail-scroll dt { color: var(--color-text-subtle); font-size: var(--type-meta-size); line-height: var(--type-body-line); }
+.customization-detail-scroll dd { margin: 0; overflow-wrap: anywhere; }
+.customization-detail-scroll code { color: var(--color-text-muted); font-family: var(--font-code); font-size: var(--type-code-size); line-height: var(--type-code-line); }
+
+/* Compact: three side-by-side regions would leave the catalog under half the
+   usable width, so provenance moves to a bounded region beneath it. A stacked pane
+   is sized by its content, so the scroll child carries the cap: a percentage
+   max-height on a content-sized region resolves against itself and clips. */
+@media (max-width: 1080px) {
+  .customization-workbench { grid-template-columns: var(--customization-nav-width, 200px) 6px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .customization-detail { grid-column: 3; grid-row: 2; grid-template-rows: var(--pane-header-height) auto; border-left: 0; border-top: 1px solid var(--color-border); }
+  .customization-detail-scroll { max-height: 220px; }
+}
+
+/* Narrow: one column. The filter list keeps a bounded, scrolling height so the
+   catalog it describes stays the region with room to read, and provenance appears
+   only once a row is selected. */
+@media (max-width: 760px) {
+  .customization-workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .customization-workbench > .studio-pane-sash { display: none; }
+  .customization-nav { grid-column: 1; grid-row: 1; max-height: 200px; border-right: 0; border-bottom: 1px solid var(--color-border); }
+  .customization-entries { grid-column: 1; grid-row: 2; grid-template-rows: auto auto minmax(0, 1fr); }
+  .customization-entries > header { flex-wrap: wrap; padding-block: var(--space-sm); }
+  .customization-search { flex-basis: 100%; }
+  .customization-detail { grid-column: 1; grid-row: 3; grid-template-rows: var(--pane-header-height) auto; }
+  /* Nothing selected leaves only a prompt, which is not worth a region this narrow. */
+  .customization-detail:has(.customization-detail-empty) { display: none; }
+}

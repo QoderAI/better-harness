@@ -2,18 +2,36 @@ export const customize = {
   library: {
     "refresh": "Refresh",
     "retry": "Retry",
-    "loadFailed": "Customizations could not load. Open a category to retry.",
+    "loadFailed": "Customizations could not load. Refresh to try again.",
 
   "title": "Customizations",
-  "category": "Category",
-  "agent": "Agent",
+  "filtersAria": "Customization filters",
+  "entriesAria": "Customization entries",
+  "searchLabel": "Filter entries",
+  "resizeNavAria": "Resize the customization filter pane",
+  "sections": {
+    "library": "Library",
+    "agents": "Agents"
+  },
   "allAgents": "All Agents",
   "unassigned": "Agent not identified",
-  "close": "Close customizations",
   "entryCount": "{{count}} entry",
   "entryCount_other": "{{count}} entries",
   "noEntries": "No entries in this category for the selected Agent.",
+  "noMatches": "No entries match this filter.",
   "toolsBoundary": "Retained MCP tool descriptors only. Their freshness does not prove the server is currently connected.",
+  "cols": {
+    "name": "Name",
+    "category": "Category",
+    "agents": "Agents",
+    "scope": "Scope",
+    "evidence": "Evidence",
+    "source": "Source"
+  },
+  "details": {
+    "title": "Provenance",
+    "empty": "Select an entry to see which Agents expose it and where it comes from."
+  },
   "categories": {
     "overview": "Overview",
     "plugins": "Plugins",

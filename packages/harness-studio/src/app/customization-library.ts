@@ -38,3 +38,53 @@ export function customizationLibraryRows(catalog: CustomizationCatalogV1): Custo
 export function filterCustomizationRows(rows: readonly CustomizationLibraryRow[], category: CustomizationCategory, host: string): CustomizationLibraryRow[] {
   return rows.filter((row) => (category === "overview" || row.category === category) && (host === "all" || (host === "unassigned" ? row.hosts.length === 0 : row.hosts.includes(host))));
 }
+
+/** One Agent row in the secondary sidebar: `all`, a collected Host, or `unassigned`. */
+export interface CustomizationAgentFacet {
+  id: string;
+  /** Absent for `all` and `unassigned`, whose names are Studio's own copy. */
+  label?: string;
+  /** The Host's collection status, carried only when it was not a clean collection. */
+  status?: string;
+  count: number;
+}
+
+/**
+ * The Agent dimension as rows rather than a menu: every Host the catalog observed
+ * keeps its place in the list even when the selected category holds none of its
+ * entries, because a zero beside a Host that collected is evidence and a missing
+ * row is not. `unassigned` appears only when some entry really has no Agent edge.
+ */
+export function customizationAgentFacets(options: {
+  rows: readonly CustomizationLibraryRow[];
+  category: CustomizationCategory;
+  hosts: readonly { id: string; label: string; status: string }[];
+}): CustomizationAgentFacet[] {
+  const { rows, category, hosts } = options;
+  const count = (host: string): number => filterCustomizationRows(rows, category, host).length;
+  const observed = [...new Set([...hosts.map((host) => host.id), ...rows.flatMap((row) => row.hosts)])].sort();
+  return [
+    { id: "all", count: count("all") },
+    ...observed.map((id) => {
+      const host = hosts.find((item) => item.id === id);
+      return {
+        id,
+        ...(host === undefined ? {} : { label: host.label }),
+        ...(host === undefined || host.status === "ok" ? {} : { status: host.status }),
+        count: count(id),
+      };
+    }),
+    ...(rows.some((row) => row.hosts.length === 0) ? [{ id: "unassigned", count: count("unassigned") }] : []),
+  ];
+}
+
+/**
+ * The text filter is the last stage, after category and Agent, so the counts a
+ * reader navigates by keep describing the catalog rather than the search box. It
+ * matches the three fields a row actually shows.
+ */
+export function searchCustomizationRows(rows: readonly CustomizationLibraryRow[], query: string): CustomizationLibraryRow[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return [...rows];
+  return rows.filter((row) => [row.name, row.description, row.source].some((value) => value?.toLowerCase().includes(needle) === true));
+}

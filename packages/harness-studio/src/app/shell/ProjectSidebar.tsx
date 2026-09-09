@@ -48,7 +48,6 @@ export function ProjectSidebar(props: {
   onDateRangeChange: (range: StudioDateRange) => void;
   /** Rendered as the sidebar's last row: appearance and language live here. */
   settings: ReactNode;
-  customizations: ReactNode;
 }): React.JSX.Element {
   const { t } = useTranslation("common");
   const navigationRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -59,7 +58,7 @@ export function ProjectSidebar(props: {
   // The sidebar now carries one level, so the roving tab stop covers the View
   // rows only. Projects moved to the switcher, which is a menu button with its
   // own keyboard contract.
-  const viewDestinations = props.destinations.filter((destination) => destination.id !== "customizations" && destination.id !== "memory");
+  const viewDestinations = props.destinations.filter((destination) => destination.id !== "memory");
   const orderedIds = viewDestinations.map((destination) => `view:${destination.id}`);
   const selectedNavigationId = props.current === null ? "" : `view:${props.current}`;
   const [focusedNavigationId, setFocusedNavigationId] = useState(selectedNavigationId);
@@ -205,9 +204,9 @@ export function ProjectSidebar(props: {
       </section>
     </nav>
 
-    {/* Settings closes the sidebar's column: a full-width row pinned to the
-        bottom, the position a macOS source list uses for library-wide controls. */}
-    <div className="studio-sidebar-customizations"><button type="button" aria-current={props.current === "memory-sources" || props.current === "memory" ? "page" : undefined} onClick={() => props.onSelectView("memory")}><Brain aria-hidden="true" size={15} />{t("area.memory")}</button>{props.customizations}</div>
+    {/* Memory is not scoped to the open Project, so it closes the column above
+        Settings rather than sitting among the Project's Views. */}
+    <div className="studio-sidebar-global"><button type="button" aria-current={props.current === "memory-sources" || props.current === "memory" ? "page" : undefined} onClick={() => props.onSelectView("memory")}><Brain aria-hidden="true" size={15} />{t("area.memory")}</button></div>
     <footer className="studio-sidebar-footer">{props.settings}</footer>
   </aside>;
 }

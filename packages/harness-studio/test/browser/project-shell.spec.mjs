@@ -139,10 +139,10 @@ test("switches one shared View workbench between remembered Projects", async ({ 
   await page.keyboard.press("End");
   await expect(viewNavigation(page).getByRole("button", { name: /^Compare/ })).toBeFocused();
   await page.keyboard.press("Home");
-  await expect(viewNavigation(page).getByRole("button", { name: /^Sessions/ })).toBeFocused();
+  await expect(viewNavigation(page).getByRole("button", { name: /^Customizations/ })).toBeFocused();
   expect(await page.locator(".studio-primary-nav nav button").evaluateAll((buttons) => buttons.filter((button) => button.tabIndex === 0).length)).toBe(1);
 
-  await expect(viewNavigation(page).getByRole("button")).toHaveCount(5);
+  await expect(viewNavigation(page).getByRole("button")).toHaveCount(6);
   await expect(page.locator(".studio-context-title")).toHaveText("Sessions");
 
   for (const layout of layouts) {

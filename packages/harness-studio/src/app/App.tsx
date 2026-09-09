@@ -212,8 +212,7 @@ export function App(): React.JSX.Element {
   const [sessionOpenId, setSessionOpenId] = useState<string>();
   const [configFailure, setConfigFailure] = useState<string | null>(null);
   const [bootstrapRevision, setBootstrapRevision] = useState(0);
-  const [area, setArea] = useState<StudioArea>(() => areaFromHash() === "customizations" ? STUDIO_DEFAULT_AREA : areaFromHash());
-  const [customizationRequest, setCustomizationRequest] = useState(() => areaFromHash() === "customizations" ? 1 : 0);
+  const [area, setArea] = useState<StudioArea>(areaFromHash);
   const [locationRevision, setLocationRevision] = useState(0);
   const [compareSurface, setCompareSurface] = useState<StudioCompareSurface>("sessions");
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -316,9 +315,7 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const onHashChange = (): void => {
-      const next = studioLocationFromHash().area;
-      if (next === "customizations") setCustomizationRequest((value) => value + 1);
-      else setArea(next);
+      setArea(studioLocationFromHash().area);
       setLocationRevision((revision) => revision + 1);
     };
     globalThis.addEventListener("hashchange", onHashChange);
@@ -331,12 +328,8 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     if (config === undefined || projectOpening) return;
-    let location = studioLocationFromHash();
+    const location = studioLocationFromHash();
     if (location.area === "memory" || location.area === "memory-sources") return;
-    if (location.area === "customizations") {
-      location = { ...location, area };
-      globalThis.history.replaceState(null, "", studioLocationHash({ ...location, area }));
-    }
     if (location.projectId !== undefined && location.projectId !== activeProjectId && projects.some((project) => project.id === location.projectId)) {
       void activateStudioProject(location.projectId, false);
       return;
@@ -353,7 +346,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (!navigationOpen) return undefined;
     const focusFrame = globalThis.requestAnimationFrame(() => {
-      document.querySelector<HTMLButtonElement>(".studio-primary-nav nav button")?.focus();
+      // The View list is a roving group, so its one tab stop is the row to focus;
+      // the first button in the DOM may be a row that is deliberately skipped.
+      document.querySelector<HTMLButtonElement>('.studio-primary-nav nav button[tabindex="0"]')?.focus();
     });
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
@@ -570,7 +565,6 @@ export function App(): React.JSX.Element {
       onCloseNavigation={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }}
       dateRange={dateRange}
       onDateRangeChange={setDateRange}
-      customizations={<CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} enabled={config.customizationAnalysisEnabled} openRequest={customizationRequest} onOpenHandled={() => setCustomizationRequest(0)} onAnalyzed={customizationAnalyzed} />}
       settings={<SettingsMenu theme={theme} onTheme={chooseTheme} />}
     />
     <SidebarSash width={sidebarWidth} onWidth={setSidebarWidth} />
@@ -593,6 +587,9 @@ export function App(): React.JSX.Element {
           globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
         }} /> : <>
         {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}-${dateScopeKey}`} dateRange={dateRange} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
+        {area === "customizations" && (config.customizationAnalysisEnabled
+          ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />
+          : <EmptyWorkspace eyebrow={t("customize:empty.eyebrow")} title={t("customize:empty.titleConnected")} detail={t("customize:empty.detailConnected")} />)}
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} dateRange={dateRange} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}-${dateScopeKey}`} dateRange={dateRange} config={config} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}

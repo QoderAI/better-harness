@@ -441,6 +441,9 @@ thead th {
 th.numeric,
 td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
 tbody tr:hover { background: var(--color-surface-hover); }
+/* A frozen header is a sticky overlay inside the scroll region, so a row brought
+   into view by keyboard focus has to clear it rather than land underneath. */
+tbody tr { scroll-margin-top: var(--row-height); }
 
 /* The shared DataTable. Columns declare their own bounds through `<colgroup>`,
    so a fixed layout resolves the widths up front instead of letting the longest

@@ -102,7 +102,7 @@ async function assertRenderedContract(page) {
   expect(contract.belowFloor).toEqual([]);
   expect(contract.dockedShadows).toEqual([]);
   expect(contract.visibleSurfaceSwitchers).toBeLessThanOrEqual(1);
-  expect(contract.ownedStyleSheets).toEqual(expect.arrayContaining(["customization-library.css", "live-composer.css", "shell.css", "tokens.css", "workbench.css"]));
+  expect(contract.ownedStyleSheets).toEqual(expect.arrayContaining(["customizations.css", "live-composer.css", "shell.css", "tokens.css", "workbench.css"]));
 }
 
 test.beforeAll(async () => {
@@ -706,8 +706,8 @@ test("renders the shell, local workspace intake, and empty compare surfaces at a
     await assertRenderedContract(page);
     await page.screenshot({ path: testInfo.outputPath(`landing-${layout.name}.png`) });
 
-    // Customizations is the sidebar's library row, not a View row, so the roving
-    // tab stop covers the View list and starts at Sessions.
+    // The View list is one roving tab stop that starts at the current View, so
+    // Customizations above it does not take the tab stop from Sessions.
     const views = page.getByRole("navigation", { name: "Studio View navigation" });
     if (layout.name === "wide") {
       await views.getByRole("button", { name: /^Sessions/ }).focus();

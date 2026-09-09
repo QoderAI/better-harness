@@ -703,6 +703,7 @@
 .studio-surface { min-width: 0; min-height: 0; overflow: auto; background: var(--color-workspace); }
 .studio-surface-inspector,
 .studio-surface-artifacts,
+.studio-surface-customizations,
 .studio-surface-debugger,
 .studio-surface-sessions,
 .studio-surface-compare { overflow: hidden; }

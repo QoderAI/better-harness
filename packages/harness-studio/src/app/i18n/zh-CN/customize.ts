@@ -4,18 +4,36 @@ export const customize: typeof enCustomize = {
   library: {
     "refresh": "刷新",
     "retry": "重试",
-    "loadFailed": "自定义配置加载失败，打开任一类别可重试。",
+    "loadFailed": "自定义配置加载失败，刷新可重试。",
 
   "title": "自定义配置",
-  "category": "类别",
-  "agent": "Agent 来源",
+  "filtersAria": "自定义配置筛选",
+  "entriesAria": "自定义配置条目",
+  "searchLabel": "筛选条目",
+  "resizeNavAria": "调整自定义配置筛选面板宽度",
+  "sections": {
+    "library": "资源库",
+    "agents": "Agent"
+  },
   "allAgents": "所有 Agent",
   "unassigned": "尚未识别 Agent",
-  "close": "关闭自定义配置",
   "entryCount": "{{count}} 项",
   "entryCount_other": "{{count}} 项",
   "noEntries": "所选 Agent 在此类别中没有条目。",
+  "noMatches": "没有条目匹配当前筛选。",
   "toolsBoundary": "仅展示已保留的 MCP 工具描述。新鲜度不代表服务当前已连接。",
+  "cols": {
+    "name": "名称",
+    "category": "类别",
+    "agents": "Agent",
+    "scope": "范围",
+    "evidence": "证据",
+    "source": "来源"
+  },
+  "details": {
+    "title": "来源溯源",
+    "empty": "选择一个条目，查看哪些 Agent 暴露它以及它来自哪里。"
+  },
   "categories": {
     "overview": "概览",
     "plugins": "插件",

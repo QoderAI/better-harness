@@ -711,15 +711,16 @@ occupy more attention than the active task.
   locates its Session in the workspace; do not duplicate the calendar or turn
   the workspace into a second schedule view.
 
-- Customizations lives in a collapsible lower sidebar library above Settings,
-  outside the main Views. Category rows open a modal without replacing the
-  workbench. The dialog identifies Coding Agent provenance per entry and offers
-  category and Agent filters. Shared entries retain all observed Agents; counts
-  remain absent while metadata loads automatically on entry. Refresh is optional.
-  Escape and Close return focus to the opener. Library rows use a neutral hover,
-  a soft selection while their dialog is open, and filled primary/on-primary for
-  keyboard focus, including counts and icons. Do not outline the entire row as a
-  floating form control; the filled source-list state is its focus indicator.
+- Customizations is a View in the primary sidebar and opens in the workspace, not
+  in a modal. Inside it, the catalog's two dimensions are the secondary sidebar's
+  two sections — Library for categories, Agents for All Agents plus each observed
+  Coding Agent — so a reader can see which categories exist and how many entries
+  each Agent contributed without opening a menu. Both sections form one keyboard
+  ring, each keeps its own `aria-current` row, and every row is one line: icon,
+  name, and one trailing slot holding the count, or the Agent's collection status
+  word when it did not collect cleanly. Selecting a table row updates the trailing
+  provenance pane; it does not open a dialog. Shared entries retain all observed
+  Agents, and an unidentified Agent stays explicit rather than inferred.
 
 ### Actions and forms
 

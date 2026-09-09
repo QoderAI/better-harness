@@ -50,9 +50,12 @@
 .memory-provenance dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-sm) var(--space-md); margin: 0; padding: var(--space-sm) var(--space-lg) var(--space-lg); }
 .memory-provenance dt { color: var(--color-text-subtle); }
 .memory-provenance dd { margin: 0; overflow-wrap: anywhere; }
-.studio-sidebar-customizations > button { width: 100%; min-height: var(--navigation-row-height); display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--color-text-muted); text-align: left; }
-.studio-sidebar-customizations > button:hover { background: var(--color-surface-hover); }
-.studio-sidebar-customizations > button[aria-current="page"] { background: var(--color-surface-selected); color: var(--color-text); }
+/* Memory is not scoped to the open Project, so its row closes the sidebar column
+   above Settings rather than joining the Project's View list. */
+.studio-sidebar-global { flex: none; border-top: 1px solid var(--color-border); padding: var(--space-xs) var(--sidebar-inset); }
+.studio-sidebar-global > button { width: 100%; min-height: var(--navigation-row-height); display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--color-text-muted); text-align: left; }
+.studio-sidebar-global > button:hover { background: var(--color-surface-hover); }
+.studio-sidebar-global > button[aria-current="page"] { background: var(--color-surface-selected); color: var(--color-text); }
 
 .memory-analysis-slot { min-width: 0; min-height: 0; display: flex; }
 .memory-analysis { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; border-left: 1px solid var(--color-border-strong); background: var(--color-panel); }
