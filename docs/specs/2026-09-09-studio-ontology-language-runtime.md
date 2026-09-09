@@ -9,14 +9,14 @@
 - Request: analyze Zed's tech stack for the memories Ontology module, decide
   between Rust+XPC+WASM-per-language and a Node/`web-tree-sitter` approach,
   record the decision, and start the implementation
-- ADR: [Ontology Language Analysis Runtime](../adrs/ontology-language-runtime.md) (`ADR-0008`)
+- ADR: [Ontology Language Analysis Runtime](../adrs/ontology-language-runtime.md) (`ADR-0009`)
 
 ## Intent
 
 Studio's memories module wants an Ontology view of a target project. Memories
 are a summarized recollection of a session; they are not a structural index
 of source code, so the entity layer (functions, classes, interfaces, …) has
-to come from parsing. ADR-0008 decided that parsing runs in a new Rust
+to come from parsing. ADR-0009 decided that parsing runs in a new Rust
 sidecar, `harness-ontology-service`, alongside the existing `oxc-service` /
 `acp-host` / `evidence-host` hosts, using native tree-sitter for the engine
 and letting individual language grammars load as WASM modules rather than
@@ -86,7 +86,7 @@ other five languages — those are follow-ups, matching how
   `.wasm` (via `tree-sitter build --wasm` or a vendored prebuilt package) and
   exercising `tree_sitter::WasmStore::load_language` is unstarted.
 - Cross-file relationships — calls, imports, type hierarchy. This service
-  reports what one file defines, not how files relate; ADR-0008's Decision
+  reports what one file defines, not how files relate; ADR-0009's Decision
   is explicit that this is a separate, later design (candidates: reuse
   `oxc_semantic` for JS/TS, or a `stack-graphs`-style resolver for the rest).
 - Confirming the Java/C#/Swift/Kotlin/SQL grammar choices against Zed's
@@ -222,11 +222,11 @@ feature the desktop build enables only once a language actually needs it)
 once real WASM grammar loading is implemented, so this is noted here rather
 than treated as a settled cost.
 
-Risk: the Java/C#/Swift/Kotlin/SQL grammar choices in ADR-0008 are picked by
+Risk: the Java/C#/Swift/Kotlin/SQL grammar choices in ADR-0009 are picked by
 crates.io download counts, not a confirmed match to Zed's own extension
 pins — treat that table as a starting point for the WASM-loading follow-up,
 not a settled dependency lock. The entity queries are original (see
-ADR-0008's Decision on why), so their coverage is narrower than an
+ADR-0009's Decision on why), so their coverage is narrower than an
 editor-grade outline: no field/const/static/macro entities, and Go's plain
 type aliases are not captured. None of this is wired to Studio yet; the
 Ontology UI has nothing to call today.

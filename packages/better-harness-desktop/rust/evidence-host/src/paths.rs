@@ -65,8 +65,20 @@ pub fn env_home(var: &str, default_name: &str) -> PathBuf {
         .unwrap_or_else(|| home_dir().join(default_name))
 }
 
+// Canonical Windows paths include an IO-only verbatim prefix. Native hosts
+// encode the conventional drive/UNC spelling in their storage directory names.
+fn workspace_slug_input(workspace: &Path) -> String {
+    let raw = workspace.to_string_lossy();
+    let native = if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_owned()
+    };
+    native.replace('\\', "/")
+}
+
 pub fn qoder_slug_variants(workspace: &Path) -> Vec<String> {
-    let text = workspace.to_string_lossy().replace('\\', "/");
+    let text = workspace_slug_input(workspace);
     let slashy = text.replace(':', "-").replace('/', "-");
     let no_colon = text.replace(':', "").replace('/', "-");
     let mut values = vec![slashy, no_colon];
@@ -77,7 +89,7 @@ pub fn qoder_slug_variants(workspace: &Path) -> Vec<String> {
 
 /// Claude Code folds `/`, `.`, and `_` into `-` when naming `~/.claude/projects/<slug>`.
 pub fn claude_slug_variants(workspace: &Path) -> Vec<String> {
-    let text = workspace.to_string_lossy().replace('\\', "/");
+    let text = workspace_slug_input(workspace);
     let bases = [text.replace(':', "-"), text.replace(':', "")];
     let classes: [&[char]; 3] = [&['/', '.', '_'], &['/', '.'], &['/']];
     let mut values = Vec::new();
@@ -106,7 +118,7 @@ pub fn cwd_matches(workspace: &Path, candidate: &str) -> bool {
 /// Qwen `sanitizeCwd`: every non-alphanumeric char becomes `-`. Windows also
 /// lowercases; emit both so a POSIX host can still find a Windows-written tree.
 pub fn qwen_slug_variants(workspace: &Path) -> Vec<String> {
-    let text = workspace.to_string_lossy();
+    let text = workspace_slug_input(workspace);
     let slug: String = text
         .chars()
         .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
@@ -120,7 +132,7 @@ pub fn qwen_slug_variants(workspace: &Path) -> Vec<String> {
 /// Pi default tree: `--<cwd with /\: folded to ->>--`. OMP also writes a
 /// home-relative `-<rel>--` form when the workspace sits under `$HOME`.
 pub fn pi_session_dir_variants(workspace: &Path) -> Vec<String> {
-    let text = workspace.to_string_lossy().replace('\\', "/");
+    let text = workspace_slug_input(workspace);
     let body = text
         .trim_start_matches(['/', '\\'])
         .replace(['/', '\\', ':'], "-");
@@ -138,7 +150,7 @@ pub fn pi_session_dir_variants(workspace: &Path) -> Vec<String> {
 
 /// WorkBuddy project dirs: strip one leading separator, fold `/\:` to `-`.
 pub fn workbuddy_slug_variants(workspace: &Path) -> Vec<String> {
-    let text = workspace.to_string_lossy().replace('\\', "/");
+    let text = workspace_slug_input(workspace);
     let body = text.trim_start_matches('/').replace(['/', '\\', ':'], "-");
     vec![body]
 }
@@ -420,6 +432,22 @@ pub fn repo_relative(root: &Path, candidate: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_storage_slugs_ignore_windows_verbatim_prefixes() {
+        for (native, canonical) in [
+            (r"C:\work\sample", r"\\?\C:\work\sample"),
+            (r"\\server\share\sample", r"\\?\UNC\server\share\sample"),
+        ] {
+            let native = Path::new(native);
+            let canonical = Path::new(canonical);
+            assert_eq!(qoder_slug_variants(canonical), qoder_slug_variants(native));
+            assert_eq!(claude_slug_variants(canonical), claude_slug_variants(native));
+            assert_eq!(qwen_slug_variants(canonical), qwen_slug_variants(native));
+            assert_eq!(pi_session_dir_variants(canonical), pi_session_dir_variants(native));
+            assert_eq!(workbuddy_slug_variants(canonical), workbuddy_slug_variants(native));
+        }
+    }
 
     #[test]
     fn explicit_file_arguments_keep_root_files_without_treating_programs_as_paths() {

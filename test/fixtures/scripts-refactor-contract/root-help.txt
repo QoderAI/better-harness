@@ -53,6 +53,7 @@ Commands:
   Other
     harness-inspector        Inspect feature, Story, prompt, session, tool-call, and commit
                              provenance by product tree or date
+    memory                   Discover native Memory sources and explicitly read one document
 
 Examples:
   better-harness report

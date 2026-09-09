@@ -9,6 +9,8 @@ import { encodeSseData, readJsonBody, respondJson, sameOriginRequest } from "./h
 
 export interface StudioRunStreamOptions {
   source: string;
+  /** Already-read request, transformed by a trusted host route before streaming. */
+  input?: unknown;
   harnessId?: string;
   runtimeId?: string;
   cwd?: string;
@@ -33,7 +35,7 @@ export async function streamHarnessRun(
   }
   let input;
   try {
-    input = parseHarnessRunRequestV1(await readJsonBody(request, 66_560));
+    input = parseHarnessRunRequestV1(options.input ?? await readJsonBody(request, 66_560));
   } catch (error) {
     respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
     return;

@@ -1,0 +1,104 @@
+.studio-area:has(.memory-review-workbench) { grid-template-rows: var(--titlebar-height) minmax(0, 1fr); }
+.memory-review-workbench { height: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--color-workspace); }
+.memory-review-topbar { flex: none; min-height: var(--workbench-bar-height); display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: 0 var(--space-lg); border-bottom: 1px solid var(--color-border); }
+.memory-review-tabs { display: flex; align-self: stretch; gap: var(--space-xl); }
+.memory-review-tabs button { display: flex; align-items: center; gap: var(--space-sm); border: 0; border-radius: 0; padding: 0 var(--space-xs); background: transparent; color: var(--color-text-muted); border-bottom: 2px solid transparent; }
+.memory-review-tabs button[aria-selected="true"] { color: var(--color-text); border-bottom-color: var(--color-primary); }
+.memory-review-tabs button > span { font-size: var(--type-meta-size); color: var(--color-text-subtle); font-variant-numeric: tabular-nums; }
+.memory-review-preview-label { color: var(--color-text-subtle); font-size: var(--type-meta-size); white-space: nowrap; }
+.memory-review-layout { min-height: 0; flex: 1; display: grid; grid-template-columns: 156px minmax(0, 1fr) 336px; }
+.memory-review-queue { min-height: 0; overflow: auto; padding: var(--space-lg) var(--space-sm); border-right: 1px solid var(--color-border); background: var(--color-sidebar); }
+.memory-review-queue h2 { margin: var(--space-xs) var(--space-sm) var(--space-sm); color: var(--color-text-subtle); font-size: var(--type-pane-size); line-height: var(--type-pane-line); font-weight: var(--weight-medium); }
+.memory-review-queue h2:not(:first-child) { margin-top: var(--space-xl); }
+.memory-review-queue > button { width: 100%; min-height: var(--navigation-row-height); display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); border: 0; padding: var(--space-xs) var(--space-sm); background: transparent; color: var(--color-text-muted); font-weight: var(--weight-regular); text-align: left; }
+.memory-review-queue > button:hover { background: var(--color-surface-hover); }
+.memory-review-queue > button[aria-pressed="true"] { background: var(--color-surface-selected); color: var(--color-text); }
+.memory-review-queue small { color: var(--color-text-subtle); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; }
+.memory-review-queue-note { margin: var(--space-xxl) var(--space-sm) 0; padding-top: var(--space-lg); border-top: 1px solid var(--color-border); color: var(--color-text-subtle); font-size: var(--type-meta-size); }
+.memory-review-queue-note p { margin: var(--space-sm) 0; line-height: var(--type-meta-line); }
+.memory-review-candidates { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.memory-review-list-header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); padding: var(--space-lg) var(--space-xl); min-height: var(--workbench-bar-height); }
+.memory-review-list-header h2 { font-size: var(--type-subhead-size); line-height: var(--type-subhead-line); font-weight: var(--weight-semibold); margin: 0; white-space: nowrap; }
+.memory-review-list-header label { display: flex; align-items: center; gap: var(--space-sm); max-width: 180px; min-width: 0; color: var(--color-text-subtle); }
+.memory-review-list-header input { min-width: 0; width: 100%; height: var(--control-height); border: 0; background: transparent; color: var(--color-text); font: inherit; }
+.memory-review-list-header input::placeholder { color: var(--color-text-subtle); }
+.memory-review-card-list { min-height: 0; flex: 1; overflow: auto; padding: 0 var(--space-xl) var(--space-xl); }
+.memory-review-card { display: block; width: 100%; padding: var(--space-lg); margin: 0 0 var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-xs); background: var(--color-panel); text-align: left; font-weight: var(--weight-regular); }
+.memory-review-card:hover { background: var(--color-surface); }
+.memory-review-card[aria-pressed="true"] { border-color: var(--color-primary); }
+.memory-review-card-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); color: var(--color-text-subtle); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
+.memory-review-card-meta > span:first-child { color: var(--color-text-muted); font-weight: var(--weight-medium); }
+.memory-review-card-meta > span[data-status="conflict"] { color: var(--color-warning); }
+.memory-review-card-meta > span[data-status="accepted"] { color: var(--color-success); }
+.memory-review-card h3 { margin: var(--space-md) 0 var(--space-sm); font-size: var(--type-subhead-size); line-height: var(--type-subhead-line); font-weight: var(--weight-semibold); }
+.memory-review-card > p { margin: 0; color: var(--color-text-muted); font-size: var(--type-body-size); line-height: var(--type-body-line); }
+.memory-review-lineage-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); margin-top: var(--space-lg); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.memory-review-lineage-chips > span { display: inline-flex; align-items: center; gap: var(--space-sm); }
+.memory-review-lineage-chips i { width: var(--space-lg); height: 1px; background: var(--color-border-strong); }
+.memory-review-lineage-chips > svg { color: var(--color-text-subtle); }
+.memory-review-card-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-md); margin-top: var(--space-lg); padding-top: var(--space-md); border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.memory-review-grounding, .memory-review-suggested { display: inline-flex; align-items: center; gap: var(--space-xs); }
+.memory-review-grounding small { color: var(--color-text-subtle); font-size: inherit; }
+.memory-review-level-dots { display: inline-flex; gap: 3px; margin-right: var(--space-xs); }
+.memory-review-level-dots i { width: 5px; height: 5px; border: 1px solid var(--color-text-subtle); border-radius: var(--radius-full); }
+.memory-review-level-dots i[data-lit="true"] { background: var(--color-text-muted); border-color: var(--color-text-muted); }
+.memory-review-suggested > strong { font-weight: var(--weight-medium); color: var(--color-text); }
+.memory-review-inspector { min-height: 0; min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--color-border-strong); background: var(--color-panel); }
+.memory-review-inspector-header { flex: none; min-height: var(--workbench-bar-height); display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); padding: 0 var(--space-lg); border-bottom: 1px solid var(--color-border); }
+.memory-review-inspector-header h2 { margin: 0; font-size: var(--type-pane-size); line-height: var(--type-pane-line); font-weight: var(--weight-semibold); }
+.memory-review-inspector-header span { color: var(--color-text-subtle); font-size: var(--type-meta-size); }
+.memory-review-inspector-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 var(--space-lg); }
+.memory-review-statement { padding: var(--space-lg) 0; }
+.memory-review-statement h3 { margin: 0 0 var(--space-md); font-size: var(--type-subhead-size); line-height: var(--type-subhead-line); }
+.memory-review-statement > p { margin: 0 0 var(--space-md); line-height: var(--type-body-line); }
+.memory-review-statement > span { color: var(--color-text-subtle); font-size: var(--type-meta-size); }
+.memory-review-statement label { display: grid; gap: var(--space-sm); margin-bottom: var(--space-md); }
+.memory-review-statement textarea { min-height: 110px; width: 100%; resize: vertical; padding: var(--space-sm); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); color: var(--color-text); background: var(--color-workspace); font: inherit; }
+.memory-review-inspector-section { border-top: 1px solid var(--color-border); padding: var(--space-lg) 0; }
+.memory-review-inspector-section h4 { margin: 0 0 var(--space-md); font-size: var(--type-meta-size); font-weight: var(--weight-medium); color: var(--color-text-subtle); }
+.memory-review-evidence-list { list-style: none; padding: 0; margin: 0; }
+.memory-review-evidence-list li { position: relative; padding: 0 0 var(--space-lg) var(--space-lg); border-left: 1px solid var(--color-border-strong); margin-left: var(--space-xs); }
+.memory-review-evidence-list li:last-child { padding-bottom: 0; }
+.memory-review-evidence-list li::before { content: ''; position: absolute; width: 5px; height: 5px; left: -3px; top: 6px; border-radius: var(--radius-full); background: var(--color-text-subtle); }
+.memory-review-evidence-list li > div { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); }
+.memory-review-evidence-list strong { font-size: var(--type-meta-size); font-weight: var(--weight-medium); }
+.memory-review-evidence-list li > div > span, .memory-review-evidence-list small { color: var(--color-text-subtle); font-size: var(--type-meta-size); }
+.memory-review-evidence-list small { display: block; margin-top: var(--space-xs); }
+.memory-review-evidence-list p { margin: var(--space-sm) 0 0; color: var(--color-text-muted); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
+.memory-review-applies { display: flex; flex-wrap: wrap; gap: var(--space-sm) var(--space-md); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.memory-review-review-actions { flex: none; border-top: 1px solid var(--color-border); padding: var(--space-md) var(--space-lg); background: var(--color-panel); }
+.memory-review-owner-select { position: relative; display: flex; align-items: center; gap: var(--space-md); margin-bottom: var(--space-sm); font-size: var(--type-meta-size); }
+.memory-review-owner-select > span { flex: none; color: var(--color-text-subtle); }
+.memory-review-owner-select select { appearance: none; flex: 1; width: 100%; min-width: 0; height: var(--control-height); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); background: var(--color-workspace); color: var(--color-text); padding: 0 var(--space-xl) 0 var(--space-sm); font: inherit; cursor: pointer; }
+.memory-review-owner-select > svg { position: absolute; right: var(--space-sm); pointer-events: none; color: var(--color-text-subtle); }
+.memory-review-review-actions > button { width: 100%; display: flex; justify-content: center; align-items: center; gap: var(--space-sm); }
+.memory-review-review-actions > div { display: flex; justify-content: space-between; margin-top: var(--space-sm); }
+.memory-review-review-actions > div button { display: flex; align-items: center; gap: var(--space-xs); border: 0; background: transparent; color: var(--color-text-muted); padding: 0 var(--space-sm); }
+.memory-review-conflict { color: var(--color-text-muted); }
+.memory-review-conflict > h4 { color: var(--color-warning); }
+.memory-review-conflict > div { padding: var(--space-sm); margin-bottom: var(--space-sm); border-left: 2px solid var(--color-warning); background: var(--color-warning-surface); }
+.memory-review-conflict p { margin: var(--space-xs) 0; }
+.memory-review-conflict label { display: flex; gap: var(--space-sm); align-items: flex-start; font-size: var(--type-meta-size); }
+.memory-review-promotion-line { list-style: none; padding: 0 0 0 var(--space-sm); margin: 0; }
+.memory-review-promotion-line li { display: flex; align-items: center; gap: var(--space-sm); border-left: 1px solid var(--color-border-strong); padding: var(--space-sm) var(--space-md); color: var(--color-text-muted); }
+.memory-review-promotion-line li:last-child { color: var(--color-success); }
+.memory-review-empty { max-width: 38ch; margin: var(--space-xxxl) auto; padding: var(--space-xl); color: var(--color-text-muted); }
+.memory-review-empty h3 { color: var(--color-text); }
+.memory-review-inspector-empty { padding: var(--space-lg); color: var(--color-text-muted); }
+.memory-review-status { flex: none; display: flex; justify-content: space-between; gap: var(--space-lg); min-height: var(--statusbar-height); padding: var(--space-xs) var(--space-lg); border-top: 1px solid var(--color-border); font-size: var(--type-meta-size); color: var(--color-text-subtle); }
+.memory-review-status > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-review-status > span:last-child { white-space: nowrap; }
+@media (max-width: 1200px) { .memory-review-layout { grid-template-columns: minmax(0, 1fr) 320px; } .memory-review-queue { display: none; } }
+@media (max-width: 720px) {
+  .memory-review-layout { display: flex; flex-direction: column; overflow: auto; }
+  .memory-review-candidates { flex: none; max-height: 45%; min-height: 200px; }
+  .memory-review-card-list { padding: 0 var(--space-md) var(--space-md); }
+  .memory-review-list-header { padding: var(--space-md); flex-wrap: wrap; gap: var(--space-xs); }
+  .memory-review-list-header label { max-width: none; flex: 1; }
+  .memory-review-inspector { flex: 1; min-height: 340px; border-left: 0; border-top: 1px solid var(--color-border-strong); }
+  .memory-review-topbar { padding: 0 var(--space-md); gap: var(--space-xs); }
+  .memory-review-tabs { gap: var(--space-md); }
+  .memory-review-preview-label { font-size: var(--type-meta-size); }
+  .memory-review-card { padding: var(--space-md); }
+  .memory-review-status > span:last-child { display: none; }
+}

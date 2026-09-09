@@ -25,9 +25,11 @@ export async function streamRun(
   runId: string,
   project: StudioRunProjectBinding | undefined,
   onEvents: (events: HarnessRunStreamEventV1[]) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(endpoint, {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
       ...(project === undefined ? {} : {

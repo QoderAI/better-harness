@@ -2,7 +2,7 @@
 
 ## Traceability
 
-- ADR ID: `ADR-0008`
+- ADR ID: `ADR-0009`
 - Status: Proposed
 - Decision date: 2026-09-09
 - Spec: [Studio Ontology Language Runtime](../specs/2026-09-09-studio-ontology-language-runtime.md)

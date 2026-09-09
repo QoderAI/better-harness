@@ -50,6 +50,9 @@ export interface DataTableProps<Row> {
   /** Set when the table is the panel of a tablist. */
   role?: string;
   emptyMessage?: string;
+  /** Optional document selection; cell buttons provide keyboard activation. */
+  onSelectRow?: (row: Row) => void;
+  selectedRowId?: string;
 }
 
 export function DataTable<Row>(props: DataTableProps<Row>): React.JSX.Element {
@@ -107,7 +110,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): React.JSX.Element {
       })}</tr>)}</thead>
       <tbody>{rows.length === 0 && props.emptyMessage !== undefined
         ? <tr className="data-table-empty"><td colSpan={table.getAllLeafColumns().length}>{props.emptyMessage}</td></tr>
-        : rows.map((row) => <tr key={row.id}>{row.getVisibleCells().map((cell) => {
+        : rows.map((row) => <tr key={row.id} aria-selected={props.onSelectRow === undefined ? undefined : props.selectedRowId === row.id} onClick={props.onSelectRow === undefined ? undefined : () => props.onSelectRow?.(row.original)}>{row.getVisibleCells().map((cell) => {
           const meta = cell.column.columnDef.meta as DataTableColumnMeta | undefined;
           // Every column here clips, so a plain text value carries its full form
           // on hover. Cells that render their own markup own their own title.

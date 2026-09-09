@@ -14,6 +14,13 @@ const AUDIENCE_RANK = Object.freeze({
 
 const COMMANDS = [
   {
+    name: "memory",
+    kind: "direct",
+    audience: "advanced",
+    script: "memory/cli.mjs",
+    summary: "Discover native Memory sources and explicitly read one document.",
+  },
+  {
     name: "report",
     kind: "direct",
     audience: "workflow",
