@@ -1,0 +1,3 @@
+interface:
+  display_name: "Memory Recap"
+  short_description: "Diagnose agent collaboration and recommend improvements"
