@@ -46,7 +46,7 @@ export function ensureAcpRun(state: HarnessStudioState, runId: string): AcpRunCo
 export function acpExecutorFactory(
   agent: StudioAcpAgentOptions,
   state: HarnessStudioState,
-  host: { executable?: string; transport?: "stdio" | "nsxpc"; allowRoots?: readonly string[]; prepare?: boolean; connect?: boolean; conversation?: boolean; runDirectory?: string; agentId?: string; cwd?: string; recovery?: AcpSessionRecovery; turnOffset?: number } = {},
+  host: { executable?: string; transport?: "stdio" | "nsxpc"; allowRoots?: readonly string[]; prepare?: boolean; connect?: boolean; conversation?: boolean; runDirectory?: string; agentId?: string; cwd?: string; recovery?: AcpSessionRecovery; turnOffset?: number; initialPrompt?: () => string } = {},
 ): HarnessExecutorFactory {
   return (context) => {
     const control = ensureAcpRun(state, context.runId);
@@ -131,6 +131,7 @@ export function acpExecutorFactory(
           env: agent.env,
           onRunEvent: observe,
           onSessionReady,
+          initialPrompt: host.initialPrompt,
           onConnectionReady,
           conversation,
           recovery: host.recovery,
@@ -151,6 +152,7 @@ export function acpExecutorFactory(
           ...(host.allowRoots === undefined ? {} : { allowRoots: host.allowRoots }),
           onRunEvent: observe,
           onSessionReady,
+          initialPrompt: host.initialPrompt,
           onConnectionReady,
           conversation,
           recovery: host.recovery,
@@ -401,6 +403,10 @@ export async function configureAcpRun(request: IncomingMessage, response: Server
     }
     if (body?.action === "start") {
       if (!control.startPrompt) throw new Error("This session has already started.");
+      if (body.prompt !== undefined) {
+        if (!control.setInitialPrompt) throw new Error("This session does not accept an edited initial prompt.");
+        control.setInitialPrompt(body.prompt);
+      }
       control.startPrompt();
       return { started: true };
     }

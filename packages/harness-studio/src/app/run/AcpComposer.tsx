@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSessionOwnedState } from "./session-view-store.js";
 import type { AcpPromptContent } from "@qoder-ai/harness/exec";
 import type { AcpSessionActions } from "./acp-session-actions.js";
 import type { HarnessRunState } from "./run-store.js";
 
-export function AcpComposer({ state, actions }: { state: HarnessRunState; actions: AcpSessionActions }): React.JSX.Element {
+export function AcpComposer({ state, actions, context, compact = false }: { state: HarnessRunState; actions: AcpSessionActions; context?: ReactNode; compact?: boolean }): React.JSX.Element {
   const { t } = useTranslation("run");
   const key = `acp-draft:${state.runId}`;
   const [draft, setDraft] = useState(() => { try { return localStorage.getItem(key) ?? ""; } catch { return ""; } });
@@ -70,6 +70,7 @@ export function AcpComposer({ state, actions }: { state: HarnessRunState; action
     </details>}
     {!!commands.length && <div className="acp-command-suggestions" role="listbox" aria-label={t("conversation.commands")}>{commands.map((command, index) => <button type="button" role="option" aria-selected={index === commandIndex} key={command.name} onClick={() => { setDraft(`/${command.name} `); input.current?.focus(); }}><strong>/{command.name}</strong><span>{command.description}{command.inputHint ? ` · ${command.inputHint}` : ""}</span></button>)}</div>}
     {!!attachments.length && <ul className="acp-attachments">{attachments.map((block, index) => <li key={index}><span>{block.type === "resource" ? block.resource.uri : t("session.image")}</span><button type="button" aria-label={t("conversation.removeAttachment", { index: index + 1 })} onClick={() => setAttachments(items => items.filter((_, position) => position !== index))}>×</button></li>)}</ul>}
+    {context}
     <textarea ref={input} rows={2} value={draft} aria-label={t("conversation.followup")} placeholder={t("conversation.followup")} disabled={closed}
       onChange={event => { setDraft(event.target.value); setCommandIndex(0); setCommandsDismissed(false); }} onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); void attach(event.clipboardData.files); } }}
       onKeyDown={event => {
@@ -80,11 +81,11 @@ export function AcpComposer({ state, actions }: { state: HarnessRunState; action
         if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void send(event.altKey || event.metaKey || event.ctrlKey); } }} />
     <div className="acp-composer-actions">
       {(conversation.capabilities.image || conversation.capabilities.audio || conversation.capabilities.embeddedContext) && <><input ref={file} hidden type="file" multiple onChange={event => void attach(event.target.files)} /><button type="button" disabled={pending || loading || closed} onClick={() => file.current?.click()}>{t(loading ? "conversation.loading" : "conversation.attach")}</button></>}
-      <span className="acp-turn-status" role="status">{t(`conversation.status.${conversation.status}`)}</span>
+      {!compact && <span className="acp-turn-status" role="status">{t(`conversation.status.${conversation.status}`)}</span>}
       {generating && <button type="button" disabled={pending} onClick={() => void act(() => actions.execute({ action: "stop" }))}>{t("conversation.stop")}</button>}
       {generating && (!!draft.trim() || attachments.length > 0) && <button type="button" disabled={pending || loading} onClick={() => void send(true)}>{t("conversation.sendNow")}</button>}
       <button className="primary" type="button" disabled={pending || loading || closed || (!draft.trim() && !attachments.length)} onClick={() => void send()}>{t(editing ? "conversation.save" : generating ? "conversation.queue" : "conversation.send")}</button>
-      {(!generating || error !== undefined || conversation.status === "cancelling") && !closed && <button type="button" disabled={pending} onClick={() => void act(() => actions.execute({ action: "close" }))}>{t("conversation.close")}</button>}
+      {!compact && (!generating || error !== undefined || conversation.status === "cancelling") && !closed && <button type="button" disabled={pending} onClick={() => void act(() => actions.execute({ action: "close" }))}>{t("conversation.close")}</button>}
     </div>
     {conversation.turns.at(-1)?.error && <p className="acp-setting-error" role="alert">{conversation.turns.at(-1)?.error}</p>}
     {conversation.turns.at(-1)?.stopReason && !["end_turn", "error"].includes(conversation.turns.at(-1)!.stopReason!) && <p className="acp-session-notice">{t("conversation.turnStopped", { reason: conversation.turns.at(-1)!.stopReason })}</p>}

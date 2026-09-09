@@ -1,3 +1,4 @@
+import { appendFile } from "node:fs/promises";
 import { Readable, Writable } from "node:stream";
 import { agent, methods, ndJsonStream } from "@agentclientprotocol/sdk";
 
@@ -108,6 +109,8 @@ const app = agent({ name: "better-harness-acp-fixture" })
     cancelled = true;
   })
   .onRequest(methods.agent.session.prompt, async (context) => {
+    const recordIndex = process.argv.indexOf("--record-prompts");
+    if (recordIndex !== -1) await appendFile(process.argv[recordIndex + 1], JSON.stringify(context.params) + "\n");
     if (process.argv.includes("--artifact-internal-error")) {
       process.stderr.write("fixture-secret-context\n");
       throw new Error("fixture-internal-error");

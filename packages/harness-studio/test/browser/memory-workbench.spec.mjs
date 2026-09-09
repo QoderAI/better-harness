@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, readFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,7 @@ test.beforeAll(async () => {
   for (const relative of ['skills/one/SKILL.md', 'skills/two/SKILL.md', 'extensions/one.md', 'extensions/two.md', 'extensions/three.md', 'extensions/four.md', 'raw_memories.md']) {
     const file = join(root, ...relative.split('/')); await mkdir(dirname(file), { recursive: true }); await writeFile(file, '# Synthetic support material');
   }
-  const agent = { command: process.execPath, args: [join(dirname(fileURLToPath(import.meta.url)), '../../../harness/test/fixtures/acp-agent.mjs'), '--conversation', '--session-controls'] };
+  const agent = { command: process.execPath, args: [join(dirname(fileURLToPath(import.meta.url)), '../../../harness/test/fixtures/acp-agent.mjs'), '--conversation', '--session-controls', '--record-prompts', join(home, 'prompts.jsonl')] };
   studio = await startHarnessStudioServer({ port: 0, appDir: join(dirname(fileURLToPath(import.meta.url)), '../../dist/app'), memoryHome: home, memoryAcpAgents: [{ id: 'fixture', label: 'Fixture ACP', agent }] });
 });
 test.afterAll(async () => { await studio?.close(); await rm(home, { recursive: true, force: true }); });
@@ -43,22 +43,31 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     await expect(page.getByRole('tab')).toHaveCount(2); expect(reads).toHaveLength(1);
     await page.screenshot({ path: info.outputPath(`memory-editor-${layout.name}.png`) });
     await page.getByRole('button', { name: 'AI analysis', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Close analysis', exact: true })).toBeFocused();
+    await expect(page.getByRole('textbox', { name: 'Analysis request', exact: true })).toBeFocused();
+    await page.getByRole('textbox', { name: 'Analysis request', exact: true }).fill('Before connection');
     await page.getByRole('button', { name: 'Connect Agent', exact: true }).click();
     const panel = page.locator('.memory-analysis');
     const model = panel.getByRole('combobox', { name: 'Model', exact: true });
     await expect(model).toHaveValue('fixture-default');
     await model.selectOption('fixture-candidate');
     await expect(model).toHaveValue('fixture-candidate');
-    await panel.getByRole('button', { name: 'Send prompt', exact: true }).click();
+    await panel.getByRole('textbox', { name: 'Analysis request', exact: true }).fill(`Edited request ${layout.name}`);
+    await expect(panel.getByText('Ready. Send the prompt when you are ready.', { exact: true })).toHaveCount(0);
+    await panel.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(panel.locator('.streaming-message').last()).toContainText('turn:1 session:fixture-session blocks:1 model:fixture-candidate');
+    const received = (await readFile(join(home, 'prompts.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line)).at(-1);
+    const sent = received.prompt.map(block => block.text ?? '').join('\n');
+    expect(sent).toContain(`User request:\nEdited request ${layout.name}`);
+    expect(sent).toContain('Keep source evidence.');
+    expect(sent).not.toContain('Before connection');
     const draft = panel.locator('.acp-composer textarea');
     await draft.fill('wait'); await draft.press('Enter');
     await expect(panel.locator('.streaming-message').last()).toContainText('turn:2');
     await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
     // The fixture withholds completion until Stop, proving a visible first chunk.
     await panel.getByRole('button', { name: 'Stop', exact: true }).click();
-    await expect(panel.locator('.acp-turn-status')).toHaveText('Ready');
+    await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
+    await expect(panel.locator('.acp-turn-status')).toHaveCount(0);
     await draft.fill('third'); await draft.press('Enter');
     await expect(panel.locator('.streaming-message').last()).toContainText('turn:3 session:fixture-session');
     if (layout.width > 700) {
@@ -177,4 +186,34 @@ test('disconnecting a prepared ACP session removes its temporary directory and c
   } finally { controller.abort(); await reader.cancel().catch(() => undefined); }
   await expect.poll(async () => access(directory).then(() => true, () => false)).toBe(false);
   expect((await fetch(`${studio.url}/api/acp/runs/${runId}/cancel`, { method: 'POST' })).status).toBe(404);
+});
+
+test('memory dividers resize with pointer and keyboard and frontmatter starts collapsed', async ({ page }, info) => {
+  await writeFile(join(home, '.codex', 'memories', 'extensions', 'compact.md'), '---\nname: compact-fixture\ndescription: Metadata stays available\n---\n\n# Full width body\n\nReadable content.');
+  await page.setViewportSize({ width: 1600, height: 900 }); await page.goto(`${studio.url}/#/memory`);
+  await findOpen(page, 'compact.md');
+  const frontmatter = page.locator('.memory-frontmatter');
+  await expect(frontmatter).not.toHaveAttribute('open');
+  await expect(page.getByText('compact-fixture', { exact: false })).not.toBeVisible();
+  await frontmatter.getByText('Frontmatter', { exact: true }).click();
+  await expect(frontmatter).toHaveAttribute('open');
+  await expect(frontmatter).toContainText('compact-fixture');
+  await frontmatter.getByText('Frontmatter', { exact: true }).click();
+  const article = await page.locator('.markdown-document').boundingBox(), body = await page.locator('.memory-reader-body').boundingBox();
+  expect(body.width - article.width).toBeLessThanOrEqual(26);
+  expect((await page.locator('.memory-editor-bar').boundingBox()).height).toBeLessThanOrEqual(36);
+  for (const name of ['Resize memory explorer', 'Resize memory analysis']) {
+    if (name.endsWith('analysis')) await page.getByRole('button', { name: 'AI analysis', exact: true }).click();
+    const sash = page.getByRole('separator', { name });
+    const before = Number(await sash.getAttribute('aria-valuenow'));
+    await sash.focus(); await page.keyboard.press('ArrowRight');
+    expect(Number(await sash.getAttribute('aria-valuenow'))).toBe(before + (name.endsWith('explorer') ? 8 : -8));
+    const box = await sash.boundingBox(); await page.mouse.move(box.x + box.width / 2, box.y + 100); await page.mouse.down(); await page.mouse.move(box.x + 60, box.y + 100, { steps: 8 }); await page.mouse.up();
+    expect(Number(await sash.getAttribute('aria-valuenow'))).not.toBe(before);
+    await sash.press('Home'); expect(Number(await sash.getAttribute('aria-valuenow'))).toBe(Number(await sash.getAttribute('aria-valuemin')));
+    await sash.press('End'); expect(Number(await sash.getAttribute('aria-valuenow'))).toBe(Number(await sash.getAttribute('aria-valuemax')));
+    await sash.dblclick();
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath('memory-resized.png') });
 });

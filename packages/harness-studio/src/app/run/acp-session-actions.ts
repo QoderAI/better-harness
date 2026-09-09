@@ -6,7 +6,8 @@ export type AcpSessionAction =
   | { action: "connection-select"; sessionId?: string }
   | { action: "config"; configId: string; value: string | boolean }
   | { action: "mode"; modeId: string }
-  | { action: "start" | "stop" | "close" | "queue-resume" }
+  | { action: "start"; prompt?: string }
+  | { action: "stop" | "close" | "queue-resume" }
   | { action: "send"; id: string; content: AcpPromptContent; immediately?: boolean }
   | { action: "queue-edit"; id: string; content: AcpPromptContent }
   | { action: "queue-remove"; id: string }

@@ -43,15 +43,19 @@ export async function streamMemoryAcp(request: IncomingMessage, response: Server
   const profile = memoryAcpProfiles(options).find(value => value.id === selection.agentId && value.agent);
   if (!profile?.agent) throw new Error('Select an available ACP Agent.');
   if (state.acpRuns.has(input.runId)) throw new Error('Memory session already exists.');
-  const prompt = memoryAnalysisPrompt(snapshot, selection.entryId);
+  let prompt = memoryAnalysisPrompt(snapshot, selection.entryId);
   // The shared stream contract keeps its usual bound, including line annotations.
   const transformed = parseHarnessRunRequestV1({ ...input, prompt });
   const directory = await mkdtemp(join(tmpdir(), 'harness-memory-acp-'));
   const control = ensureAcpRun(state, input.runId);
+  control.setInitialPrompt = value => {
+    if (typeof value !== 'string' || !value.trim() || value.length > 8192) throw new Error('Enter a request of at most 8192 characters.');
+    prompt = parseHarnessRunRequestV1({ ...input, prompt: `${memoryAnalysisPrompt(snapshot, selection.entryId)}\n\nUser request:\n${value}` }).prompt;
+  };
   try {
     await streamHarnessRun(request, response, {
       input: transformed, source: SOURCE, harnessId: 'memory-review', runtimeId: 'acp', cwd: directory,
-      executorFactory: acpExecutorFactory(profile.agent, state, { prepare: true, conversation: true, cwd: directory, agentId: profile.id }),
+      executorFactory: acpExecutorFactory(profile.agent, state, { prepare: true, conversation: true, initialPrompt: () => prompt, cwd: directory, agentId: profile.id }),
       runAbortSignal: () => control.abortController.signal,
       onClientDisconnect: () => abortAcpRun(state, input.runId),
     });

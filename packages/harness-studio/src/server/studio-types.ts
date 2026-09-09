@@ -312,6 +312,7 @@ export interface AcpRunControl {
   config?: AcpConfigOption[];
   modes?: string[];
   startPrompt?: () => void;
+  setInitialPrompt?: (prompt: unknown) => void;
   actionTail?: Promise<unknown>;
   abortController: AbortController;
   pendingPermissions: Map<string, AcpPendingPermission>;

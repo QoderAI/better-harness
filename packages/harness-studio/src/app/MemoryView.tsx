@@ -8,6 +8,7 @@ import { MagnifyingGlass } from '@phosphor-icons/react/MagnifyingGlass';
 import { Sparkle } from '@phosphor-icons/react/Sparkle';
 import type { MemoryInventory, MemorySnapshot } from '../contracts/memory.js';
 import { ToolbarActions } from './shell/ToolbarActions.js';
+import { useMemoryPanes } from './memory/useMemoryPanes.js';
 import { MemoryReader } from './memory/MemoryReader.js';
 import { MemoryAnalysisPanel, type MemoryAcpAgent } from './memory/MemoryAnalysisPanel.js';
 import { MemoryExplorer } from './memory/MemoryExplorer.js';
@@ -38,6 +39,7 @@ export function MemoryView(): React.JSX.Element {
   const [indexError, setIndexError] = useState(false);
   const [indexRevision, setIndexRevision] = useState(0);
   const [analysis, setAnalysis] = useState(false);
+  const panes = useMemoryPanes(analysis);
   const [capability, setCapability] = useState<{ available: boolean; agents?: MemoryAcpAgent[]; maxBytes: number }>();
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [explorerOpen, setExplorerOpen] = useState(false);
@@ -134,7 +136,7 @@ export function MemoryView(): React.JSX.Element {
   }, [activeKey, selected, selectedEntry?.title]);
   useEffect(() => { globalThis.document.querySelector('.memory-editor-tabs [aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [activeKey, tabs.length]);
   const sourceCoverage = inventory?.sources.filter(source => location.host === 'all' || source.host === location.host) ?? [];
-  return <section className={`memory-workbench memory-browser${analysis ? ' has-analysis' : ''}${explorerOpen || !selected ? ' explorer-open' : ''}`} aria-label={t('area.memory')} onKeyDown={event => {
+  return <section ref={panes.root} style={panes.style} className={`memory-workbench memory-browser${analysis ? ' has-analysis' : ''}${explorerOpen || !selected ? ' explorer-open' : ''}`} aria-label={t('area.memory')} onKeyDown={event => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'w' && activeKey) { event.preventDefault(); closeTab(activeKey); }
     if (event.key === 'Escape' && explorerOpen && selected) { setExplorerOpen(false); requestAnimationFrame(() => globalThis.document.querySelector<HTMLButtonElement>('.memory-explorer-toggle')?.focus()); }
   }}>
@@ -150,14 +152,16 @@ export function MemoryView(): React.JSX.Element {
       <details className="memory-source-coverage"><summary>{t('memory.sourceStatus')}</summary>{sourceCoverage.map(source => <div key={source.sourceId}><span>{hostLabel(source.host)}</span><span>{t(`memory.coverageLabels.${source.coverage.state}`)}</span><span className="memory-coverage-path">{source.root?.displayPath ?? t('memory.noNativeSource')}</span></div>)}</details>
       <footer className="memory-inventory-footer">{t('memory.fileCount', { count: inventory?.documents.length ?? 0 })}</footer>
     </aside>
+    {panes.sash('explorer')}
     <div className="memory-editor">
       <div className="memory-editor-bar"><button className="memory-explorer-toggle" type="button" aria-label={t('memory.navigation')} aria-expanded={explorerOpen} onClick={() => { setExplorerOpen(value => !value); requestAnimationFrame(() => search.current?.focus()); }}><Folder size={16} /></button><div className="memory-editor-tabs" role="tablist" aria-label={t('memory.openEditors')}>
         {tabs.map((tab, index) => <div className="memory-editor-tab" key={tab.key} data-active={tab.key === activeKey}><button role="tab" id={`memory-editor-tab-${index}`} type="button" aria-selected={tab.key === activeKey} aria-controls="memory-editor-panel" tabIndex={tab.key === activeKey ? 0 : -1} title={inventory?.documents.find(doc => doc.id === tab.document)?.nativeIdentity.path} onClick={() => activate(tab)} onKeyDown={event => { const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : undefined; if (next !== undefined) { event.preventDefault(); activate(tabs[next]!); requestAnimationFrame(() => globalThis.document.getElementById(`memory-editor-tab-${next}`)?.focus()); } else if (event.key === 'Delete') { event.preventDefault(); closeTab(tab.key); } }}>{tab.title}</button><button type="button" aria-label={t('memory.closeEditor', { title: tab.title })} onClick={() => closeTab(tab.key)}><X size={12} /></button></div>)}
       </div></div>
       <div className="memory-editor-panel" id="memory-editor-panel" role="tabpanel" aria-labelledby={activeKey && tabs.some(tab => tab.key === activeKey) ? `memory-editor-tab-${tabs.findIndex(tab => tab.key === activeKey)}` : undefined}>
-        {selected ? <MemoryReader scrollPositions={readerPositions.current} document={selected} source={selectedSource} snapshot={snapshot} entry={selectedEntry} reading={reading} error={readError} onRetry={() => setReadRevision(value => value + 1)} onClose={() => activeKey && closeTab(activeKey)} /> : <div className="memory-empty">{t('memory.pickFile')}</div>}
+        {selected ? <MemoryReader scrollPositions={readerPositions.current} document={selected} source={selectedSource} snapshot={snapshot} entry={selectedEntry} reading={reading} error={readError} onRetry={() => setReadRevision(value => value + 1)} /> : <div className="memory-empty">{t('memory.pickFile')}</div>}
       </div>
     </div>
+    {analysis && panes.sash('analysis')}
     {analysis && <div id="memory-analysis-panel" className="memory-analysis-slot"><MemoryAnalysisPanel snapshot={snapshot} entry={selectedEntry} agents={capability?.agents ?? []} maxBytes={capability?.maxBytes ?? 0} onClose={closeAnalysis} onReveal={(value, entry) => { rememberSnapshot(value); setCacheRevision(version => version + 1); navigate({ document: value.documentId, entry: entry?.id }); setExplorerOpen(false); }} /></div>}
   </section>;
 }

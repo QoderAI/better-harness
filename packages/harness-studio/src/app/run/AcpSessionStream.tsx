@@ -11,8 +11,10 @@ import { TimelineEntry, ToolCallEntry } from "./TimelineEntry.js";
 const readingPositions = new Map<string, { top: number; following: boolean }>();
 
 /** A host-independent view: callers own launch, routing and permission authority. */
-export function AcpSessionStream({ state, prompt, failure, onPermission, actions, permissionClassName = "" }: {
+export function AcpSessionStream({ state, prompt, failure, onPermission, actions, permissionClassName = "", compact = false, showComposer = true }: {
   state: HarnessRunState;
+  compact?: boolean;
+  showComposer?: boolean;
   actions?: AcpSessionActions;
   prompt: string;
   failure?: string;
@@ -93,7 +95,7 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
       }}>
       <div className="acp-session-content" ref={content}>
         {prompt && !state.conversation && <section className="acp-session-prompt"><strong>{t("live.userRequest")}</strong><p>{prompt}</p></section>}
-        <details className="acp-session-metadata"><summary>{t("session.details")}</summary>
+        {!compact && <details className="acp-session-metadata"><summary>{t("session.details")}</summary>
         {(session.title || session.updatedAt) && <details className="acp-session-info"><summary>{t("session.title")}<span>{session.title}</span></summary><dl>
           {session.title && <div><dt>{t("session.title")}</dt><dd>{session.title}</dd></div>}
           {session.updatedAt && <div><dt>{t("session.updatedAt")}</dt><dd><time dateTime={session.updatedAt}>{session.updatedAt}</time></dd></div>}
@@ -110,24 +112,24 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
           <ol>{session.plan.map((entry, index) => <li key={index} data-status={entry.status}><span>{t(`session.planStatus.${entry.status}`)}</span><p>{entry.content}</p><small>{t(`session.planPriority.${entry.priority}`)}</small></li>)}</ol>
         </details>}
         {session.commands !== undefined && session.commands.length > 0 && <details className="acp-session-commands"><summary>{t("session.commands", { count: session.commands.length })}</summary><p>{t("session.observedOnly")}</p><dl>{session.commands.map((command) => <div key={command.name}><dt>/{command.name}</dt><dd>{command.description}{command.inputHint && <p className="acp-command-hint">{t("session.commandInput", { hint: command.inputHint })}</p>}</dd></div>)}</dl></details>}
-        </details>
+        </details>}
         {session.partial && <p className="acp-session-notice">{t("session.partial")}</p>}
         {!!session.unsupported?.length && <details className="acp-session-notice"><summary>{t("session.unsupported")}</summary><p>{session.unsupported.join(", ")}</p></details>}
         {state.warnings.map((warning, index) => <p className="acp-session-notice" key={index}>{warning}</p>)}
         <ol className="acp-session-events">
           {items.map((item) => <SessionEntry scope={state.runId} key={`${item.kind}:${item.id}`} item={item} tool={session.tools.get(item.id)} />)}
         </ol>
-        {items.length === 0 && <p className="acp-session-notice" role="status">{t(session.prepared ? "session.readyToSend" : state.status === "running" ? "live.waiting" : "session.empty")}</p>}
+        {!compact && items.length === 0 && <p className="acp-session-notice" role="status">{t(session.prepared ? "session.readyToSend" : state.status === "running" ? "live.waiting" : "session.empty")}</p>}
       </div>
     </div>
-    <footer className="acp-conversation-footer">
+    {showComposer && <footer className="acp-conversation-footer">
       {state.conversation && actions && <AcpComposer state={state} actions={actions} />}
       <div className="acp-composer-toolbar"><AcpSessionSettings session={session} runId={state.runId} active={state.status === "running" && state.conversation?.status !== "closed"} actions={actions} />
       {session.usage && <small title={t("session.context")}>{Math.round(session.usage.used / Math.max(session.usage.size, 1) * 100)}%</small>}
       </div>
       {session.prepared && actions && <button type="button" disabled={starting} onClick={() => { setStarting(true); setStartError(undefined); void actions.execute({ action: "start" }).catch(error => setStartError(String(error))).finally(() => setStarting(false)); }}>{t("session.sendPrompt")}</button>}
       {startError && <p role="alert">{startError}</p>}
-    </footer>
+    </footer>}
     {paused && items.length > 0 && <button className="acp-session-latest" type="button" onClick={() => {
       following.current = true;
       lastScrollTop.current = scroll.current?.scrollTop ?? 0;

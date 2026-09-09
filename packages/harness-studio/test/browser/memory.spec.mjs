@@ -55,10 +55,10 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     expect(await provenance.evaluate(element => element.open)).toBe(false);
     await expect(provenance.locator('summary')).toContainText(join(home, '.codex', 'memories', skillDocument));
     await expect(provenance.locator('.memory-provenance-path')).toBeVisible();
-    await expect(page.locator('.memory-reader-header')).toContainText(skillDocument);
-    await expect(page.locator('.memory-reader-header .memory-reader-meta')).toHaveText('CodexUnparsedSkills');
+    await expect(page.getByRole('tab', { name: skillDocument, exact: true })).toHaveAttribute('aria-selected', 'true');
     await page.screenshot({ path: info.outputPath(`memory-collapsed-${layout.name}.png`) });
     await page.getByText('Snapshot provenance', { exact: true }).click();
+    await expect(provenance).toContainText('Codex');
     await expect(page.locator('.memory-reader code').filter({ hasText: 'sha256:' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`memory-${layout.name}.png`) });
@@ -105,7 +105,7 @@ test('a late read cannot replace the next selected document', async ({ page }) =
   release();
   await finished;
   await expect(page.getByRole('heading', { name: 'Architecture knowledge' })).toHaveCount(0);
-  await expect(page.locator('.memory-reader-header')).toContainText('runtime-boundaries.md');
+  await expect(page.getByRole('tab', { name: 'runtime-boundaries.md', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('searchbox').fill('runtime-boundaries.md');
   await page.getByRole('treeitem', { name: 'runtime-boundaries.md', exact: true }).first().click();
   expect(reads).toBe(2);

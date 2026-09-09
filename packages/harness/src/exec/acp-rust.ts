@@ -84,6 +84,8 @@ export interface AcpRustExecutorOptions {
   conversation?: AcpConversation;
   recovery?: AcpSessionRecovery;
   onSessionReady?: AcpSessionReadyHandler;
+  /** Resolve an edited initial request after session preparation. */
+  initialPrompt?: () => string;
   onConnectionReady?: AcpConnectionReadyHandler;
   sessionConfig?: Readonly<Record<string, string | boolean>>;
   abortSignal?: AbortSignal;
@@ -140,7 +142,6 @@ export class AcpRustExecutor implements HarnessExecutor {
       ...(task.sourceRoot !== undefined ? { sourceRoot: task.sourceRoot } : {}),
     });
     const { preamble, warnings } = buildRunPreamble(revision, bundle, receipt, deliveries);
-    const prompt = preamble.length > 0 ? `${preamble}\n\n${task.prompt}` : task.prompt;
     const emitter = new HarnessRunEmitter(this.options.onRunEvent);
     const trace: HarnessProtocolEvent[] = [];
     const output: string[] = [];
@@ -216,6 +217,8 @@ export class AcpRustExecutor implements HarnessExecutor {
         setMode: (modeId: string) => liveClient.call("session.setMode", { connectionId, sessionId: liveSessionId, modeId }),
       };
       await this.options.onSessionReady?.(sessionControl);
+      const initialPrompt = this.options.initialPrompt?.() ?? task.prompt;
+      const prompt = preamble.length > 0 ? `${preamble}\n\n${initialPrompt}` : initialPrompt;
       if (abortSignal?.aborted === true) {
         stopReason = "cancelled";
       } else {
@@ -234,10 +237,10 @@ export class AcpRustExecutor implements HarnessExecutor {
               try { const result = await liveClient.call("session.prompt", { connectionId, sessionId: liveSessionId, prompt: "", content }); return { stopReason: String(result.stopReason) }; }
               finally { emitter.endMessage(); }
             },
-          }, { id: "initial", content: [{ type: "text", text: task.prompt }] }, [{ type: "text", text: effectiveRecovery ? task.prompt : prompt }]) : await client.call("session.prompt", {
+          }, { id: "initial", content: [{ type: "text", text: initialPrompt }] }, [{ type: "text", text: effectiveRecovery ? initialPrompt : prompt }]) : await client.call("session.prompt", {
             connectionId,
             sessionId,
-            prompt: effectiveRecovery ? task.prompt : prompt,
+            prompt: effectiveRecovery ? initialPrompt : prompt,
           });
           stopReason = typeof finished.stopReason === "string" ? finished.stopReason : undefined;
         } finally {

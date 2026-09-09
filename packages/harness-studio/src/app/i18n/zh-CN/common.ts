@@ -5,6 +5,13 @@ export const common: typeof enCommon = {
     inbox: "Inbox", project: "项目 Memory", sources: "Memory 来源", preview: "设计预览", filters: "Memory 筛选", queue: "待处理", curated: "项目", allCandidates: "全部候选", allMemory: "全部知识", review: "待审查", conflict: "冲突", kind: "类型", refineryHint: "将 Agent 的证据晋升为项目拥有的知识。", candidates: "Memory 候选", search: "筛选候选…", noProject: "还没有晋升的知识", noCandidates: "此视图没有候选", promoteHint: "接受一个候选，并选择它的归属。", filterHint: "切换筛选以继续审查。", accepted: "已接受", new: "新增", evidenceShort: "个来源", suggested: "建议", owner: "归属", inspector: "Inspector", select: "选择候选，检查证据并确定归属。", statement: "陈述", projectScope: "示例项目", proposed: "待审", evidence: "证据", olderMemory: "较早的 Memory", currentDecision: "当前决策", resolveConflict: "以已审查的陈述解决此冲突", appliesTo: "适用范围", promotion: "晋升来源链", promoteTo: "晋升到", nativeEvidence: "原生证据", candidate: "Memory 候选", humanReview: "人工审查", accept: "接受", edit: "编辑", done: "完成", reject: "拒绝", previewBoundary: "示例候选 · 修改仅保留在本次预览", exampleEvidence: "个示例来源", acceptedNotice: "已在预览中接受「{{title}}」→ {{owner}}。", rejectedNotice: "已从预览 Inbox 移除「{{title}}」。",
   },
   memory: {
+    resizeExplorer: "调整 Memory 目录宽度",
+    resizeAnalysis: "调整 AI 分析宽度",
+    frontmatter: "元数据",
+    analysisInput: "分析请求",
+    analysisPlaceholder: "分析这份记忆，提出改进建议。",
+    sendAnalysis: "发送",
+
     analysisRequest: "分析《{{title}}》，结合来源行号给出改进建议。", openEditors: "已打开的记忆", closeEditor: "关闭 {{title}}", pickFile: "从左侧目录打开一条记忆。",
     analysisAgent: "分析 Agent", connectAgent: "连接 Agent", closeSession: "关闭会话", acpFailed: "连接失败或来源已变化，请刷新后重连。",
     allProjects: "全部项目", loadingEntries: "正在加载记忆…", indexError: "记忆加载失败。", noEntries: "该分类暂无记忆条目。",

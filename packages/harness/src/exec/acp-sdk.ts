@@ -52,6 +52,8 @@ export interface AcpSdkExecutorOptions {
   conversation?: AcpConversation;
   recovery?: AcpSessionRecovery;
   onSessionReady?: AcpSessionReadyHandler;
+  /** Resolve an edited initial request after session preparation. */
+  initialPrompt?: () => string;
   onConnectionReady?: AcpConnectionReadyHandler;
   sessionConfig?: Readonly<Record<string, string | boolean>>;
   abortSignal?: AbortSignal;
@@ -84,7 +86,6 @@ export class AcpSdkExecutor implements HarnessExecutor {
       ...(task.sourceRoot !== undefined ? { sourceRoot: task.sourceRoot } : {}),
     });
     const { preamble, warnings } = buildRunPreamble(revision, bundle, receipt, deliveries);
-    const prompt = preamble.length > 0 ? `${preamble}\n\n${task.prompt}` : task.prompt;
     const emitter = new HarnessRunEmitter(this.options.onRunEvent);
     const trace: HarnessProtocolEvent[] = [];
     const output: string[] = [];
@@ -223,6 +224,8 @@ export class AcpSdkExecutor implements HarnessExecutor {
           setMode: (modeId: string) => agent.request(sdk.methods.agent.session.setMode, { sessionId: created.sessionId, modeId }),
         };
         await this.options.onSessionReady?.(sessionControl);
+        const initialPrompt = this.options.initialPrompt?.() ?? task.prompt;
+        const prompt = preamble.length > 0 ? `${preamble}\n\n${initialPrompt}` : initialPrompt;
         const cancel = async (): Promise<void> => {
           await agent.notify(sdk.methods.agent.session.cancel, { sessionId: created.sessionId });
         };
@@ -240,10 +243,10 @@ export class AcpSdkExecutor implements HarnessExecutor {
               try { return await agent.request(sdk.methods.agent.session.prompt, { sessionId: created.sessionId, prompt: content }); }
               finally { emitter.endMessage(); }
             },
-          }, { id: "initial", content: [{ type: "text", text: task.prompt }] }, [{ type: "text", text: effectiveRecovery ? task.prompt : prompt }]);
+          }, { id: "initial", content: [{ type: "text", text: initialPrompt }] }, [{ type: "text", text: effectiveRecovery ? initialPrompt : prompt }]);
           return await requestWithAbort(() => agent.request(sdk.methods.agent.session.prompt, {
             sessionId: created.sessionId,
-            prompt: [{ type: "text", text: effectiveRecovery ? task.prompt : prompt }],
+            prompt: [{ type: "text", text: effectiveRecovery ? initialPrompt : prompt }],
           }, abortSignal === undefined ? undefined : { cancellationSignal: abortSignal }), abortSignal, "session/prompt");
         } finally {
           abortSignal?.removeEventListener("abort", notifyCancel);
