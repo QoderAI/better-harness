@@ -1217,8 +1217,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   const inspector = page.locator("[data-studio-native-inspector]");
   await expect(inspector).toBeVisible();
   await expect(inspector).toHaveAttribute("data-react-inspector-workbench", "true");
-  await expect(inspector.getByRole("tab", { name: "Sessions", exact: true })).toHaveAttribute("aria-selected", "true");
-  await expect(inspector.getByRole("tab", { name: "Date", exact: true })).toHaveCount(0);
+  await expect(inspector.getByRole("tab")).toHaveCount(0);
   await expect(inspector.locator(".date-calendar")).toBeVisible();
   await expect(inspector.getByRole("navigation", { name: "Sessions on selected date" })).toBeVisible();
   await expect(inspector.locator(".date-session-token-summary")).toHaveCount(2);
