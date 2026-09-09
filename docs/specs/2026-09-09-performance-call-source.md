@@ -3,7 +3,7 @@
 ## Traceability
 
 - Spec ID: performance-call-source
-- Status: Draft
+- Status: Implemented; local validation
 - Request: show identifiable Waiting calls and navigate source file/line references; bound reads for long JSONL logs.
 
 ## Intent
@@ -45,5 +45,28 @@ committing or publishing.
 
 ## Test and review evidence
 
-Pending implementation. Codex authors this change. Preserve unrelated Memory edits.
-Local macOS and simulated path checks do not establish other-OS runtime support.
+Codex authored the implementation. Local Rust performance tests passed (14),
+Studio API tests passed (9), code highlighting/rendering and i18n tests passed
+(10), Studio build/typecheck passed, and doc-link checks passed (8). Root preview
+health and Canvas module returned HTTP 200. Browser tests exercise native-backed
+wide/compact/narrow views, original line positions, source switching, focus
+restoration, lazy reads and failure/retry. Dark Chinese 200% reflow is also checked.
+
+The actual requested session and source line 44 were opened in a dark browser:
+seven lines rendered, line 44 selected, no console/page errors. Its invocation is
+`git --no-pager log --oneline -8`. Five native source-window reads took 4.1–4.5 ms
+on this Mac, scanned 15,021 bytes, and returned 3,054 bytes. A 128 MiB synthetic
+file required only 15 scanned bytes for its early five-line window. These are
+bounded-read observations, not general latency guarantees.
+
+Review readiness: the user request supplies scope; no Story was supplied. This
+spec intentionally extends the earlier metadata-only source boundary. Native
+source reads bypass analysis, retain path checks, cap scanning at 32 MiB, cap
+retained lines at 16 KiB, and cap displayed lines at 4,096 characters. New UI
+uses existing semantic tokens and Shiki. Shared HighlightedCode retains its
+plain-text fallback for existing consumers. Unrelated Memory/server work was
+left alone. Source windows are excerpts of the current file; moved, missing or
+changed logs may no longer match an earlier timing snapshot.
+
+Local macOS and simulated path checks do not establish Windows/Linux runtime
+support. No installed Desktop validation was performed.

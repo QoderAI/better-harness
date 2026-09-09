@@ -105,12 +105,13 @@ test('dark Chinese report and nested proportions',async({page},info)=>{
  await page.evaluate(()=>document.documentElement.style.zoom='2');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
  await page.screenshot({path:info.outputPath('storage-reflow.png'),fullPage:true});
- await page.locator('.storage-category').filter({hasText:'Waiting'}).click();
+ await page.locator('.storage-category').filter({hasText:'等待'}).click();
  await page.locator('.storage-part').filter({hasText:'Bash'}).click();
  await page.locator('.storage-call').first().click();
  await page.locator('.performance-source-link').first().click();
  await expect(page.locator('.performance-source-view .highlighted-code')).toHaveAttribute('data-highlight-state','highlighted');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+ await expect(page.locator('.performance-analysis')).not.toBeVisible();
  await page.screenshot({path:info.outputPath('storage-source-dark-reflow.png'),fullPage:true});
 });
 

@@ -177,3 +177,11 @@
   .performance-has-source .performance-evidence { flex-basis: 100%; }
   .storage-call .storage-mini-track { display: none; }
 }
+/* Source reading gets the pane when zoom or docking leaves too little room
+   for a readable analysis column alongside it. */
+.performance-panes { container-type: inline-size; }
+@container (max-width: 720px) {
+  .performance-has-source .performance-analysis { display: none; }
+  .performance-has-source .performance-evidence { flex-basis: 100%; }
+  .performance-has-source .performance-evidence-back { display: inline-flex; }
+}
