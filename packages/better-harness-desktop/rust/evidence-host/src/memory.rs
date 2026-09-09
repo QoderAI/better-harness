@@ -50,6 +50,10 @@ fn safe(path: &Path) -> Result<PathBuf> {
     let mut current = PathBuf::new();
     for part in path.components() {
         current.push(part);
+        // A Windows drive/UNC prefix becomes a filesystem root only after RootDir.
+        if matches!(part, std::path::Component::Prefix(_)) {
+            continue;
+        }
         let meta = fs::symlink_metadata(&current).map_err(|e| e.to_string())?;
         if meta.file_type().is_symlink() {
             return Err("symbolic-link-not-supported".into());
