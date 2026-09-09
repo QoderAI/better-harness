@@ -21,7 +21,10 @@ function isThinRoute(route) {
 // that have a real native Chinese translation under
 // docs/i18n/zh-Hans/docusaurus-plugin-content-blog/. These stay indexable; add a
 // post's slug here when its Chinese article lands.
-const TRANSLATED_ZH_BLOG_ROUTES = new Set(["blog/harness-inspector"]);
+const TRANSLATED_ZH_BLOG_ROUTES = new Set([
+  "blog/harness-inspector",
+  "blog/organizational-harness-engineering",
+]);
 
 function isUntranslatedBlogRoute(route, currentLocale, defaultLocale) {
   // Non-translated zh-Hans blog routes fall back to English posts; keep them
