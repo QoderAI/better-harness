@@ -17,10 +17,10 @@ body.performance-resizing, body.performance-resizing * { user-select: none; }
 .performance-workspace input, .performance-workspace select { min-width: 0; max-width: 100%; min-height: var(--control-height); padding: var(--space-xs) var(--space-sm); color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); }
 .performance-session-list { overflow: auto; flex: 1; }
 .performance-session { display: grid; width: 100%; gap: var(--space-xs); text-align: left; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; background: transparent; padding: var(--space-md); }
-.performance-session > span { display: flex; gap: var(--space-xs); justify-content: space-between; }
-.performance-session strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.performance-session > span { display: flex; gap: var(--space-xs); justify-content: space-between; min-width: 0; }
+.performance-session strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .performance-session b { flex: none; }
-.performance-session small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.performance-session small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .performance-session[aria-current="true"], .performance-span[aria-pressed="true"], .performance-metrics button[aria-pressed="true"] { background: var(--color-surface-selected); box-shadow: inset 2px 0 var(--color-primary); }
 .performance-session:hover, .performance-span:hover, .performance-findings button:hover, .performance-agent-row:hover { background: var(--color-surface-hover); }
 .performance-analysis { flex: 1; min-width: 0; overflow: auto; padding: var(--space-lg); }

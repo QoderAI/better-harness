@@ -49,9 +49,11 @@ export async function sessionPerformanceRoute(request: IncomingMessage, response
   if (state.workspace?.scanRequired) { send(409, { error: 'project-scan-required' }); return true; }
   if ([...url.searchParams.keys()].some(k => !['refresh', 'source', 'line'].includes(k))) { send(400, { error: 'unsupported-parameter' }); return true; }
   const sessionId = url.pathname.slice('/api/session-performance'.length + 1);
-  if (sessionId && (!/^[a-zA-Z0-9_.-]{1,160}$/u.test(sessionId) || sessionId === '.' || sessionId === '..')) { send(400, { error: 'invalid-session-id' }); return true; }
+  if (sessionId && (!/^[a-zA-Z0-9_:.-]{1,160}$/u.test(sessionId) || sessionId === '.' || sessionId === '..')) { send(400, { error: 'invalid-session-id' }); return true; }
   const workspaceSession = sessionId ? state.workspace?.sessions.get(sessionId) : undefined;
-  if (workspaceSession && workspaceSession.summary.provider && workspaceSession.summary.provider !== 'qoder') {
+  // Any workspace-discovered Session that is not explicitly Qoder cannot be analyzed by
+  // the Rust performance host, which only reads Qoder-format event logs.
+  if (workspaceSession && workspaceSession.summary.provider !== 'qoder') {
     send(200, { schemaVersion: 1, engine: 'rust', session: workspaceSessionTiming(workspaceSession.summary), turns: [], spans: [], totalSpans: 0, omittedSpans: 0 });
     return true;
   }
@@ -88,6 +90,9 @@ export async function sessionPerformanceRoute(request: IncomingMessage, response
       const known = new Set(sessions.map((s) => typeof s.id === 'string' ? s.id : ''));
       for (const stored of state.workspace.sessions.values()) {
         if (known.has(stored.summary.id)) continue;
+        // Qoder sessions are already discovered by the Rust performance analyzer; merging
+        // workspace-discovered Qoder sessions would duplicate them under a `qoder:` id.
+        if (stored.summary.provider === 'qoder') continue;
         sessions.push(workspaceSessionTiming(stored.summary));
         known.add(stored.summary.id);
       }

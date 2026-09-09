@@ -203,7 +203,6 @@ async function fetchStudioState(): Promise<{ config: StudioConfig; sources: Stud
 
 export function App(): React.JSX.Element {
   const { t } = useTranslation("common");
-  const { t: performanceT } = useTranslation("performance");
   const [config, setConfig] = useState<StudioConfig | undefined>(undefined);
   const [sources, setSources] = useState<StudioSourceOption[]>([]);
   const [projects, setProjects] = useState<StudioProjectDescriptor[]>([]);
@@ -598,7 +597,7 @@ export function App(): React.JSX.Element {
     <section className="studio-area">
       <header className={`studio-context-bar${contextNavigation ? " has-surface-navigation" : ""}`}>
         <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={sidebarVisible ? t("workspace:gate.closeTitle") : t("workspace:gate.openTitle")} aria-label={sidebarVisible ? t("workspace:gate.closeAria") : t("workspace:gate.openAria")} aria-expanded={sidebarVisible} onClick={toggleSidebar}><SidebarSimple aria-hidden="true" size={17} /></button>
-        <div className="studio-context-title"><h1>{showWelcome ? t("workspace:welcome.title") : t(`area.${area}`)}</h1>{area === "session-performance" && <span className="studio-context-subtitle">{performanceT("subtitle")}</span>}</div>
+        <div className="studio-context-title"><h1>{showWelcome ? t("workspace:welcome.title") : t(`area.${area}`)}</h1></div>
         {contextNavigation && <div className="studio-context-navigation">{contextNavigation}</div>}
         {/* The active View's primary action lands here, so a workbench does not
             open a second bar just to hold one button. */}
