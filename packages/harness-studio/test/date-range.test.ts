@@ -12,6 +12,14 @@ import {
 /** A fixed local noon, so a day shift never lands on a DST boundary. */
 const NOW = new Date(2026, 8, 8, 12, 0, 0);
 
+/**
+ * Stamps built from the local clock rather than written as `...Z` literals: a
+ * fixed UTC instant lands on a different local day depending on the host offset,
+ * which would make these cases pass in UTC CI and fail west of it.
+ */
+const ON_NOW_DAY = new Date(2026, 8, 8, 3, 22, 0).toISOString();
+const MONTHS_EARLIER = new Date(2026, 6, 1, 0, 0, 0).toISOString();
+
 describe("studio date range", () => {
   it("opens on everything, so a fresh launch never hides retained history", () => {
     expect(STUDIO_DEFAULT_DATE_RANGE.preset).toBe("all");
@@ -40,41 +48,43 @@ describe("studio date range", () => {
   });
 
   it("includes both ends of the window", () => {
+    // A preset window is relative, so `now` has to be pinned on every call:
+    // `withinDateRange` re-resolves the preset and would otherwise re-derive the
+    // ends from the wall clock and drift out from under the fixtures.
     const range = resolveDateRange({ preset: "last7" }, NOW);
-    expect(withinDateRange("2026-09-02T00:00:01", range)).toBe(true);
-    expect(withinDateRange("2026-09-08T23:59:59", range)).toBe(true);
-    expect(withinDateRange("2026-09-01T23:59:59", range)).toBe(false);
-    expect(withinDateRange("2026-09-09T00:00:00", range)).toBe(false);
+    expect(withinDateRange("2026-09-02T00:00:01", range, NOW)).toBe(true);
+    expect(withinDateRange("2026-09-08T23:59:59", range, NOW)).toBe(true);
+    expect(withinDateRange("2026-09-01T23:59:59", range, NOW)).toBe(false);
+    expect(withinDateRange("2026-09-09T00:00:00", range, NOW)).toBe(false);
   });
 
   it("keeps a row whose timestamp cannot be read rather than dropping it", () => {
     // Filtering is a narrowing, not a deletion: an unreadable date must not make
     // a row disappear with no way for the reader to find it again.
     const range = resolveDateRange({ preset: "today" }, NOW);
-    expect(withinDateRange(undefined, range)).toBe(true);
-    expect(withinDateRange("not-a-date", range)).toBe(true);
+    expect(withinDateRange(undefined, range, NOW)).toBe(true);
+    expect(withinDateRange("not-a-date", range, NOW)).toBe(true);
   });
 
   it("uses the local calendar day rather than a UTC one", () => {
     // 23:30 local on the 8th is the 9th in UTC; "today" must still hold it.
     const lateLocal = new Date(2026, 8, 8, 23, 30, 0);
     expect(localDayKey(lateLocal)).toBe("2026-09-08");
-    expect(withinDateRange(lateLocal.toISOString(), resolveDateRange({ preset: "today" }, NOW))).toBe(true);
+    expect(withinDateRange(lateLocal.toISOString(), resolveDateRange({ preset: "today" }, NOW), NOW)).toBe(true);
   });
 
   it("judges a Session by last activity rather than when it started", () => {
-    expect(activityTimestamp("2026-09-08T03:22:00.000Z", "2026-07-01T00:00:00.000Z"))
-      .toBe("2026-09-08T03:22:00.000Z");
+    expect(activityTimestamp(ON_NOW_DAY, MONTHS_EARLIER)).toBe(ON_NOW_DAY);
     const today = resolveDateRange({ preset: "today" }, NOW);
-    expect(withinDateRange(activityTimestamp("2026-09-08T03:22:00.000Z", "2026-07-01T00:00:00.000Z"), today, NOW)).toBe(true);
-    expect(withinDateRange("2026-07-01T00:00:00.000Z", today, NOW)).toBe(false);
+    expect(withinDateRange(activityTimestamp(ON_NOW_DAY, MONTHS_EARLIER), today, NOW)).toBe(true);
+    expect(withinDateRange(MONTHS_EARLIER, today, NOW)).toBe(false);
   });
 
   it("hides Artifacts whose observations fall outside the window", () => {
     const artifacts = [{ id: "recent" }, { id: "old" }, { id: "undated" }];
     const observations = [
-      { artifactId: "recent", savedAt: "2026-09-08T03:22:00.000Z" },
-      { artifactId: "old", savedAt: "2026-06-01T00:00:00.000Z" },
+      { artifactId: "recent", savedAt: ON_NOW_DAY },
+      { artifactId: "old", savedAt: MONTHS_EARLIER },
     ];
     const visible = artifactsInDateRange(artifacts, observations, { preset: "today" }, NOW);
     expect(visible.map((artifact) => artifact.id)).toEqual(["recent", "undated"]);
