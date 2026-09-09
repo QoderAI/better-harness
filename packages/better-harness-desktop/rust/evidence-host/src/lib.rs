@@ -1,6 +1,7 @@
 pub mod artifacts;
 pub mod discover;
 pub mod model;
+pub mod memory;
 pub mod paths;
 pub mod platforms;
 pub mod privacy;
@@ -30,6 +31,7 @@ fn dispatch(frame: &RequestFrame) -> Result<String, String> {
                 "protocol": HOST_PROTOCOL_VERSION,
                 "pid": std::process::id(),
                 "platforms": crate::model::PORTED,
+                "capabilities": ["sessions.discover", "artifacts.observe", "memory.discover", "memory.read"],
             }),
         ),
         "sessions.discover" => {
@@ -44,6 +46,17 @@ fn dispatch(frame: &RequestFrame) -> Result<String, String> {
             Ok(result) => encode_ok(frame.id, result),
             Err(message) => encode_error(frame.id, "observe-failed", message),
         },
+        "memory.discover" | "memory.read" => {
+            let result = if frame.method == "memory.read" {
+                memory::read(&frame.params)
+            } else {
+                memory::discover(&frame.params)
+            };
+            match result {
+                Ok(value) => encode_ok(frame.id, value),
+                Err(message) => encode_error(frame.id, "memory-unavailable", message),
+            }
+        }
         "shutdown" => encode_ok(frame.id, json!({ "status": "shutting-down" })),
         other => encode_error(
             frame.id,

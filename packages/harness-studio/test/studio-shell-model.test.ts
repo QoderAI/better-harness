@@ -54,10 +54,11 @@ const EMPTY: StudioConfig = {
 };
 
 describe("Studio control-plane navigation", () => {
-  it("offers the six workbenches with honest availability", () => {
+  it("offers global Memory and the existing workbenches with honest availability", () => {
     const destinations = studioDestinations(EMPTY, undefined, commonT);
 
     expect(destinations.map((destination) => destination.id)).toEqual([
+      "memory",
       "customizations",
       "sessions",
       "commits",
@@ -87,7 +88,8 @@ describe("Studio control-plane navigation", () => {
       availability: "foundation",
       status: "Project required",
     });
-    expect(capabilitySummary(EMPTY, commonT)).toEqual({ ready: 1, partial: 1, foundation: 4 });
+    expect(capabilitySummary(EMPTY, commonT)).toEqual({ ready: 2, partial: 1, foundation: 4 });
+    expect(studioProjectGateRequired({ ...EMPTY, workspaceDiscoveryEnabled: true }, false, "memory-sources")).toBe(false);
   });
 
   it("routes configured artifacts to Debugger, Compare, and Inspector surfaces", () => {
@@ -125,7 +127,7 @@ describe("Studio control-plane navigation", () => {
       availability: "ready",
       status: "12 definitions",
     });
-    expect(capabilitySummary(config, commonT)).toEqual({ ready: 6, partial: 0, foundation: 0 });
+    expect(capabilitySummary(config, commonT)).toEqual({ ready: 7, partial: 0, foundation: 0 });
   });
 
   it("treats an artifact directory as independent of every other input", () => {

@@ -1,4 +1,5 @@
 import { readAcpConversation, listAcpConversations } from "./acp-conversation-log.js";
+import { memoryRoute } from "./memory-routes.js";
 import { resolve } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -253,6 +254,7 @@ async function route(
   experimentRuns: Map<string, AbortController>,
 ): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
+  if (await memoryRoute(request, response, state, options.memoryHome, options.memoryProvider)) return;
   if (request.method === "GET" && url.pathname === "/api/config") {
     const defaultAcpAgent = options.acpAgent
       ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)?.agent;

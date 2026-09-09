@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { useTranslation } from "react-i18next";
 import type { Icon } from "@phosphor-icons/react";
 import { Binoculars } from "@phosphor-icons/react/Binoculars";
+import { Brain } from "@phosphor-icons/react/Brain";
 import { BugBeetle } from "@phosphor-icons/react/BugBeetle";
 import { CaretUpDown } from "@phosphor-icons/react/CaretUpDown";
 import { Flask } from "@phosphor-icons/react/Flask";
@@ -18,6 +19,8 @@ import { DateRangeFilter } from "./DateRangeFilter.js";
 import type { StudioArea, StudioDestination } from "../studio-shell-model.js";
 
 const VIEW_ICONS: Record<StudioArea, Icon> = {
+  "memory-sources": Brain,
+  memory: Brain,
   customizations: PuzzlePiece,
   sessions: Binoculars,
   commits: GitBranch,
@@ -56,7 +59,7 @@ export function ProjectSidebar(props: {
   // The sidebar now carries one level, so the roving tab stop covers the View
   // rows only. Projects moved to the switcher, which is a menu button with its
   // own keyboard contract.
-  const viewDestinations = props.destinations.filter((destination) => destination.id !== "customizations");
+  const viewDestinations = props.destinations.filter((destination) => destination.id !== "customizations" && destination.id !== "memory");
   const orderedIds = viewDestinations.map((destination) => `view:${destination.id}`);
   const selectedNavigationId = props.current === null ? "" : `view:${props.current}`;
   const [focusedNavigationId, setFocusedNavigationId] = useState(selectedNavigationId);
@@ -190,7 +193,7 @@ export function ProjectSidebar(props: {
 
     {/* The Project says where to look; this says when. Both scope every View
         below, which is why neither is one of the rows. */}
-    <DateRangeFilter range={props.dateRange} onChange={props.onDateRangeChange} />
+    {props.current !== "memory" && props.current !== "memory-sources" && <DateRangeFilter range={props.dateRange} onChange={props.onDateRangeChange} />}
 
     <nav aria-label={t("sidebar.navAria")} onKeyDown={onNavigationKeyDown}>
       <section
@@ -204,7 +207,7 @@ export function ProjectSidebar(props: {
 
     {/* Settings closes the sidebar's column: a full-width row pinned to the
         bottom, the position a macOS source list uses for library-wide controls. */}
-    <div className="studio-sidebar-customizations">{props.customizations}</div>
+    <div className="studio-sidebar-customizations"><button type="button" aria-current={props.current === "memory-sources" || props.current === "memory" ? "page" : undefined} onClick={() => props.onSelectView("memory")}><Brain aria-hidden="true" size={15} />{t("area.memory")}</button>{props.customizations}</div>
     <footer className="studio-sidebar-footer">{props.settings}</footer>
   </aside>;
 }

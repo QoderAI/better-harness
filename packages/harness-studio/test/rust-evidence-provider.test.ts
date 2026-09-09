@@ -38,6 +38,23 @@ function fakeHostProcess(onRequest: (request: { id: number; method: string }) =>
 }
 
 describe("Rust evidence host client", () => {
+  it("routes Memory calls through the injected native transport", async () => {
+    const methods: string[] = [];
+    const child = fakeHostProcess(request => { methods.push(request.method); return { native: true }; });
+    const host = createRustEvidenceHost({ executable: "/native/host", spawnProcess: () => child as never });
+    await expect(host.discoverMemory({ workspace: "/project" })).resolves.toEqual({ native: true });
+    await expect(host.readMemory({ id: "document", scope: "project" })).resolves.toEqual({ native: true });
+    expect(methods).toEqual(["memory.discover", "memory.read"]);
+    await host.close();
+  });
+
+  it("rejects a timed out Memory call rather than leaving its promise pending", async () => {
+    const child = fakeHostProcess(() => undefined);
+    const host = createRustEvidenceHost({ executable: "/native/host", timeoutMs: 10, spawnProcess: () => child as never });
+    await expect(host.discoverMemory({})).rejects.toThrow("timed out");
+    expect(child.killed).toBe(true);
+    await host.close();
+  });
   it("describes the evidence protocol over stdio", async () => {
     const child = fakeHostProcess((request) => {
       if (request.method === "host.describe") {

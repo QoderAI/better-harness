@@ -13,6 +13,8 @@ import { ArtifactView } from "./artifacts/ArtifactView.js";
 import { CompareView } from "./CompareView.js";
 import { CompareLiveView } from "./CompareLiveView.js";
 import { CustomizationView } from "./CustomizationView.js";
+import { MemoryView } from "./MemoryView.js";
+import { MemoryWorkbench } from "./memory-review/MemoryWorkbench.js";
 import { ExperimentView } from "./experiment/ExperimentView.js";
 import { GitHistoryView } from "./GitHistoryView.js";
 import { RunView } from "./run/RunView.js";
@@ -57,6 +59,8 @@ import {
 } from "./studio-shell-model.js";
 
 const STUDIO_AREAS: readonly StudioArea[] = [
+  "memory",
+  "memory-sources",
   "customizations",
   "sessions",
   "commits",
@@ -582,6 +586,8 @@ export function App(): React.JSX.Element {
         {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
       <div className={`studio-surface studio-surface-${area}`}>
+        {area === "memory-sources" && <MemoryView key={`memory-${workspaceRevision}`} />}
+        {area === "memory" && <MemoryWorkbench onSources={() => openArea("memory-sources")} />}
         {showWelcome ? <WorkspaceWelcome onWorkspaceChanged={async () => {
           const projectId = await workspaceChanged();
           globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
@@ -593,9 +599,9 @@ export function App(): React.JSX.Element {
         {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         </>}
       </div>
-      {area === "debugger" ? <footer className="studio-status-bar"><strong>{activeProject?.label}</strong><div id="studio-debugger-status" /></footer> : <StatusBar
+      {area === "memory" ? null : area === "debugger" ? <footer className="studio-status-bar"><strong>{activeProject?.label}</strong><div id="studio-debugger-status" /></footer> : <StatusBar
         scope={activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
-        status={dateRange.preset !== "all" && (area === "sessions" || area === "artifacts") ? "" : current.status}
+        status={area === "memory-sources" ? t("memory.readonly") : dateRange.preset !== "all" && (area === "sessions" || area === "artifacts") ? "" : current.status}
         config={config}
         dateRange={dateRange}
       />}
