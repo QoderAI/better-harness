@@ -1,0 +1,52 @@
+{
+  "project": "https://github.com/vercel/ai-elements",
+  "copyright": "Copyright 2023 Vercel, Inc.",
+  "license": "Apache-2.0",
+  "retrieved": "2026-09-09",
+  "cli": "ai-elements@1.9.0",
+  "command": "npx ai-elements@latest add conversation message chain-of-thought tool confirmation suggestion",
+  "files": [
+    {
+      "name": "conversation",
+      "url": "https://elements.ai-sdk.dev/api/registry/conversation.json",
+      "sha256": "ac2589ea88b2a231c049a639d150e01af4ecd3022677a53fc21f3c3e3af3b150"
+    },
+    {
+      "name": "message",
+      "url": "https://elements.ai-sdk.dev/api/registry/message.json",
+      "sha256": "db7d416e1515b8e3f39390119192bdd4f11647ed8bae92d1588726dc4227b568"
+    },
+    {
+      "name": "chain-of-thought",
+      "url": "https://elements.ai-sdk.dev/api/registry/chain-of-thought.json",
+      "sha256": "5ccfddc925c98161c2508f63632380bb9976bfe95ffede4b9332451dcb6f0b70"
+    },
+    {
+      "name": "tool",
+      "url": "https://elements.ai-sdk.dev/api/registry/tool.json",
+      "sha256": "b142e6ab3889bb9e8462b5d9af55f7880082ed60f98f0d3234eabdafd3ab32ca"
+    },
+    {
+      "name": "confirmation",
+      "url": "https://elements.ai-sdk.dev/api/registry/confirmation.json",
+      "sha256": "68e5fa3bc8961531bfb4f6d004a01562047d0544e210256420c6f6c413337cea"
+    },
+    {
+      "name": "suggestion",
+      "url": "https://elements.ai-sdk.dev/api/registry/suggestion.json",
+      "sha256": "4fbf7d90cac64b771dd4e0fa99d7099e4d102aed1249333ef4fcdf9456807a00"
+    },
+    {
+      "name": "prompt-input",
+      "url": "https://elements.ai-sdk.dev/api/registry/prompt-input.json",
+      "sha256": "9402979f8ce84d58e889971370567a8f97f9940154862fa43c52c71f54a0ede2",
+      "method": "Registry source adapted manually; controlled ACP drafts retain submission authority"
+    }
+  ],
+  "suggestions": {
+    "url": "https://github.com/vercel/ai-elements/pull/448",
+    "statusAtRetrieval": "open, unmerged",
+    "patchSha256": "1782ab3121b019da26c902c1ebc9985e088ccea6a195c09beecbe3d0490335ef",
+    "adaptation": "Caret-bound matching and plain-text insertion; fixed Studio command and session-reference sources"
+  }
+}

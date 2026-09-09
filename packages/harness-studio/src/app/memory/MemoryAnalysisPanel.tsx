@@ -1,3 +1,4 @@
+import { PromptInput, PromptInputFooter, PromptInputHeader, PromptInputSubmit, PromptInputTextarea, PromptInputTools } from "../components/ai-elements/prompt-input.js";
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from '@phosphor-icons/react/X';
@@ -10,6 +11,7 @@ import { createAcpSessionActions } from '../run/acp-session-actions.js';
 import { postAcpRunAction } from '../run/acp-run-actions.js';
 import { applyHarnessRunEvent, initialRunState, settleRunState, type HarnessRunState } from '../run/run-store.js';
 import { streamRun } from '../run/stream-run.js';
+import { Suggestion, Suggestions } from '../components/ai-elements/suggestion.js';
 
 export interface MemoryAcpAgent { id: string; label: string; available: boolean; unavailableReason?: string }
 export function MemoryAnalysisPanel({ snapshot, entry, agents, maxBytes, onClose, onReveal }: { snapshot?: MemorySnapshot; entry?: MemoryEntry; agents: MemoryAcpAgent[]; maxBytes: number; onClose: () => void; onReveal: (snapshot: MemorySnapshot, entry?: MemoryEntry) => void }): React.JSX.Element {
@@ -71,16 +73,21 @@ export function MemoryAnalysisPanel({ snapshot, entry, agents, maxBytes, onClose
     <div className="memory-analysis-toolbar"><button ref={close} type="button" onClick={onClose} aria-label={t('memory.closeAnalysis')}><X size={15} /></button></div>
     {state.runId ? <AcpSessionStream compact showComposer={false} state={displayState} prompt="" actions={actions} onPermission={(requestId, optionId) => postAcpRunAction(state.runId!, { requestId, optionId })} /> : <div className="memory-analysis-transcript" />}
     <footer className="memory-analysis-composer">
-      {active && state.conversation && !state.acp.prepared && actions ? <AcpComposer key={state.runId} compact context={context} state={state} actions={actions} /> : <div className="acp-composer">
-        {context}
-        <textarea ref={input} rows={3} aria-label={t('memory.analysisInput')} placeholder={t('memory.analysisPlaceholder')} value={draft} maxLength={8192} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void sendInitial(); } }} />
-        <div className="acp-composer-actions"><button className="primary" type="button" disabled={!state.acp.prepared || !active || sending || !draft.trim()} onClick={() => void sendInitial()}>{t('memory.sendAnalysis')}</button></div>
+      {(!state.runId || state.acp.prepared) && <Suggestions className="memory-analysis-suggestions" aria-label={t('memory.analysisSuggestions')}>
+        {(['review', 'conflicts'] as const).map(kind => <Suggestion key={kind} suggestion={t(`memory.suggestions.${kind}.prompt`)} disabled={sending} onClick={value => { setDraft(value); input.current?.focus(); }}>{t(`memory.suggestions.${kind}.label`)}</Suggestion>)}
+      </Suggestions>}
+      {active && state.conversation && !state.acp.prepared && actions ? <AcpComposer key={state.runId} compact context={context} state={state} actions={actions} toolbar={<AcpSessionSettings session={state.acp} runId={state.runId} active={active} actions={actions} />} /> : <div className="acp-composer">
+        <PromptInput onSubmit={event => { event.preventDefault(); void sendInitial(); }}>
+          {context && <PromptInputHeader>{context}</PromptInputHeader>}
+          <PromptInputTextarea ref={input} rows={3} aria-label={t('memory.analysisInput')} placeholder={t('memory.analysisPlaceholder')} value={draft} maxLength={8192} onValueChange={setDraft} />
+          <PromptInputFooter><PromptInputTools>
+            {active && actions ? <AcpSessionSettings session={state.acp} runId={state.runId} active={active} actions={actions} /> : <select aria-label={t('memory.analysisAgent')} value={agentId} disabled={active} onChange={event => setAgentId(event.target.value)}>{!agents.some(agent => agent.available) && <option value="">{t('memory.analysisUnavailable')}</option>}{agents.map(agent => <option key={agent.id} value={agent.id} disabled={!agent.available}>{agent.label}</option>)}</select>}
+          </PromptInputTools>
+          {!active ? <button className="primary" type="button" disabled={!snapshot || !agentId || tooLarge} onClick={() => void connect()}>{t('memory.connectAgent')}</button> : <PromptInputSubmit label={t('memory.sendAnalysis')} pending={sending} disabled={!state.acp.prepared || !active || sending || !draft.trim()} />}
+          </PromptInputFooter>
+        </PromptInput>
       </div>}
-      {active && actions && <div className="acp-composer-toolbar"><AcpSessionSettings session={state.acp} runId={state.runId} active={active} actions={actions} /></div>}
-      <div className="memory-acp-launcher">
-        <select aria-label={t('memory.analysisAgent')} value={agentId} disabled={active} onChange={event => setAgentId(event.target.value)}>{!agents.some(agent => agent.available) && <option value="">{t('memory.analysisUnavailable')}</option>}{agents.map(agent => <option key={agent.id} value={agent.id} disabled={!agent.available}>{agent.label}</option>)}</select>
-        {active ? <button type="button" onClick={() => void stop()}>{t('memory.closeSession')}</button> : <button type="button" disabled={!snapshot || !agentId || tooLarge} onClick={() => void connect()}>{t('memory.connectAgent')}</button>}
-      </div>
+      {active && <div className="acp-composer-caption"><span>{agents.find(agent => agent.id === agentId)?.label}</span><button type="button" onClick={() => void stop()}>{t('memory.closeSession')}</button></div>}
       {sendError && <p role="alert">{sendError}</p>}
       {!active && tooLarge && <p role="status">{t('memory.analysisTooLarge')}</p>}
       {!selection && <p>{t('memory.selectForAnalysis')}</p>}

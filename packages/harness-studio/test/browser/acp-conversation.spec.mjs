@@ -140,11 +140,11 @@ test("long transcript preserves reading and expanded tool state across view chan
   const scroll = alpha.locator(".acp-session-scroll");
   await scroll.evaluate(node => { node.scrollTop = 0; });
   await expect(alpha.getByRole("button", { name: "Back to latest" })).toBeVisible();
-  await alpha.locator(".tool-card > summary").click();
-  await expect(alpha.locator(".tool-card")).toHaveAttribute("open", "");
+  await alpha.locator(".tool-card > .ai-tool-header").click();
+  await expect(alpha.locator(".tool-card")).toHaveAttribute("data-state", "open");
   await page.getByRole("button", { name: "Sessions", exact: true }).click();
   await page.getByRole("button", { name: "Compare", exact: true }).click();
-  await expect(alpha.locator(".tool-card")).toHaveAttribute("open", "");
+  await expect(alpha.locator(".tool-card")).toHaveAttribute("data-state", "open");
   expect(await scroll.evaluate(node => node.scrollTop)).toBeLessThan(500);
   await draft(alpha).fill("next"); await draft(alpha).press("Enter"); await ready(alpha);
   await expect.poll(() => scroll.evaluate(node => node.scrollHeight - node.scrollTop - node.clientHeight)).toBeLessThanOrEqual(24);
@@ -161,4 +161,89 @@ test("long transcript preserves reading and expanded tool state across view chan
   await page.screenshot({ animations: "disabled", path: info.outputPath("conversation-200percent.png") });
   await alpha.getByRole("button", { name: "Close session", exact: true }).click();
   await beta.getByRole("button", { name: "Close session", exact: true }).click();
+});
+
+test("prompt completions preserve caret, IME and drafts; Streamdown formats before completion", async ({ page }, info) => {
+  const errors = [], remoteRequests = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+  page.on("request", request => { if (request.url().includes("example.com")) remoteRequests.push(request.url()); });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const [alpha, beta] = await start(page, "markdown composer fixture");
+  const response = alpha.locator(".ai-message-response").filter({ hasText: "Composer review" });
+  await expect(response.getByRole("heading", { name: "Composer review" })).toBeVisible();
+  await expect(response.locator("strong").filter({ hasText: "重点" })).toBeVisible();
+  await expect(response.getByRole("cell", { name: "Ready", exact: true })).toBeVisible();
+  await expect(response.locator(".highlighted-code")).toHaveText("const ready = true;");
+  await expect(response.locator(".highlighted-code")).toHaveAttribute("data-highlight-state", "highlighted");
+  await expect(alpha.locator('.streaming-message[aria-busy=true]').filter({ hasText: 'Composer review' })).toHaveCount(1);
+  expect(await page.evaluate(() => window.fixtureInjected)).toBeUndefined();
+  await expect(response.locator('a[href^="javascript:"]')).toHaveCount(0);
+  await expect(response.locator("img,script")).toHaveCount(0);
+  await expect(response.getByRole("link", { name: "Docs", exact: true })).toHaveAttribute("rel", "noreferrer noopener");
+  expect(remoteRequests).toEqual([]);
+  const input = draft(alpha);
+  await input.fill("Inspect @src later");
+  await input.evaluate(node => node.setSelectionRange(12, 12));
+  await expect(alpha.getByRole("listbox", { name: "Session files" })).toBeVisible();
+  await expect(alpha.getByRole("option").first()).toContainText("src/composer.tsx");
+  await input.press("Tab");
+  await expect(input).toHaveValue("Inspect @src/composer.tsx later");
+  await expect(beta.locator('.acp-composer textarea')).toHaveValue("");
+  await input.fill("Earlier text\n/rev HEAD");
+  await input.evaluate(node => node.setSelectionRange(17, 17));
+  await expect(alpha.getByRole("listbox", { name: "Commands" })).toBeVisible();
+  const activeId = await input.getAttribute("aria-activedescendant");
+  expect(await page.locator(`[id="${activeId}"]`).getAttribute("aria-selected")).toBe("true");
+  await input.dispatchEvent("compositionstart");
+  await input.dispatchEvent("keydown", { key: "Enter", keyCode: 229, isComposing: true });
+  await expect(input).toHaveValue("Earlier text\n/rev HEAD");
+  await input.dispatchEvent("compositionend");
+  await input.fill("/rev"); await input.press("Escape");
+  await expect(alpha.getByRole("listbox")).toHaveCount(0);
+  await input.fill("/review"); await input.press("ArrowUp"); await input.press("Enter");
+  await expect(input).toHaveValue("/review ");
+  await input.fill("/re"); await input.press("ArrowDown");
+  await expect(alpha.getByRole('listbox', { name: 'Commands' }).getByRole('option', { selected: true })).toContainText('/refactor');
+  await input.press('Tab'); await expect(input).toHaveValue('/refactor ');
+  await input.fill('/re'); await alpha.getByRole('option').filter({ hasText: '/review' }).click();
+  await expect(input).toHaveValue('/review '); await expect(input).toBeFocused();
+  await expect(alpha.locator(".acp-message-queue")).toHaveCount(0);
+  await input.fill("/nothing"); await expect(alpha.getByRole("status").filter({ hasText: "No matching" })).toBeVisible();
+  await input.press("Escape");
+  await input.fill(Array.from({ length: 30 }, (_, index) => `Line ${index}`).join("\n"));
+  expect(await input.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+  await input.fill("/rev");
+  for (const [name, width, height] of [["wide", 1440, 900], ["compact", 1024, 768], ["narrow", 390, 844]]) {
+    await page.setViewportSize({ width, height });
+    await input.scrollIntoViewIfNeeded(); await input.focus();
+    await expect(alpha.getByRole("listbox", { name: "Commands" })).toBeVisible();
+    const bounds = await alpha.locator(".ai-prompt-suggestions").boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width + 1); expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await alpha.locator(".ai-prompt-input").evaluate(node => getComputedStyle(node).outlineStyle)).toBe("solid");
+    for (const theme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      await page.screenshot({ animations: "disabled", path: info.outputPath(`composer-${name}-${theme}.png`) });
+    }
+  }
+  await input.press("Escape"); await input.fill("");
+  await alpha.getByRole("button", { name: "Finish Markdown", exact: true }).click();
+  await beta.getByRole("button", { name: "Finish Markdown", exact: true }).click();
+  await ready(alpha); await ready(beta);
+  await expect(response.locator("strong").filter({ hasText: "Finished." })).toHaveCount(1);
+  await expect(response.locator(".highlighted-code")).toHaveText("const ready = true;");
+  // Dropping a text file follows the same ACP attachment path as selection and paste.
+  await alpha.locator(".ai-prompt-input").evaluate(node => {
+    const dataTransfer = new DataTransfer(); dataTransfer.items.add(new File(["drop evidence"], "drop.txt", { type: "text/plain" }));
+    node.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+  });
+  await expect(alpha.locator(".acp-attachments")).toContainText("drop.txt");
+  await input.fill("@drop"); await input.press("Enter"); await expect(input).toHaveValue("@drop.txt ");
+  await input.fill("attachment request"); await input.press("Enter"); await ready(alpha);
+  await expect(alpha).toContainText("turn:2 session:fixture-session blocks:2");
+  await alpha.getByRole("button", { name: "Close session", exact: true }).click();
+  await beta.getByRole("button", { name: "Close session", exact: true }).click();
+  expect(errors).toEqual([]);
 });

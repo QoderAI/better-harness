@@ -8,6 +8,11 @@ export const common = {
     frontmatter: "Frontmatter",
     analysisInput: "Analysis request",
     analysisPlaceholder: "Review this memory and suggest improvements.",
+    analysisSuggestions: "Analysis suggestions",
+    suggestions: {
+      review: { label: "Suggest improvements", prompt: "Review this memory and suggest improvements with source line references." },
+      conflicts: { label: "Find conflicts", prompt: "Find contradictions, outdated guidance and missing scope in this memory. Cite the source lines for each finding." },
+    },
     sendAnalysis: "Send",
 
     analysisRequest: "Analyze “{{title}}” and suggest improvements with source line references.", openEditors: "Open editors", closeEditor: "Close {{title}}", pickFile: "Open a memory from the explorer.",

@@ -1,3 +1,4 @@
+import { PromptInput, PromptInputFooter, PromptInputTextarea } from "./components/ai-elements/prompt-input.js";
 import { AcpConversationHistory } from "./run/AcpConversationHistory.js";
 import { useSessionOwnedState } from "./run/session-view-store.js";
 import { createAcpSessionActions } from "./run/acp-session-actions.js";
@@ -161,20 +162,20 @@ export function CompareLiveView(props: {
     {closeError && <p role="alert">{closeError}</p>}
     {!comparison && <AcpConversationHistory project={props.project} />}
     {comparison && <div className="acp-compare-toolbar"><SharedTreeNote /><button type="button" onClick={() => void newComparison()}>{t("live.newComparison")}</button></div>}
-    <form
+    <PromptInput
       hidden={comparison !== undefined}
       className="live-compare-composer"
       onSubmit={(event) => { event.preventDefault(); void launch(); }}
     >
-      <textarea
+      <PromptInputTextarea
         className="live-compare-prompt"
         value={prompt}
         rows={2}
         aria-label={t("live.promptLabel")}
         placeholder={t("live.promptPlaceholder")}
-        onChange={(event) => setPrompt(event.target.value)}
+        onValueChange={setPrompt}
       />
-      <div className="live-compare-bar">
+      <PromptInputFooter className="live-compare-bar">
         <AgentPicker
           agents={props.agents}
           chosen={chosen}
@@ -209,8 +210,8 @@ export function CompareLiveView(props: {
             ? t(comparison?.lanes.some((lane) => lane.state.acp.prepared) ? "live.configuring" : "live.running")
             : chosen.length < MIN_LANES ? t("live.runIdle") : t("live.run", { count: chosen.length })}</span>
         </button>
-      </div>
-    </form>
+      </PromptInputFooter>
+    </PromptInput>
 
     {comparison === undefined
       ? <p className="artifact-status" role="status">{t("live.idle")}</p>

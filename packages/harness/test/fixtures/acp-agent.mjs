@@ -125,6 +125,17 @@ const app = agent({ name: "better-harness-acp-fixture" })
       await notify({ sessionUpdate: "available_commands_update", availableCommands: [{ name: "review", description: "Review changes", input: { hint: "revision" } }] });
       await notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `turn:${turnCount} session:${sessionId} blocks:${context.params.prompt.length} model:${sessionConfig.model ?? "fixture-default"}\n` } });
       await notify({ sessionUpdate: "tool_call", toolCallId: `tool-${turnCount}`, title: "Read conversation evidence", kind: "read", status: "in_progress" });
+      if (text.includes("markdown composer fixture")) {
+        await notify({ sessionUpdate: "available_commands_update", availableCommands: [{ name: "review", description: "Review changes", input: { hint: "revision" } }, { name: "refactor", description: "Refactor selected code" }] });
+        await notify({ sessionUpdate: "tool_call_update", toolCallId: `tool-${turnCount}`, locations: [{ path: "src/composer.tsx", line: 1 }] });
+        const gate = context.client.request(methods.client.session.requestPermission, {
+          sessionId, toolCall: { toolCallId: "markdown-gate", title: "Finish Markdown", kind: "read", status: "pending" },
+          options: [{ optionId: "finish-markdown", name: "Finish Markdown", kind: "allow_once" }],
+        });
+        await notify({ sessionUpdate: "agent_message_chunk", messageId: "markdown-response", content: { type: "text", text: "\n## Composer review\n\n中文**重点**说明。\n\n| Item | Status |\n| --- | --- |\n| Input | Ready |\n\n[Docs](https://example.com/docs)\n\n![Remote image](https://example.com/never-load.png)\n\n<script>window.fixtureInjected=true</script>\n\n[Unsafe](javascript:alert(1))\n\n```typescript\nconst ready = true;\n" } });
+        const decision = await gate;
+        if (decision.outcome.outcome === "selected") await notify({ sessionUpdate: "agent_message_chunk", messageId: "markdown-response", content: { type: "text", text: "```\n\n**Finished.**" } });
+      }
       if (text.includes("permission")) {
         await Promise.all([1, 2].map(index => context.client.request(methods.client.session.requestPermission, {
           sessionId, toolCall: { toolCallId: `permission-${turnCount}-${index}`, title: `Permission ${index}`, kind: "read", status: "pending" },

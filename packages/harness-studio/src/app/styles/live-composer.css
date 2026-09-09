@@ -11,23 +11,27 @@
   box-shadow: var(--shadow-overlay);
 }
 .live-composer::backdrop { background: var(--color-overlay); }
-.live-composer form { display: grid; gap: var(--space-lg); padding: var(--space-lg); }
+.live-composer form { margin: var(--space-lg); }
 .live-composer header,
 .live-composer footer { display: flex; align-items: center; gap: var(--space-sm); }
-.live-composer header { justify-content: space-between; }
+.live-composer header { justify-content: space-between; padding: var(--space-lg) var(--space-lg) 0; }
 .live-composer h2 { margin: 0; font-size: var(--type-subhead-size); line-height: var(--type-subhead-line); }
 .live-composer header > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.live-composer-agent { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--space-md); color: var(--color-text-muted); }
-.live-composer :is(select, textarea) {
+.live-composer-agent { display: flex; align-items: center; min-width: 0; flex: 1; color: var(--color-text-muted); }
+.live-composer-agent > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.live-composer select {
   width: 100%;
   min-width: 0;
   margin: 0;
-  border: 1px solid var(--color-border-strong);
+  border: 0;
   border-radius: var(--radius-xs);
   padding: var(--space-sm);
   color: var(--color-text);
-  background: var(--color-surface);
+  background: transparent;
 }
 .live-composer select { min-height: var(--control-height); padding-block: var(--space-xs); }
-.live-composer textarea { resize: vertical; max-height: 40dvh; }
 .live-composer footer { justify-content: flex-end; }
+@media (max-width: 760px) {
+  .live-composer .ai-prompt-footer { flex-wrap: wrap; }
+  .live-composer-agent { flex-basis: 100%; }
+}

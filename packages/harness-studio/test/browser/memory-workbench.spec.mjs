@@ -41,9 +41,16 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     await page.getByRole('tab', { name: 'General Tips', exact: true }).click();
     await findOpen(page, 'General Tips');
     await expect(page.getByRole('tab')).toHaveCount(2); expect(reads).toHaveLength(1);
-    await page.screenshot({ path: info.outputPath(`memory-editor-${layout.name}.png`) });
+    await page.screenshot({ animations: "disabled", path: info.outputPath(`memory-editor-${layout.name}.png`) });
     await page.getByRole('button', { name: 'AI analysis', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Analysis request', exact: true })).toBeFocused();
+    const suggestion = page.getByRole('button', { name: 'Find conflicts', exact: true });
+    await suggestion.focus(); await page.keyboard.press('Enter');
+    const request = page.getByRole('textbox', { name: 'Analysis request', exact: true });
+    await expect(request).toBeFocused();
+    await expect(request).toHaveValue('Find contradictions, outdated guidance and missing scope in this memory. Cite the source lines for each finding.');
+    await expect(page.getByRole('button', { name: 'Connect Agent', exact: true })).toBeVisible();
+    await expect(page.locator('.memory-analysis .acp-session-stream')).toHaveCount(0);
     await page.getByRole('textbox', { name: 'Analysis request', exact: true }).fill('Before connection');
     await page.getByRole('button', { name: 'Connect Agent', exact: true }).click();
     const panel = page.locator('.memory-analysis');
@@ -75,11 +82,16 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
       await expect(panel.locator('.memory-analysis-source')).toContainText('General Tips');
       await expect(panel.locator('.streaming-message').last()).toContainText('turn:3');
     }
-    await draft.focus(); expect(await draft.evaluate(node => getComputedStyle(node).outlineStyle)).not.toBe('none');
+    await draft.focus(); expect(await panel.locator('.ai-prompt-input').evaluate(node => getComputedStyle(node).outlineStyle)).toBe('solid');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: info.outputPath(`memory-acp-${layout.name}.png`) });
+    await page.screenshot({ animations: "disabled", path: info.outputPath(`memory-acp-${layout.name}.png`) });
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-    await page.screenshot({ path: info.outputPath(`memory-acp-dark-${layout.name}.png`) });
+    await expect.poll(() => panel.locator('.ai-tool-header').last().evaluate(node => {
+      const probe = document.createElement('span'); probe.style.color = 'var(--color-text-muted)'; node.append(probe);
+      const expected = getComputedStyle(probe).color; probe.remove();
+      return getComputedStyle(node).color === expected;
+    })).toBe(true);
+    await page.screenshot({ animations: "disabled", path: info.outputPath(`memory-acp-dark-${layout.name}.png`) });
     await panel.getByRole('button', { name: 'Close session', exact: true }).click();
     await expect(panel.getByRole('button', { name: 'Connect Agent', exact: true })).toBeVisible();
     await panel.getByRole('button', { name: 'Close analysis' }).focus(); await page.keyboard.press('Escape');
@@ -215,5 +227,5 @@ test('memory dividers resize with pointer and keyboard and frontmatter starts co
     await sash.dblclick();
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: info.outputPath('memory-resized.png') });
+  await page.screenshot({ animations: "disabled", path: info.outputPath('memory-resized.png') });
 });

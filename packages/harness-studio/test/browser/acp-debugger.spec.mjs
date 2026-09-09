@@ -236,7 +236,20 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
   await page.keyboard.press("Escape");
   await expect(runTwo).toBeEnabled();
 
-  await runTwo.click();
+  for (const layout of layouts) {
+    await page.setViewportSize(layout);
+    await prompt.focus();
+    const inputBounds = await page.locator('.live-compare-composer').boundingBox();
+    expect(inputBounds.x).toBeGreaterThanOrEqual(0);
+    expect(inputBounds.x + inputBounds.width).toBeLessThanOrEqual(layout.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(layout.width);
+    expect(await page.locator('.live-compare-composer').evaluate(node => getComputedStyle(node).outlineStyle)).toBe('solid');
+    await page.screenshot({ path: testInfo.outputPath(`compare-input-${layout.name}.png`), animations: 'disabled' });
+  }
+  await page.setViewportSize(layouts[0]);
+  await prompt.dispatchEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true });
+  await expect(page.locator('.live-compare-lane')).toHaveCount(0);
+  await prompt.press('Enter');
   const lanes = page.locator(".live-compare-lane");
   await expect(lanes).toHaveCount(2);
   await expect(lanes.nth(0)).toContainText("Alpha ACP");
@@ -357,6 +370,7 @@ test("keeps the compact run dialog bounded and restores keyboard focus", async (
     const task = dialog.getByRole("textbox", { name: "Task", exact: true });
     await expect(dialog).toBeVisible();
     await expect(task).toBeFocused();
+    expect((await dialog.getByRole('combobox', { name: 'Agent' }).boundingBox()).width).toBeGreaterThanOrEqual(120);
     await task.fill("   ");
     await expect(dialog.getByRole("button", { name: "Run", exact: true })).toBeDisabled();
     await task.fill("hi");

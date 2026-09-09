@@ -1,3 +1,4 @@
+import { PromptInput, PromptInputFooter, PromptInputTextarea } from "../components/ai-elements/prompt-input.js";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { LiveAgentChoice } from "./live-agent-choices.js";
@@ -42,15 +43,14 @@ export function LiveRunComposer(props: {
       const bounds = event.currentTarget.getBoundingClientRect();
       if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) props.onClose();
     }}>
-    <form onSubmit={(event) => { event.preventDefault(); if (canRun) props.onRun(); }}>
       <header><h2 id="live-composer-title">{t("composer.title")}</h2>{props.projectLabel && <span title={props.projectLabel}>{props.projectLabel}</span>}</header>
-      <label className="live-composer-agent"><span>{t("composer.agent")}</span>
+    <PromptInput onSubmit={(event) => { event.preventDefault(); if (canRun) props.onRun(); }}>
+      <PromptInputTextarea ref={input} value={props.prompt} aria-label={t("composer.promptLabel")} placeholder={t("composer.promptPlaceholder")} onValueChange={props.onPrompt} rows={4} />
+      <PromptInputFooter><label className="live-composer-agent"><span>{t("composer.agent")}</span>
         <select value={props.selectedAgent?.value ?? ""} onChange={(event) => props.onAgent(event.target.value)}>
           {props.agents.map((choice) => <option key={choice.value} value={choice.value} disabled={!choice.available} title={choice.detail}>{choice.available ? choice.label : t("composer.agentUnavailable", { agent: choice.label })}</option>)}
         </select>
-      </label>
-      <textarea ref={input} value={props.prompt} aria-label={t("composer.promptLabel")} placeholder={t("composer.promptPlaceholder")} onChange={(event) => props.onPrompt(event.target.value)} rows={4} />
-      <footer>{props.onChooseSession && <button type="button" disabled={!canRun} onClick={props.onChooseSession}>{t("connection.title")}</button>}<button type="button" onClick={props.onClose}>{t("composer.cancel")}</button><button type="submit" className="primary" disabled={!canRun}>{t("composer.run")}</button></footer>
-    </form>
+      </label>{props.onChooseSession && <button type="button" disabled={!canRun} onClick={props.onChooseSession}>{t("connection.title")}</button>}<button type="button" onClick={props.onClose}>{t("composer.cancel")}</button><button type="submit" className="primary" disabled={!canRun}>{t("composer.run")}</button></PromptInputFooter>
+    </PromptInput>
   </dialog>;
 }

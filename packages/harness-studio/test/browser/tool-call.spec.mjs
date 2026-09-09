@@ -604,8 +604,8 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
   await expect(page.getByText("Run finished", { exact: true })).toBeVisible();
 
   await expect(page.locator(".studio-status-bar").getByRole("status")).toContainText("Run finished");
-  const card = page.locator("details.tool-card");
-  await expect(card.locator(".tool-status")).toHaveText("Failed");
+  const card = page.locator(".tool-card");
+  await expect(card.locator(".ai-tool-status")).toHaveText("Failed");
   const colors = await page.evaluate(() => {
     const resolveColor = (token) => {
       const probe = document.createElement("span");
@@ -616,7 +616,7 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
       return value;
     };
     return {
-      toolIdentity: getComputedStyle(document.querySelector(".tool-icon")).color,
+      toolIdentity: getComputedStyle(document.querySelector(".ai-tool-icon")).color,
       expectedToolIdentity: resolveColor("--event-tool"),
       verifyIdentity: getComputedStyle(document.querySelector(".timeline-segment.kind-verify")).backgroundColor,
       expectedVerifyIdentity: resolveColor("--event-verify"),
@@ -632,10 +632,10 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
   expect([colors.interaction, colors.success, colors.warning, colors.danger, colors.candidate]).not.toContain(colors.toolIdentity);
   expect([colors.interaction, colors.success, colors.warning, colors.danger, colors.candidate]).not.toContain(colors.verifyIdentity);
 
-  const summary = card.locator("summary");
+  const summary = card.locator(".ai-tool-header");
   await summary.focus();
   await page.keyboard.press("Enter");
-  await expect(card).toHaveAttribute("open", "");
+  await expect(card).toHaveAttribute("data-state", "open");
   await expect(card.getByRole("heading", { name: "Arguments" })).toBeVisible();
   await expect(card.getByText(/Result truncated from [\d,]+ bytes/)).toBeVisible();
   // The native run stream folds host tool call ids without the AG-UI `<runId>:<id>`
@@ -646,7 +646,7 @@ test("renders a keyboard-expandable failed and truncated Tool Call at 390px", as
   await page.screenshot({ path: testInfo.outputPath("tool-call-390.png"), fullPage: true });
 
   await page.keyboard.press("Enter");
-  await expect(card).not.toHaveAttribute("open", "");
+  await expect(card).toHaveAttribute("data-state", "closed");
   const dimensions = await page.evaluate(() => ({
     innerWidth: window.innerWidth,
     documentWidth: document.documentElement.scrollWidth,
@@ -856,7 +856,7 @@ test("renders meaningful Live trial evidence at all layout modes", async ({ page
     await page.getByPlaceholder("Task prompt for the harness run…").fill(`Verify ${layout.name} live evidence`);
     await page.getByRole("button", { name: "Run", exact: true }).click();
     await expect(page.locator(".studio-status-bar").getByRole("status")).toContainText("Run finished");
-    await expect(page.locator("details.tool-card")).toHaveCount(1);
+    await expect(page.locator(".tool-card")).toHaveCount(1);
     await assertRenderedContract(page);
     const ratio = await page.evaluate(() => {
       const grid = document.querySelector(".debugger-grid")?.getBoundingClientRect();

@@ -188,7 +188,7 @@ function MarkdownInlineNode({ node, context }: { node: MarkdownInline; context: 
   return <MarkdownInlineView nodes={node.children} context={context} />;
 }
 
-function fenceHint(language: string | undefined): string {
+export function fenceHint(language: string | undefined): string {
   if (language === undefined || language.trim() === "") return "block.txt";
   const normalized = language.trim().toLowerCase();
   return FENCE_LANGUAGE_HINTS[normalized] ?? normalized;

@@ -1047,26 +1047,9 @@
 .timeline .entry { border-left: 2px solid var(--color-text-subtle); padding: var(--space-sm); background: var(--color-surface-subtle); }
 .timeline .entry pre { margin: var(--space-xs) 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .entry-tag { margin-right: var(--space-sm); color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.tool-card,
 .live-tool-group { border: 1px solid var(--color-border); border-left: 2px solid var(--event-tool); border-radius: var(--radius-none); background: var(--color-workspace); }
 .tool-card + .tool-card { margin-top: var(--space-sm); }
-.tool-card > summary { min-height: 52px; padding: var(--space-sm); display: grid; grid-template-columns: var(--toolbar-target) minmax(0, 1fr) auto var(--type-section-size); gap: var(--space-sm); align-items: center; cursor: pointer; list-style: none; }
-.tool-card > summary::-webkit-details-marker,
 .live-tool-group > summary::-webkit-details-marker { display: none; }
-.tool-icon { width: var(--toolbar-target); height: var(--toolbar-target); display: grid; place-items: center; color: var(--event-tool); background: var(--color-surface-subtle); }
-.tool-title { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 var(--space-sm); align-items: baseline; }
-.tool-title small { grid-column: 1 / -1; color: var(--event-tool); font-weight: var(--weight-semibold); }
-.tool-title code { overflow: hidden; color: var(--color-text-muted); text-overflow: ellipsis; white-space: nowrap; }
-.tool-status { border-left: 1px solid currentColor; padding-left: var(--space-sm); color: var(--color-text-muted); font-size: var(--type-meta-size); font-weight: var(--weight-semibold); }
-.status-running .tool-status,
-.status-preparing .tool-status { color: var(--color-warning); }
-.tool-card.status-failed,
-.tool-card.status-interrupted { border-left-color: var(--color-danger); }
-.status-failed .tool-status,
-.status-interrupted .tool-status { color: var(--color-danger); }
-.status-result-unavailable .tool-status { color: var(--color-text-muted); }
-.tool-chevron { color: var(--color-text-subtle); transition: transform var(--motion-fast) ease; }
-.tool-card[open] .tool-chevron { transform: rotate(180deg); }
 .tool-detail { border-top: 1px solid var(--color-border); background: var(--color-surface-subtle); }
 .tool-detail section { padding: var(--space-sm); border-bottom: 1px solid var(--color-border); }
 .tool-detail h4 { margin: 0 0 var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); line-height: var(--type-meta-line); }
@@ -1267,15 +1250,11 @@
   .notebook-viewbar button:not(.active) { display: none; }
   .mock-tool-detail { grid-template-columns: 1fr; }
   .mock-tool-detail section { border-right: 0; border-bottom: 1px solid var(--color-border); }
-  .tool-card > summary { grid-template-columns: var(--toolbar-target) minmax(0, 1fr) auto; }
-  .tool-chevron { display: none; }
-  .tool-status { max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .timeline-legend { max-width: 64vw; overflow-x: auto; }
   .timeline-range > span { display: none; }
 }
 
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-@media (prefers-reduced-motion: reduce) { .tool-chevron { transition: none; } }
 
 /* Artifacts: workspace evidence scope -> matching outputs -> current View host. */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
@@ -1737,15 +1716,7 @@
    title bar and the sidebar already name this area, so the surface carries no
    page header, prompt restatement, or metric grid above the evidence. */
 .live-compare-workspace { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--color-workspace); }
-/* The composer is one control, so the shell owns the border and the focus ring
-   and the prompt inside it draws neither. Its band still spans the workspace, so
-   the outer padding keeps the control off the shell edges. */
-.live-compare-composer { margin: var(--space-sm) var(--space-md); padding: var(--space-xs) var(--space-sm) var(--space-sm); display: grid; gap: var(--space-xs); border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-surface); }
-.live-compare-composer:focus-within { border-color: var(--color-focus); box-shadow: 0 0 0 1px var(--color-focus); }
-.live-compare-prompt { width: 100%; min-width: 0; padding: var(--space-xs) var(--space-xs) 0; border: 0; color: var(--color-text); background: transparent; font: inherit; resize: vertical; }
-/* The prompt already carries the composer's ring, so a second ring inside the
-   same control would read as two focused fields. */
-.live-compare-prompt:focus-visible { outline: none; }
+.live-compare-workspace > .live-compare-composer { margin: var(--space-sm) var(--space-md); }
 /* One toolbar row for the Agent decision and Run. Chips wrap before they shrink,
    so a fourth Agent lengthens the row rather than clipping a name. */
 .live-compare-bar { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-sm); }
@@ -2255,3 +2226,5 @@
 .session-compare-usage > div { display: flex; justify-content: space-between; gap: var(--space-sm); }
 
 .session-compare-calls summary .session-compare-call-preview { display: block; margin-left: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-code); }
+
+.live-compare-run { margin-inline-start: auto; }

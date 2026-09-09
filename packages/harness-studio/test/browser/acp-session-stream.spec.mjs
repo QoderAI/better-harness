@@ -61,7 +61,7 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await expect(alpha.getByRole("alert")).toContainText("Decision unavailable; retry");
   await expect(alpha.getByRole("button", { name: "Allow once", exact: true })).toBeEnabled();
   await alpha.getByRole("button", { name: "Allow once", exact: true }).click();
-  await expect(alpha.getByRole("button", { name: "Continue stream" })).toBeVisible();
+  await expect(alpha.getByRole("button", { name: "Continue stream", exact: true })).toBeVisible();
   await expect(beta.getByRole("button", { name: "Allow once", exact: true })).toBeVisible();
   // The first lane progressed while the second lane is still gated.
   await expect(alpha.getByRole("combobox", { name: "Model", exact: true })).toHaveValue("stream-model");
@@ -80,16 +80,17 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await alpha.locator(".acp-session-info summary").click();
   await expect(alpha.locator(".acp-session-info time")).toHaveAttribute("datetime", "2026-09-08T00:00:00Z");
   await alpha.locator(".acp-session-info summary").click();
+  await alpha.locator(".acp-session-plan").getByRole("button", { name: "Plan · 1/2" }).click();
   await expect(alpha.locator(".acp-session-plan")).toContainText("High priority");
   await alpha.locator(".acp-session-commands summary").click();
   await expect(alpha.locator(".acp-command-hint")).toContainText("Optional revision");
   await alpha.locator(".acp-session-commands summary").click();
-  await alpha.locator(".acp-thought summary").click();
+  await alpha.locator(".acp-thought").getByRole("button", { name: "Thinking" }).click();
   await expect(alpha.locator(".acp-thought")).toContainText("Inspecting the evidence.");
   const tool = alpha.locator(".tool-card").filter({ hasText: "Read stream fixture" });
   await page.keyboard.press("Tab");
-  await tool.locator("summary").focus();
-  expect(await tool.locator("summary").evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe("none");
+  await tool.getByRole("button", { name: /Read stream fixture/ }).focus();
+  expect(await tool.getByRole("button", { name: /Read stream fixture/ }).evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe("none");
   await page.keyboard.press("Enter");
   await expect(tool).toContainText('"path": "fixture.txt"');
   await expect(tool).toContainText('"verified": true');
@@ -97,9 +98,9 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await expect(alpha.locator(".acp-session-commands")).toContainText("/review");
   // Keep the transcript parked at the top while a new chunk completes the turn.
   await scroll.evaluate((node) => { node.scrollTop = 0; });
-  await alpha.getByRole("button", { name: "Continue stream" }).click();
+  await alpha.getByRole("button", { name: "Continue stream", exact: true }).click();
   await expect(alpha.locator(".run-badge")).toHaveText("Ready");
-  await expect(alpha.locator(".acp-session-plan summary")).toHaveText("Plan · 2/2");
+  await expect(alpha.locator(".acp-session-plan .ai-chain-header")).toHaveText("Plan · 2/2");
   expect(await scroll.evaluate((node) => node.scrollTop)).toBe(0);
   await alpha.getByRole("button", { name: "Back to latest" }).focus();
   await page.keyboard.press("Enter");

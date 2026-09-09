@@ -10,6 +10,11 @@ export const common: typeof enCommon = {
     frontmatter: "元数据",
     analysisInput: "分析请求",
     analysisPlaceholder: "分析这份记忆，提出改进建议。",
+    analysisSuggestions: "分析建议",
+    suggestions: {
+      review: { label: "改进建议", prompt: "分析这份记忆，结合来源行号提出改进建议。" },
+      conflicts: { label: "查找冲突", prompt: "查找这份记忆中的矛盾、过时的指导和缺失的适用范围，并标注每项发现的来源行号。" },
+    },
     sendAnalysis: "发送",
 
     analysisRequest: "分析《{{title}}》，结合来源行号给出改进建议。", openEditors: "已打开的记忆", closeEditor: "关闭 {{title}}", pickFile: "从左侧目录打开一条记忆。",

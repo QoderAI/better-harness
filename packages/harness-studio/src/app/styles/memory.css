@@ -60,16 +60,9 @@
 .memory-analysis-toolbar button { display: grid; place-items: center; width: var(--toolbar-target); height: var(--toolbar-target); padding: 0; border: 0; background: transparent; color: var(--color-text-muted); }
 .memory-analysis-transcript { flex: 1; min-height: 0; }
 .memory-analysis-composer { flex: none; min-width: 0; position: relative; padding: var(--space-sm); border-top: 1px solid var(--color-border); }
-.memory-analysis-composer .acp-composer { max-height: 35dvh; overflow-y: auto; padding: var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-xs); }
-.memory-analysis-composer .acp-composer-actions > .primary { margin-inline-start: auto; }
-.memory-analysis-composer .acp-config-toolbar { width: 100%; flex-wrap: nowrap; gap: var(--space-xs); }
-.memory-analysis-composer .acp-setting-compact { flex: 1; }
 .memory-analysis-composer .acp-config-toolbar .acp-session-settings { position: static; flex: none; }
 .memory-analysis-composer .acp-session-settings { padding: var(--space-xs) 0; border: 0; }
 .memory-analysis-composer .acp-config-toolbar .acp-settings-fields { min-width: 0; box-sizing: border-box; width: 100%; padding: var(--space-md); position: absolute; bottom: 100%; left: 0; right: 0; max-height: 45dvh; overflow: auto; background: var(--color-panel); border: 1px solid var(--color-border-strong); box-shadow: var(--shadow-popover); z-index: 2; }
-.memory-acp-launcher { display: flex; align-items: center; gap: var(--space-sm); padding-top: var(--space-xs); }
-.memory-acp-launcher select { min-width: 0; flex: 1; height: var(--control-height); border: 0; background: transparent; color: var(--color-text-muted); }
-.memory-acp-launcher button { flex: none; }
 .memory-analysis-source { max-width: 100%; display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs); text-align: left; border: 0; background: var(--color-surface-subtle); color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .memory-analysis-source svg { flex: none; }
 .memory-analysis-source span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

@@ -10,13 +10,7 @@
 .acp-session-facts > div { display: flex; gap: var(--space-xs); min-width: 0; }
 .acp-session-facts dt, .acp-session-commands > p { color: var(--color-text-muted); }
 .acp-session-facts dd, .acp-session-commands dd { margin: 0; }
-.acp-session-plan summary, .acp-session-commands summary, .acp-thought summary, .acp-session-notice summary { cursor: pointer; min-height: var(--control-height); align-content: center; }
-.acp-session-plan ol { list-style: none; padding: 0; margin: var(--space-xs) 0 0; }
-.acp-session-plan li { display: flex; align-items: baseline; gap: var(--space-sm); padding-block: var(--space-xs); }
-.acp-session-plan li > span { flex: none; color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.acp-session-plan li[data-status="in_progress"] > span { color: var(--color-warning); }
-.acp-session-plan li[data-status="completed"] > span { color: var(--color-success); }
-.acp-session-plan li p { margin: 0; }
+.acp-session-commands summary, .acp-session-notice summary { cursor: pointer; min-height: var(--control-height); align-content: center; }
 .acp-session-commands dl > div + div { margin-top: var(--space-sm); }
 .acp-session-notice { color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .acp-session-error { color: var(--color-danger); }
@@ -25,14 +19,10 @@
 .acp-session-events > li { min-width: 0; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
 .acp-session-events .entry { margin: 0; }
 .acp-session-events .tool-card { border: 0; border-radius: 0; margin: 0; background: transparent; }
-.acp-session-events .tool-card > summary { padding: var(--space-xs) 0; }
-.acp-session-events .tool-title { min-width: 0; }
-.acp-session-events .tool-title code { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .acp-session-events .tool-detail { padding: var(--space-sm) 0; min-width: 0; }
 .acp-session-events .tool-detail > section { min-width: 0; }
 .acp-thought { color: var(--color-text-muted); }
 .acp-thought .streaming-message { margin-top: var(--space-sm); }
-.acp-session-latest { position: absolute; bottom: var(--space-sm); left: 50%; transform: translateX(-50%); max-width: calc(100% - var(--space-md)); background: var(--color-panel); border: 1px solid var(--color-border-strong); white-space: nowrap; }
 .acp-permission-gate { flex: none; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-warning-surface); overflow-wrap: anywhere; max-height: 45%; overflow: auto; }
 .acp-permission-gate > div { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-sm); }
 .acp-permission-gate p { margin: var(--space-xs) 0; }
@@ -76,17 +66,13 @@
 .acp-session-info dt { color: var(--color-text-muted); }
 .acp-session-info dd { margin: var(--space-xs) 0 var(--space-sm); }
 .acp-session-facts dt { flex-shrink: 0; }
-.acp-session-plan li p { flex: 1; }
-.acp-session-plan li small, .acp-command-hint { color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.acp-session-plan li small { text-align: end; }
-.acp-command-hint { margin: var(--space-xs) 0 0; }
+.acp-command-hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--type-meta-size); }
 
 /* Persistent input owns configuration; protocol details stay out of the reading flow. */
 .live-compare-composer[hidden] { display: none; }
 .acp-compare-toolbar { display: flex; align-items: center; justify-content: space-between; padding: var(--space-xs) var(--space-md); border-bottom: 1px solid var(--color-border); }
 .acp-conversation-footer { flex: none; min-width: 0; max-height: 55%; overflow: visible; padding: var(--space-sm) var(--space-md); border-top: 1px solid var(--color-border); background: var(--color-panel); }
 .acp-composer { min-width: 0; }
-.acp-composer textarea { display: block; width: 100%; min-height: var(--control-height); max-height: 25dvh; resize: vertical; box-sizing: border-box; border: 0; background: transparent; color: var(--color-text); padding: var(--space-sm) 0; }
 .acp-composer-actions, .acp-composer-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); }
 .acp-turn-status { color: var(--color-text-muted); font-size: var(--type-meta-size); margin-inline-end: auto; }
 .acp-composer-toolbar > small { color: var(--color-text-muted); margin-inline-start: auto; }
@@ -97,12 +83,6 @@
 .acp-message-queue, .acp-command-suggestions, .acp-attachments { max-height: 18dvh; overflow: auto; margin: 0; }
 .acp-message-queue > div, .acp-attachments > li { display: flex; align-items: center; gap: var(--space-xs); }
 .acp-message-queue > div > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.acp-command-suggestions button { display: flex; text-align: start; width: 100%; gap: var(--space-sm); }
-.acp-command-suggestions span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); }
-.acp-session-events .tool-title > small { display: none; }
-.acp-session-events .tool-title { display: flex; flex: 1; align-items: baseline; gap: var(--space-sm); }
-.acp-session-events .tool-title > code { display: none; }
-.acp-session-events .tool-card > summary { min-height: var(--row-height); }
 .acp-config-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-sm); min-width: 0; }
 .acp-config-toolbar .acp-setting-compact { display: block; min-width: 0; }
 .acp-setting-compact label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -110,7 +90,6 @@
 .acp-config-toolbar .acp-session-settings { position: relative; }
 .acp-config-toolbar .acp-settings-fields { min-width: min(22rem, 70vw); }
 .acp-conversation-footer { position: relative; }
-.acp-session-stream > .acp-session-latest { position: static; align-self: center; margin: var(--space-xs); transform: none; }
 .acp-session-events > li { content-visibility: auto; contain-intrinsic-size: auto 72px; }
 
 .acp-conversation-history { padding: var(--space-sm) var(--space-md); }
@@ -122,8 +101,6 @@
 .live-compare-workspace:has(.acp-compare-toolbar), .live-compare-workspace:has(.acp-conversation-history) { display: flex; flex-direction: column; }
 .live-compare-workspace .live-compare-lanes { flex: 1; }
 .acp-session-stream .acp-conversation-footer { max-height: none; }
-.acp-conversation-footer .acp-composer { max-height: 38dvh; overflow-y: auto; }
-.acp-session-events .tool-icon { background: transparent; padding: 0; width: auto; height: auto; }
 .acp-permission-list { flex: none; max-height: 35%; overflow: auto; }
 .acp-permission-list .acp-permission-gate { max-height: none; }
 @media (max-width: 700px) {
