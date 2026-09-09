@@ -7,7 +7,7 @@ import { saveAcpAgentPreferences } from "./acp-session-preferences.js";
 export { postAcpSessionAction } from "./acp-session-actions.js";
 
 /** Compact current-value controls, with less common options in one disclosure. */
-export function AcpSessionSettings({ session, runId, active, actions, agentId }: { session: AcpSessionState; runId?: string; active: boolean; actions?: AcpSessionActions; agentId?: string }): React.JSX.Element | null {
+export function AcpSessionSettings({ session, runId, active, actions, agentId, compact = true }: { session: AcpSessionState; runId?: string; active: boolean; actions?: AcpSessionActions; agentId?: string; compact?: boolean }): React.JSX.Element | null {
   const { t } = useTranslation("run");
   const id = useId();
   const [config, setConfig] = useState(session.config);
@@ -58,7 +58,7 @@ export function AcpSessionSettings({ session, runId, active, actions, agentId }:
     </div>;
   }
   return <div className="acp-config-toolbar">
-    {core.map(option => field(option, true))}
+    {core.map(option => field(option, compact))}
     {!!legacy && <select aria-label={t("session.mode")} value={mode ?? ""} disabled={!editable || pending !== undefined} onChange={event => void apply("mode", { action: "mode", modeId: event.target.value })}>{session.modes!.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
     {extra.length > 0 && <details className="acp-session-settings" ref={disclosure} onKeyDown={event => { if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type === "search") event.preventDefault(); if (event.key === "Escape") { event.preventDefault(); disclosure.current!.open = false; disclosure.current?.querySelector("summary")?.focus(); } }}>
       <summary title={t("session.settings")} aria-label={t("session.settings")}>···</summary>

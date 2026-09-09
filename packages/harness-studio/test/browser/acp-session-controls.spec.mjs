@@ -28,16 +28,26 @@ test("configures model and effort before prompting, retries errors, and isolates
   await expect(open.or(page.getByRole("textbox", { name: "What should these Agents do?" }))).toBeVisible();
   if (await open.isVisible()) await open.click();
   await page.getByRole("textbox", { name: "What should these Agents do?" }).fill("Read configuration evidence");
+  await expect(page.locator(".acp-conversation-history")).toHaveCount(0);
   await page.getByRole("button", { name: /^Choose Agents/ }).click();
   for (const name of ["Alpha ACP", "Beta ACP"]) await page.getByRole("menuitemcheckbox", { name: new RegExp(name) }).click();
   await page.keyboard.press("Escape");
+  const configurations = page.locator(".live-compare-configuration");
+  await expect(configurations).toHaveCount(2);
+  await expect(configurations.first().getByRole("combobox", { name: "Mode", exact: true })).toHaveCount(1);
+  const readiness = page.locator(".live-compare-readiness");
+  await expect(readiness).toHaveText("Ready");
+  const readinessBox = await readiness.boundingBox();
+  const configureBox = await page.getByRole("button", { name: "Configure Agents", exact: true }).boundingBox();
+  expect(readinessBox.y).toBeGreaterThanOrEqual(configureBox.y);
+  expect(readinessBox.y + readinessBox.height).toBeLessThanOrEqual(configureBox.y + configureBox.height);
+  // Refreshing configuration remains in the persistent composer and does not
+  // create a transient message/lane area before the prompt starts.
   await page.getByRole("button", { name: "Configure Agents", exact: true }).click();
-  const alpha = page.locator(".live-compare-lane").nth(0), beta = page.locator(".live-compare-lane").nth(1);
-  await expect(alpha.getByRole("button", { name: "Send prompt", exact: true })).toBeEnabled();
-  await expect(beta.getByRole("button", { name: "Send prompt", exact: true })).toBeEnabled();
-  await expect(alpha.getByRole("combobox", { name: "Mode", exact: true })).toHaveCount(1);
-  await expect(alpha.locator(".acp-session-events > li")).toHaveCount(0);
-  await expect(alpha.getByRole("button", { name: "Back to latest" })).toHaveCount(0);
+  await expect(page.locator(".live-compare-lane")).toHaveCount(0);
+  await expect(configurations.first().getByRole("combobox", { name: "Mode", exact: true })).toHaveCount(1);
+  const alpha = configurations.filter({ hasText: "Alpha ACP" });
+  const beta = configurations.filter({ hasText: "Beta ACP" });
   let fail = true, actionUrl;
   await page.route("**/api/acp/runs/*/session", async route => {
     actionUrl = route.request().url();
@@ -69,15 +79,14 @@ test("configures model and effort before prompting, retries errors, and isolates
     await page.screenshot({ animations: "disabled", path: info.outputPath(`acp-settings-${size.name}.png`) });
   }
   await alpha.locator(".acp-session-settings > summary").click();
-  await alpha.getByRole("button", { name: "Send prompt", exact: true }).click();
-  await expect(alpha.locator(".streaming-message").last()).toContainText("configured:fixture-candidate:low:true");
-  await expect(alpha.locator(".live-compare-counts")).toContainText("1 tool call");
-  await alpha.getByRole("button", { name: "Allow once", exact: true }).click();
-  await expect(alpha.locator(".run-badge")).toHaveText("Completed");
-  await alpha.getByRole("button", { name: "Close session", exact: true }).click();
+  await page.getByRole("button", { name: "Run 2 Agents", exact: true }).click();
+  const alphaLane = page.locator(".live-compare-lane").filter({ hasText: "Alpha ACP" });
+  const betaLane = page.locator(".live-compare-lane").filter({ hasText: "Beta ACP" });
+  await alphaLane.getByRole("button", { name: "Allow once", exact: true }).click();
+  await expect(alphaLane.locator(".run-badge")).toHaveText("Completed");
+  await alphaLane.getByRole("button", { name: "Close session", exact: true }).click();
   expect((await page.request.post(actionUrl, { data: { action: "config", configId: "model", value: "fixture-default" } })).status()).toBe(409);
-  await beta.getByRole("button", { name: "Interrupt", exact: true }).click();
-  await expect(beta.locator(".run-badge")).toHaveText("finished");
+  await betaLane.getByRole("button", { name: "Reject", exact: true }).click();
   expect(errors).toEqual([]);
 });
 

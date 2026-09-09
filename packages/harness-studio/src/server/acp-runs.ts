@@ -401,6 +401,11 @@ export async function configureAcpRun(request: IncomingMessage, response: Server
       }
       return { snapshot: conversation.snapshot() };
     }
+    if (body?.action === "set-prompt") {
+      if (!control.startPrompt || !control.setInitialPrompt) throw new Error("This session no longer accepts an initial prompt.");
+      control.setInitialPrompt(body.prompt);
+      return { prepared: true };
+    }
     if (body?.action === "start") {
       if (!control.startPrompt) throw new Error("This session has already started.");
       if (body.prompt !== undefined) {

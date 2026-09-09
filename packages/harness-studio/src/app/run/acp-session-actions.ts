@@ -6,6 +6,7 @@ export type AcpSessionAction =
   | { action: "connection-select"; sessionId?: string }
   | { action: "config"; configId: string; value: string | boolean }
   | { action: "mode"; modeId: string }
+  | { action: "set-prompt"; prompt: string }
   | { action: "start"; prompt?: string }
   | { action: "stop" | "close" | "queue-resume" }
   | { action: "send"; id: string; content: AcpPromptContent; immediately?: boolean }

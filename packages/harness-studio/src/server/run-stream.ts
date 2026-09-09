@@ -16,6 +16,8 @@ export interface StudioRunStreamOptions {
   cwd?: string;
   sourceRoot?: string;
   executorFactory: HarnessExecutorFactory;
+  /** Invoked after request validation and before the executor is created. */
+  onInput?: (input: { prompt: string; threadId: string; runId: string }) => void;
   runAbortSignal?: (runId: string) => AbortSignal | undefined;
   onClientDisconnect?: (runId: string) => void;
 }
@@ -41,6 +43,7 @@ export async function streamHarnessRun(
     return;
   }
 
+  options.onInput?.(input);
   response.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-store",

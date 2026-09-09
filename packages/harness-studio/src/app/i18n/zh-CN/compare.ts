@@ -23,6 +23,8 @@ export const compare: typeof enCompare = {
     configuring: "配置中…",
 
     prepare: "配置 Agent",
+    settingsAria: "已选 Agent 配置",
+    agentSettingsAria: "{{agent}} 的配置",
     title: "实时对比 Agent",
     promptLabel: "这些 Agent 要做什么？",
     promptPlaceholder: "描述每个 Agent 都要尝试的需求…",

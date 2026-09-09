@@ -218,7 +218,9 @@ export function App(): React.JSX.Element {
   const [bootstrapRevision, setBootstrapRevision] = useState(0);
   const [area, setArea] = useState<StudioArea>(areaFromHash);
   const [locationRevision, setLocationRevision] = useState(0);
-  const [compareSurface, setCompareSurface] = useState<StudioCompareSurface>("sessions");
+  // Live comparison is the active workflow. Retained Session evidence is only
+  // opened after the reader explicitly selects a pair in Sessions.
+  const [compareSurface, setCompareSurface] = useState<StudioCompareSurface>("live");
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storedSidebarCollapsed);
   const [sidebarWidth, setSidebarWidth] = useState(storedSidebarWidth);
@@ -394,7 +396,7 @@ export function App(): React.JSX.Element {
       setProjects(loaded.projectCatalog.projects);
       setActiveProjectId(loaded.projectCatalog.activeProjectId);
       setConfig(loaded.config);
-      setCompareSurface((currentSurface) => compareSurfaces(loaded.config).includes(currentSurface) ? currentSurface : compareSurfaces(loaded.config)[0] ?? "sessions");
+      setCompareSurface((currentSurface) => compareSurfaces(loaded.config).includes(currentSurface) ? currentSurface : compareSurfaces(loaded.config)[0] ?? "live");
       setDataRevision((revision) => revision + 1);
     } catch (error) {
       setConfigFailure(error instanceof Error ? error.message : t("config.sourceSwitchFailed"));
@@ -410,7 +412,7 @@ export function App(): React.JSX.Element {
     setConfig(loaded.config);
     setSessionCompareIds(undefined);
     setSessionOpenId(undefined);
-    setCompareSurface((currentSurface) => compareSurfaces(loaded.config).includes(currentSurface) ? currentSurface : compareSurfaces(loaded.config)[0] ?? "sessions");
+    setCompareSurface((currentSurface) => compareSurfaces(loaded.config).includes(currentSurface) ? currentSurface : compareSurfaces(loaded.config)[0] ?? "live");
     setWorkspaceRevision((revision) => revision + 1);
     return loaded.projectCatalog.activeProjectId;
   }
@@ -932,8 +934,11 @@ function SessionsWorkspace(props: {
         if (cancelled) return;
         setOmittedCount(payload.workspace.omittedCount);
         setSessions(payload.sessions);
-        const inRange = payload.sessions.filter((session) => withinDateRange(session.savedAt, props.dateRange));
-        const initialSession = inRange.find((session) => session.id === props.initialSessionId) ?? inRange[0];
+        // Opening Sessions presents an evidence catalog, not an implicit detail
+        // navigation. Only an explicit deep-link/session request opens a row.
+        const initialSession = props.initialSessionId === undefined
+          ? undefined
+          : payload.sessions.find((session) => session.id === props.initialSessionId && withinDateRange(session.savedAt, props.dateRange));
         if (initialSession !== undefined) await openSession(initialSession.id, () => cancelled);
       } catch (error) {
         if (!cancelled) setFailure(error instanceof Error ? error.message : String(error));
@@ -1279,53 +1284,26 @@ interface SessionComparison {
   right: SessionComparisonSide;
 }
 
-/**
- * Seed the pair with two different Agents when the Project has them, so the
- * default view answers the cross-Agent question instead of pairing whichever
- * two Sessions happen to be newest.
- */
-function crossAgentPair(sessions: readonly SessionSummary[]): [string, string] | undefined {
-  const first = sessions[0];
-  if (first === undefined) return undefined;
-  const other = sessions.find((session) => (session.provider ?? "") !== (first.provider ?? ""));
-  return other === undefined ? undefined : [first.id, other.id];
-}
-
 function SessionCompareView(props: { navigation: ReactNode; initialIds?: [string, string] }): React.JSX.Element {
   const { t } = useTranslation("sessions");
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [leftId, setLeftId] = useState(props.initialIds?.[0] ?? "");
-  const [rightId, setRightId] = useState(props.initialIds?.[1] ?? "");
   const [comparison, setComparison] = useState<SessionComparison>();
   const [failure, setFailure] = useState<string>();
+  const leftId = props.initialIds?.[0];
+  const rightId = props.initialIds?.[1];
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("api/sessions");
-        if (!response.ok) throw new Error(await studioApiError(response));
-        const loaded = await response.json() as { sessions: SessionSummary[] };
-        if (cancelled) return;
-        setSessions(loaded.sessions);
-        const preferred = crossAgentPair(loaded.sessions);
-        setLeftId((current) => current || preferred?.[0] || loaded.sessions[0]?.id || "");
-        setRightId((current) => current || preferred?.[1] || loaded.sessions[1]?.id || "");
-      } catch (error) {
-        if (!cancelled) setFailure(error instanceof Error ? error.message : String(error));
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    if (leftId === "" || rightId === "" || leftId === rightId) return;
+    if (leftId === undefined || rightId === undefined || leftId === rightId) {
+      setComparison(undefined);
+      setFailure(undefined);
+      return;
+    }
     const controller = new AbortController();
+    setComparison(undefined);
+    setFailure(undefined);
     void (async () => {
       try {
         const response = await fetch(`api/session-compare?${new URLSearchParams({ left: leftId, right: rightId })}`, { signal: controller.signal });
         if (!response.ok) throw new Error(await studioApiError(response));
-        setFailure(undefined);
         setComparison(await response.json() as SessionComparison);
       } catch (error) {
         if (!controller.signal.aborted) setFailure(error instanceof Error ? error.message : String(error));
@@ -1334,10 +1312,15 @@ function SessionCompareView(props: { navigation: ReactNode; initialIds?: [string
     return () => controller.abort();
   }, [leftId, rightId]);
 
-  const optionLabel = (session: SessionSummary): string => t("compare.optionLabel", { agent: session.provider ?? t("common:localAgent"), prompt: session.prompt });
+  if (leftId === undefined || rightId === undefined || leftId === rightId) {
+    return <main className="session-compare-workspace">
+      <header><div><small>{t("compare.eyebrow")}</small><h1>{t("compare.title")}</h1></div>{props.navigation}</header>
+      <div className="session-compare-empty"><h2>{t("compare.selectPairTitle")}</h2><p>{t("compare.selectPairDetail")}</p></div>
+    </main>;
+  }
+
   return <main className="session-compare-workspace">
     <header><div><small>{t("compare.eyebrow")}</small><h1>{t("compare.title")}</h1></div>{props.navigation}</header>
-    <div className="session-compare-picker"><label><span>{t("compare.left")}</span><select value={leftId} onChange={(event) => setLeftId(event.target.value)}>{sessions.map((session) => <option key={session.id} value={session.id} disabled={session.id === rightId}>{optionLabel(session)}</option>)}</select></label><label><span>{t("compare.right")}</span><select value={rightId} onChange={(event) => setRightId(event.target.value)}>{sessions.map((session) => <option key={session.id} value={session.id} disabled={session.id === leftId}>{optionLabel(session)}</option>)}</select></label></div>
     {failure !== undefined && <p className="session-compare-boundary status-danger" role="alert">{failure}</p>}
     {comparison === undefined ? <p className="artifact-status" role="status">{t("compare.loading")}</p> : <>
       <p className="session-compare-boundary"><strong>{t("compare.noWinner")}</strong> {comparison.boundary}</p>

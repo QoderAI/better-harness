@@ -65,6 +65,8 @@ export const sessions = {
     aria: "Observed Session differences",
     eyebrow: "Observed retained evidence",
     title: "Compare Agents",
+    selectPairTitle: "Choose two Sessions to compare",
+    selectPairDetail: "Select two retained Sessions in Sessions, then choose Compare.",
     left: "Left Agent Session",
     right: "Right Agent Session",
     loading: "Loading Session comparison…",

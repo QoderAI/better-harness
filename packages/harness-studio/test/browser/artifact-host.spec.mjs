@@ -1542,7 +1542,10 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
     await route.fulfill({ response, json: { ...await response.json(), workspaceWorkbenchEnabled: false } });
   });
   await page.reload();
-  await expect(page.getByRole("button", { name: /Repair renderer/ })).toBeVisible();
+  const rendererSession = page.getByRole("button", { name: /Repair renderer/ });
+  await expect(rendererSession).toBeVisible();
+  await expect(page.getByText("Select a session to inspect retained evidence.")).toBeVisible();
+  await rendererSession.click();
   await expect(page.getByRole("heading", { name: "Repair renderer" })).toBeVisible();
   await expect(page.locator(".session-event-rows")).toContainText("Bash");
   const sessionDiff = page.getByRole("button", { name: "Open Session artifact review.diff" });

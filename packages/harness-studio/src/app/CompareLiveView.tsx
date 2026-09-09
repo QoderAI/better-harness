@@ -2,7 +2,7 @@ import { CompareFiles } from "./run/CompareFiles.js";
 import { ResizableComparePanes } from "./run/ResizableComparePanes.js";
 import { comparisonLaneStatus } from "./run/compare-evidence.js";
 import { PromptInput, PromptInputFooter, PromptInputTextarea } from "./components/ai-elements/prompt-input.js";
-import { AcpConversationHistory } from "./run/AcpConversationHistory.js";
+import { AcpSessionSettings } from "./run/AcpSessionSettings.js";
 import { useSessionOwnedState } from "./run/session-view-store.js";
 import { createAcpSessionActions } from "./run/acp-session-actions.js";
 import { useEffect, useId, useRef, useState } from "react";
@@ -34,6 +34,9 @@ const MIN_LANES = 1;
  * the widths this shell targets and bounds what a single click can start.
  */
 const MAX_LANES = 4;
+/** The stream protocol forbids an empty request; prepared ACP sessions replace
+ * this transport placeholder with the reader's prompt before `start`. */
+const PREPARE_PROMPT = "Prepare the Agent session configuration.";
 
 function laneKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -70,65 +73,146 @@ export function CompareLiveView(props: {
   const [chosen, setChosen] = useSessionOwnedState<readonly string[]>(`${owner}:chosen`, []);
   const [comparison, setComparison, liveComparison] = useSessionOwnedState<LiveComparison | undefined>(`${owner}:comparison`, undefined);
   const [, , running] = useSessionOwnedState(`${owner}:running`, false);
-
+  const [prepared, setPrepared] = useState<readonly LaneRun[]>([]);
+  const preparedRef = useRef<readonly LaneRun[]>([]);
+  const preparingAgents = useRef(new Map<string, string>());
+  const preparedControllers = useRef(new Map<string, AbortController>());
+  const launchBusy = useRef(false);
+  const [preparationRevision, setPreparationRevision] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [queuedLaunch, setQueuedLaunch] = useState<string>();
   const [reveal, setReveal] = useState<{ laneKey: string; id: string; token: number }>();
+  const [closeError, setCloseError] = useState<string>();
   const available = props.agents.filter((agent) => agent.available);
   const active = comparison !== undefined
     && comparison.lanes.some((lane) => lane.state.status === "running");
-  const canRun = prompt.trim() !== "" && chosen.length >= MIN_LANES && chosen.every((id) => available.some((agent) => agent.id === id)) && !active;
+  const configurationReady = chosen.length >= MIN_LANES && chosen.every((agentId) => {
+    const lane = prepared.find((candidate) => candidate.agentId === agentId);
+    return lane?.state.status === "running" && lane.state.acp.prepared === true;
+  });
+  const canRequestRun = prompt.trim() !== "" && chosen.length >= MIN_LANES
+    && chosen.every((id) => available.some((agent) => agent.id === id)) && !active;
 
+  function updatePrepared(update: (current: readonly LaneRun[]) => readonly LaneRun[]): void {
+    const next = update(preparedRef.current);
+    preparedRef.current = next;
+    setPrepared(next);
+  }
 
   function patchLane(key: string, update: (run: LaneRun) => LaneRun): void {
     const current = liveComparison.current;
-    if (current === undefined) return;
+    if (current === undefined) {
+      updatePrepared((runs) => runs.map((lane) => lane.key === key ? update(lane) : lane));
+      return;
+    }
     const next = { ...current, lanes: current.lanes.map((lane) => lane.key === key ? update(lane) : lane) };
     liveComparison.current = next;
     setComparison(next);
   }
 
-  async function launch(prepare = false, connect = false): Promise<void> {
-    if (!canRun || running.current) return;
-    running.current = true;
-    const task = prompt.trim();
-    const started = chosen.map((agentId) => {
-      const key = laneKey();
-      return { agentId, key, ...runIdentity(key) };
+  function releasePrepared(lanes: readonly LaneRun[]): void {
+    for (const lane of lanes) {
+      preparedControllers.current.get(lane.key)?.abort();
+      preparedControllers.current.delete(lane.key);
+      void postAcpRunAction(lane.runId, "cancel").catch(() => undefined);
+    }
+  }
+
+  function prepareAgent(agentId: string): void {
+    if (!available.some((agent) => agent.id === agentId) || preparingAgents.current.has(agentId)) return;
+    const key = laneKey();
+    const { threadId, runId } = runIdentity(key);
+    const controller = new AbortController();
+    preparingAgents.current.set(agentId, key);
+    preparedControllers.current.set(key, controller);
+    updatePrepared((current) => [...current, { key, agentId, runId, state: { ...initialRunState(), runId, status: "running" } }]);
+    void streamRun(
+      `api/acp/runs/stream?conversation=1&prepare=1&agent=${encodeURIComponent(agentId)}`,
+      PREPARE_PROMPT,
+      threadId,
+      runId,
+      props.project,
+      (events: HarnessRunStreamEventV1[]) => patchLane(key, (run) => ({ ...run, state: events.reduce(applyHarnessRunEvent, run.state) })),
+      controller.signal,
+    ).catch((error) => {
+      if (controller.signal.aborted) return;
+      patchLane(key, (run) => ({
+        ...run,
+        failure: error instanceof Error ? error.message : String(error),
+        state: settleRunState({ ...run.state, status: "error" }, "interrupted"),
+      }));
+    }).finally(() => {
+      if (preparingAgents.current.get(agentId) === key) preparingAgents.current.delete(agentId);
+      preparedControllers.current.delete(key);
     });
-    const next: LiveComparison = {
-      prompt: task,
-      lanes: started.map(({ agentId, key, runId }) => ({
-        key,
-        agentId,
-        runId,
-        state: { ...initialRunState(), runId, status: "running" },
-      })),
-    };
-    liveComparison.current = next;
-    setComparison(next);
-    // Every lane is launched together and settles independently, so a slow or
-    // failing Agent never withholds another lane's evidence.
-    await Promise.all(started.map(async ({ agentId, key, threadId, runId }) => {
-      try {
-        await streamRun(
-          `api/acp/runs/stream?conversation=1&agent=${encodeURIComponent(agentId)}${prepare ? "&prepare=1" : ""}${connect ? "&connect=1" : ""}`,
-          task,
-          threadId,
-          runId,
-          props.project,
-          (events: HarnessRunStreamEventV1[]) => patchLane(key, (run) => ({
-            ...run,
-            state: events.reduce(applyHarnessRunEvent, run.state),
-          })),
-        );
-      } catch (error) {
-        patchLane(key, (run) => ({
-          ...run,
-          failure: error instanceof Error ? error.message : String(error),
-          state: settleRunState({ ...run.state, status: "error" }, "interrupted"),
-        }));
-      }
-    }));
-    running.current = false;
+  }
+
+  useEffect(() => {
+    const selected = new Set(chosen);
+    const obsolete = preparedRef.current.filter((lane) => !selected.has(lane.agentId));
+    if (obsolete.length > 0) {
+      releasePrepared(obsolete);
+      updatePrepared((current) => current.filter((lane) => selected.has(lane.agentId)));
+    }
+    for (const agentId of chosen) {
+      if (!preparedRef.current.some((lane) => lane.agentId === agentId)) prepareAgent(agentId);
+    }
+  }, [chosen, preparationRevision, props.project?.id, props.project?.revision]);
+
+  useEffect(() => () => {
+    // A live comparison is session-owned and may survive a view switch. A
+    // configuration-only preparation has no visible work to preserve.
+    if (liveComparison.current === undefined) releasePrepared(preparedRef.current);
+  }, []);
+
+  async function startPrepared(task: string): Promise<void> {
+    if (launchBusy.current || liveComparison.current !== undefined) return;
+    const lanes = prepared.filter((lane) => chosen.includes(lane.agentId));
+    if (lanes.length !== chosen.length || lanes.some((lane) => lane.state.status !== "running" || !lane.state.acp.prepared)) {
+      setQueuedLaunch(task);
+      return;
+    }
+    launchBusy.current = true;
+    running.current = true;
+    setQueuedLaunch(undefined);
+    try {
+      // Retain the current draft before mounting the lanes. They then use the
+      // established ACP stream start path, including its conversation capture.
+      await Promise.all(lanes.map((lane) => createAcpSessionActions(lane.runId).execute({ action: "set-prompt", prompt: task })));
+      const next: LiveComparison = { prompt: task, lanes };
+      liveComparison.current = next;
+      setComparison(next);
+    } catch (error) {
+      setCloseError(error instanceof Error ? error.message : String(error));
+    } finally {
+      running.current = false;
+      launchBusy.current = false;
+    }
+  }
+
+  function launch(): void {
+    if (!canRequestRun) return;
+    const task = prompt.trim();
+    if (!configurationReady) {
+      setQueuedLaunch(task);
+      return;
+    }
+    void startPrepared(task);
+  }
+
+  useEffect(() => {
+    if (queuedLaunch !== undefined && configurationReady && !active) void startPrepared(queuedLaunch);
+  }, [active, configurationReady, queuedLaunch]);
+
+  async function refreshConfiguration(): Promise<void> {
+    if (chosen.length < MIN_LANES || refreshing || active) return;
+    setRefreshing(true);
+    setQueuedLaunch(undefined);
+    releasePrepared(preparedRef.current);
+    updatePrepared(() => []);
+    preparingAgents.current.clear();
+    setPreparationRevision((current) => current + 1);
+    setRefreshing(false);
   }
 
   const runIdFor = (key: string): string | undefined =>
@@ -146,30 +230,39 @@ export function CompareLiveView(props: {
     await postAcpRunAction(runId, { requestId, optionId });
   }
 
-  const [closeError, setCloseError] = useState<string>();
   async function newComparison(): Promise<void> {
     setCloseError(undefined);
     try {
-      await Promise.all((comparison?.lanes ?? []).filter(lane => lane.state.status === "running").map(lane => createAcpSessionActions(lane.runId).execute({ action: "close" })));
-      running.current = false; liveComparison.current = undefined; setComparison(undefined);
+      await Promise.all((comparison?.lanes ?? []).filter((lane) => lane.state.status === "running").map((lane) => createAcpSessionActions(lane.runId).execute({ action: "close" })));
+      releasePrepared(preparedRef.current);
+      updatePrepared(() => []);
+      preparingAgents.current.clear();
+      running.current = false;
+      liveComparison.current = undefined;
+      setComparison(undefined);
+      setPreparationRevision((current) => current + 1);
     } catch (error) { setCloseError(String(error)); }
   }
+
   const labelFor = (agentId: string): string => props.agents.find((agent) => agent.id === agentId)?.label ?? agentId;
+  const readiness = available.length === 0
+    ? t("live.noAgents")
+    : chosen.length < MIN_LANES
+      ? t("live.agentFloor", { count: MIN_LANES })
+      : refreshing || !configurationReady || queuedLaunch !== undefined
+        ? t("live.configuring")
+        : t("live.ready");
 
   // No page title or eyebrow: the shell title bar and the sidebar already name
   // this area, and the composer states the decision on its own.
   return <main className="live-compare-workspace" aria-label={t("live.title")}>
-    {/* One control, not four regions: the shell owns the border and the focus
-        ring, the prompt sits inside it, and the Agent decision plus Run read as
-        the composer's own toolbar row. */}
     {closeError && <p role="alert">{closeError}</p>}
-    {!comparison && <AcpConversationHistory project={props.project} />}
     {comparison && <div className="acp-compare-toolbar">{comparison.lanes.length > 1 && <SharedTreeNote />}<button type="button" onClick={() => void newComparison()}>{t(comparison.lanes.length === 1 ? "live.newRun" : "live.newComparison")}</button></div>}
     {comparison === undefined
-      ? <div className="live-compare-empty"><p className="artifact-status" role="status">{t("live.idle")}</p></div>
+      ? <div className="live-compare-empty" aria-hidden="true" />
       : <>
-        <CompareFiles owner={owner} lanes={comparison.lanes.map(lane => ({ ...lane, label: labelFor(lane.agentId) }))}
-          onReveal={(laneKey, id) => setReveal(previous => ({ laneKey, id, token: (previous?.token ?? 0) + 1 }))} />
+        <CompareFiles owner={owner} lanes={comparison.lanes.map((lane) => ({ ...lane, label: labelFor(lane.agentId) }))}
+          onReveal={(laneKey, id) => setReveal((previous) => ({ laneKey, id, token: (previous?.token ?? 0) + 1 }))} />
         <ResizableComparePanes owner={owner} panes={comparison.lanes.map((lane, index) => ({
           key: lane.key, label: labelFor(lane.agentId), content: <LiveLane
             side={t("live.laneAgent", { index: index + 1 })}
@@ -182,7 +275,7 @@ export function CompareLiveView(props: {
     <PromptInput
       hidden={comparison !== undefined}
       className="live-compare-composer"
-      onSubmit={(event) => { event.preventDefault(); void launch(); }}
+      onSubmit={(event) => { event.preventDefault(); launch(); }}
     >
       <PromptInputTextarea
         className="live-compare-prompt"
@@ -201,8 +294,6 @@ export function CompareLiveView(props: {
             ? current.filter((candidate) => candidate !== agentId)
             : current.length < MAX_LANES ? [...current, agentId] : current)}
         />
-        {/* Removal is named after the Agent it drops rather than a lane index,
-            so the control reads the same before and after the row reflows. */}
         {chosen.map((agentId) => <span className="live-compare-chip" key={agentId}>
           <span>{labelFor(agentId)}</span>
           <button
@@ -211,22 +302,25 @@ export function CompareLiveView(props: {
             onClick={() => setChosen((current) => current.filter((candidate) => candidate !== agentId))}
           ><X aria-hidden="true" size={11} /></button>
         </span>)}
-        {/* Exactly one note, chosen by state. The overwrite consequence is only
-            true once two Agents will actually write, so below the floor the row
-            states the prerequisite for Run instead. */}
-        {available.length === 0
-          ? <p className="live-compare-note status-warning" role="alert">{t("live.noAgents")}</p>
-          : chosen.length < MIN_LANES
-            ? <p className="live-compare-note">{t("live.agentFloor", { count: MIN_LANES })}</p>
-            : chosen.length > 1 ? <SharedTreeNote /> : null}
-        {!active && <button type="button" disabled={!canRun} onClick={() => void launch(false, true)}>{t("live.chooseSession")}</button>}
-        {!active && <button type="button" disabled={!canRun} onClick={() => void launch(true)}>{t("live.prepare")}</button>}
-        <button className="primary live-compare-run" type="submit" disabled={!canRun}>
+        {chosen.length > 1 && <SharedTreeNote />}
+        <span className={`live-compare-readiness${available.length === 0 ? " status-warning" : ""}`} role="status">{readiness}</span>
+        <button type="button" disabled={chosen.length < MIN_LANES || refreshing || active} onClick={() => void refreshConfiguration()}>{t("live.prepare")}</button>
+        <button className="primary live-compare-run" type="submit" disabled={!canRequestRun}>
           <Play aria-hidden="true" size={14} />
-          <span>{active
-            ? t(comparison?.lanes.some((lane) => lane.state.acp.prepared) ? "live.configuring" : "live.running")
-            : chosen.length < MIN_LANES ? t("live.runIdle") : t("live.run", { count: chosen.length })}</span>
+          <span>{chosen.length < MIN_LANES ? t("live.runIdle") : t("live.run", { count: chosen.length })}</span>
         </button>
+        {chosen.length > 0 && <div className="live-compare-configurations" aria-label={t("live.settingsAria")}>
+          {chosen.map((agentId) => {
+            const lane = prepared.find((candidate) => candidate.agentId === agentId);
+            return <section className="live-compare-configuration" key={agentId} aria-label={t("live.agentSettingsAria", { agent: labelFor(agentId) })}>
+              <strong>{labelFor(agentId)}</strong>
+              {lane?.state.acp.prepared === true
+                ? <AcpSessionSettings session={lane.state.acp} runId={lane.runId} active={lane.state.status === "running"} actions={createAcpSessionActions(lane.runId)} agentId={agentId} compact={false} />
+                : <span className="live-compare-config-status" role="status">{t("live.configuring")}</span>}
+              {lane?.failure !== undefined && <p role="alert">{lane.failure}</p>}
+            </section>;
+          })}
+        </div>}
       </PromptInputFooter>
     </PromptInput>
   </main>;

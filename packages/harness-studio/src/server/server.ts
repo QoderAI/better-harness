@@ -678,16 +678,28 @@ async function route(
       respondJson(response, 400, { error: `ACP Agent '${requestedAgentId}' is not an available Studio Agent.` });
       return;
     }
+    // A prepared Compare session receives its real prompt only after its inline
+    // configuration has been reviewed. The validated request remains the source
+    // of truth for ordinary runs, while `start` may replace it for prepared ones.
+    let initialPrompt = "";
     await streamHarnessRun(request, response, {
       source: acpAgent.harnessSource ?? DEFAULT_LOCAL_ACP_HARNESS_SOURCE,
       harnessId: acpAgent.harnessId ?? DEFAULT_LOCAL_HARNESS_ID,
       runtimeId: acpAgent.runtimeId ?? DEFAULT_LOCAL_ACP_RUNTIME_ID,
       ...(runtimeOptions.cwd !== undefined ? { cwd: runtimeOptions.cwd } : {}),
       ...(runtimeOptions.sourceRoot !== undefined ? { sourceRoot: runtimeOptions.sourceRoot } : {}),
+      onInput: (input) => {
+        initialPrompt = input.prompt;
+        ensureAcpRun(state, input.runId).setInitialPrompt = (value) => {
+          if (typeof value !== "string" || value.trim() === "") throw new Error("Enter a prompt before starting this ACP session.");
+          initialPrompt = value;
+        };
+      },
       executorFactory: acpExecutorFactory(acpAgent, state, {
         prepare: url.searchParams.get("prepare") === "1",
         connect: url.searchParams.get("connect") === "1",
         conversation: url.searchParams.get("conversation") === "1",
+        initialPrompt: () => initialPrompt,
         agentId: requestedAgentId ?? "__default",
         cwd: runtimeOptions.cwd ?? process.cwd(),
         recovery,

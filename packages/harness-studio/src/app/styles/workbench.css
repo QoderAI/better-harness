@@ -1759,10 +1759,19 @@
 .live-compare-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-compare-chip > button { width: 24px; min-width: 24px; height: 24px; min-height: 24px; flex: none; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-full); color: var(--color-text-muted); background: transparent; }
 .live-compare-chip > button:hover { color: var(--color-text); background: var(--color-surface-hover); }
-/* Exactly one note sits between the chips and Run, and it is the row's only
-   flexible cell so Run stays pinned to the trailing edge. */
-.live-compare-note { min-width: 0; flex: 1 1 12rem; margin: 0; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.live-compare-note.status-warning { color: var(--color-warning); }
+/* Readiness is a compact part of the command row. It never claims a separate
+   line; Agent configuration expands below only after an Agent is selected. */
+.live-compare-note { min-width: 0; flex: 0 1 auto; max-width: min(20rem, 100%); margin: 0; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.live-compare-note.status-warning,
+.live-compare-readiness.status-warning { color: var(--color-warning); }
+.live-compare-readiness { flex: none; min-width: 0; color: var(--color-text-muted); font-size: var(--type-meta-size); white-space: nowrap; }
+.live-compare-configurations { flex: 1 0 100%; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--space-sm); padding-top: var(--space-sm); border-top: 1px solid var(--color-border); }
+.live-compare-configuration { min-width: min(100%, 18rem); flex: 1 1 18rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); padding-inline: var(--space-sm); border-left: 2px solid var(--color-primary); }
+.live-compare-configuration > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-meta-size); }
+.live-compare-configuration .acp-config-toolbar { align-items: start; }
+.live-compare-configuration .acp-setting { grid-template-columns: minmax(7rem, 1fr) minmax(8rem, 1.25fr); }
+.live-compare-config-status { color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.live-compare-configuration [role="alert"] { margin: 0; color: var(--color-danger); font-size: var(--type-meta-size); overflow-wrap: anywhere; }
 .live-compare-shared-tree { position: relative; color: var(--color-warning); }
 .live-compare-shared-tree > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-compare-note-toggle { width: 24px; min-width: 24px; height: 24px; min-height: 24px; flex: none; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-full); color: var(--color-text-muted); background: transparent; }
@@ -1896,6 +1905,9 @@
 
 .session-compare-workspace { width: 100%; height: 100%; min-width: 0; overflow: auto; }
 .session-compare-workspace > header { min-height: var(--pane-header-height); padding: 0 var(--space-md); display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.session-compare-empty { max-width: 42rem; margin: auto; padding: var(--space-xl); color: var(--color-text-muted); }
+.session-compare-empty h2 { margin: 0; color: var(--color-text); font-size: var(--type-section-size); }
+.session-compare-empty p { margin: var(--space-sm) 0 0; }
 .session-compare-workspace > header h1 { margin: 0; font-size: var(--type-label-size); }
 .session-compare-picker { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--color-border); }
 .session-compare-picker label { min-width: 0; padding: var(--space-md); display: grid; gap: var(--space-xs); }

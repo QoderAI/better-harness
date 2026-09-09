@@ -25,9 +25,10 @@ async function start(page, prompt = "first") {
   await page.getByRole("button", { name: /^Choose Agents/ }).click();
   for (const name of ["Alpha ACP", "Beta ACP"]) await page.getByRole("menuitemcheckbox", { name: new RegExp(name) }).click();
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Configure Agents", exact: true }).click();
+  // Agent settings prepare inline in the shared composer; Run is the only
+  // transition that creates message lanes and dispatches the initial prompt.
+  await page.getByRole("button", { name: "Run 2 Agents", exact: true }).click();
   const lanes = page.locator(".live-compare-lane");
-  for (let index = 0; index < 2; index++) await lanes.nth(index).getByRole("button", { name: "Send prompt", exact: true }).click();
   return [lanes.nth(0), lanes.nth(1)];
 }
 const draft = lane => lane.locator(".acp-composer textarea");

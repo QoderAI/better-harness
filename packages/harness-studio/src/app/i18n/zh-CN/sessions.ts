@@ -67,6 +67,8 @@ export const sessions: typeof enSessions = {
     aria: "观测到的会话差异",
     eyebrow: "观测到的保留证据",
     title: "对比 Agent",
+    selectPairTitle: "选择两个会话进行对比",
+    selectPairDetail: "请先在会话中选中两个保留会话，再点击“对比”。",
     left: "左侧 Agent 会话",
     right: "右侧 Agent 会话",
     loading: "正在加载会话对比…",
