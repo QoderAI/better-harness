@@ -1,0 +1,66 @@
+import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { test, expect } from '@playwright/test';
+import { startHarnessStudioServer } from '../../dist/server/server.js';
+import { createRustEvidenceHost } from '../../dist/server/workspace/rust-evidence-provider.js';
+import { writePerformanceFixture } from './fixtures/performance.mjs';
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const executable = process.env.HARNESS_EVIDENCE_HOST ?? join(packageRoot, '..', 'better-harness-desktop', 'dist', 'rust', 'release', `harness-evidence-host${process.platform === 'win32' ? '.exe' : ''}`);
+let root, studio, host, project;
+test.skip(!existsSync(executable), 'Build the Rust evidence host to exercise native session performance.');
+test.beforeAll(async () => {
+  root = await mkdtemp(join(tmpdir(), 'performance-browser-'));
+  const fixture = await writePerformanceFixture(root);
+  host = createRustEvidenceHost({ executable });
+  studio = await startHarnessStudioServer({ appDir: join(packageRoot,'dist','app'), port: 0, sessionPerformanceHome: fixture.home, sessionPerformanceProvider: host,
+    workspaceDirectoryPicker: async () => fixture.workspace, workspaceSessionProvider: { discover: async () => ({ label: 'Timing fixture', sessions: [] }) } });
+  project = (await (await fetch(`${studio.url}/api/projects/open`, { method: 'POST' })).json()).project;
+});
+test.afterAll(async () => { await studio?.close(); await host?.close(); if (root) await rm(root,{ recursive:true, force:true }); });
+for (const layout of [{name:'wide',width:1440,height:900},{name:'compact',width:1024,height:768},{name:'narrow',width:390,height:844}]) {
+ test(`storage report ${layout.name}`,async({page},info)=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.setViewportSize(layout);await page.addInitScript(()=>localStorage.setItem('harness-studio-language','en'));
+  await page.goto(`${studio.url}/#/projects/${project.id}/sessions/performance?session=slow-session`);
+  await expect(page.locator('.storage-category')).toHaveCount(6);
+  await expect(page.locator('.storage-bar')).toBeVisible();
+  await expect(page.locator('.performance-intervals')).not.toBeVisible();
+  await page.screenshot({path:info.outputPath(`storage-${layout.name}.png`),fullPage:true});
+  const waiting=page.locator('.storage-category').filter({hasText:'Waiting'});
+  await waiting.focus();await waiting.press('Enter');
+  await expect(page.locator('.storage-title')).toContainText('Qoder · slow-ses');
+  await expect(waiting).toHaveAttribute('aria-expanded','true');
+  await page.locator('.storage-part').filter({hasText:'Bash'}).click();
+  await expect(page.locator('.storage-detail-heading')).toContainText('cumulative call time');
+  await page.screenshot({path:info.outputPath(`storage-${layout.name}-drilldown.png`),fullPage:true});
+  await page.locator('.storage-call').first().click();
+  await expect(page.locator('.performance-evidence')).toBeFocused();
+  await expect(page.locator('.performance-evidence')).toContainText('5 m 45 s');
+  await page.locator('.performance-evidence').press('Escape');
+  await expect(page.locator('.storage-call').first()).toBeFocused();
+  await waiting.click();await expect(waiting).toHaveAttribute('aria-expanded','false');
+  await expect(page.locator('.storage-call')).toHaveCount(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  expect(await page.locator('.performance-analysis').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+  expect(errors).toEqual([]);
+ });
+}
+test('dark Chinese report and nested proportions',async({page},info)=>{
+ await page.setViewportSize({width:1440,height:900});await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});
+ await page.addInitScript(()=>localStorage.setItem('harness-studio-language','zh-CN'));
+ await page.goto(`${studio.url}/#/projects/${project.id}/sessions/performance?session=slow-session`);
+ await expect(page.locator('.storage-category')).toHaveCount(6);
+ await page.screenshot({path:info.outputPath('storage-dark-zh.png'),fullPage:true});
+ const agents=page.locator('.storage-category').filter({hasText:'Subagents'});
+ await expect(agents).toContainText('1 m 9 s');
+ await agents.click();
+ await expect(page.locator('.storage-title')).toContainText('Qoder · slow-ses');
+ await expect(page.locator('.storage-agent-summary')).toContainText('峰值并发');
+ await page.screenshot({path:info.outputPath('storage-subagents.png'),fullPage:true});
+ await page.evaluate(()=>document.documentElement.style.zoom='2');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+ await page.screenshot({path:info.outputPath('storage-reflow.png'),fullPage:true});
+});

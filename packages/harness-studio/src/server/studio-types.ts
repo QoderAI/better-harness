@@ -64,6 +64,11 @@ export interface StudioWorkspaceSessionProvider {
   discover(workspacePath: string): Promise<StudioWorkspaceDiscovery>;
 }
 export interface HarnessStudioServerOptions {
+  /** Server-owned Qoder log root; browser requests cannot override it. */
+  sessionPerformanceHome?: string;
+  sessionPerformanceProvider?: {
+    analyzeSessionPerformance(params: Record<string, unknown>): Promise<Record<string, unknown>>;
+  };
   /** Configured ACP profiles for explicitly started Memory analysis sessions. */
   memoryAcpAgents?: readonly StudioAcpAgentProfile[];
   /** Server-owned isolated Memory home; never accepted from browser requests. */

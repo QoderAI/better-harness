@@ -65,6 +65,8 @@ export const common: typeof enCommon = {
     plane: "Harness 控制台",
   },
   area: {
+    "session-performance": "性能分析",
+    sessionOverview: "概览",
     memory: "Memory",
     "memory-sources": "Memory 来源",
     customizations: "自定义",

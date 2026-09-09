@@ -57,11 +57,14 @@ import {
   type StudioConfig,
 } from "./studio-shell-model.js";
 
+const SessionPerformanceWorkspace = lazy(() => import("./performance/SessionPerformanceWorkspace.js"));
+
 const STUDIO_AREAS: readonly StudioArea[] = [
   "memory",
   "memory-sources",
   "customizations",
   "sessions",
+  "session-performance",
   "commits",
   "artifacts",
   "debugger",
@@ -586,6 +589,7 @@ export function App(): React.JSX.Element {
           const projectId = await workspaceChanged();
           globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
         }} /> : <>
+        {area === "session-performance" && <SessionPerformanceWorkspace key={`performance-${config.activeProjectId}-${config.projectRevision}`} config={config} dateRange={dateRange} />}
         {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}-${dateScopeKey}`} dateRange={dateRange} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
         {area === "customizations" && (config.customizationAnalysisEnabled
           ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />

@@ -94,6 +94,7 @@ port.on('message', async (data) => {
         projectStateRoot: join(data.dataDirectory, 'state'),
         workspaceSessionProvider: createRustEvidenceWorkspaceSessionProvider(evidenceHost),
         memoryProvider: evidenceHost,
+        sessionPerformanceProvider: evidenceHost,
         customizationCollector: createBundledAgentCustomizationCollector(),
         workspaceDirectoryPicker: pickDirectory,
       });

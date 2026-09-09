@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { createInspectorWorkspaceSessionProvider } from "./inspector-workspace-provider.mjs";
@@ -18,9 +19,15 @@ const acpAgentArgs = JSON.parse(process.env.BETTER_HARNESS_ACP_ARGS_JSON || "[]"
 if (!Array.isArray(acpAgentArgs) || !acpAgentArgs.every((value) => typeof value === "string")) {
   throw new Error("BETTER_HARNESS_ACP_ARGS_JSON must be a JSON string array.");
 }
+const nativeIndex = process.argv.indexOf("--evidence-host");
+const nativeExecutable = nativeIndex >= 0 ? path.resolve(process.argv[nativeIndex + 1])
+  : path.join(repositoryRoot, "packages", "better-harness-desktop", "dist", "native", `harness-evidence-host${process.platform === "win32" ? ".exe" : ""}`);
+const { createRustEvidenceHost } = await import(path.join(packageRoot, "dist", "server", "workspace", "rust-evidence-provider.js"));
+const performanceHost = existsSync(nativeExecutable) ? createRustEvidenceHost({ executable: nativeExecutable }) : undefined;
 const started = await startHarnessStudioServer({
   appDir: path.join(packageRoot, "dist", "app"),
   port,
+  sessionPerformanceProvider: performanceHost,
   workspaceSessionProvider: createInspectorWorkspaceSessionProvider(),
   acpAgent: {
     command: process.env.BETTER_HARNESS_ACP_AGENT || "codex-acp",

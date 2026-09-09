@@ -357,7 +357,7 @@
    accent, as in a focused macOS source list. The former 2px leading border plus
    tinted label is a VS Code treatment and asked `primary` to read as text on an
    accent-tinted bed, which cannot reach AA in either theme. */
-.studio-project-views > button {
+.studio-project-views button {
   width: calc(100% - var(--sidebar-inset) * 2);
   min-width: 0;
   min-height: var(--navigation-row-height);
@@ -375,25 +375,25 @@
   font-weight: var(--weight-regular);
 }
 
-.studio-project-views > button:hover { background: var(--color-surface-hover); }
-.studio-project-views > button:active { background: var(--color-surface-active); }
+.studio-project-views button:hover { background: var(--color-surface-hover); }
+.studio-project-views button:active { background: var(--color-surface-active); }
 
-.studio-project-views > button[aria-current="page"] {
+.studio-project-views button[aria-current="page"] {
   color: var(--color-on-primary);
   background: var(--color-primary);
 }
 
-.studio-project-views > button[aria-current="page"]:hover { background: var(--color-primary-hover); }
+.studio-project-views button[aria-current="page"]:hover { background: var(--color-primary-hover); }
 
-.studio-project-views > button > svg { justify-self: center; color: var(--color-text-muted); }
-.studio-project-views > button[aria-current="page"] > svg { color: currentColor; }
+.studio-project-views button > svg { justify-self: center; color: var(--color-text-muted); }
+.studio-project-views button[aria-current="page"] > svg { color: currentColor; }
 
-.studio-project-views > button strong { min-width: 0; overflow: hidden; color: inherit; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-label-size); font-weight: var(--weight-regular); }
-.studio-project-views > button[aria-current="page"] strong { font-weight: var(--weight-semibold); }
+.studio-project-views button strong { min-width: 0; overflow: hidden; color: inherit; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-label-size); font-weight: var(--weight-regular); }
+.studio-project-views button[aria-current="page"] strong { font-weight: var(--weight-semibold); }
 
 /* The trailing slot: a named availability for a View. */
-.studio-project-views > button small { flex: none; color: var(--color-text-subtle); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.studio-project-views > button[aria-current="page"] small { color: currentColor; }
+.studio-project-views button small { flex: none; color: var(--color-text-subtle); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.studio-project-views button[aria-current="page"] small { color: currentColor; }
 
 .studio-project-remove { width: var(--toolbar-target); height: var(--toolbar-target); position: absolute; top: 50%; right: var(--space-xs); display: grid; place-items: center; border: 0; border-radius: var(--radius-xs); padding: 0; color: var(--color-text-subtle); background: transparent; opacity: 0; transform: translateY(-50%); }
 .studio-project-menu-row:hover .studio-project-remove,
@@ -706,6 +706,7 @@
 .studio-surface-customizations,
 .studio-surface-debugger,
 .studio-surface-sessions,
+.studio-surface-session-performance,
 .studio-surface-compare { overflow: hidden; }
 .studio-surface .debugger-mode,
 .studio-surface main.experiment-mode { width: 100%; height: 100%; min-height: 0; max-width: none; margin: 0; padding: 0; }

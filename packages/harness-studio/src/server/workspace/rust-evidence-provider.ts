@@ -25,6 +25,7 @@ export interface RustEvidenceHost {
   observe(params: { workspace: string; sessions: unknown[] }): Promise<Record<string, unknown>>;
   discoverMemory(params: Record<string, unknown>): Promise<Record<string, unknown>>;
   readMemory(params: Record<string, unknown>): Promise<Record<string, unknown>>;
+  analyzeSessionPerformance(params: Record<string, unknown>): Promise<Record<string, unknown>>;
   close(): Promise<void>;
 }
 
@@ -180,6 +181,7 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
     },
     discoverMemory(params) { return call("memory.discover", params); },
     readMemory(params) { return call("memory.read", params); },
+    analyzeSessionPerformance(params) { return call("sessions.performance", params); },
     async close() {
       if (closed) return;
       const active = child;

@@ -1,4 +1,5 @@
 import { readAcpConversation, listAcpConversations } from "./acp-conversation-log.js";
+import { sessionPerformanceRoute } from "./session-performance-routes.js";
 import { memoryRoute } from "./memory-routes.js";
 import { resolve } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -255,6 +256,7 @@ async function route(
   experimentRuns: Map<string, AbortController>,
 ): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
+  if (await sessionPerformanceRoute(request, response, state, options)) return;
   if (await memoryRoute(request, response, state, options)) return;
   if (request.method === "GET" && url.pathname === "/api/config") {
     const defaultAcpAgent = options.acpAgent
@@ -276,6 +278,7 @@ async function route(
       historyEnabled: state.historyAdapter !== undefined,
       inspectorEnabled: activeSourcePath(state.sourceCatalog, state.activeSources, "inspector") !== undefined,
       gitEnabled: state.workspace?.gitRoot !== undefined,
+      sessionPerformanceEnabled: options.sessionPerformanceProvider !== undefined,
       workspaceWorkbenchEnabled: state.workspace?.inspectorReport !== undefined,
       workspaceDiscoveryEnabled: options.workspaceSessionProvider !== undefined,
       workspaceConnected: state.workspace !== undefined,

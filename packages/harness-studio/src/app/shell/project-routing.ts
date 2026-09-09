@@ -10,6 +10,10 @@ const PROJECT_ID = /^project_[a-f0-9]{32}$/u;
 export function parseStudioLocation(hash: string | undefined, areas: ReadonlySet<string>): StudioLocation {
   const route = (hash ?? "").replace(/^#\/?/u, "").split('?')[0]!;
   const parts = route.split("/").filter(Boolean);
+  if (parts[0] === "projects" && parts.length === 4 && PROJECT_ID.test(parts[1]!) && parts[2] === "sessions" && parts[3] === "performance") {
+    return { projectId: parts[1], area: "session-performance" };
+  }
+  if (parts.length === 2 && parts[0] === "sessions" && parts[1] === "performance") return { area: "session-performance" };
   // A retained hash can name a View this build no longer has. The Project is
   // still the scope the reader asked for, so keep it and land on the default
   // View rather than dropping back to a Project-less route.
@@ -21,7 +25,8 @@ export function parseStudioLocation(hash: string | undefined, areas: ReadonlySet
 }
 
 export function studioLocationHash(location: StudioLocation): string {
+  const route = location.area === "session-performance" ? "sessions/performance" : location.area;
   return location.projectId === undefined
-    ? `#/${location.area}`
-    : `#/projects/${location.projectId}/${location.area}`;
+    ? `#/${route}`
+    : `#/projects/${location.projectId}/${route}`;
 }

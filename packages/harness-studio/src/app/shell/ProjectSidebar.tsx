@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Icon } from "@phosphor-icons/react";
+import { CaretDown } from "@phosphor-icons/react/CaretDown";
+import { CaretRight } from "@phosphor-icons/react/CaretRight";
+import { Gauge } from "@phosphor-icons/react/Gauge";
 import { Binoculars } from "@phosphor-icons/react/Binoculars";
 import { Brain } from "@phosphor-icons/react/Brain";
 import { BugBeetle } from "@phosphor-icons/react/BugBeetle";
@@ -23,6 +26,7 @@ const VIEW_ICONS: Record<StudioArea, Icon> = {
   memory: Brain,
   customizations: PuzzlePiece,
   sessions: Binoculars,
+  "session-performance": Gauge,
   commits: GitBranch,
   artifacts: Package,
   debugger: BugBeetle,
@@ -59,7 +63,10 @@ export function ProjectSidebar(props: {
   // rows only. Projects moved to the switcher, which is a menu button with its
   // own keyboard contract.
   const viewDestinations = props.destinations.filter((destination) => destination.id !== "memory");
-  const orderedIds = viewDestinations.map((destination) => `view:${destination.id}`);
+  const [sessionsExpanded, setSessionsExpanded] = useState(true);
+  const orderedIds = viewDestinations.flatMap((destination) => destination.id === "session-performance" ? [] : destination.id === "sessions"
+    ? ["sessions-group", ...(sessionsExpanded ? ["view:sessions", "view:session-performance"] : [])] : [`view:${destination.id}`]);
+  useEffect(() => { if (props.current === "sessions" || props.current === "session-performance") setSessionsExpanded(true); }, [props.current]);
   const selectedNavigationId = props.current === null ? "" : `view:${props.current}`;
   const [focusedNavigationId, setFocusedNavigationId] = useState(selectedNavigationId);
   const tabStopId = orderedIds.includes(focusedNavigationId)
@@ -93,6 +100,12 @@ export function ProjectSidebar(props: {
   }, [menuOpen]);
 
   function onNavigationKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
+    const focusedKey = [...navigationRefs.current.entries()].find(([, button]) => button === document.activeElement)?.[0];
+    if (["sessions-group", "view:sessions", "view:session-performance"].includes(focusedKey ?? "") && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
+      event.preventDefault(); setSessionsExpanded(event.key === "ArrowRight");
+      if (event.key === "ArrowLeft") { setFocusedNavigationId("sessions-group"); navigationRefs.current.get("sessions-group")?.focus(); }
+      return;
+    }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     if (orderedIds.length === 0) return;
     event.preventDefault();
@@ -200,7 +213,16 @@ export function ProjectSidebar(props: {
         aria-label={activeProject === undefined ? t("sidebar.configuredViewsAria") : t("sidebar.viewsAria", { label: activeProject.label })}
       >
         <h2>{t("sidebar.views")}</h2>
-        {viewDestinations.map((destination) => renderView(destination))}
+        {viewDestinations.filter(d => d.id !== "session-performance").map((destination) => destination.id !== "sessions" ? renderView(destination) : <div key="sessions" className="studio-sessions-nav">
+          <button type="button" aria-expanded={sessionsExpanded} aria-controls="studio-sessions-children"
+            ref={node => { if (node) navigationRefs.current.set("sessions-group", node); else navigationRefs.current.delete("sessions-group"); }}
+            tabIndex={tabStopId === "sessions-group" ? 0 : -1} onFocus={() => setFocusedNavigationId("sessions-group")}
+            onClick={() => setSessionsExpanded(value => !value)}><Binoculars aria-hidden="true" size={15} /><strong>{destination.label}</strong>{sessionsExpanded ? <CaretDown aria-hidden="true" size={13} /> : <CaretRight aria-hidden="true" size={13} />}</button>
+          {sessionsExpanded && <div id="studio-sessions-children" className="studio-sessions-children">
+            {renderView({ ...destination, label: t("area.sessionOverview") })}
+            {renderView(props.destinations.find(d => d.id === "session-performance")!)}
+          </div>}
+        </div>)}
       </section>
     </nav>
 

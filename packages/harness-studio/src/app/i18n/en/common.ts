@@ -63,6 +63,8 @@ export const common = {
     plane: "Harness control plane",
   },
   area: {
+    "session-performance": "Performance",
+    sessionOverview: "Overview",
     memory: "Memory",
     "memory-sources": "Memory sources",
     customizations: "Customizations",

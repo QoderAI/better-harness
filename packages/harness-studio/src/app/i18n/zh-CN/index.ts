@@ -10,7 +10,10 @@ import { run } from "./run.js";
 import { sessions } from "./sessions.js";
 import { workspace } from "./workspace.js";
 
+import { performance } from "./performance.js";
+
 export const namespaces = {
+  performance,
   common,
   workspace,
   sessions,

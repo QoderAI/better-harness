@@ -4,6 +4,7 @@ export type StudioArea =
   | "memory"
   | "memory-sources"
   | "customizations"
+  | "session-performance"
   | "sessions"
   | "commits"
   | "artifacts"
@@ -43,6 +44,7 @@ export interface StudioSessionAgent {
 export type StudioSessionCompareScope = "cross-agent" | "single-agent" | "insufficient";
 
 export interface StudioConfig {
+  sessionPerformanceEnabled?: boolean;
   runEnabled: boolean;
   acpEnabled: boolean;
   acpAgentLabel?: string;
@@ -138,6 +140,10 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
       group: t("group.observe"),
       availability: config.workspaceConnected ? "ready" : "partial",
       status: sessionsStatus(),
+    },
+    {
+      id: "session-performance", label: t("area.session-performance"), group: t("group.observe"),
+      availability: config.sessionPerformanceEnabled ? "ready" : "foundation", status: config.sessionPerformanceEnabled ? t("area.session-performance") : t("destination.collectorUnavailable"),
     },
     {
       id: "commits",
