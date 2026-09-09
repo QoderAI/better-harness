@@ -1,8 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Diagnostic } from "../contracts/index.js";
-import type { ManagedArtifactLinker } from "../linker/port.js";
-import type { LinkResult } from "../linker/esbuild-linker.js";
-import { entryModuleSource } from "../linker/entry.js";
+import { entryModuleSource, type LinkResult, type ManagedArtifactLinker } from "../linker/index.js";
 
 export const GO_ESBUILD_LINKER_VERSION = "esbuild-go-0.28.2+link-v1";
 const MAX_FRAME = 64 * 1024 * 1024;

@@ -16,5 +16,6 @@ export {
   type TrustedRuntimePackage,
 } from "./allowed-packages.js";
 export { LINK_ENTRY, linkArtifactBundle, type LinkInput, type LinkResult } from "./esbuild-linker.js";
+export { entryModuleSource } from "./entry.js";
 
 export { WASM_ARTIFACT_LINKER, type ArtifactLinker, type ManagedArtifactLinker, type ArtifactLinkerFactory } from "./port.js";
