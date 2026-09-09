@@ -1,0 +1,68 @@
+[package]
+name = "harness-ontology-service"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+publish = false
+
+[[bin]]
+name = "harness-ontology-service"
+path = "src/main.rs"
+
+# macOS NSXPC service (launchd-managed) and the stdio<->NSXPC bridge Studio
+# spawns in its place. Both are thin transport shells around the driver in
+# `lib.rs`; off macOS they compile to a stub that exits non-zero. Mirrors
+# `oxc-service` and `evidence-host` so the three hosts stay reviewable together.
+[[bin]]
+name = "harness-ontology-xpc"
+path = "src/bin/harness-ontology-xpc.rs"
+
+[[bin]]
+name = "harness-ontology-client"
+path = "src/bin/harness-ontology-client.rs"
+
+[features]
+# Statically-linked grammars for the pilot language set. Languages outside
+# this set are registered (so `host.describe` lists them) but resolve as
+# `grammar-unavailable` until their `.wasm` grammar is loaded at runtime
+# through the `wasm` feature below — see ADR-0008.
+default = ["native-grammars"]
+native-grammars = [
+  "dep:tree-sitter-rust",
+  "dep:tree-sitter-python",
+  "dep:tree-sitter-go",
+  "dep:tree-sitter-typescript",
+]
+
+[dependencies]
+# `wasm` pulls in wasmtime-c-api so `GrammarRegistry` can load a language from
+# a `.wasm` buffer at runtime (`tree_sitter::WasmStore`), independent of the
+# native grammar crates below. No `.wasm` grammars are bundled yet; see the
+# Spec's Non-goals.
+tree-sitter = { version = "0.27", features = ["wasm"] }
+tree-sitter-rust = { version = "=0.24.2", optional = true }
+tree-sitter-python = { version = "=0.25.0", optional = true }
+tree-sitter-go = { version = "=0.25.0", optional = true }
+# Also provides the TSX grammar, reused for both `tsx` and `javascript` — the
+# same reuse Zed's own language configs make (JS is a permissive subset of the
+# TSX grammar).
+tree-sitter-typescript = { version = "=0.23.2", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+# `QueryCursor::matches` yields a `StreamingIterator` (each match borrows the
+# cursor), not a normal `Iterator`; this trait is what makes `.next()` callable.
+streaming-iterator = "0.1.9"
+
+[dev-dependencies]
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "libc", "NSXPCConnection", "NSObject", "NSString", "NSData", "NSError", "NSSet", "NSRunLoop", "block2"] }
+block2 = "0.6.2"
+
+[build-dependencies]
+cc = "1"
