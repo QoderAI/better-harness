@@ -454,6 +454,50 @@ fn dsh_zstd_fixture_is_discovered() {
 }
 
 #[test]
+fn dsh_packed_rows_become_assistant_text_and_one_tool_call() {
+    let workspace = unique_dir("evidence-dsh-packed-workspace");
+    fs::write(workspace.join("mod.rs"), "ok").unwrap();
+    let workspace = fs::canonicalize(&workspace).unwrap();
+    let home = unique_dir("evidence-dsh-packed-home");
+    let cwd = workspace.to_string_lossy().into_owned();
+    let dir = home
+        .join("sessions")
+        .join(dsh_project_key(&cwd))
+        .join(encode_dsh_session_id("dsh-packed"));
+    fs::create_dir_all(&dir).unwrap();
+    let args = json!({"file_path": workspace.join("mod.rs").to_string_lossy()}).to_string();
+    let (left, right) = args.split_at(args.len() / 2);
+    fs::write(
+        dir.join("session.jsonl"),
+        format!(
+            "{}\n{}\n{}\n{}\n",
+            json!({"type":"session","version":0,"id":"dsh-packed","cwd": cwd, "createdAt": 1757300000000i64, "delegationDepth": 0}),
+            json!({"type":"text-chunks","seq0":0,"time0":1757300001000i64,"data":{"turn":1,"step":1,"index":0,"dt":[1],"texts":["Look","ing."]}}),
+            json!({"type":"reasoning-chunks","seq0":2,"time0":1757300001002i64,"data":{"turn":1,"step":1,"index":1,"dt":[],"texts":["hidden"]}}),
+            json!({"type":"tool-call-chunks","seq0":3,"time0":1757300001003i64,"data":{"turn":1,"step":1,"index":2,"id":"c1","name":"Read","dt":[1],"args":[left, right]}})
+        ),
+    )
+    .unwrap();
+    let sessions = dsh::discover_from(&home, &workspace, 10).unwrap();
+    fs::remove_dir_all(&workspace).ok();
+    fs::remove_dir_all(&home).ok();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(
+        sessions[0].dialogue.as_ref().unwrap().turns[0]
+            .response
+            .as_deref(),
+        Some("Looking.")
+    );
+    assert_eq!(sessions[0].tool_call_count, 1);
+    assert_eq!(
+        sessions[0].tool_activity.as_ref().unwrap().calls[0]
+            .file_path
+            .as_deref(),
+        Some("mod.rs")
+    );
+}
+
+#[test]
 fn pi_custom_session_dir_and_fork_cutoff() {
     let workspace = unique_dir("evidence-pi-custom-workspace");
     fs::write(workspace.join("main.rs"), "fn main() {}").unwrap();

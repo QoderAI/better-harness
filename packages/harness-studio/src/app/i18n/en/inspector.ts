@@ -5,7 +5,7 @@ export const inspector = {
   loading: "Loading React Inspector workbench…",
   resizePrompts: "Resize prompts lane",
   resizeActivity: "Resize activity lane",
-  graph: { time: "Observed time", sequence: "Call order", previous: "Previous", next: "Next", zoomIn: "Zoom in", zoomOut: "Zoom out", label: "Tool activity graph" },
+  graph: { time: "Observed time", sequence: "Call order", previous: "Previous", next: "Next", zoomIn: "Zoom in", zoomOut: "Zoom out", label: "Tool activity graph", allActivity: "All activity", callAxis: "Call", idle: "idle" },
   workbenchAria: "React Harness Inspector Workbench",
   scopePickerAria: "Scope picker",
   expandTree: "Expand capability tree",

@@ -115,6 +115,25 @@ fn read_session(
             .and_then(|value| normalize_timestamp(value));
         snap.stamp(stamp.clone());
         match kind {
+            "text-chunks" => {
+                if let Some(joined) = packed_texts(record) {
+                    snap.assistant(&joined);
+                    snap.stamp(
+                        record
+                            .get("time0")
+                            .and_then(|value| normalize_timestamp(value)),
+                    );
+                }
+            }
+            "reasoning-chunks" => {}
+            "tool-call-chunks" => {
+                if let Some((id, name, input)) = packed_tool(record) {
+                    let stamp = record
+                        .get("time0")
+                        .and_then(|value| normalize_timestamp(value));
+                    snap.tool(workspace, &id, &name, &input, stamp);
+                }
+            }
             "user/message" => {
                 let source = record.pointer("/data/source/kind").and_then(Value::as_str);
                 if source != Some("user") {
@@ -166,4 +185,32 @@ fn read_session(
         }
     }
     snap.finish()
+}
+
+fn packed_texts(record: &Value) -> Option<String> {
+    let texts = record.pointer("/data/texts")?.as_array()?;
+    let joined = texts
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>()
+        .join("");
+    (!joined.is_empty()).then_some(joined)
+}
+
+fn packed_tool(record: &Value) -> Option<(String, String, Value)> {
+    let data = record.get("data")?;
+    let id = data.get("id").and_then(Value::as_str)?.to_string();
+    let name = data
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("tool")
+        .to_string();
+    let args = data.get("args")?.as_array()?;
+    let joined = args
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>()
+        .join("");
+    let input = serde_json::from_str(&joined).unwrap_or(Value::Null);
+    Some((id, name, input))
 }
