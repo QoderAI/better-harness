@@ -67,3 +67,16 @@ export function isPerformanceResult(value: unknown, detail: boolean): value is P
       && array(s.evidence, 4, evidence) && object(s.facts) && Object.keys(s.facts).length <= 30
       && Object.values(s.facts).every(v => v === null || typeof v === 'boolean' || text(v) || typeof v === 'number' && Number.isFinite(v)));
 }
+
+export interface PerformanceSource {
+  schemaVersion: 1; engine: 'rust'; source: string; line: number;
+  startLine: number; content: string; truncated: boolean; scannedBytes: number;
+}
+export function isPerformanceSource(v: unknown): v is PerformanceSource {
+  if (!object(v) || v.schemaVersion !== 1 || v.engine !== 'rust' || !text(v.source)
+    || !count(v.line) || v.line < 1 || !count(v.startLine) || v.startLine < 1
+    || typeof v.content !== 'string' || v.content.length > 60000
+    || typeof v.truncated !== 'boolean' || !count(v.scannedBytes) || v.scannedBytes > 32 * 1024 * 1024) return false;
+  const lines = v.content.split('\n');
+  return lines.length <= 7 && v.startLine <= v.line && v.line < v.startLine + lines.length;
+}

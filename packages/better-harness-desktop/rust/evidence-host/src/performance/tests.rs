@@ -288,6 +288,31 @@ fn reader_scopes_paths_redacts_labels_and_marks_corrupt_evidence() {
     large.set_len(9 * 1024 * 1024).unwrap();
     let bounded = analyze_params(&input).unwrap();
     assert_eq!(bounded["session"]["coverage"]["truncated"], true);
+    // A huge tail must not change the cost of reading an early source window.
+    use std::io::Write;
+    let mut huge = fs::File::create(dir.join("huge.jsonl")).unwrap();
+    huge.write_all(b"{}\n{}\n{}\n{}\n{}\n").unwrap();
+    huge.set_len(128 * 1024 * 1024).unwrap();
+    let early = analyze_params(&json!({"workspace":workspace,"qoderHome":home,"sessionId":"sample","source":{"source":"1/segments/huge.jsonl","line":2}})).unwrap();
+    assert_eq!(early["scannedBytes"], 15);
+    assert_eq!(early["truncated"], false);
+    let source = analyze_params(&json!({"workspace":workspace,"qoderHome":home,"sessionId":"sample","source":{"source":"1/segments/sample.jsonl","line":2}})).unwrap();
+    assert_eq!(source["startLine"], 1);
+    assert_eq!(source["line"], 2);
+    assert!(source["content"].as_str().unwrap().contains("model.response.completed"));
+    for source in ["../segments/sample.jsonl", "1/segments/../sample.jsonl", "1/segments/C:\\sample.jsonl", "1/segments/linked.jsonl"] {
+        assert!(analyze_params(&json!({"workspace":workspace,"qoderHome":home,"sessionId":"sample","source":{"source":source,"line":1}})).is_err());
+    }
+    let tool_rows = [
+        json!({"type":"tool.requested","ts":"2026-09-01T01:00:00Z","tool_call_id":"one","data":{"tool_name":"Bash","args":{"command":"git status --short","password":"never-return"}}}),
+        json!({"type":"tool.shell.started","ts":"2026-09-01T01:00:05Z","tool_call_id":"one","data":{}}),
+        json!({"type":"tool.execution.finished","ts":"2026-09-01T01:00:06Z","tool_call_id":"one","data":{"tool_name":"Bash"}}),
+    ];
+    fs::write(dir.join("tool.jsonl"), tool_rows.iter().map(serde_json::Value::to_string).collect::<Vec<_>>().join("\n")).unwrap();
+    let calls = analyze_params(&input).unwrap();
+    let wait = calls["spans"].as_array().unwrap().iter().find(|s| s["kind"] == "dispatch").unwrap();
+    assert_eq!(wait["facts"]["callSummary"], "git status --short");
+    assert!(!calls.to_string().contains("never-return"));
     fs::remove_dir_all(root).unwrap();
 }
 

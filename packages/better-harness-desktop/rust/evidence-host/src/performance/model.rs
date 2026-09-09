@@ -8,6 +8,7 @@ pub struct PerformanceParams {
     pub qoder_home: Option<String>,
     pub session_id: Option<String>,
     pub max_sessions: Option<usize>,
+    pub source: Option<SourceRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -173,4 +174,11 @@ pub struct Detail {
     pub total_spans: usize,
     pub omitted_spans: usize,
     pub spans: Vec<Span>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceRequest {
+    pub source: String,
+    pub line: usize,
 }

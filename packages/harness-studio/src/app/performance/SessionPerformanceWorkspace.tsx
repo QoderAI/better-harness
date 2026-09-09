@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft } from '@phosphor-icons/react/ArrowLeft';
 import { ArrowClockwise } from '@phosphor-icons/react/ArrowClockwise';
+import { PerformanceSourceView } from './PerformanceSourceView.js';
 import { StorageReport } from './StorageReport.js';
 import { X } from '@phosphor-icons/react/X';
-import type { PerformanceCatalog, PerformanceDetail, TimingSpan } from '../../contracts/session-performance.js';
+import type { PerformanceCatalog, PerformanceDetail, TimingEvidence } from '../../contracts/session-performance.js';
 import type { StudioConfig } from '../studio-shell-model.js';
 import { withinDateRange, type StudioDateRange } from '../date-range.js';
 
@@ -42,6 +43,8 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
   const [turnId, setTurnId] = useState('');
   const [kind, setKind] = useState('all');
   const [spanId, setSpanId] = useState<string>();
+  const [sourceRecord, setSourceRecord] = useState<TimingEvidence>();
+  const sourceOpener = useRef<HTMLElement | null>(null);
   const [page, setPage] = useState(0);
   const [spanPage, setSpanPage] = useState(0);
   const detailRef = useRef<HTMLElement>(null);
@@ -74,6 +77,8 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
   const selectedTurn = detail?.turns.find(turn => turn.id === turnId);
   const rows = (detail?.spans ?? []).filter(span => (kind === 'all' || span.kind === kind)
     && (!selectedTurn || span.turnId === selectedTurn.label || (span.startMs !== null && span.endMs !== null && span.startMs <= (selectedTurn.endMs ?? selectedTurn.startMs) && span.endMs >= selectedTurn.startMs)));
+  useEffect(() => { setSourceRecord(undefined); }, [spanId, detail]);
+  const closeSource = (): void => { setSourceRecord(undefined); requestAnimationFrame(() => sourceOpener.current?.focus()); };
   const selectedSpan = detail?.spans.find(span => span.id === spanId);
   const start = selectedTurn?.startMs ?? detail?.session.firstSeenMs ?? 0;
   const end = selectedTurn?.endMs ?? detail?.session.lastActivityMs ?? detail?.session.lastSeenMs ?? start;
@@ -89,7 +94,7 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
     const total = Math.max(1, Math.ceil(length / size));
     return total <= 1 ? null : <div className="performance-pager"><button disabled={index === 0} onClick={() => change(index - 1)}>{t('previous')}</button><span>{t('page', { page: index + 1, total })}</span><button disabled={index + 1 >= total} onClick={() => change(index + 1)}>{t('next')}</button></div>;
   }
-  return <section className={`performance-workspace${selection ? ' performance-has-session' : ''}${selectedSpan ? ' performance-has-evidence' : ''}`} aria-label={t('title')}>
+  return <section className={`performance-workspace${selection ? ' performance-has-session' : ''}${selectedSpan ? ' performance-has-evidence' : ''}${sourceRecord ? ' performance-has-source' : ''}`} aria-label={t('title')}>
     <header className="performance-header"><span>{t('subtitle')}</span><button disabled={!catalog && !error} onClick={() => setRefresh(value => value + 1)} aria-label={t('refresh')}><ArrowClockwise aria-hidden="true" size={16} />{t('refresh')}</button></header>
     {error ? <p className="performance-state" role="alert">{t(error === 'unavailable' ? 'unavailable' : 'error')}</p> : !catalog ? <p className="performance-state" role="status">{t('loading')}</p> : <div className="performance-panes">
       <aside className="performance-catalog" aria-label={t('sessions')}>
@@ -122,12 +127,14 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
       {selectedSpan && <aside className="performance-evidence" aria-label={t('evidence')} tabIndex={-1} ref={evidenceRef} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeEvidence(); } }}>
         <div className="performance-toolbar"><h3>{t('evidence')}</h3><button aria-label={t('close')} onClick={closeEvidence}><X aria-hidden="true" size={15} /></button></div>
         <button className="performance-evidence-back" onClick={closeEvidence}><ArrowLeft aria-hidden="true" size={15} />{t('backDetail')}</button>
+        {sourceRecord && <PerformanceSourceView key={`${sourceRecord.source}:${sourceRecord.line}`} sessionId={selectedId!} record={sourceRecord} headers={headers} onClose={closeSource} />}<div hidden={!!sourceRecord}>
         <h2>{selectedSpan.label || metricLabel(selectedSpan.kind)}</h2><strong className="performance-evidence-duration">{timingDuration(selectedSpan.durationMs)}</strong>
+        {typeof selectedSpan.facts.callSummary === 'string' && <pre className="performance-call-summary">{selectedSpan.facts.callSummary}</pre>}
         <dl className="performance-facts">{[['category', metricLabel(selectedSpan.kind)], ['status', t(`statuses.${selectedSpan.status}`, { defaultValue: selectedSpan.status })], ['basis', t(`bases.${selectedSpan.basis}`, { defaultValue: selectedSpan.basis })], ['start', date(selectedSpan.startMs)], ['end', date(selectedSpan.endMs)], ['relationship', selectedSpan.relationship ? t(`relationships.${selectedSpan.relationship}`, { defaultValue: selectedSpan.relationship }) : t('unknownValue')]].map(([key,value]) => <div key={key}><dt>{t(key!)}</dt><dd>{value}</dd></div>)}</dl>
         {selectedSpan.parentId && detail?.spans.some(s => s.id === selectedSpan.parentId) && <button onClick={() => selectSpan(selectedSpan.parentId!)}>{t('parent')}</button>}
         {!!detail?.spans.some(s => s.parentId === selectedSpan.id) && <section><h3>{t('children')}</h3>{detail.spans.filter(s => s.parentId === selectedSpan.id).slice(0,80).map(child => <button className="performance-agent-row" key={child.id} onClick={() => selectSpan(child.id)}><span>{child.label || metricLabel(child.kind)}</span><strong>{timingDuration(child.durationMs)}</strong></button>)}</section>}
-        <h3>{t('raw')}</h3>{selectedSpan.evidence.map((record, index) => <div className="performance-source" key={index}><strong>{record.eventType}</strong><code>{record.source}:{record.line}</code><small>{date(record.timestampMs)}</small></div>)}
-        <details><summary>{t('facts')}</summary><pre>{JSON.stringify(selectedSpan.facts, null, 2)}</pre></details>
+        <h3>{t('raw')}</h3>{selectedSpan.evidence.map((record, index) => <div className="performance-source" key={index}><strong>{record.eventType}</strong><button className="performance-source-link" onClick={event => { sourceOpener.current = event.currentTarget; setSourceRecord(record); }}><code>{record.source}:{record.line}</code></button><small>{date(record.timestampMs)}</small></div>)}
+        <details><summary>{t('facts')}</summary><pre>{JSON.stringify(selectedSpan.facts, null, 2)}</pre></details></div>
       </aside>}
     </div>}
   </section>;

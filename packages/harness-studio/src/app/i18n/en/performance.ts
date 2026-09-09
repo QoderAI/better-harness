@@ -1,4 +1,13 @@
 export const performance = {
+  sourceTitle: 'Source log',
+  backEvidence: 'Back to evidence',
+  sourceNote: 'Read-only excerpt · original line numbers · sensitive values redacted',
+  sourceLoading: 'Reading nearby lines…',
+  sourceError: 'Source could not be read. It may have moved or changed.',
+  sourceLimit: 'This line is beyond the 32 MiB scan limit.',
+  sourceRetry: 'Retry',
+  sourceTruncated: 'Some source text exceeds the preview limit and is omitted or shortened.',
+  sourceLine: 'Source line {{line}}',
  observedElapsed:'Observed elapsed', activityNote:'Each category counts overlapping intervals once. The bar adds category times, so it can exceed elapsed time. Child work is included in its Subagent. Call details use cumulative invocation time.',
   otherCalls: "Other calls",
   overview:'Overview', distribution:'Time distribution', observedTime:'observed time', ofSession:'{{percent}} of session', cumulativeCalls:'cumulative call time', concurrentCalls:'Concurrent calls', categoryShare:'Share of this category’s attributed time', callsOverlap:'Call durations may overlap; percentages use cumulative call time.', breakdown:'Breakdown', categories:'Time by category', agentCountShort:'{{count}} agents', callNumber:'Call {{number}}', timingNotes:'Timing notes', partitionNote:'Overlapping work is counted once. Child work belongs to its Subagent; different activities running together appear as Concurrent. Gaps inside completed turns are Unattributed.', eventDetails:'Execution details', topCalls:'Showing {{shown}} of {{total}} calls', storageKinds:{model:'Model',tool:'Tools',hook:'Hooks',wait:'Waiting',subagent:'Subagents',parallel:'Concurrent',unknown:'Unattributed'},

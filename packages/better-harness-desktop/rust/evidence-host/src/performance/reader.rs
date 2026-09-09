@@ -25,6 +25,9 @@ pub fn read(params: PerformanceParams) -> Result<Value, String> {
     if params.session_id.as_deref().is_some_and(|id| !valid_id(id)) {
         return Err("invalid-session-id".into());
     }
+    if params.source.is_some() && params.session_id.is_none() {
+        return Err("source-session-required".into());
+    }
     let workspace = normalize_workspace(&params.workspace);
     if !workspace.is_dir() {
         return Err("workspace-unavailable".into());
@@ -68,6 +71,10 @@ pub fn read(params: PerformanceParams) -> Result<Value, String> {
             }
             dirs.entry(id).or_default().push(entry.path());
         }
+    }
+    if let Some(source) = &params.source {
+        let paths = dirs.get(params.session_id.as_ref().unwrap()).ok_or("source-not-found")?;
+        return super::source::read(&home, paths, source);
     }
     let mut selected: Vec<_> = dirs.into_iter().collect();
     let discovered = selected.len();
@@ -134,7 +141,7 @@ fn valid_id(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
 }
 
-fn safe_directory(path: &Path, home: &Path) -> bool {
+pub(super) fn safe_directory(path: &Path, home: &Path) -> bool {
     let Ok(relative) = path.strip_prefix(home) else {
         return false;
     };
@@ -280,10 +287,13 @@ fn read_events(home: &Path, dirs: &[PathBuf], budget: u64) -> (Vec<Event>, Cover
                         .take(256)
                         .collect::<String>()
                 };
-                // Keep only metadata used by this analysis. Tool arguments,
-                // commands, outputs and arbitrary error messages never leave
-                // the input line or enter a service response.
+                // Retain bounded metadata and a redacted invocation summary only.
                 let mut data = serde_json::Map::new();
+                if kind == "tool.requested" || kind == "tool.shell.started" {
+                    if let Some(summary) = super::source::call_summary(&raw["data"]) {
+                        data.insert("callSummary".into(), summary.into());
+                    }
+                }
                 // Only actual user-input events may supply a Session title.
                 // Never promote model prompts or tool-output previews.
                 if matches!(kind, "input.prompt.submitted" | "input.prompt.received") {

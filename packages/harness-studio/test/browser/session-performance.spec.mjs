@@ -56,9 +56,31 @@ for (const layout of [{name:'wide',width:1440,height:900},{name:'compact',width:
   await page.locator('.storage-part').filter({hasText:'Bash'}).click();
   await expect(page.locator('.storage-detail-heading')).toContainText('cumulative call time');
   await page.screenshot({path:info.outputPath(`storage-${layout.name}-drilldown.png`),fullPage:true});
+  await expect(page.locator('.storage-call').first()).toContainText('git status --short');
   await page.locator('.storage-call').first().click();
   await expect(page.locator('.performance-evidence')).toBeFocused();
   await expect(page.locator('.performance-evidence')).toContainText('5 m 45 s');
+  const links = page.locator('.performance-source-link');
+  const reference = await links.first().innerText();
+  const line = Number(reference.split(':').at(-1));
+  await links.first().focus(); await links.first().press('Enter');
+  await expect(page.getByRole('region', {name:'Source log'})).toBeFocused();
+  const source = page.locator('.performance-source-view .highlighted-code');
+  await expect(source).toHaveAttribute('data-highlight-state', 'highlighted');
+  await expect(source.locator('[data-active]')).toHaveAttribute('data-line', String(line));
+  await expect(source.locator('[data-active]')).toContainText('git status --short');
+  expect(await source.locator('.highlighted-code-line').count()).toBeLessThanOrEqual(7);
+  const positions = await source.locator('.highlighted-code-line').evaluateAll(lines => lines.map(line => line.getBoundingClientRect().top));
+  expect(positions.length).toBeGreaterThan(1);
+  expect(positions.every((top, i) => i === 0 || top > positions[i - 1])).toBe(true);
+  expect(await page.locator('.performance-evidence').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+  await page.screenshot({path:info.outputPath(`storage-${layout.name}-source.png`),fullPage:true});
+  await source.press('Escape');
+  await expect(links.first()).toBeFocused();
+  await links.last().click();
+  await expect(source).toHaveAttribute('data-highlight-state','highlighted');
+  await expect(source.locator('[data-active]')).toContainText('hook.started');
+  await source.press('Escape');
   await page.locator('.performance-evidence').press('Escape');
   await expect(page.locator('.storage-call').first()).toBeFocused();
   await waiting.click();await expect(waiting).toHaveAttribute('aria-expanded','false');
@@ -83,4 +105,35 @@ test('dark Chinese report and nested proportions',async({page},info)=>{
  await page.evaluate(()=>document.documentElement.style.zoom='2');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
  await page.screenshot({path:info.outputPath('storage-reflow.png'),fullPage:true});
+ await page.locator('.storage-category').filter({hasText:'Waiting'}).click();
+ await page.locator('.storage-part').filter({hasText:'Bash'}).click();
+ await page.locator('.storage-call').first().click();
+ await page.locator('.performance-source-link').first().click();
+ await expect(page.locator('.performance-source-view .highlighted-code')).toHaveAttribute('data-highlight-state','highlighted');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+ await page.screenshot({path:info.outputPath('storage-source-dark-reflow.png'),fullPage:true});
+});
+
+test('source reads are lazy and expose loading and retry', async ({page}) => {
+ let sourceRequests = 0;
+ let release;
+ const delayed = new Promise(resolve => { release = resolve; });
+ await page.addInitScript(()=>localStorage.setItem('harness-studio-language','en'));
+ await page.route('**/api/session-performance/slow-session?source=*', async route => {
+   sourceRequests++;
+   if (sourceRequests === 1) { await delayed; await route.fulfill({status:503,contentType:'application/json',body:'{}'}); }
+   else await route.continue();
+ });
+ await page.goto(`${studio.url}/#/projects/${project.id}/sessions/performance?session=slow-session`);
+ await page.locator('.storage-category').filter({hasText:'Waiting'}).click();
+ await page.locator('.storage-part').filter({hasText:'Bash'}).click();
+ await page.locator('.storage-call').first().click();
+ expect(sourceRequests).toBe(0);
+ await page.locator('.performance-source-link').first().click();
+ await expect(page.getByText('Reading nearby lines…')).toBeVisible();
+ release();
+ await expect(page.getByRole('alert')).toContainText('Source could not be read');
+ await page.getByRole('button',{name:'Retry',exact:true}).click();
+ await expect(page.locator('.performance-source-view .highlighted-code')).toHaveAttribute('data-highlight-state','highlighted');
+ expect(sourceRequests).toBe(2);
 });

@@ -12,7 +12,7 @@ export async function writePerformanceFixture(root) {
   const add = (type, ms, turn_id = 'main', tool_call_id = '', data = {}, request_id = '') => events.push({ type, ts: new Date(base + ms).toISOString(), turn_id, tool_call_id, request_id, loop_id: turn_id, data });
   add('input.prompt.submitted', 0, 'main', '', { text_preview: 'Fix slow desktop startup' });
   add('turn.started', 0);
-  add('tool.requested', 100, 'main', 'bash', { tool_name: 'Bash' });
+  add('tool.requested', 100, 'main', 'bash', { tool_name: 'Bash', args: { command: 'git status --short', description: 'Inspect working tree' } });
   add('hook.started', 345092, 'main', 'bash', { hook_name: 'PreToolUse:Bash', hook_event_name: 'PreToolUse', source: 'user' });
   add('hook.finished', 346228, 'main', 'bash', { hook_name: 'PreToolUse:Bash', hook_event_name: 'PreToolUse', source: 'user', duration_ms: 1136 });
   add('tool.shell.started', 348249, 'main', 'bash');

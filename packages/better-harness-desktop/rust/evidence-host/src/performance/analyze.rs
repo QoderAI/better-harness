@@ -331,6 +331,18 @@ pub fn analyze(session_id: &str, events: Vec<Event>, mut coverage: Coverage) -> 
         }
     }
     add_tool_phases(&events, &mut spans);
+    // Invocation ids, not display labels, connect wait phases to their call.
+    let mut summaries = HashMap::new();
+    for event in &events {
+        if !event.tool.is_empty() && !event.text("callSummary").is_empty() {
+            summaries.entry(event.tool.as_str()).or_insert(event.text("callSummary"));
+        }
+    }
+    for span in &mut spans {
+        if let Some(summary) = summaries.get(span.invocation.as_str()) {
+            span.facts["callSummary"] = json!(summary);
+        }
+    }
     link_subagents(&mut turns, &mut spans, &mut coverage);
     spans.sort_by(|a, b| (a.start_ms.or(a.end_ms), &a.id).cmp(&(b.start_ms.or(b.end_ms), &b.id)));
     turns.sort_by_key(|t| t.start_ms);

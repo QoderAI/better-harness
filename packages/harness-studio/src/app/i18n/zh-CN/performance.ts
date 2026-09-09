@@ -1,4 +1,13 @@
 export const performance = {
+  sourceTitle: '日志源码',
+  backEvidence: '返回证据',
+  sourceNote: '只读片段 · 原始行号 · 敏感信息已脱敏',
+  sourceLoading: '正在读取附近行…',
+  sourceError: '无法读取源码，文件可能已移动或变化。',
+  sourceLimit: '该行超出 32 MiB 扫描限制。',
+  sourceRetry: '重试',
+  sourceTruncated: '部分源码超过预览限制，已省略或截短。',
+  sourceLine: '源码第 {{line}} 行',
  observedElapsed:'观测历时', activityNote:'各类别内部去除重叠；分段条合计各类耗时，可能大于实际历时。子回合工作归入 Subagent。调用明细按累计调用耗时计算比例。',
   otherCalls: "其他调用",
   overview:'概览', distribution:'耗时分布', observedTime:'已观测耗时', ofSession:'占 Session 的 {{percent}}', cumulativeCalls:'调用累计耗时', concurrentCalls:'并发调用', categoryShare:'按当前类别的归因耗时分配', callsOverlap:'调用可能重叠；这里的比例以调用累计耗时为基准。', breakdown:'耗时构成', categories:'分类耗时', agentCountShort:'{{count}} 个代理', callNumber:'第 {{number}} 次调用', timingNotes:'计时说明', partitionNote:'重叠时间只计一次。子回合的工作归入 Subagent；不同活动同时发生的部分归入并发。已完成回合内的空白归入未归因。', eventDetails:'执行明细', topCalls:'展示 {{total}} 次调用中的前 {{shown}} 次', storageKinds:{model:'模型',tool:'工具',hook:'Hooks',wait:'等待',subagent:'Subagents',parallel:'并发',unknown:'未归因'},

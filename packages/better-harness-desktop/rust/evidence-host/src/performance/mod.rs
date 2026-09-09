@@ -5,6 +5,7 @@ mod breakdown;
 mod intervals;
 mod model;
 mod reader;
+mod source;
 
 pub use model::*;
 use serde_json::Value;

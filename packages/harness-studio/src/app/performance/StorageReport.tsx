@@ -23,6 +23,7 @@ export function StorageReport({detail,onSelect}:{detail:PerformanceDetail;onSele
  });
  const [expanded,setExpanded]=useState<Set<string>>(()=>new Set());
  const toggle=(key:string,open?:boolean):void=>setExpanded(current=>{const next=new Set(current);if(open??!next.has(key))next.add(key);else next.delete(key);return next;});
+ const spansById=new Map(detail.spans.map(span=>[span.id,span]));
  const summary=detail.session;const total=summary.breakdown.activityTotalMs;
  const segments=summary.breakdown.segments.filter(s=>s.kind!=='parallel');
  const label=(kind:string):string=>t(`storageKinds.${kind}`,{defaultValue:kind});
@@ -55,8 +56,8 @@ export function StorageReport({detail,onSelect}:{detail:PerformanceDetail;onSele
         <span className="storage-row-value">{timingDuration(part.durationMs)}<small>{percent(part.durationMs,base)}</small></span>{part.calls.length>0&&<CaretRight className="storage-caret" size={14} aria-hidden="true"/>}
        </button>
        {partOpen&&<div className="storage-calls" id={region} role="region" aria-label={partName(part.label)}>
-        {part.calls.map((call,callIndex)=><button className="storage-call" key={call.spanId} disabled={!detail.spans.some(s=>s.id===call.spanId)} onClick={()=>onSelect(call.spanId)}>
-         <span>{t('callNumber',{number:callIndex+1})}</span><span className="storage-mini-track" aria-hidden="true"><i style={{width:`${part.cumulativeMs?call.durationMs/part.cumulativeMs*100:0}%`}}/></span><span className="storage-row-value">{timingDuration(call.durationMs)}<small>{percent(call.durationMs,part.cumulativeMs)}</small></span><CaretRight size={13} aria-hidden="true"/>
+        {part.calls.map((call,callIndex)=><button className="storage-call" key={call.spanId} disabled={!spansById.has(call.spanId)} onClick={()=>onSelect(call.spanId)}>
+         <span className="storage-call-label"><strong>{String(spansById.get(call.spanId)?.facts.callSummary || call.label || part.label)}</strong><small>{t('callNumber',{number:callIndex+1})} · {t(`kinds.${spansById.get(call.spanId)?.kind}`,{defaultValue:part.label})}</small></span><span className="storage-mini-track" aria-hidden="true"><i style={{width:`${part.cumulativeMs?call.durationMs/part.cumulativeMs*100:0}%`}}/></span><span className="storage-row-value">{timingDuration(call.durationMs)}<small>{percent(call.durationMs,part.cumulativeMs)}</small></span><CaretRight size={13} aria-hidden="true"/>
         </button>)}
         {part.count>part.calls.length&&<p className="storage-caption">{t('topCalls',{shown:part.calls.length,total:part.count})}</p>}
        </div>}
