@@ -7,6 +7,7 @@ import type { HarnessIrBundle, HarnessRevision } from "../ir/index.js";
 import { ACP_ADAPTER_DESCRIPTOR } from "../resolver/adapter-registry.js";
 import { verifyRevisionSourceLocks } from "../resolver/source-lock.js";
 import { HarnessRunEmitter, type HarnessRunEventListener, type HarnessProtocolEvent } from "./events.js";
+import { createLineFramer } from "./line-framer.js";
 import { prepareMaterialization } from "./materialization.js";
 import { loadSkillDeliveries } from "./skill-delivery.js";
 import {
@@ -338,8 +339,7 @@ function stringEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 class HostClient {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly pending = new Map<number, PendingRequest>();
-  private buffer = "";
-  private bufferBytes = 0;
+  private readonly framer = createLineFramer(MAX_FRAME_BYTES);
   private sequence = 0;
   private stderr = "";
   private failure: Error | undefined;
@@ -376,8 +376,9 @@ class HostClient {
     );
     this.child.once("exit", () => this.fail(new Error("The ACP host exited during the run.")));
     this.child.stdin.on("error", () => this.fail(new Error("The ACP host closed its input.")));
-    this.child.stdout.setEncoding("utf8");
-    this.child.stdout.on("data", (chunk: string) => this.ingest(chunk));
+    // No setEncoding: the framer splits bytes and decodes whole lines, which is
+    // what keeps the frame budget honest for multi-byte content.
+    this.child.stdout.on("data", (chunk: Buffer) => this.ingest(chunk));
   }
 
   /** Route permission requests for one connection to the configured handler. */
@@ -430,22 +431,14 @@ class HostClient {
     this.fail(new Error("The ACP host is closed."));
   }
 
-  private ingest(chunk: string): void {
-    this.buffer += chunk;
-    // Frame limits are byte limits: a decoded string counts UTF-16 units, so
-    // multi-byte conversation content would otherwise buy several times the budget.
-    this.bufferBytes += Buffer.byteLength(chunk, "utf8");
-    if (this.bufferBytes > MAX_FRAME_BYTES) {
+  private ingest(chunk: Buffer): void {
+    const { lines, overflow } = this.framer.push(chunk);
+    if (overflow) {
       this.fail(new Error("An ACP host frame exceeds its size limit."));
       return;
     }
-    for (;;) {
-      const newline = this.buffer.indexOf("\n");
-      if (newline < 0) break;
-      const framed = this.buffer.slice(0, newline);
+    for (const framed of lines) {
       const line = framed.trim();
-      this.buffer = this.buffer.slice(newline + 1);
-      this.bufferBytes -= Buffer.byteLength(framed, "utf8") + 1;
       if (line.length === 0) continue;
       let frame: Record<string, unknown>;
       try {

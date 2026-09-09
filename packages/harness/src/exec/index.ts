@@ -99,3 +99,5 @@ export type { AcpSessionControl, AcpSessionRecovery, AcpSessionReadyHandler } fr
 export * from "./acp-conversation.js";
 
 export type { AcpConnectionControl, AcpConnectionReadyHandler, AcpAuthenticationMethod } from "./acp-connection-control.js";
+
+export { createLineFramer, type FramedChunk, type LineFramer } from "./line-framer.js";

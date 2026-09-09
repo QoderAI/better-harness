@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createLineFramer } from "@qoder-ai/harness/exec";
 import type { StudioWorkspaceDiscovery, StudioWorkspaceSessionProvider } from "../studio-types.js";
 
 export const EVIDENCE_HOST_PROTOCOL_VERSION = "evidence-rust-1.0.0+jsonl-v1";
@@ -65,8 +66,7 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
   let bridgePid: number | undefined;
   let inflight: Inflight | undefined;
   const queue: Queued[] = [];
-  let buffer = "";
-  let bufferBytes = 0;
+  const framer = createLineFramer(MAX_FRAME_BYTES);
 
   /**
    * The host answers one request at a time, so only the in-flight request is
@@ -106,30 +106,23 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
 
   const start = (): ChildProcessWithoutNullStreams => {
     if (child) return child;
-    buffer = "";
-    bufferBytes = 0;
+    framer.reset();
     const active = child = launch(options.executable);
     bridgePid = active.pid;
     active.stderr.resume();
     active.on("error", () => fail(active, new Error("Evidence host could not start.")));
     active.stdin.on("error", () => fail(active, new Error("Evidence host input closed.")));
     active.on("exit", () => fail(active, new Error("Evidence host exited during a request.")));
-    active.stdout.setEncoding("utf8");
-    active.stdout.on("data", (chunk: string) => {
+    // No setEncoding: the framer splits bytes and decodes whole lines, which is
+    // what keeps the frame budget honest for multi-byte evidence.
+    active.stdout.on("data", (chunk: Buffer) => {
       if (child !== active) return;
-      // Frame limits are byte limits: a decoded string counts UTF-16 units, so
-      // multi-byte evidence would otherwise buy several times the stated budget.
-      bufferBytes += Buffer.byteLength(chunk, "utf8");
-      if (bufferBytes > MAX_FRAME_BYTES + 1) {
+      const { lines, overflow } = framer.push(chunk);
+      if (overflow) {
         fail(active, new Error("Evidence host response exceeds its frame limit."));
         return;
       }
-      buffer += chunk;
-      let newline: number;
-      while ((newline = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-        bufferBytes -= Buffer.byteLength(line, "utf8") + 1;
+      for (const line of lines) {
         if (line.trim() === "") continue;
         let value: unknown;
         try { value = JSON.parse(line); } catch {
