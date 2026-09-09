@@ -80,8 +80,11 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.screenshot({ path: info.outputPath(`memory-dark-${layout.name}.png`) });
     if (layout.width <= 700) await page.getByRole('button', { name: 'Memory navigation', exact: true }).click();
-    await page.locator('.memory-agent-nav').getByRole('button', { name: /^Cursor/ }).click();
+    await expect(page.locator('.memory-agent-nav').getByRole('button', { name: /^Cursor/ })).toHaveCount(0);
+    await page.locator('.memory-agent-nav').getByRole('button', { name: /^Qwen Code/ }).click();
     await expect(page.getByRole('treeitem', { name: 'SKILL.md', exact: true })).toHaveCount(0);
+    await page.goto(`${studio.url}/#/memory-sources?host=cursor`);
+    await expect(page.locator('.memory-agent-nav').getByRole('button', { name: /^All Agents/ })).toBeVisible();
     await page.getByText('Source status', { exact: true }).click();
     await expect(page.getByText('No native storage contract', { exact: true })).toBeVisible();
     await page.screenshot({ path: info.outputPath(`memory-unavailable-${layout.name}.png`) });

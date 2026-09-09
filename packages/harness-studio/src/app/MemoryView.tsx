@@ -150,12 +150,12 @@ export function MemoryView(): React.JSX.Element {
       <div className="memory-filterbar"><label className="memory-search"><MagnifyingGlass size={15} aria-hidden="true" /><input ref={search} type="search" aria-label={t('memory.search')} placeholder={t('memory.search')} value={location.query} onChange={event => navigate({ query: event.target.value }, true)} /></label></div>
       <FacetNavigation className="memory-agent-nav" label={t('memory.host')} groups={[{
         id: 'agents', label: t('customize:library.sections.agents'),
-        items: ['all', ...new Set(inventory?.sources.map(source => source.host))].map(host => ({
-          id: host, label: host === 'all' ? t('customize:library.allAgents') : hostLabel(host), current: location.host === host,
-          count: inventory?.documents.filter(doc => host === 'all' || doc.provenance.host === host).length,
-          icon: host === 'all' ? <Users size={16} aria-hidden="true" /> : <Robot size={16} aria-hidden="true" />,
-          onSelect: () => navigate({ host }),
-        })),
+        items: inventory ? ['all', ...new Set(inventory.sources.map(source => source.host))].map(host => {
+          const count = inventory.documents.filter(doc => host === 'all' || doc.provenance.host === host).length;
+          return { id: host, label: host === 'all' ? t('customize:library.allAgents') : hostLabel(host), current: location.host === host, count,
+            icon: host === 'all' ? <Users size={16} aria-hidden="true" /> : <Robot size={16} aria-hidden="true" />,
+            onSelect: () => navigate({ host }) };
+        }).filter(item => item.count > 0) : [],
       }]} />
       {error ? <div className="memory-message"><p role="alert">{t('memory.error')}</p><button type="button" onClick={() => setRevision(value => value + 1)}>{t('memory.refresh')}</button></div> : !inventory ? <p className="memory-message" role="status">{t('memory.loading')}</p> : <MemoryExplorer nodes={nodes} query={location.query} activeKey={activeKey} initialView={location.view} onOpen={open} label={t('memory.documents')} />}
       {(indexing || indexError) && <div className="memory-index-status"><span role={indexError ? 'alert' : 'status'}>{t(indexError ? 'memory.indexError' : 'memory.loadingEntries')}</span>{indexError && <button type="button" onClick={() => setIndexRevision(value => value + 1)}>{t('memory.retry')}</button>}</div>}
