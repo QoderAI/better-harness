@@ -4,6 +4,10 @@
 - Status: Proposed
 - Decision date: 2026-09-08
 
+The Desktop Profile and compilation decision is extended by
+[Use DSH for Harness Design](studio-dsh-harness-design.md). The generic Web host
+below remains available to embedders; Desktop uses the dedicated Design Profile.
+
 ## Context
 
 The maintainer explicitly requests the official DSH interactive interface inside

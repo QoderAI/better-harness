@@ -28,21 +28,12 @@ export const common = {
   area: {
     harnessDesign: "Harness Design",
     dsh: "DSH",
-    pi: "Pi",
     customizations: "Customizations",
     sessions: "Sessions",
     commits: "Commits",
     artifacts: "Artifacts",
     debugger: "Debugger",
     compare: "Compare",
-  },
-  pi: {
-    inputBusy: "Terminal input is still pending. Wait before pasting more text.",
-    open: "Start Pi", starting: "Starting…", failed: "Pi terminal could not be opened.",
-    terminal: "Official Pi terminal", keyboardHint: "Ctrl+Shift+F6 returns focus to Studio navigation.",
-    missingDetail: "Pi is unavailable. Add an installed Pi to Studio Desktop's PATH and restart Studio.",
-    projectDetail: "Open a local Project from the sidebar to start Pi.", readOnlyDetail: "Select a local Project to start Pi.",
-    status: { ready: "Official Pi terminal", missing: "Pi setup required", project: "Project required", readOnly: "Read-only Project" },
   },
   dsh: {
     scope: "Workspace selected in DSH",

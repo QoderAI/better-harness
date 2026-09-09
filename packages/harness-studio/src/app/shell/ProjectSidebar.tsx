@@ -25,7 +25,6 @@ const VIEW_ICONS: Record<StudioArea, Icon> = {
   artifacts: Package,
   debugger: BugBeetle,
   dsh: ChatCircleText,
-  pi: ChatCircleText,
   compare: Flask,
 };
 

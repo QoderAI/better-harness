@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,27 @@ async function setup(mode = "ready", startupTimeoutMs = 3000) {
   return host;
 }
 describe("official DSH Web application lifecycle", () => {
+  it("bundled bootstrap serializes concurrent Design launches and keeps controller credentials host-owned", async () => {
+    const previous = await setup(); await previous.close();
+    const { createDshWebHost: bundled } = await import("../dist/server/dsh-web-host.js");
+    const home = join(directory!, "design-home");
+    host = bundled({ command: process.execPath, args: [fixture, "ready"] }, { designHome: home });
+    const [one, two] = await Promise.all([host.open(directory!), host.open(tmpdir())]);
+    expect(two.url).toBe(one.url);
+    await vi.waitFor(() => expect(host!.state().design?.phase).toBe("idle"));
+    expect(host.state().design?.entry).toBe(join(directory!, ".harness-design", "plugin.ts"));
+    const config = JSON.parse(await readFile(join(home, "profiles", "wasm", "control", "controller.patch.yml"), "utf8"))[0].insert[0].config;
+    expect(JSON.stringify(host.state())).not.toContain(config.token);
+    expect(JSON.parse(await readFile(join(home, "profiles", "wasm", "package.json"), "utf8")).dsh.profile.patchReload).toBe("startup");
+    await host.close(); await expect(fetch(one.url!)).rejects.toThrow();
+  });
+  it("closing during startup stops immediately without waiting for the readiness deadline", async () => {
+    const h = await setup("hang", 20000);
+    const ready = h.open(directory!);
+    await h.close();
+    expect((await ready).status).toBe("error");
+    expect(h.state().status).toBe("stopped");
+  });
   it("reuses one process across concurrent opens and Project directories, then stops its endpoint", async () => {
     const h = await setup();
     expect(h.state()).toEqual({ status: "stopped" });

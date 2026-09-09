@@ -43,7 +43,8 @@
       "node_modules/**"
     ],
     "asarUnpack": [
-      "**/node-pty/**",
+      "**/harness-studio/dist/server/runtime/dsh-design/**",
+      "**/esbuild-wasm/**",
       "**/*.node",
       "**/*.wasm"
     ],

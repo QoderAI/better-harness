@@ -97,6 +97,8 @@ export async function buildStudioApp() {
 export async function buildStudioServerRuntime() {
   const runtimeAssetRoot = join(packageRoot, "dist", "server", "runtime", "ui");
   await mkdir(runtimeAssetRoot, { recursive: true });
+  const designRoot = join(packageRoot, "dist", "server", "runtime", "dsh-design");
+  await mkdir(designRoot, { recursive: true });
   const nodeRuntime = {
     bundle: true,
     format: "esm",
@@ -108,6 +110,9 @@ export async function buildStudioServerRuntime() {
     },
   };
   await Promise.all([
+    build({ ...nodeRuntime, entryPoints: [join(repositoryRoot, "scripts", "dsh-plugin-runtime", "index.mjs")],
+      outfile: join(designRoot, "index.mjs"), external: ["esbuild-wasm"] }),
+    ...["control.mjs", "activation.mjs"].map(file => copyFile(join(repositoryRoot, "scripts", "dsh-plugin-runtime", file), join(designRoot, file))),
     build({
       ...nodeRuntime,
       entryPoints: [join(repositoryRoot, "scripts", "agent-customize", "index.mjs")],

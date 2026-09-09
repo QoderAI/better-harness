@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { StudioRunProjectBinding } from "./run/stream-run.js";
 import { dshWorkspaceStatus, type StudioConfig } from "./studio-shell-model.js";
 
-interface WebState { status: "stopped" | "starting" | "ready" | "error"; url?: string; error?: string }
+interface WebState { status: "stopped" | "starting" | "ready" | "error"; url?: string; error?: string; design?: { phase: string; entry: string; message: string } }
 
 /** The frame is the official application, including its own composer and Host API. */
 export function DshWorkspace({ config, project, visible = true }: {
@@ -59,5 +59,8 @@ export function DshWorkspace({ config, project, visible = true }: {
         {status !== "ready" && <p>{t(`dsh.${status}Detail`)}</p>}
         {web.error && <p role="alert">{web.error}</p>}
       </div>}
+    {web.status === "ready" && web.design && <p className="dsh-design-status" role={web.design.phase === "error" ? "alert" : "status"} title={web.design.entry}>
+      {web.design.message}
+    </p>}
   </section>;
 }

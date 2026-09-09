@@ -131,6 +131,7 @@ else {
     child.stderr?.on('data', (data) => process.stderr.write(data));
     service = connectStudioService(child, {
       token, dataDirectory: app.getPath('userData'), onFailure: fail,
+      dshDesignRuntime: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@qoder-ai', 'harness-studio', 'dist', 'server', 'runtime', 'dsh-design', 'index.mjs') : undefined,
       oxcTransport: process.platform === 'darwin' ? 'nsxpc' : 'stdio',
       oxcExecutable: process.platform === 'darwin'
         ? join(app.isPackaged ? join(process.resourcesPath, '..') : fileURLToPath(new URL('../dist/native/Harness OXC.app/Contents', import.meta.url)), 'MacOS', 'harness-oxc-client')

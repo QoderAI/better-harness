@@ -8,10 +8,10 @@ import { startHarnessStudioServer } from '../../dist/server/server.js';
 import { createDshWebHost } from '../../dist/server/dsh-web-host.js';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const layouts = [{ name: 'wide', width: 1440, height: 900 }, { name: 'compact', width: 1024, height: 768 }, { name: 'narrow', width: 390, height: 844 }];
-let directory, server, foreign, opens, stops;
+let directory, server, foreign, opens, stops, designStatus;
 async function start({ native = false, missing = false } = {}) {
   directory = await realpath(await mkdtemp(join(tmpdir(), 'studio-dsh-ui-')));
-  opens = []; stops = 0;
+  opens = []; stops = 0; designStatus = undefined;
   let current = { status: 'stopped' };
   if (!native && !missing) {
     foreign = createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><html><body><label>Foreign application draft<textarea></textarea></label><button>Foreign settings</button></body></html>'); });
@@ -19,7 +19,7 @@ async function start({ native = false, missing = false } = {}) {
   }
   const dshWebHost = missing ? undefined : native
     ? createDshWebHost({ command: process.env.DSH_WEB_COMMAND, args: JSON.parse(process.env.DSH_WEB_ARGS ?? '[]') })
-    : { state: () => current, open: async cwd => { opens.push(cwd); current = { status: 'ready', url: `http://127.0.0.1:${foreign.address().port}/?token=fixture` }; return current; }, stop: async () => { stops++; current = { status: 'stopped' }; }, close: async () => {} };
+    : { state: () => ({ ...current, design: designStatus }), open: async cwd => { opens.push(cwd); current = { status: 'ready', url: `http://127.0.0.1:${foreign.address().port}/?token=fixture` }; return current; }, stop: async () => { stops++; current = { status: 'stopped' }; }, close: async () => {} };
   server = await startHarnessStudioServer({ appDir: process.env.STUDIO_TEST_APP_DIR ?? join(root, 'dist/app'), dshWebHost, runDirectory: join(directory, 'runs'), harnessMode: 'workspace-default',
     workspaceDirectoryPicker: async () => directory, workspaceSessionProvider: { discover: async () => ({ label: 'DSH test project', sessions: [] }) } });
 }
@@ -51,20 +51,16 @@ for (const layout of layouts) test(`official application container preserves foc
   const frame = page.frameLocator('iframe.dsh-native-frame');
   const draft = frame.getByRole('textbox', { name: 'Foreign application draft' });
   await draft.fill('keep the upstream draft'); await expect(draft).toBeFocused();
-  const runtimeNavigation = page.getByRole('navigation', { name: 'Harness Design', exact: true });
-  await runtimeNavigation.getByRole('button', { name: 'DSH', exact: true }).focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(runtimeNavigation.getByRole('button', { name: 'Pi', exact: true })).toBeFocused();
-  await expect(page.getByRole('button', { name: 'Start Pi', exact: true })).toBeVisible();
-  await page.goBack();
-  await expect(draft).toBeVisible();
-  await expect(draft).toHaveValue('keep the upstream draft');
   const sessions = page.getByRole('button', { name: 'Sessions', exact: true });
   if (await page.locator('.studio-nav-toggle').getAttribute('aria-expanded') === 'false') await page.locator('.studio-nav-toggle').click();
   await sessions.click();
   const dshNav = page.getByRole('button', { name: 'Harness Design', exact: true });
   if (await page.locator('.studio-nav-toggle').getAttribute('aria-expanded') === 'false') await page.locator('.studio-nav-toggle').click();
   await dshNav.click();
+  await expect(draft).toHaveValue('keep the upstream draft');
+  designStatus = { phase: 'error', entry: join(directory, '.harness-design', 'plugin.ts'), message: 'Plugin activation failed; previous configuration was retained. Repair the plugin and compile again.' };
+  await expect(page.locator('.dsh-design-status')).toHaveAttribute('role', 'alert', { timeout: 10000 });
+  await expect(page.getByRole('alert')).toContainText('Plugin activation failed');
   await expect(draft).toHaveValue('keep the upstream draft');
   expect(opens).toEqual([directory]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -73,6 +69,8 @@ for (const layout of layouts) test(`official application container preserves foc
   expect(bounds.width).toBeGreaterThan(200); expect(bounds.x + bounds.width).toBeLessThanOrEqual(layout.width);
   if (layout.width <= 1080) await expect(page.locator('.studio-project-sidebar')).toBeHidden();
   await page.screenshot({ path: info.outputPath(`dsh-container-${layout.name}.png`) });
+  designStatus = { ...designStatus, phase: 'active', message: 'Plugin activated in the running DSH process.' };
+  await expect(page.locator('.dsh-design-status')).toHaveAttribute('role', 'status', { timeout: 10000 });
   await expect(page.locator('#studio-toolbar-actions button')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

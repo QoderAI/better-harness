@@ -3,7 +3,7 @@
 ## Traceability
 
 - Spec ID: studio-pi-runtime-comparison
-- Status: Implemented (local validation; draft PR)
+- Status: Pi UI superseded by [DSH Harness Design](2026-09-09-studio-dsh-harness-design.md); historical measurements retained
 - Request: extend the DSH draft PR with a similar Pi integration and compare size.
 - Decision: [Native Pi terminal](../adrs/studio-native-pi-terminal.md)
 

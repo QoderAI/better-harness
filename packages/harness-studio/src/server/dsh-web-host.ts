@@ -2,10 +2,12 @@ import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { findExecutable } from "./acp-agent-catalog.js";
 
 export interface DshWebCommand { command: string; args?: readonly string[] }
-export interface DshWebState { status: "stopped" | "starting" | "ready" | "error"; url?: string; error?: string }
+export interface DshDesignState { phase: "idle" | "compiling" | "waiting" | "activating" | "active" | "error"; entry: string; message: string; revision?: string }
+export interface DshWebState { status: "stopped" | "starting" | "ready" | "error"; url?: string; error?: string; design?: DshDesignState }
 export interface DshWebHost {
   state(): DshWebState;
   open(cwd: string): Promise<DshWebState>;
@@ -45,13 +47,18 @@ interface Entry {
   ready: Promise<DshWebState>;
   exited: Promise<void>;
   stopping?: Promise<void>;
+  stopPolling?: () => void;
 }
 
 /** Lifecycle only: all frontend, authentication and interactive APIs stay in DSH. */
-export function createDshWebHost(command: DshWebCommand, input: { startupTimeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): DshWebHost {
+export function createDshWebHost(command: DshWebCommand, input: { startupTimeoutMs?: number; env?: NodeJS.ProcessEnv; designHome?: string; designRuntime?: string } = {}): DshWebHost {
   const entries = new Map<string, Entry>();
   let closed = false;
+  let opening: Promise<DshWebState> | undefined;
+  let stopping: Promise<void> | undefined;
+  let generation = 0;
   async function terminate(entry: Entry): Promise<void> {
+    entry.stopPolling?.();
     if (entry.stopping) return entry.stopping;
     entry.stopping = (async () => {
       if (entry.child.exitCode !== null || entry.child.signalCode !== null || !entry.child.pid) return;
@@ -71,9 +78,8 @@ export function createDshWebHost(command: DshWebCommand, input: { startupTimeout
     })();
     return entry.stopping;
   }
-  return {
-    state: () => ({ ...(entries.get("desktop")?.state ?? { status: "stopped" }) }),
-    async open(cwd) {
+  async function open(cwd: string): Promise<DshWebState> {
+      const version = generation;
       const id = "desktop";
       if (closed) throw new Error("DSH host is shutting down.");
       const previous = entries.get(id);
@@ -84,15 +90,39 @@ export function createDshWebHost(command: DshWebCommand, input: { startupTimeout
         if (replacement !== previous && replacement) return replacement.ready;
       }
       if (closed) throw new Error("DSH host is shutting down.");
+      let design: { home: string; profile: string; patch: string; token: string; entry: string } | undefined;
+      if (input.designHome) {
+        const capability = await import(input.designRuntime ? pathToFileURL(input.designRuntime).href : new URL("./runtime/dsh-design/index.mjs", import.meta.url).href);
+        design = await capability.prepareDshDesignProfile({ home: input.designHome, cwd });
+      }
+      if (closed || version !== generation) throw new Error("DSH host is shutting down.");
       // Fixed flags are appended to a trusted host configuration, never renderer input.
-      const child = spawn(command.command, [...(command.args ?? []), "--profile", "web", "--no-open", "--host", "127.0.0.1", "--port", "0"], {
-        cwd, env: input.env ?? process.env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32",
+      const child = spawn(command.command, [...(command.args ?? []), "--profile", design?.profile ?? "web", ...(design ? ["--patch", design.patch] : []), "--no-open", "--host", "127.0.0.1", "--port", "0"], {
+        cwd, env: { ...(input.env ?? process.env), ...(design ? { DSH_HOME: design.home } : {}) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32",
       });
       let settle!: (state: DshWebState) => void;
       let exit!: () => void;
       const entry: Entry = { cwd, child, state: { status: "starting" }, ready: new Promise(done => { settle = done; }), exited: new Promise(done => { exit = done; }) };
       entries.set(id, entry);
-      const fail = (error: string) => { entry.state = { status: "error", error }; settle({ ...entry.state }); };
+      const fail = (error: string) => { entry.stopPolling?.(); entry.state = { status: "error", error }; settle({ ...entry.state }); };
+      const pollDesign = (url: string) => {
+        if (!design) return;
+        const controller = new AbortController();
+        let pollTimer: ReturnType<typeof setTimeout>;
+        const refresh = async () => {
+          try {
+            const response = await fetch(new URL("/harness-design/status", url), { headers: { "X-Harness-Design-Token": design!.token }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]) });
+            if (!response.ok) throw new Error("Controller unavailable");
+            const value = await response.json() as DshDesignState;
+            if (!["idle", "compiling", "waiting", "activating", "active", "error"].includes(value.phase) || typeof value.message !== "string") throw new Error("Invalid controller status");
+            if (!controller.signal.aborted) entry.state = { ...entry.state, design: { phase: value.phase, entry: design!.entry, message: value.message.slice(0, 2000), ...(typeof value.revision === "string" && /^[a-f0-9]{64}$/.test(value.revision) ? { revision: value.revision } : {}) } };
+          } catch {
+            if (!controller.signal.aborted) entry.state = { ...entry.state, design: { phase: "error", entry: design!.entry, message: "Harness Design controller is unavailable; plugin activation is unconfirmed." } };
+          } finally { if (!controller.signal.aborted) pollTimer = setTimeout(() => void refresh(), 1000); }
+        };
+        entry.stopPolling = () => { controller.abort(); clearTimeout(pollTimer); };
+        void refresh();
+      };
       const timer = setTimeout(() => { fail("DSH Web did not become ready. Check the installed web profile and frontend, then retry."); void terminate(entry); }, input.startupTimeoutMs ?? 45000);
       let pending = "";
       child.stdout!.setEncoding("utf8");
@@ -104,15 +134,29 @@ export function createDshWebHost(command: DshWebCommand, input: { startupTimeout
         while ((end = pending.indexOf("\n")) >= 0) {
           const line = pending.slice(0, end).replace(/\r$/, ""); pending = pending.slice(end + 1);
           const url = dshReadyUrl(line);
-          if (url && entry.state.status === "starting") { clearTimeout(timer); entry.state = { status: "ready", url }; settle({ ...entry.state }); }
+          if (url && entry.state.status === "starting") { clearTimeout(timer); entry.state = { status: "ready", url }; pollDesign(url); settle({ ...entry.state }); }
         }
       });
       child.stderr!.resume();
       child.on("error", () => { clearTimeout(timer); fail("Could not launch DSH Web. Check its executable and web profile."); exit(); });
       child.on("exit", () => { clearTimeout(timer); pending = ""; fail("DSH Web has exited. Reopen it to restore sessions in the official interface."); exit(); });
       return entry.ready;
+  }
+  async function stop(): Promise<void> {
+    generation++;
+    await Promise.all([...entries.values()].map(terminate));
+    await opening?.catch(() => {});
+    entries.clear();
+  }
+  return {
+    state: () => ({ ...(entries.get("desktop")?.state ?? { status: opening ? "starting" : "stopped" }) }),
+    open(cwd) {
+      if (closed) return Promise.reject(new Error("DSH host is shutting down."));
+      if (stopping) return Promise.reject(new Error("DSH host is stopping."));
+      opening ??= open(cwd).finally(() => { opening = undefined; });
+      return opening;
     },
-    async stop() { const id = "desktop"; const entry = entries.get(id); if (entry) { await terminate(entry); if (entries.get(id) === entry) entries.delete(id); } },
-    async close() { closed = true; await Promise.all([...entries.values()].map(terminate)); entries.clear(); },
+    stop() { stopping ??= stop().finally(() => { stopping = undefined; }); return stopping; },
+    async close() { closed = true; await (stopping ?? stop()); },
   };
 }

@@ -25,7 +25,7 @@ if (process.platform === 'win32') {
 
 let app;
 try {
-  app = await electron.launch({ args: [root, `--user-data-dir=${join(temp, 'user')}`], env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` }, timeout: 60000 });
+  app = await electron.launch({ ...(process.env.DSH_DESKTOP_EXECUTABLE ? { executablePath: process.env.DSH_DESKTOP_EXECUTABLE } : {}), args: [...(process.env.DSH_DESKTOP_EXECUTABLE ? [] : [root]), `--user-data-dir=${join(temp, 'user')}`], env: { ...process.env, SSH_CONNECTION: 'native-smoke-browser-picker', PATH: `${bin}${delimiter}${process.env.PATH}` }, timeout: 60000 });
   const page = await app.firstWindow(); const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   const foreignHeaders = [];
@@ -52,10 +52,21 @@ try {
   const frame = page.frameLocator('iframe.dsh-native-frame');
   await expect(frame.locator('body')).not.toContainText('Unauthorized');
   await expect(frame.getByRole('button', { name: 'Settings', exact: true })).toBeVisible({ timeout: 20000 });
+  const notice = frame.getByRole('button', { name: 'Continue', exact: true });
+  await notice.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+  if (await notice.isVisible()) await notice.click();
   const later = frame.getByRole('button', { name: 'Configure later', exact: true });
   await later.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
   if (await later.isVisible()) await later.click();
   await expect(later).toBeHidden();
+  const choose = frame.getByRole('button', { name: 'Choose workspace', exact: true });
+  if (await choose.isVisible()) {
+    await choose.click(); await frame.getByRole('button', { name: 'Edit path', exact: true }).click();
+    const field = frame.getByRole('textbox', { name: 'Edit path', exact: true });
+    await field.fill(project); await field.press('Enter'); await frame.getByRole('button', { name: 'Open', exact: true }).click();
+  }
+  await expect(page.locator('.dsh-design-status')).toHaveAttribute('role', 'status', { timeout: 15000 });
+  await expect(page.locator('.dsh-design-status')).toContainText('harness_compile_plugin');
   const editor = frame.locator('[contenteditable="true"][role="textbox"]');
   await expect(editor).toBeVisible();
   await editor.fill('Review this project with DSH — draft only, not submitted.');

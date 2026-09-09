@@ -7,7 +7,6 @@ export type StudioArea =
   | "artifacts"
   | "debugger"
   | "dsh"
-  | "pi"
   | "compare";
 
 /**
@@ -44,7 +43,6 @@ export type StudioSessionCompareScope = "cross-agent" | "single-agent" | "insuff
 
 export interface StudioConfig {
   dshWebEnabled?: boolean;
-  piTerminalEnabled?: boolean;
   runEnabled: boolean;
   acpEnabled: boolean;
   acpAgentLabel?: string;
@@ -163,15 +161,10 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
     },
     {
       id: "dsh",
-      label: t("area.dsh"),
+      label: t("area.harnessDesign"),
       group: t("group.run"),
       availability: dshWorkspaceStatus(config) === "ready" ? "ready" : "foundation",
       status: t(`dsh.status.${dshWorkspaceStatus(config)}`),
-    },
-    {
-      id: "pi", label: t("area.pi"), group: t("group.run"),
-      availability: piWorkspaceStatus(config) === "ready" ? "ready" : "foundation",
-      status: t(`pi.status.${piWorkspaceStatus(config)}`),
     },
     {
       id: "compare",
@@ -201,12 +194,6 @@ export function compareSurfaces(config: StudioConfig): readonly StudioCompareSur
 /** Agents this host can actually launch for a live comparison. */
 export function selectableAcpAgents(config: StudioConfig): readonly StudioAcpAgentOption[] {
   return (config.acpAgents ?? []).filter((agent) => agent.available);
-}
-
-export function piWorkspaceStatus(config: StudioConfig): "missing" | "project" | "readOnly" | "ready" {
-  if (!config.piTerminalEnabled) return "missing";
-  if (!config.workspaceConnected) return "project";
-  return config.projectExecutionEnabled ? "ready" : "readOnly";
 }
 
 export function dshWorkspaceStatus(config: StudioConfig): "missing" | "project" | "readOnly" | "ready" {
@@ -251,7 +238,7 @@ function hasUsableArtifacts(config: StudioConfig): boolean {
 }
 
 export function studioProjectGateRequired(config: StudioConfig, hasConfiguredSources: boolean, area: StudioArea = STUDIO_DEFAULT_AREA): boolean {
-  if (area === "artifacts" || area === "dsh" || area === "pi") return false;
+  if (area === "artifacts" || area === "dsh") return false;
   const independentContext = hasConfiguredSources
     || config.inspectorEnabled
     || config.evidenceEnabled

@@ -65,7 +65,6 @@ describe("Studio control-plane navigation", () => {
       "artifacts",
       "debugger",
       "dsh",
-      "pi",
       "compare",
     ]);
     // The landing View must be one the shell can actually resolve.
@@ -90,7 +89,7 @@ describe("Studio control-plane navigation", () => {
       availability: "foundation",
       status: "Project required",
     });
-    expect(capabilitySummary(EMPTY, commonT)).toEqual({ ready: 1, partial: 1, foundation: 6 });
+    expect(capabilitySummary(EMPTY, commonT)).toEqual({ ready: 1, partial: 1, foundation: 5 });
   });
 
   it("gates DSH by its own Agent and an executable Project", () => {
@@ -138,7 +137,7 @@ describe("Studio control-plane navigation", () => {
       availability: "ready",
       status: "12 definitions",
     });
-    expect(capabilitySummary(config, commonT)).toEqual({ ready: 6, partial: 0, foundation: 2 });
+    expect(capabilitySummary(config, commonT)).toEqual({ ready: 6, partial: 0, foundation: 1 });
   });
 
   it("treats an artifact directory as independent of every other input", () => {

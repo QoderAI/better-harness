@@ -36,7 +36,8 @@ test('only a credential-free ephemeral IPv4 loopback origin can become the Studi
 });
 
 test('startup sends the versioned contract and returns the validated ready result', async () => {
-  const { child, service } = setup();
+  const { child, service } = setup({ dshDesignRuntime: 'native-design/index.mjs' });
+  assert.equal(child.sent[0].dshDesignRuntime, 'native-design/index.mjs');
   assert.equal(child.sent[0].type, 'start');
   assert.equal(child.sent[0].version, 1);
   assert.equal(child.sent[0].acpHostExecutable, '/native/harness-acp-host');

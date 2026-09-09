@@ -3,7 +3,7 @@
 ## Traceability
 
 - Spec ID: harness-design-entry
-- Status: Implemented (local browser validation)
+- Status: Superseded by [DSH Harness Design](2026-09-09-studio-dsh-harness-design.md); dual-runtime UI removed
 - Request: name the entry Harness Design. No Story id supplied.
 
 ## Intent and acceptance

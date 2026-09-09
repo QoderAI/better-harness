@@ -5,7 +5,6 @@ import { message, isMessage } from './protocol.mjs';
 import {
   startHarnessStudioServer, defaultAppDir, discoverAcpAgentProfiles,
   createDshWebHost, discoverDshWebCommand,
-  createPiTerminalHost, discoverPiCommand,
   createRustEvidenceHost, createRustEvidenceWorkspaceSessionProvider,
   createBundledAgentCustomizationCollector,
 } from '@qoder-ai/harness-studio';
@@ -81,14 +80,11 @@ port.on('message', async (data) => {
       compilers.add({ close: () => evidenceHost.close() });
       await evidenceHost.describe();
       const dshWebCommand = await discoverDshWebCommand();
-      const dshWebHost = dshWebCommand ? createDshWebHost(dshWebCommand) : undefined;
+      if (data.dshDesignRuntime !== undefined && typeof data.dshDesignRuntime !== 'string') throw new Error('Invalid Design runtime path');
+      const dshWebHost = dshWebCommand ? createDshWebHost(dshWebCommand, { designHome: join(data.dataDirectory, 'harness-design'), designRuntime: data.dshDesignRuntime }) : undefined;
       if (dshWebHost) compilers.add(dshWebHost);
-      const piCommand = await discoverPiCommand();
-      const piTerminalHost = piCommand ? createPiTerminalHost(piCommand) : undefined;
-      if (piTerminalHost) compilers.add(piTerminalHost);
       server = await startHarnessStudioServer({
         dshWebHost,
-        piTerminalHost,
         oxcCompilerFactory,
         acpHostExecutable: data.acpHostExecutable,
         acpHostTransport: data.acpHostTransport,

@@ -1,7 +1,7 @@
 # Preserve Pi's native terminal interface in Studio
 
 - ADR-0009
-- Status: Proposed
+- Status: Superseded by [Use DSH for Harness Design](studio-dsh-harness-design.md)
 - Date: 2026-09-08
 
 ## Context
