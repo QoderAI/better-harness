@@ -1,9 +1,40 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { HarnessStudioServerOptions, HarnessStudioState } from './studio-types.js';
+import type { HarnessStudioServerOptions, HarnessStudioState, StudioWorkspaceSessionSummary } from './studio-types.js';
 import { respondJson, sameOriginRequest } from './http-utils.js';
 import { isPerformanceResult, isPerformanceSource } from '../contracts/session-performance.js';
 
 type Cache = { revision: number; entries: Map<string, { at: number; result: Promise<Record<string, unknown>> }> };
+type TimingSession = Record<string, unknown>;
+
+function workspaceSessionTiming(summary: StudioWorkspaceSessionSummary): TimingSession {
+  const firstSeenMs = (() => {
+    try { const d = new Date(summary.savedAt); return Number.isNaN(d.getTime()) ? null : d.getTime(); } catch { return null; }
+  })();
+  const label = summary.prompt?.slice(0, 1024) || summary.id;
+  return {
+    breakdown: { totalMs: 0, activityTotalMs: 0, segments: [] },
+    id: summary.id,
+    provider: summary.provider || 'unknown',
+    label,
+    firstSeenMs,
+    lastSeenMs: firstSeenMs,
+    lastActivityMs: firstSeenMs,
+    wallMs: null,
+    completedTurnMs: null,
+    timedUnionMs: null,
+    unattributedTurnMs: null,
+    longestMs: null,
+    turnCount: 0,
+    toolCount: summary.toolCallCount ?? 0,
+    retryCount: 0,
+    metrics: [],
+    subagents: { count: 0, timedCount: 0, cumulativeMs: null, elapsedMs: null, maxMs: null, peakConcurrency: 0, unlinkedCount: 0, unlinkedTurnCount: 0 },
+    findings: [],
+    coverage: { files: 0, events: 0, invalidLines: 0, invalidTimestamps: 0, unreadableFiles: 0, truncated: false, unpairedEvents: 0, ambiguousPairs: 0, clockConflicts: 0 },
+    status: 'no-evidence',
+    firstTokenStatus: 'unrecorded',
+  };
+}
 const caches = new WeakMap<HarnessStudioState, Cache>();
 export async function sessionPerformanceRoute(request: IncomingMessage, response: ServerResponse, state: HarnessStudioState, options: HarnessStudioServerOptions): Promise<boolean> {
   const url = new URL(request.url ?? '/', 'http://localhost');
@@ -19,6 +50,11 @@ export async function sessionPerformanceRoute(request: IncomingMessage, response
   if ([...url.searchParams.keys()].some(k => !['refresh', 'source', 'line'].includes(k))) { send(400, { error: 'unsupported-parameter' }); return true; }
   const sessionId = url.pathname.slice('/api/session-performance'.length + 1);
   if (sessionId && (!/^[a-zA-Z0-9_.-]{1,160}$/u.test(sessionId) || sessionId === '.' || sessionId === '..')) { send(400, { error: 'invalid-session-id' }); return true; }
+  const workspaceSession = sessionId ? state.workspace?.sessions.get(sessionId) : undefined;
+  if (workspaceSession && workspaceSession.summary.provider && workspaceSession.summary.provider !== 'qoder') {
+    send(200, { schemaVersion: 1, engine: 'rust', session: workspaceSessionTiming(workspaceSession.summary), turns: [], spans: [], totalSpans: 0, omittedSpans: 0 });
+    return true;
+  }
   const source = url.searchParams.get('source');
   const lineText = url.searchParams.get('line');
   const line = Number(lineText);
@@ -47,6 +83,20 @@ export async function sessionPerformanceRoute(request: IncomingMessage, response
     const result = await entry.result;
     if (state.projectRevision !== revision || state.activeProjectId !== projectId) { send(409, { error: 'project-changed' }); return true; }
     if (!isPerformanceResult(result, !!sessionId)) { send(502, { error: 'invalid-performance-response' }); return true; }
+    if (!sessionId && state.workspace) {
+      const sessions = result.sessions as TimingSession[];
+      const known = new Set(sessions.map((s) => typeof s.id === 'string' ? s.id : ''));
+      for (const stored of state.workspace.sessions.values()) {
+        if (known.has(stored.summary.id)) continue;
+        sessions.push(workspaceSessionTiming(stored.summary));
+        known.add(stored.summary.id);
+      }
+      sessions.sort((a, b) => {
+        const aMs = typeof a.lastActivityMs === 'number' ? a.lastActivityMs : (typeof a.longestMs === 'number' ? a.longestMs : 0);
+        const bMs = typeof b.lastActivityMs === 'number' ? b.lastActivityMs : (typeof b.longestMs === 'number' ? b.longestMs : 0);
+        return bMs - aMs || String(a.id).localeCompare(String(b.id));
+      });
+    }
     send(200, result);
   } catch (error) {
     const message = error instanceof Error ? error.message : '';

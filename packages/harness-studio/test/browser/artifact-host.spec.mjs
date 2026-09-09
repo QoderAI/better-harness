@@ -1219,7 +1219,8 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspector).toHaveAttribute("data-react-inspector-workbench", "true");
   await expect(inspector.getByRole("tab", { name: "Sessions", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(inspector.getByRole("tab", { name: "Date", exact: true })).toHaveCount(0);
-  await expect(inspector.getByRole("navigation", { name: "Sessions in range" })).toBeVisible();
+  await expect(inspector.locator(".date-calendar")).toBeVisible();
+  await expect(inspector.getByRole("navigation", { name: "Sessions on selected date" })).toBeVisible();
   await expect(inspector.locator(".date-session-token-summary")).toHaveCount(2);
   await expect(inspector.locator(".date-session-token-summary").first()).toHaveText(/40 current · 1\/1 comp snapshots · 25/u);
   await expect(inspector.locator(".workbench-token-summary").first()).toHaveText(/40 current · 1\/1 comp snapshots · 25/u);

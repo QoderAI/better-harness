@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft } from '@phosphor-icons/react/ArrowLeft';
 import { ArrowClockwise } from '@phosphor-icons/react/ArrowClockwise';
 import { PerformanceSourceView } from './PerformanceSourceView.js';
 import { StorageReport } from './StorageReport.js';
+import { ToolbarActions } from '../shell/ToolbarActions.js';
 import { X } from '@phosphor-icons/react/X';
 import type { PerformanceCatalog, PerformanceDetail, TimingEvidence } from '../../contracts/session-performance.js';
 import type { StudioConfig } from '../studio-shell-model.js';
@@ -40,6 +41,12 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
   const [selection, setSelection] = useState(() => params().get('session'));
   const [query, setQuery] = useState(() => params().get('q') ?? '');
   const [sort, setSort] = useState(() => params().get('sort') ?? 'longest');
+  const [providerFilter, setProviderFilter] = useState(() => params().get('provider') ?? 'all');
+  const [catalogWidth, setCatalogWidth] = useState(() => {
+    try { const stored = globalThis.localStorage?.getItem('performance.catalogWidth'); const n = stored ? Number(stored) : NaN; return Number.isFinite(n) && n >= 180 && n <= 600 ? n : 260; } catch { return 260; }
+  });
+  const [resizing, setResizing] = useState(false);
+  const workspaceRef = useRef<HTMLElement>(null);
   const [turnId, setTurnId] = useState('');
   const [kind, setKind] = useState('all');
   const [spanId, setSpanId] = useState<string>();
@@ -51,7 +58,9 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
   const evidenceRef = useRef<HTMLElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const headers = useMemo(() => ({ 'x-harness-project-id': config.activeProjectId ?? '', 'x-harness-project-revision': String(config.projectRevision ?? 0) }), [config.activeProjectId, config.projectRevision]);
-  useEffect(() => { const listener = (): void => { const query = params(); setSelection(query.get('session')); setQuery(query.get('q') ?? ''); setSort(query.get('sort') ?? 'longest'); setSpanId(undefined); }; globalThis.addEventListener('hashchange', listener); return () => globalThis.removeEventListener('hashchange', listener); }, []);
+  useEffect(() => { const listener = (): void => { const query = params(); setSelection(query.get('session')); setQuery(query.get('q') ?? ''); setSort(query.get('sort') ?? 'longest'); setProviderFilter(query.get('provider') ?? 'all'); setSpanId(undefined); }; globalThis.addEventListener('hashchange', listener); return () => globalThis.removeEventListener('hashchange', listener); }, []);
+  useEffect(() => { if (!resizing) return; const onMove = (e: PointerEvent): void => { const rect = workspaceRef.current?.getBoundingClientRect(); if (!rect) return; setCatalogWidth(Math.max(180, Math.min(600, e.clientX - rect.left))); }; const onUp = (): void => setResizing(false); window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp); document.body.classList.add('performance-resizing'); return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); document.body.classList.remove('performance-resizing'); }; }, [resizing]);
+  useEffect(() => { try { globalThis.localStorage?.setItem('performance.catalogWidth', String(catalogWidth)); } catch {} }, [catalogWidth]);
   useEffect(() => {
     const controller = new AbortController(); setError(''); setCatalog(undefined);
     fetch(`api/session-performance${refresh ? '?refresh=true' : ''}`, { headers, signal: controller.signal })
@@ -59,10 +68,13 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
       .then(setCatalog).catch(e => { if (!controller.signal.aborted) setError(e.message === 'unavailable' ? 'unavailable' : 'error'); });
     return () => controller.abort();
   }, [headers, refresh]);
-  const sessions = useMemo(() => (catalog?.sessions ?? []).filter(s => withinDateRange(s.lastActivityMs === null ? undefined : new Date(s.lastActivityMs).toISOString(), dateRange)
-    && `${s.label} ${s.id}`.toLowerCase().includes(query.toLowerCase())).sort((a,b) => sort === 'recent' ? (b.lastActivityMs ?? 0) - (a.lastActivityMs ?? 0) : b.breakdown.totalMs - a.breakdown.totalMs), [catalog, dateRange, query, sort]);
+  const providers = useMemo(() => [...new Set((catalog?.sessions ?? []).map(s => s.provider).filter((p): p is string => !!p))].sort(), [catalog]);
+  const sessions = useMemo(() => (catalog?.sessions ?? []).filter(s => (providerFilter === 'all' || s.provider === providerFilter)
+    && withinDateRange(s.lastActivityMs === null ? undefined : new Date(s.lastActivityMs).toISOString(), dateRange)
+    && `${s.label} ${s.id}`.toLowerCase().includes(query.toLowerCase())).sort((a,b) => sort === 'recent' ? (b.lastActivityMs ?? 0) - (a.lastActivityMs ?? 0) : b.breakdown.totalMs - a.breakdown.totalMs), [catalog, dateRange, query, sort, providerFilter]);
   const selectedId = selection ?? sessions[0]?.id;
-  useEffect(() => { setPage(0); }, [query, sort, dateRange]);
+  function chooseSession(id: string): void { routeSelection(id); setSelection(id); requestAnimationFrame(() => detailRef.current?.focus()); }
+  useEffect(() => { setPage(0); }, [query, sort, dateRange, providerFilter]);
   useEffect(() => {
     setDetail(undefined); setSpanId(undefined); setDetailError(false); setKind(params().get('kind') ?? 'all'); setSpanPage(0);
     if (!selectedId || !catalog) return;
@@ -86,7 +98,7 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
   const selectSpan = (id: string): void => { opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setSpanId(id); };
   const closeEvidence = (): void => { setSpanId(undefined); requestAnimationFrame(() => opener.current?.isConnected ? opener.current.focus() : detailRef.current?.focus()); };
   useEffect(() => { if (selectedSpan) evidenceRef.current?.focus(); }, [selectedSpan?.id]);
-  const chooseSession = (id: string): void => { routeSelection(id); setSelection(id); requestAnimationFrame(() => detailRef.current?.focus()); };
+  useEffect(() => { if (providerFilter !== 'all' && detail?.session.provider && detail.session.provider !== providerFilter && sessions.length > 0) { chooseSession(sessions[0].id); } }, [providerFilter, detail?.session.provider, sessions, chooseSession]);
   const summary = detail?.session;
   const metricLabel = (name: string): string => t(`kinds.${name}`, { defaultValue: name });
   const paged = <T,>(items: T[], index: number, size: number): T[] => items.slice(index * size, (index + 1) * size);
@@ -94,23 +106,25 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
     const total = Math.max(1, Math.ceil(length / size));
     return total <= 1 ? null : <div className="performance-pager"><button disabled={index === 0} onClick={() => change(index - 1)}>{t('previous')}</button><span>{t('page', { page: index + 1, total })}</span><button disabled={index + 1 >= total} onClick={() => change(index + 1)}>{t('next')}</button></div>;
   }
-  return <section className={`performance-workspace${selection ? ' performance-has-session' : ''}${selectedSpan ? ' performance-has-evidence' : ''}${sourceRecord ? ' performance-has-source' : ''}`} aria-label={t('title')}>
-    <header className="performance-header"><span>{t('subtitle')}</span><button disabled={!catalog && !error} onClick={() => setRefresh(value => value + 1)} aria-label={t('refresh')}><ArrowClockwise aria-hidden="true" size={16} />{t('refresh')}</button></header>
+  return <><ToolbarActions><button className="performance-refresh" disabled={!catalog && !error} onClick={() => setRefresh(value => value + 1)} aria-label={t('refresh')}><ArrowClockwise aria-hidden="true" size={16} />{t('refresh')}</button></ToolbarActions>
+  <section ref={workspaceRef} style={{ '--performance-catalog-width': `${catalogWidth}px` } as CSSProperties} className={`performance-workspace${selection ? ' performance-has-session' : ''}${selectedSpan ? ' performance-has-evidence' : ''}${sourceRecord ? ' performance-has-source' : ''}${resizing ? ' performance-resizing' : ''}`} aria-label={t('title')}>
     {error ? <p className="performance-state" role="alert">{t(error === 'unavailable' ? 'unavailable' : 'error')}</p> : !catalog ? <p className="performance-state" role="status">{t('loading')}</p> : <div className="performance-panes">
       <aside className="performance-catalog" aria-label={t('sessions')}>
-        <div className="performance-filters"><input aria-label={t('search')} placeholder={t('search')} value={query} onChange={event => { setQuery(event.target.value); saveFilter('q', event.target.value); }} /><select aria-label={t('sort')} value={sort} onChange={event => { setSort(event.target.value); saveFilter('sort', event.target.value); }}><option value="longest">{t('longest')}</option><option value="recent">{t('recent')}</option></select></div>
+        <div className="performance-filters"><input aria-label={t('search')} placeholder={t('search')} value={query} onChange={event => { setQuery(event.target.value); saveFilter('q', event.target.value); }} /><select aria-label={t('sort')} value={sort} onChange={event => { setSort(event.target.value); saveFilter('sort', event.target.value); }}><option value="longest">{t('longest')}</option><option value="recent">{t('recent')}</option></select>{providers.length > 0 && <select aria-label={t('provider')} value={providerFilter} onChange={event => { setProviderFilter(event.target.value); saveFilter('provider', event.target.value); }}><option value="all">{t('allProviders')}</option>{providers.map(provider => <option key={provider} value={provider}>{provider}</option>)}</select>}</div>
         <div className="performance-session-list">{sessions.length === 0 && <p className="performance-state">{t('empty')}</p>}{paged(sessions, page, 40).map(session => <button className="performance-session" key={session.id} aria-current={session.id === selectedId ? 'true' : undefined} onClick={() => chooseSession(session.id)}>
           <span><strong>{session.label}</strong><b>{timingDuration(session.breakdown.totalMs)}</b></span><small>{date(session.lastActivityMs)}</small>
         </button>)}</div>
         {pager(page, sessions.length, 40, setPage)}{catalog.coverage.omittedSessions > 0 && <p className="performance-note">{t('omitted', { count: catalog.coverage.omittedSessions })}</p>}
       </aside>
+      <div className="performance-sash" role="separator" aria-label={t('resize')} onPointerDown={() => setResizing(true)} />
       <main className="performance-analysis" tabIndex={-1} ref={detailRef} aria-label={t('title')}>
         <button className="performance-back" onClick={() => { routeSelection(null); setSelection(null); }}><ArrowLeft aria-hidden="true" size={15} />{t('back')}</button>
         {detailError ? <p className="performance-state" role="alert">{t('error')}</p> : !detail ? <p className="performance-state" role="status">{selectedId ? t('loading') : t('select')}</p> : summary && <>
+          {summary.status === 'no-evidence' && <p className="performance-state" role="status">{t('agentUnsupported')}</p>}
           <StorageReport key={summary.id} detail={detail} onSelect={selectSpan} />
           <details className="storage-events"><summary>{t('eventDetails')}</summary>
           <section className="performance-intervals"><div className="performance-toolbar"><h3>{t('timeline')}</h3><label>{t('turn')}<select aria-label={t('turn')} value={turnId} onChange={event => { setTurnId(event.target.value); saveFilter('turn', event.target.value); }}><option value="all">{t('allTurns')}</option>{detail.turns.map((turn, index) => <option key={turn.id} value={turn.id}>{index + 1} · {t(turn.isSubagent ? 'child' : 'root')} · {timingDuration(turn.durationMs)}</option>)}</select></label><label>{t('category')}<select aria-label={t('category')} value={kind} onChange={event => { setKind(event.target.value); saveFilter('kind', event.target.value); }}><option value="all">{t('all')}</option>{[...new Set(detail.spans.map(s => s.kind))].map(value => <option key={value} value={value}>{metricLabel(value)}</option>)}</select></label></div>
-            <p className="performance-note">{t('overlap')}</p><div className="performance-metrics">{summary.metrics.map(metric => <button aria-pressed={kind === metric.kind} key={metric.kind} onClick={() => { const next = kind === metric.kind ? 'all' : metric.kind; setKind(next); saveFilter('kind', next); }}><span>{metricLabel(metric.kind)} · {metric.count}</span><strong>{timingDuration(metric.durationMs)}</strong></button>)}</div>
+            <div className="performance-metrics">{summary.metrics.map(metric => <button aria-pressed={kind === metric.kind} key={metric.kind} onClick={() => { const next = kind === metric.kind ? 'all' : metric.kind; setKind(next); saveFilter('kind', next); }}><span>{metricLabel(metric.kind)} · {metric.count}</span><strong>{timingDuration(metric.durationMs)}</strong></button>)}</div>
             <div className="performance-axis"><span>{date(start)}</span><span>+{timingDuration(scale)}</span></div>
             <div className="performance-span-list">{rows.length === 0 && <p className="performance-note">{t('noSpans')}</p>}{paged(rows, spanPage, 80).map(span => {
               const left = Math.max(0, Math.min(100, ((span.startMs ?? span.endMs ?? start) - start) / scale * 100));
@@ -137,5 +151,5 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
         <details><summary>{t('facts')}</summary><pre>{JSON.stringify(selectedSpan.facts, null, 2)}</pre></details></div>
       </aside>}
     </div>}
-  </section>;
+  </section></>;
 }

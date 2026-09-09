@@ -9,6 +9,8 @@ export const artifacts: typeof enArtifacts = {
   indexing: "正在索引产物…",
   workspaceAria: "产物",
   panesAria: "产物面板",
+  resizeScopeAria: "调整范围面板大小",
+  resizeListAria: "调整产物列表面板大小",
   panes: {
     browse: "浏览",
     artifacts: "产物",

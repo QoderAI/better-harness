@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowLeft } from "@phosphor-icons/react/ArrowLeft";
 import { ActionGraph } from "./inspector/ActionGraph.js";
 import { createPortal } from "react-dom";
@@ -30,7 +31,7 @@ function inspectorT(key: string, options?: Record<string, unknown>): string {
   return studioI18n.t(`inspector:${key}`, options);
 }
 
-import { activityTimestamp, withinDateRange, type StudioDateRange } from "./date-range.js";
+import { activityTimestamp, resolveDateRange, withinDateRange, type StudioDateRange } from "./date-range.js";
 
 type Mode = "feature" | "date";
 type ViewMode = "trace" | "replay" | "usage";
@@ -130,11 +131,11 @@ export function InspectorWorkbench(props: { fallback: ReactNode; reportUrl?: str
         if (nextShadow !== shadow) setShadow(nextShadow);
       }
     }} />
-    {loaded && shadow ? createPortal(<><style>{loaded.css}{REACT_CSS}</style><ReactInspector report={loaded.report} sharedDateRange={props.dateRange !== undefined} /></>, shadow) : null}
+    {loaded && shadow ? createPortal(<><style>{loaded.css}{REACT_CSS}</style><ReactInspector report={loaded.report} sharedDateRange={props.dateRange !== undefined} dateRange={props.dateRange} /></>, shadow) : null}
   </div>;
 }
 
-function ReactInspector({ report, sharedDateRange = false }: { report: Report; sharedDateRange?: boolean }): React.JSX.Element {
+function ReactInspector({ report, sharedDateRange = false, dateRange }: { report: Report; sharedDateRange?: boolean; dateRange?: StudioDateRange }): React.JSX.Element {
   const { t } = useTranslation("inspector");
   const nodes = report.featureTree?.nodes ?? [];
   const stories = report.stories ?? [];
@@ -158,11 +159,11 @@ function ReactInspector({ report, sharedDateRange = false }: { report: Report; s
   const byStory = useMemo(() => new Map(stories.map((story) => [story.id, story])), [stories]);
   const bySession = useMemo(() => new Map(sessions.map((session) => [session.sessionId, session])), [sessions]);
   const byCommit = useMemo(() => new Map(commits.map((commit) => [commit.hash, commit])), [commits]);
+  const rangeDays = useMemo(() => filterDaysToRange(days, sharedDateRange ? dateRange : undefined, sessions, commits), [days, sharedDateRange, dateRange, sessions, commits]);
   const items = useMemo(() => {
-    if (sharedDateRange && mode === "date") return sessions.map((session): Item => ({ session }));
-    const scoped = itemsForScope(mode, scope, days, byNode, byStory, bySession);
+    const scoped = itemsForScope(mode, scope, sharedDateRange ? rangeDays : days, byNode, byStory, bySession);
     return sharedDateRange ? scoped.filter((item) => item.session !== undefined || commitsFor(item, byCommit).length > 0) : scoped;
-  }, [sharedDateRange, sessions, mode, scope, days, byNode, byStory, bySession, byCommit]);
+  }, [sharedDateRange, rangeDays, days, mode, scope, byNode, byStory, bySession, byCommit]);
   const itemSessions = [...new Map(items.filter((item) => item.session).map((item) => [item.session!.sessionId, item.session!])).values()];
   const itemCommits = new Set(items.flatMap((item) => commitsFor(item, byCommit).map((commit) => commit.hash)));
   const itemStories = new Set(items.flatMap((item) => item.story ? [item.story.id] : []));
@@ -233,8 +234,16 @@ function ReactInspector({ report, sharedDateRange = false }: { report: Report; s
 
   function changeMode(next: Mode): void {
     setMode(next);
-    setScope(next === "feature" ? report.featureTree?.roots?.[0] ?? nodes[0]?.id ?? "" : days.at(-1)?.date ?? "");
+    setScope(next === "feature" ? report.featureTree?.roots?.[0] ?? nodes[0]?.id ?? "" : (sharedDateRange ? rangeDays : days).at(-1)?.date ?? "");
   }
+
+  // When the Studio date window narrows, the previously selected day may fall
+  // outside the new range. Fall back to the latest day still in the window so
+  // the picker and the workbench never reference an invisible scope.
+  useEffect(() => {
+    if (mode !== "date" || !sharedDateRange) return;
+    setScope((current) => (rangeDays.some((day) => day.date === current) ? current : rangeDays.at(-1)?.date ?? ""));
+  }, [mode, sharedDateRange, rangeDays]);
 
   // The sash bounds come from the pane area itself, so a dragged width cannot
   // survive a window that no longer has room for it. The stacked regime is the
@@ -282,14 +291,7 @@ function ReactInspector({ report, sharedDateRange = false }: { report: Report; s
           <button className="picker-toggle" type="button" aria-expanded={!pickerCollapsed} aria-label={pickerCollapsed ? inspectorT("expandTree") : inspectorT("collapseTree")} onClick={() => setPickerCollapsed((value) => !value)}><span className="collapse-label">{inspectorT("hide")}</span><span className="expand-label">{inspectorT("showTree")}</span></button>
         </div>
         <section className={`picker-panel${mode === "feature" ? " active" : ""}`} role="tabpanel" hidden={mode !== "feature"}><div className="picker-heading"><strong>{t("capabilityTree")}</strong><span>{t("nodeCount", { count: nodes.length })}</span></div>{nodes.length ? <FeatureTree roots={report.featureTree?.roots ?? []} byNode={byNode} selected={scope} collapsed={collapsedBranches} onSelect={setScope} onToggle={(id) => setCollapsedBranches(toggle(collapsedBranches, id))} /> : <p className="picker-empty">{t("noFeatureTree")}</p>}</section>
-        <section className={`picker-panel date-picker-panel${mode === "date" ? " active" : ""}`} role="tabpanel" hidden={mode !== "date"}>{sharedDateRange ? <nav className="date-session-navigator" aria-label={t("rangeSessions")}>
-          <div className="date-session-heading"><strong>{t("rangeSessions")}</strong><span>{sessions.length}</span></div>
-          <div className="date-session-list">{sessions.map((session) => { const summary = sessionContextSnapshotPresentation(session, t); return <button type="button" className="date-session-row" key={session.sessionId} onClick={() => locateSession(session)}>
-            <span className="date-session-row-meta"><strong>{session.platform}</strong><time>{session.firstSeen ? new Date(session.firstSeen).toLocaleString(studioLocale()) : ""}</time></span>
-            <span className="date-session-title">{sessionTitle(session)}</span>
-            {summary.compact && <span className="date-session-token-summary" title={summary.title}>{summary.compact}</span>}
-          </button>; })}{sessions.length === 0 && <p className="picker-empty">{t("common:dateRange.emptyWindow")}</p>}</div>
-        </nav> : <DatePicker days={days} bySession={bySession} selected={scope} onSelect={setScope} />}</section>
+        <section className={`picker-panel date-picker-panel${mode === "date" ? " active" : ""}`} role="tabpanel" hidden={mode !== "date"}><DatePicker days={sharedDateRange ? rangeDays : days} bySession={bySession} selected={scope} onSelect={setScope} onLocateSession={sharedDateRange ? locateSession : undefined} /></section>
       </aside>
       <PaneSash
         orientation="vertical"
@@ -325,7 +327,7 @@ function FeatureTree(props: { roots: string[]; byNode: Map<string, FeatureNode>;
   return <ul className="capability-tree" role="tree" aria-label={t("capabilityTree")}>{roots.map(render)}</ul>;
 }
 
-function DatePicker({ days, bySession, selected, onSelect }: { days: Day[]; bySession: Map<string, Session>; selected: string; onSelect(value: string): void }): React.JSX.Element {
+function DatePicker({ days, bySession, selected, onSelect, onLocateSession }: { days: Day[]; bySession: Map<string, Session>; selected: string; onSelect(value: string): void; onLocateSession?(session: Session): void }): React.JSX.Element {
   const { t } = useTranslation("inspector");
   const locale = studioLocale();
   const byDate = useMemo(() => new Map(days.map((day) => [day.date, day])), [days]);
@@ -354,7 +356,52 @@ function DatePicker({ days, bySession, selected, onSelect }: { days: Day[]; bySe
   const sessions = (day?.sessionIds ?? []).map((id) => bySession.get(id)).filter((session): session is Session => Boolean(session));
   const contextSummary = dayContextSnapshotPresentation(sessions, t);
   const label = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(first);
-  return <><div className="date-calendar"><header><div className="date-calendar-nav"><button type="button" aria-label={t("datePicker.prevMonth")} disabled={monthIndex <= 0} onClick={() => setMonth(months[monthIndex - 1]!)}><span aria-hidden="true">‹</span></button><strong>{label}</strong><button type="button" aria-label={t("datePicker.nextMonth")} disabled={monthIndex >= months.length - 1} onClick={() => setMonth(months[monthIndex + 1]!)}><span aria-hidden="true">›</span></button></div><span className="date-calendar-zone">{t("datePicker.utc")}</span></header><div className="date-weekdays" aria-hidden="true">{(t("datePicker.weekdaysShort", { returnObjects: true }) as string[]).map((value, index) => <span key={`${value}-${index}`}>{value}</span>)}</div><div className="date-grid" role="group" aria-label={t("datePicker.calendarAria", { label })}>{cells}</div><div className="date-selection-summary" aria-live="polite"><strong>{day ? formatDate(day.date, locale) : t("datePicker.selectDate")}</strong><span>{day ? t("datePicker.selectionSummary", { sessions: day.sessionIds?.length ?? 0, commits: day.commitHashes?.length ?? 0 }) : ""}</span></div>{(contextSummary.observedSessions > 0 || contextSummary.compactionCount > 0) && <div className="date-context-summary"><strong>{contextSummary.observedSessions > 0 ? t("datePicker.daySnapshotSum", { tokens: formatTokenCount(contextSummary.snapshotTokenSum) }) : t("datePicker.dayContextUnavailable")}</strong><span>{t("datePicker.dayContextCoverage", { observed: contextSummary.observedSessions, total: sessions.length, count: contextSummary.compactionCount })}</span></div>}</div><nav className="date-session-navigator" aria-label={t("datePicker.sessionsOnAria")}><div className="date-session-heading"><strong>{t("datePicker.sessionsLabel")}</strong><span>{sessions.length}</span></div><div className="date-session-list">{sessions.length ? sessions.map((session) => { const summary = sessionContextSnapshotPresentation(session, t); return <a className="date-session-row" href={`#workbench-${encodeURIComponent(session.sessionId)}`} key={session.sessionId}><span className="date-session-row-top"><span className="date-session-row-meta"><strong>{session.platform ?? t("datePicker.agent")}</strong><time>{formatClock(session.firstSeen)}</time><span>{formatDuration(session.durationMs)}</span></span><span className="date-session-row-stat">{t("datePicker.callsCount", { count: totalCalls(session) })}</span></span><span className="date-session-title">{sessionTitle(session)}</span>{summary.compact && <span className="date-session-token-summary" title={summary.title}>{summary.compact}</span>}</a>; }) : <p className="picker-empty">{t("datePicker.noSessionsOnDate")}</p>}</div></nav></>;
+  return <><div className="date-calendar"><header><div className="date-calendar-nav"><button type="button" aria-label={t("datePicker.prevMonth")} disabled={monthIndex <= 0} onClick={() => setMonth(months[monthIndex - 1]!)}><span aria-hidden="true">‹</span></button><strong>{label}</strong><button type="button" aria-label={t("datePicker.nextMonth")} disabled={monthIndex >= months.length - 1} onClick={() => setMonth(months[monthIndex + 1]!)}><span aria-hidden="true">›</span></button></div><span className="date-calendar-zone">{t("datePicker.utc")}</span></header><div className="date-weekdays" aria-hidden="true">{(t("datePicker.weekdaysShort", { returnObjects: true }) as string[]).map((value, index) => <span key={`${value}-${index}`}>{value}</span>)}</div><div className="date-grid" role="group" aria-label={t("datePicker.calendarAria", { label })}>{cells}</div><div className="date-selection-summary" aria-live="polite"><strong>{day ? formatDate(day.date, locale) : t("datePicker.selectDate")}</strong><span>{day ? t("datePicker.selectionSummary", { sessions: day.sessionIds?.length ?? 0, commits: day.commitHashes?.length ?? 0 }) : ""}</span></div>{(contextSummary.observedSessions > 0 || contextSummary.compactionCount > 0) && <div className="date-context-summary"><strong>{contextSummary.observedSessions > 0 ? t("datePicker.daySnapshotSum", { tokens: formatTokenCount(contextSummary.snapshotTokenSum) }) : t("datePicker.dayContextUnavailable")}</strong><span>{t("datePicker.dayContextCoverage", { observed: contextSummary.observedSessions, total: sessions.length, count: contextSummary.compactionCount })}</span></div>}</div><nav className="date-session-navigator" aria-label={t("datePicker.sessionsOnAria")}><div className="date-session-heading"><strong>{t("datePicker.sessionsLabel")}</strong><span>{sessions.length}</span></div><DateSessionList sessions={sessions} onLocateSession={onLocateSession} t={t} /></nav></>;
+}
+
+function DateSessionList({ sessions, onLocateSession, t }: { sessions: Session[]; onLocateSession?(session: Session): void; t: TFunction }): React.JSX.Element {
+  const listRef = useRef<HTMLDivElement>(null);
+  const virtual = useVirtualizer({ count: sessions.length, getScrollElement: () => listRef.current, estimateSize: () => 60, overscan: 8 });
+  const virtualized = sessions.length > 50;
+  const visible = virtualized ? virtual.getVirtualItems().map((item) => ({ index: item.index, offset: item.start })) : sessions.map((_, index) => ({ index, offset: 0 }));
+  return (
+    <div ref={listRef} className="date-session-list">
+      <div className={virtualized ? "date-session-list-virtual" : undefined} style={virtualized ? { height: virtual.getTotalSize(), position: "relative", width: "100%" } : undefined}>
+        {sessions.length === 0 && <p className="picker-empty">{t("datePicker.noSessionsOnDate")}</p>}
+        {visible.map(({ index, offset }) => {
+          const session = sessions[index]!;
+          const summary = sessionContextSnapshotPresentation(session, t);
+          const content = (
+            <>
+              <span className="date-session-row-top">
+                <span className="date-session-row-meta">
+                  <strong>{session.platform ?? t("datePicker.agent")}</strong>
+                  <time>{formatClock(session.firstSeen)}</time>
+                  <span>{formatDuration(session.durationMs)}</span>
+                </span>
+                <span className="date-session-row-stat">{t("datePicker.callsCount", { count: totalCalls(session) })}</span>
+              </span>
+              <span className="date-session-title">{sessionTitle(session)}</span>
+              {summary.compact && <span className="date-session-token-summary" title={summary.title}>{summary.compact}</span>}
+            </>
+          );
+          const style = virtualized ? { position: "absolute" as const, top: 0, left: 0, width: "100%", transform: `translateY(${offset}px)` } : undefined;
+          if (onLocateSession) {
+            return (
+              <button type="button" className="date-session-row" key={session.sessionId} ref={virtualized ? virtual.measureElement : undefined} data-index={index} onClick={() => onLocateSession(session)} style={style}>
+                {content}
+              </button>
+            );
+          }
+          return (
+            <a className="date-session-row" href={`#workbench-${encodeURIComponent(session.sessionId)}`} key={session.sessionId} ref={virtualized ? virtual.measureElement : undefined} data-index={index} style={style}>
+              {content}
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function Metric({ value, label, singular }: { value: number; label: string; singular: string }): React.JSX.Element | null {
@@ -1020,6 +1067,26 @@ function SessionReplay({ session }: { session: Session }): React.JSX.Element {
   const end = session.replay?.endMs;
   const timed = Number.isFinite(start) && Number.isFinite(end) && Number(end) > Number(start);
   return <section id="react-session-panel-replay" role="tabpanel" aria-labelledby="react-session-tab-replay" className="session-mode-panel replay-shell"><div className="replay-boundary"><strong>{t("replay.boundary")}</strong><span>{t("replay.boundaryDetail")}</span></div><div className="replay-layout"><main className="replay-stage" tabIndex={0} aria-label={t("replay.stageAria")} onKeyDown={(keyboardEvent) => { if (keyboardEvent.key.toLowerCase() === "j") { keyboardEvent.preventDefault(); setIndex(index - 1); } else if (keyboardEvent.key.toLowerCase() === "l") { keyboardEvent.preventDefault(); setIndex(index + 1); } else if (keyboardEvent.key === " ") { keyboardEvent.preventDefault(); togglePlayback(); } }}><article className={`replay-event-card ${event.type}`}><header><div><small>{event.label ?? event.type}</small><h3>{event.title ?? t("replay.eventTitle", { index: index + 1 })}</h3></div><div className="replay-event-badges">{event.status === "failed" && <span className="replay-status failed">{t("replay.failed")}</span>}{event.availability === "unavailable" && <span className="replay-availability">{t("replay.contentUnavailable")}</span>}{event.bodyExcerpt && <span className="replay-excerpt">{t("replay.excerpt")}</span>}</div></header><div className="replay-event-meta"><span>{replayTiming(event)}</span>{event.meta && <code>{event.meta}</code>}{Number.isFinite(event.durationMs) && <span>{formatDuration(event.durationMs)}</span>}</div><div className="replay-event-body"><p>{event.body ?? t("replay.noBody")}</p></div>{event.files?.length ? <div className="replay-stage-files"><strong>{t("replay.files")}</strong>{event.files.map((file) => <button type="button" key={file} onClick={() => { const next = replayIndexForFile(events, files, file); if (next >= 0) setIndex(next); }}><code>{file}</code></button>)}</div> : null}<footer><span>{event.turnIndex ? t("replay.turn", { index: event.turnIndex }) : t("replay.outsideTurn")}</span></footer></article></main><aside className="replay-index"><div className="replay-index-tabs" role="tablist" aria-label={t("replay.indexAria")}><button type="button" role="tab" aria-selected={indexTab === "events"} tabIndex={indexTab === "events" ? 0 : -1} onClick={() => setIndexTab("events")} onKeyDown={(keyEvent) => moveInspectorTab(keyEvent, "files", setIndexTab)}>{t("replay.events")} <span>{events.length}</span></button><button type="button" role="tab" aria-selected={indexTab === "files"} tabIndex={indexTab === "files" ? 0 : -1} onClick={() => setIndexTab("files")} onKeyDown={(keyEvent) => moveInspectorTab(keyEvent, "events", setIndexTab)}>{t("replay.filesTab")} <span>{files.length}</span></button></div><div className="replay-index-body" role="tabpanel">{indexTab === "events" ? <div className="replay-event-list">{events.map((candidate, candidateIndex) => <button ref={candidateIndex === index ? currentEventRow : undefined} type="button" className={candidateIndex === index ? "replay-current" : undefined} aria-current={candidateIndex === index ? "step" : undefined} key={candidate.id} onClick={() => setIndex(candidateIndex)}><span className="replay-event-order">{candidate.order ?? candidateIndex + 1}</span><span className="replay-event-copy"><strong>{candidate.title ?? candidate.label ?? candidate.type}</strong><small>{replayTiming(candidate)}</small></span><span className="replay-event-kind">{candidate.type.replace("-", " ")}</span></button>)}</div> : files.length ? <div className="replay-file-list">{files.map((file) => <button type="button" key={file.path} onClick={() => { const next = replayIndexForFile(events, files, file.path); if (next >= 0) setIndex(next); }}><code>{file.path}</code><span>{t("replay.eventsCount", { count: file.eventIds.length })}</span></button>)}</div> : <div className="empty-state">{t("replay.noFiles")}</div>}</div></aside></div><section className="replay-transport" aria-label={t("replay.transportAria")}><div className="replay-rail-head"><strong>{t("replay.sessionTimeline")}</strong><span>{timed ? `${formatStamp(start)} → ${formatStamp(end)} UTC` : t("replay.sequenceAxis")}</span></div><div className="react-replay-rail">{events.map((candidate, candidateIndex) => <button type="button" className={`replay-rail-mark ${candidate.type}${candidate.status === "failed" ? " failed" : ""}`} aria-label={t("replay.eventAria", { index: candidateIndex + 1, title: candidate.title ?? candidate.type })} style={{ left: `${timed && Number.isFinite(candidate.atMs) ? ((Number(candidate.atMs) - Number(start)) / (Number(end) - Number(start))) * 100 : (candidateIndex / Math.max(1, events.length - 1)) * 100}%` }} onClick={() => setIndex(candidateIndex)} key={candidate.id} />)}<i className="react-replay-cursor" style={{ left: `${timed && Number.isFinite(event.atMs) ? ((Number(event.atMs) - Number(start)) / (Number(end) - Number(start))) * 100 : (index / Math.max(1, events.length - 1)) * 100}%` }} /></div><div className="replay-rail-legend">{replayLegend(events).map(([type, label]) => <span className={type} key={type}>{label}</span>)}</div><div className="replay-controls"><button type="button" disabled={index === 0} onClick={() => setIndex(index - 1)}>{t("replay.previous")} <kbd>J</kbd></button><button type="button" className="replay-play" aria-pressed={playing} onClick={togglePlayback}>{playing ? t("replay.pause") : t("replay.play")} <kbd>Space</kbd></button><button type="button" disabled={index === events.length - 1} onClick={() => setIndex(index + 1)}>{t("replay.next")} <kbd>L</kbd></button><span className="replay-position">{t("replay.position", { index: index + 1, total: events.length })}</span><div className="replay-speeds" aria-label={t("replay.speedAria")}>{[1, 2, 4, 8].map((value) => <button type="button" aria-pressed={speed === value} onClick={() => setSpeed(value)} key={value}>{value}x</button>)}</div></div></section></section>;
+}
+
+function filterDaysToRange(days: Day[], dateRange: StudioDateRange | undefined, sessions: Session[], commits: Commit[]): Day[] {
+  if (dateRange === undefined) return days;
+  const window = resolveDateRange(dateRange);
+  const sessionIds = new Set(sessions.map((session) => session.sessionId));
+  const commitHashes = new Set(commits.map((commit) => commit.hash));
+  return days
+    .filter((day) => {
+      if (window.preset === "all") return true;
+      if (window.from !== undefined && day.date < window.from) return false;
+      if (window.to !== undefined && day.date > window.to) return false;
+      return true;
+    })
+    .map((day) => ({
+      ...day,
+      sessionIds: day.sessionIds?.filter((id) => sessionIds.has(id)),
+      commitHashes: day.commitHashes?.filter((hash) => commitHashes.has(hash)),
+    }))
+    .filter((day) => (day.sessionIds?.length ?? 0) > 0 || (day.commitHashes?.length ?? 0) > 0);
 }
 
 function itemsForScope(mode: Mode, scope: string, days: Day[], byNode: Map<string, FeatureNode>, byStory: Map<string, Story>, bySession: Map<string, Session>): Item[] {

@@ -17,7 +17,7 @@ export interface TimingMetric { kind: string; count: number; timedCount: number;
 export interface TimingPart { label: string; durationMs: number; cumulativeMs: number; count: number; calls: {spanId:string;label:string;durationMs:number}[] }
 export interface SessionTiming {
   breakdown: { totalMs: number; activityTotalMs: number; segments: { kind: string; activityMs: number; durationMs: number; cumulativeMs: number; parts: TimingPart[]; callParts: TimingPart[] }[] };
-  id: string; provider: 'qoder'; label: string; firstSeenMs: number | null; lastSeenMs: number | null; lastActivityMs: number | null;
+  id: string; provider: string; label: string; firstSeenMs: number | null; lastSeenMs: number | null; lastActivityMs: number | null;
   wallMs: number | null; completedTurnMs: number | null; timedUnionMs: number | null; unattributedTurnMs: number | null; longestMs: number | null;
   turnCount: number; toolCount: number; retryCount: number; metrics: TimingMetric[];
   subagents: { count: number; timedCount: number; cumulativeMs: number | null; elapsedMs: number | null; maxMs: number | null; peakConcurrency: number; unlinkedCount: number; unlinkedTurnCount: number };
@@ -25,7 +25,7 @@ export interface SessionTiming {
   coverage: TimingCoverage; status: string; firstTokenStatus: 'unrecorded';
 }
 export interface PerformanceCatalog {
-  schemaVersion: 1; engine: 'rust'; provider: 'qoder'; status: string; sessions: SessionTiming[];
+  schemaVersion: 1; engine: 'rust'; provider: string; status: string; sessions: SessionTiming[];
   coverage: { discoveredSessions: number; omittedSessions: number; directoryLimitReached: boolean; unreadableDirectories: number };
 }
 export interface PerformanceDetail { schemaVersion: 1; engine: 'rust'; session: SessionTiming; turns: TimingTurn[]; spans: TimingSpan[]; totalSpans: number; omittedSpans: number }
@@ -42,7 +42,7 @@ function timingPart(v: unknown): boolean {
     && array(v.calls, 80, c => object(c) && text(c.spanId) && text(c.label) && count(c.durationMs));
 }
 function summary(v: unknown): boolean {
-  if (!object(v) || !text(v.id) || !text(v.label) || v.provider !== 'qoder' || v.firstTokenStatus !== 'unrecorded' || !text(v.status)) return false;
+  if (!object(v) || !text(v.id) || !text(v.label) || !text(v.provider) || v.firstTokenStatus !== 'unrecorded' || !text(v.status)) return false;
   if (!['firstSeenMs','lastSeenMs','lastActivityMs','wallMs','completedTurnMs','timedUnionMs','unattributedTurnMs','longestMs'].every(k => nullableNumber(v[k]))
     || !['turnCount','toolCount','retryCount'].every(k => count(v[k]))) return false;
   const b = v.breakdown;
@@ -57,7 +57,7 @@ export function isPerformanceResult(value: unknown, detail: boolean): value is P
   if (!object(value) || value.schemaVersion !== 1 || value.engine !== 'rust') return false;
   if (!detail) {
     const c = value.coverage;
-    return value.provider === 'qoder' && text(value.status) && array(value.sessions, 500, summary) && object(c)
+    return text(value.provider) && text(value.status) && array(value.sessions, 500, summary) && object(c)
       && count(c.discoveredSessions) && count(c.omittedSessions) && count(c.unreadableDirectories) && typeof c.directoryLimitReached === 'boolean';
   }
   return summary(value.session) && count(value.totalSpans) && count(value.omittedSpans)

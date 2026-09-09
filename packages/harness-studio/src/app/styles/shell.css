@@ -457,6 +457,7 @@
 }
 
 .studio-context-title { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: var(--space-sm); }
+.studio-context-subtitle { color: var(--color-text-muted); font-size: var(--type-meta-size); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .studio-context-title h1 {
   overflow: hidden;
   margin: 0;

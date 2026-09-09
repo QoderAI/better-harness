@@ -33,7 +33,6 @@ export function StorageReport({detail,onSelect}:{detail:PerformanceDetail;onSele
    <div className="storage-title"><h2>{summary.label}</h2><span><strong>{timingDuration(summary.breakdown.totalMs)}</strong><small>{t('observedElapsed')}</small></span></div>
    <div className="storage-bar" aria-label={t('distribution')}>{segments.filter(s=>s.activityMs>0).map(s=><button key={s.kind} {...linkCategory(s.kind)} className={`storage-segment storage-${s.kind}`} style={{flexGrow:s.activityMs}} aria-label={`${label(s.kind)} ${timingDuration(s.activityMs)} ${percent(s.activityMs,total)}`} title={`${label(s.kind)} · ${percent(s.activityMs,total)}`} onClick={()=>toggle(s.kind,true)}/>)}</div>
    <div className="storage-legend">{segments.filter(s=>s.activityMs>0).map(s=><button key={s.kind} {...linkCategory(s.kind)} className={`storage-legend-item storage-${s.kind}`} title={`${label(s.kind)} · ${timingDuration(s.activityMs)} · ${percent(s.activityMs,total)}`} aria-expanded={expanded.has(s.kind)} aria-controls={`${id}-${s.kind}`} onClick={()=>toggle(s.kind)}><i className={`storage-dot storage-${s.kind}`}/>{label(s.kind)}</button>)}</div>
-   <p className="storage-caption">{t('overlap')}</p>
   </section>
   <div className="storage-category-list" aria-label={t('categories')}>{segments.map(segment=>{
    const Icon=icons[segment.kind as keyof typeof icons]??Clock;const open=expanded.has(segment.kind);
@@ -68,6 +67,6 @@ export function StorageReport({detail,onSelect}:{detail:PerformanceDetail;onSele
     </div>}
    </div>;
   })}</div>
-  <details className="storage-method"><summary>{t('timingNotes')}{summary.status==='partial'?` · ${t('partial')}`:''}</summary><p>{t('activityNote')}</p><p>{t('modelNote')}</p><p>{t('coverage',{events:summary.coverage.events,files:summary.coverage.files,unpaired:summary.coverage.unpairedEvents,ambiguous:summary.coverage.ambiguousPairs,clocks:summary.coverage.clockConflicts})}</p></details>
+  <details className="storage-method"><summary>{t('timingNotes')}{summary.status==='partial'?` · ${t('partial')}`:''}</summary><p>{t('coverage',{events:summary.coverage.events,files:summary.coverage.files,unpaired:summary.coverage.unpairedEvents,ambiguous:summary.coverage.ambiguousPairs,clocks:summary.coverage.clockConflicts})}</p></details>
  </div>;
 }

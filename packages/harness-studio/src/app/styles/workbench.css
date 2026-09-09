@@ -1265,7 +1265,7 @@
   min-height: 0;
   overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(228px, 252px) minmax(264px, 300px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, var(--artifact-scope-width, 252px)) var(--sash-size) minmax(0, var(--artifact-list-width, 300px)) var(--sash-size) minmax(0, 1fr);
   background: var(--color-workspace);
 }
 .artifact-narrow-tabs { display: none; }
@@ -1273,7 +1273,7 @@
 .artifact-list-pane,
 .artifact-preview-pane { min-width: 0; min-height: 0; overflow: hidden; }
 .artifact-scope-pane,
-.artifact-list-pane { display: flex; flex-direction: column; border-right: 1px solid var(--color-border); background: var(--color-sidebar); }
+.artifact-list-pane { display: flex; flex-direction: column; border-right: 0; background: var(--color-sidebar); }
 .artifact-scope-pane > header,
 .artifact-list-pane > header,
 .artifact-editor-header {
@@ -1295,6 +1295,8 @@
 .artifact-list-pane > header h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-label-size); line-height: var(--type-label-line); }
 .artifact-scope-pane > header > span,
 .artifact-list-pane > header > span { color: var(--color-text-muted); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; }
+.artifact-scope-pane > header,
+.artifact-list-pane > header { justify-content: flex-end; }
 .artifact-scope-switch { min-height: var(--control-height); display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--color-border); background: var(--color-sidebar); }
 .artifact-scope-switch button { border: 0; border-bottom: 2px solid transparent; border-radius: var(--radius-none); display: inline-flex; align-items: center; justify-content: center; gap: var(--space-xs); color: var(--color-text-muted); background: transparent; font: inherit; font-size: var(--type-meta-size); }
 .artifact-scope-switch button:hover:not(:disabled) { color: var(--color-text); background: var(--color-surface-hover); }
@@ -2091,6 +2093,7 @@
   .git-changed-files { grid-row: 2; border-right: 0; border-bottom: 1px solid var(--color-border); }
   .git-file-diff { grid-column: 1; grid-row: 3; min-height: 260px; }
   .artifact-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--workbench-bar-height) minmax(0, 1fr); }
+  .artifact-workspace > .studio-pane-sash { display: none; }
   .artifact-narrow-tabs { display: flex; border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
   .artifact-narrow-tabs button { flex: 1; border: 0; border-bottom: 2px solid transparent; border-radius: var(--radius-none); color: var(--color-text-muted); background: transparent; font: inherit; }
   .artifact-narrow-tabs button[aria-selected="true"] { border-bottom-color: var(--color-primary); color: var(--color-primary); background: var(--color-surface-selected); }

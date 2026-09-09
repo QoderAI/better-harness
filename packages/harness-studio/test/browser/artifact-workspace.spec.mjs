@@ -110,7 +110,7 @@ test("keeps file navigation, Artifact selection, and Canvas reachable at all tar
     const workspaceRegion = page.getByRole("region", { name: "Artifacts" });
     if (viewport.width <= 760) await workspaceRegion.getByRole("tab", { name: "Browse" }).click();
     await expect(page.locator(".studio-context-title")).toHaveText("Artifacts");
-    await expect(workspaceRegion.locator(".artifact-scope-pane > header")).toContainText("Project scopeBrowse");
+    await expect(workspaceRegion.locator(".artifact-scope-pane > header")).toHaveText("4");
     await expect(workspaceRegion.getByRole("tree")).toBeVisible();
     await expect(workspaceRegion.getByRole("tab", { name: "Date", exact: true })).toHaveCount(0);
     await expect(page.locator(".artifact-editor-header small")).toContainText("current ");

@@ -7,6 +7,8 @@ export const artifacts = {
   indexing: "Indexing artifacts…",
   workspaceAria: "Artifacts",
   panesAria: "Artifact panes",
+  resizeScopeAria: "Resize scope pane",
+  resizeListAria: "Resize artifact list pane",
   panes: {
     browse: "Browse",
     artifacts: "Artifacts",

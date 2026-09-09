@@ -9,7 +9,10 @@
 .performance-workspace button:disabled { cursor: default; }
 .performance-header button, .performance-back, .performance-evidence-back { display: inline-flex; align-items: center; gap: var(--space-xs); }
 .performance-panes { display: flex; flex: 1; min-height: 0; overflow: hidden; }
-.performance-catalog { flex: 0 0 260px; display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid var(--color-border); background: var(--color-panel); }
+.performance-catalog { flex: 0 0 var(--performance-catalog-width, 260px); display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid var(--color-border); background: var(--color-panel); }
+.performance-sash { flex: none; width: 5px; margin-left: -2px; margin-right: -2px; cursor: col-resize; z-index: 10; background: transparent; }
+.performance-sash:hover, .performance-sash:active { background: var(--color-primary); }
+body.performance-resizing, body.performance-resizing * { user-select: none; }
 .performance-filters { display: grid; gap: var(--space-sm); padding: var(--space-md); border-bottom: 1px solid var(--color-border); }
 .performance-workspace input, .performance-workspace select { min-width: 0; max-width: 100%; min-height: var(--control-height); padding: var(--space-xs) var(--space-sm); color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); }
 .performance-session-list { overflow: auto; flex: 1; }
@@ -64,6 +67,7 @@
 .performance-state { padding: var(--space-xl); color: var(--color-text-muted); }
 @media (max-width: 1200px) { .performance-catalog { flex-basis: 230px; } .performance-has-evidence .performance-catalog { display: none; } .performance-totals { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 700px) {
+  .performance-sash { display: none; }
   .performance-header { padding: var(--space-md); align-items: start; }
   .performance-header h1 { font-size: var(--type-subhead-size); }
   .performance-header button { font-size: var(--type-meta-size); }

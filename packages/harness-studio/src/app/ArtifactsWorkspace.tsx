@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CaretRight } from "@phosphor-icons/react/CaretRight";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
@@ -27,9 +27,16 @@ import {
 import { ArtifactView } from "./artifacts/ArtifactView.js";
 import { ArtifactInteractionPane } from "./artifacts/ArtifactInteractionPane.js";
 import type { ArtifactHostedIntentFailure } from "./artifacts/ArtifactSurface.js";
+import { PaneSash } from "./shell/PaneSash.js";
 import { studioLocale } from "./i18n/index.js";
 import { useRovingFocus } from "./roving-tablist.js";
 import type { StudioConfig } from "./studio-shell-model.js";
+
+const ARTIFACT_NARROW_QUERY = "(max-width: 760px)";
+const ARTIFACT_SASH_SIZE = 1;
+const ARTIFACT_SCOPE_WIDTH = { default: 252, min: 180 };
+const ARTIFACT_LIST_WIDTH = { default: 300, min: 220 };
+const ARTIFACT_PREVIEW_MIN_WIDTH = 320;
 
 type ArtifactScope =
   | { kind: "all" }
@@ -53,6 +60,27 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
   const [surfaceIntentOutcome, setSurfaceIntentOutcome] = useState<ArtifactHostedIntentOutcomeV1>();
   const [surfaceIntentFailure, setSurfaceIntentFailure] = useState<ArtifactHostedIntentFailure>();
   const [adoptedIntentId, setAdoptedIntentId] = useState<string>();
+  const workspaceRef = useRef<HTMLElement>(null);
+  const [frameWidth, setFrameWidth] = useState(0);
+  const [isNarrow, setIsNarrow] = useState(() => globalThis.matchMedia?.(ARTIFACT_NARROW_QUERY).matches === true);
+  const [scopeWidth, setScopeWidth] = useState(ARTIFACT_SCOPE_WIDTH.default);
+  const [listWidth, setListWidth] = useState(ARTIFACT_LIST_WIDTH.default);
+
+  useEffect(() => {
+    const element = workspaceRef.current;
+    if (element === null) return;
+    const observer = new ResizeObserver(([entry]) => setFrameWidth(entry!.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const media = globalThis.matchMedia?.(ARTIFACT_NARROW_QUERY);
+    if (media === undefined) return;
+    const sync = (event: MediaQueryListEvent): void => setIsNarrow(event.matches);
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     setSurfaceSelection(undefined);
@@ -209,7 +237,26 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
     setNarrowPane("preview");
   };
 
-return <section className="artifact-workspace" data-narrow-pane={narrowPane} aria-label={t("workspaceAria")}>
+  const measured = frameWidth > 0;
+  const maxScope = measured
+    ? Math.max(ARTIFACT_SCOPE_WIDTH.min, frameWidth - ARTIFACT_LIST_WIDTH.min - ARTIFACT_PREVIEW_MIN_WIDTH - 2 * ARTIFACT_SASH_SIZE)
+    : ARTIFACT_SCOPE_WIDTH.default;
+  const fittedScope = measured ? Math.min(Math.max(scopeWidth, ARTIFACT_SCOPE_WIDTH.min), maxScope) : scopeWidth;
+  const maxList = measured
+    ? Math.max(ARTIFACT_LIST_WIDTH.min, frameWidth - fittedScope - ARTIFACT_PREVIEW_MIN_WIDTH - 2 * ARTIFACT_SASH_SIZE)
+    : ARTIFACT_LIST_WIDTH.default;
+  const fittedList = measured ? Math.min(Math.max(listWidth, ARTIFACT_LIST_WIDTH.min), maxList) : listWidth;
+  const workspaceStyle: React.CSSProperties | undefined = measured
+    ? { "--artifact-scope-width": `${fittedScope}px`, "--artifact-list-width": `${fittedList}px` } as React.CSSProperties
+    : undefined;
+
+  return <section
+    ref={workspaceRef}
+    className="artifact-workspace"
+    data-narrow-pane={narrowPane}
+    aria-label={t("workspaceAria")}
+    style={workspaceStyle}
+  >
     <div className="artifact-narrow-tabs" role="tablist" aria-label={t("panesAria")} onKeyDown={narrowTabs.onKeyDown}>
       {(["scope", "artifacts", "preview"] as const).map((pane) => <button
         key={pane}
@@ -218,15 +265,16 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
         id={`artifact-tab-${pane}`}
         aria-controls={`artifact-${pane}-pane`}
         aria-selected={narrowPane === pane}
+        aria-label={pane === "scope" ? t("panes.browse") : pane === "artifacts" ? t("panes.artifacts") : t("panes.preview")}
         disabled={pane === "preview" && active === undefined}
         ref={narrowTabs.itemRef(pane)}
         tabIndex={narrowTabs.tabIndexFor(pane)}
         onClick={() => setNarrowPane(pane)}
-      >{pane === "scope" ? t("panes.browse") : t(`panes.${pane}`)}</button>)}
+      >{pane === "scope" ? <FolderOpen aria-hidden="true" size={15} /> : pane === "artifacts" ? <File aria-hidden="true" size={15} /> : t("panes.preview")}</button>)}
     </div>
 
     <aside className="artifact-scope-pane" id="artifact-scope-pane" role="tabpanel" aria-labelledby="artifact-tab-scope">
-<header><div><small>{navigation === undefined ? t("workspaceAria") : t("scopeHeader.projectScope")}</small><h2>{t("scopeHeader.browse")}</h2></div><span>{artifacts.length}</span></header>
+      <header aria-label={t("fileTree.aria")}><span>{artifacts.length}</span></header>
       <ArtifactFileNavigator artifacts={artifacts} scope={scope} onSelect={selectScope} />
       {windowHidesArtifacts && <p className="artifact-pane-note">{t("common:dateRange.emptyWindow")}</p>}
       {!windowHidesArtifacts && props.dateRange.preset !== "all" && windowTotal !== undefined
@@ -234,8 +282,19 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
       {!liveUpdates && <p className="artifact-pane-note" role="note">{t("liveUpdatesStopped")}</p>}
     </aside>
 
+    <PaneSash
+      orientation="vertical"
+      label={t("resizeScopeAria")}
+      size={fittedScope}
+      min={ARTIFACT_SCOPE_WIDTH.min}
+      max={maxScope}
+      fallback={ARTIFACT_SCOPE_WIDTH.default}
+      disabled={isNarrow || !measured}
+      onSize={setScopeWidth}
+    />
+
     <section className="artifact-list-pane" id="artifact-artifacts-pane" role="tabpanel" aria-labelledby="artifact-tab-artifacts">
-      <header><div><small>{scopeDescription(scope, navigation, artifacts, t)}</small><h2>{t("panes.artifacts")}</h2></div><span>{scopedArtifacts.length}</span></header>
+      <header aria-label={t("scopedAria")}><span>{scopedArtifacts.length}</span></header>
       <label className="artifact-search"><MagnifyingGlass aria-hidden="true" size={14} /><span className="sr-only">{t("search.srOnly")}</span><input value={query} type="search" placeholder={t("search.placeholder")} onChange={(event) => setQuery(event.currentTarget.value)} /></label>
       <nav className="artifact-rows" aria-label={t("scopedAria")}>
         {scopedArtifacts.length === 0
@@ -244,6 +303,17 @@ return <section className="artifact-workspace" data-narrow-pane={narrowPane} ari
       </nav>
       {omitted.length > 0 && <p className="artifact-pane-note" role="note">{t("omitted", { count: omitted.length })}</p>}
     </section>
+
+    <PaneSash
+      orientation="vertical"
+      label={t("resizeListAria")}
+      size={fittedList}
+      min={ARTIFACT_LIST_WIDTH.min}
+      max={maxList}
+      fallback={ARTIFACT_LIST_WIDTH.default}
+      disabled={isNarrow || !measured}
+      onSize={setListWidth}
+    />
 
     <main className="artifact-preview-pane" id="artifact-preview-pane" role="tabpanel" aria-labelledby="artifact-tab-preview">
       {active === undefined || catalog === undefined
@@ -408,13 +478,6 @@ function artifactIdsForScope(scope: ArtifactScope, navigation: WorkspaceArtifact
 function observationsForArtifact(navigation: WorkspaceArtifactNavigation | undefined, artifactId: string): WorkspaceArtifactObservation[] {
   return navigation?.observations.filter((observation) => observation.artifactId === artifactId)
     .sort((left, right) => right.savedAt.localeCompare(left.savedAt)) ?? [];
-}
-
-function scopeDescription(scope: ArtifactScope, navigation: WorkspaceArtifactNavigation | undefined, artifacts: ArtifactDescriptor[], t: (key: string, options?: Record<string, unknown>) => string): string {
-  if (scope.kind === "all") return t("scopeDescription.all");
-  if (scope.kind === "folder") return scope.value;
-  if (scope.kind === "file") return artifacts.find((artifact) => artifact.id === scope.value)?.label ?? t("scopeDescription.selectedFile");
-  return t("scopeDescription.all");
 }
 
 function fileTreeFolders(artifacts: ArtifactDescriptor[]): ArtifactFolderNode[] {
