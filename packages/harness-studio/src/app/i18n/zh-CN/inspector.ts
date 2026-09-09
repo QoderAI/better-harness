@@ -7,7 +7,7 @@ export const inspector: typeof enInspector = {
   loading: "正在加载 React Inspector 工作台…",
   resizePrompts: "调整提示词栏宽度",
   resizeActivity: "调整活动栏宽度",
-  graph: { time: "观测时间", sequence: "调用顺序", previous: "上一段", next: "下一段", zoomIn: "放大", zoomOut: "缩小", label: "工具活动图" },
+  graph: { time: "观测时间", sequence: "调用顺序", previous: "上一段", next: "下一段", zoomIn: "放大", zoomOut: "缩小", label: "工具活动图", allActivity: "全部活动", callAxis: "调用", idle: "空闲" },
   workbenchAria: "React Harness Inspector 工作台",
   scopePickerAria: "范围选择器",
   expandTree: "展开能力树",

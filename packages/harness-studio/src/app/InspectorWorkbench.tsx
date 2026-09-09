@@ -201,6 +201,17 @@ function ReactInspector({ report, sharedDateRange = false }: { report: Report; s
     setSelectedSession(undefined);
   }
 
+  function locateSession(session: Session): void {
+    const target = [...(inspectorRoot.current?.querySelectorAll<HTMLElement>("[data-session-workbench]") ?? [])]
+      .find((element) => element.dataset.sessionWorkbench === session.sessionId);
+    if (target === undefined) return;
+    target.scrollIntoView({
+      behavior: globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
+      inline: "nearest",
+    });
+  }
+
   useEffect(() => {
     if (selectedSession !== undefined) return;
     const trigger = sessionTrigger.current;
@@ -273,7 +284,7 @@ function ReactInspector({ report, sharedDateRange = false }: { report: Report; s
         <section className={`picker-panel${mode === "feature" ? " active" : ""}`} role="tabpanel" hidden={mode !== "feature"}><div className="picker-heading"><strong>{t("capabilityTree")}</strong><span>{t("nodeCount", { count: nodes.length })}</span></div>{nodes.length ? <FeatureTree roots={report.featureTree?.roots ?? []} byNode={byNode} selected={scope} collapsed={collapsedBranches} onSelect={setScope} onToggle={(id) => setCollapsedBranches(toggle(collapsedBranches, id))} /> : <p className="picker-empty">{t("noFeatureTree")}</p>}</section>
         <section className={`picker-panel date-picker-panel${mode === "date" ? " active" : ""}`} role="tabpanel" hidden={mode !== "date"}>{sharedDateRange ? <nav className="date-session-navigator" aria-label={t("rangeSessions")}>
           <div className="date-session-heading"><strong>{t("rangeSessions")}</strong><span>{sessions.length}</span></div>
-          <div className="date-session-list">{sessions.map((session) => { const summary = sessionContextSnapshotPresentation(session, t); return <button type="button" className="date-session-row" key={session.sessionId} onClick={(event) => openSession(session, event.currentTarget)}>
+          <div className="date-session-list">{sessions.map((session) => { const summary = sessionContextSnapshotPresentation(session, t); return <button type="button" className="date-session-row" key={session.sessionId} onClick={() => locateSession(session)}>
             <span className="date-session-row-meta"><strong>{session.platform}</strong><time>{session.firstSeen ? new Date(session.firstSeen).toLocaleString(studioLocale()) : ""}</time></span>
             <span className="date-session-title">{sessionTitle(session)}</span>
             {summary.compact && <span className="date-session-token-summary" title={summary.title}>{summary.compact}</span>}
@@ -375,8 +386,8 @@ function WorkbenchCard({ item, commits, collapsed, onToggle, onOpen }: { item: I
     || commits.length > 0;
   const contextSummary = session ? sessionContextSnapshotPresentation(session, t) : null;
   const head = <header className="workbench-head"><div className="workbench-title-line"><div className="workbench-meta">{session ? <><span className="workbench-provider">{session.platform ?? t("datePicker.agent")}</span><span>{formatClock(session.firstSeen)}</span><span className="workbench-duration">{formatDuration(session.durationMs)}</span>{contextSummary?.compact && <span className="workbench-token-summary" title={contextSummary.title}>{contextSummary.compact}</span>}</> : <span>No linked Session</span>}</div><h3>{item.story?.title ?? (session ? sessionTitle(session) : "Commits without a linked Session")}</h3></div><div className="head-actions">{session && <button className="prepare-button" type="button" onClick={(event) => onOpen(session, event.currentTarget)}>Open session</button>}{retained && <button className="card-collapse" type="button" aria-expanded={!collapsed} onClick={onToggle}>{collapsed ? "+" : "−"}</button>}</div></header>;
-  if (!retained) return <article className="workbench workbench-unevidenced" id={session ? `workbench-${encodeURIComponent(session.sessionId)}` : undefined}>{head}{session ? <p className="workbench-unevidenced-note">No prompt, tool call, or commit was retained for this Session.</p> : null}</article>;
-  return <article className={`workbench${collapsed ? " card-collapsed" : ""}`} id={session ? `workbench-${encodeURIComponent(session.sessionId)}` : undefined}>{head}<div ref={grid} className="workbench-grid" style={{ "--prompt-width": `${prompt}px`, "--activity-width": `${activity}px` } as CSSProperties}><PromptLane item={item} onOpen={onOpen} /><PaneSash orientation="vertical" label={t("resizePrompts")} size={prompt} min={180} max={Math.max(180, width - activity - 252)} fallback={260} onSize={setPromptWidth} /><ActivityLane session={session} onOpen={onOpen} /><PaneSash orientation="vertical" label={t("resizeActivity")} size={activity} min={240} max={Math.max(240, width - prompt - 252)} fallback={360} onSize={setActivityWidth} /><DeliveryLane commits={commits} /></div></article>;
+  if (!retained) return <article className="workbench workbench-unevidenced" id={session ? `workbench-${encodeURIComponent(session.sessionId)}` : undefined} data-session-workbench={session?.sessionId}>{head}{session ? <p className="workbench-unevidenced-note">No prompt, tool call, or commit was retained for this Session.</p> : null}</article>;
+  return <article className={`workbench${collapsed ? " card-collapsed" : ""}`} id={session ? `workbench-${encodeURIComponent(session.sessionId)}` : undefined} data-session-workbench={session?.sessionId}>{head}<div ref={grid} className="workbench-grid" style={{ "--prompt-width": `${prompt}px`, "--activity-width": `${activity}px` } as CSSProperties}><PromptLane item={item} onOpen={onOpen} /><PaneSash orientation="vertical" label={t("resizePrompts")} size={prompt} min={180} max={Math.max(180, width - activity - 252)} fallback={260} onSize={setPromptWidth} /><ActivityLane session={session} onOpen={onOpen} /><PaneSash orientation="vertical" label={t("resizeActivity")} size={activity} min={240} max={Math.max(240, width - prompt - 252)} fallback={360} onSize={setActivityWidth} /><DeliveryLane commits={commits} /></div></article>;
 }
 
 function PromptLane({ item, onOpen }: { item: Item; onOpen(session: Session, trigger?: HTMLElement): void }): React.JSX.Element {

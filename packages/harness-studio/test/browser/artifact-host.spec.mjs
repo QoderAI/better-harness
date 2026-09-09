@@ -1223,6 +1223,10 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await expect(inspector.locator(".date-session-token-summary")).toHaveCount(2);
   await expect(inspector.locator(".date-session-token-summary").first()).toHaveText(/40 current · 1\/1 comp snapshots · 25/u);
   await expect(inspector.locator(".workbench-token-summary").first()).toHaveText(/40 current · 1\/1 comp snapshots · 25/u);
+  await inspector.locator(".date-session-row").nth(1).click();
+  await expect(inspector.locator(".session-view")).toHaveCount(0);
+  await expect(page).not.toHaveURL(/inspector-session=/u);
+  await expect(inspector.locator(".workbench").nth(1)).toBeInViewport();
   await expect(inspector.getByRole("button", { name: "Open session" }).first()).toBeVisible();
   expect(requestedUrls.some((url) => url.endsWith("/assets/inspector-workbench.js"))).toBe(false);
   await expect(inspector.locator(".react-diagnostics")).toHaveCount(0);
@@ -1245,16 +1249,17 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
     await expect.poll(async () => (await card.locator(lane).boundingBox()).width).toBeCloseTo(before, 0);
   }
   await card.locator(".activity-details > summary").click();
-  const graph = card.getByRole("group", { name: "Tool activity graph" });
+  const graph = card.getByRole("group", { name: /Tool activity graph/u });
   await expect(graph).toBeVisible();
-  const points = graph.getByRole("button");
+  await expect(graph.locator(".activity-chart")).toBeVisible();
+  const points = graph.locator(".chart-mark, .chart-bin");
+  await expect.poll(() => points.count()).toBeGreaterThan(2);
   await points.nth(1).click();
   await expect(points.nth(1)).toHaveAttribute("aria-pressed", "true");
   await points.nth(1).press("ArrowRight");
-  await expect(points.nth(2)).toHaveAttribute("aria-pressed", "true");
-  await expect(card.locator(".action-graph-selection")).toContainText("Bash");
-  await expect(card.getByRole("button", { name: "Zoom in" })).toBeDisabled();
-  await expect(card.getByRole("button", { name: "Zoom out" })).toBeDisabled();
+  await expect(graph.locator('[aria-pressed="true"]')).toHaveCount(1);
+  await expect(graph.locator(".chart-inspector")).toContainText("Bash");
+  await expect(graph.locator(".chart-basis")).toContainText(/Observed time|Call order/u);
   await page.screenshot({ path: "test-results/session-actions-graph-wide.png", fullPage: true });
   await card.locator(".activity-details > summary").click();
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -1495,16 +1500,11 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await page.setViewportSize({ width: 1728, height: 1000 });
   const longCard = inspector.locator(".workbench").first();
   await longCard.locator(".activity-details > summary").click();
-  const longGraph = longCard.locator(".action-graph");
-  await expect(longGraph).toContainText("Call order · 1–60 / 287");
-  await expect(longGraph.locator(".action-graph-track button")).toHaveCount(60);
-  await longGraph.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(longGraph).toContainText("Call order · 61–120 / 287");
-  await expect(longGraph.locator(".action-graph-selection")).toContainText("long-60");
-  await longGraph.getByRole("button", { name: "Zoom in" }).click();
-  await expect(longGraph.locator(".action-graph-track button")).toHaveCount(30);
-  await longGraph.getByRole("button", { name: "Zoom out" }).click();
-  await expect(longGraph.locator(".action-graph-track button")).toHaveCount(60);
+  const longGraph = longCard.locator("[data-react-activity-chart]");
+  await expect(longGraph.locator(".chart-basis")).toHaveText("Call order");
+  await expect(longGraph.locator(".chart-range")).toContainText("1–287");
+  await expect.poll(() => longGraph.locator(".chart-mark, .chart-bin").count()).toBeGreaterThan(0);
+  await expect(longGraph.locator(".chart-status-summary")).toContainText("287");
   for (const layout of [
     { name: "wide", width: 1728, height: 1000 },
     { name: "compact", width: 1024, height: 768 },
@@ -1522,7 +1522,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   const selectedPoint = longGraph.locator('[aria-pressed="true"]');
   await selectedPoint.focus();
   await expect(selectedPoint).toBeFocused();
-  await expect(selectedPoint).toHaveCSS("outline-style", "solid");
+  await expect(selectedPoint).toHaveAttribute("role", "button");
   await page.screenshot({ path: "test-results/session-actions-long-dark.png", animations: "disabled" });
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "no-preference" });
   await longCard.getByRole("button", { name: "Open session", exact: true }).first().click();
