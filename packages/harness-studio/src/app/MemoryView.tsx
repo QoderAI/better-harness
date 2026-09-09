@@ -31,6 +31,7 @@ export function MemoryView(): React.JSX.Element {
   const [reading, setReading] = useState(false);
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
+  const readRequest = useRef<AbortController | undefined>(undefined);
   const reader = useRef<HTMLElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const tabs = useRovingTablist<MemoryTab>({ ids: ['documents', 'sources'], active: tab, onSelect: setTab, panelId: 'memory-inventory-panel' });
@@ -44,7 +45,7 @@ export function MemoryView(): React.JSX.Element {
       const data = await response.json() as MemoryInventory;
       if (!controller.signal.aborted) setInventory(data);
     }).catch(() => { if (!controller.signal.aborted) setError(true); });
-    return () => { controller.abort(); generation.current++; };
+    return () => { controller.abort(); readRequest.current?.abort(); generation.current++; };
   }, [revision]);
 
   const sources = inventory?.sources.filter((source) => (host === 'all' || source.host === host) && (scope === 'all' || source.scope === scope)) ?? [];
@@ -54,15 +55,17 @@ export function MemoryView(): React.JSX.Element {
   const visibleSources = sources.filter((source) => `${hostLabel(source.host)} ${source.root?.displayPath ?? ''} ${source.coverage.state}`.toLocaleLowerCase().includes(term));
   const selectedSource = inventory?.sources.find((source) => source.sourceId === selected?.sourceId);
   const blocks = useMemo(() => snapshot ? parseMarkdown(snapshot.content).blocks : [], [snapshot]);
-  function clear(): void { generation.current++; setSelected(undefined); setSnapshot(undefined); setReading(false); setError(false); }
-  function select(doc: MemoryDocument): void { if (doc.id !== selected?.id) { clear(); setSelected(doc); } }
+  function clear(): void { generation.current++; readRequest.current?.abort(); setSelected(undefined); setSnapshot(undefined); setReading(false); setError(false); }
+  function select(doc: MemoryDocument): void { if (doc.id !== selected?.id) { clear(); setSelected(doc); void read(doc); } }
   function closeReader(): void { clear(); search.current?.focus(); }
-  async function read(): Promise<void> {
-    if (!selected) return;
+  async function read(doc: MemoryDocument): Promise<void> {
+    readRequest.current?.abort();
+    const controller = new AbortController();
+    readRequest.current = controller;
     const current = ++generation.current;
     setReading(true); setError(false);
     try {
-      const response = await fetch('/api/memory/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: selected.id, scope: selected.scope, authorized: true }), cache: 'no-store' });
+      const response = await fetch('/api/memory/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: doc.id, scope: doc.scope, authorized: true }), cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error();
       const value = await response.json() as MemorySnapshot;
       if (current === generation.current) setSnapshot(value);
@@ -105,14 +108,12 @@ export function MemoryView(): React.JSX.Element {
         <footer className="memory-inventory-footer"><span>{t('memory.inventoryHint')}</span>{tab === 'documents' && <button type="button" onClick={() => setTab('sources')}>{t('memory.viewSources')}</button>}</footer>
       </section>
       {showingReader && <section className="memory-reader" ref={reader} aria-label={t('memory.preview')}>
-        <header className="memory-reader-header"><FileText size={16} aria-hidden="true" /><strong title={selected.metadata.title}>{selected.metadata.title}</strong><button type="button" aria-label={t('memory.close')} title={t('memory.close')} onClick={closeReader}><X size={15} /></button></header>
-        <div className="memory-reader-meta"><span>{hostLabel(selected.provenance.host)}</span><span>{selected.scope}</span><span>{selected.role}</span></div>
-        <div className="memory-reader-body">
-          {!snapshot ? <div className="memory-read-prompt"><FileText size={28} aria-hidden="true" /><h2>{t('memory.readyToRead')}</h2><p>{t('memory.privacy')}</p><button className="primary" type="button" disabled={reading} onClick={() => void read()}>{reading ? t('memory.loading') : t('memory.read')}</button></div>
+        <header className="memory-reader-header"><FileText size={16} aria-hidden="true" /><div className="memory-reader-heading"><strong>{selected.metadata.title}</strong><div className="memory-reader-meta"><span>{hostLabel(selected.provenance.host)}</span><span>{selected.scope}</span><span>{selected.role}</span></div></div><button type="button" aria-label={t('memory.close')} title={t('memory.close')} onClick={closeReader}><X size={15} /></button></header>
+        <div className="memory-reader-body" aria-busy={reading}>
+          {!snapshot ? <div className="memory-reader-state">{reading ? <p role="status">{t('memory.loading')}</p> : error && <button type="button" onClick={() => void read(selected)}>{t('memory.retry')}</button>}</div>
             : <article className="markdown-document">{blocks.map((block, index) => <MarkdownBlockView key={index} block={block} context={{ resources: [], goTo: (slug) => { for (const node of reader.current?.querySelectorAll<HTMLElement>('[data-md-heading]') ?? []) if (node.dataset.mdHeading === slug) node.scrollIntoView({ block: 'nearest' }); } }} />)}</article>}
         </div>
-        <details className="memory-provenance"><summary>{t('memory.provenance')}</summary><dl>
-          <dt>{t('memory.location')}</dt><dd>{selected.nativeIdentity.path}</dd>
+        <details className="memory-provenance"><summary><CaretDown size={12} aria-hidden="true" /><span>{t('memory.provenance')}</span><span className="memory-provenance-path">{selected.nativeIdentity.path}</span></summary><dl>
           <dt>{t('memory.support')}</dt><dd>{selectedSource?.support}</dd>
           <dt>{t('memory.workspace')}</dt><dd>{selectedSource?.workspace?.identity ?? t('memory.userMemory')}</dd>
           {snapshot && <><dt>SHA-256</dt><dd><code>sha256:{snapshot.digest}</code></dd><dt>{t('memory.captured')}</dt><dd>{new Date(snapshot.capturedAt).toLocaleString()}</dd></>}

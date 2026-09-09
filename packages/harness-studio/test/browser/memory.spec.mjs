@@ -5,11 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { startHarnessStudioServer } from '../../dist/server/server.js';
 let studio, home;
+const skillDocument = 'skills/personal-codex-plugin-scaffold/SKILL.md';
 test.beforeAll(async () => {
   home = await realpath(await mkdtemp(join(tmpdir(), 'studio-memory-')));
   const root = join(home, '.codex', 'memories');
   await mkdir(root, { recursive: true });
   await writeFile(join(root, 'MEMORY.md'), '# Architecture knowledge\n\nKeep **source provenance** with each snapshot.\n\n- Read only\n- No extraction\n\n```ts\nconst memory = "native";\n```\n');
+  await mkdir(join(root, 'skills', 'personal-codex-plugin-scaffold'), { recursive: true });
+  await writeFile(join(root, skillDocument), '# Architecture knowledge\n\n```ts\nconst memory = \"native\";\n```\n');
   for (const relative of [['.claude', 'projects', 'example-project', 'memory', 'runtime-boundaries.md'], ['.qwen', 'memories', 'review-preferences.md']]) {
     const file = join(home, ...relative);
     await mkdir(dirname(file), { recursive: true });
@@ -22,7 +25,7 @@ test('API requires document authorization and scope; inventory has no bodies', a
   const response = await fetch(`${studio.url}/api/memory`);
   expect(response.headers.get('cache-control')).toBe('no-store');
   const inventory = await response.json();
-  expect(inventory.documents).toHaveLength(3);
+  expect(inventory.documents).toHaveLength(4);
   expect(JSON.stringify(inventory)).not.toContain('source provenance');
   const doc = inventory.documents.find(doc => doc.provenance.host === 'codex');
   for (const body of [{ id: doc.id, scope: 'user' }, { id: doc.id, scope: 'project', authorized: true }, { id: '../MEMORY.md', scope: 'user', authorized: true }]) {
@@ -40,22 +43,28 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     await page.setViewportSize(layout);
     await page.goto(`${studio.url}/#/memory-sources`);
     await expect(page.getByRole('heading', { name: 'Memory sources', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'MEMORY.md', exact: true }).click();
+    const document = page.getByRole('button', { name: skillDocument, exact: true });
+    await document.focus();
+    await expect(document).toBeFocused();
     expect(reads).toHaveLength(0);
-    const read = page.getByRole('button', { name: 'Read this document' });
-    await read.focus();
-    await expect(read).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('heading', { name: 'Architecture knowledge' })).toBeVisible();
     expect(reads).toHaveLength(1);
+    expect(reads[0].postDataJSON()).toMatchObject({ scope: 'user', authorized: true });
+    const provenance = page.locator('.memory-provenance');
+    expect(await provenance.evaluate(element => element.open)).toBe(false);
+    await expect(provenance.locator('summary')).toContainText(join(home, '.codex', 'memories', skillDocument));
+    await expect(provenance.locator('.memory-provenance-path')).toBeVisible();
+    await expect(page.locator('.memory-reader-header')).toContainText(skillDocument);
+    await expect(page.locator('.memory-reader-header .memory-reader-meta')).toHaveText('Codexusergenerated');
+    await page.screenshot({ path: info.outputPath(`memory-collapsed-${layout.name}.png`) });
     await page.getByText('Snapshot provenance', { exact: true }).click();
     await expect(page.locator('.memory-reader code').filter({ hasText: 'sha256:' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`memory-${layout.name}.png`) });
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
     await page.reload();
-    await page.getByRole('button', { name: 'MEMORY.md', exact: true }).click();
-    await page.getByRole('button', { name: 'Read this document' }).click();
+    await page.getByRole('button', { name: skillDocument, exact: true }).click();
     await expect(page.locator('.memory-reader .highlighted-code')).toHaveAttribute('data-highlight-state', 'highlighted');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.screenshot({ path: info.outputPath(`memory-dark-${layout.name}.png`) });
@@ -67,17 +76,69 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     expect(errors).toEqual([]);
   });
 }
-test('filter changes discard an in-flight authorized response', async ({ page }) => {
+test('filter changes cancel the selected document read', async ({ page }) => {
   await page.goto(`${studio.url}/#/memory-sources`);
-  let release;
+  let release, markStarted, markFinished;
   const held = new Promise(resolve => { release = resolve; });
-  await page.route('**/api/memory/read', async route => { await held; await route.continue(); });
+  const started = new Promise(resolve => { markStarted = resolve; });
+  const finished = new Promise(resolve => { markFinished = resolve; });
+  await page.route('**/api/memory/read', async route => {
+    const response = await route.fetch();
+    markStarted();
+    await held;
+    await route.fulfill({ response });
+    markFinished();
+  });
   await page.getByRole('button', { name: 'MEMORY.md', exact: true }).click();
-  await page.getByRole('button', { name: 'Read this document' }).click();
+  await started;
+  await expect(page.locator('.memory-reader-body')).toHaveAttribute('aria-busy', 'true');
   await page.getByLabel('Agent', { exact: true }).selectOption('cursor');
-  const response = page.waitForResponse('**/api/memory/read');
   release();
-  await response;
+  await finished;
   await expect(page.getByRole('heading', { name: 'Architecture knowledge' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Memory reader' })).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+test('a late read cannot replace the next selected document', async ({ page }) => {
+  await page.goto(`${studio.url}/#/memory-sources`);
+  let release, markStarted, markFinished;
+  const held = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { markStarted = resolve; });
+  const finished = new Promise(resolve => { markFinished = resolve; });
+  let reads = 0;
+  await page.route('**/api/memory/read', async route => {
+    reads++;
+    if (reads !== 1) return route.continue();
+    const response = await route.fetch();
+    markStarted();
+    await held;
+    await route.fulfill({ response });
+    markFinished();
+  });
+  await page.getByRole('button', { name: 'MEMORY.md', exact: true }).click();
+  await started;
+  await page.getByRole('button', { name: 'runtime-boundaries.md', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Synthetic Memory' })).toBeVisible();
+  release();
+  await finished;
+  await expect(page.getByRole('heading', { name: 'Architecture knowledge' })).toHaveCount(0);
+  await expect(page.locator('.memory-reader-header')).toContainText('runtime-boundaries.md');
+  await page.getByRole('button', { name: 'runtime-boundaries.md', exact: true }).click();
+  expect(reads).toBe(2);
+});
+test('a selected document can retry after a failed read', async ({ page }) => {
+  await page.goto(`${studio.url}/#/memory-sources`);
+  let reads = 0;
+  await page.route('**/api/memory/read', route => {
+    reads++;
+    return reads === 1
+      ? route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Unavailable' }) })
+      : route.continue();
+  });
+  await page.getByRole('button', { name: 'MEMORY.md', exact: true }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await page.getByRole('button', { name: 'Retry reading', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Architecture knowledge' })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(reads).toBe(2);
 });
