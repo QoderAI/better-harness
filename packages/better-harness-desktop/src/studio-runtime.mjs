@@ -93,6 +93,7 @@ port.on('message', async (data) => {
         // of opening on the empty gate.
         projectStateRoot: join(data.dataDirectory, 'state'),
         workspaceSessionProvider: createRustEvidenceWorkspaceSessionProvider(evidenceHost),
+        memoryProvider: evidenceHost,
         customizationCollector: createBundledAgentCustomizationCollector(),
         workspaceDirectoryPicker: pickDirectory,
       });

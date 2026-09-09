@@ -1,6 +1,8 @@
 import type { TFunction } from "i18next";
 
 export type StudioArea =
+  | "memory"
+  | "memory-sources"
   | "customizations"
   | "sessions"
   | "commits"
@@ -118,6 +120,7 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
             : t("destination.singleAgentOnly");
 
   return [
+    { id: "memory", label: t("area.memory"), group: t("group.control"), availability: "ready", status: t("memoryReview.preview") },
     {
       id: "customizations",
       label: t("area.customizations"),
@@ -223,7 +226,7 @@ function hasUsableArtifacts(config: StudioConfig): boolean {
 }
 
 export function studioProjectGateRequired(config: StudioConfig, hasConfiguredSources: boolean, area: StudioArea = STUDIO_DEFAULT_AREA): boolean {
-  if (area === "artifacts") return false;
+  if (area === "artifacts" || area === "memory-sources" || area === "memory") return false;
   const independentContext = hasConfiguredSources
     || config.inspectorEnabled
     || config.evidenceEnabled

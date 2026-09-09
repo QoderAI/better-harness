@@ -1,4 +1,25 @@
 export const common = {
+  memoryReview: {
+    inbox: "Inbox", project: "Project Memory", sources: "Memory sources", preview: "Design preview", filters: "Memory filters", queue: "Inbox", curated: "Project", allCandidates: "All candidates", allMemory: "All Memory", review: "Needs review", conflict: "Conflicts", kind: "Type", refineryHint: "From agent evidence to project Memory.", candidates: "Memory candidates", search: "Filter candidates…", noProject: "No promoted Memory yet", noCandidates: "No candidates in this view", promoteHint: "Accept a candidate and choose where it belongs.", filterHint: "Change the filter to continue reviewing.", accepted: "Accepted", new: "New", evidenceShort: "sources", suggested: "Suggested", owner: "Owner", inspector: "Inspector", select: "Select a candidate to inspect its evidence and choose an owner.", statement: "Statement", projectScope: "Example project", proposed: "Proposed", evidence: "Evidence", olderMemory: "Older Memory", currentDecision: "Current decision", resolveConflict: "Use the reviewed statement to resolve this conflict", appliesTo: "Applies to", promotion: "Promotion lineage", promoteTo: "Promote to", nativeEvidence: "Native evidence", candidate: "Memory candidate", humanReview: "Human review", accept: "Accept", edit: "Edit", done: "Done", reject: "Reject", previewBoundary: "Example candidates · changes stay in this preview", exampleEvidence: "example sources", acceptedNotice: "Accepted “{{title}}” → {{owner}} in this preview.", rejectedNotice: "Removed “{{title}}” from this preview inbox.",
+  },
+  memory: {
+    analysisRequest: "Analyze “{{title}}” and suggest improvements with source line references.", openEditors: "Open editors", closeEditor: "Close {{title}}", pickFile: "Open a memory from the explorer.",
+    analysisAgent: "Analysis Agent", connectAgent: "Connect Agent", closeSession: "Close session", acpFailed: "Connection failed or source changed. Refresh and reconnect.",
+    allProjects: "All projects", loadingEntries: "Loading Memory…", indexError: "Could not load Memory.", noEntries: "No entries in this category.",
+    views: { personal: "Personal", "cross-project": "General", projects: "Projects", sources: "Source files" },
+    scopeLabels: { personal: "Personal", "cross-project": "General", project: "Project", task: "Task", mixed: "Mixed", unknown: "Unparsed" },
+    roles: { summary: "Summaries", registry: "Indexes", knowledge: "Knowledge", episode: "History", skill: "Skills", extension: "Extensions", working: "Working files", unknown: "Other files" },
+    bindingLabels: { global: "Global library", project: "Project", unknown: "Unbound" },
+    coverageLabels: { available: "Available", partial: "Partial", unavailable: "Unavailable" },
+    findingKinds: { observation: "Observation", suggestion: "Suggestion", conflict: "Conflict" },
+    navigation: "Memory navigation", closeNavigation: "Close Memory navigation", aiAnalysis: "AI analysis", closeAnalysis: "Close analysis",
+    analysisUnavailable: "No Memory analysis provider configured", selectForAnalysis: "Select a document to analyze.", startAnalysis: "Start analysis", analyzeAgain: "Analyze again", retryAnalysis: "Retry analysis", analyzing: "Analyzing…", cancel: "Cancel", analysisFailed: "Analysis failed. Try again.", analysisCancelled: "Analysis cancelled.", analysisChanged: "The source changed. Read it again.", analysisTooLarge: "This document exceeds the analysis limit.",
+    library: "Library", binding: "Native binding", lines: "Lines", sourceFile: "Source file", sourceStatus: "Source status", noMatches: "No matches.", noFiles: "No source files.", notParsed: "No parsed entries yet.", readError: "Could not read this document.", entryCount: "Entries {{count}}", fileCount: "Files {{count}}",
+    documentsTab: "Documents", sourcesTab: "Sources", readonly: "Read only", search: "Filter documents…", location: "Native location", coverage: "Coverage", noNativeSource: "No native storage contract", close: "Close reader", support: "Support", workspace: "Workspace", captured: "Captured", userMemory: "User memory", inventoryHint: "Metadata inventory", viewSources: "View sources",
+    host: "Agent", scope: "Scope", all: "All", refresh: "Refresh", document: "Document", documents: "Memory documents", updated: "Updated", preview: "Memory reader",
+    error: "Memory could not be loaded. Refresh sources and try again.", loading: "Loading…", empty: "No Memory documents match these filters. Check Sources for coverage.",
+    sources: "Sources ({{count}})", select: "Select a document to inspect its source.", retry: "Retry reading", provenance: "Snapshot provenance", metadataOnly: "Native Memory · metadata only",
+  },
   brand: {
     product: "Better Harness",
     studio: "Studio",
@@ -26,6 +47,8 @@ export const common = {
     plane: "Harness control plane",
   },
   area: {
+    memory: "Memory",
+    "memory-sources": "Memory sources",
     customizations: "Customizations",
     sessions: "Sessions",
     commits: "Commits",

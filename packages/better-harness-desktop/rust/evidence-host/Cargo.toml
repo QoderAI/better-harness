@@ -21,6 +21,8 @@ path = "src/bin/harness-evidence-client.rs"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 zstd = "0.13"
+sha2 = "0.10"
+libc = "0.2"
 
 [profile.release]
 lto = "thin"

@@ -56,12 +56,19 @@ jobs:
         run: npm run harness-ui:build
       - name: Test Harness organization Dashboard
         run: npm run harness-ui:test
+      - uses: dtolnay/rust-toolchain@1.96.0
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.20.0' }}
+      - name: Build native Evidence Host for Memory browser tests
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.20.0' }}
+        run: cargo build --locked --manifest-path packages/better-harness-desktop/rust/evidence-host/Cargo.toml
       - name: Install Chromium for Harness Studio browser test
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.20.0' }}
         run: npx playwright install --with-deps chromium
       - name: Test Harness Studio browser interaction
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.20.0' }}
         run: npm run harness-studio:test:browser
+        env:
+          BETTER_HARNESS_EVIDENCE_HOST: ${{ github.workspace }}/packages/better-harness-desktop/rust/evidence-host/target/debug/harness-evidence-host
       - name: Test Harness organization Dashboard interaction
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.20.0' }}
         run: npm run harness-ui:test:browser

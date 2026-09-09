@@ -23,6 +23,8 @@ export interface RustEvidenceHost {
     includeDialogue?: boolean;
   }): Promise<Record<string, unknown>>;
   observe(params: { workspace: string; sessions: unknown[] }): Promise<Record<string, unknown>>;
+  discoverMemory(params: Record<string, unknown>): Promise<Record<string, unknown>>;
+  readMemory(params: Record<string, unknown>): Promise<Record<string, unknown>>;
   close(): Promise<void>;
 }
 
@@ -67,6 +69,7 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
 
   const start = (): ChildProcessWithoutNullStreams => {
     if (child) return child;
+    buffer = "";
     const active = child = launch(options.executable);
     bridgePid = active.pid;
     active.stderr.resume();
@@ -150,7 +153,6 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
     if (frame.length > MAX_REQUEST_BYTES) return Promise.reject(new Error("Evidence host request exceeds its frame limit."));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        pending.delete(id);
         fail(active, new Error(`Evidence host ${method} timed out.`));
       }, timeoutMs);
       pending.set(id, { resolve, reject, timer });
@@ -176,6 +178,8 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
     observe(params) {
       return call("artifacts.observe", params);
     },
+    discoverMemory(params) { return call("memory.discover", params); },
+    readMemory(params) { return call("memory.read", params); },
     async close() {
       if (closed) return;
       const active = child;

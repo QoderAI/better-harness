@@ -344,6 +344,7 @@ export async function runHarnessStudioCli(argv: string[], io: HarnessStudioCliIo
   const acpAgents = harnessSource === undefined && parsed.experiment === undefined
     ? []
     : await discoverAcpAgentProfiles({ explicit: explicitAcpAgent });
+  const memoryProfiles = acpAgents.length ? acpAgents : await discoverAcpAgentProfiles();
   const preferredAcpAgent = explicitAcpAgent === undefined
     ? acpAgents.find((profile) => profile.agent !== undefined)?.agent
     : acpAgents.find((profile) => profile.agent?.command === explicitAcpAgent.command)?.agent ?? explicitAcpAgent;
@@ -361,6 +362,7 @@ export async function runHarnessStudioCli(argv: string[], io: HarnessStudioCliIo
   try {
     started = await startHarnessStudioServer({
       appDir: defaultAppDir(),
+      memoryAcpAgents: memoryProfiles,
       port: parsed.port,
       host: parsed.host,
       allowRemote: parsed.allowRemote,

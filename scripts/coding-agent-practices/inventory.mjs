@@ -238,8 +238,8 @@ function addMemoryTitle(entry, filePath) {
   });
 }
 
-async function collectMemoryCategories(rootPath, workspace, includeGlobal = false) {
-  const files = await walkFiles(rootPath, {
+async function collectMemoryCategories(rootPath, workspace, includeGlobal = false, walker = walkFiles) {
+  const files = await walker(rootPath, {
     maxDepth: 8,
     limit: 10_000,
     match: (filePath) => !path.basename(filePath).startsWith("."),
@@ -363,8 +363,8 @@ async function collectCodexMemoryConfig(codexHome) {
   return entries.sort((left, right) => left.key.localeCompare(right.key));
 }
 
-async function collectCodexMemoryCategories(rootPath) {
-  const files = await walkFiles(rootPath, {
+async function collectCodexMemoryCategories(rootPath, walker = walkFiles) {
+  const files = await walker(rootPath, {
     maxDepth: 8,
     limit: 10_000,
     match: (filePath) => !path.basename(filePath).startsWith("."),
@@ -380,6 +380,13 @@ async function collectCodexMemoryCategories(rootPath) {
     categories.set(category, current);
   }
   return [...categories.values()].sort((left, right) => left.category.localeCompare(right.category));
+}
+
+/** Memory-only public projection: never loads settings, caches or other assets. */
+export async function collectNativeMemoryMetadata({ platform, root, workspace, includeUserHome = false, walker = walkFiles }) {
+  if (platform === "codex") return collectCodexMemoryCategories(root, walker);
+  if (platform === "qoder") return collectMemoryCategories(root, workspace, includeUserHome, walker);
+  throw new Error("Unsupported legacy Memory provider");
 }
 
 async function collectCodexMemories(scope) {
