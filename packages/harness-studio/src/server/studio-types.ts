@@ -61,6 +61,8 @@ export interface StudioWorkspaceSessionProvider {
   discover(workspacePath: string): Promise<StudioWorkspaceDiscovery>;
 }
 export interface HarnessStudioServerOptions {
+  /** Configured ACP profiles for explicitly started Memory analysis sessions. */
+  memoryAcpAgents?: readonly StudioAcpAgentProfile[];
   /** Server-owned isolated Memory home; never accepted from browser requests. */
   memoryHome?: string;
   /** Desktop supplies its supervised Rust Evidence Host transport. */

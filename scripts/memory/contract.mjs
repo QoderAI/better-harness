@@ -5,6 +5,7 @@ export const digest = (text) => createHash('sha256').update(text).digest('hex');
 export const identity = (...parts) => digest(JSON.stringify(parts));
 export function validateInventory(inventory) {
   if (!inventory || !Array.isArray(inventory.sources) || !Array.isArray(inventory.documents)) throw new TypeError('Invalid Memory inventory');
+  if (inventory.schemaVersion !== undefined && inventory.schemaVersion !== 2) throw new TypeError('Unsupported Memory schema version');
   const text = (value) => typeof value === 'string' && value.length > 0;
   const date = (value) => text(value) && Number.isFinite(Date.parse(value));
   const sources = new Map();
@@ -21,6 +22,8 @@ export function validateInventory(inventory) {
     if (!doc || !text(doc.id) || ids.has(doc.id) || !sources.has(doc.sourceId) || !SCOPES.includes(doc.scope) || !text(doc.nativeIdentity?.path) || doc.provenance?.sourceKind !== 'native-memory' || !['index', 'topic', 'pinned', 'generated', 'consolidated', 'unknown'].includes(doc.role)) throw new TypeError('Invalid MemoryDocument');
     const source = sources.get(doc.sourceId);
     if (doc.provenance.host !== source.host || doc.scope !== source.scope || !date(doc.provenance.observedAt) || !date(doc.metadata?.updatedAt) || !Number.isSafeInteger(doc.metadata?.byteSize) || doc.metadata.byteSize < 0 || 'content' in doc || 'body' in doc) throw new TypeError('Invalid Memory document metadata or provenance');
+    if (inventory.schemaVersion === 2 && (!text(source.library?.id) || source.library.host !== source.host || !text(source.library.root) || doc.libraryId !== source.library.id || !['global', 'project', 'unknown'].includes(doc.binding?.kind) || doc.binding.kind !== source.binding?.kind || doc.binding.identity !== source.binding?.identity || !['summary', 'registry', 'knowledge', 'episode', 'skill', 'extension', 'working', 'unknown'].includes(doc.materialRole) || !['personal', 'cross-project', 'project', 'task', 'mixed', 'unknown'].includes(doc.contentScope?.kind) || !['native-binding', 'native-layout', 'source-declared', 'unparsed'].includes(doc.contentScope?.evidence))) throw new TypeError('Invalid Memory v2 projection');
+    if (inventory.schemaVersion === 2 && (doc.binding.kind === 'project' && !text(doc.binding.identity) || doc.contentScope.kind === 'project' && !text(doc.contentScope.projectIdentity))) throw new TypeError('Missing Memory project identity');
     ids.add(doc.id);
   }
   return inventory;

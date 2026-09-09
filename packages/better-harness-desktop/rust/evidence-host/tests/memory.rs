@@ -97,6 +97,109 @@ fn unsupported_hosts_do_not_scan_and_oversized_files_cannot_be_read() {
     assert!(read(&json!({"home":home.0,"id":inventory["documents"][0]["id"],"scope":"user","includeMemories":true,"includeMemoryContent":true})).unwrap_err().contains("too-large"));
 }
 
+#[test]
+fn version_two_separates_materials_without_changing_legacy_scope_or_identity() {
+    let home = Home::new();
+    for path in [
+        "memory_summary.md",
+        "MEMORY.md",
+        "rollout_summaries/history.md",
+        "skills/example/SKILL.md",
+        "extensions/ad_hoc/notes/example.md",
+        "raw_memories.md",
+    ] {
+        home.put(&format!(".codex/memories/{path}"), "private body");
+    }
+    let old = discover(&json!({"home":home.0,"platform":"codex"})).unwrap();
+    let new = discover(&json!({"home":home.0,"platform":"codex","schemaVersion":2})).unwrap();
+    assert!(old.get("schemaVersion").is_none());
+    assert_eq!(new["schemaVersion"], 2);
+    for doc in new["documents"].as_array().unwrap() {
+        let legacy = old["documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["id"] == doc["id"])
+            .unwrap();
+        assert_eq!(legacy["scope"], doc["scope"]);
+        assert_eq!(doc["contentScope"]["kind"], "unknown");
+        assert_eq!(doc["binding"]["kind"], "global");
+        assert!(doc.get("content").is_none());
+    }
+    let mut roles: Vec<_> = new["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["materialRole"].as_str().unwrap())
+        .collect();
+    roles.sort();
+    assert_eq!(
+        roles,
+        vec![
+            "episode",
+            "extension",
+            "registry",
+            "skill",
+            "summary",
+            "working"
+        ]
+    );
+    let snapshot = read(&json!({"home":home.0,"schemaVersion":2,"id":new["documents"][0]["id"],"scope":"user","includeMemories":true,"includeMemoryContent":true})).unwrap();
+    assert_eq!(snapshot["document"]["id"], snapshot["documentId"]);
+    assert_eq!(
+        snapshot["source"]["library"]["id"],
+        snapshot["document"]["libraryId"]
+    );
+}
+
+#[test]
+fn version_two_enumerates_qoder_projects_and_accounts_without_a_workspace() {
+    let home = Home::new();
+    home.put(
+        ".qoder/memories/account-a/global/user_communication/style.md",
+        "personal",
+    );
+    home.put(
+        ".qoder/memories/account-a/projects/same-project/knowledge.md",
+        "project A",
+    );
+    home.put(
+        ".qoder/memories/account-b/projects/same-project/knowledge.md",
+        "project B",
+    );
+    let old = discover(&json!({"home":home.0,"platform":"qoder"})).unwrap();
+    assert_eq!(old["documents"].as_array().unwrap().len(), 1);
+    let new = discover(&json!({"home":home.0,"platform":"qoder","schemaVersion":2})).unwrap();
+    let docs = new["documents"].as_array().unwrap();
+    assert_eq!(docs.len(), 3);
+    let projects: Vec<_> = docs
+        .iter()
+        .filter(|d| d["contentScope"]["kind"] == "project")
+        .collect();
+    assert_eq!(projects.len(), 2);
+    assert_ne!(projects[0]["libraryId"], projects[1]["libraryId"]);
+    assert_ne!(projects[0]["sourceId"], projects[1]["sourceId"]);
+    assert_eq!(projects[0]["binding"]["identity"], "same-project");
+    assert_eq!(
+        docs.iter()
+            .filter(|d| d["contentScope"]["kind"] == "personal")
+            .count(),
+        1
+    );
+    for doc in projects {
+        let snapshot = read(&json!({"home":home.0,"schemaVersion":2,"id":doc["id"],"scope":"project","includeMemories":true,"includeMemoryContent":true})).unwrap();
+        assert_eq!(snapshot["documentId"], doc["id"]);
+        assert_eq!(snapshot["document"]["binding"]["identity"], "same-project");
+    }
+}
+
+#[test]
+fn memory_schema_versions_are_explicit() {
+    let home = Home::new();
+    assert!(discover(&json!({"home":home.0,"schemaVersion":3})).is_err());
+    assert!(discover(&json!({"home":home.0,"schemaVersion":"2"})).is_err());
+}
+
 #[cfg(unix)]
 #[test]
 fn symbolic_links_and_deep_trees_are_partial_without_reading_the_target() {

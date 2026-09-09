@@ -53,6 +53,6 @@
 | `i18n/zh-CN/common.ts` | 同步中文重试文案 |
 | `test/browser/memory.spec.mjs` | 自动读取、API 边界、三屏宽、迟到结果和重试行为 |
 | 本 spec | 定义本次交互要求并记录本地证据 |
-| `2026-09-09-memory-scope-and-navigation.md` | 上轮分析草案，补充指向本次交互 spec；语义分类方案仍待实施 |
+| [Memory 范围、导航与分析](../adrs/memory-navigation-and-analysis.md) | 原范围分析草案已合入统一 ADR；语义分类方案仍待实施 |
 
 全部修改未暂存，构建与截图为 ignored 产物。风险集中在读取时机变化，已确认只有显式选择的文档触发读取；API 授权检查保留。本次验证不代表 Windows/Linux CI 或安装后的 Desktop 验证，也不代表 scope 语义问题已解决。

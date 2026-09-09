@@ -8,7 +8,7 @@ export interface StudioLocation {
 const PROJECT_ID = /^project_[a-f0-9]{32}$/u;
 
 export function parseStudioLocation(hash: string | undefined, areas: ReadonlySet<string>): StudioLocation {
-  const route = (hash ?? "").replace(/^#\/?/u, "");
+  const route = (hash ?? "").replace(/^#\/?/u, "").split('?')[0]!;
   const parts = route.split("/").filter(Boolean);
   // A retained hash can name a View this build no longer has. The Project is
   // still the scope the reader asked for, so keep it and land on the default

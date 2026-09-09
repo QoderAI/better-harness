@@ -2,6 +2,7 @@
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeMap,
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -269,11 +270,50 @@ fn root(path: PathBuf, scope: &'static str, workspace: Option<Value>) -> Root {
         partial: false,
     }
 }
-fn roots(host: &str, home: &Path, workspace: Option<&Path>) -> Result<Vec<Root>> {
+fn roots(host: &str, home: &Path, workspace: Option<&Path>, version2: bool) -> Result<Vec<Root>> {
     let mut result = Vec::new();
     if host == "codex" || host == "qoder" {
         let path = home.join("memories");
         let (files, partial) = walk(&path)?;
+        if host == "qoder" && version2 {
+            let mut groups: BTreeMap<PathBuf, Root> = BTreeMap::new();
+            for file in files {
+                let parts: Vec<_> = file.strip_prefix(&path).unwrap().components().collect();
+                if parts.len() < 3 {
+                    continue;
+                }
+                let account_root = path.join(parts[0]);
+                let (group, scope, binding) = if parts[1].as_os_str() == "global" {
+                    (account_root.join("global"), "user", None)
+                } else if parts[1].as_os_str() == "projects" && parts.len() >= 4 {
+                    let project = parts[2].as_os_str().to_string_lossy();
+                    if workspace.is_some_and(|w| qoder_slug(w) != project) {
+                        continue;
+                    }
+                    (
+                        account_root.join("projects").join(parts[2]),
+                        "project",
+                        Some(json!({"identity":project,"qualification":"host-native"})),
+                    )
+                } else {
+                    continue;
+                };
+                let item = groups.entry(group.clone()).or_insert_with(|| {
+                    let mut item = root(group, scope, binding);
+                    item.files = Some(Vec::new());
+                    item.partial = partial;
+                    item
+                });
+                item.files.as_mut().unwrap().push(file);
+            }
+            if groups.is_empty() {
+                let mut item = root(path, "user", None);
+                item.files = Some(Vec::new());
+                item.partial = partial;
+                return Ok(vec![item]);
+            }
+            return Ok(groups.into_values().collect());
+        }
         for scope in ["user", "project"] {
             let chosen: Vec<_> = files
                 .iter()
@@ -395,6 +435,7 @@ fn roots(host: &str, home: &Path, workspace: Option<&Path>) -> Result<Vec<Root>>
 }
 
 pub fn discover(options: &Value) -> Result<Value> {
+    let version2 = memory_version2(options)?;
     let scope = text(options, "scope");
     if scope.is_some_and(|s| !["user", "project", "team", "agent"].contains(&s)) {
         return Err("Invalid memory scope".into());
@@ -437,7 +478,7 @@ pub fn discover(options: &Value) -> Result<Value> {
                 .or_else(|| env.map(PathBuf::from))
                 .unwrap_or_else(|| home.join(format!(".{host}"))),
         )?;
-        let roots = match roots(host, &host_home, workspace.as_deref()) {
+        let roots = match roots(host, &host_home, workspace.as_deref(), version2) {
             Ok(r) => r,
             Err(_) => {
                 sources.push(unavailable("memory-discovery-failed"));
@@ -455,6 +496,32 @@ pub fn discover(options: &Value) -> Result<Value> {
             let mut source = json!({"sourceId":source_id,"host":host,"support":support,"scope":item.scope,"root":{"displayPath":item.path,"source":item.origin},"capabilities":{"enumerate":true,"read":true,"metadata":true,"write":false},"coverage":{"state":"available"}});
             if let Some(workspace) = item.workspace {
                 source["workspace"] = workspace;
+            }
+            if version2 {
+                let mut library = json!({"id":id(&[host,&host_home.to_string_lossy()]),"host":host,"root":host_home.join("memories")});
+                if host == "qoder" {
+                    if let Ok(relative) = item.path.strip_prefix(host_home.join("memories")) {
+                        if let Some(account) = relative.components().next() {
+                            let account = account.as_os_str().to_string_lossy();
+                            library["accountNamespace"] = json!(account);
+                            library["id"] =
+                                json!(id(&[host, &host_home.to_string_lossy(), &account]));
+                            library["root"] =
+                                json!(host_home.join("memories").join(account.as_ref()));
+                        }
+                    }
+                } else if host != "codex" {
+                    library["root"] = source["root"]["displayPath"].clone();
+                    library["id"] = json!(id(&[host, &item.path.to_string_lossy()]));
+                }
+                source["library"] = library;
+                source["binding"] = match source.get("workspace") {
+                    Some(workspace) => {
+                        json!({"kind":"project","identity":workspace["identity"],"qualification":workspace["qualification"]})
+                    }
+                    None if item.scope == "user" => json!({"kind":"global"}),
+                    _ => json!({"kind":"unknown"}),
+                };
             }
             let walked = item
                 .files
@@ -493,14 +560,82 @@ pub fn discover(options: &Value) -> Result<Value> {
                         } else {
                             "topic"
                         };
-                        documents.push(json!({"id":id(&[&source_id,&relative.to_string_lossy()]),"sourceId":source_id,"nativeIdentity":{"path":file},"role":role,"scope":item.scope,"metadata":{"title":relative,"updatedAt":stamp(meta.modified().map_err(|e| e.to_string())?),"byteSize":meta.len()},"provenance":{"host":host,"sourceKind":"native-memory","observedAt":observed}}));
+                        let mut document = json!({"id":id(&[&source_id,&relative.to_string_lossy()]),"sourceId":source_id,"nativeIdentity":{"path":file},"role":role,"scope":item.scope,"metadata":{"title":relative,"updatedAt":stamp(meta.modified().map_err(|e| e.to_string())?),"byteSize":meta.len()},"provenance":{"host":host,"sourceKind":"native-memory","observedAt":observed}});
+                        if version2 {
+                            // This is a portable display path, separate from nativeIdentity.path.
+                            document["metadata"]["title"] = json!(relative.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/"));
+                            document["materialRole"] = json!(material_role(host, relative));
+                            document["binding"] = source["binding"].clone();
+                            document["libraryId"] = source["library"]["id"].clone();
+                            let personal = host == "qoder"
+                                && item.scope == "user"
+                                && relative.components().next().is_some_and(|c| {
+                                    ["user_behavior", "user_communication", "user_info"]
+                                        .iter()
+                                        .any(|part| c.as_os_str() == *part)
+                                });
+                            document["contentScope"] = if source["binding"]["kind"] == "project" {
+                                json!({"kind":"project","projectIdentity":source["binding"]["identity"],"evidence":"native-binding"})
+                            } else if personal {
+                                json!({"kind":"personal","evidence":"native-layout"})
+                            } else {
+                                json!({"kind":"unknown","evidence":"unparsed"})
+                            };
+                        }
+                        documents.push(document);
                     }
                 }
             }
             sources.push(source);
         }
     }
-    Ok(json!({"sources":sources,"documents":documents}))
+    let mut result = json!({"sources":sources,"documents":documents});
+    if version2 {
+        result["schemaVersion"] = json!(2);
+    }
+    Ok(result)
+}
+
+fn memory_version2(options: &Value) -> Result<bool> {
+    match options.get("schemaVersion") {
+        None => Ok(false),
+        Some(v) if v == 1 => Ok(false),
+        Some(v) if v == 2 => Ok(true),
+        _ => Err("Unsupported Memory schema version".into()),
+    }
+}
+
+fn material_role(host: &str, relative: &Path) -> &'static str {
+    let name = relative.file_name().unwrap_or_default();
+    if host == "codex" {
+        let first = relative.components().next().map(|c| c.as_os_str());
+        if first.is_some_and(|c| c == "rollout_summaries") {
+            return "episode";
+        }
+        if first.is_some_and(|c| c == "skills") {
+            return "skill";
+        }
+        if first.is_some_and(|c| c == "extensions") {
+            return "extension";
+        }
+        if relative.components().count() == 1 {
+            if name == "memory_summary.md" {
+                return "summary";
+            }
+            if name == "MEMORY.md" {
+                return "registry";
+            }
+            if name == "raw_memories.md" {
+                return "working";
+            }
+        }
+        return "unknown";
+    }
+    if name == "MEMORY.md" {
+        "registry"
+    } else {
+        "knowledge"
+    }
 }
 
 pub fn read(options: &Value) -> Result<Value> {
@@ -534,7 +669,11 @@ pub fn read(options: &Value) -> Result<Value> {
         return Err("Memory document outside source".into());
     }
     let (content, revision) = body(file)?;
-    Ok(
-        json!({"documentId":document["id"],"digest":hash(content.as_bytes()),"content":content,"capturedAt":stamp(SystemTime::now()),"sourceRevision":revision,"scope":document["scope"],"workspace":source.get("workspace").cloned().unwrap_or_else(|| json!({"identity":source["sourceId"],"qualification":"unknown"})),"provenance":{"host":source["host"],"sourceId":source["sourceId"],"nativeIdentity":file}}),
-    )
+    let mut snapshot = json!({"documentId":document["id"],"digest":hash(content.as_bytes()),"content":content,"capturedAt":stamp(SystemTime::now()),"sourceRevision":revision,"scope":document["scope"],"workspace":source.get("workspace").cloned().unwrap_or_else(|| json!({"identity":source["sourceId"],"qualification":"unknown"})),"provenance":{"host":source["host"],"sourceId":source["sourceId"],"nativeIdentity":file}});
+    if memory_version2(options)? {
+        snapshot["schemaVersion"] = json!(2);
+        snapshot["document"] = document.clone();
+        snapshot["source"] = source.clone();
+    }
+    Ok(snapshot)
 }

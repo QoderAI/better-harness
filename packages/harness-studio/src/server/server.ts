@@ -254,7 +254,7 @@ async function route(
   experimentRuns: Map<string, AbortController>,
 ): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
-  if (await memoryRoute(request, response, state, options.memoryHome, options.memoryProvider)) return;
+  if (await memoryRoute(request, response, state, options)) return;
   if (request.method === "GET" && url.pathname === "/api/config") {
     const defaultAcpAgent = options.acpAgent
       ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)?.agent;

@@ -14,7 +14,6 @@ import { CompareView } from "./CompareView.js";
 import { CompareLiveView } from "./CompareLiveView.js";
 import { CustomizationView } from "./CustomizationView.js";
 import { MemoryView } from "./MemoryView.js";
-import { MemoryWorkbench } from "./memory-review/MemoryWorkbench.js";
 import { ExperimentView } from "./experiment/ExperimentView.js";
 import { GitHistoryView } from "./GitHistoryView.js";
 import { RunView } from "./run/RunView.js";
@@ -333,6 +332,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (config === undefined || projectOpening) return;
     let location = studioLocationFromHash();
+    if (location.area === "memory" || location.area === "memory-sources") return;
     if (location.area === "customizations") {
       location = { ...location, area };
       globalThis.history.replaceState(null, "", studioLocationHash({ ...location, area }));
@@ -376,8 +376,9 @@ export function App(): React.JSX.Element {
   function openArea(next: StudioArea): void {
     setArea(next);
     closeNavigation();
-    const nextHash = studioLocationHash({ area: next, ...(activeProjectId === undefined ? {} : { projectId: activeProjectId }) });
+    const nextHash = studioLocationHash({ area: next, ...(activeProjectId === undefined || next === "memory" || next === "memory-sources" ? {} : { projectId: activeProjectId }) });
     if (globalThis.location.hash !== nextHash) globalThis.history.pushState(null, "", nextHash);
+    if (next === "memory" || next === "memory-sources") globalThis.dispatchEvent(new Event('popstate'));
   }
 
   async function selectSource(source: StudioSourceOption): Promise<void> {
@@ -438,7 +439,7 @@ export function App(): React.JSX.Element {
       const result = await response.json() as { opened?: boolean; cancelled?: boolean; project?: StudioProjectDescriptor };
       if (result.cancelled || result.opened !== true) return;
       await workspaceChanged();
-      if (result.project !== undefined) {
+      if (result.project !== undefined && area !== "memory" && area !== "memory-sources") {
         closeNavigation();
         const hash = studioLocationHash({ projectId: result.project.id, area });
         globalThis.history.pushState(null, "", hash);
@@ -460,12 +461,12 @@ export function App(): React.JSX.Element {
       if (!response.ok) throw new Error(await studioApiError(response));
       await workspaceChanged();
       closeNavigation();
-      if (updateHistory) globalThis.history.pushState(null, "", studioLocationHash({ projectId, area }));
+      if (updateHistory && area !== "memory" && area !== "memory-sources") globalThis.history.pushState(null, "", studioLocationHash({ projectId, area }));
     } catch (error) {
       setProjectFailure(error instanceof Error ? error.message : "Project activation failed.");
       await refreshProjectCatalog();
       closeNavigation();
-      if (!updateHistory) {
+      if (!updateHistory && area !== "memory" && area !== "memory-sources") {
         globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(activeProjectId === undefined ? {} : { projectId: activeProjectId }) }));
       }
     } finally {
@@ -483,7 +484,7 @@ export function App(): React.JSX.Element {
       const wasActive = projectId === activeProjectId;
       await workspaceChanged();
       closeNavigation();
-      if (wasActive) globalThis.history.pushState(null, "", studioLocationHash({ area }));
+      if (wasActive && area !== "memory" && area !== "memory-sources") globalThis.history.pushState(null, "", studioLocationHash({ area }));
     } catch (error) {
       setProjectFailure(error instanceof Error ? error.message : "Project removal failed.");
       closeNavigation();
@@ -586,8 +587,7 @@ export function App(): React.JSX.Element {
         {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
       <div className={`studio-surface studio-surface-${area}`}>
-        {area === "memory-sources" && <MemoryView key={`memory-${workspaceRevision}`} />}
-        {area === "memory" && <MemoryWorkbench onSources={() => openArea("memory-sources")} />}
+        {(area === "memory" || area === "memory-sources") && <MemoryView />}
         {showWelcome ? <WorkspaceWelcome onWorkspaceChanged={async () => {
           const projectId = await workspaceChanged();
           globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
@@ -599,9 +599,9 @@ export function App(): React.JSX.Element {
         {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         </>}
       </div>
-      {area === "memory" ? null : area === "debugger" ? <footer className="studio-status-bar"><strong>{activeProject?.label}</strong><div id="studio-debugger-status" /></footer> : <StatusBar
-        scope={activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
-        status={area === "memory-sources" ? t("memory.readonly") : dateRange.preset !== "all" && (area === "sessions" || area === "artifacts") ? "" : current.status}
+      {area === "debugger" ? <footer className="studio-status-bar"><strong>{activeProject?.label}</strong><div id="studio-debugger-status" /></footer> : <StatusBar
+        scope={area === "memory" || area === "memory-sources" ? t('area.memory') : activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
+        status={area === "memory-sources" || area === "memory" ? t("memory.readonly") : dateRange.preset !== "all" && (area === "sessions" || area === "artifacts") ? "" : current.status}
         config={config}
         dateRange={dateRange}
       />}
