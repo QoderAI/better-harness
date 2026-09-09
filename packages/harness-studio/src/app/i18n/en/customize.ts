@@ -26,7 +26,17 @@ export const customize = {
     "agents": "Agents",
     "scope": "Scope",
     "evidence": "Evidence",
+    "uses": "Uses",
     "source": "Source"
+  },
+  "usage": {
+    "notObserved": "Not observed",
+    "observed": "{{count}} observed invocation",
+    "observed_other": "{{count}} observed invocations",
+    "observedOn": "{{count}} observed invocation, last on {{date}}",
+    "observedOn_other": "{{count}} observed invocations, last on {{date}}",
+    "boundary": "Uses are invocations observed in {{count}} retained Session of this Project ({{from}} to {{to}}), matched by name per Agent. No count is not proof a definition is unused.",
+    "boundary_other": "Uses are invocations observed in {{count}} retained Sessions of this Project ({{from}} to {{to}}), matched by name per Agent. No count is not proof a definition is unused."
   },
   "details": {
     "title": "Provenance",

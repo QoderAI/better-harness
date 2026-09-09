@@ -76,7 +76,25 @@ test.beforeAll(async () => {
     appDir: join(packageRoot, "dist", "app"),
     port: 0,
     workspaceDirectoryPicker: async () => workspace,
-    workspaceSessionProvider: { discover: async () => ({ label: "customization-fixture", sessions: [] }) },
+    workspaceSessionProvider: {
+      discover: async () => ({
+        label: "customization-fixture",
+        sessions: [],
+        // What retained Sessions were observed invoking, per Host. Codex names the
+        // Skill through its plugin, which is the case the matching rule exists for.
+        customizationUsage: {
+          kind: "BetterHarnessCustomizationUsageV1",
+          schemaVersion: 1,
+          observedSessions: 4,
+          window: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-08T00:00:00.000Z" },
+          entries: [
+            { kind: "skill", hostId: "codex", name: "review", count: 2, lastObservedAt: "2026-09-07T00:00:00.000Z" },
+            { kind: "skill", hostId: "qoder", name: "review", count: 5, lastObservedAt: "2026-09-08T00:00:00.000Z" },
+            { kind: "mcp-server", hostId: "qoder", name: "schedule", count: 3, lastObservedAt: "2026-09-06T00:00:00.000Z" },
+          ],
+        },
+      }),
+    },
     customizationCollector: collector,
   });
   const opened = await fetch(`${studio.url}/api/workspace/open`, { method: "POST" });
@@ -172,6 +190,32 @@ test("browses the catalog as a docked View with category and Agent rows", async 
   await search.fill("no-such-entry");
   await expect(entries).toContainText("No entries match this filter");
   await search.fill("");
+
+  // Observed invocations: a count per exposing Agent, following the Agent filter,
+  // and an honest boundary instead of a zero for what was never observed.
+  await filters.getByRole("button", { name: /^Skills/ }).click();
+  const usesHeader = table.getByRole("columnheader", { name: /Uses/ });
+  await expect(usesHeader).toBeVisible();
+  const reviewRow = table.getByRole("row").filter({ hasText: "review" });
+  await expect(reviewRow).toContainText("7");
+  await expect(entries).toContainText("4 retained Sessions of this Project");
+  await filters.getByRole("button", { name: /^Codex/ }).click();
+  await expect(reviewRow).toContainText("2");
+  await filters.getByRole("button", { name: /^Qoder/ }).click();
+  await expect(reviewRow).toContainText("5");
+  await table.getByRole("button", { name: "review" }).click();
+  await expect(provenance).toContainText("5 observed invocations, last on 2026-09-08");
+  // Sorting by the column brings the most-used definition to the top.
+  await usesHeader.getByRole("button").click();
+  await expect(usesHeader).toHaveAttribute("aria-sort", "ascending");
+
+  // A category no rule can observe does not grow a column of dashes.
+  await filters.getByRole("button", { name: "All Agents" }).click();
+  await filters.getByRole("button", { name: /^Hooks/ }).click();
+  await expect(table.getByRole("columnheader", { name: /Uses/ })).toHaveCount(0);
+  await filters.getByRole("button", { name: /^MCP Servers/ }).click();
+  await expect(table.getByRole("row").filter({ hasText: "schedule" })).toContainText("3");
+  await filters.getByRole("button", { name: /^Skills/ }).click();
 
   for (const theme of ["light", "dark"]) {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });

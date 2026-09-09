@@ -4,6 +4,7 @@ import {
   buildToolCallTrace,
   buildUsageReport,
   CACHE_ACCOUNTING_MODE,
+  collectSessionCustomizationUsage,
   createAnalyzer,
   observedContextUsage,
   observedCacheAccountingMode,
@@ -210,6 +211,7 @@ export function summarizeSessionEvents(session, events = [], {
   platform,
   includeToolTrace = false,
   includeDialogue = false,
+  includeCustomizationUsage = false,
 } = {}) {
   const attributedEvents = attributedToolEvents(events);
   const files = new Set();
@@ -357,6 +359,9 @@ export function summarizeSessionEvents(session, events = [], {
     : null;
   const toolActivity = toolTrace ? normalizeToolActivity(toolTrace.calls, requestFacts) : null;
   const dialogue = includeDialogue ? summarizeDialogue(attributedEvents) : null;
+  // Attributed events carry the resolved tool name, so a nested MCP call inside an
+  // exec is counted against its server rather than against the shell.
+  const customizationUsage = includeCustomizationUsage ? collectSessionCustomizationUsage(attributedEvents) : null;
   // Derived from every retained inference, never from the display-bounded
   // dialogue above, so `actualModelCalls` and the processing totals stay the
   // Session's real numbers even when Session View caps what it shows.
@@ -430,6 +435,9 @@ export function summarizeSessionEvents(session, events = [], {
     toolCounts: Object.fromEntries([...toolCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))),
     ...(toolTrace ? { toolTrace, toolActivity } : {}),
     ...(dialogue ? { dialogue } : {}),
+    // Which Skills and MCP Servers this Session actually invoked. Opt-in, because
+    // only a caller that pairs it with the customization catalog can present it.
+    ...(customizationUsage ? { customizationUsage } : {}),
     models: [...models].sort(),
     tokenUsage,
     usageReport,
@@ -456,6 +464,7 @@ export async function collectSessionSummaries({
   maxSessions = DEFAULT_MAX_SESSIONS,
   includeToolTrace = false,
   includeDialogue = false,
+  includeCustomizationUsage = false,
 } = {}) {
   const analyzer = await createAnalyzer(platform);
   const scopeOptions = { workspace };
@@ -486,6 +495,7 @@ export async function collectSessionSummaries({
       platform,
       includeToolTrace,
       includeDialogue,
+      includeCustomizationUsage,
     }));
   }
   return summaries;
@@ -505,6 +515,7 @@ export async function collectMultiPlatformSessionSummaries({
   maxSessions = DEFAULT_MAX_SESSIONS,
   includeToolTrace = false,
   includeDialogue = false,
+  includeCustomizationUsage = false,
   createAnalyzer: createPlatformAnalyzer = createAnalyzer,
 } = {}) {
   const requested = [...new Set(platforms)];
@@ -552,6 +563,7 @@ export async function collectMultiPlatformSessionSummaries({
         platform: candidate.platform,
         includeToolTrace,
         includeDialogue,
+        includeCustomizationUsage,
       }));
       candidate.provider.included += 1;
     } catch (error) {

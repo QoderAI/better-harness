@@ -11,6 +11,12 @@ export {
   SUPPORTED_SESSION_PROVIDERS,
 } from "./analyzer.mjs";
 export { parseArgs, parseBooleanFlag } from "./cli.mjs";
+export {
+  aggregateCustomizationUsage,
+  collectSessionCustomizationUsage,
+  CUSTOMIZATION_USAGE_SCHEMA_VERSION,
+  normalizeCustomizationUsageName,
+} from "./customization-usage.mjs";
 export { buildTaskEpisodes, stableFingerprint } from "./episode-contract.mjs";
 export { isDirectory, pathExists, pathStat, readJson, walkFiles } from "./fs.mjs";
 export { buildObservationManifest } from "./observation-manifest.mjs";

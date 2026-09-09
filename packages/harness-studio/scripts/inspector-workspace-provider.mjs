@@ -9,7 +9,7 @@ import {
   correlateCommitsWithSessions,
   resolveRepoRoot,
 } from "../../../scripts/commit-session-link/index.mjs";
-import { SUPPORTED_SESSION_PROVIDERS } from "../../../scripts/session-analysis/index.mjs";
+import { aggregateCustomizationUsage, SUPPORTED_SESSION_PROVIDERS } from "../../../scripts/session-analysis/index.mjs";
 import {
   buildHarnessInspectorReport,
   emptyFeatureTree,
@@ -67,6 +67,7 @@ export function createInspectorWorkspaceSessionProvider({
         maxSessions: MAX_SESSIONS,
         includeToolTrace: true,
         includeDialogue: true,
+        includeCustomizationUsage: true,
       });
       const sessionsWithCheckpoints = attachCheckpointFactsToSessions(sessions.map(privacySafeSession), checkpointResolution.checkpoints);
       const correlated = correlate(commits, sessionsWithCheckpoints);
@@ -104,6 +105,9 @@ export function createInspectorWorkspaceSessionProvider({
       return {
         label: path.basename(repoRoot),
         inspectorReport,
+        // Which Skills and MCP Servers these Sessions invoked, per Host. The
+        // catalog states what is configured; this states what was observed.
+        customizationUsage: aggregateCustomizationUsage(sessionsWithCheckpoints),
         sessions: sessionsWithCheckpoints.map(projectInspectorSession).filter(Boolean),
         providers: providers.map((provider) => ({
           provider: provider.platform,

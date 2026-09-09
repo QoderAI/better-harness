@@ -1,6 +1,7 @@
 import type { AcpConversation } from "@qoder-ai/harness/exec";
 import type { AcpSessionControl } from "@qoder-ai/harness/exec";
 import type { AcpConfigOption } from "../contracts/acp-session-config.js";
+import type { CustomizationUsageV1 } from "../contracts/customization-usage.js";
 import type { OxcCompilerFactory } from "../agent-react/host/index.js";
 import { DebuggerSession } from "../contracts/debugger-session.js";
 import { CheckpointSourcePreview, ExperimentLockReceipt } from "../contracts/experiment-setup.js";
@@ -56,6 +57,8 @@ export interface StudioWorkspaceDiscovery {
   providers?: StudioWorkspaceProviderDiagnostic[];
   /** Privacy-filtered Inspector workbench projection for this workspace. */
   inspectorReport?: Record<string, unknown>;
+  /** Observed Skill and MCP Server invocations, per Host. Absent when unsupported. */
+  customizationUsage?: CustomizationUsageV1;
 }
 export interface StudioWorkspaceSessionProvider {
   discover(workspacePath: string): Promise<StudioWorkspaceDiscovery>;
@@ -203,6 +206,8 @@ export interface StudioWorkspace {
   providers: StudioWorkspaceProviderDiagnostic[];
   inspectorReport?: Record<string, unknown>;
   inputTrace?: UserInputTraceV1;
+  /** Observed Skill and MCP Server invocations for this Project, per Host. */
+  customizationUsage?: CustomizationUsageV1;
   /** Server-only execution root for the selected local project. Never serialized. */
   localDirectory?: string;
   /** Current workspace files supported by retained change/deliver evidence. */

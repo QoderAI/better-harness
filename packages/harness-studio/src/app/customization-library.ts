@@ -1,4 +1,5 @@
 import type { CustomizationCatalogV1 } from "@qoder-ai/harness/customization";
+import type { CustomizationUsageV1 } from "../contracts/customization-usage.js";
 
 export const CUSTOMIZATION_CATEGORIES = ["overview", "plugins", "mcp", "skills", "instructions", "agents", "hooks", "tools", "commands"] as const;
 export type CustomizationCategory = typeof CUSTOMIZATION_CATEGORIES[number];
@@ -87,4 +88,62 @@ export function searchCustomizationRows(rows: readonly CustomizationLibraryRow[]
   const needle = query.trim().toLowerCase();
   if (needle === "") return [...rows];
   return rows.filter((row) => [row.name, row.description, row.source].some((value) => value?.toLowerCase().includes(needle) === true));
+}
+
+/** Categories whose entries a Session can be observed invoking. */
+const USAGE_CATEGORIES = { skills: "skill", mcp: "mcp-server" } as const;
+
+export interface CustomizationRowUsage {
+  count: number;
+  lastObservedAt?: string;
+}
+
+/**
+ * Whether this category can carry an observation at all. A column of dashes over
+ * Instructions or Hooks would claim Studio looked and found nothing, when no rule
+ * for observing them exists.
+ */
+export function customizationUsageObservable(category: CustomizationCategory): boolean {
+  return category === "overview" || category in USAGE_CATEGORIES;
+}
+
+/**
+ * The definition-name side of the matching rule owned by
+ * `scripts/session-analysis/customization-usage.mjs`, which normalizes the observed
+ * name before it leaves the server. Both sides must reduce to the same form, so
+ * this repeats the rule rather than importing a Node-only script into the bundle.
+ */
+export function normalizeCustomizationUsageName(value: string): string {
+  const text = value.trim().toLowerCase();
+  return text.split(/[:/\\]/u).filter(Boolean).at(-1) ?? "";
+}
+
+/**
+ * The observed invocations for one row, or `undefined` when none were observed.
+ *
+ * A count is only read for the Hosts the row is actually exposed to, and the Agent
+ * filter narrows it further, so the number always answers the question the reader
+ * has on screen. `undefined` means not observed — never proof of an unused
+ * definition, which is why the caller must not render it as `0`.
+ */
+export function customizationRowUsage(
+  row: CustomizationLibraryRow,
+  usage: CustomizationUsageV1 | undefined,
+  agent: string,
+): CustomizationRowUsage | undefined {
+  const kind = USAGE_CATEGORIES[row.category as keyof typeof USAGE_CATEGORIES];
+  if (kind === undefined || usage === undefined) return undefined;
+  const name = normalizeCustomizationUsageName(row.name);
+  const hosts = agent === "all" || agent === "unassigned" ? row.hosts : row.hosts.filter((host) => host === agent);
+  if (name === "" || hosts.length === 0) return undefined;
+  let count = 0;
+  let lastObservedAt: string | undefined;
+  for (const entry of usage.entries) {
+    if (entry.kind !== kind || entry.name !== name || !hosts.includes(entry.hostId)) continue;
+    count += entry.count;
+    if (entry.lastObservedAt !== undefined && (lastObservedAt === undefined || entry.lastObservedAt > lastObservedAt)) {
+      lastObservedAt = entry.lastObservedAt;
+    }
+  }
+  return count === 0 ? undefined : { count, ...(lastObservedAt === undefined ? {} : { lastObservedAt }) };
 }

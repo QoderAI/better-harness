@@ -28,7 +28,17 @@ export const customize: typeof enCustomize = {
     "agents": "Agent",
     "scope": "范围",
     "evidence": "证据",
+    "uses": "调用",
     "source": "来源"
+  },
+  "usage": {
+    "notObserved": "未观测到",
+    "observed": "观测到 {{count}} 次调用",
+    "observed_other": "观测到 {{count}} 次调用",
+    "observedOn": "观测到 {{count}} 次调用，最近于 {{date}}",
+    "observedOn_other": "观测到 {{count}} 次调用，最近于 {{date}}",
+    "boundary": "调用数来自本项目 {{count}} 个已保留会话（{{from}} 至 {{to}}）中观测到的调用，按 Agent 以名称匹配。没有计数不代表该定义未被使用。",
+    "boundary_other": "调用数来自本项目 {{count}} 个已保留会话（{{from}} 至 {{to}}）中观测到的调用，按 Agent 以名称匹配。没有计数不代表该定义未被使用。"
   },
   "details": {
     "title": "来源溯源",

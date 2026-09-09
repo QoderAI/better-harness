@@ -54,6 +54,7 @@ import {
   serveSessionComparison,
   sessionAgentBreakdown,
   serveWorkspaceCustomizations,
+  serveWorkspaceCustomizationUsage,
   serveWorkspaceSession,
   serveWorkspaceSessions,
 } from "./workspace/routes.js";
@@ -357,6 +358,10 @@ async function route(
   }
   if (request.method === "GET" && url.pathname === "/api/customizations") {
     serveWorkspaceCustomizations(response, state);
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/customizations/usage") {
+    serveWorkspaceCustomizationUsage(response, state);
     return;
   }
   if (request.method === "POST" && url.pathname === "/api/customizations/analyze") {

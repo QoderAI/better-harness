@@ -168,6 +168,68 @@ describe("Studio customization analysis routes", () => {
     expect(body).not.toContain(launchWorkspace);
     expect((await fetch(`${started.url}/api/customizations`)).status).toBe(404);
   });
+
+  it("serves observed usage from the Project's discovery and bounds what a provider returns", async () => {
+    const appDir = await tempDirectory("customization-app-");
+    const workspace = await tempDirectory("customization-usage-workspace-");
+    await writeFile(join(appDir, "index.html"), "<!doctype html><title>fixture</title>", "utf8");
+    started = await startHarnessStudioServer({
+      appDir,
+      workspaceDirectoryPicker: async () => workspace,
+      workspaceSessionProvider: {
+        discover: async () => ({
+          label: "fixture",
+          sessions: [],
+          customizationUsage: {
+            kind: "BetterHarnessCustomizationUsageV1",
+            schemaVersion: 1,
+            observedSessions: 3.7,
+            window: { from: "2026-09-01T00:00:00.000Z", to: "not-a-date" },
+            entries: [
+              { kind: "skill", hostId: "codex", name: "review", count: 2, lastObservedAt: "2026-09-02T00:00:00.000Z" },
+              // Dropped: no positive count, an unsupported kind, and a blank Host.
+              { kind: "skill", hostId: "qoder", name: "idle", count: 0 },
+              { kind: "hook", hostId: "qoder", name: "pre-commit", count: 5 },
+              { kind: "mcp-server", hostId: "  ", name: "schedule", count: 5 },
+            ],
+          },
+        }),
+      },
+    });
+
+    // No Project is open yet, so there is nothing observed to report.
+    expect((await fetch(`${started.url}/api/customizations/usage`)).status).toBe(404);
+    expect((await fetch(`${started.url}/api/workspace/open`, { method: "POST" })).ok).toBe(true);
+
+    const response = await fetch(`${started.url}/api/customizations/usage`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      kind: "BetterHarnessCustomizationUsageV1",
+      schemaVersion: 1,
+      observedSessions: 3,
+      window: { from: "2026-09-01T00:00:00.000Z", to: null },
+      entries: [{ kind: "skill", hostId: "codex", name: "review", count: 2, lastObservedAt: "2026-09-02T00:00:00.000Z" }],
+    });
+  });
+
+  it("rejects a malformed usage aggregate instead of opening the Project with it", async () => {
+    const appDir = await tempDirectory("customization-app-");
+    const workspace = await tempDirectory("customization-usage-workspace-");
+    await writeFile(join(appDir, "index.html"), "<!doctype html><title>fixture</title>", "utf8");
+    started = await startHarnessStudioServer({
+      appDir,
+      workspaceDirectoryPicker: async () => workspace,
+      workspaceSessionProvider: {
+        discover: async () => ({
+          label: "fixture",
+          sessions: [],
+          customizationUsage: { kind: "SomethingElse", schemaVersion: 1, observedSessions: 1, window: { from: null, to: null }, entries: [] } as never,
+        }),
+      },
+    });
+    expect((await fetch(`${started.url}/api/workspace/open`, { method: "POST" })).ok).toBe(false);
+    expect((await fetch(`${started.url}/api/customizations/usage`)).status).toBe(404);
+  });
 });
 
 async function viWaitFor(predicate: () => boolean): Promise<void> {

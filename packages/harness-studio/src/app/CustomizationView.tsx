@@ -14,6 +14,7 @@ import { Wrench } from "@phosphor-icons/react/Wrench";
 import { Terminal } from "@phosphor-icons/react/Terminal";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { CustomizationAnalysisResponseV1 } from "@qoder-ai/harness/customization";
+import type { CustomizationUsageV1 } from "../contracts/customization-usage.js";
 import { studioApiError } from "./studio-api.js";
 import { DataTable } from "./shell/DataTable.js";
 import { PaneSash } from "./shell/PaneSash.js";
@@ -22,6 +23,8 @@ import {
   CUSTOMIZATION_CATEGORIES,
   customizationAgentFacets,
   customizationLibraryRows,
+  customizationRowUsage,
+  customizationUsageObservable,
   filterCustomizationRows,
   searchCustomizationRows,
   type CustomizationCategory,
@@ -83,6 +86,7 @@ export function CustomizationView(props: {
   const [agent, setAgent] = useState("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string>();
+  const [usage, setUsage] = useState<CustomizationUsageV1>();
   const [navWidth, setNavWidth] = useState(NAV_WIDTH.default);
   const [frame, setFrame] = useState(0);
   const [focusedRow, setFocusedRow] = useState("category:overview");
@@ -125,6 +129,22 @@ export function CustomizationView(props: {
     return () => { cancelled = true; };
   }, []);
 
+  // Observed invocations are a separate, optional reading of retained Sessions. A
+  // Project whose provider cannot supply them keeps the catalog exactly as it is.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("api/customizations/usage");
+        if (!response.ok) return;
+        const value = await response.json() as CustomizationUsageV1;
+        if (!cancelled && Array.isArray(value.entries)) setUsage(value);
+      } catch {
+        // Usage is supplementary; the catalog remains the View's evidence.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   async function analyze(): Promise<void> {
     setBusy(true); setFailure(undefined);
     try {
@@ -147,6 +167,10 @@ export function CustomizationView(props: {
   const scoped = filterCustomizationRows(rows, category, agent);
   const visible = searchCustomizationRows(scoped, query);
   const detail = visible.find((row) => rowKey(row) === selected);
+  const detailUsage = detail === undefined ? undefined : customizationRowUsage(detail, usage, agent);
+  // A column of dashes over a category no rule can observe would claim Studio
+  // looked; the column appears only where an invocation is observable.
+  const usageColumn = usage !== undefined && customizationUsageObservable(category);
   const agentName = (id: string): string => id === "all" ? t("library.allAgents") : id === "unassigned" ? t("library.unassigned") : hostLabel(id);
   const busyState = loading || busy;
 
@@ -192,7 +216,7 @@ export function CustomizationView(props: {
       id: "name",
       header: t("library.cols.name"),
       accessorFn: (row) => row.name,
-      meta: { width: category === "overview" ? "28%" : "34%" },
+      meta: { width: usageColumn ? category === "overview" ? "26%" : "32%" : category === "overview" ? "28%" : "34%" },
       cell: ({ row }) => <button
         type="button"
         className="customization-name-cell"
@@ -206,34 +230,53 @@ export function CustomizationView(props: {
       id: "category",
       header: t("library.cols.category"),
       accessorFn: (row: CustomizationLibraryRow) => t(`library.categories.${row.category}`),
-      meta: { width: "13%" },
+      meta: { width: "12%" },
     } as ColumnDef<CustomizationLibraryRow, never>] : []),
     {
       id: "agents",
       header: t("library.cols.agents"),
       accessorFn: (row) => row.hosts.length === 0 ? t("library.unassigned") : row.hosts.map(hostLabel).join(", "),
-      meta: { width: category === "overview" ? "17%" : "18%" },
+      meta: { width: category === "overview" ? "16%" : "18%" },
     },
     {
       id: "scope",
       header: t("library.cols.scope"),
       accessorFn: (row) => t(`library.scopes.${row.scope}`),
-      meta: { width: "11%" },
+      meta: { width: "10%" },
     },
     {
       id: "evidence",
       header: t("library.cols.evidence"),
       accessorFn: (row) => t(`library.evidence.${row.evidence}`),
-      meta: { width: category === "overview" ? "13%" : "15%" },
+      meta: { width: category === "overview" ? "12%" : "14%" },
     },
+    // Observed invocations. Sorting treats an unobserved row as the lowest value
+    // while the cell keeps saying "not observed", because a rendered 0 would claim
+    // Studio proved the definition never ran.
+    ...(usageColumn ? [{
+      id: "uses",
+      header: t("library.cols.uses"),
+      accessorFn: (row: CustomizationLibraryRow) => customizationRowUsage(row, usage, agent)?.count ?? 0,
+      meta: { width: category === "overview" ? "10%" : "11%", numeric: true },
+      cell: ({ row }: { row: { original: CustomizationLibraryRow } }) => {
+        const observed = customizationRowUsage(row.original, usage, agent);
+        return observed === undefined
+          ? <span title={t("library.usage.notObserved")}>{"\u2014"}</span>
+          : <span title={observed.lastObservedAt === undefined
+            ? t("library.usage.observed", { count: observed.count })
+            : t("library.usage.observedOn", { count: observed.count, date: observed.lastObservedAt.slice(0, 10) })}>{observed.count}</span>;
+      },
+    } as ColumnDef<CustomizationLibraryRow, never>] : []),
     {
       id: "source",
       header: t("library.cols.source"),
       accessorFn: (row) => row.source ?? t("results.opaqueSource"),
-      meta: { width: category === "overview" ? "18%" : "22%" },
+      // The declared widths total 100%: the trailing path column absorbs whatever
+      // the Uses column is not using.
+      meta: { width: usageColumn ? category === "overview" ? "14%" : "15%" : category === "overview" ? "22%" : "24%" },
       cell: ({ getValue }) => <code className="customization-source-cell" title={String(getValue())}>{String(getValue())}</code>,
     },
-  ], [category, hosts, t]);
+  ], [agent, category, hosts, t, usage, usageColumn]);
 
   const measured = frame > 0;
   const navMax = measured
@@ -309,6 +352,7 @@ export function CustomizationView(props: {
         {failure !== undefined && <p role="alert">{failure}</p>}
         {busyState && analysis !== undefined && <p role="status">{t("loadingCatalog")}</p>}
         {category === "tools" && <p>{t("library.toolsBoundary")}</p>}
+        {usageColumn && <p>{t("library.usage.boundary", { count: usage.observedSessions, from: usage.window.from?.slice(0, 10) ?? "—", to: usage.window.to?.slice(0, 10) ?? "—" })}</p>}
         {analysis?.catalog.runtimeObservations.map((item) => item.kind === "host-collection" && item.message !== undefined && (agent === "all" || agent === item.hostId)
           ? <p key={item.id} role={item.status === "error" ? "alert" : "status"}>{hostLabel(item.hostId)}: {item.message}</p>
           : null)}
@@ -320,7 +364,7 @@ export function CustomizationView(props: {
           columns={columns}
           rows={visible}
           rowId={rowKey}
-          minWidth={category === "overview" ? "680px" : "580px"}
+          minWidth={usageColumn ? category === "overview" ? "760px" : "660px" : category === "overview" ? "680px" : "580px"}
           initialSorting={[{ id: "name", desc: false }]}
           emptyMessage={query.trim() === "" ? t("library.noEntries") : t("library.noMatches")}
           onSelectRow={(row) => setSelected(rowKey(row))}
@@ -342,6 +386,14 @@ export function CustomizationView(props: {
             <div><dt>{t("library.cols.agents")}</dt><dd>{detail.hosts.length === 0 ? t("library.unassigned") : detail.hosts.map(hostLabel).join(", ")}</dd></div>
             <div><dt>{t("library.cols.scope")}</dt><dd>{t(`library.scopes.${detail.scope}`)}</dd></div>
             <div><dt>{t("library.cols.evidence")}</dt><dd>{t(`library.evidence.${detail.evidence}`)}</dd></div>
+            {customizationUsageObservable(detail.category) && usage !== undefined && <div>
+              <dt>{t("library.cols.uses")}</dt>
+              <dd>{detailUsage === undefined
+                ? t("library.usage.notObserved")
+                : detailUsage.lastObservedAt === undefined
+                  ? t("library.usage.observed", { count: detailUsage.count })
+                  : t("library.usage.observedOn", { count: detailUsage.count, date: detailUsage.lastObservedAt.slice(0, 10) })}</dd>
+            </div>}
             <div><dt>{t("library.cols.source")}</dt><dd><code>{detail.source ?? t("results.opaqueSource")}</code></dd></div>
           </dl>
         </div>}

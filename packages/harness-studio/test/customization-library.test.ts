@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import type { CustomizationCatalogV1, InstructionDefinitionV1, HostExposureV1 } from "@qoder-ai/harness/customization";
-import { customizationAgentFacets, customizationLibraryRows, filterCustomizationRows, searchCustomizationRows } from "../src/app/customization-library.js";
+import { customizationAgentFacets, customizationLibraryRows, customizationRowUsage, customizationUsageObservable, filterCustomizationRows, searchCustomizationRows } from "../src/app/customization-library.js";
+import type { CustomizationUsageV1 } from "../src/contracts/customization-usage.js";
 const source = { evidenceId: "source", scope: "project" as const, logicalPath: "Workspace/AGENTS.md" };
 function fixture(): CustomizationCatalogV1 {
   const definition: InstructionDefinitionV1 = { kind: "instruction", id: "shared", name: "Guidance", source, format: { id: "markdown", conformance: "standard" }, revision: { revisionId: "sha256:a", completeness: "complete" }, validation: { status: "valid", diagnostics: [] }, instructionRole: "project", composition: "append" };
@@ -53,4 +54,44 @@ it("filters entries by the fields a row shows, after the category and Agent scop
   expect(searchCustomizationRows(rows, "agents.md").map((row) => row.id).sort()).toEqual(["shared", "unassigned"]);
   expect(searchCustomizationRows(rows, "")).toHaveLength(rows.length);
   expect(searchCustomizationRows(rows, "nothing-here")).toEqual([]);
+});
+
+const usage: CustomizationUsageV1 = {
+  kind: "BetterHarnessCustomizationUsageV1",
+  schemaVersion: 1,
+  observedSessions: 4,
+  window: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-05T00:00:00.000Z" },
+  entries: [
+    { kind: "skill", hostId: "codex", name: "review", count: 2, lastObservedAt: "2026-09-02T00:00:00.000Z" },
+    { kind: "skill", hostId: "qoder", name: "review", count: 5, lastObservedAt: "2026-09-04T00:00:00.000Z" },
+    { kind: "skill", hostId: "claude", name: "unexposed-skill", count: 9 },
+    { kind: "mcp-server", hostId: "qoder", name: "schedule", count: 3 },
+  ],
+};
+const skillRow = { id: "skill", category: "skills" as const, name: "Review", hosts: ["codex", "qoder"], scope: "project", evidence: "valid" };
+
+it("reads an observation only for the Hosts a row is exposed to, following the Agent filter", () => {
+  // Both exposing Agents, then one at a time: the number always answers the
+  // question the filter is asking.
+  expect(customizationRowUsage(skillRow, usage, "all")).toEqual({ count: 7, lastObservedAt: "2026-09-04T00:00:00.000Z" });
+  expect(customizationRowUsage(skillRow, usage, "codex")).toEqual({ count: 2, lastObservedAt: "2026-09-02T00:00:00.000Z" });
+  expect(customizationRowUsage(skillRow, usage, "qoder")).toEqual({ count: 5, lastObservedAt: "2026-09-04T00:00:00.000Z" });
+  // Claude invoked a Skill of the same kind, but not this definition's row.
+  expect(customizationRowUsage(skillRow, usage, "claude")).toBeUndefined();
+  expect(customizationRowUsage({ ...skillRow, hosts: [] }, usage, "all")).toBeUndefined();
+});
+
+it("matches a Host's namespaced invocation name and never invents a zero", () => {
+  expect(customizationRowUsage({ ...skillRow, name: "better-harness:review" }, usage, "qoder")).toEqual({ count: 5, lastObservedAt: "2026-09-04T00:00:00.000Z" });
+  expect(customizationRowUsage({ ...skillRow, name: "other" }, usage, "all")).toBeUndefined();
+  expect(customizationRowUsage(skillRow, undefined, "all")).toBeUndefined();
+  // An MCP registration matches its own kind, and a Hook row is never matched to
+  // a Skill observation of the same name.
+  expect(customizationRowUsage({ ...skillRow, category: "mcp", name: "schedule", hosts: ["qoder"] }, usage, "all")).toEqual({ count: 3 });
+  expect(customizationRowUsage({ ...skillRow, category: "hooks", name: "review" }, usage, "all")).toBeUndefined();
+});
+
+it("only claims a category is observable when a rule exists for it", () => {
+  expect(["overview", "skills", "mcp"].map(customizationUsageObservable)).toEqual([true, true, true]);
+  expect(["plugins", "instructions", "agents", "hooks", "tools", "commands"].map(customizationUsageObservable)).toEqual([false, false, false, false, false, false]);
 });

@@ -1,4 +1,5 @@
 import { GitCommitDetail } from "../../contracts/git-history.js";
+import { CUSTOMIZATION_USAGE_KIND, type CustomizationUsageV1 } from "../../contracts/customization-usage.js";
 import { projectUserInputTrace } from "../../contracts/input-trace.js";
 import { IntentCorrelationAnalysisV1, IntentCorrelationContractError, validateIntentCorrelationAnalysis } from "../../contracts/intent-correlation.js";
 import { MAX_STUDIO_PROJECTS, STUDIO_PROJECT_CATALOG_KIND, type StudioProjectDescriptor } from "../../contracts/studio-project.js";
@@ -148,6 +149,7 @@ async function discoverWorkspace(options: HarnessStudioServerOptions, workspaceP
       ? discovered.inspectorReport
       : (() => { throw new Error("Workspace Inspector report is malformed."); })();
   const inputTrace = inspectorReport === undefined ? undefined : projectUserInputTrace(inspectorReport);
+  const customizationUsage = normalizeCustomizationUsage(discovered.customizationUsage);
   const gitRoot = await resolveGitRepositoryRoot(workspacePath);
   const artifactObservations = await collectWorkspaceArtifactObservations(workspacePath, [...sessions.values()]);
   return {
@@ -157,6 +159,7 @@ async function discoverWorkspace(options: HarnessStudioServerOptions, workspaceP
     sessions,
     providers,
     ...(inspectorReport === undefined ? {} : { inspectorReport, inputTrace }),
+    ...(customizationUsage === undefined ? {} : { customizationUsage }),
     localDirectory: workspacePath,
     artifactObservations,
     ...(gitRoot === undefined ? {} : { gitRoot, gitCommitCache: new Map<string, GitCommitDetail>() }),
@@ -390,6 +393,41 @@ function normalizeDiscoveredWorkspaceSession(candidate: StudioWorkspaceSession):
 function boundedNonNegativeInteger(value: unknown): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.trunc(numeric))) : 0;
+}
+
+/**
+ * A discovery provider is host code, not trusted input: bound every field before
+ * the aggregate reaches a browser. An entry that loses its kind, Host, name, or a
+ * positive count carries no observation and is dropped rather than shown as zero.
+ */
+const MAX_USAGE_ENTRIES = 400;
+function normalizeCustomizationUsage(value: CustomizationUsageV1 | undefined): CustomizationUsageV1 | undefined {
+  if (value === undefined) return undefined;
+  if (value.kind !== CUSTOMIZATION_USAGE_KIND || !Array.isArray(value.entries)) {
+    throw new Error("Workspace customization usage is malformed.");
+  }
+  const timestamp = (candidate: unknown): string | undefined => {
+    const text = typeof candidate === "string" ? candidate : "";
+    return text !== "" && Number.isFinite(Date.parse(text)) ? new Date(text).toISOString() : undefined;
+  };
+  const label = (candidate: unknown): string => String(candidate ?? "").normalize("NFKC").replace(/\s+/gu, " ").trim().slice(0, 120);
+  return {
+    kind: CUSTOMIZATION_USAGE_KIND,
+    schemaVersion: boundedNonNegativeInteger(value.schemaVersion),
+    observedSessions: boundedNonNegativeInteger(value.observedSessions),
+    window: { from: timestamp(value.window?.from) ?? null, to: timestamp(value.window?.to) ?? null },
+    entries: value.entries
+      .flatMap((entry) => {
+        const count = boundedNonNegativeInteger(entry?.count);
+        const hostId = label(entry?.hostId);
+        const name = label(entry?.name);
+        if (count === 0 || hostId === "" || name === "") return [];
+        if (entry?.kind !== "skill" && entry?.kind !== "mcp-server") return [];
+        const observedAt = timestamp(entry?.lastObservedAt);
+        return [{ kind: entry.kind, hostId, name, count, ...(observedAt === undefined ? {} : { lastObservedAt: observedAt }) }];
+      })
+      .slice(0, MAX_USAGE_ENTRIES),
+  };
 }
 export async function importWorkspaceFile(
   request: IncomingMessage,
@@ -685,6 +723,21 @@ export function serveWorkspaceCustomizations(response: ServerResponse, state: Ha
     return;
   }
   respondJson(response, 200, state.customizationAnalysis, { "Cache-Control": "no-store" });
+}
+
+/**
+ * Observed invocations for the open Project, served beside the catalog rather than
+ * inside it: the catalog is the Host's configuration, this is Studio's reading of
+ * retained Sessions. A Project whose provider cannot supply it answers with an
+ * empty aggregate, so the client can tell "nothing observed" from "not offered".
+ */
+export function serveWorkspaceCustomizationUsage(response: ServerResponse, state: HarnessStudioState): void {
+  const usage = state.workspace?.customizationUsage;
+  if (usage === undefined) {
+    respondJson(response, 404, { error: "This Project has no observed customization usage." });
+    return;
+  }
+  respondJson(response, 200, usage, { "Cache-Control": "no-store" });
 }
 export async function analyzeWorkspaceCustomizations(
   request: IncomingMessage,
