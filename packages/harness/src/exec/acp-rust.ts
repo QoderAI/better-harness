@@ -339,6 +339,7 @@ class HostClient {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly pending = new Map<number, PendingRequest>();
   private buffer = "";
+  private bufferBytes = 0;
   private sequence = 0;
   private stderr = "";
   private failure: Error | undefined;
@@ -431,15 +432,20 @@ class HostClient {
 
   private ingest(chunk: string): void {
     this.buffer += chunk;
-    if (this.buffer.length > MAX_FRAME_BYTES) {
+    // Frame limits are byte limits: a decoded string counts UTF-16 units, so
+    // multi-byte conversation content would otherwise buy several times the budget.
+    this.bufferBytes += Buffer.byteLength(chunk, "utf8");
+    if (this.bufferBytes > MAX_FRAME_BYTES) {
       this.fail(new Error("An ACP host frame exceeds its size limit."));
       return;
     }
     for (;;) {
       const newline = this.buffer.indexOf("\n");
       if (newline < 0) break;
-      const line = this.buffer.slice(0, newline).trim();
+      const framed = this.buffer.slice(0, newline);
+      const line = framed.trim();
       this.buffer = this.buffer.slice(newline + 1);
+      this.bufferBytes -= Buffer.byteLength(framed, "utf8") + 1;
       if (line.length === 0) continue;
       let frame: Record<string, unknown>;
       try {
