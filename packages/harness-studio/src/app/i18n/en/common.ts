@@ -26,6 +26,7 @@ export const common = {
     plane: "Harness control plane",
   },
   area: {
+    harnessDesign: "Harness Design",
     dsh: "DSH",
     pi: "Pi",
     customizations: "Customizations",

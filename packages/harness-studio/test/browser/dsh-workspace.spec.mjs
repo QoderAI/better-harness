@@ -23,7 +23,7 @@ async function start({ native = false, missing = false } = {}) {
   server = await startHarnessStudioServer({ appDir: process.env.STUDIO_TEST_APP_DIR ?? join(root, 'dist/app'), dshWebHost, runDirectory: join(directory, 'runs'), harnessMode: 'workspace-default',
     workspaceDirectoryPicker: async () => directory, workspaceSessionProvider: { discover: async () => ({ label: 'DSH test project', sessions: [] }) } });
 }
-test.afterEach(async () => { await server?.close(); if (foreign) { await new Promise(done => foreign.close(done)); foreign = undefined; } if (directory) await rm(directory, { recursive: true, force: true }); });
+test.afterEach(async () => { await server?.close(); server = undefined; if (foreign) { await new Promise(done => foreign.close(done)); foreign = undefined; } if (directory) await rm(directory, { recursive: true, force: true }); directory = undefined; });
 async function open(page) {
   await page.goto(`${server.url}/#/dsh`);
   const switcher = page.locator('.studio-project-switcher > button');
@@ -37,9 +37,13 @@ for (const layout of layouts) test(`official application container preserves foc
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   page.on('pageerror', error => errors.push(error.message));
   await page.setViewportSize(layout); await open(page);
+  await expect(page.getByRole('heading', { name: 'Harness Design', exact: true })).toBeVisible();
+  await expect(page.locator('.studio-project-views').getByRole('button', { name: 'Harness Design', exact: true })).toHaveCount(1);
+  await expect(page.locator('.studio-project-views').getByRole('button', { name: /^(DSH|Pi)$/ })).toHaveCount(0);
   const launch = page.getByRole('button', { name: 'Start DSH', exact: true });
   await expect(page.locator('.dsh-workspace button')).toHaveCount(1);
   await expect(page.locator('#studio-toolbar-actions button')).toHaveCount(0);
+  if (layout.width <= 1080) await expect(page.locator('.studio-project-sidebar')).toBeHidden();
   await page.screenshot({ path: info.outputPath(`dsh-launch-${layout.name}.png`) });
   await page.keyboard.press('Tab'); await launch.focus(); await expect(launch).toBeFocused();
   expect(await launch.evaluate(node => getComputedStyle(node).outlineStyle)).not.toBe('none');
@@ -47,10 +51,18 @@ for (const layout of layouts) test(`official application container preserves foc
   const frame = page.frameLocator('iframe.dsh-native-frame');
   const draft = frame.getByRole('textbox', { name: 'Foreign application draft' });
   await draft.fill('keep the upstream draft'); await expect(draft).toBeFocused();
+  const runtimeNavigation = page.getByRole('navigation', { name: 'Harness Design', exact: true });
+  await runtimeNavigation.getByRole('button', { name: 'DSH', exact: true }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(runtimeNavigation.getByRole('button', { name: 'Pi', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Start Pi', exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(draft).toBeVisible();
+  await expect(draft).toHaveValue('keep the upstream draft');
   const sessions = page.getByRole('button', { name: 'Sessions', exact: true });
   if (await page.locator('.studio-nav-toggle').getAttribute('aria-expanded') === 'false') await page.locator('.studio-nav-toggle').click();
   await sessions.click();
-  const dshNav = page.getByRole('button', { name: 'DSH', exact: true });
+  const dshNav = page.getByRole('button', { name: 'Harness Design', exact: true });
   if (await page.locator('.studio-nav-toggle').getAttribute('aria-expanded') === 'false') await page.locator('.studio-nav-toggle').click();
   await dshNav.click();
   await expect(draft).toHaveValue('keep the upstream draft');
@@ -59,6 +71,7 @@ for (const layout of layouts) test(`official application container preserves foc
   await expect.poll(async () => (await page.locator('iframe.dsh-native-frame').boundingBox()).width).toBeGreaterThan(200);
   const bounds = await page.locator('iframe.dsh-native-frame').boundingBox();
   expect(bounds.width).toBeGreaterThan(200); expect(bounds.x + bounds.width).toBeLessThanOrEqual(layout.width);
+  if (layout.width <= 1080) await expect(page.locator('.studio-project-sidebar')).toBeHidden();
   await page.screenshot({ path: info.outputPath(`dsh-container-${layout.name}.png`) });
   await expect(page.locator('#studio-toolbar-actions button')).toHaveCount(0);
   expect(errors).toEqual([]);

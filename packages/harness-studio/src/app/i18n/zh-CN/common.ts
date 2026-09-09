@@ -28,6 +28,7 @@ export const common: typeof enCommon = {
     plane: "Harness 控制台",
   },
   area: {
+    harnessDesign: "Harness Design",
     dsh: "DSH",
     pi: "Pi",
     customizations: "自定义",

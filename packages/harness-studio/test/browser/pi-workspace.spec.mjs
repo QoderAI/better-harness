@@ -27,8 +27,10 @@ for (const [name, width, height] of [['wide', 1440, 900], ['compact', 1024, 768]
   await page.locator('.studio-project-switcher > button').click();
   await page.getByRole('menuitem', { name: 'Open project', exact: true }).click();
   await expect(page.locator('.studio-project-switcher > button')).toContainText('Pi test project');
-  await nav(page, 'Pi');
+  await nav(page, 'Harness Design');
+  await expect(page.getByRole('heading', { name: 'Harness Design', exact: true })).toBeVisible();
   if (await page.locator('.studio-nav-toggle').isVisible() && await page.locator('.studio-nav-toggle').getAttribute('aria-expanded') === 'true') await page.locator('.studio-nav-toggle').click();
+  if (width <= 1080) await expect(page.locator('.studio-project-sidebar')).toBeHidden();
   const launch = page.getByRole('button', { name: 'Start Pi', exact: true });
   await expect(page.locator('.pi-workspace button')).toHaveCount(1);
   await expect(page.locator('#studio-toolbar-actions button')).toHaveCount(0);
@@ -38,13 +40,21 @@ for (const [name, width, height] of [['wide', 1440, 900], ['compact', 1024, 768]
   const input = page.locator('.xterm-helper-textarea');
   await input.focus(); await expect(input).toBeFocused(); await page.keyboard.type('native draft');
   await expect(screen).toContainText('native draft');
-  await nav(page, 'Sessions'); await nav(page, 'Pi');
+  await page.getByRole('navigation', { name: 'Harness Design', exact: true }).getByRole('button', { name: 'DSH', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Start DSH', exact: true })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Harness Design', exact: true }).getByRole('button', { name: 'Pi', exact: true }).click();
+  await expect(screen).toContainText('native draft');
+  await nav(page, 'Sessions'); await nav(page, 'Harness Design');
   await expect(screen).toContainText('native draft');
   await expect(page.locator('#studio-toolbar-actions button')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const bounds = await page.locator('.pi-terminal').boundingBox();
   expect(bounds.width).toBeGreaterThan(200); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
   await input.focus(); await page.keyboard.press('Control+Shift+F6'); await expect(input).not.toBeFocused();
+  if (width <= 1080) {
+    await expect(page.locator('.studio-nav-toggle')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('.studio-project-sidebar')).toBeHidden();
+  }
   await page.screenshot({ path: info.outputPath(`pi-terminal-${name}.png`) });
   expect(errors).toEqual([]);
 });

@@ -40,7 +40,7 @@ try {
   assert.equal(config.dshWebEnabled, true);
   assert.equal(config.acpAgents.find(agent => agent.id === 'dsh')?.available, true);
   await app.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }); }, project);
-  await page.getByRole('button', { name: 'DSH', exact: true }).click();
+  await page.getByRole('button', { name: 'Harness Design', exact: true }).click();
   await page.locator('.studio-project-switcher > button').click();
   await page.getByRole('menuitem', { name: 'Open project', exact: true }).click();
   await expect(page.locator('.dsh-workspace button')).toHaveCount(1);
@@ -61,7 +61,7 @@ try {
   await editor.fill('Review this project with DSH — draft only, not submitted.');
   await expect(editor).toBeFocused();
   await page.getByRole('button', { name: 'Sessions', exact: true }).click();
-  await page.getByRole('button', { name: 'DSH', exact: true }).click();
+  await page.getByRole('button', { name: 'Harness Design', exact: true }).click();
   await expect(editor).toContainText('draft only');
   for (const [name, width, height] of [['wide', 1440, 900], ['compact', 1024, 768], ['narrow', 390, 844]]) {
     await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(...size), [width, height]);

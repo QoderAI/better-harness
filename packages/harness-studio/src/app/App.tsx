@@ -214,6 +214,8 @@ export function App(): React.JSX.Element {
   const [configFailure, setConfigFailure] = useState<string | null>(null);
   const [bootstrapRevision, setBootstrapRevision] = useState(0);
   const [area, setArea] = useState<StudioArea>(() => areaFromHash() === "customizations" ? STUDIO_DEFAULT_AREA : areaFromHash());
+  const designRuntime = useRef<"dsh" | "pi">(areaFromHash() === "pi" ? "pi" : "dsh");
+  useEffect(() => { if (area === "dsh" || area === "pi") designRuntime.current = area; }, [area]);
   const [customizationRequest, setCustomizationRequest] = useState(() => areaFromHash() === "customizations" ? 1 : 0);
   const [locationRevision, setLocationRevision] = useState(0);
   const [compareSurface, setCompareSurface] = useState<StudioCompareSurface>("sessions");
@@ -512,6 +514,9 @@ export function App(): React.JSX.Element {
     ? compareSurface
     : availableCompareSurfaces[0] ?? compareSurface;
   const destinations = studioDestinations(config, effectiveCompareSurface, t);
+  const isHarnessDesign = area === "dsh" || area === "pi";
+  const navigationDestinations = destinations.filter((destination) => destination.id !== "pi").map((destination) =>
+    destination.id === "dsh" ? { ...destination, label: t("area.harnessDesign"), status: `${t("area.dsh")} / ${t("area.pi")}` } : destination);
   const current = destinations.find((destination) => destination.id === area)
     ?? destinations.find((destination) => destination.id === STUDIO_DEFAULT_AREA)
     ?? destinations[0]!;
@@ -557,14 +562,14 @@ export function App(): React.JSX.Element {
     <ProjectSidebar
       projects={projects}
       activeProjectId={activeProjectId}
-      destinations={destinations}
-      current={showWelcome ? null : area}
+      destinations={navigationDestinations}
+      current={showWelcome ? null : isHarnessDesign ? "dsh" : area}
       opening={projectOpening}
       canOpenProject={config.workspaceDiscoveryEnabled}
       onOpenProject={() => void openProject()}
       onActivateProject={(projectId) => void activateStudioProject(projectId)}
       onRemoveProject={(projectId) => void removeStudioProject(projectId)}
-      onSelectView={openArea}
+      onSelectView={(next) => openArea(next === "dsh" ? designRuntime.current : next)}
       onCollapseSidebar={() => { setSidebarCollapsed(true); navigationToggleRef.current?.focus(); }}
       onCloseNavigation={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }}
       dateRange={dateRange}
@@ -577,7 +582,7 @@ export function App(): React.JSX.Element {
     <section className="studio-area">
       <header className={`studio-context-bar${contextNavigation ? " has-surface-navigation" : ""}`}>
         <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={sidebarVisible ? t("workspace:gate.closeTitle") : t("workspace:gate.openTitle")} aria-label={sidebarVisible ? t("workspace:gate.closeAria") : t("workspace:gate.openAria")} aria-expanded={sidebarVisible} onClick={toggleSidebar}><SidebarSimple aria-hidden="true" size={17} /></button>
-        <div className="studio-context-title"><h1>{showWelcome ? t("workspace:welcome.title") : t(`area.${area}`)}</h1></div>
+        <div className="studio-context-title"><h1>{showWelcome ? t("workspace:welcome.title") : isHarnessDesign ? t("area.harnessDesign") : t(`area.${area}`)}</h1></div>
         {contextNavigation && <div className="studio-context-navigation">{contextNavigation}</div>}
         {/* The active View's primary action lands here, so a workbench does not
             open a second bar just to hold one button. */}
@@ -594,8 +599,11 @@ export function App(): React.JSX.Element {
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} dateRange={dateRange} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}-${dateScopeKey}`} dateRange={dateRange} config={config} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
-        <PiWorkspace visible={area === "pi"} key={`pi-${activeProject?.id}-${config.projectRevision}`} config={config} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />
-        <DshWorkspace visible={area === "dsh"} key="dsh-official" config={config} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />
+        <div className="harness-design-workspace" hidden={!isHarnessDesign}>
+          <div className="harness-design-navigation"><SurfaceNavigation label={t("area.harnessDesign")} items={[{ id: "dsh", label: t("area.dsh") }, { id: "pi", label: t("area.pi") }]} active={area} onSelect={openArea} /></div>
+          <PiWorkspace visible={area === "pi"} key={`pi-${activeProject?.id}-${config.projectRevision}`} config={config} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />
+          <DshWorkspace visible={area === "dsh"} key="dsh-official" config={config} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />
+        </div>
         {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         </>}
       </div>

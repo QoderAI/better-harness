@@ -30,7 +30,8 @@ try {
   await page.waitForLoadState('networkidle');
   assert.equal(await page.evaluate(async () => (await (await fetch('/api/config')).json()).piTerminalEnabled), true);
   await app.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }); }, project);
-  await page.getByRole('button', { name: 'Pi', exact: true }).click();
+  await page.getByRole('button', { name: 'Harness Design', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Harness Design', exact: true }).getByRole('button', { name: 'Pi', exact: true }).click();
   await page.locator('.studio-project-switcher > button').click(); await page.getByRole('menuitem', { name: 'Open project', exact: true }).click();
   const launch = page.getByRole('button', { name: 'Start Pi', exact: true });
   await expect(launch).toBeEnabled(); await expect(page.locator('.pi-workspace button')).toHaveCount(1);
@@ -41,7 +42,7 @@ try {
   await expect(screen).toContainText('v0.85.1', { timeout: 30000 });
   await input.focus(); await page.keyboard.type('Review this project - draft only');
   await expect(screen).toContainText('draft only');
-  await page.getByRole('button', { name: 'Sessions', exact: true }).click(); await page.getByRole('button', { name: 'Pi', exact: true }).click();
+  await page.getByRole('button', { name: 'Sessions', exact: true }).click(); await page.getByRole('button', { name: 'Harness Design', exact: true }).click();
   await expect(screen).toContainText('draft only');
   for (const [name, width, height] of [['wide', 1440, 900], ['compact', 1024, 768], ['narrow', 390, 844]]) {
     await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(...size), [width, height]);
