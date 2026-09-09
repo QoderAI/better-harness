@@ -107,6 +107,21 @@ describe.each(transports)('Go esbuild $transport', ({ executable, transport }) =
     }
   });
 
+  it('re-queues work that never reached a killed service instead of failing it', async () => {
+    // The service links one request at a time, so a stalled first request must not
+    // take down a request that was still waiting its turn to be written.
+    let launches = 0;
+    const linker = createGoEsbuildLinker({ executable, transport, timeoutMs: 1_000,
+      spawnProcess(binary) { return ++launches === 1 ? spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'pipe' }) : spawn(binary, [], { stdio: 'pipe' }); },
+    });
+    try {
+      const [stalled, queued] = await Promise.all([linker.link(input()), linker.link(input())]);
+      expect(stalled.diagnostics[0]?.code).toBe('limit/compile-timeout');
+      expect(queued.status).toBe('ready');
+      expect(launches).toBe(2);
+    } finally { await linker.close(); }
+  });
+
   it('bounds admission, correlates parallel requests and closes pending work', async () => {
     const linker = createGoEsbuildLinker({ executable, transport });
     try {

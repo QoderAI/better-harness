@@ -96,6 +96,24 @@ describe.each(transports)('Rust OXC $transport service', ({ executable, transpor
     }
   });
 
+  it('re-queues work that never reached a killed service instead of failing it', async () => {
+    // The service compiles one request at a time, so a stalled first request must
+    // not take down a request that was still waiting its turn to be written.
+    let launches = 0;
+    const rust = createRustOxcCompiler({ executable, transport, timeoutMs: 1_000,
+      spawnProcess(binary) {
+        return ++launches === 1 ? spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'pipe' }) : spawn(binary, [], { stdio: 'pipe' });
+      },
+    });
+    try {
+      const [stalled, queued] = await Promise.all([rust.compileModule(input()), rust.compileModule(input())]);
+      expect(stalled.diagnostics[0]?.code).toBe('limit/compile-timeout');
+      expect(queued.diagnostics).toEqual([]);
+      expect(queued.viewDeclaration?.id).toBe('orders');
+      expect(launches).toBe(2);
+    } finally { await rust.close(); }
+  });
+
   it('close cancels pending work and refuses later compilation', async () => {
     const rust = createRustOxcCompiler({ executable, transport, spawnProcess: () => spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'pipe' }) });
     const compiling = rust.compileModule(input());

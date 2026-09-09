@@ -4,6 +4,9 @@ import type { StudioWorkspaceDiscovery, StudioWorkspaceSessionProvider } from ".
 export const EVIDENCE_HOST_PROTOCOL_VERSION = "evidence-rust-1.0.0+jsonl-v1";
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
+const MAX_PENDING = 16;
+/** One re-queue after another request killed the host; bounds restart storms. */
+const MAX_RESTARTS = 1;
 
 export interface RustEvidenceHostOptions {
   readonly executable: string;
@@ -29,9 +32,15 @@ export interface RustEvidenceHost {
   close(): Promise<void>;
 }
 
-interface Pending {
+interface Queued {
+  readonly id: number;
+  readonly method: string;
+  readonly frame: string;
   readonly resolve: (value: Record<string, unknown>) => void;
   readonly reject: (error: Error) => void;
+  restarts: number;
+}
+interface Inflight extends Queued {
   readonly timer: ReturnType<typeof setTimeout>;
 }
 
@@ -54,23 +63,51 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
   let transportProven = transport !== "nsxpc";
   let servicePid: number | undefined;
   let bridgePid: number | undefined;
-  const pending = new Map<number, Pending>();
+  let inflight: Inflight | undefined;
+  const queue: Queued[] = [];
   let buffer = "";
+  let bufferBytes = 0;
 
+  /**
+   * The host answers one request at a time, so only the in-flight request is
+   * implicated in a failure. Queued requests were never written and carry no side
+   * effect: re-queue them onto a fresh process instead of failing them for another
+   * request's fault, and give up after MAX_RESTARTS so a host that cannot run
+   * cannot spin up processes indefinitely.
+   */
   const fail = (active: ChildProcessWithoutNullStreams, error: Error): void => {
     if (child !== active) return;
     child = undefined;
-    for (const request of pending.values()) {
-      clearTimeout(request.timer);
-      request.reject(error);
-    }
-    pending.clear();
+    const failed = inflight;
+    inflight = undefined;
+    if (failed) { clearTimeout(failed.timer); failed.reject(error); }
     active.kill("SIGKILL");
+    for (const request of queue.splice(0)) {
+      if (request.restarts >= MAX_RESTARTS) request.reject(error);
+      else { request.restarts += 1; queue.push(request); }
+    }
+    pump();
+  };
+  /** Writes at most one request at a time so a deadline measures host work, not queue depth. */
+  const pump = (): void => {
+    if (inflight || queue.length === 0 || closed) return;
+    const next = queue.shift()!;
+    let active: ChildProcessWithoutNullStreams;
+    try { active = start(); }
+    catch (error) {
+      next.reject(error instanceof Error ? error : new Error("Evidence host could not start."));
+      pump();
+      return;
+    }
+    const timer = setTimeout(() => fail(active, new Error(`Evidence host ${next.method} timed out.`)), timeoutMs);
+    inflight = { ...next, timer };
+    active.stdin.write(`${next.frame}\n`, (error) => { if (error) fail(active, new Error("Evidence host input closed.")); });
   };
 
   const start = (): ChildProcessWithoutNullStreams => {
     if (child) return child;
     buffer = "";
+    bufferBytes = 0;
     const active = child = launch(options.executable);
     bridgePid = active.pid;
     active.stderr.resume();
@@ -80,7 +117,10 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
     active.stdout.setEncoding("utf8");
     active.stdout.on("data", (chunk: string) => {
       if (child !== active) return;
-      if (buffer.length + chunk.length > MAX_FRAME_BYTES + 1) {
+      // Frame limits are byte limits: a decoded string counts UTF-16 units, so
+      // multi-byte evidence would otherwise buy several times the stated budget.
+      bufferBytes += Buffer.byteLength(chunk, "utf8");
+      if (bufferBytes > MAX_FRAME_BYTES + 1) {
         fail(active, new Error("Evidence host response exceeds its frame limit."));
         return;
       }
@@ -89,6 +129,7 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
       while ((newline = buffer.indexOf("\n")) !== -1) {
         const line = buffer.slice(0, newline);
         buffer = buffer.slice(newline + 1);
+        bufferBytes -= Buffer.byteLength(line, "utf8") + 1;
         if (line.trim() === "") continue;
         let value: unknown;
         try { value = JSON.parse(line); } catch {
@@ -125,22 +166,21 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
           fail(active, new Error("Evidence host returned an invalid envelope."));
           return;
         }
-        const request = pending.get(Number(value.id));
-        if (!request) {
+        const request = inflight;
+        if (!request || request.id !== Number(value.id)) {
           fail(active, new Error("Evidence host returned an unknown request id."));
           return;
         }
         clearTimeout(request.timer);
-        pending.delete(Number(value.id));
+        inflight = undefined;
         if (record(value.error)) {
           request.reject(new Error(typeof value.error.message === "string" ? value.error.message : "Evidence host request failed."));
-          continue;
-        }
-        if (!record(value.result)) {
+        } else if (!record(value.result)) {
           request.reject(new Error("Evidence host returned an empty result."));
-          continue;
+        } else {
+          request.resolve(value.result);
         }
-        request.resolve(value.result);
+        pump();
       }
     });
     return active;
@@ -148,18 +188,13 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
 
   const call = (method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
     if (closed) return Promise.reject(new Error("Evidence host is closed."));
-    const active = start();
+    if (queue.length + (inflight ? 1 : 0) >= MAX_PENDING) return Promise.reject(new Error("Evidence host queue is full."));
     const id = ++sequence;
     const frame = JSON.stringify({ version: 1, id, method, params });
-    if (frame.length > MAX_REQUEST_BYTES) return Promise.reject(new Error("Evidence host request exceeds its frame limit."));
+    if (Buffer.byteLength(frame, "utf8") > MAX_REQUEST_BYTES) return Promise.reject(new Error("Evidence host request exceeds its frame limit."));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        fail(active, new Error(`Evidence host ${method} timed out.`));
-      }, timeoutMs);
-      pending.set(id, { resolve, reject, timer });
-      active.stdin.write(`${frame}\n`, (error) => {
-        if (error) fail(active, new Error("Evidence host input closed."));
-      });
+      queue.push({ id, method, frame, resolve, reject, restarts: 0 });
+      pump();
     });
   };
 
@@ -184,10 +219,15 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
     analyzeSessionPerformance(params) { return call("sessions.performance", params); },
     async close() {
       if (closed) return;
-      const active = child;
-      try { if (active) await call("shutdown"); } catch { /* process may already be gone */ }
+      try { if (child) await call("shutdown"); } catch { /* process may already be gone */ }
       closed = true;
+      // Read the child after the await: a request that timed out while shutdown was
+      // queued restarts the host, and the process to reap is the current one.
+      const active = child;
       child = undefined;
+      const stopped = new Error("Evidence host is closed.");
+      if (inflight) { clearTimeout(inflight.timer); inflight.reject(stopped); inflight = undefined; }
+      for (const request of queue.splice(0)) request.reject(stopped);
       active?.kill("SIGKILL");
     },
   };

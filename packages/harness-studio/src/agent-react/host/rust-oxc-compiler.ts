@@ -6,6 +6,8 @@ import type { ManagedOxcCompiler } from "./compiler-factory.js";
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 const MAX_PENDING = 16;
+/** One re-queue after another request killed the service; bounds restart storms. */
+const MAX_RESTARTS = 1;
 export const RUST_OXC_COMPILER_VERSION = "oxc-rust-0.147.0+jsonl-v1";
 
 export interface RustOxcCompilerOptions {
@@ -22,10 +24,15 @@ export interface RustOxcCompiler extends ManagedOxcCompiler {
   readonly processId: number | undefined;
   readonly bridgeProcessId: number | undefined;
 }
-interface Pending {
+interface Queued {
+  readonly id: number;
   readonly method: "parse" | "transform";
+  readonly frame: string;
   readonly resolve: (value: Record<string, unknown>) => void;
   readonly reject: (error: Error) => void;
+  restarts: number;
+}
+interface Inflight extends Queued {
   readonly timer: ReturnType<typeof setTimeout>;
 }
 function record(value: unknown): value is Record<string, unknown> {
@@ -37,7 +44,7 @@ function nativeErrors(value: unknown): value is NativeOxcError[] {
     && (item.labels === undefined || (Array.isArray(item.labels) && item.labels.every((label) => record(label)
       && Number.isSafeInteger(label.start) && Number(label.start) >= 0))));
 }
-function validResult(value: unknown, method: Pending["method"]): value is Record<string, unknown> {
+function validResult(value: unknown, method: Queued["method"]): value is Record<string, unknown> {
   if (!record(value) || !nativeErrors(value.errors)) return false;
   if (method === "parse") return value.errors.length > 0 || (record(value.program)
     && value.program.type === "Program" && Array.isArray(value.program.body));
@@ -62,15 +69,44 @@ export function createRustOxcCompiler(options: RustOxcCompilerOptions): RustOxcC
   let bridgePid: number | undefined;
   let sequence = 0;
   let closed = false;
-  const pending = new Map<number, Pending>();
+  let inflight: Inflight | undefined;
+  const queue: Queued[] = [];
   const exiting = new Set<Promise<void>>();
 
+  /**
+   * The service compiles one request at a time, so only the in-flight request is
+   * implicated in a failure. Queued requests were never written and carry no side
+   * effect: re-queue them onto a fresh process instead of failing them for another
+   * request's fault, and give up after MAX_RESTARTS so a service that cannot run
+   * cannot spin up processes indefinitely.
+   */
   const fail = (active: ChildProcessWithoutNullStreams, error: Error): void => {
     if (child !== active) return;
     child = undefined;
-    for (const request of pending.values()) { clearTimeout(request.timer); request.reject(error); }
-    pending.clear();
+    const failed = inflight;
+    inflight = undefined;
+    if (failed) { clearTimeout(failed.timer); failed.reject(error); }
     active.kill("SIGKILL");
+    for (const request of queue.splice(0)) {
+      if (request.restarts >= MAX_RESTARTS) request.reject(error);
+      else { request.restarts += 1; queue.push(request); }
+    }
+    pump();
+  };
+  /** Writes at most one request at a time so a deadline measures service work, not queue depth. */
+  const pump = (): void => {
+    if (inflight || queue.length === 0 || closed) return;
+    const next = queue.shift()!;
+    let active: ChildProcessWithoutNullStreams;
+    try { active = start(); }
+    catch (error) {
+      next.reject(error instanceof Error ? error : new Error("OXC Rust service could not start."));
+      pump();
+      return;
+    }
+    const timer = setTimeout(() => fail(active, new Error(`OXC Rust service exceeded the ${timeoutMs}ms deadline.`)), timeoutMs);
+    inflight = { ...next, timer };
+    active.stdin.write(next.frame, (error) => { if (error) fail(active, new Error("OXC service write failed.")); });
   };
   const start = (): ChildProcessWithoutNullStreams => {
     if (child) return child;
@@ -99,8 +135,8 @@ export function createRustOxcCompiler(options: RustOxcCompilerOptions): RustOxcC
         if (!record(value) || value.version !== 1 || !Number.isSafeInteger(value.id)) {
           fail(active, new Error("OXC service returned an invalid envelope.")); return;
         }
-        const request = pending.get(Number(value.id));
-        if (!request) { fail(active, new Error("OXC service returned an unknown request id.")); return; }
+        const request = inflight;
+        if (!request || request.id !== Number(value.id)) { fail(active, new Error("OXC service returned an unknown request id.")); return; }
         const validIdentity = transport === "stdio"
           ? value.pid === active.pid && value.transport === undefined
           : value.transport === "nsxpc" && value.bridgePid === active.pid
@@ -111,25 +147,24 @@ export function createRustOxcCompiler(options: RustOxcCompilerOptions): RustOxcC
         }
         lastPid = Number(value.pid);
         clearTimeout(request.timer);
-        pending.delete(Number(value.id));
+        inflight = undefined;
         request.resolve(value.result);
+        pump();
       }
     });
     return active;
   };
 
-  const call = async (method: Pending["method"], filename: string, source: string): Promise<Record<string, unknown>> => {
+  const call = async (method: Queued["method"], filename: string, source: string): Promise<Record<string, unknown>> => {
     if (closed) throw new Error("OXC Rust compiler is closed.");
-    if (pending.size >= MAX_PENDING) throw new Error("OXC service queue is full.");
+    if (queue.length + (inflight ? 1 : 0) >= MAX_PENDING) throw new Error("OXC service queue is full.");
     const id = ++sequence;
     if (id > 0xffffffff) throw new Error("OXC request ids exhausted.");
     const frame = JSON.stringify({ version: 1, id, method, filename, source }) + "\n";
     if (Buffer.byteLength(frame) > MAX_REQUEST_BYTES) throw new Error("OXC service request exceeds its frame limit.");
-    const active = start();
     return await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => fail(active, new Error(`OXC Rust service exceeded the ${timeoutMs}ms deadline.`)), timeoutMs);
-      pending.set(id, { method, resolve, reject, timer });
-      active.stdin.write(frame, (error) => { if (error) fail(active, new Error("OXC service write failed.")); });
+      queue.push({ id, method, frame, resolve, reject, restarts: 0 });
+      pump();
     });
   };
   const backend: NativeOxcBackend = {
@@ -158,6 +193,7 @@ export function createRustOxcCompiler(options: RustOxcCompilerOptions): RustOxcC
     },
     async close() {
       closed = true;
+      for (const request of queue.splice(0)) request.reject(new Error("OXC Rust compiler is closed."));
       if (child) fail(child, new Error("OXC Rust compiler is closed."));
       await Promise.all([...exiting]);
     },

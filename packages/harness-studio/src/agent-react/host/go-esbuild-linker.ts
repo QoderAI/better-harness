@@ -5,6 +5,8 @@ import { entryModuleSource, type LinkResult, type ManagedArtifactLinker } from "
 export const GO_ESBUILD_LINKER_VERSION = "esbuild-go-0.28.2+link-v1";
 const MAX_FRAME = 64 * 1024 * 1024;
 const MAX_PENDING = 16;
+/** One re-queue after another request killed the service; bounds restart storms. */
+const MAX_RESTARTS = 1;
 
 export interface GoEsbuildLinkerOptions {
   readonly executable: string;
@@ -17,11 +19,16 @@ export interface GoEsbuildLinker extends ManagedArtifactLinker {
   readonly processId: number | undefined;
   readonly bridgeProcessId: number | undefined;
 }
-interface Pending {
+interface Queued {
+  readonly id: number;
+  readonly frame: string;
   readonly resolve: (result: LinkResult) => void;
   readonly reject: (error: Error) => void;
-  readonly timer: ReturnType<typeof setTimeout>;
   readonly maxOutputBytes: number;
+  restarts: number;
+}
+interface Inflight extends Queued {
+  readonly timer: ReturnType<typeof setTimeout>;
 }
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -54,15 +61,40 @@ export function createGoEsbuildLinker(options: GoEsbuildLinkerOptions): GoEsbuil
   let bridgePid: number | undefined;
   let closed = false;
   let sequence = 0;
-  const pending = new Map<number, Pending>();
+  let inflight: Inflight | undefined;
+  const queue: Queued[] = [];
   const exiting = new Set<Promise<void>>();
 
+  /**
+   * The service links one request at a time, so only the in-flight request is
+   * implicated in a failure. Queued requests were never written and carry no side
+   * effect: re-queue them onto a fresh process instead of failing them for another
+   * request's fault, and give up after MAX_RESTARTS so a service that cannot run
+   * cannot spin up processes indefinitely.
+   */
   function fail(active: ChildProcessWithoutNullStreams, reason: string): void {
     if (child !== active) return;
     child = undefined;
-    for (const request of pending.values()) { clearTimeout(request.timer); request.reject(new Error(reason)); }
-    pending.clear();
+    const failed = inflight;
+    inflight = undefined;
+    if (failed) { clearTimeout(failed.timer); failed.reject(new Error(reason)); }
     active.kill("SIGKILL");
+    for (const request of queue.splice(0)) {
+      if (request.restarts >= MAX_RESTARTS) request.reject(new Error(reason));
+      else { request.restarts += 1; queue.push(request); }
+    }
+    pump();
+  }
+  /** Writes at most one request at a time so a deadline measures service work, not queue depth. */
+  function pump(): void {
+    if (inflight || queue.length === 0 || closed) return;
+    const next = queue.shift()!;
+    let active: ChildProcessWithoutNullStreams;
+    try { active = start(); }
+    catch { next.reject(new Error("Go esbuild service could not start.")); pump(); return; }
+    const timer = setTimeout(() => fail(active, "Go esbuild exceeded its deadline."), timeoutMs);
+    inflight = { ...next, timer };
+    active.stdin.write(next.frame, (error) => { if (error) fail(active, "Go esbuild write failed."); });
   }
   function start(): ChildProcessWithoutNullStreams {
     if (child) return child;
@@ -95,7 +127,7 @@ export function createGoEsbuildLinker(options: GoEsbuildLinkerOptions): GoEsbuil
         if (!record(value) || value.version !== 1 || !Number.isSafeInteger(value.id) || value.engineVersion !== GO_ESBUILD_LINKER_VERSION) {
           fail(active, "Go esbuild returned an incompatible envelope."); return;
         }
-        const request = pending.get(Number(value.id));
+        const request = inflight && inflight.id === Number(value.id) ? inflight : undefined;
         const validIdentity = transport === "stdio"
           ? value.pid === active.pid && value.transport === undefined
           : value.transport === "nsxpc" && value.bridgePid === active.pid
@@ -106,8 +138,9 @@ export function createGoEsbuildLinker(options: GoEsbuildLinkerOptions): GoEsbuil
         }
         lastPid = Number(value.pid);
         clearTimeout(request.timer);
-        pending.delete(Number(value.id));
+        inflight = undefined;
         request.resolve(value.result);
+        pump();
       }
     });
     return active;
@@ -136,12 +169,10 @@ export function createGoEsbuildLinker(options: GoEsbuildLinkerOptions): GoEsbuil
         return { status: "failed", diagnostics: [{ level: "error", code: "link/failed", message: "Go esbuild request exceeds its frame or sequence limit." }] };
       }
       try {
-        if (pending.size >= MAX_PENDING) throw new Error("Go esbuild queue is full.");
-        const active = start();
+        if (queue.length + (inflight ? 1 : 0) >= MAX_PENDING) throw new Error("Go esbuild queue is full.");
         return await new Promise<LinkResult>((resolve, reject) => {
-          const timer = setTimeout(() => fail(active, "Go esbuild exceeded its deadline."), timeoutMs);
-          pending.set(id, { resolve, reject, timer, maxOutputBytes: input.maxOutputBytes });
-          active.stdin.write(frame, (error) => { if (error) fail(active, "Go esbuild write failed."); });
+          queue.push({ id, frame, resolve, reject, maxOutputBytes: input.maxOutputBytes, restarts: 0 });
+          pump();
         });
       } catch {
         return { status: "failed", diagnostics: [{ level: "error", code: "limit/compile-timeout",
@@ -150,6 +181,7 @@ export function createGoEsbuildLinker(options: GoEsbuildLinkerOptions): GoEsbuil
     },
     async close() {
       closed = true;
+      for (const request of queue.splice(0)) request.reject(new Error("Go esbuild linker is closed."));
       if (child) fail(child, "Go esbuild linker is closed.");
       await Promise.all([...exiting]);
     },
