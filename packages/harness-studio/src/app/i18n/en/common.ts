@@ -3,6 +3,10 @@ export const common = {
     inbox: "Inbox", project: "Project Memory", sources: "Memory sources", preview: "Design preview", filters: "Memory filters", queue: "Inbox", curated: "Project", allCandidates: "All candidates", allMemory: "All Memory", review: "Needs review", conflict: "Conflicts", kind: "Type", refineryHint: "From agent evidence to project Memory.", candidates: "Memory candidates", search: "Filter candidates…", noProject: "No promoted Memory yet", noCandidates: "No candidates in this view", promoteHint: "Accept a candidate and choose where it belongs.", filterHint: "Change the filter to continue reviewing.", accepted: "Accepted", new: "New", evidenceShort: "sources", suggested: "Suggested", owner: "Owner", inspector: "Inspector", select: "Select a candidate to inspect its evidence and choose an owner.", statement: "Statement", projectScope: "Example project", proposed: "Proposed", evidence: "Evidence", olderMemory: "Older Memory", currentDecision: "Current decision", resolveConflict: "Use the reviewed statement to resolve this conflict", appliesTo: "Applies to", promotion: "Promotion lineage", promoteTo: "Promote to", nativeEvidence: "Native evidence", candidate: "Memory candidate", humanReview: "Human review", accept: "Accept", edit: "Edit", done: "Done", reject: "Reject", previewBoundary: "Example candidates · changes stay in this preview", exampleEvidence: "example sources", acceptedNotice: "Accepted “{{title}}” → {{owner}} in this preview.", rejectedNotice: "Removed “{{title}}” from this preview inbox.",
   },
   memory: {
+    contextProvided: "Context supplied",
+    contextScope: "Frozen document snapshot · {{lines}} lines",
+    openContext: "Open source",
+
     resizeExplorer: "Resize memory explorer",
     resizeAnalysis: "Resize memory analysis",
     frontmatter: "Frontmatter",

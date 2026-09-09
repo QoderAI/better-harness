@@ -1,3 +1,4 @@
+import { observedToolPaths } from "./acp-tool-projection.js";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSessionOwnedState } from "./session-view-store.js";
@@ -13,7 +14,7 @@ import { X } from "@phosphor-icons/react/X";
 import { PromptInput, PromptInputButton, PromptInputFooter, PromptInputHeader, PromptInputSubmit, PromptInputTextarea, PromptInputTools } from "../components/ai-elements/prompt-input.js";
 import type { PromptSuggestion } from "../components/ai-elements/prompt-input-model.js";
 
-export function AcpComposer({ state, actions, context, toolbar, compact = false }: { state: HarnessRunState; actions: AcpSessionActions; context?: ReactNode; toolbar?: ReactNode; compact?: boolean }): React.JSX.Element {
+export function AcpComposer({ state, actions, context, toolbar, compact = false, sessionLabel, onCloseSession }: { state: HarnessRunState; actions: AcpSessionActions; context?: ReactNode; toolbar?: ReactNode; compact?: boolean; sessionLabel?: string; onCloseSession?: () => Promise<void> }): React.JSX.Element {
   const { t } = useTranslation("run");
   const key = `acp-draft:${state.runId}`;
   const [draft, setDraft] = useState(() => { try { return localStorage.getItem(key) ?? ""; } catch { return ""; } });
@@ -31,7 +32,7 @@ export function AcpComposer({ state, actions, context, toolbar, compact = false 
   const generating = conversation.status === "generating" || conversation.status === "cancelling";
   const closed = conversation.status === "closed";
   const commands: PromptSuggestion[] = (state.acp.commands ?? []).map(command => ({ id: `command:${command.name}`, trigger: "/", label: `/${command.name}`, description: [command.description, command.inputHint].filter(Boolean).join(" · "), value: `/${command.name}` }));
-  const paths = [...new Set([...state.acp.tools.values()].flatMap(tool => tool.locations?.map(location => location.path) ?? []))];
+  const paths = [...new Set([...state.acp.tools.values()].flatMap(observedToolPaths))];
   const mentions: PromptSuggestion[] = paths.map(path => ({ id: `file:${path}`, trigger: "@", label: path, description: t("conversation.observedFile"), value: `@${path}` }));
   for (const block of attachments) if (block.type === "resource") mentions.push({ id: `attachment:${block.resource.uri}`, trigger: "@", label: attachmentLabel(block), description: t("conversation.attachedFile"), value: `@${attachmentLabel(block)}` });
   const canAttach = conversation.capabilities.image || conversation.capabilities.audio || conversation.capabilities.embeddedContext;
@@ -102,7 +103,7 @@ export function AcpComposer({ state, actions, context, toolbar, compact = false 
         </li>)}</ul>}
       </PromptInputHeader>}
       <PromptInputTextarea ref={input} rows={2} value={draft} onValueChange={setDraft} onSend={immediately => void send(immediately)}
-        aria-label={t("conversation.followup")} placeholder={t("conversation.promptPlaceholder")} disabled={closed}
+        aria-description={t("conversation.inputKeys")} title={t("conversation.inputKeys")} aria-label={t("conversation.followup")} placeholder={t("conversation.promptPlaceholder")} disabled={closed}
         suggestions={[...commands, ...mentions]} suggestionLabels={{ commands: t("conversation.commands"), mentions: t("conversation.sessionFiles"), empty: t("conversation.noSuggestions"), keyboard: t("conversation.suggestionKeys") }}
         onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); void attach(event.clipboardData.files); } }} />
       <PromptInputFooter className="acp-composer-actions">
@@ -117,12 +118,13 @@ export function AcpComposer({ state, actions, context, toolbar, compact = false 
           <PromptInputSubmit label={submitLabel} state={editing ? "save" : generating ? "queue" : "send"} pending={pending || loading} disabled={pending || loading || closed || (!draft.trim() && !attachments.length)} />
         </div>
       </PromptInputFooter>
+      <div className="acp-composer-caption"><span className="acp-turn-status" role="status">{t(`conversation.status.${conversation.status}`)}</span>
+        {sessionLabel && <span className="acp-composer-agent-label">{sessionLabel}</span>}
+        <span className="ai-prompt-key-hint" hidden={compact}>{t("conversation.inputKeys")}</span>
+        {generating && (!!draft.trim() || attachments.length > 0) && <button type="button" disabled={pending || loading} onClick={() => void send(true)}>{t("conversation.sendNow")}</button>}
+        {!closed && (onCloseSession || (!compact && (!generating || error !== undefined || conversation.status === "cancelling"))) && <button type="button" disabled={pending} onClick={() => void act(onCloseSession ?? (() => actions.execute({ action: "close" })))}>{t("conversation.close")}</button>}
+      </div>
     </PromptInput>
-    {(!compact || generating) && <div className="acp-composer-caption"><span className="acp-turn-status" role="status">{t(`conversation.status.${conversation.status}`)}</span>
-      <span className="ai-prompt-key-hint">{t("conversation.inputKeys")}</span>
-      {generating && (!!draft.trim() || attachments.length > 0) && <button type="button" disabled={pending || loading} onClick={() => void send(true)}>{t("conversation.sendNow")}</button>}
-      {!compact && (!generating || error !== undefined || conversation.status === "cancelling") && !closed && <button type="button" disabled={pending} onClick={() => void act(() => actions.execute({ action: "close" }))}>{t("conversation.close")}</button>}
-    </div>}
     {conversation.turns.at(-1)?.error && <p className="acp-setting-error" role="alert">{conversation.turns.at(-1)?.error}</p>}
     {conversation.turns.at(-1)?.stopReason && !["end_turn", "error"].includes(conversation.turns.at(-1)!.stopReason!) && <p className="acp-session-notice">{t("conversation.turnStopped", { reason: conversation.turns.at(-1)!.stopReason })}</p>}
     {error && <p className="acp-setting-error" role="alert">{error}</p>}

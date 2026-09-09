@@ -62,6 +62,12 @@ export function MemoryAnalysisPanel({ snapshot, entry, agents, maxBytes, onClose
     stateRef.current = settleRunState({ ...stateRef.current, status: 'finished' }, 'interrupted'); setState(stateRef.current);
   }
   const context = selection && <button className="memory-analysis-source" type="button" title={selection.snapshot.document?.nativeIdentity.path} onClick={() => onReveal(selection.snapshot, selection.entry)}><FileText size={14} aria-hidden="true" /><span>{selection.snapshot.document?.metadata.title}{selection.entry ? ` · ${selection.entry.title}` : ''}</span></button>;
+  const contextEvidence = frozen && state.conversation?.turns.length ? <details className="acp-context-evidence">
+    <summary><FileText size={14} aria-hidden="true" /><span>{t('memory.contextProvided')} · {frozen.snapshot.document?.metadata.title}</span></summary>
+    <code>{frozen.snapshot.document?.nativeIdentity.path}</code>
+    <p>{t('memory.contextScope', { lines: frozen.snapshot.content.split(/\r?\n/u).length })}{frozen.entry ? ` · ${frozen.entry.title} [L${frozen.entry.source.startLine}–L${frozen.entry.source.endLine}]` : ''}</p>
+    <button type="button" onClick={() => onReveal(frozen.snapshot, frozen.entry)}>{t('memory.openContext')}</button>
+  </details> : undefined;
   async function sendInitial(): Promise<void> {
     if (!state.acp.prepared || !actions || sending || !draft.trim()) return;
     setSending(true); setSendError(undefined); sentPrompt.current = draft;
@@ -71,12 +77,12 @@ export function MemoryAnalysisPanel({ snapshot, entry, agents, maxBytes, onClose
   }
   return <aside className="memory-analysis memory-acp-analysis" aria-label={t('memory.aiAnalysis')} onKeyDown={event => { if (event.key === 'Escape' && event.target === close.current) { event.stopPropagation(); onClose(); } }}>
     <div className="memory-analysis-toolbar"><button ref={close} type="button" onClick={onClose} aria-label={t('memory.closeAnalysis')}><X size={15} /></button></div>
-    {state.runId ? <AcpSessionStream compact showComposer={false} state={displayState} prompt="" actions={actions} onPermission={(requestId, optionId) => postAcpRunAction(state.runId!, { requestId, optionId })} /> : <div className="memory-analysis-transcript" />}
+    {state.runId ? <AcpSessionStream contextEvidence={contextEvidence} compact showComposer={false} state={displayState} prompt="" actions={actions} onPermission={(requestId, optionId) => postAcpRunAction(state.runId!, { requestId, optionId })} /> : <div className="memory-analysis-transcript" />}
     <footer className="memory-analysis-composer">
       {(!state.runId || state.acp.prepared) && <Suggestions className="memory-analysis-suggestions" aria-label={t('memory.analysisSuggestions')}>
         {(['review', 'conflicts'] as const).map(kind => <Suggestion key={kind} suggestion={t(`memory.suggestions.${kind}.prompt`)} disabled={sending} onClick={value => { setDraft(value); input.current?.focus(); }}>{t(`memory.suggestions.${kind}.label`)}</Suggestion>)}
       </Suggestions>}
-      {active && state.conversation && !state.acp.prepared && actions ? <AcpComposer key={state.runId} compact context={context} state={state} actions={actions} toolbar={<AcpSessionSettings session={state.acp} runId={state.runId} active={active} actions={actions} />} /> : <div className="acp-composer">
+      {active && state.conversation && !state.acp.prepared && actions ? <AcpComposer key={state.runId} compact sessionLabel={agents.find(agent => agent.id === agentId)?.label} onCloseSession={stop} context={context} state={state} actions={actions} toolbar={<AcpSessionSettings session={state.acp} runId={state.runId} active={active} actions={actions} />} /> : <div className="acp-composer">
         <PromptInput onSubmit={event => { event.preventDefault(); void sendInitial(); }}>
           {context && <PromptInputHeader>{context}</PromptInputHeader>}
           <PromptInputTextarea ref={input} rows={3} aria-label={t('memory.analysisInput')} placeholder={t('memory.analysisPlaceholder')} value={draft} maxLength={8192} onValueChange={setDraft} />
@@ -85,9 +91,9 @@ export function MemoryAnalysisPanel({ snapshot, entry, agents, maxBytes, onClose
           </PromptInputTools>
           {!active ? <button className="primary" type="button" disabled={!snapshot || !agentId || tooLarge} onClick={() => void connect()}>{t('memory.connectAgent')}</button> : <PromptInputSubmit label={t('memory.sendAnalysis')} pending={sending} disabled={!state.acp.prepared || !active || sending || !draft.trim()} />}
           </PromptInputFooter>
+          {active && <div className="acp-composer-caption"><span className="acp-composer-agent-label">{agents.find(agent => agent.id === agentId)?.label}</span><button type="button" onClick={() => void stop()}>{t('memory.closeSession')}</button></div>}
         </PromptInput>
       </div>}
-      {active && <div className="acp-composer-caption"><span>{agents.find(agent => agent.id === agentId)?.label}</span><button type="button" onClick={() => void stop()}>{t('memory.closeSession')}</button></div>}
       {sendError && <p role="alert">{sendError}</p>}
       {!active && tooLarge && <p role="status">{t('memory.analysisTooLarge')}</p>}
       {!selection && <p>{t('memory.selectForAnalysis')}</p>}

@@ -9,6 +9,13 @@ export const compare: typeof enCompare = {
     results: "证据结果",
   },
   live: {
+    resize: "调整 {{left}} 和 {{right}} 的宽度",
+    files: "文件 · {{count}}",
+    file: "已观察的路径",
+    noFiles: "尚未观察到明确的文件路径。",
+    notObserved: "未观察到",
+    revealFileCall: "{{agent}}：{{path}} · {{status}} · 查看工具调用",
+    fileKind: { read: "读取", edit: "编辑", delete: "删除", search: "搜索", other: "工具" },
     chooseSession: "选择会话",
     newComparison: "新建比较",
     ready: "已就绪",
@@ -44,6 +51,8 @@ export const compare: typeof enCompare = {
     laneWarnings: "{{count}} 条警告",
     laneWarnings_other: "{{count}} 条警告",
     status: {
+      ready: "就绪", completed: "已完成", permission: "等待批准",
+      cancelling: "正在中断…", interrupted: "已中断", stopped: "已停止", closed: "已关闭",
       idle: "空闲",
       running: "运行中",
       finished: "已完成",

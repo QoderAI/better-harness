@@ -25,11 +25,10 @@ const statusIcons = {
 
 export type ToolHeaderProps = ComponentProps<typeof Collapsible.Trigger> & { title: string; state: ToolState; statusLabel: string; summary?: string };
 export const ToolHeader = ({ className = "", title, state, statusLabel, summary, ...props }: ToolHeaderProps) => {
-  const StatusIcon = statusIcons[state];
   return <Collapsible.Trigger className={`ai-tool-header ${className}`} {...props}>
     <Wrench className="ai-tool-icon" size={15} aria-hidden="true" />
-    <span className="ai-tool-title"><strong>{title}</strong>{summary && <code>{summary}</code>}</span>
-    <span className="ai-tool-status" data-status={state} aria-live="polite"><StatusIcon size={14} aria-hidden="true" />{statusLabel}</span>
+    <span className="ai-tool-title"><strong>{title}</strong>{summary && <code title={summary}>{summary}</code>}</span>
+    <ToolStatus live state={state} label={statusLabel} />
     <CaretDown className="ai-disclosure-chevron" size={14} aria-hidden="true" />
   </Collapsible.Trigger>;
 };
@@ -45,3 +44,8 @@ export const ToolInput = ({ label, children, ...props }: ComponentProps<"section
 export const ToolOutput = ({ label, output, children, ...props }: ComponentProps<"section"> & { label: string; output?: ReactNode }) => (
   <section className="ai-tool-output" {...props}><h4>{label}</h4>{output}{children}</section>
 );
+
+export function ToolStatus({ state, label, live = false }: { state: ToolState; label: string; live?: boolean }): React.JSX.Element {
+  const Icon = statusIcons[state];
+  return <span className="ai-tool-status" data-status={state} aria-live={live ? "polite" : undefined}><Icon size={14} aria-hidden="true" />{label}</span>;
+}

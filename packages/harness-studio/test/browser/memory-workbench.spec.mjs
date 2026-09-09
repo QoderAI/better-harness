@@ -16,7 +16,7 @@ test.beforeAll(async () => {
   for (const relative of ['skills/one/SKILL.md', 'skills/two/SKILL.md', 'extensions/one.md', 'extensions/two.md', 'extensions/three.md', 'extensions/four.md', 'raw_memories.md']) {
     const file = join(root, ...relative.split('/')); await mkdir(dirname(file), { recursive: true }); await writeFile(file, '# Synthetic support material');
   }
-  const agent = { command: process.execPath, args: [join(dirname(fileURLToPath(import.meta.url)), '../../../harness/test/fixtures/acp-agent.mjs'), '--conversation', '--session-controls', '--record-prompts', join(home, 'prompts.jsonl')] };
+  const agent = { command: process.execPath, args: [join(dirname(fileURLToPath(import.meta.url)), '../../../harness/test/fixtures/acp-agent.mjs'), '--conversation', '--session-controls', '--core-settings-only', '--record-prompts', join(home, 'prompts.jsonl')] };
   studio = await startHarnessStudioServer({ port: 0, appDir: join(dirname(fileURLToPath(import.meta.url)), '../../dist/app'), memoryHome: home, memoryAcpAgents: [{ id: 'fixture', label: 'Fixture ACP', agent }] });
 });
 test.afterAll(async () => { await studio?.close(); await rm(home, { recursive: true, force: true }); });
@@ -56,12 +56,21 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     const panel = page.locator('.memory-analysis');
     const model = panel.getByRole('combobox', { name: 'Model', exact: true });
     await expect(model).toHaveValue('fixture-default');
+    await expect(model.locator('option')).toHaveCount(22);
+    await expect(panel.locator('.acp-session-settings')).toHaveCount(0);
     await model.selectOption('fixture-candidate');
     await expect(model).toHaveValue('fixture-candidate');
     await panel.getByRole('textbox', { name: 'Analysis request', exact: true }).fill(`Edited request ${layout.name}`);
     await expect(panel.getByText('Ready. Send the prompt when you are ready.', { exact: true })).toHaveCount(0);
     await panel.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(panel.locator('.streaming-message').last()).toContainText('turn:1 session:fixture-session blocks:1 model:fixture-candidate');
+    const source = panel.locator('.acp-context-evidence');
+    await expect(source).toContainText('Context supplied');
+    await source.locator('summary').click();
+    await expect(source).toContainText('Frozen document snapshot');
+    await expect(source).toContainText('General Tips');
+    await expect(source.locator('code')).toContainText('memory_summary.md');
+    await source.locator('summary').click();
     const received = (await readFile(join(home, 'prompts.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line)).at(-1);
     const sent = received.prompt.map(block => block.text ?? '').join('\n');
     expect(sent).toContain(`User request:\nEdited request ${layout.name}`);
@@ -74,19 +83,29 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     // The fixture withholds completion until Stop, proving a visible first chunk.
     await panel.getByRole('button', { name: 'Stop', exact: true }).click();
     await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
-    await expect(panel.locator('.acp-turn-status')).toHaveCount(0);
+    await expect(panel.locator('.ai-prompt-input .acp-turn-status')).toHaveText('Ready');
+    await expect(panel.locator('.memory-analysis-composer > .acp-composer-caption')).toHaveCount(0);
+    await expect(panel.locator('.ai-prompt-input').getByRole('button', { name: 'Close session', exact: true })).toBeVisible();
+    await expect(panel.locator('.ai-prompt-input .acp-composer-agent-label')).toHaveText('Fixture ACP');
+    await expect(panel.locator('.ai-prompt-key-hint')).toBeHidden();
     await draft.fill('third'); await draft.press('Enter');
     await expect(panel.locator('.streaming-message').last()).toContainText('turn:3 session:fixture-session');
     if (layout.width > 700) {
       await page.getByRole('tab', { name: 'User Profile', exact: true }).click();
       await expect(panel.locator('.memory-analysis-source')).toContainText('General Tips');
       await expect(panel.locator('.streaming-message').last()).toContainText('turn:3');
+      await source.locator('summary').click();
+      await expect(source).toContainText('General Tips');
+      await source.getByRole('button', { name: 'Open source', exact: true }).click();
+      await expect(page.getByRole('tab', { name: 'General Tips', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await page.screenshot({ animations: 'disabled', path: info.outputPath(`memory-context-${layout.name}.png`) });
+      await source.locator('summary').click();
     }
     await draft.focus(); expect(await panel.locator('.ai-prompt-input').evaluate(node => getComputedStyle(node).outlineStyle)).toBe('solid');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ animations: "disabled", path: info.outputPath(`memory-acp-${layout.name}.png`) });
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-    await expect.poll(() => panel.locator('.ai-tool-header').last().evaluate(node => {
+    await expect.poll(() => panel.locator('.acp-activity-header').last().evaluate(node => {
       const probe = document.createElement('span'); probe.style.color = 'var(--color-text-muted)'; node.append(probe);
       const expected = getComputedStyle(probe).color; probe.remove();
       return getComputedStyle(node).color === expected;

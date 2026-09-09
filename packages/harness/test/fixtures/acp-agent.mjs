@@ -11,12 +11,17 @@ const conversation = process.argv.includes("--conversation");
 const sessionConfig = {};
 const controls = process.argv.includes("--session-controls");
 function configOptions() {
-  return [
+  const options = [
     { id: "mode", name: "Mode", category: "mode", type: "select", currentValue: sessionConfig.mode ?? "agent", options: [{ value: "agent", name: "Agent" }, { value: "plan", name: "Plan" }] },
     { id: "model", name: "Model", category: "model", type: "select", currentValue: sessionConfig.model ?? "fixture-default", options: [{ group: "fixture", name: "Fixture models", options: [{ value: "fixture-default", name: "Fixture default" }, { value: "fixture-candidate", name: "Fixture candidate" }] }] },
     { id: "effort", name: "Reasoning effort", category: "thought_level", type: "select", currentValue: sessionConfig.effort ?? "high", description: "Reasoning budget for this session.", options: (sessionConfig.model === "fixture-candidate" ? ["low", "medium"] : ["low", "medium", "high"]).map(value => ({ value, name: value })) },
     { id: "fast", name: "Fast mode", type: "boolean", currentValue: sessionConfig.fast ?? false },
   ];
+  if (process.argv.includes("--core-settings-only")) {
+    options[1].options[0].options.push(...Array.from({ length: 20 }, (_, index) => ({ value: `model-${index}`, name: `Model ${index}` })));
+    return options.filter(option => option.id !== "fast");
+  }
+  return options;
 }
 
 const app = agent({ name: "better-harness-acp-fixture" })
@@ -125,6 +130,23 @@ const app = agent({ name: "better-harness-acp-fixture" })
       await notify({ sessionUpdate: "available_commands_update", availableCommands: [{ name: "review", description: "Review changes", input: { hint: "revision" } }] });
       await notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `turn:${turnCount} session:${sessionId} blocks:${context.params.prompt.length} model:${sessionConfig.model ?? "fixture-default"}\n` } });
       await notify({ sessionUpdate: "tool_call", toolCallId: `tool-${turnCount}`, title: "Read conversation evidence", kind: "read", status: "in_progress" });
+      if (process.argv.includes("--compare-files")) {
+        await notify({ sessionUpdate: "tool_call_update", toolCallId: `tool-${turnCount}`, rawInput: { path: "src/shared.ts" }, locations: [{ path: "src/shared.ts", line: 1 }, ...(process.argv.includes("--compare-read-failure") ? [{ path: "src/beta-only.ts" }] : [])] });
+      }
+      if (text.includes("compact activity fixture")) {
+        await notify({ sessionUpdate: "agent_thought_chunk", messageId: `activity-thought-${turnCount}`, content: { type: "text", text: "Inspect the source before changing it." } });
+        for (const [id, kind, status, title] of [
+          ["command", "execute", "completed", "Run checks"], ["search", "search", "failed", "Search source"],
+          ["edit", "edit", "in_progress", "Edit source"], ["read", "read", "completed", "Read architecture"],
+        ]) await notify({ sessionUpdate: "tool_call", toolCallId: `activity-${id}-${turnCount}`, kind, status, title, rawInput: { path: "packages/harness-studio/src/app/run/AcpSessionStream.tsx" }, rawOutput: status === "completed" ? "Fixture result" : undefined });
+        await context.client.request(methods.client.session.requestPermission, {
+          sessionId, toolCall: { toolCallId: `activity-edit-${turnCount}`, title: "Edit source", kind: "edit", status: "pending" },
+          options: [{ optionId: "finish", name: "Finish activity", kind: "allow_once" }],
+        });
+        await notify({ sessionUpdate: "tool_call_update", toolCallId: `activity-edit-${turnCount}`, status: "completed", rawOutput: "Updated source" });
+        await notify({ sessionUpdate: "tool_call", toolCallId: `activity-final-${turnCount}`, kind: "execute", status: "completed", title: "Verify result", rawOutput: "Checks passed" });
+        await notify({ sessionUpdate: "agent_message_chunk", messageId: `activity-result-${turnCount}`, content: { type: "text", text: "The source review is complete. One search failed; the remaining results are available in the activity details." } });
+      }
       if (text.includes("markdown composer fixture")) {
         await notify({ sessionUpdate: "available_commands_update", availableCommands: [{ name: "review", description: "Review changes", input: { hint: "revision" } }, { name: "refactor", description: "Refactor selected code" }] });
         await notify({ sessionUpdate: "tool_call_update", toolCallId: `tool-${turnCount}`, locations: [{ path: "src/composer.tsx", line: 1 }] });
@@ -145,7 +167,7 @@ const app = agent({ name: "better-harness-acp-fixture" })
       if (text.includes("wait")) while (!cancelled) await new Promise(resolve => setTimeout(resolve, 10));
       if (text.includes("long transcript")) for (let index = 0; index < 250; index++) await notify({ sessionUpdate: "agent_message_chunk", messageId: `turn-${turnCount}-message-${index}`, content: { type: "text", text: `Retained entry ${index}: readable conversation history.` } });
       // The final tool update deliberately follows cancellation, before its acknowledgement.
-      await notify({ sessionUpdate: "tool_call_update", toolCallId: `tool-${turnCount}`, status: "completed", rawOutput: { turns: turnCount, history: conversationHistory, blocks: context.params.prompt } });
+      await notify({ sessionUpdate: "tool_call_update", toolCallId: `tool-${turnCount}`, status: process.argv.includes("--compare-read-failure") ? "failed" : "completed", rawOutput: { turns: turnCount, history: conversationHistory, blocks: context.params.prompt } });
       return { stopReason: cancelled ? "cancelled" : text.includes("refuse") ? "refusal" : "end_turn" };
     }
     if (controls) await context.client.notify(methods.client.session.update, { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `configured:${sessionConfig.model ?? "fixture-default"}:${sessionConfig.effort ?? "high"}:${sessionConfig.fast ?? false}\n` } } });

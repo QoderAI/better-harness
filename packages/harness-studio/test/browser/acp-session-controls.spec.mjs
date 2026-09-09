@@ -53,6 +53,7 @@ test("configures model and effort before prompting, retries errors, and isolates
   await expect(alpha.getByRole("combobox", { name: "Reasoning effort" })).toHaveValue("medium");
   await alpha.getByRole("combobox", { name: "Reasoning effort" }).selectOption("low");
   await alpha.locator(".acp-session-settings > summary").click();
+  await expect(alpha.getByRole("combobox", { name: "Model", exact: true })).toHaveCount(1);
   await alpha.getByRole("checkbox", { name: "Fast mode" }).click();
   await expect(alpha.getByRole("checkbox", { name: "Fast mode" })).toBeChecked();
   await expect(beta.getByRole("combobox", { name: "Model", exact: true })).toHaveValue("fixture-default");
@@ -72,7 +73,7 @@ test("configures model and effort before prompting, retries errors, and isolates
   await expect(alpha.locator(".streaming-message").last()).toContainText("configured:fixture-candidate:low:true");
   await expect(alpha.locator(".live-compare-counts")).toContainText("1 tool call");
   await alpha.getByRole("button", { name: "Allow once", exact: true }).click();
-  await expect(alpha.locator(".run-badge")).toHaveText("Ready");
+  await expect(alpha.locator(".run-badge")).toHaveText("Completed");
   await alpha.getByRole("button", { name: "Close session", exact: true }).click();
   expect((await page.request.post(actionUrl, { data: { action: "config", configId: "model", value: "fixture-default" } })).status()).toBe(409);
   await beta.getByRole("button", { name: "Interrupt", exact: true }).click();
@@ -103,8 +104,9 @@ test("renders rich messages and update-only tool diffs without losing their fiel
     await expect(stream.getByRole("img", { name: "Agent image" })).toHaveCount(1);
     await expect(stream.getByRole("link", { name: "Evidence report" })).toHaveAttribute("href", "https://example.com/report");
     await expect(stream).toContainText("Retained resource text");
+    for (const activity of await stream.locator(".acp-activity-header").all()) await activity.click();
     const tool = stream.locator(".tool-card").filter({ hasText: "Preview file changes" });
-    await tool.locator("summary").click();
+    await tool.locator(".ai-tool-header").click();
     await expect(tool).toContainText("/fixture/readme.md:1");
     await expect(tool).toContainText("Tool progress evidence");
     await expect(tool.locator('[data-artifact-code-view="diff"]')).toHaveCount(1);

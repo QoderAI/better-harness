@@ -7,6 +7,13 @@ export const compare = {
     results: "Evidence results",
   },
   live: {
+    resize: "Resize {{left}} and {{right}}",
+    files: "Files · {{count}}",
+    file: "Observed path",
+    noFiles: "No explicit file locations observed yet.",
+    notObserved: "Not observed",
+    revealFileCall: "{{agent}}: {{path}} · {{status}} · Show tool call",
+    fileKind: { read: "Read", edit: "Edit", delete: "Delete", search: "Search", other: "Tool" },
     chooseSession: "Choose sessions",
     newComparison: "New comparison",
     ready: "Ready",
@@ -42,6 +49,8 @@ export const compare = {
     laneWarnings: "{{count}} warning",
     laneWarnings_other: "{{count}} warnings",
     status: {
+      ready: "Ready", completed: "Completed", permission: "Awaiting approval",
+      cancelling: "Interrupting…", interrupted: "Interrupted", stopped: "Stopped", closed: "Closed",
       idle: "idle",
       running: "running",
       finished: "finished",

@@ -17,6 +17,7 @@ export const run: typeof enRun = {
     historyUnavailable: "此会话记录不可用。",
     searchSettings: "搜索设置与模型", followup: "继续与此 Agent 对话…", send: "发送", queue: "加入队列", sendNow: "立即发送", stop: "停止", close: "关闭会话", save: "保存消息", edit: "编辑", remove: "移除", resumeQueue: "继续队列", queued: "待发送 · {{count}}", commands: "命令", attach: "附件", loading: "正在加载…", attachmentLimit: "附件必须小于 2 MB。", unsupportedAttachment: "此 Agent 不支持这种附件类型。", removeAttachment: "移除附件 {{index}}", turnStopped: "本轮已停止：{{reason}}", status: { connecting: "连接中", generating: "生成中", cancelling: "正在停止…", idle: "就绪", closed: "会话已关闭" } },
   session: {
+    activity: { thought_other: "{{count}} 段思考", read_other: "{{count}} 次读取", edit_other: "{{count}} 次编辑", execute_other: "{{count}} 条命令", search_other: "{{count}} 次搜索", other_other: "{{count}} 次工具调用", thought: "{{count}} 段思考", read: "{{count}} 次读取", edit: "{{count}} 次编辑", execute: "{{count}} 条命令", search: "{{count}} 次搜索", other: "{{count}} 次工具调用", running: "{{count}} 项进行中", failed: "{{count}} 项失败", interrupted: "{{count}} 项已中断", unavailable: "{{count}} 项结果缺失" },
     details: "会话详情",
     updatedAt: "更新时间",
     commandInput: "参数：{{hint}}",

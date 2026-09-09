@@ -140,6 +140,7 @@ test("long transcript preserves reading and expanded tool state across view chan
   const scroll = alpha.locator(".acp-session-scroll");
   await scroll.evaluate(node => { node.scrollTop = 0; });
   await expect(alpha.getByRole("button", { name: "Back to latest" })).toBeVisible();
+  await alpha.locator(".acp-activity-header").click();
   await alpha.locator(".tool-card > .ai-tool-header").click();
   await expect(alpha.locator(".tool-card")).toHaveAttribute("data-state", "open");
   await page.getByRole("button", { name: "Sessions", exact: true }).click();

@@ -71,9 +71,10 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await expect(alpha.locator(".streaming-message").last()).toContainText("Evidence row 50");
   const entries = alpha.locator(".acp-session-events > li");
   await expect(entries.filter({ hasText: "Starting inspection." })).toHaveCount(1);
+  await expect.poll(() => scroll.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight)).toBeLessThanOrEqual(24);
+  for (const activity of await alpha.locator(".acp-activity-header").all()) await activity.click();
   await expect(entries.locator(".acp-thought")).toHaveCount(1);
   await expect(entries.locator(".tool-card").filter({ hasText: "Read stream fixture" })).toHaveCount(1);
-  await expect.poll(() => scroll.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight)).toBeLessThanOrEqual(24);
   await scroll.evaluate((node) => { node.scrollTop = 0; });
   await expect(alpha.getByRole("button", { name: "Back to latest" })).toBeVisible();
   await alpha.locator(".acp-session-metadata:not([open]) > summary").click();
@@ -85,7 +86,6 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await alpha.locator(".acp-session-commands summary").click();
   await expect(alpha.locator(".acp-command-hint")).toContainText("Optional revision");
   await alpha.locator(".acp-session-commands summary").click();
-  await alpha.locator(".acp-thought").getByRole("button", { name: "Thinking" }).click();
   await expect(alpha.locator(".acp-thought")).toContainText("Inspecting the evidence.");
   const tool = alpha.locator(".tool-card").filter({ hasText: "Read stream fixture" });
   await page.keyboard.press("Tab");
@@ -99,7 +99,7 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   // Keep the transcript parked at the top while a new chunk completes the turn.
   await scroll.evaluate((node) => { node.scrollTop = 0; });
   await alpha.getByRole("button", { name: "Continue stream", exact: true }).click();
-  await expect(alpha.locator(".run-badge")).toHaveText("Ready");
+  await expect(alpha.locator(".run-badge")).toHaveText("Completed");
   await expect(alpha.locator(".acp-session-plan .ai-chain-header")).toHaveText("Plan · 2/2");
   expect(await scroll.evaluate((node) => node.scrollTop)).toBe(0);
   await alpha.getByRole("button", { name: "Back to latest" }).focus();
@@ -120,7 +120,7 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await expect(beta.getByRole("button", { name: "Close session", exact: true })).toBeEnabled();
   await expect(beta.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
   await beta.getByRole("button", { name: "Stop", exact: true }).click();
-  await expect(beta.locator(".run-badge")).toHaveText("Ready");
+  await expect(beta.locator(".run-badge")).toHaveText("Interrupted");
   await expect(beta.locator(".acp-permission-gate")).toHaveCount(0);
   for (const layout of layouts) {
     await page.setViewportSize(layout);

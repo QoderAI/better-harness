@@ -1,9 +1,16 @@
+import { useStickToBottomContext } from "use-stick-to-bottom";
+import * as Collapsible from "@radix-ui/react-collapsible";
+import { CaretRight } from "@phosphor-icons/react/CaretRight";
+import { Wrench } from "@phosphor-icons/react/Wrench";
+import { useSessionOwnedState } from "./session-view-store.js";
+import { activitySummary, conversationBlocks } from "./conversation-activity.js";
+import { projectAcpTool, observedToolPaths } from "./acp-tool-projection.js";
 import { AcpConnectionPanel } from "./AcpConnectionPanel.js";
 import type { AcpSessionActions } from "./acp-session-actions.js";
 import { AcpComposer } from "./AcpComposer.js";
 import { AcpContent, AcpTerminalContext } from "./AcpContent.js";
 import { AcpSessionSettings } from "./AcpSessionSettings.js";
-import { memo, useMemo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { timelineItems, type AcpPendingPermission, type HarnessRunState, type TimelineItem } from "./run-store.js";
 import { TimelineEntry, ToolCallEntry } from "./TimelineEntry.js";
@@ -16,7 +23,9 @@ import { AcpConversationPosition } from "./AcpConversationPosition.js";
 import { planElementState } from "./ai-elements-adapter.js";
 
 /** A host-independent view: callers own launch, routing and permission authority. */
-export function AcpSessionStream({ state, prompt, failure, onPermission, actions, permissionClassName = "", compact = false, showComposer = true }: {
+export function AcpSessionStream({ state, prompt, failure, onPermission, actions, permissionClassName = "", compact = false, showComposer = true, revealTool, contextEvidence }: {
+  revealTool?: { id: string; token: number };
+  contextEvidence?: React.ReactNode;
   state: HarnessRunState;
   compact?: boolean;
   showComposer?: boolean;
@@ -30,6 +39,7 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
   const [startError, setStartError] = useState<string>();
   const [starting, setStarting] = useState(false);
   const items = useMemo(() => timelineItems(state), [state.timelineRevision, state.timelineByKey]);
+  const blocks = useMemo(() => conversationBlocks(items), [items]);
   const session = state.acp;
 
   if (state.connection && state.status === "running" && actions && state.runId) return <AcpConnectionPanel key={state.runId} runId={state.runId} connection={state.connection} actions={actions} />;
@@ -44,7 +54,8 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
     {(failure ?? state.error) && <p className="acp-session-error" role="alert">{failure ?? state.error}</p>}
     <Conversation key={state.runId ?? "empty"} initial={false} aria-label={t("session.transcript")}>
       <ConversationContent className="acp-session-content" scrollClassName="acp-session-scroll">
-        {prompt && !state.conversation && <Message className="acp-session-prompt" from="user"><strong>{t("live.userRequest")}</strong><MessageContent><p>{prompt}</p></MessageContent></Message>}
+        {contextEvidence}
+        {prompt && !state.conversation && <Message className="acp-session-prompt" from="user" aria-label={t("live.userRequest")}><MessageContent><p>{prompt}</p></MessageContent></Message>}
         {!compact && <details className="acp-session-metadata"><summary>{t("session.details")}</summary>
         {(session.title || session.updatedAt) && <details className="acp-session-info"><summary>{t("session.title")}<span>{session.title}</span></summary><dl>
           {session.title && <div><dt>{t("session.title")}</dt><dd>{session.title}</dd></div>}
@@ -67,7 +78,9 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
         {!!session.unsupported?.length && <details className="acp-session-notice"><summary>{t("session.unsupported")}</summary><p>{session.unsupported.join(", ")}</p></details>}
         {state.warnings.map((warning, index) => <p className="acp-session-notice" key={index}>{warning}</p>)}
         <ol className="acp-session-events">
-          {items.map((item) => <SessionEntry scope={state.runId} key={`${item.kind}:${item.id}`} item={item} tool={session.tools.get(item.id)} />)}
+          {blocks.map(block => block.kind === "message"
+            ? <SessionEntry scope={state.runId} key={block.key} item={block.item} />
+            : <SessionActivity key={block.key} groupKey={block.key} items={block.items} state={state} revealTool={revealTool} />)}
         </ol>
         {!compact && items.length === 0 && <ConversationEmptyState role="status" title={t(session.prepared ? "session.readyToSend" : state.status === "running" ? "live.waiting" : "session.empty")} />}
       </ConversationContent>
@@ -80,35 +93,54 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
         <AcpSessionSettings session={session} runId={state.runId} active={state.status === "running" && state.conversation.status !== "closed"} actions={actions} />
         {session.usage && <small className="ai-prompt-usage" title={t("session.context")}>{Math.round(session.usage.used / Math.max(session.usage.size, 1) * 100)}%</small>}
       </>} />}
+      {session.prepared && !state.conversation && actions && <AcpSessionSettings session={session} runId={state.runId} active={state.status === "running"} actions={actions} />}
       {session.prepared && actions && <button type="button" disabled={starting} onClick={() => { setStarting(true); setStartError(undefined); void actions.execute({ action: "start" }).catch(error => setStartError(String(error))).finally(() => setStarting(false)); }}>{t("session.sendPrompt")}</button>}
       {startError && <p role="alert">{startError}</p>}
     </footer>}
   </div></AcpTerminalContext.Provider>;
 }
 
-const SessionEntry = memo(function SessionEntry({ item, tool, scope }: {
+const SessionActivity = memo(function SessionActivity({ groupKey, items, state, revealTool }: {
+  groupKey: string; items: TimelineItem[]; state: HarnessRunState; revealTool?: { id: string; token: number };
+}): React.JSX.Element {
+  const { t } = useTranslation("run");
+  const [open, setOpen] = useSessionOwnedState(`${state.runId}:activity:${groupKey}`, false);
+  const revealToken = items.some(item => item.kind === "tool-call" && item.id === revealTool?.id) ? revealTool?.token : undefined;
+  const { stopScroll } = useStickToBottomContext();
+  useLayoutEffect(() => {
+    if (revealToken !== undefined) { stopScroll(); setOpen(true); }
+  }, [revealToken, setOpen, stopScroll]);
+  const summary = activitySummary(items, state.acp.tools);
+  const label = Object.entries(summary.counts).filter(([, count]) => count > 0)
+    .map(([kind, count]) => t(`session.activity.${kind}`, { count })).join(" · ");
+  return <li className="acp-activity-row"><Collapsible.Root className="acp-activity" open={open} onOpenChange={next => { stopScroll(); setOpen(next); }}>
+    <Collapsible.Trigger className="acp-activity-header">
+      <Wrench size={15} aria-hidden="true" />
+      <span className="acp-activity-label">{label}</span>
+      {summary.paths.length > 0 && <code className="acp-activity-path" title={summary.paths.join("\n")}>{summary.paths[0]}{summary.paths.length > 1 && ` +${summary.paths.length - 1}`}</code>}
+      <span className="acp-activity-status" role="status">{Object.entries(summary.statuses).filter(([, count]) => count > 0).map(([status, count]) => <span key={status} data-status={status}>{t(`session.activity.${status}`, { count })}</span>)}</span>
+      <CaretRight className="acp-activity-chevron" size={14} aria-hidden="true" />
+    </Collapsible.Trigger>
+    <Collapsible.Content className="acp-activity-content"><ol>{items.map(item => <SessionEntry key={`${item.kind}:${item.id}`} flatThought scope={state.runId} item={item} tool={state.acp.tools.get(item.id)} revealToken={revealTool?.id === item.id ? revealTool.token : undefined} />)}</ol></Collapsible.Content>
+  </Collapsible.Root></li>;
+});
+
+const SessionEntry = memo(function SessionEntry({ item, tool, scope, revealToken, flatThought }: {
+  flatThought?: boolean;
+  revealToken?: number;
   scope?: string;
   item: TimelineItem;
   tool?: HarnessRunState["acp"]["tools"] extends ReadonlyMap<string, infer Value> ? Value : never;
 }): React.JSX.Element {
-  let projected = item;
-  if (item.kind === "tool-call" && tool !== undefined) {
-    projected = { ...item,
-      ...(tool.title === undefined ? {} : { name: tool.title }),
-      ...(tool.input === undefined ? {} : { argsText: stringify(tool.input) }),
-      ...(tool.output === undefined ? {} : { resultText: stringify(tool.output) }),
-      ...(tool.status === "failed" ? { status: "failed" }
-        : tool.status === "completed" ? { status: "completed" } : {}),
-    };
-  }
-  return <li>{projected.kind === "tool-call" ? <ToolCallEntry persistenceKey={`${scope}:tool:${item.id}`} item={projected} richResult={!!tool?.content?.length && tool.output === undefined}>
+  const { stopScroll } = useStickToBottomContext();
+  useLayoutEffect(() => { if (revealToken !== undefined) stopScroll(); }, [revealToken, stopScroll]);
+  const projected = projectAcpTool(item, tool);
+  return <li>{projected.kind === "tool-call" ? <ToolCallEntry revealToken={revealToken} persistenceKey={`${scope}:tool:${item.id}`} item={projected} filePaths={observedToolPaths(tool)} richResult={!!tool?.content?.length && tool.output === undefined}>
     {tool?.kind && <p className="acp-tool-kind">{tool.kind}</p>}
     {!!tool?.locations?.length && <ul className="acp-tool-locations">{tool.locations.map((location, index) => <li key={index}><code>{location.path}{location.line === undefined ? "" : `:${location.line}`}</code></li>)}</ul>}
     {tool?.content?.map((value, index) => <AcpContent value={value} key={index} />)}
-  </ToolCallEntry> : <TimelineEntry item={projected} persistenceKey={`${scope}:${item.kind}:${item.id}`} />}</li>;
+  </ToolCallEntry> : <TimelineEntry item={projected} flatThought={flatThought} persistenceKey={`${scope}:${item.kind}:${item.id}`} />}</li>;
 });
-
-function stringify(value: unknown): string { return typeof value === "string" ? value : JSON.stringify(value); }
 
 export function AcpPermissionGate({ permission, onPermission, className = "", showKind = false }: {
   permission: AcpPendingPermission;

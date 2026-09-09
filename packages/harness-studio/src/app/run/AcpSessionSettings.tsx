@@ -56,11 +56,11 @@ export function AcpSessionSettings({ session, runId, active, actions }: { sessio
   return <div className="acp-config-toolbar">
     {core.map(option => field(option, true))}
     {!!legacy && <select aria-label={t("session.mode")} value={mode ?? ""} disabled={!editable || pending !== undefined} onChange={event => void apply("mode", { action: "mode", modeId: event.target.value })}>{session.modes!.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
-    {(extra.length > 0 || core.some(option => option.choices.length > 12)) && <details className="acp-session-settings" ref={disclosure} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); disclosure.current!.open = false; disclosure.current?.querySelector("summary")?.focus(); } }}>
+    {extra.length > 0 && <details className="acp-session-settings" ref={disclosure} onKeyDown={event => { if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type === "search") event.preventDefault(); if (event.key === "Escape") { event.preventDefault(); disclosure.current!.open = false; disclosure.current?.querySelector("summary")?.focus(); } }}>
       <summary title={t("session.settings")} aria-label={t("session.settings")}>···</summary>
       <div className="acp-settings-fields">
         <input type="search" aria-label={t("conversation.searchSettings")} placeholder={t("conversation.searchSettings")} value={query} onChange={event => setQuery(event.target.value)} />
-        {(query ? config ?? [] : [...extra, ...core.filter(option => option.choices.length > 12)]).map(option => field({ ...option, id: `${option.id}` }))}
+        {extra.map(option => field({ ...option, id: `${option.id}` }))}
       </div>
     </details>}
     {pending && <span role="status">{t("session.saving")}</span>}

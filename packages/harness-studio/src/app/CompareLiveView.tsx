@@ -1,3 +1,6 @@
+import { CompareFiles } from "./run/CompareFiles.js";
+import { ResizableComparePanes } from "./run/ResizableComparePanes.js";
+import { comparisonLaneStatus } from "./run/compare-evidence.js";
 import { PromptInput, PromptInputFooter, PromptInputTextarea } from "./components/ai-elements/prompt-input.js";
 import { AcpConversationHistory } from "./run/AcpConversationHistory.js";
 import { useSessionOwnedState } from "./run/session-view-store.js";
@@ -69,6 +72,7 @@ export function CompareLiveView(props: {
   const [comparison, setComparison, liveComparison] = useSessionOwnedState<LiveComparison | undefined>(`${owner}:comparison`, undefined);
   const [, , running] = useSessionOwnedState(`${owner}:running`, false);
 
+  const [reveal, setReveal] = useState<{ laneKey: string; id: string; token: number }>();
   const available = props.agents.filter((agent) => agent.available);
   const active = comparison !== undefined
     && comparison.lanes.some((lane) => lane.state.status === "running");
@@ -162,6 +166,20 @@ export function CompareLiveView(props: {
     {closeError && <p role="alert">{closeError}</p>}
     {!comparison && <AcpConversationHistory project={props.project} />}
     {comparison && <div className="acp-compare-toolbar"><SharedTreeNote /><button type="button" onClick={() => void newComparison()}>{t("live.newComparison")}</button></div>}
+    {comparison === undefined
+      ? <div className="live-compare-empty"><p className="artifact-status" role="status">{t("live.idle")}</p></div>
+      : <>
+        <CompareFiles owner={owner} lanes={comparison.lanes.map(lane => ({ ...lane, label: labelFor(lane.agentId) }))}
+          onReveal={(laneKey, id) => setReveal(previous => ({ laneKey, id, token: (previous?.token ?? 0) + 1 }))} />
+        <ResizableComparePanes owner={owner} panes={comparison.lanes.map((lane, index) => ({
+          key: lane.key, label: labelFor(lane.agentId), content: <LiveLane
+            side={t("live.laneAgent", { index: index + 1 })}
+            label={labelFor(lane.agentId)} run={lane} prompt={comparison.prompt}
+            revealTool={reveal?.laneKey === lane.key ? reveal : undefined}
+            onCancel={() => cancel(lane.key)}
+            onDecide={(requestId, optionId) => decide(lane.key, requestId, optionId)} />,
+        }))} />
+      </>}
     <PromptInput
       hidden={comparison !== undefined}
       className="live-compare-composer"
@@ -212,20 +230,6 @@ export function CompareLiveView(props: {
         </button>
       </PromptInputFooter>
     </PromptInput>
-
-    {comparison === undefined
-      ? <p className="artifact-status" role="status">{t("live.idle")}</p>
-      : <div className="live-compare-lanes">
-          {comparison.lanes.map((lane, index) => <LiveLane
-            key={lane.key}
-            side={t("live.laneAgent", { index: index + 1 })}
-            label={labelFor(lane.agentId)}
-            run={lane}
-            prompt={comparison.prompt}
-            onCancel={() => cancel(lane.key)}
-            onDecide={(requestId, optionId) => decide(lane.key, requestId, optionId)}
-          />)}
-        </div>}
   </main>;
 }
 
@@ -338,6 +342,7 @@ function SharedTreeNote(): React.JSX.Element {
 }
 
 function LiveLane(props: {
+  revealTool?: { id: string; token: number };
   side: string;
   label: string;
   prompt: string;
@@ -351,6 +356,7 @@ function LiveLane(props: {
   const [actionError, setActionError] = useState<string>();
   const items = timelineItems(props.run.state);
   const warnings = props.run.state.warnings.length;
+  const status = comparisonLaneStatus(props.run.state);
   const counts = [
     t("live.laneTools", { count: props.run.state.toolCallCount }),
     t("live.laneMessages", { count: items.filter((item) => item.kind === "message" && item.role === undefined).length }),
@@ -371,10 +377,10 @@ function LiveLane(props: {
   return <section className="live-compare-lane" aria-label={t("live.laneAria", { side: props.side, agent: props.label })}>
     <header>
       <strong>{props.label}</strong>
-      <span className={`run-badge status-${props.run.state.status}`} role="status">{t((props.run.state.connection || props.run.state.acp.prepared || props.run.state.conversation?.status === "idle") ? "live.ready" : `live.status.${props.run.state.status}`)}</span>
+      <span className={`run-badge status-${status}`} role="status">{t(`live.status.${status}`)}</span>
       <small className="live-compare-counts">{counts}</small>
       {props.run.state.status === "running" && !props.run.state.conversation && !props.run.state.connection && <button type="button" disabled={cancelling} onClick={() => void cancel()}>{t(cancelling ? "live.cancelling" : "live.cancel")}</button>}
     </header>
-    <AcpSessionStream actions={createAcpSessionActions(props.run.runId)} state={props.run.state} prompt={props.prompt} failure={actionError ?? props.run.failure} onPermission={props.onDecide} permissionClassName="live-compare-permission" />
+    <AcpSessionStream revealTool={props.revealTool} actions={createAcpSessionActions(props.run.runId)} state={props.run.state} prompt={props.prompt} failure={actionError ?? props.run.failure} onPermission={props.onDecide} permissionClassName="live-compare-permission" />
   </section>;
 }

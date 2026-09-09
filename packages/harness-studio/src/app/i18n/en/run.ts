@@ -15,6 +15,7 @@ export const run = {
     historyUnavailable: "This conversation is unavailable.",
     searchSettings: "Search settings and models", followup: "Message this Agent…", send: "Send", queue: "Queue", sendNow: "Send now", stop: "Stop", close: "Close session", save: "Save message", edit: "Edit", remove: "Remove", resumeQueue: "Resume queue", queued: "Queued · {{count}}", commands: "Commands", attach: "Attach", loading: "Loading…", attachmentLimit: "Attachments must be smaller than 2 MB.", unsupportedAttachment: "This Agent does not support this attachment type.", removeAttachment: "Remove attachment {{index}}", turnStopped: "Turn stopped: {{reason}}", status: { connecting: "Connecting", generating: "Generating", cancelling: "Stopping…", idle: "Ready", closed: "Session closed" } },
   session: {
+    activity: { thought: "{{count}} thought", read: "{{count}} read", edit: "{{count}} edit", execute: "{{count}} command", search: "{{count}} search", other: "{{count}} tool call", thought_other: "{{count}} thoughts", read_other: "{{count}} reads", edit_other: "{{count}} edits", execute_other: "{{count}} commands", search_other: "{{count}} searches", other_other: "{{count}} tool calls", running: "{{count}} running", failed: "{{count}} failed", interrupted: "{{count}} interrupted", unavailable: "{{count}} unavailable" },
     details: "Session details",
     updatedAt: "Updated",
     commandInput: "Input: {{hint}}",
