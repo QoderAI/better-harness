@@ -28,12 +28,23 @@ export const common: typeof enCommon = {
     plane: "Harness 控制台",
   },
   area: {
+    harnessDesign: "Harness Design",
+    dsh: "DSH",
     customizations: "自定义",
     sessions: "会话",
     commits: "提交",
     artifacts: "产物",
     debugger: "调试器",
     compare: "对比",
+  },
+  dsh: {
+    scope: "工作区由 DSH 选择",
+    missingDetail: "DSH Web 不可用。请将已安装的 DSH 加入 Studio Desktop 的 PATH，然后重启 Studio。",
+    projectDetail: "从侧栏打开本地项目后即可启动 DSH。",
+    readOnlyDetail: "请选择本地项目以启动 DSH。",
+    open: "启动 DSH", starting: "启动中…",
+    frameTitle: "DSH 官方界面", failed: "无法打开 DSH Web。",
+    status: { ready: "DSH 官方 Web", missing: "需要配置 DSH Web", project: "需要项目", readOnly: "只读项目" },
   },
   group: {
     control: "控制",

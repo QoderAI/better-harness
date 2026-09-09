@@ -26,12 +26,23 @@ export const common = {
     plane: "Harness control plane",
   },
   area: {
+    harnessDesign: "Harness Design",
+    dsh: "DSH",
     customizations: "Customizations",
     sessions: "Sessions",
     commits: "Commits",
     artifacts: "Artifacts",
     debugger: "Debugger",
     compare: "Compare",
+  },
+  dsh: {
+    scope: "Workspace selected in DSH",
+    missingDetail: "DSH Web is unavailable. Add an installed DSH to Studio Desktop's PATH and restart Studio.",
+    projectDetail: "Open a local Project from the sidebar to start DSH.",
+    readOnlyDetail: "Select a local Project to start DSH.",
+    open: "Start DSH", starting: "Starting…",
+    frameTitle: "Official DSH interface", failed: "DSH Web could not be opened.",
+    status: { ready: "Official DSH Web", missing: "DSH Web setup required", project: "Project required", readOnly: "Read-only Project" },
   },
   group: {
     control: "Control",

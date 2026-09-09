@@ -260,6 +260,7 @@ describe("harness-studio server", () => {
     const config = await (await fetch(`${started.url}/api/config`)).json();
 
     expect(config).toEqual({
+      dshWebEnabled: false,
       acpAgentLabel: "ACP Agent",
       acpEnabled: false,
       acpRuntimeProfile: "acp-v1-stdio",

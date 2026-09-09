@@ -18,6 +18,9 @@ deprecated.
 | `ADR-0005` | [Checkpoint-backed Compare Sources and Materialization](checkpoint-backed-compare-sources.md) | Proposed | 2026-08-17 | Source-neutral checkpoint discovery, request provenance, adapter projections, and per-lane materialization |
 | `ADR-0006` | [Session Notebook Trace and Outcome Projection](session-notebook-evidence-projection.md) | Proposed | 2026-08-18 | Ordered Turn evidence, response availability, evidence-bounded outcomes, and session-scoped patch requirements |
 | `ADR-0007` | [Harness Studio Artifact Runtime and Provider Architecture](studio-artifact-runtime-and-providers.md) | Proposed | 2026-08-22 | Revision-bound data and code lifecycles, renderer surfaces, external providers, and retained trace boundaries |
+| `ADR-0008` | [Official DSH workspace and ACP comparison in Studio](studio-dsh-acp-workspace.md) | Proposed | 2026-09-08 | Official DSH Web workspace, managed runtime, and ACP comparison |
+| `ADR-0009` | [Preserve Pi's native terminal interface in Studio](studio-native-pi-terminal.md) | Superseded | 2026-09-08 | Historical Pi PTY comparison; replaced by ADR-0010 |
+| `ADR-0010` | [Use DSH for Harness Design](studio-dsh-harness-design.md) | Accepted | 2026-09-09 | Single official UI and coordinated native plugin compilation |
 
 ## Lifecycle
 

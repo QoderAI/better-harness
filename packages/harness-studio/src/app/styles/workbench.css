@@ -2255,3 +2255,13 @@
 .session-compare-usage > div { display: flex; justify-content: space-between; gap: var(--space-sm); }
 
 .session-compare-calls summary .session-compare-call-preview { display: block; margin-left: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-code); }
+
+/* Studio owns the surrounding pane; the isolated official DSH app owns its UI. */
+.dsh-workspace { min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--color-workspace); }
+.dsh-workspace[hidden] { display: none; }
+.dsh-native-frame { border: 0; width: 100%; height: 100%; flex: 1; min-height: 0; background: var(--color-workspace); }
+.dsh-launch { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-md); min-height: 0; padding: var(--space-md); overflow: auto; }
+.dsh-launch p { max-width: 42rem; margin: 0; text-align: center; overflow-wrap: anywhere; color: var(--color-text-muted); }
+.dsh-workspace button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.dsh-design-status { margin: 0; padding: var(--space-xs) var(--space-md); border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: var(--type-pane-size); max-height: 6rem; overflow: auto; overflow-wrap: anywhere; flex-shrink: 0; }
+.dsh-design-status[role="alert"] { color: var(--color-danger); }

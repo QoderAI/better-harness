@@ -6,6 +6,7 @@ export type StudioArea =
   | "commits"
   | "artifacts"
   | "debugger"
+  | "dsh"
   | "compare";
 
 /**
@@ -41,6 +42,7 @@ export interface StudioSessionAgent {
 export type StudioSessionCompareScope = "cross-agent" | "single-agent" | "insufficient";
 
 export interface StudioConfig {
+  dshWebEnabled?: boolean;
   runEnabled: boolean;
   acpEnabled: boolean;
   acpAgentLabel?: string;
@@ -158,6 +160,13 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
       status: debuggerStatus(),
     },
     {
+      id: "dsh",
+      label: t("area.harnessDesign"),
+      group: t("group.run"),
+      availability: dshWorkspaceStatus(config) === "ready" ? "ready" : "foundation",
+      status: t(`dsh.status.${dshWorkspaceStatus(config)}`),
+    },
+    {
       id: "compare",
       label: t("area.compare"),
       group: t("group.validate"),
@@ -185,6 +194,12 @@ export function compareSurfaces(config: StudioConfig): readonly StudioCompareSur
 /** Agents this host can actually launch for a live comparison. */
 export function selectableAcpAgents(config: StudioConfig): readonly StudioAcpAgentOption[] {
   return (config.acpAgents ?? []).filter((agent) => agent.available);
+}
+
+export function dshWorkspaceStatus(config: StudioConfig): "missing" | "project" | "readOnly" | "ready" {
+  if (!config.dshWebEnabled) return "missing";
+  if (!config.workspaceConnected) return "project";
+  return config.projectExecutionEnabled ? "ready" : "readOnly";
 }
 
 /**
@@ -223,7 +238,7 @@ function hasUsableArtifacts(config: StudioConfig): boolean {
 }
 
 export function studioProjectGateRequired(config: StudioConfig, hasConfiguredSources: boolean, area: StudioArea = STUDIO_DEFAULT_AREA): boolean {
-  if (area === "artifacts") return false;
+  if (area === "artifacts" || area === "dsh") return false;
   const independentContext = hasConfiguredSources
     || config.inspectorEnabled
     || config.evidenceEnabled

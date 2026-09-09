@@ -12,6 +12,7 @@ import { ArtifactsWorkspace } from "./ArtifactsWorkspace.js";
 import { ArtifactView } from "./artifacts/ArtifactView.js";
 import { CompareView } from "./CompareView.js";
 import { CompareLiveView } from "./CompareLiveView.js";
+import { DshWorkspace } from "./DshWorkspace.js";
 import { CustomizationView } from "./CustomizationView.js";
 import { ExperimentView } from "./experiment/ExperimentView.js";
 import { GitHistoryView } from "./GitHistoryView.js";
@@ -62,6 +63,7 @@ const STUDIO_AREAS: readonly StudioArea[] = [
   "commits",
   "artifacts",
   "debugger",
+  "dsh",
   "compare",
 ];
 
@@ -573,7 +575,7 @@ export function App(): React.JSX.Element {
     <section className="studio-area">
       <header className={`studio-context-bar${contextNavigation ? " has-surface-navigation" : ""}`}>
         <button ref={navigationToggleRef} className="studio-nav-toggle" type="button" title={sidebarVisible ? t("workspace:gate.closeTitle") : t("workspace:gate.openTitle")} aria-label={sidebarVisible ? t("workspace:gate.closeAria") : t("workspace:gate.openAria")} aria-expanded={sidebarVisible} onClick={toggleSidebar}><SidebarSimple aria-hidden="true" size={17} /></button>
-        <div className="studio-context-title"><h1>{showWelcome ? t("workspace:welcome.title") : t(`area.${area}`)}</h1></div>
+        <div className="studio-context-title"><h1>{showWelcome ? t("workspace:welcome.title") : area === "dsh" ? t("area.harnessDesign") : t(`area.${area}`)}</h1></div>
         {contextNavigation && <div className="studio-context-navigation">{contextNavigation}</div>}
         {/* The active View's primary action lands here, so a workbench does not
             open a second bar just to hold one button. */}
@@ -590,11 +592,12 @@ export function App(): React.JSX.Element {
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} dateRange={dateRange} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}-${dateScopeKey}`} dateRange={dateRange} config={config} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
+        <DshWorkspace visible={area === "dsh"} key="dsh-official" config={config} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />
         {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         </>}
       </div>
       {area === "debugger" ? <footer className="studio-status-bar"><strong>{activeProject?.label}</strong><div id="studio-debugger-status" /></footer> : <StatusBar
-        scope={activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
+        scope={area === "dsh" ? t("dsh.scope") : activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
         status={dateRange.preset !== "all" && (area === "sessions" || area === "artifacts") ? "" : current.status}
         config={config}
         dateRange={dateRange}

@@ -43,8 +43,10 @@ const PRESETS: readonly Preset[] = [
   {
     id: "dsh",
     label: "DSH ACP",
+    executable: "dsh",
+    args: ["--profile", "acp"],
     modelPolicy: "agent-default",
-    missing: "No portable DSH ACP entrypoint is registered; configure it with --acp-agent and --acp-arg.",
+    missing: "dsh is not installed or is not on PATH. DSH requires the acp profile (--profile acp).",
   },
   {
     id: "codex-acp",
@@ -185,7 +187,7 @@ export async function findExecutable(name: string, input: {
 }
 
 function presetForCommand(command: string): Preset | undefined {
-  const executable = basename(command).replace(/\.(?:cmd|exe|bat|com)$/iu, "");
+  const executable = win32.basename(command).replace(/\.(?:cmd|exe|bat|com)$/iu, "");
   if (executable === "dsh") return PRESETS.find((preset) => preset.id === "dsh");
   return PRESETS.find((preset) => preset.executable === executable);
 }

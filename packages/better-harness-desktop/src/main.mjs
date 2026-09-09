@@ -63,7 +63,9 @@ async function createWindow() {
     if (!isSameOrigin(url, origin)) event.preventDefault();
   });
   window.webContents.on('will-redirect', (event, url) => {
-    if (!isSameOrigin(url, origin)) event.preventDefault();
+    // The official DSH subframe exchanges its launch token for a cookie and
+    // redirects on its own origin. Only top-level redirects can replace Studio.
+    if (event.isMainFrame && !isSameOrigin(url, origin)) event.preventDefault();
   });
   window.webContents.setWindowOpenHandler(({ url }) => {
     // External links require an explicit native confirmation; no protocol handlers.
@@ -129,6 +131,7 @@ else {
     child.stderr?.on('data', (data) => process.stderr.write(data));
     service = connectStudioService(child, {
       token, dataDirectory: app.getPath('userData'), onFailure: fail,
+      dshDesignRuntime: app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@qoder-ai', 'harness-studio', 'dist', 'server', 'runtime', 'dsh-design', 'index.mjs') : undefined,
       oxcTransport: process.platform === 'darwin' ? 'nsxpc' : 'stdio',
       oxcExecutable: process.platform === 'darwin'
         ? join(app.isPackaged ? join(process.resourcesPath, '..') : fileURLToPath(new URL('../dist/native/Harness OXC.app/Contents', import.meta.url)), 'MacOS', 'harness-oxc-client')

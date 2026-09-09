@@ -4,6 +4,7 @@ import { parentPort } from 'node:worker_threads';
 import { message, isMessage } from './protocol.mjs';
 import {
   startHarnessStudioServer, defaultAppDir, discoverAcpAgentProfiles,
+  createDshWebHost, discoverDshWebCommand,
   createRustEvidenceHost, createRustEvidenceWorkspaceSessionProvider,
   createBundledAgentCustomizationCollector,
 } from '@qoder-ai/harness-studio';
@@ -78,7 +79,12 @@ port.on('message', async (data) => {
       });
       compilers.add({ close: () => evidenceHost.close() });
       await evidenceHost.describe();
+      const dshWebCommand = await discoverDshWebCommand();
+      if (data.dshDesignRuntime !== undefined && typeof data.dshDesignRuntime !== 'string') throw new Error('Invalid Design runtime path');
+      const dshWebHost = dshWebCommand ? createDshWebHost(dshWebCommand, { designHome: join(data.dataDirectory, 'harness-design'), designRuntime: data.dshDesignRuntime }) : undefined;
+      if (dshWebHost) compilers.add(dshWebHost);
       server = await startHarnessStudioServer({
+        dshWebHost,
         oxcCompilerFactory,
         acpHostExecutable: data.acpHostExecutable,
         acpHostTransport: data.acpHostTransport,
