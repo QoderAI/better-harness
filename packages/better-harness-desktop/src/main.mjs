@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, dialog, Menu, nativeTheme, session, utilityProcess } from 'electron';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { connectStudioService } from './service-host.mjs';
+import { connectStudioService, desktopEsbuildOptions } from './service-host.mjs';
 import { HEADER, isSameOrigin, isExternalUrl } from './protocol.mjs';
 
 let window;
@@ -129,6 +129,9 @@ else {
     child.stderr?.on('data', (data) => process.stderr.write(data));
     service = connectStudioService(child, {
       token, dataDirectory: app.getPath('userData'), onFailure: fail,
+      ...desktopEsbuildOptions({ platform: process.platform, contentsDirectory: app.isPackaged
+        ? join(process.resourcesPath, '..')
+        : fileURLToPath(new URL('../dist/native/Harness Esbuild.app/Contents', import.meta.url)) }),
       oxcTransport: process.platform === 'darwin' ? 'nsxpc' : 'stdio',
       oxcExecutable: process.platform === 'darwin'
         ? join(app.isPackaged ? join(process.resourcesPath, '..') : fileURLToPath(new URL('../dist/native/Harness OXC.app/Contents', import.meta.url)), 'MacOS', 'harness-oxc-client')

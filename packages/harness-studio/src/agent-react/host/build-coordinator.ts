@@ -17,11 +17,13 @@ import { isNormalizedRevisionPath } from "./stream-assembler.js";
 import {
   type AllowedPackageResolver,
   createAllowedPackageResolver,
-  linkArtifactBundle,
+  WASM_ARTIFACT_LINKER,
+  type ArtifactLinker,
   type TrustedRuntimePackage,
 } from "../linker/index.js";
 
 export interface BuildCoordinatorOptions {
+  readonly linker?: ArtifactLinker;
   readonly compiler: OxcCompilerPort;
   readonly runtimePackages: readonly TrustedRuntimePackage[];
   readonly runtimeVersion?: string;
@@ -70,6 +72,7 @@ export function createBuildCoordinator(options: BuildCoordinatorOptions): AgentR
         revision: ownedRevision,
         buildGeneration: mine,
         compiler: options.compiler,
+        linker: options.linker ?? WASM_ARTIFACT_LINKER,
         runtimePackages: options.runtimePackages,
         runtimeVersion,
         maxModules,
@@ -84,6 +87,7 @@ export function createBuildCoordinator(options: BuildCoordinatorOptions): AgentR
 }
 
 interface RunBuildOptions {
+  readonly linker: ArtifactLinker;
   readonly revision: ArtifactRevision;
   readonly buildGeneration: number;
   readonly compiler: OxcCompilerPort;
@@ -204,7 +208,7 @@ async function runBuild(options: RunBuildOptions): Promise<BuildSnapshot> {
     }]);
   }
 
-  const linked = await linkArtifactBundle({
+  const linked = await options.linker.link({
     compiledModules,
     entryModule: revision.descriptor.entry,
     resolver,
@@ -230,6 +234,7 @@ async function runBuild(options: RunBuildOptions): Promise<BuildSnapshot> {
 }
 
 interface SnapshotParts {
+  readonly linker: ArtifactLinker;
   readonly revision: ArtifactRevision;
   readonly buildGeneration: number;
   readonly compiler: OxcCompilerPort;
@@ -262,6 +267,8 @@ function freezeSnapshot(parts: SnapshotParts): BuildSnapshot {
     });
   const buildPolicyDigest = parts.digest([
     parts.compiler.policyFingerprint,
+    parts.linker.linkerVersion,
+    parts.linker.policyFingerprint,
     parts.maxModules,
     parts.maxOutputBytes,
     runtimePackages,

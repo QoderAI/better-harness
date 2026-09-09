@@ -1,7 +1,15 @@
+import { join } from 'node:path';
 import { isMessage, isStudioUrl, message } from './protocol.mjs';
 
+/** Native linking is enabled only for the approved macOS XPC host. */
+export function desktopEsbuildOptions({ platform, contentsDirectory }) {
+  return platform === 'darwin'
+    ? { esbuildTransport: 'nsxpc', esbuildExecutable: join(contentsDirectory, 'MacOS', 'harness-esbuild-client') }
+    : {};
+}
+
 /** Owns one child. No generic method dispatch or renderer IPC surface. */
-export function connectStudioService(child, { token, dataDirectory, oxcExecutable, oxcTransport = 'stdio', acpHostExecutable, acpHostTransport = 'stdio', evidenceHostExecutable, evidenceHostTransport = 'stdio', pickDirectory, onFailure, startupTimeout = 30_000, shutdownTimeout = 5_000 }) {
+export function connectStudioService(child, { token, dataDirectory, oxcExecutable, oxcTransport = 'stdio', esbuildExecutable, esbuildTransport = 'stdio', acpHostExecutable, acpHostTransport = 'stdio', evidenceHostExecutable, evidenceHostTransport = 'stdio', pickDirectory, onFailure, startupTimeout = 30_000, shutdownTimeout = 5_000 }) {
   let ready = false;
   let stopping = false;
   let exited = false;
@@ -49,7 +57,7 @@ export function connectStudioService(child, { token, dataDirectory, oxcExecutabl
       else if (!stopping) onFailure(new Error(`Studio service exited unexpectedly (${code})`));
     });
   });
-  child.postMessage(message('start', { token, dataDirectory, oxcExecutable, oxcTransport, acpHostExecutable, acpHostTransport, evidenceHostExecutable, evidenceHostTransport }));
+  child.postMessage(message('start', { token, dataDirectory, oxcExecutable, oxcTransport, esbuildExecutable, esbuildTransport, acpHostExecutable, acpHostTransport, evidenceHostExecutable, evidenceHostTransport }));
   return {
     started,
     stop() {

@@ -1,3 +1,4 @@
+import type { ArtifactLinkerFactory } from "../../../agent-react/linker/port.js";
 import type { OxcCompilerFactory } from "../../../agent-react/host/index.js";
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
@@ -54,6 +55,7 @@ export interface CompiledArtifactPreview {
 
 export interface CompileArtifactPreviewOptions {
   oxcCompilerFactory?: OxcCompilerFactory;
+  artifactLinkerFactory?: ArtifactLinkerFactory;
   artifactRoot: string;
   entry: ArtifactEntry;
   descriptor: ArtifactDescriptor;
@@ -100,9 +102,9 @@ const retainedByBuild = new Map<string, CompiledArtifactPreview>();
 const inflightByRevision = new Map<string, Promise<CompiledArtifactPreview>>();
 let buildSequence = 0;
 let compileCount = 0;
-const compilerFactoryIds = new WeakMap<OxcCompilerFactory, number>();
+const compilerFactoryIds = new WeakMap<OxcCompilerFactory | ArtifactLinkerFactory, number>();
 let compilerFactorySequence = 0;
-function compilerFactoryKey(factory?: OxcCompilerFactory): string {
+function compilerFactoryKey(factory?: OxcCompilerFactory | ArtifactLinkerFactory): string {
   if (factory === undefined) return "worker";
   let id = compilerFactoryIds.get(factory);
   if (id === undefined) { id = ++compilerFactorySequence; compilerFactoryIds.set(factory, id); }
@@ -136,7 +138,7 @@ export async function compileArtifactPreview(options: CompileArtifactPreviewOpti
   const buildRuntime = options.buildRuntime ?? REACT_SOURCE_BUILD_RUNTIME;
   const limits = resolveArtifactCompileLimits(options.limits);
   const limitKey = JSON.stringify(limits);
-  const entryKey = `${options.entry.path}\u0000${buildRuntime.id}@${buildRuntime.version}\u0000${limitKey}\u0000${compilerFactoryKey(options.oxcCompilerFactory)}`;
+  const entryKey = `${options.entry.path}\u0000${buildRuntime.id}@${buildRuntime.version}\u0000${limitKey}\u0000${compilerFactoryKey(options.oxcCompilerFactory)}\u0000${compilerFactoryKey(options.artifactLinkerFactory)}`;
   const cached = latestByEntry.get(entryKey);
   if (cached !== undefined
     && cached.snapshot.revisionId === options.descriptor.revision.id
@@ -171,6 +173,7 @@ async function compileArtifactRevision(
   if (buildRuntime.module.kind === "agent-react") {
     const result = await compileAgentReactProduction({
       oxcCompilerFactory: options.oxcCompilerFactory,
+      artifactLinkerFactory: options.artifactLinkerFactory,
       artifactRoot: root,
       entryPath,
       viewId: agentReactViewId(options.entry.label),
@@ -230,7 +233,7 @@ async function compileArtifactRevision(
     diagnostics = diagnosticsFromError(error, root);
   }
 
-  const buildId = digestBuild(root, options.descriptor, sources, code, css, diagnostics, buildRuntime, limits);
+  const buildId = digestBuild(root, options.descriptor, sources, code, css, diagnostics, buildRuntime, limits, agentReact?.buildDigest);
   const base = `/api/artifacts/${encodeURIComponent(options.descriptor.id)}/revisions/${digestHex(options.descriptor.revision.id)}`;
   const snapshot: ArtifactBuildSnapshot = {
     kind: ARTIFACT_BUILD_SNAPSHOT_KIND,
@@ -543,6 +546,7 @@ function digestBuild(
   diagnostics: ArtifactBuildDiagnostic[],
   buildRuntime: ArtifactBuildRuntimeImplementation,
   limits: Readonly<ArtifactCompileLimits>,
+  agentReactBuildDigest?: string,
 ): ArtifactDigest {
   const sourceDigests = [...sources]
     .map(([path, stamp]) => [relative(root, path).split(sep).join("/"), stamp.digest] as const)
@@ -558,6 +562,7 @@ function digestBuild(
     code ?? null,
     css,
     diagnostics,
+    ...(agentReactBuildDigest === undefined ? [] : [agentReactBuildDigest]),
   ])).digest("hex");
   return `sha256:${digest}`;
 }

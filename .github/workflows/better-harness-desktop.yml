@@ -25,12 +25,20 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: packages/better-harness-desktop/go/esbuild-service/go.mod
+          cache-dependency-path: packages/better-harness-desktop/go/esbuild-service/go.sum
       - uses: dtolnay/rust-toolchain@1.96.0
       - run: npm ci
       - run: npm run better-harness-desktop:test
       - run: npm run better-harness-desktop:pack
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # Build the stdio test harness without selecting or shipping it on Windows/Linux.
+      - run: npm run build:go -w @qoder-ai/better-harness-desktop
+        if: runner.os != 'macOS'
+      - run: npm run test:go -w @qoder-ai/better-harness-desktop
       - run: npm run test:rust -w @qoder-ai/better-harness-desktop
       - run: npm run test:native -w @qoder-ai/better-harness-desktop
       # Both native suites drive staged Rust executables, so they belong to the

@@ -1,3 +1,4 @@
+import { createGoEsbuildLinker, GO_ESBUILD_LINKER_VERSION } from "@qoder-ai/harness-studio/esbuild-service";
 import { createRustOxcCompiler } from "@qoder-ai/harness-studio/oxc-service";
 import { join } from 'node:path';
 import { parentPort } from 'node:worker_threads';
@@ -46,7 +47,7 @@ async function stop() {
 port.on('message', async (data) => {
   try {
     if (isMessage(data, 'start') && !starting && !stopping) {
-      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || typeof data.oxcExecutable !== 'string' || typeof data.acpHostExecutable !== 'string' || typeof data.evidenceHostExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport) || !['stdio', 'nsxpc'].includes(data.acpHostTransport) || !['stdio', 'nsxpc'].includes(data.evidenceHostTransport)) {
+      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || (data.esbuildExecutable !== undefined && (typeof data.esbuildExecutable !== 'string' || data.esbuildTransport !== 'nsxpc' || process.platform !== 'darwin')) || typeof data.oxcExecutable !== 'string' || typeof data.acpHostExecutable !== 'string' || typeof data.evidenceHostExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport) || !['stdio', 'nsxpc'].includes(data.acpHostTransport) || !['stdio', 'nsxpc'].includes(data.evidenceHostTransport)) {
         throw new Error('Invalid Studio startup contract');
       }
       starting = true;
@@ -58,6 +59,30 @@ port.on('message', async (data) => {
         compilers.add(compiler);
         return compiler;
       };
+      const artifactLinkerFactory = data.esbuildExecutable === undefined ? undefined : ({ timeoutMs }) => {
+        if (stopping) throw new Error('Studio is shutting down');
+        const linker = createGoEsbuildLinker({ executable: data.esbuildExecutable, transport: data.esbuildTransport, timeoutMs });
+        const close = linker.close.bind(linker);
+        linker.close = async () => { try { await close(); } finally { compilers.delete(linker); } };
+        compilers.add(linker);
+        return linker;
+      };
+      let esbuildPid;
+      let esbuildBridgePid;
+      if (artifactLinkerFactory) {
+        const linkProbe = artifactLinkerFactory({ timeoutMs: 5_000 });
+        try {
+          const packages = ['react', '@studio/agent-react', '@studio/agent-react/jsx-dev-runtime'];
+          const linked = await linkProbe.link({
+            compiledModules: new Map([['/desktop-smoke.js', 'export default {id:"desktop-smoke"};']]),
+            entryModule: '/desktop-smoke.js', maxOutputBytes: 1024 * 1024,
+            resolver: { allowedPackages: packages, resolveRuntimePackage: (name) => packages.includes(name) ? name : undefined },
+          });
+          if (linked.status !== 'ready') throw new Error('Go esbuild startup probe failed');
+          esbuildPid = linkProbe.processId;
+          esbuildBridgePid = linkProbe.bridgeProcessId;
+        } finally { await linkProbe.close(); }
+      }
       const probe = oxcCompilerFactory({ timeoutMs: 5_000 });
       let oxcPid;
       let bridgePid;
@@ -70,7 +95,7 @@ port.on('message', async (data) => {
       const nativeLibraries = process.report.getReport().sharedObjects;
       if (nativeLibraries.some((library) => /oxc[_-](parser|transform)/i.test(library))) throw new Error('OXC NAPI unexpectedly loaded in Studio');
       // Local diagnostic receipt, without source text or credentials.
-      console.info(JSON.stringify({ kind: 'better-harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false, acpTransport: data.acpHostTransport, acpRuntime: data.acpHostTransport === 'nsxpc' ? 'acp-v1-nsxpc' : 'acp-v1-rust', evidenceTransport: data.evidenceHostTransport, evidenceRuntime: data.evidenceHostTransport === 'nsxpc' ? 'evidence-v1-nsxpc' : 'evidence-v1-rust' }));
+      console.info(JSON.stringify({ kind: 'better-harness-desktop.oxc-proof', rust: true, transport: data.oxcTransport, bridgePid, oxcPid, studioPid: process.pid, oxcNativeLoaded: false, esbuildPid, esbuildBridgePid, esbuildTransport: artifactLinkerFactory ? data.esbuildTransport : 'wasm', esbuildVersion: artifactLinkerFactory ? GO_ESBUILD_LINKER_VERSION : undefined, acpTransport: data.acpHostTransport, acpRuntime: data.acpHostTransport === 'nsxpc' ? 'acp-v1-nsxpc' : 'acp-v1-rust', evidenceTransport: data.evidenceHostTransport, evidenceRuntime: data.evidenceHostTransport === 'nsxpc' ? 'evidence-v1-nsxpc' : 'evidence-v1-rust' }));
       const acpAgents = await discoverAcpAgentProfiles();
       const evidenceHost = createRustEvidenceHost({
         executable: data.evidenceHostExecutable,
@@ -80,6 +105,7 @@ port.on('message', async (data) => {
       await evidenceHost.describe();
       server = await startHarnessStudioServer({
         oxcCompilerFactory,
+        artifactLinkerFactory,
         acpHostExecutable: data.acpHostExecutable,
         acpHostTransport: data.acpHostTransport,
         acpAgents,

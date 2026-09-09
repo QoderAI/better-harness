@@ -1,7 +1,8 @@
+import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { connectStudioService } from '../src/service-host.mjs';
+import { connectStudioService, desktopEsbuildOptions } from '../src/service-host.mjs';
 import { isStudioUrl, isExternalUrl, isSameOrigin, message } from '../src/protocol.mjs';
 
 class Child extends EventEmitter {
@@ -17,6 +18,7 @@ const setup = (overrides = {}) => {
     token: 'a'.repeat(64), dataDirectory: 'test-data',
     oxcExecutable: '/native/harness-oxc-service', acpHostExecutable: '/native/harness-acp-host',
     acpHostTransport: 'nsxpc',
+    esbuildExecutable: '/native/harness-esbuild-client', esbuildTransport: 'nsxpc',
     evidenceHostExecutable: '/native/harness-evidence-host',
     evidenceHostTransport: 'nsxpc',
     pickDirectory: async () => undefined,
@@ -41,6 +43,8 @@ test('startup sends the versioned contract and returns the validated ready resul
   assert.equal(child.sent[0].version, 1);
   assert.equal(child.sent[0].acpHostExecutable, '/native/harness-acp-host');
   assert.equal(child.sent[0].acpHostTransport, 'nsxpc');
+  assert.equal(child.sent[0].esbuildExecutable, '/native/harness-esbuild-client');
+  assert.equal(child.sent[0].esbuildTransport, 'nsxpc');
   assert.equal(child.sent[0].evidenceHostExecutable, '/native/harness-evidence-host');
   assert.equal(child.sent[0].evidenceHostTransport, 'nsxpc');
   ready(child);
@@ -90,4 +94,20 @@ test('unexpected post-start exit is reported and stalled shutdown is killed', as
   await second.service.stop();
   assert.equal(second.child.killed, true);
   assert.equal(second.failures.length, 0);
+});
+
+test('desktop selects Go XPC only on macOS and preserves the WASM default elsewhere', async () => {
+  const contentsDirectory = join('native', 'Harness Esbuild.app', 'Contents');
+  assert.deepEqual(desktopEsbuildOptions({ platform: 'darwin', contentsDirectory }), {
+    esbuildTransport: 'nsxpc', esbuildExecutable: join(contentsDirectory, 'MacOS', 'harness-esbuild-client'),
+  });
+  for (const platform of ['win32', 'linux']) {
+    const options = desktopEsbuildOptions({ platform, contentsDirectory });
+    assert.deepEqual(options, {});
+    const { child, service } = setup({ esbuildExecutable: undefined, esbuildTransport: undefined, ...options });
+    assert.equal(child.sent[0].esbuildExecutable, undefined);
+    ready(child);
+    await service.started;
+    const stopped = service.stop(); child.emit('exit', 0); await stopped;
+  }
 });

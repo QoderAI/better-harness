@@ -477,6 +477,7 @@ export async function serveArtifactBuild(
       buildRuntime: resolved.buildRuntime,
       limits: options.artifactCompileLimits,
       oxcCompilerFactory: options.oxcCompilerFactory,
+      artifactLinkerFactory: options.artifactLinkerFactory,
     });
     respondArtifactJson(response, 200, compiled.snapshot);
   } catch (error) {
@@ -506,6 +507,7 @@ export async function serveArtifactBuildPreview(
         buildRuntime: resolved.buildRuntime,
         limits: options.artifactCompileLimits,
         oxcCompilerFactory: options.oxcCompilerFactory,
+        artifactLinkerFactory: options.artifactLinkerFactory,
       });
       if (digestHex(current.snapshot.buildId) === buildId) compiled = current;
     }

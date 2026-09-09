@@ -1,7 +1,9 @@
+import type { ArtifactLinkerFactory, ManagedArtifactLinker } from "../../../agent-react/linker/port.js";
 import type { OxcCompilerFactory } from "../../../agent-react/host/index.js";
 import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { build, type Plugin } from "esbuild-wasm";
+import type { Plugin } from "esbuild-wasm";
+import { buildPreviewWithWasm, unpackedBuildInputPath } from "./esbuild-wasm-runtime.js";
 import type { ArtifactBuildDiagnostic } from "../../../contracts/artifact.js";
 import type { BuildSnapshot, Diagnostic } from "../../../agent-react/contracts/index.js";
 import {
@@ -20,6 +22,7 @@ const PRODUCTION_RUNTIME_PACKAGES: readonly TrustedRuntimePackage[] = Object.fre
 
 export interface AgentReactProductionCompileOptions {
   readonly oxcCompilerFactory?: OxcCompilerFactory;
+  readonly artifactLinkerFactory?: ArtifactLinkerFactory;
   readonly artifactRoot: string;
   readonly entryPath: string;
   readonly viewId: string;
@@ -44,7 +47,9 @@ export async function compileAgentReactProduction(
   options: AgentReactProductionCompileOptions,
 ): Promise<AgentReactProductionCompileResult> {
   const compiler = (options.oxcCompilerFactory ?? createWorkerOxcCompiler)({ timeoutMs: Math.min(options.timeoutMs, 5_000) });
+  let linker: ManagedArtifactLinker | undefined;
   try {
+    linker = options.artifactLinkerFactory?.({ timeoutMs: Math.min(options.timeoutMs, 5_000) });
     return await withinDeadline((async () => {
       const loaded = await loadAgentReactProject({
         root: options.artifactRoot,
@@ -65,6 +70,7 @@ export async function compileAgentReactProduction(
       }
       const snapshot = await createBuildCoordinator({
         compiler,
+        linker,
         runtimePackages: PRODUCTION_RUNTIME_PACKAGES,
         maxModules: options.maxModules,
         maxOutputBytes: options.maxOutputBytes,
@@ -101,7 +107,7 @@ export async function compileAgentReactProduction(
       sources: new Map(),
     };
   } finally {
-    await compiler.close();
+    await Promise.all([compiler.close(), linker?.close()]);
   }
 }
 
@@ -110,7 +116,7 @@ function hasCompileDeadline(diagnostics: readonly Diagnostic[]): boolean {
 }
 
 async function packageAgentReactBundle(snapshot: BuildSnapshot, maxOutputBytes: number): Promise<string> {
-  const result = await build({
+  const result = await buildPreviewWithWasm({
     entryPoints: ["agent-react:production-entry"],
     bundle: true,
     write: false,
@@ -149,7 +155,7 @@ function productionBundlePlugin(snapshot: BuildSnapshot): Plugin {
       }));
       api.onResolve({ filter: /^@studio\/agent-react$/ }, async () => ({ path: await runtimeModule("index") }));
       api.onResolve({ filter: /^@studio\/agent-react\/jsx-dev-runtime$/ }, async () => ({ path: await runtimeModule("jsx-dev-runtime") }));
-      api.onResolve({ filter: /^(?:react|react-dom)(?:\/.*)?$/ }, (args) => ({ path: fileURLToPath(import.meta.resolve(args.path)) }));
+      api.onResolve({ filter: /^(?:react|react-dom)(?:\/.*)?$/ }, (args) => ({ path: unpackedBuildInputPath(fileURLToPath(import.meta.resolve(args.path))) }));
     },
   };
 }
@@ -178,7 +184,7 @@ async function runtimeModule(name: "index" | "jsx-dev-runtime"): Promise<string>
   const emitted = new URL(`../../../agent-react/runtime/${name}.js`, import.meta.url);
   try {
     await access(fileURLToPath(emitted));
-    return fileURLToPath(emitted);
+    return unpackedBuildInputPath(fileURLToPath(emitted));
   } catch {
     return fileURLToPath(new URL(`../../../agent-react/runtime/${name}.ts`, import.meta.url));
   }

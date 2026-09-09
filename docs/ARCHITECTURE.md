@@ -13,9 +13,11 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   dispatches to capability-owned commands with argv arrays and must not own
   product logic, schemas, fixtures, or host adapters.
 - Compose through public surfaces; do not import another capability's private helpers, fixtures, or provider modules.
-- Extracted desktop capability services (including OXC and future ACP services)
-  are Rust executables. The existing Studio Node runtime remains a host; keep
-  capability contracts explicit and transports cross-platform.
+- Extracted desktop capability services keep native engines outside the Studio
+  Node host. OXC, ACP, and evidence services use Rust; the AgentReact linker uses
+  the public Go esbuild engine with a thin Objective-C NSXPC shell on macOS and
+  retains the existing WASM linker on Windows/Linux. The Go stdio adapter is a
+  test harness, not their desktop backend. Keep contracts explicit and portable.
 - Keep product judgment in canonical owners such as `skills/`, `scripts/`, `hooks/`, `models/`, `schemas/` (a target owner, not yet created), `templates/`, and `references/`; host shells stay thin.
 - Use business-named boundaries, not generic umbrellas such as `scripts/core/`.
 - Runtime behavior needs a contract plus validation evidence: fixtures, tests, smoke commands, or parser-safe output. CLI facades need help, unknown-command, and delegated-output coverage.

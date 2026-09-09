@@ -10,7 +10,7 @@
     "node": ">=22.20.0 <25.0.0"
   },
   "scripts": {
-    "build": "npm run build -w @qoder-ai/harness && npm run build -w @qoder-ai/harness-studio && npm run build:rust",
+    "build": "npm run build -w @qoder-ai/harness && npm run build -w @qoder-ai/harness-studio && npm run build:rust && npm run build:go -- --desktop",
     "start": "electron .",
     "test": "node --test test/*.test.mjs",
     "smoke": "node scripts/smoke.mjs",
@@ -20,7 +20,9 @@
     "dist": "npm run build && npm run stage && electron-builder",
     "build:rust": "node scripts/rust.mjs",
     "test:rust": "node scripts/rust.mjs --test",
-    "test:native": "npm exec -w @qoder-ai/harness-studio -- vitest run --config vitest.native.config.ts"
+    "test:native": "npm exec -w @qoder-ai/harness-studio -- vitest run --config vitest.native.config.ts",
+    "build:go": "node scripts/go.mjs",
+    "test:go": "node scripts/go.mjs --test"
   },
   "dependencies": {
     "@qoder-ai/harness-studio": "0.1.1"
@@ -44,7 +46,13 @@
     ],
     "asarUnpack": [
       "**/*.node",
-      "**/*.wasm"
+      "**/*.wasm",
+      "**/esbuild-wasm/**",
+      "**/@qoder-ai/harness-studio/dist/agent-react/runtime/**",
+      "**/@qoder-ai/harness-studio/dist/agent-react/contracts/**",
+      "**/node_modules/react/**",
+      "**/node_modules/react-dom/**",
+      "**/node_modules/scheduler/**"
     ],
     "npmRebuild": false,
     "mac": {

@@ -30,6 +30,10 @@
     "./oxc-service": {
       "types": "./dist/oxc-service.d.ts",
       "import": "./dist/oxc-service.js"
+    },
+    "./esbuild-service": {
+      "types": "./dist/esbuild-service.d.ts",
+      "import": "./dist/esbuild-service.js"
     }
   },
   "files": [

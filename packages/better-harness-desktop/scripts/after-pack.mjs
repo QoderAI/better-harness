@@ -2,7 +2,7 @@ import { cp, mkdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { installNsxpc, installAcpXpc, installEvidenceXpc, serviceId, acpServiceId, evidenceServiceId } from './nsxpc-bundle.mjs';
+import { installNsxpc, installEsbuildXpc, esbuildServiceId, installAcpXpc, installEvidenceXpc, serviceId, acpServiceId, evidenceServiceId } from './nsxpc-bundle.mjs';
 
 export default async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
@@ -10,6 +10,7 @@ export default async function afterPack(context) {
   const native = join(root, 'dist', 'native');
   const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   await installNsxpc(app, native);
+  await installEsbuildXpc(app, native);
   // macOS ACP runs through its own launchd NSXPC service: the `harness-acp-xpc`
   // service and the `harness-acp-host` driver it spawns live in the .xpc bundle;
   // the `harness-acp-client` bridge lands in Contents/MacOS next to harness-oxc-client.
@@ -25,6 +26,8 @@ export default async function afterPack(context) {
   // ACP .xpc holds two mach-O files, so its nested driver is signed on its own
   // before the bundle is sealed.
   for (const target of [
+    join(app, 'Contents', 'XPCServices', `${esbuildServiceId}.xpc`),
+    join(app, 'Contents', 'MacOS', 'harness-esbuild-client'),
     join(app, 'Contents', 'XPCServices', `${serviceId}.xpc`),
     join(app, 'Contents', 'MacOS', 'harness-oxc-client'),
     join(app, 'Contents', 'XPCServices', `${acpServiceId}.xpc`, 'Contents', 'MacOS', 'harness-acp-host'),

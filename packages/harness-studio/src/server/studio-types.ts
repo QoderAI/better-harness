@@ -1,3 +1,4 @@
+import type { ArtifactLinkerFactory } from "../agent-react/linker/port.js";
 import type { AcpConversation } from "@qoder-ai/harness/exec";
 import type { AcpSessionControl } from "@qoder-ai/harness/exec";
 import type { AcpConfigOption } from "../contracts/acp-session-config.js";
@@ -80,6 +81,7 @@ export interface HarnessStudioServerOptions {
   };
   /** Host-owned compiler transport; omitted in browser/CLI mode. */
   oxcCompilerFactory?: OxcCompilerFactory;
+  artifactLinkerFactory?: ArtifactLinkerFactory;
   /** Optional per-launch desktop credential. Browser CLI leaves this unset. */
   accessToken?: string;
   /** Directory holding the built React app (index.html + assets/). */
