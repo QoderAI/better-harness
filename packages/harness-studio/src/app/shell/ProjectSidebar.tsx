@@ -218,7 +218,7 @@ export function ProjectSidebar(props: {
 
     {/* The Project says where to look; this says when. Both scope every View
         below, which is why neither is one of the rows. */}
-    {props.current !== "memory" && props.current !== "memory-sources" && <DateRangeFilter range={props.dateRange} onChange={props.onDateRangeChange} />}
+    <DateRangeFilter range={props.dateRange} onChange={props.onDateRangeChange} />
 
     <nav aria-label={t("sidebar.navAria")} onKeyDown={onNavigationKeyDown}>
       <section

@@ -16,6 +16,7 @@ import { MemoryAnalysisPanel, type MemoryAcpAgent } from './memory/MemoryAnalysi
 import { MemoryExplorer } from './memory/MemoryExplorer.js';
 import { buildMemoryTree, memoryEditorKey, type MemoryTreeNode } from './memory/tree-model.js';
 import { forgetSnapshots, hostLabel, memoryBrowseIndexes, knownSnapshots, MEMORY_LOCATION_KEY, memoryLocationHash, parseMemoryLocation, rememberSnapshot, type MemoryLocation } from './memory/browser-model.js';
+import { withinDateRange, type StudioDateRange } from './date-range.js';
 
 function initialLocation(): MemoryLocation {
   const hash = globalThis.location.hash;
@@ -26,7 +27,7 @@ function initialLocation(): MemoryLocation {
 
 interface EditorTab { key: string; document: string; entry?: string; title: string; view: MemoryLocation['view']; project?: string }
 
-export function MemoryView(): React.JSX.Element {
+export function MemoryView({ dateRange }: { dateRange: StudioDateRange }): React.JSX.Element {
   const { t } = useTranslation('common');
   const [inventory, setInventory] = useState<MemoryInventory>();
   const [location, setLocation] = useState(initialLocation);
@@ -110,7 +111,12 @@ export function MemoryView(): React.JSX.Element {
   }, [inventory, indexRevision]);
 
   const loaded = useMemo(() => inventory ? knownSnapshots(inventory) : [], [inventory, cacheRevision]);
-  const nodes = useMemo(() => inventory ? buildMemoryTree(inventory, loaded, key => t(`memory.${key}`), location.host) : [], [inventory, loaded, t, location.host]);
+  const filteredInventory = useMemo(() => {
+    if (!inventory) return undefined;
+    const documents = inventory.documents.filter(doc => withinDateRange(doc.provenance.observedAt, dateRange));
+    return { ...inventory, documents };
+  }, [inventory, dateRange]);
+  const nodes = useMemo(() => filteredInventory ? buildMemoryTree(filteredInventory, loaded, key => t(`memory.${key}`), location.host) : [], [filteredInventory, loaded, t, location.host]);
   const selected = inventory?.documents.find(doc => doc.id === location.document);
   const selectedSource = inventory?.sources.find(source => source.sourceId === selected?.sourceId);
   const selectedEntry = snapshot?.extraction?.entries.find(entry => entry.id === location.entry);
@@ -150,8 +156,8 @@ export function MemoryView(): React.JSX.Element {
       <div className="memory-filterbar"><label className="memory-search"><MagnifyingGlass size={15} aria-hidden="true" /><input ref={search} type="search" aria-label={t('memory.search')} placeholder={t('memory.search')} value={location.query} onChange={event => navigate({ query: event.target.value }, true)} /></label></div>
       <FacetNavigation className="memory-agent-nav" label={t('memory.host')} groups={[{
         id: 'agents', label: t('customize:library.sections.agents'),
-        items: inventory ? ['all', ...new Set(inventory.sources.map(source => source.host))].map(host => {
-          const count = inventory.documents.filter(doc => host === 'all' || doc.provenance.host === host).length;
+        items: filteredInventory ? ['all', ...new Set(filteredInventory.sources.map(source => source.host))].map(host => {
+          const count = filteredInventory.documents.filter(doc => host === 'all' || doc.provenance.host === host).length;
           return { id: host, label: host === 'all' ? t('customize:library.allAgents') : hostLabel(host), current: location.host === host, count,
             icon: host === 'all' ? <Users size={16} aria-hidden="true" /> : <Robot size={16} aria-hidden="true" />,
             onSelect: () => navigate({ host }) };
@@ -160,7 +166,7 @@ export function MemoryView(): React.JSX.Element {
       {error ? <div className="memory-message"><p role="alert">{t('memory.error')}</p><button type="button" onClick={() => setRevision(value => value + 1)}>{t('memory.refresh')}</button></div> : !inventory ? <p className="memory-message" role="status">{t('memory.loading')}</p> : <MemoryExplorer nodes={nodes} query={location.query} activeKey={activeKey} initialView={location.view} onOpen={open} label={t('memory.documents')} />}
       {(indexing || indexError) && <div className="memory-index-status"><span role={indexError ? 'alert' : 'status'}>{t(indexError ? 'memory.indexError' : 'memory.loadingEntries')}</span>{indexError && <button type="button" onClick={() => setIndexRevision(value => value + 1)}>{t('memory.retry')}</button>}</div>}
       <details className="memory-source-coverage"><summary>{t('memory.sourceStatus')}</summary>{sourceCoverage.map(source => <div key={source.sourceId}><span>{hostLabel(source.host)}</span><span>{t(`memory.coverageLabels.${source.coverage.state}`)}</span><span className="memory-coverage-path">{source.root?.displayPath ?? t('memory.noNativeSource')}</span></div>)}</details>
-      <footer className="memory-inventory-footer">{t('memory.fileCount', { count: inventory?.documents.length ?? 0 })}</footer>
+      <footer className="memory-inventory-footer">{t('memory.fileCount', { count: filteredInventory?.documents.length ?? 0 })}</footer>
     </aside>
     {panes.sash('explorer')}
     <div className="memory-editor">

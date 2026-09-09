@@ -606,7 +606,7 @@ export function App(): React.JSX.Element {
         {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
       <div className={`studio-surface studio-surface-${area}`}>
-        {(area === "memory" || area === "memory-sources") && <MemoryView />}
+        {(area === "memory" || area === "memory-sources") && <MemoryView dateRange={dateRange} />}
         {showWelcome ? <WorkspaceWelcome onWorkspaceChanged={async () => {
           const projectId = await workspaceChanged();
           globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
