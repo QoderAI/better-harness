@@ -10,7 +10,7 @@ import type { AcpSessionActions } from "./acp-session-actions.js";
 import { AcpComposer } from "./AcpComposer.js";
 import { AcpContent, AcpTerminalContext } from "./AcpContent.js";
 import { AcpSessionSettings } from "./AcpSessionSettings.js";
-import { memo, useMemo, useRef, useState, useLayoutEffect } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { timelineItems, type AcpPendingPermission, type HarnessRunState, type TimelineItem } from "./run-store.js";
 import { TimelineEntry, ToolCallEntry } from "./TimelineEntry.js";
@@ -21,9 +21,10 @@ import { ChainOfThought, ChainOfThoughtContent, ChainOfThoughtHeader, ChainOfTho
 import { Confirmation, ConfirmationAction, ConfirmationActions, ConfirmationTitle } from "../components/ai-elements/confirmation.js";
 import { AcpConversationPosition } from "./AcpConversationPosition.js";
 import { planElementState } from "./ai-elements-adapter.js";
+import { defaultAcpConfigValue, loadAcpAgentPreferences, saveAcpAgentPreferences } from "./acp-session-preferences.js";
 
 /** A host-independent view: callers own launch, routing and permission authority. */
-export function AcpSessionStream({ state, prompt, failure, onPermission, actions, permissionClassName = "", compact = false, showComposer = true, revealTool, contextEvidence }: {
+export function AcpSessionStream({ state, prompt, failure, onPermission, actions, permissionClassName = "", compact = false, showComposer = true, revealTool, contextEvidence, agentId }: {
   revealTool?: { id: string; token: number };
   contextEvidence?: React.ReactNode;
   state: HarnessRunState;
@@ -34,13 +35,47 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
   failure?: string;
   onPermission?: (requestId: string, optionId: string) => Promise<void>;
   permissionClassName?: string;
+  /** Optional stable agent identifier used to remember config choices across runs. */
+  agentId?: string;
 }): React.JSX.Element {
   const { t } = useTranslation("run");
   const [startError, setStartError] = useState<string>();
   const [starting, setStarting] = useState(false);
+  const [autoConfigured, setAutoConfigured] = useState(false);
   const items = useMemo(() => timelineItems(state), [state.timelineRevision, state.timelineByKey]);
   const blocks = useMemo(() => conversationBlocks(items), [items]);
   const session = state.acp;
+
+  useEffect(() => {
+    if (!session.prepared || state.conversation || !actions || autoConfigured) return;
+    const needsConfig = (session.config?.length ?? 0) > 0 || (session.modes?.length ?? 0) > 0;
+    if (!needsConfig) {
+      setAutoConfigured(true);
+      void actions.execute({ action: "start" }).catch(error => setStartError(String(error)));
+      return;
+    }
+    setAutoConfigured(true);
+    void (async () => {
+      const preferences = loadAcpAgentPreferences(agentId);
+      for (const option of session.config ?? []) {
+        const target = preferences?.values[option.id] ?? defaultAcpConfigValue(option);
+        if (target !== undefined && target !== option.value) {
+          try {
+            await actions.execute({ action: "config", configId: option.id, value: target });
+          } catch {
+            // Leave manual configuration available if an automatic choice fails.
+            return;
+          }
+        }
+      }
+      if (session.mode === undefined && session.modes?.length) {
+        const modeId = preferences?.mode ?? session.modes[0]!.id;
+        try { await actions.execute({ action: "mode", modeId }); } catch { return; }
+      }
+      saveAcpAgentPreferences(agentId, session.config ?? [], session.mode);
+      try { await actions.execute({ action: "start" }); } catch (error) { setStartError(String(error)); }
+    })();
+  }, [session.prepared, state.conversation, actions, session.config, session.modes, session.mode, agentId, autoConfigured]);
 
   if (state.connection && state.status === "running" && actions && state.runId) return <AcpConnectionPanel key={state.runId} runId={state.runId} connection={state.connection} actions={actions} />;
 
@@ -72,7 +107,6 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
           <ChainOfThoughtHeader>{t("session.plan", { completed: session.plan.filter((entry) => entry.status === "completed").length, total: session.plan.length })}</ChainOfThoughtHeader>
           <ChainOfThoughtContent>{session.plan.map((entry, index) => <ChainOfThoughtStep key={index} status={planElementState(entry.status)} label={entry.content} description={`${t(`session.planStatus.${entry.status}`)} · ${t(`session.planPriority.${entry.priority}`)}`} />)}</ChainOfThoughtContent>
         </ChainOfThought>}
-        {session.commands !== undefined && session.commands.length > 0 && <details className="acp-session-commands"><summary>{t("session.commands", { count: session.commands.length })}</summary><p>{t("session.observedOnly")}</p><dl>{session.commands.map((command) => <div key={command.name}><dt>/{command.name}</dt><dd>{command.description}{command.inputHint && <p className="acp-command-hint">{t("session.commandInput", { hint: command.inputHint })}</p>}</dd></div>)}</dl></details>}
         </details>}
         {session.partial && <p className="acp-session-notice">{t("session.partial")}</p>}
         {!!session.unsupported?.length && <details className="acp-session-notice"><summary>{t("session.unsupported")}</summary><p>{session.unsupported.join(", ")}</p></details>}
@@ -89,11 +123,11 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
       {items.length > 0 && <ConversationScrollButton>{t("session.latest")}</ConversationScrollButton>}
     </Conversation>
     {showComposer && <footer className="acp-conversation-footer">
-      {state.conversation && actions && <AcpComposer key={state.runId} state={state} actions={actions} toolbar={<>
-        <AcpSessionSettings session={session} runId={state.runId} active={state.status === "running" && state.conversation.status !== "closed"} actions={actions} />
+      {state.conversation && actions && <AcpComposer key={state.runId} state={state} actions={actions} agentId={agentId} toolbar={<>
+        <AcpSessionSettings session={session} runId={state.runId} active={state.status === "running" && state.conversation.status !== "closed"} actions={actions} agentId={agentId} />
         {session.usage && <small className="ai-prompt-usage" title={t("session.context")}>{Math.round(session.usage.used / Math.max(session.usage.size, 1) * 100)}%</small>}
       </>} />}
-      {session.prepared && !state.conversation && actions && <AcpSessionSettings session={session} runId={state.runId} active={state.status === "running"} actions={actions} />}
+      {session.prepared && !state.conversation && actions && <AcpSessionSettings session={session} runId={state.runId} active={state.status === "running"} actions={actions} agentId={agentId} />}
       {session.prepared && actions && <button type="button" disabled={starting} onClick={() => { setStarting(true); setStartError(undefined); void actions.execute({ action: "start" }).catch(error => setStartError(String(error))).finally(() => setStarting(false)); }}>{t("session.sendPrompt")}</button>}
       {startError && <p role="alert">{startError}</p>}
     </footer>}

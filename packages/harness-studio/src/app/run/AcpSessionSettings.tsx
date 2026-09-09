@@ -3,10 +3,11 @@ import { useTranslation } from "react-i18next";
 import { parseAcpConfig, type AcpConfigOption } from "../../contracts/acp-session-config.js";
 import type { AcpSessionState } from "./acp-session-state.js";
 import type { AcpSessionActions, AcpSessionAction } from "./acp-session-actions.js";
+import { saveAcpAgentPreferences } from "./acp-session-preferences.js";
 export { postAcpSessionAction } from "./acp-session-actions.js";
 
 /** Compact current-value controls, with less common options in one disclosure. */
-export function AcpSessionSettings({ session, runId, active, actions }: { session: AcpSessionState; runId?: string; active: boolean; actions?: AcpSessionActions }): React.JSX.Element | null {
+export function AcpSessionSettings({ session, runId, active, actions, agentId }: { session: AcpSessionState; runId?: string; active: boolean; actions?: AcpSessionActions; agentId?: string }): React.JSX.Element | null {
   const { t } = useTranslation("run");
   const id = useId();
   const [config, setConfig] = useState(session.config);
@@ -29,8 +30,11 @@ export function AcpSessionSettings({ session, runId, active, actions }: { sessio
     try {
       const result = await actions!.execute(action);
       // A newer protocol notification is authoritative over a delayed HTTP ack.
-      if (result.configOptions !== undefined && observedConfig.current === before) setConfig(parseAcpConfig(result.configOptions));
+      const nextConfig = result.configOptions !== undefined ? parseAcpConfig(result.configOptions) : undefined;
+      const nextMode = typeof result.modeId === "string" ? result.modeId : session.mode;
+      if (nextConfig !== undefined && observedConfig.current === before) setConfig(nextConfig);
       if (typeof result.modeId === "string") setMode(result.modeId);
+      saveAcpAgentPreferences(agentId, nextConfig ?? config ?? [], nextMode);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { busy.current = false; setPending(undefined); }
   }

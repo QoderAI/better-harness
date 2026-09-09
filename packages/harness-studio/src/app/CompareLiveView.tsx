@@ -380,6 +380,6 @@ function LiveLane(props: {
       <small className="live-compare-counts">{counts}</small>
       {props.run.state.status === "running" && !props.run.state.conversation && !props.run.state.connection && <button type="button" disabled={cancelling} onClick={() => void cancel()}>{t(cancelling ? "live.cancelling" : "live.cancel")}</button>}
     </header>
-    <AcpSessionStream revealTool={props.revealTool} actions={createAcpSessionActions(props.run.runId)} state={props.run.state} prompt={props.prompt} failure={actionError ?? props.run.failure} onPermission={props.onDecide} permissionClassName="live-compare-permission" />
+    <AcpSessionStream revealTool={props.revealTool} actions={createAcpSessionActions(props.run.runId)} state={props.run.state} prompt={props.prompt} failure={actionError ?? props.run.failure} onPermission={props.onDecide} permissionClassName="live-compare-permission" agentId={props.run.agentId} />
   </section>;
 }

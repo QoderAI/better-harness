@@ -15,7 +15,7 @@ export interface LiveAgentChoice {
 }
 
 export const LOCAL_AGENT_CHOICE = "local";
-const ACP_CHOICE_PREFIX = "acp:";
+export const ACP_CHOICE_PREFIX = "acp:";
 
 /**
  * Build the bounded launcher list. The browser never names a command or argv; it

@@ -3,11 +3,11 @@ import type { run as enRun } from "../en/run.js";
 export const run: typeof enRun = {
   connection: {"title": "选择会话", "projectHistory": "查看当前项目中此 Agent 的会话，或开始新对话。", "invalidList": "Agent 返回的会话列表无效。", "authentication": "登录", "authHint": "仅在 Agent 需要时登录，Studio 不保存凭据。", "authUnsupported": "需要外部认证流程。", "authenticated": "认证已完成，可以打开会话。", "newSession": "开始新会话", "refresh": "刷新", "list": "浏览 Agent 历史", "listUnsupported": "此 Agent 不支持会话发现。", "working": "正在等待 Agent…", "empty": "当前项目暂无会话。", "restoreUnsupported": "此 Agent 可以列出会话，但不支持恢复。", "more": "加载更多会话"},
   conversation: {
-    promptPlaceholder: "继续提问… / 命令，@ 会话文件",
+    promptPlaceholder: "继续提问… @ 会话文件",
     sessionFiles: "会话文件",
     observedFile: "本会话中出现的文件 · 仅引用",
     attachedFile: "本条消息的附件",
-    noSuggestions: "没有匹配的命令或会话文件",
+    noSuggestions: "没有匹配的会话文件",
     suggestionKeys: "↑ ↓ 选择 · Tab 插入",
     inputKeys: "Enter 发送 · Shift+Enter 换行",
     recover: "恢复会话并发送",

@@ -7,14 +7,13 @@ import type { AcpSessionActions } from "./acp-session-actions.js";
 import type { HarnessRunState } from "./run-store.js";
 import { Paperclip } from "@phosphor-icons/react/Paperclip";
 import { At } from "@phosphor-icons/react/At";
-import { Terminal } from "@phosphor-icons/react/Terminal";
 import { Stop } from "@phosphor-icons/react/Stop";
 import { FileText } from "@phosphor-icons/react/FileText";
 import { X } from "@phosphor-icons/react/X";
 import { PromptInput, PromptInputButton, PromptInputFooter, PromptInputHeader, PromptInputSubmit, PromptInputTextarea, PromptInputTools } from "../components/ai-elements/prompt-input.js";
 import type { PromptSuggestion } from "../components/ai-elements/prompt-input-model.js";
 
-export function AcpComposer({ state, actions, context, toolbar, compact = false, sessionLabel, onCloseSession }: { state: HarnessRunState; actions: AcpSessionActions; context?: ReactNode; toolbar?: ReactNode; compact?: boolean; sessionLabel?: string; onCloseSession?: () => Promise<void> }): React.JSX.Element {
+export function AcpComposer({ state, actions, context, toolbar, compact = false, sessionLabel, onCloseSession, agentId }: { state: HarnessRunState; actions: AcpSessionActions; context?: ReactNode; toolbar?: ReactNode; compact?: boolean; sessionLabel?: string; onCloseSession?: () => Promise<void>; agentId?: string }): React.JSX.Element {
   const { t } = useTranslation("run");
   const key = `acp-draft:${state.runId}`;
   const [draft, setDraft] = useState(() => { try { return localStorage.getItem(key) ?? ""; } catch { return ""; } });
@@ -31,7 +30,6 @@ export function AcpComposer({ state, actions, context, toolbar, compact = false,
   const conversation = state.conversation!;
   const generating = conversation.status === "generating" || conversation.status === "cancelling";
   const closed = conversation.status === "closed";
-  const commands: PromptSuggestion[] = (state.acp.commands ?? []).map(command => ({ id: `command:${command.name}`, trigger: "/", label: `/${command.name}`, description: [command.description, command.inputHint].filter(Boolean).join(" · "), value: `/${command.name}` }));
   const paths = [...new Set([...state.acp.tools.values()].flatMap(observedToolPaths))];
   const mentions: PromptSuggestion[] = paths.map(path => ({ id: `file:${path}`, trigger: "@", label: path, description: t("conversation.observedFile"), value: `@${path}` }));
   for (const block of attachments) if (block.type === "resource") mentions.push({ id: `attachment:${block.resource.uri}`, trigger: "@", label: attachmentLabel(block), description: t("conversation.attachedFile"), value: `@${attachmentLabel(block)}` });
@@ -104,12 +102,11 @@ export function AcpComposer({ state, actions, context, toolbar, compact = false,
       </PromptInputHeader>}
       <PromptInputTextarea ref={input} rows={2} value={draft} onValueChange={setDraft} onSend={immediately => void send(immediately)}
         aria-description={t("conversation.inputKeys")} title={t("conversation.inputKeys")} aria-label={t("conversation.followup")} placeholder={t("conversation.promptPlaceholder")} disabled={closed}
-        suggestions={[...commands, ...mentions]} suggestionLabels={{ commands: t("conversation.commands"), mentions: t("conversation.sessionFiles"), empty: t("conversation.noSuggestions"), keyboard: t("conversation.suggestionKeys") }}
+        suggestions={mentions} suggestionLabels={{ mentions: t("conversation.sessionFiles"), empty: t("conversation.noSuggestions"), keyboard: t("conversation.suggestionKeys") }}
         onPaste={event => { if (event.clipboardData.files.length) { event.preventDefault(); void attach(event.clipboardData.files); } }} />
       <PromptInputFooter className="acp-composer-actions">
         <PromptInputTools>
           {canAttach && <><input ref={file} hidden type="file" multiple onChange={event => void attach(event.target.files)} /><PromptInputButton aria-label={t(loading ? "conversation.loading" : "conversation.attach")} data-tooltip={t(loading ? "conversation.loading" : "conversation.attach")} disabled={pending || loading || closed} onClick={() => file.current?.click()}><Paperclip size={16} aria-hidden="true" /></PromptInputButton></>}
-          {!!commands.length && <PromptInputButton aria-label={t("conversation.commands")} data-tooltip={t("conversation.commands")} disabled={closed} onClick={() => insertTrigger("/")}><Terminal size={16} aria-hidden="true" /></PromptInputButton>}
           {!!mentions.length && <PromptInputButton aria-label={t("conversation.sessionFiles")} data-tooltip={t("conversation.sessionFiles")} disabled={closed} onClick={() => insertTrigger("@")}><At size={16} aria-hidden="true" /></PromptInputButton>}
           {toolbar}
         </PromptInputTools>

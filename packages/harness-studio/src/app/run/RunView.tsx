@@ -94,6 +94,7 @@ import {
   toolForCursor,
 } from "./debugger-cursor.js";
 import {
+  ACP_CHOICE_PREFIX,
   isAcpChoice,
   liveAgentChoices,
   liveRunEndpoint,
@@ -427,7 +428,7 @@ export function RunView({
 
     <ResizableDebuggerPanes
       tree={live ? <LiveExecutionTree state={viewState} prompt={viewPrompt} /> : <ExecutionTree session={retainedSession} cursor={cursor} expanded={expandedNodes} onToggle={toggleExpanded} onSelect={selectNode} />}
-      activity={live ? <LiveNotebook state={viewState} prompt={viewPrompt} groups={liveGroups} acp={activeRuntime === "acp"} /> : <SessionNotebook session={retainedSession} cursor={cursor} expanded={expandedNodes} onSelect={selectCursor} onToggle={toggleExpanded} />}
+      activity={live ? <LiveNotebook state={viewState} prompt={viewPrompt} groups={liveGroups} acp={activeRuntime === "acp"} agentId={selectedAgent && isAcpChoice(selectedAgent) ? selectedAgent.value.slice(ACP_CHOICE_PREFIX.length) : undefined} /> : <SessionNotebook session={retainedSession} cursor={cursor} expanded={expandedNodes} onSelect={selectCursor} onToggle={toggleExpanded} />}
       inspector={live ? <LiveInspector state={viewState} runtime={submittedPrompt ? activeRuntime : selectedAgent && isAcpChoice(selectedAgent) ? "acp" : "qoder"} agentLabel={activeAgentLabel ?? selectedAgent?.label ?? agentLabel} project={submittedPrompt ? runProject : project} onPermission={decidePermission} /> : <StateInspector session={retainedSession} cursor={cursor} activeTab={inspectorTab} artifactEndpoint={artifactEndpoint} onTab={setInspectorTab} onPrevious={() => selectCursor(previousStateCursor(retainedSession, cursor))} />}
     />
 
@@ -674,9 +675,9 @@ function LiveExecutionTree({ state, prompt }: { state: HarnessRunState; prompt: 
   return <aside className="execution-tree live-tree" aria-label={t("tree.title")}><header><div><strong>{t("tree.title")}</strong></div><span>{t("tree.eventCount", { count: state.timelineKeys.length })}</span></header><div className="execution-tree-scroll"><TreeRow nodeId="live-session" label={t("tree.session")} detail={state.runId ?? t("tree.starting")} icon={Database} selected={false} depth={0} onSelect={() => undefined} /><TreeRow nodeId="live-turn" label={t("tree.turn", { turn: 1 })} detail={prompt} icon={GitBranch} selected={false} depth={1} onSelect={() => undefined} /><TreeRow nodeId="live-prompt" label={t("tree.prompt")} detail={prompt} icon={UserCircle} selected={false} depth={2} onSelect={() => undefined} /><TreeRow nodeId="live-tools" label={t("tree.stages")} detail={t("tree.toolCallCount", { count: state.toolCallCount })} icon={Wrench} selected={false} depth={2} status={state.status} onSelect={() => undefined} /></div></aside>;
 }
 
-function LiveNotebook({ state, prompt, groups, acp }: { state: HarnessRunState; prompt: string; groups: LiveTimelineGroup[]; acp: boolean }): React.JSX.Element {
+function LiveNotebook({ state, prompt, groups, acp, agentId }: { state: HarnessRunState; prompt: string; groups: LiveTimelineGroup[]; acp: boolean; agentId?: string }): React.JSX.Element {
   const { t } = useTranslation("run");
-  if (acp) return <main className="session-notebook live-notebook acp-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><strong>{t("live.notebookTitle")}</strong><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><AcpSessionStream actions={state.runId ? createAcpSessionActions(state.runId) : undefined} state={state} prompt={prompt} /></main>;
+  if (acp) return <main className="session-notebook live-notebook acp-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><strong>{t("live.notebookTitle")}</strong><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><AcpSessionStream actions={state.runId ? createAcpSessionActions(state.runId) : undefined} state={state} prompt={prompt} agentId={agentId} /></main>;
   return <main className="session-notebook live-notebook" aria-label={t("live.aria")}><header className="notebook-viewbar"><nav><button type="button" className="active"><ClipboardText size={13} />{t("live.notebookTitle")}</button></nav><span>{t("live.toolCalls", { count: state.toolCallCount })}</span></header><div className="session-notebook-scroll"><article className="debugger-event event-prompt"><div className="event-rail"><span><UserCircle size={13} /></span></div><div className="debugger-event-card"><header><div><strong>{t("live.userRequest")}</strong></div><span>{t("event.prompt")}</span></header><section className="prompt-cell"><p>{prompt}</p></section></div></article><section className="live-session-stage">{state.warnings.map((warning, index) => <p className="warning" key={index}><WarningCircle size={14} />{warning}</p>)}{state.error ? <p className="error" role="alert"><XCircle size={14} />{state.error}</p> : null}<section className="activity-panel" aria-label={t("live.agentActivity")}><header className="activity-panel-head"><div><h2>{t("live.agentActivity")}</h2></div><span>{t("live.activitySummary", { calls: state.toolCallCount, groups: groups.length })}</span></header><VirtualLiveTimeline groups={groups} followLatest={state.status === "running"} /></section>{state.result !== undefined ? <details className="live-run-result"><summary>{t("live.runResult")}</summary><pre>{JSON.stringify(state.result, null, 2)}</pre></details> : null}</section></div></main>;
 }
 

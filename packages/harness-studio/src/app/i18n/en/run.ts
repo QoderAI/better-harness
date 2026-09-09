@@ -1,11 +1,11 @@
 export const run = {
   connection: {"title": "Choose session", "projectHistory": "Browse this Agent’s sessions in the current Project, or start a new conversation.", "invalidList": "The Agent returned an invalid session list.", "authentication": "Sign in", "authHint": "Only sign in if this Agent requires it. Studio does not store credentials.", "authUnsupported": "Requires an external authentication flow.", "authenticated": "Authentication completed. You can now open a session.", "newSession": "Start new session", "refresh": "Refresh", "list": "Browse Agent history", "listUnsupported": "This Agent does not support session discovery.", "working": "Waiting for Agent…", "empty": "No sessions in this Project.", "restoreUnsupported": "This Agent can list sessions but cannot restore them.", "more": "Load more sessions"},
   conversation: {
-    promptPlaceholder: "Ask a follow-up… / commands, @ session files",
+    promptPlaceholder: "Ask a follow-up… @ session files",
     sessionFiles: "Session files",
     observedFile: "Observed in this session · reference only",
     attachedFile: "Attached to this message",
-    noSuggestions: "No matching commands or session files",
+    noSuggestions: "No matching session files",
     suggestionKeys: "↑ ↓ select · Tab insert",
     inputKeys: "Enter to send · Shift+Enter for newline",
     recover: "Recover and send",

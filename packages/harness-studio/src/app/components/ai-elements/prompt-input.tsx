@@ -25,7 +25,7 @@ type TextareaProps = Omit<ComponentProps<"textarea">, "value" | "onChange"> & {
   onValueChange: (value: string) => void;
   onSend?: (immediately: boolean) => void;
   suggestions?: readonly PromptSuggestion[];
-  suggestionLabels?: { commands: string; mentions: string; empty: string; keyboard: string };
+  suggestionLabels?: { commands?: string; mentions: string; empty: string; keyboard: string };
 };
 
 function assignRef(ref: Ref<HTMLTextAreaElement> | undefined, node: HTMLTextAreaElement | null) {
@@ -101,8 +101,8 @@ export function PromptInputTextarea({ value, onValueChange, onSend, suggestions 
   }
   return <div className="ai-prompt-body">
     {open && <div className="ai-prompt-suggestions">
-      <div className="ai-prompt-suggestions-heading">{match?.trigger === "/" ? suggestionLabels!.commands : suggestionLabels!.mentions}<span>{suggestionLabels!.keyboard}</span></div>
-      <div ref={list} id={id} role="listbox" aria-label={match?.trigger === "/" ? suggestionLabels!.commands : suggestionLabels!.mentions}>
+      <div className="ai-prompt-suggestions-heading">{match?.trigger === "/" ? suggestionLabels!.commands ?? suggestionLabels!.mentions : suggestionLabels!.mentions}<span>{suggestionLabels!.keyboard}</span></div>
+      <div ref={list} id={id} role="listbox" aria-label={match?.trigger === "/" ? suggestionLabels!.commands ?? suggestionLabels!.mentions : suggestionLabels!.mentions}>
         {items.map((item, position) => <div id={`${id}-${position}`} key={item.id} role="option" aria-selected={position === index} className="ai-prompt-option" onMouseDown={event => event.preventDefault()} onMouseMove={() => setActive(position)} onClick={() => select(item)}>
           {item.trigger === "/" ? <Terminal size={16} aria-hidden="true" /> : <At size={16} aria-hidden="true" />}<div><strong>{item.label}</strong>{item.description && <span>{item.description}</span>}</div>
         </div>)}
