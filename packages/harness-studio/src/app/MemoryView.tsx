@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowClockwise } from '@phosphor-icons/react/ArrowClockwise';
-import { CaretDown } from '@phosphor-icons/react/CaretDown';
+import { Robot } from '@phosphor-icons/react/Robot';
+import { Users } from '@phosphor-icons/react/Users';
+import { FacetNavigation } from './shell/FacetNavigation.js';
 import { Folder } from '@phosphor-icons/react/Folder';
 import { X } from '@phosphor-icons/react/X';
 import { MagnifyingGlass } from '@phosphor-icons/react/MagnifyingGlass';
@@ -146,7 +148,15 @@ export function MemoryView(): React.JSX.Element {
     </ToolbarActions>
     <aside className="memory-explorer" aria-label={t('memory.navigation')}>
       <div className="memory-filterbar"><label className="memory-search"><MagnifyingGlass size={15} aria-hidden="true" /><input ref={search} type="search" aria-label={t('memory.search')} placeholder={t('memory.search')} value={location.query} onChange={event => navigate({ query: event.target.value }, true)} /></label></div>
-      <label className="memory-filter"><span>{t('memory.host')}</span><select aria-label={t('memory.host')} value={location.host} onChange={event => navigate({ host: event.target.value })}><option value="all">{t('memory.all')}</option>{[...new Set(inventory?.sources.map(source => source.host))].map(host => <option key={host} value={host}>{hostLabel(host)}</option>)}</select><CaretDown size={11} aria-hidden="true" /></label>
+      <FacetNavigation className="memory-agent-nav" label={t('memory.host')} groups={[{
+        id: 'agents', label: t('customize:library.sections.agents'),
+        items: ['all', ...new Set(inventory?.sources.map(source => source.host))].map(host => ({
+          id: host, label: host === 'all' ? t('customize:library.allAgents') : hostLabel(host), current: location.host === host,
+          count: inventory?.documents.filter(doc => host === 'all' || doc.provenance.host === host).length,
+          icon: host === 'all' ? <Users size={16} aria-hidden="true" /> : <Robot size={16} aria-hidden="true" />,
+          onSelect: () => navigate({ host }),
+        })),
+      }]} />
       {error ? <div className="memory-message"><p role="alert">{t('memory.error')}</p><button type="button" onClick={() => setRevision(value => value + 1)}>{t('memory.refresh')}</button></div> : !inventory ? <p className="memory-message" role="status">{t('memory.loading')}</p> : <MemoryExplorer nodes={nodes} query={location.query} activeKey={activeKey} initialView={location.view} onOpen={open} label={t('memory.documents')} />}
       {(indexing || indexError) && <div className="memory-index-status"><span role={indexError ? 'alert' : 'status'}>{t(indexError ? 'memory.indexError' : 'memory.loadingEntries')}</span>{indexError && <button type="button" onClick={() => setIndexRevision(value => value + 1)}>{t('memory.retry')}</button>}</div>}
       <details className="memory-source-coverage"><summary>{t('memory.sourceStatus')}</summary>{sourceCoverage.map(source => <div key={source.sourceId}><span>{hostLabel(source.host)}</span><span>{t(`memory.coverageLabels.${source.coverage.state}`)}</span><span className="memory-coverage-path">{source.root?.displayPath ?? t('memory.noNativeSource')}</span></div>)}</details>

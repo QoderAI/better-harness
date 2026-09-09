@@ -351,6 +351,8 @@
 
 .studio-project-open:hover:not(:disabled) { color: var(--color-text); background: var(--color-surface-hover); }
 .studio-project-open:disabled { color: var(--color-text-subtle); }
+.studio-project-scan { margin: var(--space-xs) var(--sidebar-inset) var(--space-sm); }
+.studio-project-scan > button { width: 100%; min-height: var(--control-height); display: flex; align-items: center; justify-content: center; gap: var(--space-sm); }
 .studio-project-spinner { width: var(--space-md); height: var(--space-md); border: 2px solid var(--color-border-strong); border-top-color: var(--color-primary); border-radius: var(--radius-full); animation: workspace-progress-spin 720ms linear infinite; }
 
 /* Source-list rows are inset and rounded, and the active row is filled with the
@@ -881,3 +883,21 @@
   .studio-primary-nav { transition: none; }
   .studio-project-spinner { animation: none; }
 }
+
+/* Shared source-list filters for Customizations and Memory. */
+.studio-facet-nav h2 { min-height: var(--pane-header-height); margin: 0; padding: var(--space-sm) var(--space-sm) var(--space-xs); display: flex; align-items: flex-end; color: var(--color-text-muted); font-size: var(--type-pane-size); font-weight: var(--weight-semibold); line-height: var(--type-pane-line); letter-spacing: var(--type-pane-track); }
+.studio-facet-nav button { width: 100%; min-height: var(--navigation-row-height); display: flex; align-items: center; gap: var(--space-sm); border: 0; border-radius: var(--radius-xs); padding: var(--space-xs) var(--space-sm); background: transparent; color: var(--color-text-muted); font-weight: var(--weight-regular); text-align: left; }
+.studio-facet-nav button > svg { flex: none; color: var(--color-text-muted); }
+.studio-facet-nav button > span { min-width: 0; flex: 1; overflow: hidden; color: inherit; font-size: var(--type-label-size); text-overflow: ellipsis; white-space: nowrap; }
+.studio-facet-nav small { flex: none; color: var(--color-text-subtle); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.studio-facet-status { color: var(--color-warning); }
+.studio-facet-nav button:hover { color: var(--color-text); background: var(--color-surface-hover); }
+.studio-facet-nav button:active { background: var(--color-surface-active); }
+/* The unfocused selection is the soft fill; a focused row takes the filled
+   source-list state instead of a detached control outline. */
+.studio-facet-nav button[aria-current] { color: var(--color-text); background: var(--color-surface-selected); }
+.studio-facet-nav button[aria-current] > span { font-weight: var(--weight-semibold); }
+.studio-facet-nav button[aria-current] > svg { color: currentColor; }
+.studio-facet-nav button:focus-visible { outline: none; color: var(--color-on-primary); background: var(--color-primary); }
+.studio-facet-nav button:focus-visible > svg,
+.studio-facet-nav button:focus-visible small { color: inherit; }

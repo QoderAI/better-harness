@@ -7,9 +7,7 @@
 .memory-search { display: flex; flex: 1; align-items: center; gap: var(--space-sm); min-width: 0; color: var(--color-text-subtle); }
 .memory-search input { width: 100%; min-width: 0; height: var(--control-height); padding: 0; border: 0; background: transparent; font: inherit; color: var(--color-text); }
 .memory-search input::placeholder { color: var(--color-text-subtle); }
-.memory-filter { position: relative; display: flex; align-items: center; gap: var(--space-sm); margin: var(--space-sm) var(--space-md); font-size: var(--type-meta-size); color: var(--color-text-muted); }
-.memory-filter select { appearance: none; flex: 1; min-width: 0; height: var(--control-height); padding: 0 var(--space-xl) 0 var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-xs); font: inherit; color: var(--color-text); background: var(--color-workspace); cursor: pointer; }
-.memory-filter > svg { position: absolute; right: var(--space-sm); pointer-events: none; }
+.memory-agent-nav { flex-shrink: 0; max-height: 40%; overflow: auto; padding: 0 var(--sidebar-inset) var(--space-sm); border-bottom: 1px solid var(--color-border); background: var(--color-sidebar); }
 .memory-tree-scroll { flex: 1; min-height: 0; overflow: auto; }
 .memory-virtual-list { position: relative; width: 100%; }
 .memory-tree-row { display: flex; align-items: center; gap: var(--space-xs); width: 100%; min-height: var(--pane-header-height); padding-block: var(--space-xs); padding-inline-end: var(--space-sm); border: 0; border-radius: 0; background: transparent; color: var(--color-text); font: inherit; text-align: left; }

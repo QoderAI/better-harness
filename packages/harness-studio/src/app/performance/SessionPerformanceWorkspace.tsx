@@ -57,7 +57,7 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
     return () => controller.abort();
   }, [headers, refresh]);
   const sessions = useMemo(() => (catalog?.sessions ?? []).filter(s => withinDateRange(s.lastActivityMs === null ? undefined : new Date(s.lastActivityMs).toISOString(), dateRange)
-    && `${s.label} ${s.id}`.toLowerCase().includes(query.toLowerCase())).sort((a,b) => sort === 'recent' ? (b.lastActivityMs ?? 0) - (a.lastActivityMs ?? 0) : (b.longestMs ?? 0) - (a.longestMs ?? 0)), [catalog, dateRange, query, sort]);
+    && `${s.label} ${s.id}`.toLowerCase().includes(query.toLowerCase())).sort((a,b) => sort === 'recent' ? (b.lastActivityMs ?? 0) - (a.lastActivityMs ?? 0) : b.breakdown.totalMs - a.breakdown.totalMs), [catalog, dateRange, query, sort]);
   const selectedId = selection ?? sessions[0]?.id;
   useEffect(() => { setPage(0); }, [query, sort, dateRange]);
   useEffect(() => {
@@ -95,7 +95,7 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
       <aside className="performance-catalog" aria-label={t('sessions')}>
         <div className="performance-filters"><input aria-label={t('search')} placeholder={t('search')} value={query} onChange={event => { setQuery(event.target.value); saveFilter('q', event.target.value); }} /><select aria-label={t('sort')} value={sort} onChange={event => { setSort(event.target.value); saveFilter('sort', event.target.value); }}><option value="longest">{t('longest')}</option><option value="recent">{t('recent')}</option></select></div>
         <div className="performance-session-list">{sessions.length === 0 && <p className="performance-state">{t('empty')}</p>}{paged(sessions, page, 40).map(session => <button className="performance-session" key={session.id} aria-current={session.id === selectedId ? 'true' : undefined} onClick={() => chooseSession(session.id)}>
-          <span><strong>{session.label}</strong><b>{timingDuration(session.longestMs)}</b></span><small>{date(session.lastActivityMs)}</small>
+          <span><strong>{session.label}</strong><b>{timingDuration(session.breakdown.totalMs)}</b></span><small>{date(session.lastActivityMs)}</small>
         </button>)}</div>
         {pager(page, sessions.length, 40, setPage)}{catalog.coverage.omittedSessions > 0 && <p className="performance-note">{t('omitted', { count: catalog.coverage.omittedSessions })}</p>}
       </aside>

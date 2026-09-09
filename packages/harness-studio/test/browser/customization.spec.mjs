@@ -240,7 +240,7 @@ test("browses the catalog as a docked View with category and Agent rows", async 
   expect(calls).toBe(3); // The retained catalog is read back without collecting again.
 
   // The View is reachable from the sidebar's View list, like every other View.
-  await openView(page, "Sessions");
+  await openView(page, "Overview");
   await expect(page.locator(".studio-context-title h1")).toHaveText("Sessions");
   await openView(page, "Customizations");
   await expect(page.locator(".customization-workbench")).toBeVisible();

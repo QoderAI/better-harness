@@ -15,6 +15,7 @@ export async function sessionPerformanceRoute(request: IncomingMessage, response
   if (!workspace || !projectId || request.headers['x-harness-project-id'] !== projectId || request.headers['x-harness-project-revision'] !== String(revision)) {
     send(409, { error: 'project-changed' }); return true;
   }
+  if (state.workspace?.scanRequired) { send(409, { error: 'project-scan-required' }); return true; }
   if ([...url.searchParams.keys()].some(k => k !== 'refresh')) { send(400, { error: 'unsupported-parameter' }); return true; }
   const sessionId = url.pathname.slice('/api/session-performance'.length + 1);
   if (sessionId && (!/^[a-zA-Z0-9_.-]{1,160}$/u.test(sessionId) || sessionId === '.' || sessionId === '..')) { send(400, { error: 'invalid-session-id' }); return true; }

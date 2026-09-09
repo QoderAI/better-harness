@@ -261,7 +261,16 @@ export async function restoreActiveProject(
     const workspacePath = await realpath(project.localDirectory);
     if (!sameNativePath(workspacePath, project.localDirectory)) return false;
     if (!(await stat(workspacePath)).isDirectory()) return false;
-    activateWorkspace(state, options, projectId, await discoverWorkspace(options, workspacePath));
+    activateWorkspace(state, options, projectId, {
+      label: portableProjectLabel(project.descriptor.label),
+      localDirectory: workspacePath,
+      scanRequired: true,
+      sessions: new Map(),
+      sessionCount: 0,
+      omittedCount: 0,
+      providers: [],
+      artifactObservations: [],
+    });
     return true;
   } catch {
     project.descriptor = { ...project.descriptor, availability: "unavailable" };
@@ -275,6 +284,7 @@ export async function activateProject(
   options: HarnessStudioServerOptions,
   state: HarnessStudioState,
   projectId: string,
+  scanAll = false,
 ): Promise<void> {
   if (!sameOriginRequest(request)) {
     respondJson(response, 403, { error: "Cross-origin Project changes are not allowed." });
@@ -285,27 +295,34 @@ export async function activateProject(
     respondJson(response, 404, { error: "The requested Project is not registered." });
     return;
   }
-  if (state.workspaceOpenStage !== "idle") {
+  if (state.workspaceOpenStage !== "idle" || (scanAll && state.customizationAnalysisRunning)) {
     respondJson(response, 409, { error: "Another Project is already being opened." });
     return;
   }
   state.workspaceOpenStage = "discovering";
   try {
     let workspace: StudioWorkspace | undefined;
+    let customizationAnalysis: HarnessStudioState["customizationAnalysis"];
     if (project.kind === "local") {
       const workspacePath = await realpath(project.localDirectory!);
       if (!sameNativePath(workspacePath, project.localDirectory!)) throw new Error("The Project directory identity changed.");
       if (!(await stat(workspacePath)).isDirectory()) throw new Error("The Project directory is unavailable.");
       workspace = await discoverWorkspace(options, workspacePath);
+      if (scanAll && options.customizationCollector !== undefined) {
+        customizationAnalysis = validateStudioCustomizationAnalysis(
+          await options.customizationCollector.analyze(workspacePath), [workspacePath],
+        );
+      }
     } else {
       workspace = project.importedWorkspace;
     }
     if (workspace === undefined) throw new Error("The Project workspace is no longer available.");
     activateWorkspace(state, options, projectId, workspace);
+    if (scanAll) state.customizationAnalysis = customizationAnalysis;
     rememberProjects(options, state);
     respondJson(response, 200, { activated: true, project: project.descriptor, revision: state.projectRevision });
   } catch {
-    project.descriptor = { ...project.descriptor, availability: "unavailable" };
+    if (!scanAll) project.descriptor = { ...project.descriptor, availability: "unavailable" };
     respondJson(response, 422, { error: "Studio could not refresh the requested Project. The previous Project remains active." });
   } finally {
     state.workspaceOpenStage = "idle";
@@ -760,7 +777,7 @@ export async function analyzeWorkspaceCustomizations(
     respondJson(response, 422, { error: "An imported run folder cannot be used as a local customization workspace." });
     return;
   }
-  if (state.customizationAnalysisRunning) {
+  if (state.customizationAnalysisRunning || state.workspaceOpenStage !== "idle") {
     respondJson(response, 409, { error: "Customization analysis is already running." });
     return;
   }

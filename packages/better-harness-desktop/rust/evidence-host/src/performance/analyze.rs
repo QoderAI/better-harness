@@ -370,7 +370,13 @@ pub fn analyze(session_id: &str, events: Vec<Event>, mut coverage: Coverage) -> 
         breakdown: super::breakdown::breakdown(&spans, &turns),
         id: session_id.into(),
         provider: "qoder",
-        label: format!("Qoder · {}", &session_id[..session_id.len().min(8)]),
+        label: events.iter()
+            .find(|event| matches!(event.kind.as_str(), "input.prompt.submitted" | "input.prompt.received")
+                && !event.text("text_preview").trim().is_empty()
+                && event.data["is_subagent"] != true
+                && !turns.iter().any(|turn| turn.label == event.turn && turn.is_subagent))
+            .map(|event| label(&crate::privacy::redact_private_text(event.text("text_preview"))))
+            .unwrap_or_else(|| format!("Qoder · {}", &session_id[..session_id.len().min(8)])),
         first_seen_ms: first,
         last_seen_ms: last,
         last_activity_ms: last_activity,

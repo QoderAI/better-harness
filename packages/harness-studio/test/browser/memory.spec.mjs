@@ -42,6 +42,18 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     page.on('request', request => { if (request.url().endsWith('/api/memory/read')) reads.push(request); });
     await page.setViewportSize(layout);
   await page.goto(`${studio.url}/#/memory-sources`);
+    const facets = page.locator('.memory-agent-nav');
+    const allAgents = facets.getByRole('button', { name: /^All Agents/ });
+    await expect(allAgents).toContainText('4');
+    await page.keyboard.press('Tab');
+    await allAgents.focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(allAgents).toHaveAttribute('aria-current', 'true');
+    await expect(facets.getByRole('button', { name: /^Claude Code/ })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(facets.locator('button[tabindex="0"]')).toHaveAttribute('aria-current', 'true');
+    await page.screenshot({ path: info.outputPath(`memory-agents-${layout.name}.png`) });
+    await allAgents.click();
     await page.getByRole('searchbox').fill('personal-codex-plugin-scaffold');
     const document = page.getByRole('treeitem', { name: 'SKILL.md', exact: true });
     await document.focus();
@@ -68,7 +80,7 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.screenshot({ path: info.outputPath(`memory-dark-${layout.name}.png`) });
     if (layout.width <= 700) await page.getByRole('button', { name: 'Memory navigation', exact: true }).click();
-    await page.getByLabel('Agent', { exact: true }).selectOption('cursor');
+    await page.locator('.memory-agent-nav').getByRole('button', { name: /^Cursor/ }).click();
     await expect(page.getByRole('treeitem', { name: 'SKILL.md', exact: true })).toHaveCount(0);
     await page.getByText('Source status', { exact: true }).click();
     await expect(page.getByText('No native storage contract', { exact: true })).toBeVisible();

@@ -282,6 +282,7 @@ async function route(
       workspaceWorkbenchEnabled: state.workspace?.inspectorReport !== undefined,
       workspaceDiscoveryEnabled: options.workspaceSessionProvider !== undefined,
       workspaceConnected: state.workspace !== undefined,
+      workspaceScanRequired: state.workspace?.scanRequired === true,
       projectExecutionEnabled: state.workspace?.localDirectory !== undefined,
       activeProjectId: state.activeProjectId,
       projectRevision: state.projectRevision,
@@ -309,10 +310,10 @@ async function route(
     await openWorkspace(request, response, options, state);
     return;
   }
-  const projectActivation = url.pathname.match(/^\/api\/projects\/([^/]+)\/(?:activate|refresh)$/);
+  const projectActivation = url.pathname.match(/^\/api\/projects\/([^/]+)\/(activate|refresh|scan)$/);
   if (request.method === "POST" && projectActivation !== null) {
     const projectId = decodeRouteComponent(response, projectActivation[1]!);
-    if (projectId !== undefined) await activateProject(request, response, options, state, projectId);
+    if (projectId !== undefined) await activateProject(request, response, options, state, projectId, projectActivation[2] !== "activate");
     return;
   }
   const projectRemoval = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
@@ -814,8 +815,8 @@ export async function startHarnessStudioServer(
   const server = createHarnessStudioServer(options);
   const host = options.host ?? "127.0.0.1";
   assertStudioBindAddressAllowed(host, options.allowRemote === true);
-  // Remembered Projects land before the port opens, so the first `/api/config`
-  // already reports the restored Project rather than an empty catalog.
+  // Restore only the Project binding before listening; evidence scans require
+  // the reader's explicit Scan Project action.
   await (server as RestorableServer)[STUDIO_RESTORE];
   await new Promise<void>((resolvePromise, rejectPromise) => {
     server.once("error", rejectPromise);

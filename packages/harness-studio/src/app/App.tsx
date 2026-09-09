@@ -208,6 +208,7 @@ export function App(): React.JSX.Element {
   const [projects, setProjects] = useState<StudioProjectDescriptor[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string>();
   const [projectOpening, setProjectOpening] = useState(false);
+  const [projectScanning, setProjectScanning] = useState(false);
   const [projectFailure, setProjectFailure] = useState<string>();
   const [dataRevision, setDataRevision] = useState(0);
   const [workspaceRevision, setWorkspaceRevision] = useState(0);
@@ -472,6 +473,23 @@ export function App(): React.JSX.Element {
     }
   }
 
+  async function scanStudioProject(): Promise<void> {
+    if (activeProjectId === undefined || projectOpening) return;
+    setProjectOpening(true);
+    setProjectScanning(true);
+    setProjectFailure(undefined);
+    try {
+      const response = await fetch(`api/projects/${encodeURIComponent(activeProjectId)}/scan`, { method: "POST" });
+      if (!response.ok) throw new Error(await studioApiError(response));
+      await workspaceChanged();
+    } catch (error) {
+      setProjectFailure(error instanceof Error ? error.message : t("sidebar.scanFailed"));
+    } finally {
+      setProjectScanning(false);
+      setProjectOpening(false);
+    }
+  }
+
   async function removeStudioProject(projectId: string): Promise<void> {
     if (projectOpening) return;
     setProjectOpening(true);
@@ -560,6 +578,10 @@ export function App(): React.JSX.Element {
       current={showWelcome ? null : area}
       opening={projectOpening}
       canOpenProject={config.workspaceDiscoveryEnabled}
+      canScanProject={config.workspaceDiscoveryEnabled && activeProject?.kind === "local"}
+      scanRequired={config.workspaceScanRequired === true}
+      scanning={projectScanning}
+      onScanProject={() => void scanStudioProject()}
       onOpenProject={() => void openProject()}
       onActivateProject={(projectId) => void activateStudioProject(projectId)}
       onRemoveProject={(projectId) => void removeStudioProject(projectId)}
@@ -588,7 +610,7 @@ export function App(): React.JSX.Element {
         {showWelcome ? <WorkspaceWelcome onWorkspaceChanged={async () => {
           const projectId = await workspaceChanged();
           globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
-        }} /> : <>
+        }} /> : config.workspaceScanRequired && !["memory", "memory-sources", "debugger", "compare"].includes(area) ? <EmptyWorkspace eyebrow={activeProject?.label ?? ""} title={t("sidebar.scanPendingTitle")} detail={t("sidebar.scanPendingDetail")} /> : <>
         {area === "session-performance" && <SessionPerformanceWorkspace key={`performance-${config.activeProjectId}-${config.projectRevision}`} config={config} dateRange={dateRange} />}
         {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}-${dateScopeKey}`} dateRange={dateRange} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
         {area === "customizations" && (config.customizationAnalysisEnabled

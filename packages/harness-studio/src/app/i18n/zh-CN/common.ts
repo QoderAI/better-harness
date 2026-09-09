@@ -181,6 +181,13 @@ export const common: typeof enCommon = {
     emptyWindow: "此时间窗内没有内容。可在侧边栏放宽日期范围。",
   },
   sidebar: {
+    scanProject: "扫描项目",
+    rescanProject: "重新扫描项目",
+    scanning: "正在扫描项目…",
+    scanPendingTitle: "项目待扫描",
+    scanPendingDetail: "点击左侧“扫描项目”以加载项目证据。",
+    scanScope: "扫描会话、Git 历史、产物、Skills、MCP、Hooks 和插件。",
+    scanFailed: "项目扫描失败，请重试。",
     aria: "Studio 项目",
     navAria: "Studio 视图导航",
     projects: "项目",

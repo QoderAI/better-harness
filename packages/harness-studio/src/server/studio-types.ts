@@ -205,6 +205,8 @@ export interface WorkspaceImportSession {
 }
 export interface StudioWorkspace {
   label: string;
+  /** Restored directory binding with no evidence scanned in this process yet. */
+  scanRequired?: boolean;
   sessionCount: number;
   omittedCount: number;
   sessions: Map<string, StoredWorkspaceSession>;

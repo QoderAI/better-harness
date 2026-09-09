@@ -284,6 +284,15 @@ fn read_events(home: &Path, dirs: &[PathBuf], budget: u64) -> (Vec<Event>, Cover
                 // commands, outputs and arbitrary error messages never leave
                 // the input line or enter a service response.
                 let mut data = serde_json::Map::new();
+                // Only actual user-input events may supply a Session title.
+                // Never promote model prompts or tool-output previews.
+                if matches!(kind, "input.prompt.submitted" | "input.prompt.received") {
+                    if let Some(preview) = raw["data"]["text_preview"].as_str() {
+                        let safe = crate::privacy::redact_private_text(&crate::privacy::prepare_prompt_text(preview));
+                        let title = safe.split_whitespace().collect::<Vec<_>>().join(" ");
+                        data.insert("text_preview".into(), title.chars().take(160).collect::<String>().into());
+                    }
+                }
                 for key in [
                     "model",
                     "tool_name",

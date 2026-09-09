@@ -261,6 +261,12 @@ fn reader_scopes_paths_redacts_labels_and_marks_corrupt_evidence() {
     assert_eq!(detail["spans"][0]["durationMs"], 10000);
     assert_eq!(detail["session"]["status"], "partial");
     assert!(!detail.to_string().contains("DO-NOT-EXPOSE"));
+    assert_eq!(detail["session"]["label"], "Qoder · sample");
+    let prompt = json!({"type":"input.prompt.submitted","ts":"2026-09-01T00:59:59Z","turn_id":"main","data":{"text_preview":"Fix startup\n  with api_key=secret1234567890"}});
+    fs::write(dir.join("prompt.jsonl"), format!("{prompt}\n")).unwrap();
+    let titled = analyze_params(&input).unwrap();
+    assert!(titled["session"]["label"].as_str().unwrap().starts_with("Fix startup with"));
+    assert!(!titled.to_string().contains("secret1234567890"));
     assert_eq!(
         detail["spans"][0]["evidence"][0]["source"],
         "1/segments/sample.jsonl"
@@ -487,4 +493,17 @@ fn storage_partition_and_each_drilldown_sum_exactly_without_overlap() {
             );
         }
     }
+}
+
+#[test]
+fn session_title_uses_first_main_user_prompt_and_falls_back_without_one() {
+    let detail = analyze(vec![
+        event("model.request.started", 0, "main", "", json!({"text_preview":"MODEL INTERNAL"})),
+        event("turn.started", 1, "child", "", json!({"is_subagent":true})),
+        event("input.prompt.received", 2, "child", "", json!({"text_preview":"CHILD TASK"})),
+        event("input.prompt.submitted", 3, "main", "", json!({"text_preview":"Fix the desktop startup"})),
+        event("input.prompt.received", 4, "main", "", json!({"text_preview":"A later request"})),
+    ]);
+    assert_eq!(detail.session.label, "Fix the desktop startup");
+    assert_eq!(analyze(vec![]).session.label, "Qoder · session-");
 }

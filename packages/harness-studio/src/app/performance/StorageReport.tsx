@@ -13,6 +13,14 @@ const icons={model:Cpu,tool:TerminalWindow,hook:Lightning,wait:Clock,subagent:Gi
 const percent=(part:number,total:number):string=>total?`${Math.round(part/total*1000)/10}%`:'—';
 export function StorageReport({detail,onSelect}:{detail:PerformanceDetail;onSelect:(id:string)=>void}):React.JSX.Element {
  const {t}=useTranslation('performance');const id=useId();
+ const [hovered,setHovered]=useState<string>();
+ const [focused,setFocused]=useState<string>();
+ const highlighted=hovered??focused;
+ const linkCategory=(kind:string)=>({
+  'data-linked':highlighted===kind?true:undefined,
+  onMouseEnter:()=>setHovered(kind),onMouseLeave:()=>setHovered(undefined),
+  onFocus:()=>setFocused(kind),onBlur:()=>setFocused(undefined),
+ });
  const [expanded,setExpanded]=useState<Set<string>>(()=>new Set());
  const toggle=(key:string,open?:boolean):void=>setExpanded(current=>{const next=new Set(current);if(open??!next.has(key))next.add(key);else next.delete(key);return next;});
  const summary=detail.session;const total=summary.breakdown.activityTotalMs;
@@ -21,17 +29,17 @@ export function StorageReport({detail,onSelect}:{detail:PerformanceDetail;onSele
  const partName=(name:string):string=>name==='concurrent-calls'?t('concurrentCalls'):name==='unknown'?label('unknown'):name;
  return <div className="storage-report">
   <section className="storage-summary" aria-label={t('distribution')}>
-   <div className="storage-title"><h2>{summary.label}</h2><span><strong>{timingDuration(total)}</strong><small>{t('activityTotal')}</small></span></div>
-   <div className="storage-bar" aria-label={t('distribution')}>{segments.filter(s=>s.activityMs>0).map(s=><button key={s.kind} className={`storage-segment storage-${s.kind}`} style={{flexGrow:s.activityMs}} aria-label={`${label(s.kind)} ${timingDuration(s.activityMs)} ${percent(s.activityMs,total)}`} title={`${label(s.kind)} · ${percent(s.activityMs,total)}`} onClick={()=>toggle(s.kind,true)}/>)}</div>
-   <div className="storage-legend">{segments.filter(s=>s.activityMs>0).map(s=><button key={s.kind} aria-expanded={expanded.has(s.kind)} aria-controls={`${id}-${s.kind}`} onClick={()=>toggle(s.kind)}><i className={`storage-dot storage-${s.kind}`}/>{label(s.kind)}</button>)}</div>
-   <p className="storage-caption">{t('elapsedBasis',{duration:timingDuration(summary.breakdown.totalMs)})}</p>
+   <div className="storage-title"><h2>{summary.label}</h2><span><strong>{timingDuration(summary.breakdown.totalMs)}</strong><small>{t('observedElapsed')}</small></span></div>
+   <div className="storage-bar" aria-label={t('distribution')}>{segments.filter(s=>s.activityMs>0).map(s=><button key={s.kind} {...linkCategory(s.kind)} className={`storage-segment storage-${s.kind}`} style={{flexGrow:s.activityMs}} aria-label={`${label(s.kind)} ${timingDuration(s.activityMs)} ${percent(s.activityMs,total)}`} title={`${label(s.kind)} · ${percent(s.activityMs,total)}`} onClick={()=>toggle(s.kind,true)}/>)}</div>
+   <div className="storage-legend">{segments.filter(s=>s.activityMs>0).map(s=><button key={s.kind} {...linkCategory(s.kind)} className={`storage-legend-item storage-${s.kind}`} title={`${label(s.kind)} · ${timingDuration(s.activityMs)} · ${percent(s.activityMs,total)}`} aria-expanded={expanded.has(s.kind)} aria-controls={`${id}-${s.kind}`} onClick={()=>toggle(s.kind)}><i className={`storage-dot storage-${s.kind}`}/>{label(s.kind)}</button>)}</div>
+   <p className="storage-caption">{t('overlap')}</p>
   </section>
   <div className="storage-category-list" aria-label={t('categories')}>{segments.map(segment=>{
    const Icon=icons[segment.kind as keyof typeof icons]??Clock;const open=expanded.has(segment.kind);
    const parts=segment.callParts.length?segment.callParts:segment.parts;
    const base=segment.callParts.length?segment.cumulativeMs:segment.durationMs;
    return <div key={segment.kind} className={`storage-group storage-${segment.kind}`}>
-    <button className="storage-category" aria-expanded={open} aria-controls={`${id}-${segment.kind}`} onClick={()=>toggle(segment.kind)}>
+    <button {...linkCategory(segment.kind)} className="storage-category" aria-expanded={open} aria-controls={`${id}-${segment.kind}`} onClick={()=>toggle(segment.kind)}>
      <span className="storage-icon"><Icon size={21} aria-hidden="true"/></span>
      <span className="storage-row-name">{label(segment.kind)}{segment.kind==='subagent'&&<small>{t('agentCountShort',{count:summary.subagents.count})}</small>}</span>
      <span className="storage-row-value">{timingDuration(segment.activityMs)}<small>{percent(segment.activityMs,total)}</small></span><CaretRight className="storage-caret" size={16} aria-hidden="true"/>

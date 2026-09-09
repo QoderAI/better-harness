@@ -62,6 +62,7 @@ export interface StudioConfig {
   workspaceWorkbenchEnabled: boolean;
   workspaceDiscoveryEnabled: boolean;
   workspaceConnected: boolean;
+  workspaceScanRequired?: boolean;
   projectExecutionEnabled: boolean;
   activeProjectId?: string;
   projectRevision?: number;

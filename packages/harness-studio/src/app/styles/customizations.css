@@ -19,23 +19,6 @@
 /* Filter pane. Two sections, one keyboard ring: the categories that exist and the
    Agents that were observed, each with its retained count. */
 .customization-nav { grid-column: 1; grid-row: 1 / -1; min-width: 0; min-height: 0; overflow: auto; padding: 0 var(--sidebar-inset) var(--space-lg); border-right: 1px solid var(--color-border); background: var(--color-sidebar); }
-.customization-nav h2 { min-height: var(--pane-header-height); margin: 0; padding: var(--space-sm) var(--space-sm) var(--space-xs); display: flex; align-items: flex-end; color: var(--color-text-muted); font-size: var(--type-pane-size); font-weight: var(--weight-semibold); line-height: var(--type-pane-line); letter-spacing: var(--type-pane-track); }
-.customization-nav button { width: 100%; min-height: var(--navigation-row-height); display: flex; align-items: center; gap: var(--space-sm); border: 0; border-radius: var(--radius-xs); padding: var(--space-xs) var(--space-sm); background: transparent; color: var(--color-text-muted); font-weight: var(--weight-regular); text-align: left; }
-.customization-nav button > svg { flex: none; color: var(--color-text-muted); }
-.customization-nav button > span { min-width: 0; flex: 1; overflow: hidden; color: inherit; font-size: var(--type-label-size); text-overflow: ellipsis; white-space: nowrap; }
-.customization-nav small { flex: none; color: var(--color-text-subtle); font-size: var(--type-meta-size); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.customization-nav-status { color: var(--color-warning); }
-.customization-nav button:hover { color: var(--color-text); background: var(--color-surface-hover); }
-.customization-nav button:active { background: var(--color-surface-active); }
-/* The unfocused selection is the soft fill; a focused row takes the filled
-   source-list state instead of a detached control outline. */
-.customization-nav button[aria-current] { color: var(--color-text); background: var(--color-surface-selected); }
-.customization-nav button[aria-current] > span { font-weight: var(--weight-semibold); }
-.customization-nav button[aria-current] > svg { color: currentColor; }
-.customization-nav button:focus-visible { outline: none; color: var(--color-on-primary); background: var(--color-primary); }
-.customization-nav button:focus-visible > svg,
-.customization-nav button:focus-visible small { color: inherit; }
-
 /* Entries pane: the central evidence surface. */
 .customization-entries { grid-column: 3; grid-row: 1; min-width: 0; min-height: 0; display: grid; grid-template-rows: var(--pane-header-height) auto minmax(0, 1fr); overflow: hidden; background: var(--color-workspace); }
 .customization-entries > header { min-width: 0; display: flex; align-items: center; gap: var(--space-md); padding: 0 var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }

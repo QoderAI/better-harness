@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
 import { House } from "@phosphor-icons/react/House";
@@ -16,6 +16,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import type { CustomizationAnalysisResponseV1 } from "@qoder-ai/harness/customization";
 import type { CustomizationUsageV1 } from "../contracts/customization-usage.js";
 import { studioApiError } from "./studio-api.js";
+import { FacetNavigation } from "./shell/FacetNavigation.js";
 import { DataTable } from "./shell/DataTable.js";
 import { PaneSash } from "./shell/PaneSash.js";
 import { ToolbarActions } from "./shell/ToolbarActions.js";
@@ -89,8 +90,6 @@ export function CustomizationView(props: {
   const [usage, setUsage] = useState<CustomizationUsageV1>();
   const [navWidth, setNavWidth] = useState(NAV_WIDTH.default);
   const [frame, setFrame] = useState(0);
-  const [focusedRow, setFocusedRow] = useState("category:overview");
-  const navRefs = useRef(new Map<string, HTMLButtonElement>());
   const root = useRef<HTMLElement>(null);
   const alive = useRef(true);
   const detailStacked = useMediaQuery(DETAIL_STACK_QUERY);
@@ -173,43 +172,6 @@ export function CustomizationView(props: {
   const usageColumn = usage !== undefined && customizationUsageObservable(category);
   const agentName = (id: string): string => id === "all" ? t("library.allAgents") : id === "unassigned" ? t("library.unassigned") : hostLabel(id);
   const busyState = loading || busy;
-
-  // Both sections are one Tab stop and one Arrow-key ring: focus moves without
-  // applying a filter, so a reader can look down the list before choosing.
-  const navIds = [...CUSTOMIZATION_CATEGORIES.map((key) => `category:${key}`), ...agents.map((facet) => `agent:${facet.id}`)];
-  const tabStop = navIds.includes(focusedRow) ? focusedRow : navIds[0]!;
-  function moveNavFocus(event: ReactKeyboardEvent<HTMLElement>): void {
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const current = Math.max(0, navIds.indexOf(focusedRow));
-    const next = event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? navIds.length - 1
-        : event.key === "ArrowDown"
-          ? (current + 1) % navIds.length
-          : (current - 1 + navIds.length) % navIds.length;
-    const id = navIds[next]!;
-    setFocusedRow(id);
-    navRefs.current.get(id)?.focus();
-  }
-  function navRow(options: { id: string; label: string; current: boolean; count?: number; status?: string; icon?: React.JSX.Element; onSelect: () => void }): React.JSX.Element {
-    return <button
-      key={options.id}
-      ref={(node) => { if (node) navRefs.current.set(options.id, node); else navRefs.current.delete(options.id); }}
-      type="button"
-      tabIndex={tabStop === options.id ? 0 : -1}
-      aria-current={options.current ? "true" : undefined}
-      onFocus={() => setFocusedRow(options.id)}
-      onClick={() => { setFocusedRow(options.id); options.onSelect(); }}
-    >
-      {options.icon}
-      <span>{options.label}</span>
-      {options.status === undefined
-        ? options.count !== undefined && <small>{options.count}</small>
-        : <small className="customization-nav-status">{t(`hosts.status.${options.status}`)}</small>}
-    </button>;
-  }
 
   const columns = useMemo<ColumnDef<CustomizationLibraryRow, never>[]>(() => [
     {
@@ -297,36 +259,21 @@ export function CustomizationView(props: {
       </button>
     </ToolbarActions>
 
-    <nav className="customization-nav" aria-label={t("library.filtersAria")} onKeyDown={moveNavFocus}>
-      <section aria-labelledby="customization-nav-library">
-        <h2 id="customization-nav-library">{t("library.sections.library")}</h2>
-        {CUSTOMIZATION_CATEGORIES.map((key) => {
-          const Icon = ICONS[key];
-          return navRow({
-            id: `category:${key}`,
-            label: t(`library.categories.${key}`),
-            current: category === key,
-            ...(analysis === undefined ? {} : { count: filterCustomizationRows(rows, key, agent).length }),
-            icon: <Icon size={16} aria-hidden="true" weight={category === key ? "fill" : "regular"} />,
-            onSelect: () => setCategory(key),
-          });
-        })}
-      </section>
-      <section aria-labelledby="customization-nav-agents">
-        <h2 id="customization-nav-agents">{t("library.sections.agents")}</h2>
-        {agents.map((facet) => navRow({
-          id: `agent:${facet.id}`,
-          label: agentName(facet.id),
-          current: agent === facet.id,
-          count: facet.count,
-          ...(facet.status === undefined ? {} : { status: facet.status }),
-          icon: facet.id === "all"
-            ? <Users size={16} aria-hidden="true" weight={agent === "all" ? "fill" : "regular"} />
-            : <Robot size={16} aria-hidden="true" weight={agent === facet.id ? "fill" : "regular"} />,
-          onSelect: () => setAgent(facet.id),
-        }))}
-      </section>
-    </nav>
+    <FacetNavigation className="customization-nav" label={t("library.filtersAria")} groups={[
+      { id: "library", label: t("library.sections.library"), items: CUSTOMIZATION_CATEGORIES.map(key => {
+        const Icon = ICONS[key];
+        return { id: `category:${key}`, label: t(`library.categories.${key}`), current: category === key,
+          ...(analysis === undefined ? {} : { count: filterCustomizationRows(rows, key, agent).length }),
+          icon: <Icon size={16} aria-hidden="true" weight={category === key ? "fill" : "regular"} />,
+          onSelect: () => setCategory(key) };
+      }) },
+      { id: "agents", label: t("library.sections.agents"), items: agents.map(facet => ({
+        id: `agent:${facet.id}`, label: agentName(facet.id), current: agent === facet.id, count: facet.count,
+        ...(facet.status === undefined ? {} : { status: t(`hosts.status.${facet.status}`) }),
+        icon: facet.id === "all" ? <Users size={16} aria-hidden="true" weight={agent === "all" ? "fill" : "regular"} /> : <Robot size={16} aria-hidden="true" weight={agent === facet.id ? "fill" : "regular"} />,
+        onSelect: () => setAgent(facet.id),
+      })) },
+    ]} />
 
     <PaneSash
       orientation="vertical"

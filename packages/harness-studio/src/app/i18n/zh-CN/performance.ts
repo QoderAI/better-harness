@@ -1,10 +1,10 @@
 export const performance = {
- activityTotal:'各类活动耗时合计', elapsedBasis:'观测历时 {{duration}} · 不同类别可能并行', activityNote:'各类别内部去除重叠；分段条合计各类耗时，可能大于实际历时。子回合工作归入 Subagent。调用明细按累计调用耗时计算比例。',
+ observedElapsed:'观测历时', activityNote:'各类别内部去除重叠；分段条合计各类耗时，可能大于实际历时。子回合工作归入 Subagent。调用明细按累计调用耗时计算比例。',
   otherCalls: "其他调用",
   overview:'概览', distribution:'耗时分布', observedTime:'已观测耗时', ofSession:'占 Session 的 {{percent}}', cumulativeCalls:'调用累计耗时', concurrentCalls:'并发调用', categoryShare:'按当前类别的归因耗时分配', callsOverlap:'调用可能重叠；这里的比例以调用累计耗时为基准。', breakdown:'耗时构成', categories:'分类耗时', agentCountShort:'{{count}} 个代理', callNumber:'第 {{number}} 次调用', timingNotes:'计时说明', partitionNote:'重叠时间只计一次。子回合的工作归入 Subagent；不同活动同时发生的部分归入并发。已完成回合内的空白归入未归因。', eventDetails:'执行明细', topCalls:'展示 {{total}} 次调用中的前 {{shown}} 次', storageKinds:{model:'模型',tool:'工具',hook:'Hooks',wait:'等待',subagent:'Subagents',parallel:'并发',unknown:'未归因'},
   title: 'Session 性能分析', subtitle: 'Qoder 执行日志', refresh: '刷新', loading: '正在读取计时证据…',
   unavailable: '性能分析需要支持 Session 计时的 Rust evidence host。', error: '无法加载计时证据，请刷新重试。', empty: '没有匹配的 Qoder 计时证据。',
-  select: '选择 Session，查看耗时较长的区间。', search: '查找 Session', sort: 'Session 排序', longest: '最长区间', recent: '最近活动',
+  select: '选择 Session，查看耗时较长的区间。', search: '查找 Session', sort: 'Session 排序', longest: '最长历时', recent: '最近活动',
   sessions: 'Sessions', back: '返回 Sessions', backDetail: '返回分析', evidence: '计时证据', close: '关闭证据',
   all: '全部类别', allTurns: '整个 Session', turn: '执行回合', root: '主回合', child: 'Subagent',
   findings: '时间花在哪里', noFindings: '保留的证据中未发现较长区间。', timeline: '耗时区间', duration: '耗时', category: '类别', overlap: '各类别可能重叠，耗时不可直接相加。',

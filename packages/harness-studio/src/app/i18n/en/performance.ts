@@ -1,11 +1,11 @@
 export const performance = {
- activityTotal:'Combined activity time', elapsedBasis:'Observed elapsed {{duration}} · categories can run concurrently', activityNote:'Each category counts overlapping intervals once. The bar adds category times, so it can exceed elapsed time. Child work is included in its Subagent. Call details use cumulative invocation time.',
+ observedElapsed:'Observed elapsed', activityNote:'Each category counts overlapping intervals once. The bar adds category times, so it can exceed elapsed time. Child work is included in its Subagent. Call details use cumulative invocation time.',
   otherCalls: "Other calls",
   overview:'Overview', distribution:'Time distribution', observedTime:'observed time', ofSession:'{{percent}} of session', cumulativeCalls:'cumulative call time', concurrentCalls:'Concurrent calls', categoryShare:'Share of this category’s attributed time', callsOverlap:'Call durations may overlap; percentages use cumulative call time.', breakdown:'Breakdown', categories:'Time by category', agentCountShort:'{{count}} agents', callNumber:'Call {{number}}', timingNotes:'Timing notes', partitionNote:'Overlapping work is counted once. Child work belongs to its Subagent; different activities running together appear as Concurrent. Gaps inside completed turns are Unattributed.', eventDetails:'Execution details', topCalls:'Showing {{shown}} of {{total}} calls', storageKinds:{model:'Model',tool:'Tools',hook:'Hooks',wait:'Waiting',subagent:'Subagents',parallel:'Concurrent',unknown:'Unattributed'},
   title: 'Session performance', subtitle: 'Qoder execution logs', refresh: 'Refresh', loading: 'Reading timing evidence…',
   unavailable: 'Performance analysis needs the Rust evidence host with session timing support.',
   error: 'Timing evidence could not be loaded. Refresh to try again.', empty: 'No matching Qoder timing evidence.',
-  select: 'Select a session to inspect its slow intervals.', search: 'Find session', sort: 'Sort sessions', longest: 'Longest interval', recent: 'Recent activity',
+  select: 'Select a session to inspect its slow intervals.', search: 'Find session', sort: 'Sort sessions', longest: 'Longest elapsed', recent: 'Recent activity',
   sessions: 'Sessions', back: 'Back to sessions', backDetail: 'Back to analysis', evidence: 'Timing evidence', close: 'Close evidence',
   all: 'All categories', allTurns: 'Whole session', turn: 'Execution turn', root: 'Main', child: 'Subagent',
   findings: 'Where time was spent', noFindings: 'No long interval identified in the retained evidence.',

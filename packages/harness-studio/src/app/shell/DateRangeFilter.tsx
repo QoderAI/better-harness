@@ -72,7 +72,7 @@ export function DateRangeFilter(props: {
     </div>}
     {inverted
       ? <p id={errorId} className="studio-date-range-summary status-warning" role="alert">{t("dateRange.inverted")}</p>
-      : props.range.preset !== "custom" && <p className="studio-date-range-summary">{summary(resolved, t)}</p>}
+      : props.range.preset !== "custom" && props.range.preset !== "all" && <p className="studio-date-range-summary">{summary(resolved, t)}</p>}
   </div>;
 }
 

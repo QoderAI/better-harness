@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { useTranslation } from "react-i18next";
 import type { Icon } from "@phosphor-icons/react";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
+import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
 import { CaretRight } from "@phosphor-icons/react/CaretRight";
 import { Gauge } from "@phosphor-icons/react/Gauge";
 import { Binoculars } from "@phosphor-icons/react/Binoculars";
@@ -41,6 +42,10 @@ export function ProjectSidebar(props: {
   current: StudioArea | null;
   opening: boolean;
   canOpenProject: boolean;
+  canScanProject: boolean;
+  scanRequired: boolean;
+  scanning: boolean;
+  onScanProject: () => void;
   onOpenProject: () => void;
   onActivateProject: (projectId: string) => void;
   onRemoveProject: (projectId: string) => void;
@@ -62,12 +67,13 @@ export function ProjectSidebar(props: {
   // The sidebar now carries one level, so the roving tab stop covers the View
   // rows only. Projects moved to the switcher, which is a menu button with its
   // own keyboard contract.
-  const viewDestinations = props.destinations.filter((destination) => destination.id !== "memory");
+  const memory = props.destinations.find(destination => destination.id === "memory");
+  const viewDestinations = props.destinations.filter(destination => destination.id !== "memory").flatMap(destination => destination.id === "customizations" && memory ? [destination, memory] : [destination]);
   const [sessionsExpanded, setSessionsExpanded] = useState(true);
   const orderedIds = viewDestinations.flatMap((destination) => destination.id === "session-performance" ? [] : destination.id === "sessions"
     ? ["sessions-group", ...(sessionsExpanded ? ["view:sessions", "view:session-performance"] : [])] : [`view:${destination.id}`]);
   useEffect(() => { if (props.current === "sessions" || props.current === "session-performance") setSessionsExpanded(true); }, [props.current]);
-  const selectedNavigationId = props.current === null ? "" : `view:${props.current}`;
+  const selectedNavigationId = props.current === null ? "" : `view:${props.current === "memory-sources" ? "memory" : props.current}`;
   const [focusedNavigationId, setFocusedNavigationId] = useState(selectedNavigationId);
   const tabStopId = orderedIds.includes(focusedNavigationId)
     ? focusedNavigationId
@@ -126,7 +132,7 @@ export function ProjectSidebar(props: {
   /** View navigation carries identity; evidence status belongs in its view. */
   function renderView(destination: StudioDestination): React.JSX.Element {
     const ViewIcon = VIEW_ICONS[destination.id];
-    const selected = props.current === destination.id;
+    const selected = props.current === destination.id || (props.current === "memory-sources" && destination.id === "memory");
     const navigationId = `view:${destination.id}`;
     return <button
       key={destination.id}
@@ -203,6 +209,13 @@ export function ProjectSidebar(props: {
       </div>}
     </div>
 
+    {props.canScanProject && <div className="studio-project-scan">
+      <button type="button" disabled={props.opening} aria-busy={props.scanning} aria-label={props.scanning ? t("sidebar.scanning") : props.scanRequired ? t("sidebar.scanProject") : t("sidebar.rescanProject")} title={t("sidebar.scanScope")} onClick={props.onScanProject}>
+        {props.scanning ? <span className="studio-project-spinner" aria-hidden="true" /> : <ArrowClockwise aria-hidden="true" size={15} />}
+        <span role="status">{props.scanning ? t("sidebar.scanning") : props.scanRequired ? t("sidebar.scanProject") : t("sidebar.rescanProject")}</span>
+      </button>
+    </div>}
+
     {/* The Project says where to look; this says when. Both scope every View
         below, which is why neither is one of the rows. */}
     {props.current !== "memory" && props.current !== "memory-sources" && <DateRangeFilter range={props.dateRange} onChange={props.onDateRangeChange} />}
@@ -226,9 +239,6 @@ export function ProjectSidebar(props: {
       </section>
     </nav>
 
-    {/* Memory is not scoped to the open Project, so it closes the column above
-        Settings rather than sitting among the Project's Views. */}
-    <div className="studio-sidebar-global"><button type="button" aria-current={props.current === "memory-sources" || props.current === "memory" ? "page" : undefined} onClick={() => props.onSelectView("memory")}><Brain aria-hidden="true" size={15} />{t("area.memory")}</button></div>
     <footer className="studio-sidebar-footer">{props.settings}</footer>
   </aside>;
 }

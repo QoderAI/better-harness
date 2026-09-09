@@ -15,6 +15,8 @@
 .performance-session-list { overflow: auto; flex: 1; }
 .performance-session { display: grid; width: 100%; gap: var(--space-xs); text-align: left; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; background: transparent; padding: var(--space-md); }
 .performance-session > span { display: flex; gap: var(--space-xs); justify-content: space-between; }
+.performance-session strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.performance-session b { flex: none; }
 .performance-session small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .performance-session[aria-current="true"], .performance-span[aria-pressed="true"], .performance-metrics button[aria-pressed="true"] { background: var(--color-surface-selected); box-shadow: inset 2px 0 var(--color-primary); }
 .performance-session:hover, .performance-span:hover, .performance-findings button:hover, .performance-agent-row:hover { background: var(--color-surface-hover); }
@@ -77,13 +79,13 @@
 }
 /* Storage-style summary: one partition, then progressively disclosed rows. */
 .storage-report { max-width: 920px; margin: var(--space-lg) auto var(--space-xl); }
-.storage-summary { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-xl); }
+.storage-summary { background: var(--color-panel); border: 1px solid var(--color-border); border-radius: 0; padding: var(--space-xl); }
 .storage-title { display: flex; align-items: start; justify-content: space-between; gap: var(--space-lg); margin-bottom: var(--space-xl); }
 .storage-title h2 { margin: 0; font-size: var(--type-page-size); overflow-wrap: anywhere; }
 .storage-title > span { text-align: right; flex-shrink: 0; }
 .storage-title > span > strong { display: block; font-size: var(--type-page-size); font-weight: var(--weight-medium); }
 .storage-title small { display: block; margin-top: var(--space-xs); }
-.storage-bar { display: flex; width: 100%; height: var(--space-xxl); overflow: hidden; border-radius: var(--radius-sm); background: var(--color-surface-subtle); gap: 2px; }
+.storage-bar { display: flex; width: 100%; height: var(--space-xxl); overflow: hidden; border-radius: 0; background: var(--color-surface-subtle); gap: 2px; }
 .storage-segment { flex-basis: 0; min-width: 0; min-height: 0; border: 0; padding: 0; border-radius: 0; background: var(--segment-color); }
 .storage-segment:hover { background: var(--segment-color); filter: brightness(1.12); }
 .storage-segment:focus-visible { outline-offset: -3px; outline-color: var(--color-text); }
@@ -97,7 +99,7 @@
 .storage-legend { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-lg); margin-top: var(--space-md); }
 .storage-legend button { display: flex; align-items: center; gap: var(--space-xs); border: 0; padding: 0; background: transparent; color: var(--color-text-muted); font-weight: var(--weight-regular); }
 .storage-dot { display: inline-block; height: var(--space-md); width: var(--space-md); border-radius: var(--radius-full); background: var(--segment-color); }
-.storage-category-list { margin-top: var(--space-xl); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-panel); overflow: hidden; }
+.storage-category-list { margin-top: var(--space-xl); border: 1px solid var(--color-border); border-radius: 0; background: var(--color-panel); overflow: hidden; }
 .storage-category { display: flex; align-items: center; gap: var(--space-lg); width: 100%; min-height: 64px; padding: var(--space-md) var(--space-xl); border: 0; border-radius: 0; background: transparent; border-bottom: 1px solid var(--color-border); text-align: left; }
 .storage-category:last-child { border-bottom: 0; }
 .storage-category:focus-visible { outline-offset: -3px; }
@@ -106,7 +108,7 @@
 .storage-row-name small { display: inline; margin-left: var(--space-sm); font-weight: var(--weight-regular); }
 .storage-row-value { display: flex; align-items: baseline; gap: var(--space-lg); white-space: nowrap; font-size: var(--type-subhead-size); color: var(--color-text-muted); font-weight: var(--weight-regular); }
 .storage-row-value small { min-width: 45px; text-align: right; }
-.storage-mini-track { width: 24%; height: var(--space-sm); background: var(--color-surface-subtle); border-radius: var(--radius-xs); overflow: hidden; }
+.storage-mini-track { width: 24%; height: var(--space-sm); background: var(--color-surface-subtle); border-radius: 0; overflow: hidden; }
 .storage-mini-track i { display: block; height: 100%; background: var(--segment-color); }
 .storage-back { display: flex; gap: var(--space-sm); align-items: center; margin-bottom: var(--space-md); }
 .storage-method, .storage-caption, .storage-agent-summary { font-size: var(--type-meta-size); color: var(--color-text-muted); margin-top: var(--space-lg); }
@@ -141,3 +143,14 @@
 .storage-expanded .storage-caption { font-size: var(--type-meta-size); }
 .storage-expanded .storage-agent-summary { margin: var(--space-xs) 0 var(--space-sm); }
 @media (max-width:700px) { .storage-expanded { padding-inline: var(--space-md); } .storage-part,.storage-call { gap: var(--space-sm); } .storage-calls { margin-left: var(--space-sm); padding-inline: var(--space-sm); } }
+
+/* Category identity joins the distribution, legend, and each row's duration.
+   Underline and a leading edge keep the active association visible beyond hue. */
+.storage-category > .storage-row-name,
+.storage-category > .storage-row-value,
+.storage-category > .storage-row-value small { color: var(--segment-color); }
+.storage-category > .storage-row-value { font-weight: var(--weight-medium); }
+.storage-legend .storage-legend-item { color: var(--segment-color); }
+.storage-segment[data-linked] { background: var(--segment-color); box-shadow: inset 0 0 0 2px var(--color-text); }
+.storage-legend-item[data-linked] { text-decoration: underline; text-underline-offset: var(--space-xs); }
+.storage-category[data-linked] { background: var(--color-surface-hover); box-shadow: inset 3px 0 var(--segment-color); }

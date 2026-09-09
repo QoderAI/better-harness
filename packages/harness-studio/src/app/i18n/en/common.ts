@@ -179,6 +179,13 @@ export const common = {
     emptyWindow: "Nothing in this window. Widen the date range in the sidebar.",
   },
   sidebar: {
+    scanProject: "Scan project",
+    rescanProject: "Rescan project",
+    scanning: "Scanning project…",
+    scanPendingTitle: "Project ready to scan",
+    scanPendingDetail: "Use Scan project in the sidebar to load Project evidence.",
+    scanScope: "Scan Sessions, Git history, artifacts, Skills, MCP, hooks, and plugins.",
+    scanFailed: "Project scan failed. Try again.",
     aria: "Studio Projects",
     navAria: "Studio View navigation",
     projects: "Projects",

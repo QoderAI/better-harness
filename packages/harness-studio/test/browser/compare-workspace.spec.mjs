@@ -148,3 +148,35 @@ test('bottom composer, resizable conversations and linked file outcomes work acr
   await expect(alpha.locator('.run-badge')).toHaveText('Interrupted');
   expect(errors).toEqual([]);
 });
+
+test('one Agent runs, streams and accepts a follow-up across layouts', async ({ page }, info) => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${studio.url}/#/compare`);
+  const open = page.getByRole('button', { name: 'Open Project', exact: true });
+  const input = page.getByRole('textbox', { name: 'What should these Agents do?' });
+  await expect(open.or(input)).toBeVisible(); if (await open.isVisible()) await open.click();
+  await input.fill('Inspect shared file');
+  await page.getByRole('button', { name: /^Choose Agents/ }).click();
+  await page.getByRole('menuitemcheckbox', { name: /Alpha ACP/ }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.live-compare-shared-tree')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Run 1 Agent', exact: true }).click();
+  const lane = page.locator('.live-compare-lane');
+  await expect(lane).toHaveCount(1);
+  await expect(lane.locator('.acp-turn-status')).toHaveText('Ready');
+  await expect(lane.locator('.run-badge')).toHaveText('Completed');
+  for (const layout of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(layout);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await lane.locator('textarea').focus();
+    await expect(lane.locator('textarea')).toBeFocused();
+    await page.screenshot({ path: info.outputPath(`single-agent-${layout.width}.png`) });
+  }
+  await lane.locator('textarea').fill('Continue inspecting');
+  await lane.locator('textarea').press('Enter');
+  await expect(lane.locator('.acp-turn-status')).toHaveText('Ready');
+  await expect(lane).toContainText('Continue inspecting');
+  expect(errors).toEqual([]);
+});

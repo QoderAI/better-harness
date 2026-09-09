@@ -26,8 +26,8 @@ import { AcpSessionStream } from "./run/AcpSessionStream.js";
 import { postAcpRunAction } from "./run/acp-run-actions.js";
 import type { StudioAcpAgentOption } from "./studio-shell-model.js";
 
-/** A comparison needs a second opinion; one lane is a Debugger run, not a compare. */
-const MIN_LANES = 2;
+/** The same workspace supports a single Agent or a multi-Agent comparison. */
+const MIN_LANES = 1;
 /**
  * Every lane is one more Agent writing to the *same* working tree at the same
  * time, and one more ACP host process. Four keeps the side-by-side readable at
@@ -66,8 +66,7 @@ export function CompareLiveView(props: {
   const owner = `compare:${props.project?.id ?? "default"}`;
   const [prompt, setPrompt] = useSessionOwnedState(`${owner}:prompt`, "");
   // The chosen Agents are a set, in the order they were chosen. A set cannot
-  // express the same Agent twice, so the composer can no longer be pointed at a
-  // pair that is not a comparison.
+  // express the same Agent twice.
   const [chosen, setChosen] = useSessionOwnedState<readonly string[]>(`${owner}:chosen`, []);
   const [comparison, setComparison, liveComparison] = useSessionOwnedState<LiveComparison | undefined>(`${owner}:comparison`, undefined);
   const [, , running] = useSessionOwnedState(`${owner}:running`, false);
@@ -165,7 +164,7 @@ export function CompareLiveView(props: {
         the composer's own toolbar row. */}
     {closeError && <p role="alert">{closeError}</p>}
     {!comparison && <AcpConversationHistory project={props.project} />}
-    {comparison && <div className="acp-compare-toolbar"><SharedTreeNote /><button type="button" onClick={() => void newComparison()}>{t("live.newComparison")}</button></div>}
+    {comparison && <div className="acp-compare-toolbar">{comparison.lanes.length > 1 && <SharedTreeNote />}<button type="button" onClick={() => void newComparison()}>{t(comparison.lanes.length === 1 ? "live.newRun" : "live.newComparison")}</button></div>}
     {comparison === undefined
       ? <div className="live-compare-empty"><p className="artifact-status" role="status">{t("live.idle")}</p></div>
       : <>
@@ -219,7 +218,7 @@ export function CompareLiveView(props: {
           ? <p className="live-compare-note status-warning" role="alert">{t("live.noAgents")}</p>
           : chosen.length < MIN_LANES
             ? <p className="live-compare-note">{t("live.agentFloor", { count: MIN_LANES })}</p>
-            : <SharedTreeNote />}
+            : chosen.length > 1 ? <SharedTreeNote /> : null}
         {!active && <button type="button" disabled={!canRun} onClick={() => void launch(false, true)}>{t("live.chooseSession")}</button>}
         {!active && <button type="button" disabled={!canRun} onClick={() => void launch(true)}>{t("live.prepare")}</button>}
         <button className="primary live-compare-run" type="submit" disabled={!canRun}>

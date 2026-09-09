@@ -184,7 +184,7 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
   // naming a count it cannot start.
   await expect(page.locator(".live-compare-chip")).toHaveCount(0);
   await expect(run).toBeDisabled();
-  await expect(page.locator(".live-compare-bar")).toContainText("Choose 2 Agents to compare");
+  await expect(page.locator(".live-compare-bar")).toContainText("Choose at least one Agent");
   await prompt.fill("Compare two Agents on one requirement");
   await expect(run).toBeDisabled();
 
@@ -200,8 +200,8 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
   await expect(alphaEntry).toHaveAttribute("aria-checked", "false");
   await alphaEntry.click();
   await expect(alphaEntry).toHaveAttribute("aria-checked", "true");
-  // One Agent is a Debugger run, not a comparison, so the floor still holds.
-  await expect(page.getByRole("button", { name: "Run", exact: true })).toBeDisabled();
+  // A single selected Agent can run from this workspace.
+  await expect(page.getByRole("button", { name: "Run 1 Agent", exact: true })).toBeEnabled();
   await menu.getByRole("menuitemcheckbox", { name: /Beta ACP/ }).click();
 
   // Checkbox semantics make a duplicate pair unexpressible: two chips are always
@@ -230,7 +230,7 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
   // A chip is removed by the Agent it names, not by a lane index.
   await page.getByRole("button", { name: "Remove Beta ACP" }).click();
   await expect(page.locator(".live-compare-chip")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Run", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Run 1 Agent", exact: true })).toBeEnabled();
   await picker.click();
   await menu.getByRole("menuitemcheckbox", { name: /Beta ACP/ }).click();
   await page.keyboard.press("Escape");
