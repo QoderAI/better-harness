@@ -335,7 +335,9 @@ export function buildDashboardModel(input: DashboardInput) {
       organizations: [...new Set(deliveries.map((delivery) => delivery.organization))].sort(),
       items: deliveries.map((delivery) => {
         const packet = delivery.packet;
-        const links = packet.links ?? { sessionRefs: [], commitRefs: [], artifactRefs: [] };
+        // The upload contract admits a `links` object that omits some of its arrays,
+        // so default each one rather than trusting the shape the type declares.
+        const links = { sessionRefs: [], commitRefs: [], artifactRefs: [], ...packet.links };
         const changeObservations = packet.observations.filter((entry) => ["change", "artifact"].includes(entry.kind));
         const changeEvidenceCount = changeObservations.filter((entry) => entry.status !== "unobserved").length
           + links.commitRefs.length
