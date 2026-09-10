@@ -63,7 +63,7 @@ all config options after a successful set, rather than optimistic field patches.
 | --- | --- | --- |
 | `configOptions`, `config_option_update`, `session/set_config_option` | Values reduced to text; option schema and live control unavailable | Shared checked schema and native controls; select/grouped select/boolean; option/choice descriptions; full response replacement including model-dependent reasoning choices |
 | `modes`, `current_mode_update`, `session/set_mode` | Duplicate Mode and no edit path | Config options take precedence; legacy available modes remain selectable when configOptions is absent |
-| `session/new` then `session/prompt` | Prompt immediately began before UI could configure | Optional Configure Agents preparation; independent per-lane Send prompt; ordinary Run remains immediate |
+| `session/new` then `session/prompt` | Prompt immediately began before UI could configure | Choosing an Agent prepares its session for inline configuration; independent per-lane Send prompt; ordinary Run remains immediate |
 | `agent_message_chunk`, `agent_thought_chunk` | Only text projected; separate message ids could merge | Canonical content events; role separation and message-id framing; completed text uses the existing safe Markdown renderer |
 | `user_message_chunk` | No retained message view | User content retained separately and excluded from assistant response counts and response stop conditions |
 | `tool_call`, `tool_call_update` | Permission-first tools delayed; rich fields lost | Unique-id canonical tools before permission decisions; update-only calls; partial merges; title/kind/input/output/status/content/locations |

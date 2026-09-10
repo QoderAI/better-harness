@@ -1,7 +1,7 @@
 import { CompareFiles } from "./run/CompareFiles.js";
 import { ResizableComparePanes } from "./run/ResizableComparePanes.js";
 import { comparisonLaneStatus } from "./run/compare-evidence.js";
-import { PromptInput, PromptInputFooter, PromptInputTextarea } from "./components/ai-elements/prompt-input.js";
+import { PromptInput, PromptInputFooter, PromptInputTextarea, PromptInputTools } from "./components/ai-elements/prompt-input.js";
 import { AcpSessionSettings } from "./run/AcpSessionSettings.js";
 import { useSessionOwnedState } from "./run/session-view-store.js";
 import { createAcpSessionActions } from "./run/acp-session-actions.js";
@@ -79,7 +79,6 @@ export function CompareLiveView(props: {
   const preparedControllers = useRef(new Map<string, AbortController>());
   const launchBusy = useRef(false);
   const [preparationRevision, setPreparationRevision] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
   const [queuedLaunch, setQueuedLaunch] = useState<string>();
   const [reveal, setReveal] = useState<{ laneKey: string; id: string; token: number }>();
   const [closeError, setCloseError] = useState<string>();
@@ -204,15 +203,14 @@ export function CompareLiveView(props: {
     if (queuedLaunch !== undefined && configurationReady && !active) void startPrepared(queuedLaunch);
   }, [active, configurationReady, queuedLaunch]);
 
-  async function refreshConfiguration(): Promise<void> {
-    if (chosen.length < MIN_LANES || refreshing || active) return;
-    setRefreshing(true);
-    setQueuedLaunch(undefined);
-    releasePrepared(preparedRef.current);
-    updatePrepared(() => []);
-    preparingAgents.current.clear();
-    setPreparationRevision((current) => current + 1);
-    setRefreshing(false);
+  /** Preparation is automatic, so a failed Agent needs its own way back rather
+   * than a composer-wide refresh that would discard the settled Agents too. */
+  function retryAgent(agentId: string): void {
+    if (active) return;
+    releasePrepared(preparedRef.current.filter((lane) => lane.agentId === agentId));
+    updatePrepared((current) => current.filter((lane) => lane.agentId !== agentId));
+    preparingAgents.current.delete(agentId);
+    prepareAgent(agentId);
   }
 
   const runIdFor = (key: string): string | undefined =>
@@ -245,13 +243,13 @@ export function CompareLiveView(props: {
   }
 
   const labelFor = (agentId: string): string => props.agents.find((agent) => agent.id === agentId)?.label ?? agentId;
-  const readiness = available.length === 0
+  // Each chosen Agent states its own preparation on its own control, so the
+  // composer only speaks for what no Agent row can: an empty or unusable choice.
+  const prerequisite = available.length === 0
     ? t("live.noAgents")
     : chosen.length < MIN_LANES
       ? t("live.agentFloor", { count: MIN_LANES })
-      : refreshing || !configurationReady || queuedLaunch !== undefined
-        ? t("live.configuring")
-        : t("live.ready");
+      : undefined;
 
   // No page title or eyebrow: the shell title bar and the sidebar already name
   // this area, and the composer states the decision on its own.
@@ -286,41 +284,43 @@ export function CompareLiveView(props: {
         onValueChange={setPrompt}
       />
       <PromptInputFooter className="live-compare-bar">
-        <AgentPicker
-          agents={props.agents}
-          chosen={chosen}
-          disabled={available.length === 0}
-          onToggle={(agentId) => setChosen((current) => current.includes(agentId)
-            ? current.filter((candidate) => candidate !== agentId)
-            : current.length < MAX_LANES ? [...current, agentId] : current)}
-        />
-        {chosen.map((agentId) => <span className="live-compare-chip" key={agentId}>
-          <span>{labelFor(agentId)}</span>
-          <button
-            type="button"
-            aria-label={t("live.removeChosenAgent", { agent: labelFor(agentId) })}
-            onClick={() => setChosen((current) => current.filter((candidate) => candidate !== agentId))}
-          ><X aria-hidden="true" size={11} /></button>
-        </span>)}
-        {chosen.length > 1 && <SharedTreeNote />}
-        <span className={`live-compare-readiness${available.length === 0 ? " status-warning" : ""}`} role="status">{readiness}</span>
-        <button type="button" disabled={chosen.length < MIN_LANES || refreshing || active} onClick={() => void refreshConfiguration()}>{t("live.prepare")}</button>
+        <PromptInputTools>
+          <AgentPicker
+            agents={props.agents}
+            chosen={chosen}
+            disabled={available.length === 0}
+            onToggle={(agentId) => setChosen((current) => current.includes(agentId)
+              ? current.filter((candidate) => candidate !== agentId)
+              : current.length < MAX_LANES ? [...current, agentId] : current)}
+          />
+          {/* One control per chosen Agent: its name, the configuration it
+              actually offers, and the way to drop it, in the input region the
+              reader is already in. */}
+          {chosen.map((agentId) => {
+            const lane = prepared.find((candidate) => candidate.agentId === agentId);
+            const failed = lane !== undefined && (lane.failure !== undefined || lane.state.status === "error");
+            return <div className="live-compare-agent" key={agentId} role="group" aria-label={t("live.agentSettingsAria", { agent: labelFor(agentId) })}>
+              <span className="live-compare-agent-name">{labelFor(agentId)}</span>
+              {failed
+                ? <button type="button" className="live-compare-agent-retry" title={lane.failure ?? lane.state.error} onClick={() => retryAgent(agentId)}>{t("live.retry")}</button>
+                : lane?.state.acp.prepared === true
+                  ? <AcpSessionSettings session={lane.state.acp} runId={lane.runId} active={lane.state.status === "running"} actions={createAcpSessionActions(lane.runId)} agentId={agentId} />
+                  : <span className="live-compare-agent-status" role="status">{t("live.configuring")}</span>}
+              <button
+                type="button"
+                className="live-compare-agent-remove"
+                aria-label={t("live.removeChosenAgent", { agent: labelFor(agentId) })}
+                onClick={() => setChosen((current) => current.filter((candidate) => candidate !== agentId))}
+              ><X aria-hidden="true" size={11} /></button>
+            </div>;
+          })}
+          {chosen.length > 1 && <SharedTreeNote />}
+          {prerequisite !== undefined && <span className={`live-compare-readiness${available.length === 0 ? " status-warning" : ""}`} role="status">{prerequisite}</span>}
+        </PromptInputTools>
         <button className="primary live-compare-run" type="submit" disabled={!canRequestRun}>
           <Play aria-hidden="true" size={14} />
           <span>{chosen.length < MIN_LANES ? t("live.runIdle") : t("live.run", { count: chosen.length })}</span>
         </button>
-        {chosen.length > 0 && <div className="live-compare-configurations" aria-label={t("live.settingsAria")}>
-          {chosen.map((agentId) => {
-            const lane = prepared.find((candidate) => candidate.agentId === agentId);
-            return <section className="live-compare-configuration" key={agentId} aria-label={t("live.agentSettingsAria", { agent: labelFor(agentId) })}>
-              <strong>{labelFor(agentId)}</strong>
-              {lane?.state.acp.prepared === true
-                ? <AcpSessionSettings session={lane.state.acp} runId={lane.runId} active={lane.state.status === "running"} actions={createAcpSessionActions(lane.runId)} agentId={agentId} compact={false} />
-                : <span className="live-compare-config-status" role="status">{t("live.configuring")}</span>}
-              {lane?.failure !== undefined && <p role="alert">{lane.failure}</p>}
-            </section>;
-          })}
-        </div>}
       </PromptInputFooter>
     </PromptInput>
   </main>;

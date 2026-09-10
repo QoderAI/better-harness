@@ -17,11 +17,8 @@ export const compare = {
     chooseSession: "Choose sessions",
     newComparison: "New comparison",
     newRun: "New run",
-    ready: "Ready",
     configuring: "Configuring…",
-
-    prepare: "Configure Agents",
-    settingsAria: "Selected Agent configuration",
+    retry: "Retry",
     agentSettingsAria: "Configuration for {{agent}}",
     title: "Compare Agents live",
     promptLabel: "What should these Agents do?",

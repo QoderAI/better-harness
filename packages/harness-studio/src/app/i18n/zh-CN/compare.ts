@@ -19,11 +19,8 @@ export const compare: typeof enCompare = {
     fileKind: { read: "读取", edit: "编辑", delete: "删除", search: "搜索", other: "工具" },
     chooseSession: "选择会话",
     newComparison: "新建比较",
-    ready: "已就绪",
     configuring: "配置中…",
-
-    prepare: "配置 Agent",
-    settingsAria: "已选 Agent 配置",
+    retry: "重试",
     agentSettingsAria: "{{agent}} 的配置",
     title: "实时对比 Agent",
     promptLabel: "这些 Agent 要做什么？",

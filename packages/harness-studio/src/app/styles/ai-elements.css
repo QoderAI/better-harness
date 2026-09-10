@@ -112,7 +112,6 @@
 .ai-prompt-suggestion-empty { padding: var(--space-sm) var(--space-md); margin: 0; font-size: var(--type-meta-size); color: var(--color-text-muted); }
 .ai-prompt-spinner { animation: ai-prompt-spin 1s linear infinite; }
 @keyframes ai-prompt-spin { to { transform: rotate(360deg); } }
-.ai-prompt-footer.live-compare-bar { display: flex; flex-wrap: wrap; }
 .live-composer .ai-prompt-footer { display: flex; justify-content: flex-end; }
 .ai-message-response.markdown-document { white-space: normal; font: inherit; }
 .streaming-message { white-space: normal; }

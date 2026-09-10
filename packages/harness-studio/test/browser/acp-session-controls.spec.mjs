@@ -32,20 +32,15 @@ test("configures model and effort before prompting, retries errors, and isolates
   await page.getByRole("button", { name: /^Choose Agents/ }).click();
   for (const name of ["Alpha ACP", "Beta ACP"]) await page.getByRole("menuitemcheckbox", { name: new RegExp(name) }).click();
   await page.keyboard.press("Escape");
-  const configurations = page.locator(".live-compare-configuration");
+  // Selecting an Agent configures it in place: the offered settings belong to
+  // the Agent control inside the input region, with no second panel, no separate
+  // refresh control, and no transcript before the shared prompt starts.
+  const configurations = page.locator(".live-compare-composer .live-compare-agent");
   await expect(configurations).toHaveCount(2);
   await expect(configurations.first().getByRole("combobox", { name: "Mode", exact: true })).toHaveCount(1);
-  const readiness = page.locator(".live-compare-readiness");
-  await expect(readiness).toHaveText("Ready");
-  const readinessBox = await readiness.boundingBox();
-  const configureBox = await page.getByRole("button", { name: "Configure Agents", exact: true }).boundingBox();
-  expect(readinessBox.y).toBeGreaterThanOrEqual(configureBox.y);
-  expect(readinessBox.y + readinessBox.height).toBeLessThanOrEqual(configureBox.y + configureBox.height);
-  // Refreshing configuration remains in the persistent composer and does not
-  // create a transient message/lane area before the prompt starts.
-  await page.getByRole("button", { name: "Configure Agents", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Configure Agents", exact: true })).toHaveCount(0);
+  await expect(page.locator(".live-compare-readiness")).toHaveCount(0);
   await expect(page.locator(".live-compare-lane")).toHaveCount(0);
-  await expect(configurations.first().getByRole("combobox", { name: "Mode", exact: true })).toHaveCount(1);
   const alpha = configurations.filter({ hasText: "Alpha ACP" });
   const beta = configurations.filter({ hasText: "Beta ACP" });
   let fail = true, actionUrl;

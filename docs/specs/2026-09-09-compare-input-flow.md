@@ -11,7 +11,7 @@ Keep Compare focused on one decision at a time: select Agents, review their offe
 ## Acceptance Scenarios
 - AC-1: The idle Compare surface shows only the docked input region and its neutral reading area; it does not render saved conversation/chat content. Readiness remains an inline status/control and never consumes a separate full-width line.
 - AC-2: Choosing one or more available Agents automatically prepares their configuration in the input region. Offered core options, including reasoning strength when the Agent supplies it, are editable before the shared prompt starts.
-- AC-3: Choosing `Configure Agents` refreshes only the input-region configuration. It does not reveal a transcript, create message panes, or navigate away from Compare.
+- AC-3: Choosing `Configure Agents` refreshes only the input-region configuration. It does not reveal a transcript, create message panes, or navigate away from Compare. Superseded by [compare-inline-agent-configuration](2026-09-10-compare-inline-agent-configuration.md): configuration is now inline per Agent and recovers with a per-Agent Retry.
 - AC-4: Starting the prompt from a prepared input region preserves the current prompt and Agent configuration, then opens the existing live comparison lanes.
 - AC-5: Compare defaults to Live Agents. Its retained Sessions surface remains empty until the reader explicitly selects two Sessions in the Sessions workspace; it then requests only that pair's comparison, without loading or auto-pairing the retained Session catalog.
 - AC-6: Entering the Sessions workspace does not automatically fetch a Session detail; explicit row selection remains the only detail-opening action.

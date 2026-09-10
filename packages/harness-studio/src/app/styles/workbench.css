@@ -1719,14 +1719,13 @@
    page header, prompt restatement, or metric grid above the evidence. */
 .live-compare-workspace { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--color-workspace); }
 .live-compare-workspace > .live-compare-composer { margin: var(--space-sm) var(--space-md); }
-/* One toolbar row for the Agent decision and Run. Chips wrap before they shrink,
-   so a fourth Agent lengthens the row rather than clipping a name. */
-.live-compare-bar { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-sm); }
+/* One toolbar row for the Agent decision and Run. Agent controls wrap before
+   they shrink, so a fourth Agent lengthens the row rather than clipping a name. */
 .live-compare-picker { position: relative; flex: none; }
 .live-compare-picker > button { height: var(--control-height); display: inline-flex; align-items: center; gap: var(--space-xs); padding: 0 var(--space-sm); }
-/* The composer is docked at the *top* of the workspace, so both of its pop-ups
-   open downward over the evidence. Opening upward would put them outside the
-   viewport. */
+/* The composer is docked at the *bottom* of the workspace, so every pop-up it
+   owns opens upward over the evidence. Opening downward would put them outside
+   the viewport. */
 .live-compare-menu {
   position: absolute;
   bottom: calc(100% + var(--space-xs));
@@ -1753,25 +1752,30 @@
    <option title> never reliably was. */
 .live-compare-menu span { grid-column: 2; min-width: 0; color: var(--color-text-muted); font-size: var(--type-meta-size); overflow-wrap: anywhere; }
 .live-compare-menu p { margin: 0; padding: var(--space-xs) var(--space-sm); border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: var(--type-meta-size); }
-/* A chosen Agent is a removable value, so it reads as a chip rather than a
-   status badge, and it keeps the row's control height. */
-.live-compare-chip { flex: 0 1 auto; min-width: 0; height: var(--control-height); display: inline-flex; align-items: center; gap: var(--space-xs); padding: 0 var(--space-xs) 0 var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-full); color: var(--color-text); background: var(--color-surface-selected); font-size: var(--type-meta-size); }
-.live-compare-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.live-compare-chip > button { width: 24px; min-width: 24px; height: 24px; min-height: 24px; flex: none; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-full); color: var(--color-text-muted); background: transparent; }
-.live-compare-chip > button:hover { color: var(--color-text); background: var(--color-surface-hover); }
-/* Readiness is a compact part of the command row. It never claims a separate
-   line; Agent configuration expands below only after an Agent is selected. */
+/* A chosen Agent is one removable control that carries the settings that Agent
+   actually offers, so selecting and configuring stay the same object in the same
+   row instead of a second panel below the composer. */
+.live-compare-agent { flex: 0 1 auto; min-width: 0; max-width: 100%; min-height: var(--control-height); display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); padding: 0 var(--space-xs) 0 var(--space-sm); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); background: var(--color-surface-subtle); font-size: var(--type-meta-size); }
+.live-compare-agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-compare-agent-status { flex: none; color: var(--color-text-muted); }
+/* Settings belong to their Agent, so they group inside that Agent's control
+   instead of flattening into the toolbar row the way a single-Agent composer can. */
+.live-compare-bar .live-compare-agent .acp-config-toolbar { display: flex; gap: var(--space-xs); }
+.live-compare-agent .acp-setting-error { max-width: min(18rem, 100%); }
+.live-compare-agent-retry { min-height: var(--toolbar-target); padding: 0 var(--space-xs); border: 0; border-radius: var(--radius-xs); color: var(--color-danger); background: transparent; font-size: var(--type-meta-size); }
+.live-compare-agent-retry:hover { background: var(--color-surface-hover); }
+.live-compare-agent-remove { width: 24px; min-width: 24px; height: 24px; min-height: 24px; flex: none; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-full); color: var(--color-text-muted); background: transparent; }
+.live-compare-agent-remove:hover { color: var(--color-text); background: var(--color-surface-hover); }
+/* The remaining settings open over the reading area, anchored to the composer
+   rather than to the summary, so a fourth Agent's disclosure cannot open off the
+   viewport at narrow widths. Geometry comes from `.ai-prompt-tools`. */
+.live-compare-composer .acp-settings-fields { position: absolute; z-index: 70; box-sizing: border-box; max-width: min(26rem, 100%); max-height: 45dvh; overflow: auto; padding: var(--space-md); border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-panel); box-shadow: var(--shadow-popover); }
+/* A prerequisite is a compact part of the command row and never claims a
+   separate line; a settled Agent states its own status on its own control. */
 .live-compare-note { min-width: 0; flex: 0 1 auto; max-width: min(20rem, 100%); margin: 0; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .live-compare-note.status-warning,
 .live-compare-readiness.status-warning { color: var(--color-warning); }
-.live-compare-readiness { flex: none; min-width: 0; color: var(--color-text-muted); font-size: var(--type-meta-size); white-space: nowrap; }
-.live-compare-configurations { flex: 1 0 100%; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--space-sm); padding-top: var(--space-sm); border-top: 1px solid var(--color-border); }
-.live-compare-configuration { min-width: min(100%, 18rem); flex: 1 1 18rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); padding-inline: var(--space-sm); border-left: 2px solid var(--color-primary); }
-.live-compare-configuration > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-meta-size); }
-.live-compare-configuration .acp-config-toolbar { align-items: start; }
-.live-compare-configuration .acp-setting { grid-template-columns: minmax(7rem, 1fr) minmax(8rem, 1.25fr); }
-.live-compare-config-status { color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.live-compare-configuration [role="alert"] { margin: 0; color: var(--color-danger); font-size: var(--type-meta-size); overflow-wrap: anywhere; }
+.live-compare-readiness { flex: 0 1 auto; min-width: 0; color: var(--color-text-muted); font-size: var(--type-meta-size); }
 .live-compare-shared-tree { position: relative; color: var(--color-warning); }
 .live-compare-shared-tree > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-compare-note-toggle { width: 24px; min-width: 24px; height: 24px; min-height: 24px; flex: none; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--radius-full); color: var(--color-text-muted); background: transparent; }
@@ -2162,10 +2166,13 @@
   .session-compare-picker label + label,
   .session-compare-heads article + article,
   .session-tool-sequences section + section { border-left: 0; border-top: 1px solid var(--color-border); }
-  /* Narrow keeps every Agent lane, stacked, so the comparison never loses one. */
-  .live-compare-agent-slot { flex-basis: 100%; }
-  .live-compare-agent-actions { margin-left: 0; width: 100%; }
-  .live-compare-agent-actions button:last-child { flex: 1 1 auto; justify-content: center; }
+  /* Narrow keeps every Agent lane, stacked, so the comparison never loses one.
+     One column cannot hold a name, its settings, and Remove on one line, so the
+     Agent's identity and its removal stay together and the settings wrap under
+     them instead of stranding Remove on a line of its own. */
+  .live-compare-agent { flex-basis: 100%; }
+  .live-compare-agent-name { flex: 1 1 auto; }
+  .live-compare-bar .live-compare-agent .acp-config-toolbar { order: 1; flex-basis: 100%; }
   .live-compare-lanes { grid-auto-flow: row; grid-auto-columns: auto; grid-auto-rows: minmax(220px, auto); overflow-x: hidden; overflow-y: auto; }
   .live-compare-lane + .live-compare-lane { border-left: 0; border-top: 1px solid var(--color-border); }
   /* One stacked column cannot hold label, counts, status, and Interrupt on one
@@ -2241,5 +2248,3 @@
 .session-compare-usage > div { display: flex; justify-content: space-between; gap: var(--space-sm); }
 
 .session-compare-calls summary .session-compare-call-preview { display: block; margin-left: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-code); }
-
-.live-compare-run { margin-inline-start: auto; }
