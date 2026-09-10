@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 import { useTranslation } from "react-i18next";
 import type { Icon } from "@phosphor-icons/react";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
-import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
 import { CaretRight } from "@phosphor-icons/react/CaretRight";
 import { Gauge } from "@phosphor-icons/react/Gauge";
 import { Binoculars } from "@phosphor-icons/react/Binoculars";
@@ -42,10 +41,6 @@ export function ProjectSidebar(props: {
   current: StudioArea | null;
   opening: boolean;
   canOpenProject: boolean;
-  canScanProject: boolean;
-  scanRequired: boolean;
-  scanning: boolean;
-  onScanProject: () => void;
   onOpenProject: () => void;
   onActivateProject: (projectId: string) => void;
   onRemoveProject: (projectId: string) => void;
@@ -209,15 +204,9 @@ export function ProjectSidebar(props: {
       </div>}
     </div>
 
-    {props.canScanProject && <div className="studio-project-scan">
-      <button type="button" disabled={props.opening} aria-busy={props.scanning} aria-label={props.scanning ? t("sidebar.scanning") : props.scanRequired ? t("sidebar.scanProject") : t("sidebar.rescanProject")} title={t("sidebar.scanScope")} onClick={props.onScanProject}>
-        {props.scanning ? <span className="studio-project-spinner" aria-hidden="true" /> : <ArrowClockwise aria-hidden="true" size={15} />}
-        <span role="status">{props.scanning ? t("sidebar.scanning") : props.scanRequired ? t("sidebar.scanProject") : t("sidebar.rescanProject")}</span>
-      </button>
-    </div>}
-
     {/* The Project says where to look; this says when. Both scope every View
-        below, which is why neither is one of the rows. */}
+        below, which is why neither is one of the rows. Scanning is an action on
+        that scope rather than part of it, so it lives in the toolbar. */}
     <DateRangeFilter range={props.dateRange} onChange={props.onDateRangeChange} />
 
     <nav aria-label={t("sidebar.navAria")} onKeyDown={onNavigationKeyDown}>

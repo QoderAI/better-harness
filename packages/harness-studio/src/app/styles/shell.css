@@ -351,8 +351,6 @@
 
 .studio-project-open:hover:not(:disabled) { color: var(--color-text); background: var(--color-surface-hover); }
 .studio-project-open:disabled { color: var(--color-text-subtle); }
-.studio-project-scan { margin: var(--space-xs) var(--sidebar-inset) var(--space-sm); }
-.studio-project-scan > button { width: 100%; min-height: var(--control-height); display: flex; align-items: center; justify-content: center; gap: var(--space-sm); }
 .studio-project-spinner { width: var(--space-md); height: var(--space-md); border: 2px solid var(--color-border-strong); border-top-color: var(--color-primary); border-radius: var(--radius-full); animation: workspace-progress-spin 720ms linear infinite; }
 
 /* Source-list rows are inset and rounded, and the active row is filled with the
@@ -476,6 +474,24 @@
 .studio-context-actions { flex: none; margin-left: auto; display: flex; align-items: center; gap: var(--space-sm); }
 .studio-context-actions:empty { display: none; }
 .studio-context-actions button { min-height: var(--toolbar-target); flex: none; display: inline-flex; align-items: center; gap: var(--space-xs); }
+
+/* The shell's own toolbar actions, to the right of the View's. The View slot
+   disappears when empty, taking its auto margin with it, so this group claims
+   the margin in that case and stays on the trailing edge either way. */
+.studio-shell-actions { flex: none; display: flex; align-items: center; gap: var(--space-sm); }
+.studio-context-actions:empty + .studio-shell-actions { margin-left: auto; }
+.studio-scan-action {
+  width: var(--toolbar-target);
+  height: var(--toolbar-target);
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  color: var(--color-text-muted);
+  background: transparent;
+}
+.studio-scan-action:hover:not(:disabled) { color: var(--color-text); background: var(--color-surface-hover); }
+.studio-scan-action:disabled { color: var(--color-text-subtle); }
 .studio-theme-toggle {
   min-height: var(--control-height);
   flex: none;

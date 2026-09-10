@@ -185,7 +185,7 @@ export const common: typeof enCommon = {
     rescanProject: "重新扫描项目",
     scanning: "正在扫描项目…",
     scanPendingTitle: "项目待扫描",
-    scanPendingDetail: "点击左侧“扫描项目”以加载项目证据。",
+    scanPendingDetail: "尚未读取该项目的任何证据。扫描以加载。",
     scanScope: "扫描会话、Git 历史、产物、Skills、MCP、Hooks 和插件。",
     scanFailed: "项目扫描失败，请重试。",
     aria: "Studio 项目",

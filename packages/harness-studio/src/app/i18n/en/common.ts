@@ -183,7 +183,7 @@ export const common = {
     rescanProject: "Rescan project",
     scanning: "Scanning project…",
     scanPendingTitle: "Project ready to scan",
-    scanPendingDetail: "Use Scan project in the sidebar to load Project evidence.",
+    scanPendingDetail: "No evidence has been read from this Project yet. Scan to load it.",
     scanScope: "Scan Sessions, Git history, artifacts, Skills, MCP, hooks, and plugins.",
     scanFailed: "Project scan failed. Try again.",
     aria: "Studio Projects",

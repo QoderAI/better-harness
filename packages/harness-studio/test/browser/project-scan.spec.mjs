@@ -14,7 +14,7 @@ const layouts = [
 ];
 
 for (const theme of ["light", "dark"]) for (const layout of layouts) {
-  test(`restores without scanning and scans from the sidebar at ${layout.name} ${theme}`, async ({ page }, testInfo) => {
+  test(`restores without scanning and scans from the toolbar at ${layout.name} ${theme}`, async ({ page }, testInfo) => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "studio-scan-browser-")));
     const workspace = join(root, "project");
     const projectStateRoot = join(root, "state");
@@ -46,33 +46,63 @@ for (const theme of ["light", "dark"]) for (const layout of layouts) {
       await page.goto(`${studio.url}/#/projects/${projectId}/session-performance`);
       await expect(page.getByRole("heading", { name: "Project ready to scan" })).toBeVisible();
       expect(scans).toBe(0);
-      if (layout.name !== "wide") await page.locator(".studio-nav-toggle").click();
-      const scan = page.getByRole("button", { name: "Scan project", exact: true });
+
+      // The toolbar owns the scan at every width, so it needs no sidebar detour;
+      // on narrow windows the sidebar is an overlay that starts closed.
+      const scan = page.locator(".studio-scan-action");
       await expect(scan).toBeVisible();
+      await expect(scan).toHaveAttribute("aria-label", "Scan project");
+      expect(await page.locator(".studio-primary-nav .studio-scan-action").count()).toBe(0);
       await expect(page.getByText("Project restored. Scan to load evidence.", { exact: true })).toHaveCount(0);
       await expect(page.getByText("Every retained day", { exact: true })).toHaveCount(0);
       const viewNames = await page.locator(".studio-project-views button strong").allTextContents();
       expect(viewNames.indexOf("Memory")).toBe(viewNames.indexOf("Customizations") + 1);
-      await scan.hover();
-      await page.keyboard.press("Tab");
+
+      // While no View publishes a toolbar action, the shell group still holds the
+      // trailing edge rather than drifting in behind the title.
+      const bar = await page.locator(".studio-context-bar").boundingBox();
+      const resting = await scan.boundingBox();
+      expect(bar).not.toBeNull();
+      expect(resting).not.toBeNull();
+      expect(bar.x + bar.width - (resting.x + resting.width)).toBeLessThan(24);
+
       await scan.focus();
       await expect(scan).toBeFocused();
       expect(await scan.evaluate(node => getComputedStyle(node).outlineStyle)).not.toBe("none");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`scan-ready-${layout.name}-${theme}.png`) });
-      await page.keyboard.press("Enter");
-      await expect(page.getByRole("button", { name: "Scanning project…", exact: true })).toBeDisabled();
+
+      // The blocking first scan carries its own call to action where the reader
+      // already is, instead of pointing at another region of the window.
+      const cta = page.locator(".empty-workspace button.primary");
+      await expect(cta).toHaveText("Scan project");
+      await cta.click();
+
+      await expect(scan).toBeDisabled();
+      await expect(scan).toHaveAttribute("aria-busy", "true");
+      await expect(scan).toHaveAttribute("aria-label", "Scanning project…");
+      await expect(cta).toBeDisabled();
       await expect.poll(() => scans).toBe(1);
       await page.screenshot({ path: testInfo.outputPath(`scan-busy-${layout.name}-${theme}.png`) });
       // Switch to a view backed by this scan while it is in flight.
       await page.evaluate(() => { location.hash = location.hash.replace("session-performance", "sessions"); });
       release();
-      await expect(page.getByRole("button", { name: "Rescan project", exact: true })).toBeEnabled();
+
+      await expect(scan).toBeEnabled();
+      await expect(scan).toHaveAttribute("aria-label", "Rescan project");
       await expect(page.getByRole("heading", { name: "Project ready to scan" })).toHaveCount(0);
       expect(scans).toBe(1);
       const config = await (await fetch(`${studio.url}/api/config`)).json();
       expect(config.workspaceScanRequired).toBe(false);
       await page.screenshot({ path: testInfo.outputPath(`scan-complete-${layout.name}-${theme}.png`) });
+
+      // Rescan is the reader's refresh after an Agent turn, so it stays operable
+      // from the keyboard once the first scan has cleared the empty state.
+      await expect(cta).toHaveCount(0);
+      await scan.focus();
+      await page.keyboard.press("Enter");
+      await expect.poll(() => scans).toBe(2);
+      await expect(scan).toBeEnabled();
       expect(errors).toEqual([]);
     } finally {
       release();

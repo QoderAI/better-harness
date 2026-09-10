@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
+import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
 import { ArrowRight } from "@phosphor-icons/react/ArrowRight";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { Gear } from "@phosphor-icons/react/Gear";
@@ -549,6 +550,9 @@ export function App(): React.JSX.Element {
     ? compareNavigation
     : null;
   const activeProject = projects.find((project) => project.id === activeProjectId);
+  // Only a local directory has evidence a scan can read, and only discovery can
+  // read it, so the toolbar control and the empty-state CTA share one condition.
+  const canScanProject = config.workspaceDiscoveryEnabled && activeProject?.kind === "local";
   const openProjectAction = config.workspaceDiscoveryEnabled
     ? { label: config.workspaceConnected ? t("project.openAnother") : t("project.open"), onClick: () => void openProject() }
     : undefined;
@@ -580,10 +584,6 @@ export function App(): React.JSX.Element {
       current={showWelcome ? null : area}
       opening={projectOpening}
       canOpenProject={config.workspaceDiscoveryEnabled}
-      canScanProject={config.workspaceDiscoveryEnabled && activeProject?.kind === "local"}
-      scanRequired={config.workspaceScanRequired === true}
-      scanning={projectScanning}
-      onScanProject={() => void scanStudioProject()}
       onOpenProject={() => void openProject()}
       onActivateProject={(projectId) => void activateStudioProject(projectId)}
       onRemoveProject={(projectId) => void removeStudioProject(projectId)}
@@ -604,6 +604,12 @@ export function App(): React.JSX.Element {
         {/* The active View's primary action lands here, so a workbench does not
             open a second bar just to hold one button. */}
         <div className="studio-context-actions" id={TOOLBAR_ACTIONS_ID} />
+        {/* Scanning refreshes every View at once, so it is the shell's action
+            rather than any View's, and it stays reachable at every width — the
+            sidebar that used to hold it is an overlay on narrow windows. */}
+        {canScanProject && <div className="studio-shell-actions">
+          <ProjectScanAction scanRequired={config.workspaceScanRequired === true} scanning={projectScanning} disabled={projectOpening} onScan={() => void scanStudioProject()} />
+        </div>}
         {sources.length > 0 && <SourceSwitcher sources={sources} onSelect={(source) => void selectSource(source)} />}
         {projectFailure !== undefined && <span className="studio-project-failure" role="alert">{projectFailure}</span>}
       </header>
@@ -612,7 +618,7 @@ export function App(): React.JSX.Element {
         {showWelcome ? <WorkspaceWelcome onWorkspaceChanged={async () => {
           const projectId = await workspaceChanged();
           globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
-        }} /> : config.workspaceScanRequired && !["memory", "memory-sources", "debugger", "compare"].includes(area) ? <EmptyWorkspace eyebrow={activeProject?.label ?? ""} title={t("sidebar.scanPendingTitle")} detail={t("sidebar.scanPendingDetail")} /> : <>
+        }} /> : config.workspaceScanRequired && !["memory", "memory-sources", "debugger", "compare"].includes(area) ? <EmptyWorkspace eyebrow={activeProject?.label ?? ""} title={t("sidebar.scanPendingTitle")} detail={t("sidebar.scanPendingDetail")} action={canScanProject ? { label: projectScanning ? t("sidebar.scanning") : t("sidebar.scanProject"), onClick: () => void scanStudioProject(), disabled: projectOpening } : undefined} /> : <>
         {area === "session-performance" && <SessionPerformanceWorkspace key={`performance-${config.activeProjectId}-${config.projectRevision}`} config={config} dateRange={dateRange} />}
         {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}-${dateScopeKey}`} dateRange={dateRange} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
         {area === "customizations" && (config.customizationAnalysisEnabled
@@ -1355,8 +1361,38 @@ function sessionMetricLabel(metric: "retainedEventCount" | "toolCallCount" | "me
   })[metric];
 }
 
-function EmptyWorkspace(props: { eyebrow: string; title: string; detail: string; command?: string; action?: { label: string; onClick: () => void } }): React.JSX.Element {
-  return <main className="empty-workspace"><span><GitBranch aria-hidden="true" size={22} /></span><small>{props.eyebrow}</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" onClick={props.action.onClick}>{props.action.label}</button>}{props.command && <code>{props.command}</code>}</main>;
+/**
+ * The shell's scan control, as one toolbar icon.
+ *
+ * Sessions, commits, Skills, MCP, hooks, and plugins have no filesystem watcher,
+ * so a scan is how the reader gets everything an Agent produced since the last
+ * one. That makes it frequent, which is why it is a permanent toolbar control
+ * rather than an item inside the Project menu. It is icon-only because it is a
+ * refresh, not the primary decision on any screen; the wording it would have
+ * shown stays available as its accessible name, its tooltip, and a status region
+ * so a reader who cannot see the spinner still learns the scan is running.
+ */
+function ProjectScanAction(props: { scanRequired: boolean; scanning: boolean; disabled: boolean; onScan: () => void }): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const label = props.scanning
+    ? t("sidebar.scanning")
+    : props.scanRequired ? t("sidebar.scanProject") : t("sidebar.rescanProject");
+  return <button
+    className="studio-scan-action"
+    type="button"
+    disabled={props.disabled}
+    aria-busy={props.scanning}
+    aria-label={label}
+    title={`${label} — ${t("sidebar.scanScope")}`}
+    onClick={props.onScan}
+  >
+    {props.scanning ? <span className="studio-project-spinner" aria-hidden="true" /> : <ArrowClockwise aria-hidden="true" size={16} />}
+    <span className="sr-only" role="status">{label}</span>
+  </button>;
+}
+
+function EmptyWorkspace(props: { eyebrow: string; title: string; detail: string; command?: string; action?: { label: string; onClick: () => void; disabled?: boolean } }): React.JSX.Element {
+  return <main className="empty-workspace"><span><GitBranch aria-hidden="true" size={22} /></span><small>{props.eyebrow}</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" disabled={props.action.disabled} onClick={props.action.onClick}>{props.action.label}</button>}{props.command && <code>{props.command}</code>}</main>;
 }
 
 // The surface switcher navigates between separate top-level views (each its own
