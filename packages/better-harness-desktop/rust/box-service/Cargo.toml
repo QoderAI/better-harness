@@ -1,0 +1,48 @@
+[package]
+name = "harness-box-host"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+publish = false
+
+# The stdio driver Node spawns directly. Same shape as acp-host: the driver is
+# unmodified by transport, and NSXPC wraps it rather than replacing it.
+[[bin]]
+name = "harness-box-host"
+path = "src/main.rs"
+
+[[bin]]
+name = "harness-box-xpc"
+path = "src/bin/harness-box-xpc.rs"
+
+[[bin]]
+name = "harness-box-client"
+path = "src/bin/harness-box-client.rs"
+
+# The ACP shim. Named as a command so `harness-acp-host` can spawn it in an
+# agent's place without knowing a box exists.
+[[bin]]
+name = "harness-box-exec"
+path = "src/bin/harness-box-exec.rs"
+
+[dependencies]
+# The microVM runtime. Embedded as a library, not a daemon, so the box's
+# lifetime is the driver process's lifetime and nothing outlives a crash.
+boxlite = "0.10"
+anyhow = "1"
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt", "rt-multi-thread", "sync", "time"] }
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "libc", "NSXPCConnection", "NSObject", "NSString", "NSData", "NSError", "NSSet", "NSRunLoop", "block2"] }
+block2 = "0.6.2"
+
+[build-dependencies]
+cc = "1"
