@@ -12,9 +12,9 @@ import type { DebuggerSession } from '../../contracts/debugger-session.js';
  */
 export function SessionTranscriptPane(props: {
   sessionId: string;
-  activeToolCallId?: string;
-  linkedToolCallIds: ReadonlySet<string>;
-  onSelectToolCall: (toolCallId: string) => void;
+  activeCallStartMs?: number;
+  linkedCallStartMs: ReadonlySet<number>;
+  onSelectCall: (startedAtMs: number) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation('performance');
@@ -45,9 +45,9 @@ export function SessionTranscriptPane(props: {
           <p className="performance-note">{t('transcriptSummary', { agent: session.agent, events: session.events.length })}</p>
           <SessionTranscript
             events={session.events}
-            {...(props.activeToolCallId === undefined ? {} : { activeToolCallId: props.activeToolCallId })}
-            linkedToolCallIds={props.linkedToolCallIds}
-            onSelectToolCall={props.onSelectToolCall}
+            {...(props.activeCallStartMs === undefined ? {} : { activeCallStartMs: props.activeCallStartMs })}
+            linkedCallStartMs={props.linkedCallStartMs}
+            onSelectCall={props.onSelectCall}
           />
         </>}
   </aside>;

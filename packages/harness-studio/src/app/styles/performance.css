@@ -63,7 +63,22 @@ body.performance-resizing, body.performance-resizing * { user-select: none; }
 .performance-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .performance-state { padding: var(--space-xl); color: var(--color-text-muted); }
 
-@media (max-width: 1200px) { .performance-catalog { flex-basis: 230px; } .performance-has-evidence .performance-catalog { display: none; } .performance-totals { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+/* The retained conversation beside its own timing. It is a reading surface, not
+   a second control column, so it keeps the Session list's own row rhythm and
+   marks the matched call rather than restyling the list around it. */
+.performance-transcript { flex: 0 0 420px; min-width: 0; display: flex; flex-direction: column; overflow: auto; border-left: 1px solid var(--color-border); background: var(--color-panel); }
+.performance-transcript > .performance-toolbar { position: sticky; top: 0; z-index: 1; padding: var(--space-md); border-bottom: 1px solid var(--color-border); background: var(--color-panel); }
+.performance-transcript > .performance-note { margin: 0; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--color-border); }
+.performance-transcript .session-event-rows { flex: 1; }
+.performance-transcript .session-event-rows li[aria-current="true"] { background: var(--color-surface-selected); box-shadow: inset 2px 0 var(--color-primary); }
+.session-event-calls { display: flex; flex-wrap: wrap; gap: var(--space-xs); justify-content: flex-end; }
+.session-event-call { padding: 0 var(--space-xs); font-size: var(--type-meta-size); color: var(--color-text-muted); background: transparent; border: 1px solid transparent; border-radius: var(--radius-xs); }
+button.session-event-call { cursor: pointer; color: var(--color-text); border-color: var(--color-border-strong); }
+button.session-event-call:hover { background: var(--color-surface-hover); }
+button.session-event-call[aria-pressed="true"] { color: var(--color-primary); border-color: var(--color-primary); }
+
+@media (max-width: 1400px) { .performance-has-transcript.performance-has-evidence .performance-catalog { display: none; } }
+@media (max-width: 1200px) { .performance-catalog { flex-basis: 230px; } .performance-has-evidence .performance-catalog { display: none; } .performance-totals { grid-template-columns: repeat(2,minmax(0,1fr)); } .performance-transcript { flex-basis: 340px; } }
 @media (max-width: 700px) {
   .performance-sash { display: none; }
   .performance-header { padding: var(--space-md); align-items: start; }
@@ -75,6 +90,9 @@ body.performance-resizing, body.performance-resizing * { user-select: none; }
   .performance-has-session .performance-analysis { display: block; }
   .performance-has-evidence .performance-catalog, .performance-has-evidence .performance-analysis { display: none; }
   .performance-evidence { flex: 1; border: 0; }
+  .performance-has-transcript .performance-catalog { display: none; }
+  .performance-has-transcript.performance-has-evidence .performance-transcript { display: none; }
+  .performance-transcript { flex: 1; border: 0; }
   .performance-back, .performance-evidence-back { display: inline-flex; margin-bottom: var(--space-md); }
   .performance-span { grid-template-columns: minmax(90px,1fr) minmax(40px,0.7fr) 65px; }
   .performance-pager { flex-wrap: wrap; }

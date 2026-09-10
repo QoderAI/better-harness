@@ -13,6 +13,8 @@ export interface DebuggerToolCall {
   input: string;
   output: string;
   duration: string;
+  /** Observed start instant, when the evidence recorded one. */
+  startedAtMs?: number;
   resource?: string;
 }
 

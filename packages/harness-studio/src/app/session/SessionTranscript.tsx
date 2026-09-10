@@ -7,52 +7,45 @@ import type { DebuggerEvent } from "../../contracts/debugger-session.js";
  *
  * Timing and dialogue are two projections of one Session, so this list is the
  * single place either surface renders it. A call the reader selected elsewhere
- * is addressed by the invocation id both projections recorded, which is why a
- * timing interval and the message that produced it line up exactly instead of
- * being matched by position or by a clock.
+ * is addressed by the instant the evidence recorded for it: invocation ids are
+ * reduced to a step index before a Session is projected, while both readings
+ * take the start instant from the same record, so it lines a call up with its
+ * interval exactly rather than by position or by tool name.
  */
 export function SessionTranscript(props: {
   events: DebuggerEvent[];
-  /** Recorded invocation id to reveal; scrolled into view when it changes. */
-  activeToolCallId?: string;
-  onSelectToolCall?: (toolCallId: string) => void;
-  /** Invocation ids this reader can follow back to a timing interval. */
-  linkedToolCallIds?: ReadonlySet<string>;
+  /** Recorded start instant to reveal; scrolled into view when it changes. */
+  activeCallStartMs?: number;
+  onSelectCall?: (startedAtMs: number) => void;
+  /** Start instants this reader can follow back to a timing interval. */
+  linkedCallStartMs?: ReadonlySet<number>;
 }): React.JSX.Element {
   const { t } = useTranslation("sessions");
   const active = useRef<HTMLLIElement>(null);
   useEffect(() => {
-    if (props.activeToolCallId === undefined) return;
+    if (props.activeCallStartMs === undefined) return;
     active.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [props.activeToolCallId]);
+  }, [props.activeCallStartMs]);
   return <ol className="session-event-rows">{props.events.map((event) => {
     const calls = event.toolCalls ?? [];
-    const matched = calls.some((call) => toolCallIds(call).includes(props.activeToolCallId ?? ""));
-    return <li key={event.id} ref={matched ? active : undefined} aria-current={matched ? "true" : undefined} className={matched ? "matched" : undefined}>
+    const matched = calls.some((call) => call.startedAtMs !== undefined && call.startedAtMs === props.activeCallStartMs);
+    return <li key={event.id} ref={matched ? active : undefined} aria-current={matched ? "true" : undefined}>
       <time>{event.timestamp}</time>
       <span><strong>{event.phase} · {event.title}</strong><small>{event.summary}</small></span>
       {calls.length > 0 && <em className="session-event-calls">{calls.map((call) => {
-        const ids = toolCallIds(call);
-        const linked = props.onSelectToolCall !== undefined && ids.some((id) => props.linkedToolCallIds?.has(id) ?? false);
-        const current = ids.includes(props.activeToolCallId ?? "");
+        const at = call.startedAtMs;
+        const linked = props.onSelectCall !== undefined && at !== undefined && (props.linkedCallStartMs?.has(at) ?? false);
         return linked
           ? <button
             key={call.id}
             type="button"
             className="session-event-call"
-            aria-pressed={current}
+            aria-pressed={at === props.activeCallStartMs}
             aria-label={t("transcript.revealTiming", { name: call.name })}
-            onClick={() => props.onSelectToolCall?.(ids.find((id) => props.linkedToolCallIds?.has(id)) ?? call.id)}
+            onClick={() => props.onSelectCall?.(at)}
           >{call.name}</button>
           : <span key={call.id} className="session-event-call">{call.name}</span>;
       })}</em>}
     </li>;
   })}</ol>;
-}
-
-/** A projection may keep the recorded id, a per-resource copy of it, or both. */
-export function toolCallIds(call: { id: string; sourceCallId?: string }): string[] {
-  return call.sourceCallId === undefined || call.sourceCallId === call.id
-    ? [call.id]
-    : [call.sourceCallId, call.id];
 }

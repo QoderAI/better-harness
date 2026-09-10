@@ -209,6 +209,11 @@ function debuggerProjection(summary, identity) {
       input: safeDetail(call.detail) || "Input not retained in the privacy-safe Inspector projection.",
       output: safeDetail(call.output) || (call.status === "failed" ? "Inspector observed a failed call." : "Result payload not retained in the summary projection."),
       duration: Number.isFinite(call.durationMs) ? `${call.durationMs} ms` : "not retained",
+      // Invocation ids are deliberately reduced to a step index before they
+      // reach this projection, so the observed start instant is the only key
+      // that still identifies this call in another reading of the same
+      // evidence. It is the record's own timestamp, not new information.
+      ...(Number.isFinite(call.startedAt) ? { startedAtMs: Math.round(call.startedAt) } : {}),
       ...(resource === undefined ? {} : { resource }),
     }));
     events.push(debuggerEvent({

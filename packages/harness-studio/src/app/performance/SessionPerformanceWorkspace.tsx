@@ -98,14 +98,14 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
   // The recorded invocation id is the only key both projections share, so it is
   // what makes a timing interval and a retained call the same observation.
   const spansByCall = useMemo(() => {
-    const index = new Map<string, string>();
+    const index = new Map<number, string>();
     for (const span of detail?.spans ?? []) {
-      const call = span.facts.toolCallId;
-      if (typeof call === 'string' && call !== '' && !index.has(call)) index.set(call, span.id);
+      if (!['tool', 'shell', 'subagent'].includes(span.kind) || span.startMs === null) continue;
+      if (!index.has(span.startMs)) index.set(span.startMs, span.id);
     }
     return index;
   }, [detail]);
-  const activeCallId = typeof selectedSpan?.facts.toolCallId === 'string' ? selectedSpan.facts.toolCallId : undefined;
+  const activeCallStartMs = selectedSpan?.startMs ?? undefined;
   const toggleTranscript = (): void => setTranscriptOpen(open => { saveFilter('transcript', open ? '' : 'open'); return !open; });
   const start = selectedTurn?.startMs ?? detail?.session.firstSeenMs ?? 0;
   const end = selectedTurn?.endMs ?? detail?.session.lastActivityMs ?? detail?.session.lastSeenMs ?? start;
@@ -159,9 +159,9 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
       </main>
       {transcriptShown && <SessionTranscriptPane
         sessionId={selectedId}
-        {...(activeCallId === undefined ? {} : { activeToolCallId: activeCallId })}
-        linkedToolCallIds={new Set(spansByCall.keys())}
-        onSelectToolCall={id => { const span = spansByCall.get(id); if (span) selectSpan(span); }}
+        {...(activeCallStartMs === undefined ? {} : { activeCallStartMs })}
+        linkedCallStartMs={new Set(spansByCall.keys())}
+        onSelectCall={at => { const span = spansByCall.get(at); if (span) selectSpan(span); }}
         onClose={toggleTranscript}
       />}
       {selectedSpan && <aside className="performance-evidence" aria-label={t('evidence')} tabIndex={-1} ref={evidenceRef} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeEvidence(); } }}>

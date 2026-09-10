@@ -18,6 +18,7 @@ import { MemoryView } from "./MemoryView.js";
 import { ExperimentView } from "./experiment/ExperimentView.js";
 import { GitHistoryView } from "./GitHistoryView.js";
 import { RunView } from "./run/RunView.js";
+import { SessionTranscript } from "./session/SessionTranscript.js";
 import {
   isArtifactCatalogResponse,
   type ArtifactDescriptor,
@@ -1152,7 +1153,7 @@ function SessionDetail({ session, artifactContext }: { session: DebuggerSession;
                 onDoubleClick={() => openArtifact(artifact)}
               ><span><strong>{artifact.label}</strong><small>{artifact.format.toUpperCase()} · {t("detail.exactRevision", { id: artifact.revision.id.slice(0, 18) })}</small></span><em>{artifact.renderer.status === "ready" ? artifact.renderer.label : t("detail.previewUnavailable")}</em></button></li>)}</ul>}
         </section>
-        <ol className="session-event-rows">{session.events.map((event) => <li key={event.id}><time>{event.timestamp}</time><span><strong>{event.phase} · {event.title}</strong><small>{event.summary}</small></span>{event.toolCalls && <em>{event.toolCalls.map((tool) => tool.name).join(", ")}</em>}</li>)}</ol>
+        <SessionTranscript events={session.events} />
       </section>
       <aside className="session-artifact-preview" aria-label={t("detail.artifactViewAria")}>
         {activeArtifact === undefined || artifactContext == null
