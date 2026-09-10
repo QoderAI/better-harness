@@ -55,8 +55,18 @@ for (const theme of ["light", "dark"]) for (const layout of layouts) {
       expect(await page.locator(".studio-primary-nav .studio-scan-action").count()).toBe(0);
       await expect(page.getByText("Project restored. Scan to load evidence.", { exact: true })).toHaveCount(0);
       await expect(page.getByText("Every retained day", { exact: true })).toHaveCount(0);
+      // The View list is one source list at two levels: the Views that navigate by
+      // sub-route disclose their rows in place, Memory follows the evidence Views,
+      // and the Customizations catalog closes the list. Sessions splits its row:
+      // the label navigates and a labelled caret at the row's trailing edge
+      // discloses its children.
       const viewNames = await page.locator(".studio-project-views button strong").allTextContents();
-      expect(viewNames.indexOf("Memory")).toBe(viewNames.indexOf("Customizations") + 1);
+      expect(viewNames).toEqual([
+        "Sessions", "Overview", "Performance", "Commits",
+        "Artifacts", "Debugger", "Compare", "Memory",
+        "Customizations", "Plugins", "MCP Servers", "Skills", "Instructions", "Agents", "Hooks", "Tools", "Commands",
+      ]);
+      await expect(page.getByRole("button", { name: "Show or hide Sessions views", includeHidden: true })).toHaveAttribute("aria-expanded", "true");
 
       // While no View publishes a toolbar action, the shell group still holds the
       // trailing edge rather than drifting in behind the title.

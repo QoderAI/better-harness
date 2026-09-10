@@ -106,7 +106,7 @@ test.afterAll(async () => {
   if (workspace) await rm(workspace, { recursive: true, force: true });
 });
 
-test("browses the catalog as a docked View with category and Agent rows", async ({ page }, testInfo) => {
+test("browses the catalog as a docked View with sidebar kinds and Agent rows", async ({ page }, testInfo) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
@@ -117,6 +117,10 @@ test("browses the catalog as a docked View with category and Agent rows", async 
   await page.goto(`${studio.url}/#/customizations`);
 
   const workbench = page.locator(".customization-workbench");
+  const views = page.locator(".studio-project-views");
+  // The row's accessible name carries its trailing count ("Plugins 1"), so a
+  // prefix match finds the row both before and after the count arrives.
+  const kind = (name) => views.getByRole("button", { name: new RegExp(`^${name}( \\d+)?$`) });
   const filters = page.getByRole("navigation", { name: "Customization filters" });
   const entries = page.locator(".customization-entries");
   const provenance = page.locator(".customization-detail");
@@ -124,49 +128,55 @@ test("browses the catalog as a docked View with category and Agent rows", async 
 
   // The View replaces the pop-up: it owns the workspace and no dialog takes part.
   await expect(page.locator(".studio-context-title h1")).toHaveText("Customizations");
-  await expect(page.locator(".studio-project-views").getByRole("button", { name: "Customizations" })).toHaveAttribute("aria-current", "page");
+  // The catalog's kinds are rows of the primary sidebar, under one disclosure, so
+  // a bare route lands on a real kind rather than an aggregate list.
+  await expect(kind("Customizations")).toHaveAttribute("aria-expanded", "true");
+  await expect(kind("Plugins")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(entries).toHaveAttribute("aria-busy", "true");
-  await expect(filters.getByRole("button", { name: /^Skills/ })).toHaveCount(1);
   releaseInitialLoad();
-  await expect(filters.getByRole("button", { name: /^Skills/ }).locator("small")).toHaveText("1");
+  await expect(entries.getByRole("heading", { name: "Plugins" })).toBeVisible();
+  await expect(table).toContainText("Review Plugin");
+  // The same retained catalog the table renders also fills the sidebar counts,
+  // one per kind, so the Customizations group reads as a catalog index.
+  await expect(kind("Plugins").locator("small")).toHaveText("1");
+  await expect(kind("Skills").locator("small")).toHaveText("1");
+  await expect(kind("Instructions").locator("small")).toHaveCount(0);
   expect(calls).toBe(3);
   await page.unroute("**/api/customizations/analyze");
 
   // Every Agent the collector reached is a row, and the one that failed reports
   // its status rather than an apparently clean zero.
-  await expect(filters.getByRole("button", { name: "All Agents 3" })).toHaveAttribute("aria-current", "true");
+  await expect(filters.getByRole("button", { name: "All Agents 1" })).toHaveAttribute("aria-current", "true");
   await expect(filters.getByRole("button", { name: /^Claude/ })).toContainText("Error");
   await expect(entries.getByRole("alert")).toContainText("Claude customization collection failed");
 
-  // Overview keeps every category and names each entry's own category.
-  await expect(table).toContainText("Review Plugin");
-  await expect(table).toContainText("schedule");
-  await expect(table.getByRole("columnheader", { name: /Category/ })).toBeVisible();
-
-  await filters.getByRole("button", { name: /^Skills/ }).click();
+  // One kind per View, named by the entries heading. No aggregate list remains,
+  // so no row has to state which kind it is.
+  await kind("Skills").click();
+  // The kind is part of the route, alongside the Project scope.
+  await expect(page).toHaveURL(/\/customizations\/skills$/);
   await expect(entries.getByRole("heading", { name: "Skills" })).toBeVisible();
   await expect(table.getByRole("columnheader", { name: /Category/ })).toHaveCount(0);
   await expect(table.getByRole("row").filter({ hasText: "review" })).toContainText("Codex, Qoder");
   expect(await workbench.innerText()).not.toContain(workspace);
   expect(await workbench.innerText()).not.toContain("private-token");
 
-  // Category and Agent compose, and each keeps the other's choice.
+  // Kind and Agent compose, and each keeps the other's choice.
   await filters.getByRole("button", { name: /^Claude/ }).click();
   await expect(entries).toContainText("No entries in this category");
-  await expect(filters.getByRole("button", { name: /^Skills/ }).locator("small")).toHaveText("0");
   await filters.getByRole("button", { name: /^Qoder/ }).click();
   await expect(table).toContainText("review");
-  await filters.getByRole("button", { name: /^Plugins/ }).click();
+  await kind("Plugins").click();
   await expect(entries).toContainText("No entries in this category");
   await filters.getByRole("button", { name: /^Codex/ }).click();
   await expect(table).toContainText("Review Plugin");
-  await filters.getByRole("button", { name: /^Tools/ }).click();
+  await kind("Tools").click();
   await expect(entries).toContainText("Retained MCP tool descriptors only");
 
   // Selecting a row updates the provenance pane; it does not open anything.
   await filters.getByRole("button", { name: "All Agents" }).click();
-  await filters.getByRole("button", { name: /^MCP Servers/ }).click();
+  await kind("MCP Servers").click();
   await expect(provenance).toContainText("Select an entry");
   await table.getByRole("button", { name: "schedule" }).click();
   await expect(provenance.getByRole("heading", { name: "schedule" })).toBeVisible();
@@ -174,16 +184,18 @@ test("browses the catalog as a docked View with category and Agent rows", async 
   await expect(provenance).toContainText("Project");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  // The filter list is one Tab stop: arrows move focus without applying a filter.
-  const mcp = filters.getByRole("button", { name: /^MCP Servers/ });
-  await mcp.focus();
+  // The Agent list is one Tab stop: arrows move focus without applying a filter.
+  const allAgents = filters.getByRole("button", { name: "All Agents" });
+  await allAgents.focus();
   await page.keyboard.press("ArrowDown");
-  await expect(filters.getByRole("button", { name: /^Skills/ })).toBeFocused();
-  await expect(mcp).toHaveAttribute("aria-current", "true");
+  await expect(filters.getByRole("button", { name: /^Claude/ })).toBeFocused();
+  await expect(allAgents).toHaveAttribute("aria-current", "true");
   await page.keyboard.press("Enter");
-  await expect(entries.getByRole("heading", { name: "Skills" })).toBeVisible();
+  await expect(filters.getByRole("button", { name: /^Claude/ })).toHaveAttribute("aria-current", "true");
+  await filters.getByRole("button", { name: "All Agents" }).click();
 
   // The text filter narrows the scoped rows and says so when nothing matches.
+  await kind("Skills").click();
   const search = entries.getByRole("searchbox", { name: "Filter entries" });
   await search.fill("review");
   await expect(table).toContainText("review");
@@ -193,7 +205,6 @@ test("browses the catalog as a docked View with category and Agent rows", async 
 
   // Observed invocations: a count per exposing Agent, following the Agent filter,
   // and an honest boundary instead of a zero for what was never observed.
-  await filters.getByRole("button", { name: /^Skills/ }).click();
   const usesHeader = table.getByRole("columnheader", { name: /Uses/ });
   await expect(usesHeader).toBeVisible();
   const reviewRow = table.getByRole("row").filter({ hasText: "review" });
@@ -211,17 +222,17 @@ test("browses the catalog as a docked View with category and Agent rows", async 
 
   // A category no rule can observe does not grow a column of dashes.
   await filters.getByRole("button", { name: "All Agents" }).click();
-  await filters.getByRole("button", { name: /^Hooks/ }).click();
+  await kind("Hooks").click();
   await expect(table.getByRole("columnheader", { name: /Uses/ })).toHaveCount(0);
-  await filters.getByRole("button", { name: /^MCP Servers/ }).click();
+  await kind("MCP Servers").click();
   await expect(table.getByRole("row").filter({ hasText: "schedule" })).toContainText("3");
-  await filters.getByRole("button", { name: /^Skills/ }).click();
+  await kind("Skills").click();
 
   for (const theme of ["light", "dark"]) {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
     for (const layout of layouts) {
       await page.setViewportSize(layout);
-      await expect(filters.getByRole("button", { name: /^Skills/ })).toBeVisible();
+      await expect(entries.getByRole("heading", { name: "Skills" })).toBeVisible();
       const entriesBox = await entries.boundingBox();
       const workbenchBox = await workbench.boundingBox();
       // The catalog stays the primary region: side panes give way before it does.
@@ -234,16 +245,20 @@ test("browses the catalog as a docked View with category and Agent rows", async 
 
   await page.setViewportSize(layouts[0]);
   await page.emulateMedia({ colorScheme: "dark" });
-  await page.goto(`${studio.url}/#/customizations`);
+  // The kind is part of the route, so a reload returns to it rather than to the
+  // first row of the sidebar group.
+  await page.goto(`${studio.url}/#/customizations/skills`);
   await expect(page.locator(".studio-context-title h1")).toHaveText("Customizations");
+  await expect(kind("Skills")).toHaveAttribute("aria-current", "page");
   await expect(entries.getByRole("table")).toContainText("review");
   expect(calls).toBe(3); // The retained catalog is read back without collecting again.
 
   // The View is reachable from the sidebar's View list, like every other View.
   await openView(page, "Overview");
   await expect(page.locator(".studio-context-title h1")).toHaveText("Sessions");
-  await openView(page, "Customizations");
+  await openView(page, "Instructions");
   await expect(page.locator(".customization-workbench")).toBeVisible();
+  await expect(entries.getByRole("heading", { name: "Instructions" })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -256,7 +271,7 @@ test("catalog loading failure can be retried from the toolbar", async ({ page })
     await held;
     await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Catalog unavailable for test" }) });
   });
-  await page.goto(`${studio.url}/#/customizations`);
+  await page.goto(`${studio.url}/#/customizations/skills`);
   const entries = page.locator(".customization-entries");
   await expect(entries).toHaveAttribute("aria-busy", "true");
   release();

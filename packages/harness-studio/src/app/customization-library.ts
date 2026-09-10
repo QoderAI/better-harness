@@ -1,11 +1,23 @@
 import type { CustomizationCatalogV1 } from "@qoder-ai/harness/customization";
 import type { CustomizationUsageV1 } from "../contracts/customization-usage.js";
 
-export const CUSTOMIZATION_CATEGORIES = ["overview", "plugins", "mcp", "skills", "instructions", "agents", "hooks", "tools", "commands"] as const;
+export const CUSTOMIZATION_CATEGORIES = ["plugins", "mcp", "skills", "instructions", "agents", "hooks", "tools", "commands"] as const;
 export type CustomizationCategory = typeof CUSTOMIZATION_CATEGORIES[number];
+
+/**
+ * The category a Customizations route lands on when none is named. The catalog is
+ * navigated by kind from the primary sidebar, so there is no aggregate row left to
+ * default to.
+ */
+export const CUSTOMIZATION_DEFAULT_CATEGORY: CustomizationCategory = "plugins";
+
+export function isCustomizationCategory(value: string | undefined): value is CustomizationCategory {
+  return value !== undefined && (CUSTOMIZATION_CATEGORIES as readonly string[]).includes(value);
+}
+
 export interface CustomizationLibraryRow {
   id: string;
-  category: Exclude<CustomizationCategory, "overview">;
+  category: CustomizationCategory;
   name: string;
   description?: string;
   hosts: string[];
@@ -37,7 +49,7 @@ export function customizationLibraryRows(catalog: CustomizationCatalogV1): Custo
 }
 
 export function filterCustomizationRows(rows: readonly CustomizationLibraryRow[], category: CustomizationCategory, host: string): CustomizationLibraryRow[] {
-  return rows.filter((row) => (category === "overview" || row.category === category) && (host === "all" || (host === "unassigned" ? row.hosts.length === 0 : row.hosts.includes(host))));
+  return rows.filter((row) => row.category === category && (host === "all" || (host === "unassigned" ? row.hosts.length === 0 : row.hosts.includes(host))));
 }
 
 /** One Agent row in the secondary sidebar: `all`, a collected Host, or `unassigned`. */
@@ -104,7 +116,7 @@ export interface CustomizationRowUsage {
  * for observing them exists.
  */
 export function customizationUsageObservable(category: CustomizationCategory): boolean {
-  return category === "overview" || category in USAGE_CATEGORIES;
+  return category in USAGE_CATEGORIES;
 }
 
 /**

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Icon } from "@phosphor-icons/react";
+import { BookOpen } from "@phosphor-icons/react/BookOpen";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
 import { CaretRight } from "@phosphor-icons/react/CaretRight";
 import { Gauge } from "@phosphor-icons/react/Gauge";
+import { HardDrives } from "@phosphor-icons/react/HardDrives";
 import { Binoculars } from "@phosphor-icons/react/Binoculars";
 import { Brain } from "@phosphor-icons/react/Brain";
 import { BugBeetle } from "@phosphor-icons/react/BugBeetle";
@@ -11,13 +13,20 @@ import { CaretUpDown } from "@phosphor-icons/react/CaretUpDown";
 import { Flask } from "@phosphor-icons/react/Flask";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { GitBranch } from "@phosphor-icons/react/GitBranch";
+import { Lightbulb } from "@phosphor-icons/react/Lightbulb";
+import { Lightning } from "@phosphor-icons/react/Lightning";
 import { Package } from "@phosphor-icons/react/Package";
+import { Plug } from "@phosphor-icons/react/Plug";
 import { Plus } from "@phosphor-icons/react/Plus";
 import { PuzzlePiece } from "@phosphor-icons/react/PuzzlePiece";
+import { Robot } from "@phosphor-icons/react/Robot";
 import { SidebarSimple } from "@phosphor-icons/react/SidebarSimple";
+import { Terminal } from "@phosphor-icons/react/Terminal";
+import { Wrench } from "@phosphor-icons/react/Wrench";
 import { X } from "@phosphor-icons/react/X";
 import type { StudioProjectDescriptor } from "../../contracts/studio-project.js";
 import type { StudioDateRange } from "../date-range.js";
+import { CUSTOMIZATION_CATEGORIES, type CustomizationCategory } from "../customization-library.js";
 import { DateRangeFilter } from "./DateRangeFilter.js";
 import type { StudioArea, StudioDestination } from "../studio-shell-model.js";
 
@@ -33,6 +42,26 @@ const VIEW_ICONS: Record<StudioArea, Icon> = {
   compare: Flask,
 };
 
+const CATEGORY_ICONS: Record<CustomizationCategory, Icon> = {
+  plugins: Plug,
+  mcp: HardDrives,
+  skills: Lightbulb,
+  instructions: BookOpen,
+  agents: Robot,
+  hooks: Lightning,
+  tools: Wrench,
+  commands: Terminal,
+};
+
+/** The two Views whose sub-routes are rows of the primary sidebar. */
+type StudioNavGroup = "sessions" | "customizations";
+
+/** Which Views a group's rows navigate to, for auto-expansion and selection. */
+const GROUP_AREAS: Record<StudioNavGroup, readonly StudioArea[]> = {
+  sessions: ["sessions", "session-performance", "commits"],
+  customizations: ["customizations"],
+};
+
 export function ProjectSidebar(props: {
   projects: readonly StudioProjectDescriptor[];
   activeProjectId?: string;
@@ -45,6 +74,11 @@ export function ProjectSidebar(props: {
   onActivateProject: (projectId: string) => void;
   onRemoveProject: (projectId: string) => void;
   onSelectView: (area: StudioArea) => void;
+  /** The catalog kind the Customizations View is showing. */
+  customizationCategory: CustomizationCategory;
+  /** Entry count per catalog kind, when the retained catalog has been read. */
+  customizationCounts: Partial<Record<CustomizationCategory, number>>;
+  onSelectCustomizationCategory: (category: CustomizationCategory) => void;
   onCollapseSidebar: () => void;
   onCloseNavigation: () => void;
   /** The Studio-wide observation window every "observe" View reads. */
@@ -54,6 +88,8 @@ export function ProjectSidebar(props: {
   settings: ReactNode;
 }): React.JSX.Element {
   const { t } = useTranslation("common");
+  // Category names belong to the Customizations catalog, not to the shell copy.
+  const { t: customizeT } = useTranslation("customize");
   const navigationRefs = useRef(new Map<string, HTMLButtonElement>());
   const switcherRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -63,12 +99,41 @@ export function ProjectSidebar(props: {
   // rows only. Projects moved to the switcher, which is a menu button with its
   // own keyboard contract.
   const memory = props.destinations.find(destination => destination.id === "memory");
-  const viewDestinations = props.destinations.filter(destination => destination.id !== "memory").flatMap(destination => destination.id === "customizations" && memory ? [destination, memory] : [destination]);
-  const [sessionsExpanded, setSessionsExpanded] = useState(true);
-  const orderedIds = viewDestinations.flatMap((destination) => destination.id === "session-performance" ? [] : destination.id === "sessions"
-    ? ["sessions-group", ...(sessionsExpanded ? ["view:sessions", "view:session-performance"] : [])] : [`view:${destination.id}`]);
-  useEffect(() => { if (props.current === "sessions" || props.current === "session-performance") setSessionsExpanded(true); }, [props.current]);
-  const selectedNavigationId = props.current === null ? "" : `view:${props.current === "memory-sources" ? "memory" : props.current}`;
+  // The Customizations group is a catalog of definitions rather than a reading of
+  // the Project, so it closes the View list after the evidence workbenches.
+  const viewDestinations = [
+    ...props.destinations.filter(destination => destination.id !== "memory" && destination.id !== "customizations"),
+    ...(memory === undefined ? [] : [memory]),
+    ...props.destinations.filter(destination => destination.id === "customizations"),
+  ];
+  // Two Views navigate by sub-route. Their rows are the sidebar's second level
+  // rather than a strip inside the workspace, so the reader picks a Session
+  // reading or a catalog kind in the same list that picks every other View.
+  const [expanded, setExpanded] = useState<Record<StudioNavGroup, boolean>>({ sessions: true, customizations: true });
+  const groupRows = (group: StudioNavGroup): string[] => group === "sessions"
+    ? ["toggle:sessions", "view:sessions", "view:session-performance", "view:commits"]
+    : CUSTOMIZATION_CATEGORIES.map(category => `category:${category}`);
+  const groupOf = (destination: StudioDestination): StudioNavGroup | undefined => destination.id === "sessions"
+    ? "sessions"
+    : destination.id === "customizations" ? "customizations" : undefined;
+  const nested = new Set<StudioArea>(["session-performance", "commits"]);
+  const rowDestinations = viewDestinations.filter(destination => !nested.has(destination.id));
+  const orderedIds = rowDestinations.flatMap((destination) => {
+    const group = groupOf(destination);
+    if (group === undefined) return [`view:${destination.id}`];
+    return [`group:${group}`, ...(expanded[group] ? groupRows(group) : [])];
+  });
+  useEffect(() => {
+    const current = props.current;
+    if (current === null) return;
+    const group = (Object.keys(GROUP_AREAS) as StudioNavGroup[]).find(key => GROUP_AREAS[key].includes(current));
+    if (group !== undefined) setExpanded(value => value[group] ? value : { ...value, [group]: true });
+  }, [props.current]);
+  const selectedNavigationId = props.current === null
+    ? ""
+    : props.current === "customizations"
+      ? `category:${props.customizationCategory}`
+      : `view:${props.current === "memory-sources" ? "memory" : props.current}`;
   const [focusedNavigationId, setFocusedNavigationId] = useState(selectedNavigationId);
   const tabStopId = orderedIds.includes(focusedNavigationId)
     ? focusedNavigationId
@@ -101,17 +166,19 @@ export function ProjectSidebar(props: {
   }, [menuOpen]);
 
   function onNavigationKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
-    const focusedKey = [...navigationRefs.current.entries()].find(([, button]) => button === document.activeElement)?.[0];
-    if (["sessions-group", "view:sessions", "view:session-performance"].includes(focusedKey ?? "") && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
-      event.preventDefault(); setSessionsExpanded(event.key === "ArrowRight");
-      if (event.key === "ArrowLeft") { setFocusedNavigationId("sessions-group"); navigationRefs.current.get("sessions-group")?.focus(); }
+    const focusedKey = [...navigationRefs.current.entries()].find(([, button]) => button === document.activeElement)?.[0] ?? "";
+    const owningGroup = (Object.keys(GROUP_AREAS) as StudioNavGroup[])
+      .find(group => focusedKey === `group:${group}` || focusedKey === `toggle:${group}` || groupRows(group).includes(focusedKey));
+    if (owningGroup !== undefined && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
+      event.preventDefault();
+      setExpanded(value => ({ ...value, [owningGroup]: event.key === "ArrowRight" }));
+      if (event.key === "ArrowLeft") { setFocusedNavigationId(`group:${owningGroup}`); navigationRefs.current.get(`group:${owningGroup}`)?.focus(); }
       return;
     }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     if (orderedIds.length === 0) return;
     event.preventDefault();
-    const focused = [...navigationRefs.current.entries()].find(([, button]) => button === document.activeElement)?.[0];
-    const currentIndex = Math.max(0, orderedIds.indexOf(focused ?? selectedNavigationId));
+    const currentIndex = Math.max(0, orderedIds.indexOf(focusedKey === "" ? selectedNavigationId : focusedKey));
     const nextIndex = event.key === "Home"
       ? 0
       : event.key === "End"
@@ -125,7 +192,7 @@ export function ProjectSidebar(props: {
   }
 
   /** View navigation carries identity; evidence status belongs in its view. */
-  function renderView(destination: StudioDestination): React.JSX.Element {
+  function renderView(destination: StudioDestination, label = destination.label): React.JSX.Element {
     const ViewIcon = VIEW_ICONS[destination.id];
     const selected = props.current === destination.id || (props.current === "memory-sources" && destination.id === "memory");
     const navigationId = `view:${destination.id}`;
@@ -140,8 +207,98 @@ export function ProjectSidebar(props: {
       onClick={() => { setFocusedNavigationId(navigationId); props.onSelectView(destination.id); }}
     >
       <ViewIcon aria-hidden="true" size={15} weight={selected ? "fill" : "regular"} />
-      <strong>{destination.label}</strong>
+      <strong>{label}</strong>
     </button>;
+  }
+
+  /** One catalog kind of the Customizations View, as a row of its group. */
+  function renderCategory(category: CustomizationCategory): React.JSX.Element {
+    const CategoryIcon = CATEGORY_ICONS[category];
+    const selected = props.current === "customizations" && props.customizationCategory === category;
+    const navigationId = `category:${category}`;
+    const count = props.customizationCounts[category];
+    return <button
+      key={category}
+      ref={(node) => { if (node) navigationRefs.current.set(navigationId, node); else navigationRefs.current.delete(navigationId); }}
+      type="button"
+      tabIndex={tabStopId === navigationId ? 0 : -1}
+      aria-current={selected ? "page" : undefined}
+      onFocus={() => setFocusedNavigationId(navigationId)}
+      onClick={() => { setFocusedNavigationId(navigationId); props.onSelectCustomizationCategory(category); }}
+    >
+      <CategoryIcon aria-hidden="true" size={15} weight={selected ? "fill" : "regular"} />
+      <strong>{customizeT(`library.categories.${category}`)}</strong>
+      {count !== undefined && <small>{count}</small>}
+    </button>;
+  }
+
+  /** Sessions keeps its children visible while other Views are open, and the
+   *  label itself navigates to Overview. The caret is the only control that
+   *  collapses the group, so switching to Compare cannot hide Sessions. */
+  function renderGroup(group: StudioNavGroup, destination: StudioDestination): React.JSX.Element {
+    const GroupIcon = VIEW_ICONS[destination.id];
+    const open = expanded[group];
+    const navigationId = `group:${group}`;
+    const children = open && <div id={`studio-nav-group-${group}`} className="studio-nav-group-children">
+      {group === "sessions"
+        ? <>
+          {renderView(destination, t("area.sessionOverview"))}
+          {renderView(props.destinations.find(d => d.id === "session-performance")!)}
+          {renderView(props.destinations.find(d => d.id === "commits")!)}
+        </>
+        : CUSTOMIZATION_CATEGORIES.map(renderCategory)}
+    </div>;
+    if (group === "sessions") {
+      return <div key={group} className="studio-nav-group">
+        <div className="studio-nav-group-row">
+          <button
+            type="button"
+            className="studio-nav-group-label"
+            ref={(node) => { if (node) navigationRefs.current.set(navigationId, node); else navigationRefs.current.delete(navigationId); }}
+            tabIndex={tabStopId === navigationId ? 0 : -1}
+            onFocus={() => setFocusedNavigationId(navigationId)}
+            onClick={() => {
+              setExpanded((value) => value[group] ? value : { ...value, [group]: true });
+              setFocusedNavigationId(`view:${destination.id}`);
+              props.onSelectView(destination.id);
+            }}
+          >
+            <GroupIcon aria-hidden="true" size={15} />
+            <strong>{destination.label}</strong>
+          </button>
+          <button
+            type="button"
+            className="studio-nav-group-toggle"
+            aria-expanded={open}
+            aria-controls={`studio-nav-group-${group}`}
+            aria-label={t("sidebar.groupToggleAria", { label: destination.label })}
+            ref={(node) => { if (node) navigationRefs.current.set(`toggle:${group}`, node); else navigationRefs.current.delete(`toggle:${group}`); }}
+            tabIndex={tabStopId === `toggle:${group}` ? 0 : -1}
+            onFocus={() => setFocusedNavigationId(`toggle:${group}`)}
+            onClick={() => setExpanded((value) => ({ ...value, [group]: !value[group] }))}
+          >
+            {open ? <CaretDown aria-hidden="true" size={13} /> : <CaretRight aria-hidden="true" size={13} />}
+          </button>
+        </div>
+        {children}
+      </div>;
+    }
+    return <div key={group} className="studio-nav-group">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`studio-nav-group-${group}`}
+        ref={(node) => { if (node) navigationRefs.current.set(navigationId, node); else navigationRefs.current.delete(navigationId); }}
+        tabIndex={tabStopId === navigationId ? 0 : -1}
+        onFocus={() => setFocusedNavigationId(navigationId)}
+        onClick={() => setExpanded((value) => ({ ...value, [group]: !value[group] }))}
+      >
+        <GroupIcon aria-hidden="true" size={15} />
+        <strong>{destination.label}</strong>
+        {open ? <CaretDown aria-hidden="true" size={13} /> : <CaretRight aria-hidden="true" size={13} />}
+      </button>
+      {children}
+    </div>;
   }
 
   return <aside className="studio-primary-nav studio-project-sidebar" aria-label={t("sidebar.aria")}>
@@ -215,16 +372,10 @@ export function ProjectSidebar(props: {
         aria-label={activeProject === undefined ? t("sidebar.configuredViewsAria") : t("sidebar.viewsAria", { label: activeProject.label })}
       >
         <h2>{t("sidebar.views")}</h2>
-        {viewDestinations.filter(d => d.id !== "session-performance").map((destination) => destination.id !== "sessions" ? renderView(destination) : <div key="sessions" className="studio-sessions-nav">
-          <button type="button" aria-expanded={sessionsExpanded} aria-controls="studio-sessions-children"
-            ref={node => { if (node) navigationRefs.current.set("sessions-group", node); else navigationRefs.current.delete("sessions-group"); }}
-            tabIndex={tabStopId === "sessions-group" ? 0 : -1} onFocus={() => setFocusedNavigationId("sessions-group")}
-            onClick={() => setSessionsExpanded(value => !value)}><Binoculars aria-hidden="true" size={15} /><strong>{destination.label}</strong>{sessionsExpanded ? <CaretDown aria-hidden="true" size={13} /> : <CaretRight aria-hidden="true" size={13} />}</button>
-          {sessionsExpanded && <div id="studio-sessions-children" className="studio-sessions-children">
-            {renderView({ ...destination, label: t("area.sessionOverview") })}
-            {renderView(props.destinations.find(d => d.id === "session-performance")!)}
-          </div>}
-        </div>)}
+        {rowDestinations.map((destination) => {
+          const group = groupOf(destination);
+          return group === undefined ? renderView(destination) : renderGroup(group, destination);
+        })}
       </section>
     </nav>
 

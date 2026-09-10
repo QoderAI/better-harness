@@ -213,5 +213,6 @@ export const common: typeof enCommon = {
     views: "视图",
     viewsAria: "{{label}} 视图",
     configuredViewsAria: "Studio 视图",
+    groupToggleAria: "显示或隐藏{{label}}视图",
   },
 };

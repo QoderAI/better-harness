@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { CustomizationCatalogV1, InstructionDefinitionV1, HostExposureV1 } from "@qoder-ai/harness/customization";
-import { customizationAgentFacets, customizationLibraryRows, customizationRowUsage, customizationUsageObservable, filterCustomizationRows, searchCustomizationRows } from "../src/app/customization-library.js";
+import { customizationAgentFacets, customizationLibraryRows, customizationRowUsage, customizationUsageObservable, filterCustomizationRows, searchCustomizationRows, CUSTOMIZATION_CATEGORIES, CUSTOMIZATION_DEFAULT_CATEGORY, isCustomizationCategory } from "../src/app/customization-library.js";
 import type { CustomizationUsageV1 } from "../src/contracts/customization-usage.js";
 const source = { evidenceId: "source", scope: "project" as const, logicalPath: "Workspace/AGENTS.md" };
 function fixture(): CustomizationCatalogV1 {
@@ -92,6 +92,18 @@ it("matches a Host's namespaced invocation name and never invents a zero", () =>
 });
 
 it("only claims a category is observable when a rule exists for it", () => {
-  expect(["overview", "skills", "mcp"].map(customizationUsageObservable)).toEqual([true, true, true]);
+  expect(["skills", "mcp"].map(customizationUsageObservable)).toEqual([true, true]);
   expect(["plugins", "instructions", "agents", "hooks", "tools", "commands"].map(customizationUsageObservable)).toEqual([false, false, false, false, false, false]);
+});
+
+it("navigates the catalog by kind alone, with a real category as the default landing row", () => {
+  // Every category the sidebar can offer names a kind rows actually carry, so a
+  // row can never fall outside the navigation.
+  const kinds = new Set(customizationLibraryRows(fixture()).map((row) => row.category));
+  for (const kind of kinds) expect(CUSTOMIZATION_CATEGORIES).toContain(kind);
+  expect(CUSTOMIZATION_CATEGORIES).toContain(CUSTOMIZATION_DEFAULT_CATEGORY);
+  expect(isCustomizationCategory(CUSTOMIZATION_DEFAULT_CATEGORY)).toBe(true);
+  // The retired aggregate row is not a route or a filter any more.
+  expect(isCustomizationCategory("overview")).toBe(false);
+  expect(isCustomizationCategory(undefined)).toBe(false);
 });

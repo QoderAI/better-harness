@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { isStudioProjectCatalog, MAX_STUDIO_PROJECTS, STUDIO_PROJECT_CATALOG_KIND } from "../src/contracts/studio-project.js";
 import { parseStudioLocation, studioLocationHash } from "../src/app/shell/project-routing.js";
+import { CUSTOMIZATION_DEFAULT_CATEGORY } from "../src/app/customization-library.js";
 import { STUDIO_DEFAULT_AREA } from "../src/app/studio-shell-model.js";
 
 const PROJECT_ID = `project_${"a".repeat(32)}`;
-const AREAS = new Set(["sessions", "compare"]);
+const AREAS = new Set(["sessions", "compare", "customizations"]);
 
 describe("Studio Project contracts", () => {
   it("round-trips opaque Project and View routes while preserving legacy routes", () => {
@@ -19,6 +20,16 @@ describe("Studio Project contracts", () => {
     expect(parseStudioLocation(`#/projects/${PROJECT_ID}/overview`, AREAS)).toEqual({ projectId: PROJECT_ID, area: STUDIO_DEFAULT_AREA });
     expect(parseStudioLocation("#/overview", AREAS)).toEqual({ area: STUDIO_DEFAULT_AREA });
     expect(parseStudioLocation(undefined, AREAS)).toEqual({ area: STUDIO_DEFAULT_AREA });
+  });
+
+  it("round-trips the Customizations catalog kind as a sub-route", () => {
+    expect(parseStudioLocation("#/customizations/skills", AREAS)).toEqual({ area: "customizations", customizationCategory: "skills" });
+    expect(parseStudioLocation(`#/projects/${PROJECT_ID}/customizations/mcp`, AREAS)).toEqual({ projectId: PROJECT_ID, area: "customizations", customizationCategory: "mcp" });
+    expect(studioLocationHash({ projectId: PROJECT_ID, area: "customizations", customizationCategory: "hooks" })).toBe(`#/projects/${PROJECT_ID}/customizations/hooks`);
+    // A bare Customizations route, and one naming a kind this build retired, both
+    // resolve to the default kind rather than to an empty catalog.
+    expect(parseStudioLocation("#/customizations", AREAS)).toEqual({ area: "customizations", customizationCategory: CUSTOMIZATION_DEFAULT_CATEGORY });
+    expect(parseStudioLocation("#/customizations/overview", AREAS)).toEqual({ area: STUDIO_DEFAULT_AREA });
   });
 
   it("accepts a bounded catalog and rejects inconsistent active Projects", () => {

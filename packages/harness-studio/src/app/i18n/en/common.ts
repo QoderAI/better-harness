@@ -211,5 +211,6 @@ export const common = {
     views: "Views",
     viewsAria: "{{label}} Views",
     configuredViewsAria: "Studio Views",
+    groupToggleAria: "Show or hide {{label}} views",
   },
 };

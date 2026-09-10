@@ -12,7 +12,6 @@ export const customize: typeof enCustomize = {
   "searchLabel": "筛选条目",
   "resizeNavAria": "调整自定义配置筛选面板宽度",
   "sections": {
-    "library": "资源库",
     "agents": "Agent"
   },
   "allAgents": "所有 Agent",
@@ -45,7 +44,6 @@ export const customize: typeof enCustomize = {
     "empty": "选择一个条目，查看哪些 Agent 暴露它以及它来自哪里。"
   },
   "categories": {
-    "overview": "概览",
     "plugins": "插件",
     "mcp": "MCP 服务",
     "skills": "技能",

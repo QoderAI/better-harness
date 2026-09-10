@@ -1,27 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
-import { House } from "@phosphor-icons/react/House";
-import { Plug } from "@phosphor-icons/react/Plug";
-import { HardDrives } from "@phosphor-icons/react/HardDrives";
-import { Lightbulb } from "@phosphor-icons/react/Lightbulb";
-import { BookOpen } from "@phosphor-icons/react/BookOpen";
 import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
 import { Robot } from "@phosphor-icons/react/Robot";
-import { Lightning } from "@phosphor-icons/react/Lightning";
 import { Users } from "@phosphor-icons/react/Users";
-import { Wrench } from "@phosphor-icons/react/Wrench";
-import { Terminal } from "@phosphor-icons/react/Terminal";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { CustomizationAnalysisResponseV1 } from "@qoder-ai/harness/customization";
 import type { CustomizationUsageV1 } from "../contracts/customization-usage.js";
-import { studioApiError } from "./studio-api.js";
 import { FacetNavigation } from "./shell/FacetNavigation.js";
 import { DataTable } from "./shell/DataTable.js";
 import { PaneSash } from "./shell/PaneSash.js";
 import { ToolbarActions } from "./shell/ToolbarActions.js";
 import {
-  CUSTOMIZATION_CATEGORIES,
   customizationAgentFacets,
   customizationLibraryRows,
   customizationRowUsage,
@@ -31,8 +21,6 @@ import {
   type CustomizationCategory,
   type CustomizationLibraryRow,
 } from "./customization-library.js";
-
-const ICONS = { overview: House, plugins: Plug, mcp: HardDrives, skills: Lightbulb, instructions: BookOpen, agents: Robot, hooks: Lightning, tools: Wrench, commands: Terminal };
 
 /** Filter-pane bounds, in px. The entries pane keeps the majority of the width. */
 const NAV_WIDTH: { default: number; min: number; max: number } = { default: 200, min: 168, max: 320 };
@@ -67,23 +55,25 @@ function useMediaQuery(query: string): boolean {
  * The Customizations View: a docked workbench, not a pop-up.
  *
  * The catalog has two independent dimensions — what a definition is, and which
- * Coding Agent exposes it — and a reader needs to see both while looking at one.
- * They are the secondary sidebar's two sections rather than two `select` menus,
- * so the categories that exist, the Agents that were observed, and how many
- * entries each holds are all readable without opening anything. Entries stay in
+ * Coding Agent exposes it. The kind is a row of the primary sidebar and the
+ * catalog itself is shell state, so this workbench renders the shell's catalog
+ * and keeps the Agent dimension beside the entries it scopes. Entries stay in
  * the shared table, and the trailing pane answers "where did this come from" for
  * the selected row.
  */
 export function CustomizationView(props: {
-  analyzed: boolean;
-  onAnalyzed: (definitionCount: number) => void;
+  /** The catalog kind to show, owned by the shell's sidebar and route. */
+  category: CustomizationCategory;
+  /** The retained catalog, loaded by the shell so the sidebar can count it too. */
+  analysis?: CustomizationAnalysisResponseV1;
+  loading: boolean;
+  /** A re-collection is in flight, e.g. from the toolbar Refresh action. */
+  busy: boolean;
+  failure?: string;
+  onAnalyze: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation("customize");
-  const [analysis, setAnalysis] = useState<CustomizationAnalysisResponseV1>();
-  const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [failure, setFailure] = useState<string>();
-  const [category, setCategory] = useState<CustomizationCategory>("overview");
+  const category = props.category;
   const [agent, setAgent] = useState("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string>();
@@ -91,10 +81,8 @@ export function CustomizationView(props: {
   const [navWidth, setNavWidth] = useState(NAV_WIDTH.default);
   const [frame, setFrame] = useState(0);
   const root = useRef<HTMLElement>(null);
-  const alive = useRef(true);
   const detailStacked = useMediaQuery(DETAIL_STACK_QUERY);
   const narrow = useMediaQuery(NARROW_QUERY);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   // The sash bounds come from the pane area itself, so a dragged width cannot
   // survive a window that no longer has room for it.
@@ -104,28 +92,6 @@ export function CustomizationView(props: {
     const observer = new ResizeObserver(([entry]) => setFrame(entry!.contentRect.width));
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
-
-  // One load per mounted View, including effect replay: the catalog is retained
-  // on the server, so returning to the View reads it instead of collecting again.
-  const initialLoad = useRef<Promise<CustomizationAnalysisResponseV1> | undefined>(undefined);
-  const onAnalyzed = useRef(props.onAnalyzed);
-  onAnalyzed.current = props.onAnalyzed;
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    initialLoad.current ??= (async () => {
-      let response = await fetch(props.analyzed ? "api/customizations" : "api/customizations/analyze", props.analyzed ? undefined : { method: "POST" });
-      if (props.analyzed && response.status === 404) response = await fetch("api/customizations/analyze", { method: "POST" });
-      if (!response.ok) throw new Error(await studioApiError(response));
-      return await response.json() as CustomizationAnalysisResponseV1;
-    })();
-    void initialLoad.current.then((value) => {
-      if (!cancelled) { setAnalysis(value); setFailure(undefined); onAnalyzed.current(value.summary.definitionCount); }
-    }).catch((error: unknown) => {
-      if (!cancelled) setFailure(String(error));
-    }).finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
   }, []);
 
   // Observed invocations are a separate, optional reading of retained Sessions. A
@@ -144,21 +110,8 @@ export function CustomizationView(props: {
     })();
     return () => { cancelled = true; };
   }, []);
-  async function analyze(): Promise<void> {
-    setBusy(true); setFailure(undefined);
-    try {
-      const response = await fetch("api/customizations/analyze", { method: "POST" });
-      if (!response.ok) throw new Error(await studioApiError(response));
-      const value = await response.json() as CustomizationAnalysisResponseV1;
-      if (!alive.current) return;
-      // A fresh collection replaces the retained catalog, so the failed initial
-      // read must not be replayed if this View remounts.
-      initialLoad.current = Promise.resolve(value);
-      setAnalysis(value); props.onAnalyzed(value.summary.definitionCount);
-    } catch (error) { if (alive.current) setFailure(String(error)); }
-    finally { if (alive.current) setBusy(false); }
-  }
 
+  const analysis = props.analysis;
   const rows = useMemo(() => analysis === undefined ? [] : customizationLibraryRows(analysis.catalog), [analysis]);
   const hosts = analysis?.catalog.hosts ?? [];
   const hostLabel = (id: string): string => hosts.find((item) => item.id === id)?.label ?? id;
@@ -171,14 +124,14 @@ export function CustomizationView(props: {
   // looked; the column appears only where an invocation is observable.
   const usageColumn = usage !== undefined && customizationUsageObservable(category);
   const agentName = (id: string): string => id === "all" ? t("library.allAgents") : id === "unassigned" ? t("library.unassigned") : hostLabel(id);
-  const busyState = loading || busy;
+  const busyState = props.loading || props.busy;
 
   const columns = useMemo<ColumnDef<CustomizationLibraryRow, never>[]>(() => [
     {
       id: "name",
       header: t("library.cols.name"),
       accessorFn: (row) => row.name,
-      meta: { width: usageColumn ? category === "overview" ? "26%" : "32%" : category === "overview" ? "28%" : "34%" },
+      meta: { width: usageColumn ? "32%" : "34%" },
       cell: ({ row }) => <button
         type="button"
         className="customization-name-cell"
@@ -188,17 +141,11 @@ export function CustomizationView(props: {
         {row.original.description !== undefined && row.original.description !== "" && <small title={row.original.description}>{row.original.description}</small>}
       </button>,
     },
-    ...(category === "overview" ? [{
-      id: "category",
-      header: t("library.cols.category"),
-      accessorFn: (row: CustomizationLibraryRow) => t(`library.categories.${row.category}`),
-      meta: { width: "12%" },
-    } as ColumnDef<CustomizationLibraryRow, never>] : []),
     {
       id: "agents",
       header: t("library.cols.agents"),
       accessorFn: (row) => row.hosts.length === 0 ? t("library.unassigned") : row.hosts.map(hostLabel).join(", "),
-      meta: { width: category === "overview" ? "16%" : "18%" },
+      meta: { width: "18%" },
     },
     {
       id: "scope",
@@ -210,7 +157,7 @@ export function CustomizationView(props: {
       id: "evidence",
       header: t("library.cols.evidence"),
       accessorFn: (row) => t(`library.evidence.${row.evidence}`),
-      meta: { width: category === "overview" ? "12%" : "14%" },
+      meta: { width: "14%" },
     },
     // Observed invocations. Sorting treats an unobserved row as the lowest value
     // while the cell keeps saying "not observed", because a rendered 0 would claim
@@ -219,7 +166,7 @@ export function CustomizationView(props: {
       id: "uses",
       header: t("library.cols.uses"),
       accessorFn: (row: CustomizationLibraryRow) => customizationRowUsage(row, usage, agent)?.count ?? 0,
-      meta: { width: category === "overview" ? "10%" : "11%", numeric: true },
+      meta: { width: "11%", numeric: true },
       cell: ({ row }: { row: { original: CustomizationLibraryRow } }) => {
         const observed = customizationRowUsage(row.original, usage, agent);
         return observed === undefined
@@ -235,10 +182,10 @@ export function CustomizationView(props: {
       accessorFn: (row) => row.source ?? t("results.opaqueSource"),
       // The declared widths total 100%: the trailing path column absorbs whatever
       // the Uses column is not using.
-      meta: { width: usageColumn ? category === "overview" ? "14%" : "15%" : category === "overview" ? "22%" : "24%" },
+      meta: { width: usageColumn ? "15%" : "24%" },
       cell: ({ getValue }) => <code className="customization-source-cell" title={String(getValue())}>{String(getValue())}</code>,
     },
-  ], [agent, category, hosts, t, usage, usageColumn]);
+  ], [agent, hosts, t, usage, usageColumn]);
 
   const measured = frame > 0;
   const navMax = measured
@@ -253,20 +200,13 @@ export function CustomizationView(props: {
     style={measured ? { "--customization-nav-width": `${fittedNavWidth}px` } as CSSProperties : undefined}
   >
     <ToolbarActions>
-      <button type="button" disabled={busyState} onClick={() => void analyze()}>
+      <button type="button" disabled={busyState} onClick={props.onAnalyze}>
         <ArrowClockwise aria-hidden="true" size={15} />
-        {busyState ? t("analyzing") : failure === undefined ? t("library.refresh") : t("library.retry")}
+        {busyState ? t("analyzing") : props.failure === undefined ? t("library.refresh") : t("library.retry")}
       </button>
     </ToolbarActions>
 
     <FacetNavigation className="customization-nav" label={t("library.filtersAria")} groups={[
-      { id: "library", label: t("library.sections.library"), items: CUSTOMIZATION_CATEGORIES.map(key => {
-        const Icon = ICONS[key];
-        return { id: `category:${key}`, label: t(`library.categories.${key}`), current: category === key,
-          ...(analysis === undefined ? {} : { count: filterCustomizationRows(rows, key, agent).length }),
-          icon: <Icon size={16} aria-hidden="true" weight={category === key ? "fill" : "regular"} />,
-          onSelect: () => setCategory(key) };
-      }) },
       { id: "agents", label: t("library.sections.agents"), items: agents.map(facet => ({
         id: `agent:${facet.id}`, label: agentName(facet.id), current: agent === facet.id, count: facet.count,
         ...(facet.status === undefined ? {} : { status: t(`hosts.status.${facet.status}`) }),
@@ -296,7 +236,7 @@ export function CustomizationView(props: {
         </label>
       </header>
       <div className="customization-notices">
-        {failure !== undefined && <p role="alert">{failure}</p>}
+        {props.failure !== undefined && <p role="alert">{props.failure}</p>}
         {busyState && analysis !== undefined && <p role="status">{t("loadingCatalog")}</p>}
         {category === "tools" && <p>{t("library.toolsBoundary")}</p>}
         {usageColumn && <p>{t("library.usage.boundary", { count: usage.observedSessions, from: usage.window.from?.slice(0, 10) ?? "—", to: usage.window.to?.slice(0, 10) ?? "—" })}</p>}
@@ -311,7 +251,7 @@ export function CustomizationView(props: {
           columns={columns}
           rows={visible}
           rowId={rowKey}
-          minWidth={usageColumn ? category === "overview" ? "760px" : "660px" : category === "overview" ? "680px" : "580px"}
+          minWidth={usageColumn ? "660px" : "580px"}
           initialSorting={[{ id: "name", desc: false }]}
           emptyMessage={query.trim() === "" ? t("library.noEntries") : t("library.noMatches")}
           onSelectRow={(row) => setSelected(rowKey(row))}

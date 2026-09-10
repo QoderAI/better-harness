@@ -406,6 +406,34 @@
 .studio-project-views { padding-top: var(--space-xs); }
 .studio-project-views h2 { min-height: var(--pane-header-height); margin: 0; padding: var(--space-sm) var(--space-md) var(--space-xs); display: flex; align-items: flex-end; color: var(--color-text-muted); font-size: var(--type-pane-size); font-weight: var(--weight-semibold); line-height: var(--type-pane-line); letter-spacing: var(--type-pane-track); }
 
+/* A View that navigates by sub-route keeps those rows as the source list's second
+   level: one disclosure row, then its indented children. The indent is the only
+   depth cue, so a child stays a plain source-list row. Sessions splits its row:
+   the label navigates and the caret at the row's trailing edge discloses. */
+.studio-nav-group, .studio-nav-group-children { display: grid; min-width: 0; }
+.studio-nav-group-children { padding-left: var(--space-lg); }
+.studio-nav-group-row {
+  width: calc(100% - var(--sidebar-inset) * 2);
+  min-width: 0;
+  margin-inline: var(--sidebar-inset);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--toolbar-target);
+  align-items: center;
+}
+.studio-nav-group-row > button { width: 100%; margin-inline: 0; }
+.studio-nav-group-label { grid-column: 1; }
+/* The caret discloses the group and sits at the row's trailing edge, the same
+   slot a plain source-list row uses for its trailing status. */
+.studio-project-views .studio-nav-group-toggle {
+  grid-column: 2;
+  width: var(--toolbar-target);
+  min-height: var(--navigation-row-height);
+  display: grid;
+  grid-template-columns: 1fr;
+  place-items: center;
+  padding: 0;
+}
+
 .availability-dot {
   width: var(--space-sm);
   height: var(--space-sm);

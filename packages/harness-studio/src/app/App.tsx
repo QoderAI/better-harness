@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
@@ -33,7 +33,9 @@ import {
 } from "./date-range.js";
 import { TOOLBAR_ACTIONS_ID, ToolbarActions } from "./shell/ToolbarActions.js";
 import { PaneSash } from "./shell/PaneSash.js";
-import { parseStudioLocation, studioLocationHash } from "./shell/project-routing.js";
+import { parseStudioLocation, studioLocationHash, type StudioLocation } from "./shell/project-routing.js";
+import { CUSTOMIZATION_DEFAULT_CATEGORY, customizationLibraryRows, type CustomizationCategory } from "./customization-library.js";
+import type { CustomizationAnalysisResponseV1 } from "@qoder-ai/harness/customization";
 import {
   isWorkspaceArtifactNavigation,
   type StudioArtifactCatalogResponse,
@@ -218,6 +220,9 @@ export function App(): React.JSX.Element {
   const [configFailure, setConfigFailure] = useState<string | null>(null);
   const [bootstrapRevision, setBootstrapRevision] = useState(0);
   const [area, setArea] = useState<StudioArea>(areaFromHash);
+  // The catalog kind Customizations shows. It is a sidebar row and a sub-route,
+  // so the shell owns it and the View follows.
+  const [customizationCategory, setCustomizationCategory] = useState<CustomizationCategory>(customizationCategoryFromHash);
   const [locationRevision, setLocationRevision] = useState(0);
   // Live comparison is the active workflow. Retained Session evidence is only
   // opened after the reader explicitly selects a pair in Sessions.
@@ -322,7 +327,9 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const onHashChange = (): void => {
-      setArea(studioLocationFromHash().area);
+      const location = studioLocationFromHash();
+      setArea(location.area);
+      if (location.customizationCategory !== undefined) setCustomizationCategory(location.customizationCategory);
       setLocationRevision((revision) => revision + 1);
     };
     globalThis.addEventListener("hashchange", onHashChange);
@@ -342,11 +349,11 @@ export function App(): React.JSX.Element {
       return;
     }
     if (location.projectId !== undefined && !projects.some((project) => project.id === location.projectId)) {
-      globalThis.history.replaceState(null, "", studioLocationHash({ area: location.area, ...(activeProjectId === undefined ? {} : { projectId: activeProjectId }) }));
+      globalThis.history.replaceState(null, "", shellHash({ ...location, projectId: undefined, ...(activeProjectId === undefined ? {} : { projectId: activeProjectId }) }));
       return;
     }
     if (location.projectId === undefined && activeProjectId !== undefined) {
-      globalThis.history.replaceState(null, "", studioLocationHash({ projectId: activeProjectId, area: location.area }));
+      globalThis.history.replaceState(null, "", shellHash({ ...location, projectId: activeProjectId }));
     }
   }, [activeProjectId, config, locationRevision, projectOpening, projects]);
 
@@ -375,10 +382,27 @@ export function App(): React.JSX.Element {
     globalThis.requestAnimationFrame(() => navigationToggleRef.current?.focus());
   }
 
-  function openArea(next: StudioArea): void {
+  /**
+   * Every hash the shell writes keeps the active View's sub-route, so switching
+   * Project or repairing a route cannot silently reset Customizations to its
+   * first catalog kind.
+   */
+  function shellHash(location: StudioLocation): string {
+    return studioLocationHash({
+      ...location,
+      ...(location.area === "customizations" && location.customizationCategory === undefined ? { customizationCategory } : {}),
+    });
+  }
+
+  function openArea(next: StudioArea, category = customizationCategory): void {
     setArea(next);
+    if (next === "customizations") setCustomizationCategory(category);
     closeNavigation();
-    const nextHash = studioLocationHash({ area: next, ...(activeProjectId === undefined || next === "memory" || next === "memory-sources" ? {} : { projectId: activeProjectId }) });
+    const nextHash = shellHash({
+      area: next,
+      ...(next === "customizations" ? { customizationCategory: category } : {}),
+      ...(activeProjectId === undefined || next === "memory" || next === "memory-sources" ? {} : { projectId: activeProjectId }),
+    });
     if (globalThis.location.hash !== nextHash) globalThis.history.pushState(null, "", nextHash);
     if (next === "memory" || next === "memory-sources") globalThis.dispatchEvent(new Event('popstate'));
   }
@@ -443,7 +467,7 @@ export function App(): React.JSX.Element {
       await workspaceChanged();
       if (result.project !== undefined && area !== "memory" && area !== "memory-sources") {
         closeNavigation();
-        const hash = studioLocationHash({ projectId: result.project.id, area });
+        const hash = shellHash({ projectId: result.project.id, area });
         globalThis.history.pushState(null, "", hash);
       }
     } catch (error) {
@@ -463,13 +487,13 @@ export function App(): React.JSX.Element {
       if (!response.ok) throw new Error(await studioApiError(response));
       await workspaceChanged();
       closeNavigation();
-      if (updateHistory && area !== "memory" && area !== "memory-sources") globalThis.history.pushState(null, "", studioLocationHash({ projectId, area }));
+      if (updateHistory && area !== "memory" && area !== "memory-sources") globalThis.history.pushState(null, "", shellHash({ projectId, area }));
     } catch (error) {
       setProjectFailure(error instanceof Error ? error.message : "Project activation failed.");
       await refreshProjectCatalog();
       closeNavigation();
       if (!updateHistory && area !== "memory" && area !== "memory-sources") {
-        globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(activeProjectId === undefined ? {} : { projectId: activeProjectId }) }));
+        globalThis.history.replaceState(null, "", shellHash({ area, ...(activeProjectId === undefined ? {} : { projectId: activeProjectId }) }));
       }
     } finally {
       setProjectOpening(false);
@@ -503,7 +527,7 @@ export function App(): React.JSX.Element {
       const wasActive = projectId === activeProjectId;
       await workspaceChanged();
       closeNavigation();
-      if (wasActive && area !== "memory" && area !== "memory-sources") globalThis.history.pushState(null, "", studioLocationHash({ area }));
+      if (wasActive && area !== "memory" && area !== "memory-sources") globalThis.history.pushState(null, "", shellHash({ area }));
     } catch (error) {
       setProjectFailure(error instanceof Error ? error.message : "Project removal failed.");
       closeNavigation();
@@ -520,6 +544,15 @@ export function App(): React.JSX.Element {
     });
   }
 
+  /**
+   * The retained catalog is shell state, not View state: the primary sidebar shows
+   * one count per kind, so it reads the same catalog the Customizations workbench
+   * renders. The View keeps only the Agent dimension, which the sidebar does not
+   * show. One load per workspace; a failed initial read is replayed only by the
+   * workbench's explicit retry.
+   */
+  const customizationCatalog = useCustomizationCatalog(config?.customizationAnalysisEnabled === true, config?.customizationAnalyzed === true, workspaceRevision, customizationAnalyzed);
+
   if (config === undefined) {
     return <main className="studio-loading"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><p>{t("loading")}</p></main>;
   }
@@ -535,10 +568,11 @@ export function App(): React.JSX.Element {
   const current = destinations.find((destination) => destination.id === area)
     ?? destinations.find((destination) => destination.id === STUDIO_DEFAULT_AREA)
     ?? destinations[0]!;
+  const compareTabSurfaces = availableCompareSurfaces.filter((id) => id !== "live" && id !== "sessions");
   const compareNavigation = (
     <SurfaceNavigation
       label={t("compare:surfaces.label")}
-      items={availableCompareSurfaces.map((id) => ({
+      items={compareTabSurfaces.map((id) => ({
         id,
         label: t(`compare:surfaces.${id}`),
       }))}
@@ -546,7 +580,9 @@ export function App(): React.JSX.Element {
       onSelect={setCompareSurface}
     />
   );
-  const contextNavigation = area === "compare" && availableCompareSurfaces.length > 1
+  // Live Agents and Sessions share one Compare workspace. Sessions live in the
+  // History pane, so those two titles are not a second tab strip.
+  const contextNavigation = area === "compare" && compareTabSurfaces.length > 0
     ? compareNavigation
     : null;
   const activeProject = projects.find((project) => project.id === activeProjectId);
@@ -588,6 +624,9 @@ export function App(): React.JSX.Element {
       onActivateProject={(projectId) => void activateStudioProject(projectId)}
       onRemoveProject={(projectId) => void removeStudioProject(projectId)}
       onSelectView={openArea}
+      customizationCategory={customizationCategory}
+      customizationCounts={customizationCatalog.counts}
+      onSelectCustomizationCategory={(category) => openArea("customizations", category)}
       onCollapseSidebar={() => { setSidebarCollapsed(true); navigationToggleRef.current?.focus(); }}
       onCloseNavigation={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }}
       dateRange={dateRange}
@@ -617,12 +656,12 @@ export function App(): React.JSX.Element {
         {(area === "memory" || area === "memory-sources") && <MemoryView dateRange={dateRange} />}
         {showWelcome ? <WorkspaceWelcome onWorkspaceChanged={async () => {
           const projectId = await workspaceChanged();
-          globalThis.history.replaceState(null, "", studioLocationHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
+          globalThis.history.replaceState(null, "", shellHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
         }} /> : config.workspaceScanRequired && !["memory", "memory-sources", "debugger", "compare"].includes(area) ? <EmptyWorkspace eyebrow={activeProject?.label ?? ""} title={t("sidebar.scanPendingTitle")} detail={t("sidebar.scanPendingDetail")} action={canScanProject ? { label: projectScanning ? t("sidebar.scanning") : t("sidebar.scanProject"), onClick: () => void scanStudioProject(), disabled: projectOpening } : undefined} /> : <>
         {area === "session-performance" && <SessionPerformanceWorkspace key={`performance-${config.activeProjectId}-${config.projectRevision}`} config={config} dateRange={dateRange} />}
         {area === "sessions" && <SessionsWorkspace key={`sessions-${dataRevision}-${workspaceRevision}-${sessionOpenId ?? "recent"}-${dateScopeKey}`} dateRange={dateRange} config={config} initialSessionId={sessionOpenId} openProjectAction={openProjectAction} onCompare={(ids) => { setSessionCompareIds(ids); setCompareSurface("sessions"); openArea("compare"); }} />}
         {area === "customizations" && (config.customizationAnalysisEnabled
-          ? <CustomizationView key={`customizations-${workspaceRevision}`} analyzed={config.customizationAnalyzed} onAnalyzed={customizationAnalyzed} />
+          ? <CustomizationView key={`customizations-${workspaceRevision}`} category={customizationCategory} analysis={customizationCatalog.analysis} loading={customizationCatalog.loading} busy={customizationCatalog.busy} failure={customizationCatalog.failure} onAnalyze={() => void customizationCatalog.analyze()} />
           : <EmptyWorkspace eyebrow={t("customize:empty.eyebrow")} title={t("customize:empty.titleConnected")} detail={t("customize:empty.detailConnected")} />)}
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} dateRange={dateRange} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}-${dateScopeKey}`} dateRange={dateRange} config={config} />}
@@ -1408,10 +1447,74 @@ function SurfaceNavigation<T extends string>(props: {
   return <nav className="studio-tabs studio-secondary-tabs" aria-label={props.label} onKeyDown={roving.onKeyDown} style={{ gridTemplateColumns: `repeat(${props.items.length}, minmax(0, 1fr))` }}>{props.items.map((item) => <button key={item.id} ref={roving.itemRef(item.id)} type="button" tabIndex={roving.tabIndexFor(item.id)} aria-current={props.active === item.id ? "page" : undefined} className={props.active === item.id ? "active" : ""} onClick={() => props.onSelect(item.id)}>{item.label}</button>)}</nav>;
 }
 
-function studioLocationFromHash(): { area: StudioArea; projectId?: string } {
+function studioLocationFromHash(): StudioLocation {
   return parseStudioLocation(globalThis.location?.hash, new Set<string>(STUDIO_AREAS));
 }
 
 function areaFromHash(): StudioArea {
   return studioLocationFromHash().area;
+}
+
+function customizationCategoryFromHash(): CustomizationCategory {
+  return studioLocationFromHash().customizationCategory ?? CUSTOMIZATION_DEFAULT_CATEGORY;
+}
+
+/**
+ * The retained Customizations catalog, held by the shell so the primary sidebar
+ * can show one count per kind and the workbench can render the same rows. One
+ * load per workspace; the explicit retry in the workbench's toolbar re-collects.
+ */
+function useCustomizationCatalog(enabled: boolean, analyzed: boolean, workspaceRevision: number, onAnalyzed: (definitionCount: number) => void): {
+  analysis?: CustomizationAnalysisResponseV1;
+  busy: boolean;
+  loading: boolean;
+  failure?: string;
+  counts: Partial<Record<CustomizationCategory, number>>;
+  analyze: () => Promise<void>;
+} {
+  const [analysis, setAnalysis] = useState<CustomizationAnalysisResponseV1>();
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [failure, setFailure] = useState<string>();
+  const initialLoad = useRef<Promise<CustomizationAnalysisResponseV1> | undefined>(undefined);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => {
+    if (!enabled) { setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    initialLoad.current ??= (async () => {
+      let response = await fetch(analyzed ? "api/customizations" : "api/customizations/analyze", analyzed ? undefined : { method: "POST" });
+      if (analyzed && response.status === 404) response = await fetch("api/customizations/analyze", { method: "POST" });
+      if (!response.ok) throw new Error(await studioApiError(response));
+      return await response.json() as CustomizationAnalysisResponseV1;
+    })();
+    void initialLoad.current.then((value) => {
+      if (!cancelled) { setAnalysis(value); setFailure(undefined); onAnalyzed(value.summary.definitionCount); }
+    }).catch((error: unknown) => {
+      if (!cancelled) setFailure(String(error));
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [enabled, analyzed, workspaceRevision]);
+  async function analyze(): Promise<void> {
+    setBusy(true); setFailure(undefined);
+    try {
+      const response = await fetch("api/customizations/analyze", { method: "POST" });
+      if (!response.ok) throw new Error(await studioApiError(response));
+      const value = await response.json() as CustomizationAnalysisResponseV1;
+      if (!alive.current) return;
+      // A fresh collection replaces the retained catalog, so the failed initial
+      // read must not be replayed if this View remounts.
+      initialLoad.current = Promise.resolve(value);
+      setAnalysis(value); onAnalyzed(value.summary.definitionCount);
+    } catch (error) { if (alive.current) setFailure(String(error)); }
+    finally { if (alive.current) setBusy(false); }
+  }
+  const counts = useMemo<Partial<Record<CustomizationCategory, number>>>(() => {
+    if (analysis === undefined) return {};
+    const summary: Partial<Record<CustomizationCategory, number>> = {};
+    for (const row of customizationLibraryRows(analysis.catalog)) summary[row.category] = (summary[row.category] ?? 0) + 1;
+    return summary;
+  }, [analysis]);
+  return { analysis, busy, loading, failure, counts, analyze };
 }

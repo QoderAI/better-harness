@@ -10,7 +10,6 @@ export const customize = {
   "searchLabel": "Filter entries",
   "resizeNavAria": "Resize the customization filter pane",
   "sections": {
-    "library": "Library",
     "agents": "Agents"
   },
   "allAgents": "All Agents",
@@ -43,7 +42,6 @@ export const customize = {
     "empty": "Select an entry to see which Agents expose it and where it comes from."
   },
   "categories": {
-    "overview": "Overview",
     "plugins": "Plugins",
     "mcp": "MCP Servers",
     "skills": "Skills",

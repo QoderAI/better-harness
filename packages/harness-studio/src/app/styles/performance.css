@@ -1,6 +1,3 @@
-.studio-sessions-nav, .studio-sessions-children { display: grid; min-width: 0; }
-.studio-sessions-children { padding-left: var(--space-lg); }
-.studio-sessions-nav > button > span { margin-left: auto; }
 .performance-workspace { height: 100%; min-height: 0; display: flex; flex-direction: column; background: var(--color-workspace); overflow: hidden; }
 .performance-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-xs) var(--space-md); border-bottom: 1px solid var(--color-border); }
 .performance-header h1 { margin: 0; }
@@ -65,6 +62,7 @@ body.performance-resizing, body.performance-resizing * { user-select: none; }
 .performance-evidence details { margin-top: var(--space-lg); }
 .performance-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .performance-state { padding: var(--space-xl); color: var(--color-text-muted); }
+
 @media (max-width: 1200px) { .performance-catalog { flex-basis: 230px; } .performance-has-evidence .performance-catalog { display: none; } .performance-totals { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 700px) {
   .performance-sash { display: none; }
