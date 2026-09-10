@@ -133,7 +133,110 @@ pub fn events(index: usize, path: &Path, root: &Path, coverage: &mut Coverage) -
     }
     flush(&mut group, &parsed, &timed, &turns, &source, &mut events);
     close_turns(&timed, &turns, &source, &mut events);
+    system_events(&parsed, &timed, &turns, &source, &mut events);
     events
+}
+
+/// Claude Code writes hook runs and request retries as `system` records rather
+/// than as conversation. They state their own durations, so they are read here
+/// even though they never bound a model interval.
+fn system_events(
+    parsed: &[Record],
+    timed: &[Timed],
+    turns: &[TurnRef],
+    source: &str,
+    events: &mut Vec<Event>,
+) {
+    for (position, record) in parsed.iter().enumerate() {
+        if record.value["type"] != "system" {
+            continue;
+        }
+        let Some(at) = stamp(&record.value["timestamp"]) else {
+            continue;
+        };
+        // A system record belongs to whatever turn was open when it was written.
+        let turn = timed
+            .iter()
+            .rposition(|entry| entry.position < position)
+            .map(|index| turns[index].id.clone())
+            .unwrap_or_default();
+        match record.value["subtype"].as_str().unwrap_or("") {
+            "stop_hook_summary" => {
+                let Some(hooks) = record.value["hookInfos"].as_array() else {
+                    continue;
+                };
+                for hook in hooks {
+                    // A hook without a stated duration ran, but for how long is
+                    // not recorded; it is left out rather than counted as zero.
+                    let Some(duration) = hook["durationMs"]
+                        .as_i64()
+                        .filter(|value| *value >= 0 && *value <= 30 * 86400 * 1000)
+                    else {
+                        continue;
+                    };
+                    events.push(
+                        EventBuilder::new("hook.finished", "stop_hook_summary", at, record.line)
+                            .turn(turn.clone())
+                            .tool(text(&record.value["toolUseID"]))
+                            .fact("hook_name", json!(hook_name(&hook["command"])))
+                            .fact("source", json!("Stop"))
+                            .fact("hook_event_name", json!("Stop"))
+                            .fact("duration_ms", json!(duration))
+                            .build(source),
+                    );
+                }
+            }
+            "api_error" => {
+                let error = &record.value["error"];
+                events.push(
+                    EventBuilder::new(
+                        "model.request.attempt_failed",
+                        "api_error",
+                        at,
+                        record.line,
+                    )
+                    .turn(turn)
+                    .fact(
+                        "error_name",
+                        json!(safe_text(
+                            error["formatted"]
+                                .as_str()
+                                .or_else(|| error["message"].as_str())
+                                .unwrap_or("API error"),
+                            120
+                        )),
+                    )
+                    .fact("error_code", error["connection"]["code"].clone())
+                    .fact("attempt", record.value["retryAttempt"].clone())
+                    .fact(
+                        "will_retry",
+                        json!(
+                            record.value["retryAttempt"].as_i64().unwrap_or(0)
+                                < record.value["maxRetries"].as_i64().unwrap_or(0)
+                        ),
+                    )
+                    .build(source),
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Hooks are named by the script that ran, not by the reader's own path.
+fn hook_name(command: &Value) -> String {
+    let text = command.as_str().unwrap_or("hook");
+    let program = text.split_whitespace().next().unwrap_or(text);
+    let name = program.rsplit('/').next().unwrap_or(program);
+    if name.is_empty() {
+        "hook".to_string()
+    } else {
+        name.chars().take(60).collect()
+    }
+}
+
+fn text(value: &Value) -> String {
+    value.as_str().unwrap_or("").chars().take(256).collect()
 }
 
 struct Timed<'a> {
@@ -386,6 +489,14 @@ fn flush(
             .fact(
                 "cache_read_input_tokens",
                 message["usage"]["cache_read_input_tokens"].clone(),
+            )
+            .fact(
+                "cache_creation_input_tokens",
+                message["usage"]["cache_creation_input_tokens"].clone(),
+            )
+            .fact(
+                "reasoning_output_tokens",
+                message["usage"]["output_tokens_details"]["thinking_tokens"].clone(),
             )
             .fact("boundary", json!("preceding-message"))
             .fact("is_subagent", json!(turn.is_subagent))

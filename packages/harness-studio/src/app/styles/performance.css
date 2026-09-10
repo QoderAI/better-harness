@@ -61,6 +61,27 @@ body.performance-resizing, body.performance-resizing * { user-select: none; }
 .performance-source code { white-space: normal; overflow-wrap: anywhere; }
 .performance-evidence details { margin-top: var(--space-lg); }
 .performance-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Spend, read beside elapsed. Model identity leads because it is the fact that
+   explains the numbers under it; the counts stay tabular so magnitudes line up. */
+.storage-usage { margin-top: var(--space-xl); padding-top: var(--space-lg); border-top: 1px solid var(--color-border); }
+.storage-usage-models { display: flex; flex-wrap: wrap; gap: var(--space-sm) var(--space-lg); }
+.storage-usage-model { display: grid; min-width: 0; }
+.storage-usage-model strong { overflow-wrap: anywhere; }
+.storage-usage-model small { color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.storage-usage-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: var(--space-md); margin: var(--space-lg) 0 0; }
+.storage-usage-facts dt { color: var(--color-text-muted); font-size: var(--type-meta-size); }
+.storage-usage-facts dd { margin: var(--space-xs) 0 0; font-variant-numeric: tabular-nums; font-weight: var(--weight-medium); }
+
+/* The evidence pane reads as one more panel of the same report, not as a
+   different surface: same card, same title block, same row rhythm. */
+.performance-evidence-head { padding: var(--space-lg); margin-bottom: var(--space-md); }
+.performance-evidence-head .storage-title { margin-bottom: 0; }
+.performance-evidence-head .storage-title h2 { font-size: var(--type-subhead-size); }
+.performance-evidence-head .storage-title > span > strong { font-size: var(--type-subhead-size); }
+.performance-evidence-tokens { margin-bottom: var(--space-lg); grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr)); }
+.performance-evidence-children { margin-top: var(--space-lg); }
+.performance-evidence .performance-agent-row { border-radius: var(--radius-xs); }
+.performance-evidence .performance-agent-row > span { display: grid; text-align: left; }
 .performance-state { padding: var(--space-xl); color: var(--color-text-muted); }
 
 /* The retained conversation beside its own timing. It is a reading surface, not

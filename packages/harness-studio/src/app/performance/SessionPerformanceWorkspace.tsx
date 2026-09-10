@@ -33,6 +33,14 @@ function routeSelection(id: string | null): void {
 }
 const date = (ms: number | null | undefined): string => ms === null || ms === undefined ? '—' : new Date(ms).toLocaleString();
 
+/** Only counts this one interval recorded; an absent count stays absent. */
+const TOKEN_FACTS: [string, string][] = [['usageInput', 'inputTokens'], ['usageOutput', 'outputTokens'],
+  ['usageReasoning', 'reasoningTokens'], ['usageCacheRead', 'cacheReadTokens'], ['usageCacheWrite', 'cacheCreationTokens']];
+function tokenFacts(facts: Record<string, string | number | boolean | null>): [string, number][] {
+  return TOKEN_FACTS.flatMap(([term, key]) => typeof facts[key] === 'number' && Number.isFinite(facts[key])
+    ? [[term, facts[key]] as [string, number]] : []);
+}
+
 export default function SessionPerformanceWorkspace({ config, dateRange }: { config: StudioConfig; dateRange: StudioDateRange }): React.JSX.Element {
   const { t } = useTranslation('performance');
   const [catalog, setCatalog] = useState<PerformanceCatalog>();
@@ -168,11 +176,16 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
         <div className="performance-toolbar"><h3>{t('evidence')}</h3><button aria-label={t('close')} onClick={closeEvidence}><X aria-hidden="true" size={15} /></button></div>
         <button className="performance-evidence-back" onClick={closeEvidence}><ArrowLeft aria-hidden="true" size={15} />{t('backDetail')}</button>
         {sourceRecord && <PerformanceSourceView key={`${sourceRecord.source}:${sourceRecord.line}`} sessionId={selectedId!} record={sourceRecord} headers={headers} onClose={closeSource} />}<div hidden={!!sourceRecord}>
-        <h2>{selectedSpan.label || metricLabel(selectedSpan.kind)}</h2><strong className="performance-evidence-duration">{timingDuration(selectedSpan.durationMs)}</strong>
-        {typeof selectedSpan.facts.callSummary === 'string' && <pre className="performance-call-summary">{selectedSpan.facts.callSummary}</pre>}
+        <section className="storage-summary performance-evidence-head">
+          <div className="storage-title"><h2>{selectedSpan.label || metricLabel(selectedSpan.kind)}</h2><span><strong>{timingDuration(selectedSpan.durationMs)}</strong><small>{metricLabel(selectedSpan.kind)}</small></span></div>
+          {typeof selectedSpan.facts.callSummary === 'string' && <pre className="performance-call-summary">{selectedSpan.facts.callSummary}</pre>}
+        </section>
+        {tokenFacts(selectedSpan.facts).length > 0 && <dl className="storage-usage-facts performance-evidence-tokens">{tokenFacts(selectedSpan.facts).map(([key, value]) => <div key={key}><dt>{t(key)}</dt><dd>{value.toLocaleString()}</dd></div>)}</dl>}
         <dl className="performance-facts">{[['category', metricLabel(selectedSpan.kind)], ['status', t(`statuses.${selectedSpan.status}`, { defaultValue: selectedSpan.status })], ['basis', t(`bases.${selectedSpan.basis}`, { defaultValue: selectedSpan.basis })], ['start', date(selectedSpan.startMs)], ['end', date(selectedSpan.endMs)], ['relationship', selectedSpan.relationship ? t(`relationships.${selectedSpan.relationship}`, { defaultValue: selectedSpan.relationship }) : t('unknownValue')]].map(([key,value]) => <div key={key}><dt>{t(key!)}</dt><dd>{value}</dd></div>)}</dl>
-        {selectedSpan.parentId && detail?.spans.some(s => s.id === selectedSpan.parentId) && <button onClick={() => selectSpan(selectedSpan.parentId!)}>{t('parent')}</button>}
-        {!!detail?.spans.some(s => s.parentId === selectedSpan.id) && <section><h3>{t('children')}</h3>{detail.spans.filter(s => s.parentId === selectedSpan.id).slice(0,80).map(child => <button className="performance-agent-row" key={child.id} onClick={() => selectSpan(child.id)}><span>{child.label || metricLabel(child.kind)}</span><strong>{timingDuration(child.durationMs)}</strong></button>)}</section>}
+        {selectedSpan.parentId && detail?.spans.some(s => s.id === selectedSpan.parentId) && <button className="performance-agent-row" onClick={() => selectSpan(selectedSpan.parentId!)}><span>{t('parent')}</span></button>}
+        {/* Hooks, dispatch and execution phases of this call are its children, so
+            a reader sees what the interval contained without leaving it. */}
+        {!!detail?.spans.some(s => s.parentId === selectedSpan.id) && <section className="performance-evidence-children"><h3>{t('children')}</h3>{detail.spans.filter(s => s.parentId === selectedSpan.id).slice(0,80).map(child => <button className="performance-agent-row" key={child.id} onClick={() => selectSpan(child.id)}><span><strong>{child.label || metricLabel(child.kind)}</strong><small>{metricLabel(child.kind)}</small></span><strong>{timingDuration(child.durationMs)}</strong></button>)}</section>}
         <h3>{t('raw')}</h3>{selectedSpan.evidence.map((record, index) => <div className="performance-source" key={index}><strong>{record.eventType}</strong><button className="performance-source-link" onClick={event => { sourceOpener.current = event.currentTarget; setSourceRecord(record); }}><code>{record.source}:{record.line}</code></button><small>{date(record.timestampMs)}</small></div>)}
         <details><summary>{t('facts')}</summary><pre>{JSON.stringify(selectedSpan.facts, null, 2)}</pre></details></div>
       </aside>}

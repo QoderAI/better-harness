@@ -7,8 +7,38 @@ import { GitFork } from '@phosphor-icons/react/GitFork';
 import { Clock } from '@phosphor-icons/react/Clock';
 import { Lightning } from '@phosphor-icons/react/Lightning';
 import { Question } from '@phosphor-icons/react/Question';
-import type { PerformanceDetail } from '../../contracts/session-performance.js';
+import type { PerformanceDetail, TimingUsage } from '../../contracts/session-performance.js';
 import { timingDuration } from './SessionPerformanceWorkspace.js';
+
+/** Grouped digits: token counts are read for magnitude, not for their last digit. */
+export const tokenCount=(value:number|null|undefined):string=>value===null||value===undefined?'—':value.toLocaleString();
+
+/**
+ * What the Session spent, beside what it spent it on. Nothing here is derived:
+ * a count the Agent did not state stays absent rather than becoming a zero, and
+ * the basis is named so a running total is never read as a per-request sum.
+ */
+export function UsageStrip({usage,firstTokenMs}:{usage:TimingUsage;firstTokenMs:number|null}):React.JSX.Element|null {
+ const {t}=useTranslation('performance');
+ const rows:[string,string][]=[];
+ if(usage.totalTokens!==null) rows.push([t('usageTotal'),tokenCount(usage.totalTokens)]);
+ if(usage.inputTokens!==null) rows.push([t('usageInput'),tokenCount(usage.inputTokens)]);
+ if(usage.outputTokens!==null) rows.push([t('usageOutput'),tokenCount(usage.outputTokens)]);
+ if(usage.reasoningOutputTokens!==null) rows.push([t('usageReasoning'),tokenCount(usage.reasoningOutputTokens)]);
+ if(usage.cacheReadInputTokens!==null) rows.push([t('usageCacheRead'),tokenCount(usage.cacheReadInputTokens)]);
+ if(usage.cacheCreationInputTokens!==null) rows.push([t('usageCacheWrite'),tokenCount(usage.cacheCreationInputTokens)]);
+ if(usage.contextWindow!==null) rows.push([t('usageContextWindow'),tokenCount(usage.contextWindow)]);
+ if(firstTokenMs!==null) rows.push([t('usageFirstToken'),timingDuration(firstTokenMs)]);
+ if(rows.length===0&&usage.models.length===0) return null;
+ return <section className="storage-usage" aria-label={t('usage')}>
+  {usage.models.length>0&&<div className="storage-usage-models">{usage.models.map(model=><span key={model.model} className="storage-usage-model">
+   <strong>{model.model}</strong>
+   <small>{t('usageRequests',{count:model.requests})}{model.durationMs===null?'':` · ${timingDuration(model.durationMs)}`}{model.outputTokens===null?'':` · ${t('usageOutputShort',{tokens:tokenCount(model.outputTokens)})}`}</small>
+  </span>)}</div>}
+  {rows.length>0&&<dl className="storage-usage-facts">{rows.map(([term,value])=><div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}</dl>}
+  <p className="storage-caption">{t(`usageBases.${usage.basis}`,{count:usage.countedRequests})}</p>
+ </section>;
+}
 const icons={model:Cpu,tool:TerminalWindow,hook:Lightning,wait:Clock,subagent:GitFork,unknown:Question};
 const percent=(part:number,total:number):string=>total?`${Math.round(part/total*1000)/10}%`:'—';
 export function StorageReport({detail,onSelect}:{detail:PerformanceDetail;onSelect:(id:string)=>void}):React.JSX.Element {
@@ -33,6 +63,7 @@ export function StorageReport({detail,onSelect}:{detail:PerformanceDetail;onSele
    <div className="storage-title"><h2>{summary.label}</h2><span><strong>{timingDuration(summary.breakdown.totalMs)}</strong><small>{t('observedElapsed')}</small></span></div>
    <div className="storage-bar" aria-label={t('distribution')}>{segments.filter(s=>s.activityMs>0).map(s=><button key={s.kind} {...linkCategory(s.kind)} className={`storage-segment storage-${s.kind}`} style={{flexGrow:s.activityMs}} aria-label={`${label(s.kind)} ${timingDuration(s.activityMs)} ${percent(s.activityMs,total)}`} title={`${label(s.kind)} · ${percent(s.activityMs,total)}`} onClick={()=>toggle(s.kind,true)}/>)}</div>
    <div className="storage-legend">{segments.filter(s=>s.activityMs>0).map(s=><button key={s.kind} {...linkCategory(s.kind)} className={`storage-legend-item storage-${s.kind}`} title={`${label(s.kind)} · ${timingDuration(s.activityMs)} · ${percent(s.activityMs,total)}`} aria-expanded={expanded.has(s.kind)} aria-controls={`${id}-${s.kind}`} onClick={()=>toggle(s.kind)}><i className={`storage-dot storage-${s.kind}`}/>{label(s.kind)}</button>)}</div>
+   <UsageStrip usage={summary.usage} firstTokenMs={summary.firstTokenMs ?? null} />
   </section>
   <div className="storage-category-list" aria-label={t('categories')}>{segments.map(segment=>{
    const Icon=icons[segment.kind as keyof typeof icons]??Clock;const open=expanded.has(segment.kind);

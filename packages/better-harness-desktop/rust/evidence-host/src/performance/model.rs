@@ -132,6 +132,44 @@ pub struct Subagents {
     pub unlinked_turn_count: usize,
 }
 
+/// What a Session spent, beside what it spent it on.
+///
+/// Every field is a number the transcript stated. `basis` says how the totals
+/// were reached: `per-request` sums each recorded request, `cumulative` reads a
+/// running total the Agent maintained. The two are never added together.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Usage {
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub cache_read_input_tokens: Option<i64>,
+    pub cache_creation_input_tokens: Option<i64>,
+    pub reasoning_output_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    /// Requests that stated a token count, not requests observed.
+    pub counted_requests: usize,
+    pub context_window: Option<i64>,
+    pub models: Vec<ModelUsage>,
+    pub basis: &'static str,
+}
+
+impl Usage {
+    pub fn recorded(&self) -> bool {
+        self.total_tokens.is_some() || self.output_tokens.is_some() || !self.models.is_empty()
+    }
+}
+
+/// One model's share of a Session, by identity rather than by category.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelUsage {
+    pub model: String,
+    pub requests: usize,
+    pub duration_ms: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub input_tokens: Option<i64>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Finding {
@@ -160,6 +198,7 @@ pub struct Summary {
     pub turn_count: usize,
     pub tool_count: usize,
     pub retry_count: usize,
+    pub usage: Usage,
     pub metrics: Vec<Metric>,
     pub subagents: Subagents,
     pub findings: Vec<Finding>,

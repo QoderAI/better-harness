@@ -1,4 +1,7 @@
-use super::{intervals, Coverage, Detail, Event, Finding, Metric, Span, Subagents, Summary, Turn};
+use super::{
+    intervals, Coverage, Detail, Event, Finding, Metric, ModelUsage, Span, Subagents, Summary, Turn,
+    Usage,
+};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -309,12 +312,23 @@ fn analyze_with(
             continue;
         }
         let identity = start.unwrap_or(event);
-        let (kind, name) = kind_name(mode, identity);
+        // Which model answered is recorded on the response, not on the record
+        // that opened the request, so the completion names the interval.
+        let (kind, name) = match kind_name(mode, identity) {
+            ("model", name) if name.is_empty() => ("model", label(event.text("model"))),
+            named => named,
+        };
         let facts = match mode {
             "model" => {
                 json!({ "model": label(event.text("model")), "requestIndex": event.data["request_index"],
                     "requestIdChanged": start.is_some_and(|s| s.request != event.request), "firstTokenMs": null, "streamingMs": null,
                     "outputTokens": event.data["output_tokens"], "stopReason": label(event.text("stop_reason")),
+                    // What this one request cost, so a long interval can be read
+                    // beside the work it actually produced.
+                    "inputTokens": event.data["input_tokens"],
+                    "cacheReadTokens": event.data["cache_read_input_tokens"],
+                    "cacheCreationTokens": event.data["cache_creation_input_tokens"],
+                    "reasoningTokens": event.data["reasoning_output_tokens"],
                     // Set when the start boundary is the record that preceded the
                     // request rather than a recorded dispatch.
                     "boundary": event.data["boundary"],
@@ -497,6 +511,7 @@ fn analyze_with(
             })
             .count(),
         retry_count,
+        usage: usage(&events, &spans),
         metrics,
         subagents,
         findings,
@@ -745,6 +760,115 @@ fn link_subagents(turns: &mut [Turn], spans: &mut Vec<Span>, coverage: &mut Cove
                 }
             }
         }
+    }
+}
+
+const TOKEN_FIELDS: [&str; 6] = [
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    "reasoning_output_tokens",
+    "total_tokens",
+];
+
+/// What the Session spent, read only from counts the transcript stated.
+///
+/// Agents report tokens in one of two shapes and they must not be mixed: a
+/// per-request count that has to be summed, or a running total the Agent
+/// already maintains. When both appear, the running total wins, because adding
+/// a cumulative record to per-request records would double-count the Session.
+fn usage(events: &[Event], spans: &[Span]) -> Usage {
+    let counted = |event: &Event, field: &str| {
+        event.data[field]
+            .as_i64()
+            .filter(|value| *value >= 0 && *value < 1_000_000_000_000)
+    };
+    let cumulative: Vec<&Event> = events
+        .iter()
+        .filter(|event| event.text("usage_basis") == "cumulative")
+        .collect();
+    let per_request: Vec<&Event> = events
+        .iter()
+        .filter(|event| event.text("usage_basis") != "cumulative")
+        .filter(|event| TOKEN_FIELDS.iter().any(|field| counted(event, field).is_some()))
+        .collect();
+    let mut totals = [None::<i64>; 6];
+    let basis = if let Some(latest) = cumulative
+        .iter()
+        .max_by_key(|event| counted(event, "total_tokens").unwrap_or(0))
+    {
+        for (index, field) in TOKEN_FIELDS.iter().enumerate() {
+            totals[index] = counted(latest, field);
+        }
+        "cumulative"
+    } else if per_request.is_empty() {
+        "unrecorded"
+    } else {
+        for (index, field) in TOKEN_FIELDS.iter().enumerate() {
+            let observed: Vec<i64> = per_request
+                .iter()
+                .filter_map(|event| counted(event, field))
+                .collect();
+            totals[index] = (!observed.is_empty()).then(|| observed.iter().sum());
+        }
+        "per-request"
+    };
+    // Model identity comes from the intervals, so a model's share of the
+    // Session is stated in the same terms as every other category.
+    let mut by_model: Vec<ModelUsage> = Vec::new();
+    for span in spans.iter().filter(|span| span.kind == "model") {
+        let name = if span.label.is_empty() {
+            continue;
+        } else {
+            span.label.as_str()
+        };
+        let entry = match by_model.iter_mut().find(|entry| entry.model == name) {
+            Some(entry) => entry,
+            None => {
+                by_model.push(ModelUsage {
+                    model: name.to_string(),
+                    requests: 0,
+                    duration_ms: None,
+                    output_tokens: None,
+                    input_tokens: None,
+                });
+                by_model.last_mut().expect("just pushed")
+            }
+        };
+        entry.requests += 1;
+        if let Some(duration) = span.duration_ms {
+            entry.duration_ms = Some(entry.duration_ms.unwrap_or(0) + duration);
+        }
+        for (target, key) in [
+            (&mut entry.output_tokens, "outputTokens"),
+            (&mut entry.input_tokens, "inputTokens"),
+        ] {
+            if let Some(value) = span.facts[key].as_i64().filter(|value| *value >= 0) {
+                *target = Some(target.unwrap_or(0) + value);
+            }
+        }
+    }
+    by_model.sort_by_key(|entry| std::cmp::Reverse(entry.duration_ms.unwrap_or(0)));
+    by_model.truncate(12);
+    Usage {
+        input_tokens: totals[0],
+        output_tokens: totals[1],
+        cache_read_input_tokens: totals[2],
+        cache_creation_input_tokens: totals[3],
+        reasoning_output_tokens: totals[4],
+        total_tokens: totals[5],
+        counted_requests: if basis == "cumulative" {
+            cumulative.len()
+        } else {
+            per_request.len()
+        },
+        context_window: events
+            .iter()
+            .filter_map(|event| counted(event, "context_window"))
+            .max(),
+        models: by_model,
+        basis,
     }
 }
 

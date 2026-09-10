@@ -82,6 +82,9 @@ pub fn events(index: usize, path: &Path, root: &Path, coverage: &mut Coverage) -
     });
     let mut events = Vec::new();
     let mut skipped_calls = HashSet::new();
+    // Codex names the model once per turn context rather than on each item, so
+    // the current one is carried forward to the intervals it produced.
+    let mut model = String::new();
     for record in &parsed {
         let value = &record.value;
         let Some(at) = stamp(&value["timestamp"]) else {
@@ -97,7 +100,31 @@ pub fn events(index: usize, path: &Path, root: &Path, coverage: &mut Coverage) -
             ("event_msg", "task_started") => events.push(
                 EventBuilder::new("turn.started", "task_started", at, record.line)
                     .turn(text(&payload["turn_id"]))
+                    .fact("context_window", payload["model_context_window"].clone())
                     .build(&source),
+            ),
+            // Codex maintains its own running totals, so these carry the whole
+            // thread's spend rather than one request's. They produce no interval;
+            // `usage.recorded` is read for accounting only.
+            ("event_msg", "token_count") => events.push(
+                usage_event(
+                    &payload["info"]["total_token_usage"],
+                    at,
+                    record.line,
+                    "token_count",
+                )
+                .fact("context_window", payload["info"]["model_context_window"].clone())
+                .build(&source),
+            ),
+            ("token_usage_record", _) => events.push(
+                usage_event(
+                    &payload["thread_token_usage"],
+                    at,
+                    record.line,
+                    "token_usage_record",
+                )
+                .turn(text(&payload["turn_id"]))
+                .build(&source),
             ),
             ("event_msg", "task_complete") => events.push(
                 EventBuilder::new("turn.finished", "task_complete", at, record.line)
@@ -109,8 +136,20 @@ pub fn events(index: usize, path: &Path, root: &Path, coverage: &mut Coverage) -
                     .fact("duration_ms", payload["duration_ms"].clone())
                     .build(&source),
             ),
+            ("turn_context", _) => {
+                if let Some(named) = payload["model"].as_str().filter(|name| !name.is_empty()) {
+                    model = named.chars().take(80).collect();
+                }
+            }
             ("event_msg", "item_completed") => {
-                item_events(&payload["item"], payload, record.line, &source, &mut events);
+                item_events(
+                    &payload["item"],
+                    payload,
+                    record.line,
+                    &model,
+                    &source,
+                    &mut events,
+                );
             }
             ("response_item", "function_call" | "custom_tool_call") => {
                 if has_command_items
@@ -197,7 +236,14 @@ pub fn events(index: usize, path: &Path, root: &Path, coverage: &mut Coverage) -
 
 /// A completed item states both of its own boundaries, so the pair of events it
 /// produces names which boundary each one came from.
-fn item_events(item: &Value, payload: &Value, line: usize, source: &str, events: &mut Vec<Event>) {
+fn item_events(
+    item: &Value,
+    payload: &Value,
+    line: usize,
+    model: &str,
+    source: &str,
+    events: &mut Vec<Event>,
+) {
     let (Some(start), Some(end)) = (
         stamp(&payload["started_at_ms"]),
         stamp(&payload["completed_at_ms"]),
@@ -234,8 +280,11 @@ fn item_events(item: &Value, payload: &Value, line: usize, source: &str, events:
                 EventBuilder::new("model.response.completed", marker("completed"), end, line)
                     .turn(turn)
                     .request(id)
+                    // The interval is named by the model that produced it; the
+                    // item kind says which half of the response it was.
+                    .fact("model", json!(if model.is_empty() { "model" } else { model }))
                     .fact(
-                        "model",
+                        "phase",
                         json!(if kind == "Reasoning" {
                             "reasoning"
                         } else {
@@ -354,6 +403,25 @@ fn text(value: &Value) -> String {
 /// function calls have no item and must still be timed.
 fn stream_duplicates_command(payload: &Value) -> bool {
     matches!(payload["name"].as_str(), Some("exec" | "shell" | "bash"))
+}
+
+/// A running total Codex already maintained. Field names are normalized to the
+/// shared vocabulary so one accounting rule serves every Agent.
+fn usage_event(usage: &Value, at: i64, line: usize, marker: &'static str) -> EventBuilder {
+    EventBuilder::new("usage.recorded", marker, at, line)
+        .fact("usage_basis", json!("cumulative"))
+        .fact("input_tokens", usage["input_tokens"].clone())
+        .fact("output_tokens", usage["output_tokens"].clone())
+        .fact("cache_read_input_tokens", usage["cached_input_tokens"].clone())
+        .fact(
+            "cache_creation_input_tokens",
+            usage["cache_write_input_tokens"].clone(),
+        )
+        .fact(
+            "reasoning_output_tokens",
+            usage["reasoning_output_tokens"].clone(),
+        )
+        .fact("total_tokens", usage["total_tokens"].clone())
 }
 
 /// Codex prepends harness context to the first user message of a turn. That

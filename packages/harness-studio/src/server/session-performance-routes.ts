@@ -34,6 +34,8 @@ function workspaceSessionTiming(summary: StudioWorkspaceSessionSummary): TimingS
     turnCount: 0,
     toolCount: summary.toolCallCount ?? 0,
     retryCount: 0,
+    usage: { inputTokens: null, outputTokens: null, cacheReadInputTokens: null, cacheCreationInputTokens: null,
+      reasoningOutputTokens: null, totalTokens: null, countedRequests: 0, contextWindow: null, models: [], basis: 'unrecorded' },
     metrics: [],
     subagents: { count: 0, timedCount: 0, cumulativeMs: null, elapsedMs: null, maxMs: null, peakConcurrency: 0, unlinkedCount: 0, unlinkedTurnCount: 0 },
     findings: [],

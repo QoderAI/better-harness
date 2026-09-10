@@ -57,6 +57,8 @@ it('preserves nested project route and rejects unsupported schema shapes', () =>
     id: 'claude:x', provider: 'claude', label: 'x', firstSeenMs: 1, lastSeenMs: 1, lastActivityMs: 1,
     wallMs: 1, completedTurnMs: null, timedUnionMs: null, unattributedTurnMs: null, longestMs: 1,
     turnCount: 0, toolCount: 0, retryCount: 0, metrics: [], findings: [], firstTokenStatus: 'unrecorded',
+    usage: { inputTokens: null, outputTokens: null, cacheReadInputTokens: null, cacheCreationInputTokens: null,
+      reasoningOutputTokens: null, totalTokens: null, countedRequests: 0, contextWindow: null, models: [], basis: 'unrecorded' },
     subagents: { count: 0, timedCount: 0, cumulativeMs: null, elapsedMs: null, maxMs: null, peakConcurrency: 0, unlinkedCount: 0, unlinkedTurnCount: 0 },
     coverage: { files: 0, events: 0, invalidLines: 0, invalidTimestamps: 0, unreadableFiles: 0, truncated: false, unpairedEvents: 0, ambiguousPairs: 0, clockConflicts: 0 },
     status: 'ok' };
@@ -113,6 +115,9 @@ it('reads a provider-prefixed session id exactly as the browser encodes it', asy
       id: 'claude:abc123', provider: 'claude', label: 'Fix the startup', firstSeenMs: 1, lastSeenMs: 2, lastActivityMs: 2,
       wallMs: 4200, completedTurnMs: null, timedUnionMs: null, unattributedTurnMs: null, longestMs: 4200,
       turnCount: 1, toolCount: 0, retryCount: 0, metrics: [], findings: [], firstTokenStatus: 'recorded', firstTokenMs: 640,
+      usage: { inputTokens: 120, outputTokens: 45, cacheReadInputTokens: null, cacheCreationInputTokens: null,
+        reasoningOutputTokens: null, totalTokens: 165, countedRequests: 1, contextWindow: 200000,
+        models: [{ model: 'claude-opus-5', requests: 1, durationMs: 4200, outputTokens: 45, inputTokens: 120 }], basis: 'per-request' },
       subagents: { count: 0, timedCount: 0, cumulativeMs: null, elapsedMs: null, maxMs: null, peakConcurrency: 0, unlinkedCount: 0, unlinkedTurnCount: 0 },
       coverage: { files: 1, events: 4, invalidLines: 0, invalidTimestamps: 0, unreadableFiles: 0, truncated: false, unpairedEvents: 0, ambiguousPairs: 0, clockConflicts: 0 },
       status: 'ok' } };

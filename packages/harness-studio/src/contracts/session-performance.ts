@@ -14,12 +14,20 @@ export interface TimingCoverage {
   truncated: boolean; unpairedEvents: number; ambiguousPairs: number; clockConflicts: number;
 }
 export interface TimingMetric { kind: string; count: number; timedCount: number; durationMs: number | null; p95Ms: number | null; maxMs: number | null }
+export interface ModelUsage { model: string; requests: number; durationMs: number | null; outputTokens: number | null; inputTokens: number | null }
+/** Token counts the agent stated. `basis` says how the totals were reached. */
+export interface TimingUsage {
+  inputTokens: number | null; outputTokens: number | null; cacheReadInputTokens: number | null;
+  cacheCreationInputTokens: number | null; reasoningOutputTokens: number | null; totalTokens: number | null;
+  countedRequests: number; contextWindow: number | null; models: ModelUsage[];
+  basis: 'per-request' | 'cumulative' | 'unrecorded';
+}
 export interface TimingPart { label: string; durationMs: number; cumulativeMs: number; count: number; calls: {spanId:string;label:string;durationMs:number}[] }
 export interface SessionTiming {
   breakdown: { totalMs: number; activityTotalMs: number; segments: { kind: string; activityMs: number; durationMs: number; cumulativeMs: number; parts: TimingPart[]; callParts: TimingPart[] }[] };
   id: string; provider: string; label: string; firstSeenMs: number | null; lastSeenMs: number | null; lastActivityMs: number | null;
   wallMs: number | null; completedTurnMs: number | null; timedUnionMs: number | null; unattributedTurnMs: number | null; longestMs: number | null;
-  turnCount: number; toolCount: number; retryCount: number; metrics: TimingMetric[];
+  turnCount: number; toolCount: number; retryCount: number; usage: TimingUsage; metrics: TimingMetric[];
   subagents: { count: number; timedCount: number; cumulativeMs: number | null; elapsedMs: number | null; maxMs: number | null; peakConcurrency: number; unlinkedCount: number; unlinkedTurnCount: number };
   findings: { code: string; spanId: string | null; durationMs: number | null; count: number; label: string }[];
   coverage: TimingCoverage; status: string;
@@ -52,6 +60,10 @@ function summary(v: unknown): boolean {
     || !['turnCount','toolCount','retryCount'].every(k => count(v[k]))) return false;
   const b = v.breakdown;
   if (!object(b) || !count(b.totalMs) || !count(b.activityTotalMs) || !array(b.segments, 7, s => object(s) && text(s.kind) && count(s.activityMs) && count(s.durationMs) && count(s.cumulativeMs) && array(s.parts, 20000, timingPart) && array(s.callParts, 20000, timingPart))) return false;
+  const u = v.usage;
+  if (!object(u) || !count(u.countedRequests) || !['per-request','cumulative','unrecorded'].includes(u.basis as string)
+    || !['inputTokens','outputTokens','cacheReadInputTokens','cacheCreationInputTokens','reasoningOutputTokens','totalTokens','contextWindow'].every(k => nullableNumber(u[k]))
+    || !array(u.models, 12, m => object(m) && text(m.model) && count(m.requests) && ['durationMs','outputTokens','inputTokens'].every(k => nullableNumber(m[k])))) return false;
   const c = v.coverage, s = v.subagents;
   return object(c) && typeof c.truncated === 'boolean' && ['files','events','invalidLines','invalidTimestamps','unreadableFiles','unpairedEvents','ambiguousPairs','clockConflicts'].every(k => count(c[k]))
     && object(s) && ['count','timedCount','peakConcurrency','unlinkedCount','unlinkedTurnCount'].every(k => count(s[k])) && ['cumulativeMs','elapsedMs','maxMs'].every(k => nullableNumber(s[k]))

@@ -754,3 +754,80 @@ fn native_transcripts_are_measured_by_the_same_rules_and_stay_namespaced() {
     }
     fs::remove_dir_all(&root).ok();
 }
+
+/// Spend is read only from counts an Agent stated, and the two shapes it
+/// states them in are never added together.
+#[test]
+fn usage_reads_stated_counts_and_never_mixes_the_two_bases() {
+    let event = |kind: &str, at: i64, request: &str, data: serde_json::Value| {
+        let mut event = event(kind, at, "main", "", data);
+        event.request = request.into();
+        event
+    };
+    let per_request = analyze(vec![
+        event("model.request.started", 0, "r1", json!({})),
+        event(
+            "model.response.completed",
+            10,
+            "r1",
+            json!({"model":"claude-opus-5","input_tokens":100,"output_tokens":20,
+                "cache_read_input_tokens":900,"reasoning_output_tokens":5}),
+        ),
+        event("model.request.started", 20, "r2", json!({})),
+        event(
+            "model.response.completed",
+            30,
+            "r2",
+            json!({"model":"claude-opus-5","input_tokens":50,"output_tokens":10}),
+        ),
+    ]);
+    let usage = &per_request.session.usage;
+    assert_eq!(usage.basis, "per-request");
+    assert_eq!(usage.input_tokens, Some(150));
+    assert_eq!(usage.output_tokens, Some(30));
+    assert_eq!(usage.cache_read_input_tokens, Some(900));
+    assert_eq!(usage.total_tokens, None, "a total nobody stated stays absent");
+    assert_eq!(usage.counted_requests, 2);
+    assert_eq!(usage.models.len(), 1);
+    assert_eq!(usage.models[0].model, "claude-opus-5");
+    assert_eq!(usage.models[0].requests, 2);
+    assert_eq!(usage.models[0].output_tokens, Some(30));
+    assert_eq!(usage.models[0].duration_ms, Some(20));
+
+    // A running total replaces the per-request sum rather than adding to it.
+    let cumulative = analyze(vec![
+        event("model.request.started", 0, "r1", json!({})),
+        event(
+            "model.response.completed",
+            10,
+            "r1",
+            json!({"model":"gpt","input_tokens":100,"output_tokens":20}),
+        ),
+        event(
+            "usage.recorded",
+            11,
+            "",
+            json!({"usage_basis":"cumulative","input_tokens":7,"output_tokens":3,
+                "total_tokens":10,"context_window":258400}),
+        ),
+        event(
+            "usage.recorded",
+            12,
+            "",
+            json!({"usage_basis":"cumulative","input_tokens":900,"output_tokens":80,
+                "total_tokens":980,"context_window":258400}),
+        ),
+    ]);
+    let usage = &cumulative.session.usage;
+    assert_eq!(usage.basis, "cumulative");
+    assert_eq!(usage.total_tokens, Some(980), "the latest running total wins");
+    assert_eq!(usage.input_tokens, Some(900));
+    assert_eq!(usage.context_window, Some(258400));
+    // Accounting events never become intervals of their own.
+    assert!(cumulative.spans.iter().all(|span| span.kind != "usage.recorded"));
+    assert_eq!(cumulative.session.usage.models[0].model, "gpt");
+
+    let silent = analyze(vec![event("turn.started", 0, "", json!({}))]);
+    assert_eq!(silent.session.usage.basis, "unrecorded");
+    assert!(!silent.session.usage.recorded());
+}
