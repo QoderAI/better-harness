@@ -120,7 +120,9 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
           ? t("destination.frozenResults")
           : compareScope === "cross-agent"
             ? t("destination.agentCompare")
-            : t("destination.singleAgentOnly");
+            : compareScope === "insufficient"
+              ? t("destination.secondAgentRequired")
+              : t("destination.singleAgentOnly");
 
   return [
     { id: "memory", label: t("area.memory"), group: t("group.control"), availability: "ready", status: t("memoryReview.preview") },
@@ -186,7 +188,10 @@ export function studioDestinations(config: StudioConfig, activeCompareSurface: S
 export function compareSurfaces(config: StudioConfig): readonly StudioCompareSurface[] {
   return [
     ...(liveCompareReady(config) ? ["live" as const] : []),
-    ...(sessionCompareScope(config) === "insufficient" ? [] : ["sessions" as const]),
+    // A connected Project always keeps the Sessions surface reachable. Zero or
+    // one retained Session still has a place to land; hiding the tab after a
+    // View switch made it look like Sessions itself disappeared.
+    ...(config.workspaceConnected ? ["sessions" as const] : []),
     ...(config.experimentEnabled ? ["bench" as const] : []),
     ...(config.evidenceEnabled ? ["results" as const] : []),
   ];

@@ -265,8 +265,6 @@ test("sends one prompt to two chosen Agents and compares them side by side", asy
   }
   await expect(lanes.nth(0)).toContainText("fixture:allow-once");
   await expect(lanes.nth(1)).toContainText("fixture:allow-once");
-  await expect(lanes.nth(0).locator(".live-compare-counts")).toContainText("1 message");
-  await expect(lanes.nth(1).locator(".live-compare-counts")).toContainText("1 message");
 
   for (const layout of layouts) {
     await page.setViewportSize(layout);

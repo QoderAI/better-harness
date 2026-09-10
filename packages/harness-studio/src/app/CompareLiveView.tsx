@@ -1,14 +1,14 @@
 import { CompareFiles } from "./run/CompareFiles.js";
 import { ResizableComparePanes } from "./run/ResizableComparePanes.js";
-import { comparisonLaneStatus } from "./run/compare-evidence.js";
 import { PromptInput, PromptInputFooter, PromptInputTextarea, PromptInputTools } from "./components/ai-elements/prompt-input.js";
 import { AcpSessionSettings } from "./run/AcpSessionSettings.js";
 import { useSessionOwnedState } from "./run/session-view-store.js";
 import { createAcpSessionActions } from "./run/acp-session-actions.js";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { CaretDown } from "@phosphor-icons/react/CaretDown";
 import { Check } from "@phosphor-icons/react/Check";
+import { ClockCounterClockwise } from "@phosphor-icons/react/ClockCounterClockwise";
 import { Info } from "@phosphor-icons/react/Info";
 import { Play } from "@phosphor-icons/react/Play";
 import { Warning } from "@phosphor-icons/react/Warning";
@@ -17,14 +17,20 @@ import type { HarnessRunStreamEventV1 } from "@qoder-ai/harness/protocol";
 import {
   applyHarnessRunEvent,
   initialRunState,
-  timelineItems,
   settleRunState,
   type HarnessRunState,
 } from "./run/run-store.js";
 import { streamRun } from "./run/stream-run.js";
 import { AcpSessionStream } from "./run/AcpSessionStream.js";
+import { AcpConversationHistory, loadAcpConversation } from "./run/AcpConversationHistory.js";
 import { postAcpRunAction } from "./run/acp-run-actions.js";
+import { ToolbarActions } from "./shell/ToolbarActions.js";
+import { PaneSash } from "./shell/PaneSash.js";
 import type { StudioAcpAgentOption } from "./studio-shell-model.js";
+
+const HISTORY_WIDTH_DEFAULT = 240;
+const HISTORY_WIDTH_MIN = 180;
+const HISTORY_WIDTH_MAX = 360;
 
 /** The same workspace supports a single Agent or a multi-Agent comparison. */
 const MIN_LANES = 1;
@@ -64,6 +70,7 @@ function runIdentity(key: string): { threadId: string; runId: string } {
 export function CompareLiveView(props: {
   agents: readonly StudioAcpAgentOption[];
   project?: { id: string; label: string; revision: number };
+  onOpenSession?: (id: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation("compare");
   const owner = `compare:${props.project?.id ?? "default"}`;
@@ -82,6 +89,10 @@ export function CompareLiveView(props: {
   const [queuedLaunch, setQueuedLaunch] = useState<string>();
   const [reveal, setReveal] = useState<{ laneKey: string; id: string; token: number }>();
   const [closeError, setCloseError] = useState<string>();
+  const [historyWidth, setHistoryWidth] = useSessionOwnedState(`${owner}:history-width`, HISTORY_WIDTH_DEFAULT);
+  const [historyOpen, setHistoryOpen] = useSessionOwnedState(`${owner}:history-open`, false);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const [historyView, setHistoryView] = useState<{ id: string; prompt: string; state: HarnessRunState }>();
   const available = props.agents.filter((agent) => agent.available);
   const active = comparison !== undefined
     && comparison.lanes.some((lane) => lane.state.status === "running");
@@ -238,8 +249,21 @@ export function CompareLiveView(props: {
       running.current = false;
       liveComparison.current = undefined;
       setComparison(undefined);
+      setHistoryView(undefined);
+      setHistoryRevision((current) => current + 1);
       setPreparationRevision((current) => current + 1);
     } catch (error) { setCloseError(String(error)); }
+  }
+
+  async function openHistory(id: string, fallbackPrompt = ""): Promise<void> {
+    if (liveComparison.current !== undefined) return;
+    try {
+      const loaded = await loadAcpConversation(id);
+      setHistoryView({ id, prompt: loaded.prompt || fallbackPrompt, state: loaded.state });
+      setCloseError(undefined);
+    } catch {
+      setCloseError(t("live.historyUnavailable"));
+    }
   }
 
   const labelFor = (agentId: string): string => props.agents.find((agent) => agent.id === agentId)?.label ?? agentId;
@@ -253,23 +277,65 @@ export function CompareLiveView(props: {
 
   // No page title or eyebrow: the shell title bar and the sidebar already name
   // this area, and the composer states the decision on its own.
-  return <main className="live-compare-workspace" aria-label={t("live.title")}>
+  const fittedHistory = Math.min(HISTORY_WIDTH_MAX, Math.max(HISTORY_WIDTH_MIN, historyWidth));
+  return <main className="live-compare-workspace" aria-label={t("live.title")} style={{ ["--compare-history-width" as string]: `${fittedHistory}px` } as CSSProperties}>
+    <ToolbarActions>
+      <button
+        type="button"
+        aria-pressed={historyOpen}
+        aria-label={t(historyOpen ? "live.historyHide" : "live.historyShow")}
+        title={t(historyOpen ? "live.historyHide" : "live.historyShow")}
+        onClick={() => setHistoryOpen((value) => !value)}
+      >
+        <ClockCounterClockwise aria-hidden="true" size={15} />
+        <span>{t("live.history")}</span>
+      </button>
+      {comparison && <button type="button" className="new-run" onClick={() => void newComparison()}>{t(comparison.lanes.length === 1 ? "live.newRun" : "live.newComparison")}</button>}
+    </ToolbarActions>
     {closeError && <p role="alert">{closeError}</p>}
-    {comparison && <div className="acp-compare-toolbar">{comparison.lanes.length > 1 && <SharedTreeNote />}<button type="button" onClick={() => void newComparison()}>{t(comparison.lanes.length === 1 ? "live.newRun" : "live.newComparison")}</button></div>}
-    {comparison === undefined
-      ? <div className="live-compare-empty" aria-hidden="true" />
-      : <>
-        <CompareFiles owner={owner} lanes={comparison.lanes.map((lane) => ({ ...lane, label: labelFor(lane.agentId) }))}
-          onReveal={(laneKey, id) => setReveal((previous) => ({ laneKey, id, token: (previous?.token ?? 0) + 1 }))} />
-        <ResizableComparePanes owner={owner} panes={comparison.lanes.map((lane, index) => ({
-          key: lane.key, label: labelFor(lane.agentId), content: <LiveLane
-            side={t("live.laneAgent", { index: index + 1 })}
-            label={labelFor(lane.agentId)} run={lane} prompt={comparison.prompt}
-            revealTool={reveal?.laneKey === lane.key ? reveal : undefined}
-            onCancel={() => cancel(lane.key)}
-            onDecide={(requestId, optionId) => decide(lane.key, requestId, optionId)} />,
-        }))} />
+    {comparison && comparison.lanes.length > 1 && <div className="acp-compare-toolbar"><SharedTreeNote /></div>}
+    <div className={`live-compare-body${historyOpen ? " has-history" : ""}`}>
+      <div className="live-compare-main">
+        {comparison === undefined
+          ? historyView
+            ? <AcpSessionStream compact showComposer={false} state={historyView.state} prompt={historyView.prompt} />
+            : <div className="live-compare-empty" aria-hidden="true" />
+          : <>
+            <CompareFiles owner={owner} lanes={comparison.lanes.map((lane) => ({ ...lane, label: labelFor(lane.agentId) }))}
+              onReveal={(laneKey, id) => setReveal((previous) => ({ laneKey, id, token: (previous?.token ?? 0) + 1 }))} />
+            <ResizableComparePanes owner={owner} panes={comparison.lanes.map((lane, index) => ({
+              key: lane.key, label: labelFor(lane.agentId), content: <LiveLane
+                labeled={comparison.lanes.length > 1}
+                side={t("live.laneAgent", { index: index + 1 })}
+                label={labelFor(lane.agentId)} run={lane} prompt={comparison.prompt}
+                revealTool={reveal?.laneKey === lane.key ? reveal : undefined}
+                onCancel={() => cancel(lane.key)}
+                onDecide={(requestId, optionId) => decide(lane.key, requestId, optionId)} />,
+            }))} />
+          </>}
+      </div>
+      {historyOpen && <>
+        <PaneSash
+          invert
+          orientation="vertical"
+          label={t("live.historyResize")}
+          size={fittedHistory}
+          min={HISTORY_WIDTH_MIN}
+          max={HISTORY_WIDTH_MAX}
+          fallback={HISTORY_WIDTH_DEFAULT}
+          onSize={setHistoryWidth}
+        />
+        <AcpConversationHistory
+          variant="pane"
+          project={props.project}
+          refreshKey={historyRevision}
+          selectedId={historyView?.id}
+          onClose={() => setHistoryOpen(false)}
+          onSelect={comparison === undefined ? (record) => void openHistory(record.runId, record.prompt) : undefined}
+          onOpenSession={props.onOpenSession}
+        />
       </>}
+    </div>
     <PromptInput
       hidden={comparison !== undefined}
       className="live-compare-composer"
@@ -436,6 +502,7 @@ function SharedTreeNote(): React.JSX.Element {
 
 function LiveLane(props: {
   revealTool?: { id: string; token: number };
+  labeled: boolean;
   side: string;
   label: string;
   prompt: string;
@@ -447,14 +514,6 @@ function LiveLane(props: {
   const [cancelling, setCancelling] = useState(false);
   const cancelBusy = useRef(false);
   const [actionError, setActionError] = useState<string>();
-  const items = timelineItems(props.run.state);
-  const warnings = props.run.state.warnings.length;
-  const status = comparisonLaneStatus(props.run.state);
-  const counts = [
-    t("live.laneTools", { count: props.run.state.toolCallCount }),
-    t("live.laneMessages", { count: items.filter((item) => item.kind === "message" && item.role === undefined).length }),
-    ...(warnings > 0 ? [t("live.laneWarnings", { count: warnings })] : []),
-  ].join(" · ");
   async function cancel(): Promise<void> {
     if (cancelBusy.current) return;
     cancelBusy.current = true;
@@ -467,13 +526,12 @@ function LiveLane(props: {
       cancelBusy.current = false;
     }
   }
-  return <section className="live-compare-lane" aria-label={t("live.laneAria", { side: props.side, agent: props.label })}>
-    <header>
+  const preparing = props.run.state.status === "running" && !props.run.state.conversation && !props.run.state.connection;
+  return <section className={`live-compare-lane${props.labeled ? "" : " live-compare-lane-plain"}`} aria-label={t("live.laneAria", { side: props.side, agent: props.label })}>
+    {props.labeled && <header>
       <strong>{props.label}</strong>
-      <span className={`run-badge status-${status}`} role="status">{t(`live.status.${status}`)}</span>
-      <small className="live-compare-counts">{counts}</small>
-      {props.run.state.status === "running" && !props.run.state.conversation && !props.run.state.connection && <button type="button" disabled={cancelling} onClick={() => void cancel()}>{t(cancelling ? "live.cancelling" : "live.cancel")}</button>}
-    </header>
-    <AcpSessionStream revealTool={props.revealTool} actions={createAcpSessionActions(props.run.runId)} state={props.run.state} prompt={props.prompt} failure={actionError ?? props.run.failure} onPermission={props.onDecide} permissionClassName="live-compare-permission" agentId={props.run.agentId} />
+      {preparing && <button type="button" disabled={cancelling} onClick={() => void cancel()}>{t(cancelling ? "live.cancelling" : "live.cancel")}</button>}
+    </header>}
+    <AcpSessionStream compact revealTool={props.revealTool} actions={createAcpSessionActions(props.run.runId)} state={props.run.state} prompt={props.prompt} failure={actionError ?? props.run.failure} onPermission={props.onDecide} permissionClassName="live-compare-permission" agentId={props.run.agentId} />
   </section>;
 }

@@ -17,11 +17,14 @@ export function PaneSash(props: {
   max: number;
   fallback: number;
   disabled?: boolean;
+  /** Trailing pane: drag toward the start grows this size. */
+  invert?: boolean;
   onSize: (size: number) => void;
 }): React.JSX.Element {
   const drag = useRef<{ origin: number; size: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   const vertical = props.orientation === "vertical";
+  const direction = props.invert === true ? -1 : 1;
 
   function commit(next: number): void {
     props.onSize(Math.round(Math.min(props.max, Math.max(props.min, next))));
@@ -48,7 +51,7 @@ export function PaneSash(props: {
     onPointerMove={(event) => {
       const active = drag.current;
       if (active === null) return;
-      commit(active.size + ((vertical ? event.clientX : event.clientY) - active.origin));
+      commit(active.size + (((vertical ? event.clientX : event.clientY) - active.origin) * direction));
     }}
     onPointerUp={(event) => {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
@@ -61,8 +64,8 @@ export function PaneSash(props: {
       const step = event.shiftKey ? 32 : 8;
       const shrink = vertical ? "ArrowLeft" : "ArrowUp";
       const grow = vertical ? "ArrowRight" : "ArrowDown";
-      if (event.key === shrink) commit(props.size - step);
-      else if (event.key === grow) commit(props.size + step);
+      if (event.key === shrink) commit(props.size - step * direction);
+      else if (event.key === grow) commit(props.size + step * direction);
       else if (event.key === "Home") commit(props.min);
       else if (event.key === "End") commit(props.max);
       else return;

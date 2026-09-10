@@ -666,7 +666,7 @@ export function App(): React.JSX.Element {
         {area === "commits" && (config.gitEnabled ? <GitHistoryView key={`commits-${workspaceRevision}`} dateRange={dateRange} /> : <EmptyWorkspace eyebrow={t("git:empty.eyebrow")} title={config.workspaceConnected ? t("git:empty.titleConnected") : t("git:empty.titleDisconnected")} detail={config.workspaceConnected ? t("git:empty.detailConnected") : projectDiscoveryDetail} action={openProjectAction} />)}
         {area === "artifacts" && <ArtifactsWorkspace key={`artifacts-${dataRevision}-${workspaceRevision}-${config.artifactsEnabled}-${dateScopeKey}`} dateRange={dateRange} config={config} />}
         {area === "debugger" && <DebuggerWorkspace config={config} openProjectAction={openProjectAction} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
-        {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
+        {area === "compare" && <CompareWorkspace key={`compare-${dataRevision}-${workspaceRevision}-${config.experimentEnabled}-${config.evidenceEnabled}`} config={config} surface={effectiveCompareSurface} navigation={null} sessionIds={sessionCompareIds} openProjectAction={openProjectAction} onOpenSessions={() => openArea("sessions")} onOpenSession={(id) => { setSessionOpenId(id); openArea("sessions"); }} project={activeProject === undefined ? undefined : { id: activeProject.id, label: activeProject.label, revision: config.projectRevision ?? 0 }} />}
         </>}
       </div>
       {area === "debugger" ? <footer className="studio-status-bar"><strong>{activeProject?.label}</strong><div id="studio-debugger-status" /></footer> : <StatusBar
@@ -1261,6 +1261,7 @@ function CompareWorkspace(props: {
   sessionIds?: [string, string];
   openProjectAction?: { label: string; onClick: () => void };
   onOpenSessions: () => void;
+  onOpenSession: (id: string) => void;
   project?: { id: string; label: string; revision: number };
 }): React.JSX.Element {
   const { t } = useTranslation("compare");
@@ -1282,23 +1283,21 @@ function CompareWorkspace(props: {
           action={props.openProjectAction}
         />;
   }
-  if (props.surface === "live") {
-    return <CompareLiveView
-      agents={props.config.acpAgents ?? []}
-      {...(props.project === undefined ? {} : { project: props.project })}
-    />;
-  }
-  if (props.surface === "sessions") {
-    return <SessionCompareView navigation={props.navigation} initialIds={props.sessionIds} />;
-  }
   if (props.surface === "bench" && props.config.experimentEnabled) {
     return <main className="experiment-mode"><ExperimentView historyEnabled={props.config.historyEnabled} navigation={props.navigation} /></main>;
   }
   if (props.surface === "results" && props.config.evidenceEnabled) {
     return <main className="evidence-results"><header><div><small>{t("frozen.eyebrow")}</small><h1>{t("frozen.title")}</h1></div>{props.navigation}</header><CompareView /></main>;
   }
-  const fallback = available[0]!;
-  return <EmptyWorkspace eyebrow={t("unavailable.eyebrow")} title={t("unavailable.title")} detail={t("unavailable.detail", { surfaces: fallback })} />;
+  const pair = props.sessionIds;
+  if (pair !== undefined && pair[0] !== pair[1]) {
+    return <SessionCompareView navigation={props.navigation} initialIds={pair} />;
+  }
+  return <CompareLiveView
+    agents={props.config.acpAgents ?? []}
+    onOpenSession={props.onOpenSession}
+    {...(props.project === undefined ? {} : { project: props.project })}
+  />;
 }
 
 interface SessionComparisonSide {

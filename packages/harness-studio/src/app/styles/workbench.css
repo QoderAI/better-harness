@@ -1811,6 +1811,7 @@
    would be too narrow to read, and only then does the row scroll sideways. */
 .live-compare-lanes { min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(17rem, 1fr); overflow-x: auto; }
 .live-compare-lane { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+.live-compare-lane-plain { grid-template-rows: minmax(0, 1fr); }
 .live-compare-lane + .live-compare-lane { border-left: 1px solid var(--color-border); }
 .live-compare-lane > header { min-height: var(--pane-header-height); padding: 0 var(--space-md); display: flex; align-items: center; gap: var(--space-sm); border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }
 .live-compare-lane > header strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2206,6 +2207,8 @@
 @media (max-width: 600px) {
   .studio-context-actions .new-run > span { display: none; }
   .studio-context-actions .new-run { min-width: var(--touch-target); }
+  .studio-context-actions button > span { display: none; }
+  .studio-context-actions button { min-width: var(--touch-target); justify-content: center; }
 }
 
 .debugger-top-actions button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }

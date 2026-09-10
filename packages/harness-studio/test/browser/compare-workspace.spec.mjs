@@ -44,7 +44,7 @@ test('compact activity preserves streaming expansion, visible failures, permissi
   await expect(activity).toHaveAttribute('aria-expanded', 'true');
   await expect(alpha.locator('.tool-card')).toHaveCount(6);
   await expect(activity).not.toContainText('running'); await expect(activity).toContainText('1 failed');
-  await page.getByRole('button', { name: 'Sessions', exact: true }).click();
+  await page.locator('.studio-project-views').getByRole('button', { name: 'Sessions', exact: true }).click();
   await page.getByRole('button', { name: 'Compare', exact: true }).click();
   await expect(activity).toHaveAttribute('aria-expanded', 'true');
   await activity.click();
@@ -99,7 +99,6 @@ test('bottom composer, resizable conversations and linked file outcomes work acr
   const lanes = page.locator('.live-compare-lane'), alpha = lanes.nth(0), beta = lanes.nth(1);
   await expect(alpha.locator('.acp-turn-status')).toHaveText('Ready');
   await expect(beta.locator('.acp-turn-status')).toHaveText('Ready');
-  await expect(alpha.locator('.run-badge')).toHaveText('Completed');
   const pathSummary = alpha.locator('.acp-activity-path').filter({ hasText: 'src/shared.ts' });
   await expect(pathSummary).toBeVisible(); expect((await pathSummary.boundingBox()).width).toBeGreaterThan(20);
   await beta.locator('textarea').fill('Private beta draft');
@@ -112,7 +111,7 @@ test('bottom composer, resizable conversations and linked file outcomes work acr
   await page.mouse.down(); await page.mouse.move(sashBox.x - 80, sashBox.y + 20); await page.mouse.up();
   await expect.poll(async () => (await alpha.boundingBox()).width).toBeLessThan(before);
   const resized = (await alpha.boundingBox()).width;
-  await page.getByRole('button', { name: 'Sessions', exact: true }).click();
+  await page.locator('.studio-project-views').getByRole('button', { name: 'Sessions', exact: true }).click();
   await page.getByRole('button', { name: 'Compare', exact: true }).click();
   expect(Math.abs((await alpha.boundingBox()).width - resized)).toBeLessThan(2);
   await expect(beta.locator('textarea')).toHaveValue('Private beta draft');
@@ -143,9 +142,9 @@ test('bottom composer, resizable conversations and linked file outcomes work acr
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await alpha.locator('textarea').fill('wait for cancellation'); await alpha.locator('textarea').press('Enter');
-  await expect(alpha.locator('.run-badge')).toHaveText('running');
+  await expect(alpha.locator('.acp-turn-status')).toHaveText('Generating');
   await alpha.getByRole('button', { name: 'Stop', exact: true }).click();
-  await expect(alpha.locator('.run-badge')).toHaveText('Interrupted');
+  await expect(alpha.locator('.acp-turn-status')).toHaveText('Ready');
   expect(errors).toEqual([]);
 });
 
@@ -166,7 +165,6 @@ test('one Agent runs, streams and accepts a follow-up across layouts', async ({ 
   const lane = page.locator('.live-compare-lane');
   await expect(lane).toHaveCount(1);
   await expect(lane.locator('.acp-turn-status')).toHaveText('Ready');
-  await expect(lane.locator('.run-badge')).toHaveText('Completed');
   for (const layout of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(layout);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

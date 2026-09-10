@@ -78,7 +78,7 @@ test("configures model and effort before prompting, retries errors, and isolates
   const alphaLane = page.locator(".live-compare-lane").filter({ hasText: "Alpha ACP" });
   const betaLane = page.locator(".live-compare-lane").filter({ hasText: "Beta ACP" });
   await alphaLane.getByRole("button", { name: "Allow once", exact: true }).click();
-  await expect(alphaLane.locator(".run-badge")).toHaveText("Completed");
+  await expect(alphaLane.locator(".acp-turn-status")).toHaveText("Ready");
   await alphaLane.getByRole("button", { name: "Close session", exact: true }).click();
   expect((await page.request.post(actionUrl, { data: { action: "config", configId: "model", value: "fixture-default" } })).status()).toBe(409);
   await betaLane.getByRole("button", { name: "Reject", exact: true }).click();

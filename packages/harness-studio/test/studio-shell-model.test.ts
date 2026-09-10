@@ -191,17 +191,17 @@ describe("Studio control-plane navigation", () => {
     };
 
     expect(liveCompareReady(ready)).toBe(true);
-    expect(compareSurfaces(ready)).toEqual(["live"]);
+    expect(compareSurfaces(ready)).toEqual(["live", "sessions"]);
     expect(selectableAcpAgents(ready).map((agent) => agent.id)).toEqual(["qodercli", "claude-acp"]);
     expect(studioDestinations(ready, "live", commonT).find((destination) => destination.id === "compare")).toMatchObject({
       availability: "ready",
       status: "Live Agent compare",
     });
-    // An unavailable Agent, a read-only Project, or no ACP support each withdraw it.
+    // An unavailable Agent, a read-only Project, or no ACP support each withdraw live compare.
     expect(liveCompareReady({ ...ready, acpAgents: [{ id: "dsh", label: "DSH ACP", available: false, detail: "No portable entrypoint." }] })).toBe(false);
     expect(liveCompareReady({ ...ready, projectExecutionEnabled: false })).toBe(false);
     expect(liveCompareReady({ ...ready, acpEnabled: false })).toBe(false);
-    expect(compareSurfaces({ ...ready, projectExecutionEnabled: false })).toEqual([]);
+    expect(compareSurfaces({ ...ready, projectExecutionEnabled: false })).toEqual(["sessions"]);
   });
 
   it("scopes Session compare by Agent count rather than Session or Project count", () => {
@@ -240,7 +240,7 @@ describe("Studio control-plane navigation", () => {
       sessionAgents: [{ agent: "qoder", sessionCount: 1 }],
     };
 
-    expect(compareSurfaces(config)).toEqual([]);
+    expect(compareSurfaces(config)).toEqual(["sessions"]);
     expect(studioDestinations(config, undefined, commonT).find((destination) => destination.id === "compare")).toMatchObject({
       availability: "partial",
       status: "Second Agent required",

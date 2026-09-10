@@ -45,7 +45,7 @@ test("three turns reuse a session, preserve per-lane drafts across navigation an
     await expect(alpha).toContainText(`turn:${number} session:fixture-session`);
   }
   await expect(beta).not.toContainText("turn:2");
-  await page.getByRole("button", { name: "Sessions", exact: true }).click();
+  await page.locator(".studio-project-views").getByRole("button", { name: "Sessions", exact: true }).click();
   await page.getByRole("button", { name: "Compare", exact: true }).click();
   await expect(draft(beta)).toHaveValue("beta private draft");
   await expect(alpha).toContainText("turn:3");
@@ -144,7 +144,7 @@ test("long transcript preserves reading and expanded tool state across view chan
   await alpha.locator(".acp-activity-header").click();
   await alpha.locator(".tool-card > .ai-tool-header").click();
   await expect(alpha.locator(".tool-card")).toHaveAttribute("data-state", "open");
-  await page.getByRole("button", { name: "Sessions", exact: true }).click();
+  await page.locator(".studio-project-views").getByRole("button", { name: "Sessions", exact: true }).click();
   await page.getByRole("button", { name: "Compare", exact: true }).click();
   await expect(alpha.locator(".tool-card")).toHaveAttribute("data-state", "open");
   expect(await scroll.evaluate(node => node.scrollTop)).toBeLessThan(500);
