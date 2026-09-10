@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pruneDesktopRuntime } from './prune-desktop-runtime.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repository = resolve(root, '../..');
@@ -31,4 +32,6 @@ await cp(join(root, 'src'), join(staging, 'src'), { recursive: true });
 // Install only the two local public artifacts and their production closure.
 // This avoids copying repository dev dependencies into the desktop distribution.
 process.stdout.write(run(['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', ...archives], staging));
+const pruned = await pruneDesktopRuntime(staging);
 console.log(`Staged desktop runtime: ${staging}`);
+console.log(`Pruned ${pruned.removed} desktop runtime files`);

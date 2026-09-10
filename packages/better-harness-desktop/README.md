@@ -11,7 +11,10 @@ npm run better-harness-desktop:dev
 ```
 
 `npm run better-harness-desktop:pack` builds an unpacked application under
-`packages/better-harness-desktop/dist/installers`. Run it on the target OS/architecture
+`packages/better-harness-desktop/dist/installers`. Staging drops source maps,
+TypeScript declarations, package READMEs, the unused `@phosphor-icons` package
+(icons are already bundled into Studio's browser assets), and PDF.js trees the
+Node adapter does not import. Run the pack command on the target OS/architecture
 so Cargo produces the matching Rust executable. `npm run dist -w
 @qoder-ai/better-harness-desktop` creates the configured ZIP (macOS), NSIS (Windows),
 or AppImage (Linux). These are development packaging targets; signing,
