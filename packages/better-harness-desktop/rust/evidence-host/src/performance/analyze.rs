@@ -1,5 +1,5 @@
-use super::{Coverage, Detail, Event, Finding, Metric, Span, Subagents, Summary, Turn, intervals};
-use serde_json::{Value, json};
+use super::{intervals, Coverage, Detail, Event, Finding, Metric, Span, Subagents, Summary, Turn};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
@@ -176,11 +176,61 @@ fn kind_name(mode: &str, event: &Event) -> (&'static str, String) {
         "permission" => ("permission", event.text("tool_name").into()),
         "fork" => ("subagent", event.text("fork_label").into()),
         "phase" => ("phase", event.text("phase").into()),
-        _ => ("shell", "Bash".into()),
+        // Qoder shell events name no tool; a reader that records one keeps it so
+        // the breakdown groups by what ran rather than by one blanket label.
+        _ => (
+            "shell",
+            match event.text("tool_name") {
+                "" => "Bash".into(),
+                name => name.into(),
+            },
+        ),
     }
 }
 
-pub fn analyze(session_id: &str, events: Vec<Event>, mut coverage: Coverage) -> Detail {
+pub fn analyze(session_id: &str, events: Vec<Event>, coverage: Coverage) -> Detail {
+    analyze_provider(session_id, "qoder", events, coverage)
+}
+
+pub fn summarize(session_id: &str, events: Vec<Event>, coverage: Coverage) -> Summary {
+    summarize_provider(session_id, "qoder", events, coverage)
+}
+
+/// Pairing and interval accounting are provider-agnostic: every reader
+/// normalizes its transcript into the same event vocabulary before arriving
+/// here, so only the recorded identity differs between platforms.
+pub fn analyze_provider(
+    session_id: &str,
+    provider: &str,
+    events: Vec<Event>,
+    coverage: Coverage,
+) -> Detail {
+    analyze_with(session_id, provider, events, coverage, true)
+}
+
+/// Catalog rows need pairing for longest/elapsed ranking, not wait-phase
+/// linking or a retained span list.
+pub fn summarize_provider(
+    session_id: &str,
+    provider: &str,
+    events: Vec<Event>,
+    coverage: Coverage,
+) -> Summary {
+    let mut summary = analyze_with(session_id, provider, events, coverage, false).session;
+    for segment in &mut summary.breakdown.segments {
+        segment.parts.clear();
+        segment.call_parts.clear();
+    }
+    summary
+}
+
+fn analyze_with(
+    session_id: &str,
+    provider: &str,
+    events: Vec<Event>,
+    mut coverage: Coverage,
+    full: bool,
+) -> Detail {
     let mut spans = Vec::new();
     let mut turns = Vec::new();
     let mut pending: HashMap<&str, Vec<usize>> = HashMap::new();
@@ -265,6 +315,10 @@ pub fn analyze(session_id: &str, events: Vec<Event>, mut coverage: Coverage) -> 
                 json!({ "model": label(event.text("model")), "requestIndex": event.data["request_index"],
                     "requestIdChanged": start.is_some_and(|s| s.request != event.request), "firstTokenMs": null, "streamingMs": null,
                     "outputTokens": event.data["output_tokens"], "stopReason": label(event.text("stop_reason")),
+                    // Set when the start boundary is the record that preceded the
+                    // request rather than a recorded dispatch.
+                    "boundary": event.data["boundary"],
+                    "includesUnobservedWork": event.data["boundary"].is_string(),
                 })
             }
             "hook" => {
@@ -330,20 +384,29 @@ pub fn analyze(session_id: &str, events: Vec<Event>, mut coverage: Coverage) -> 
             }
         }
     }
-    add_tool_phases(&events, &mut spans);
-    // Invocation ids, not display labels, connect wait phases to their call.
-    let mut summaries = HashMap::new();
-    for event in &events {
-        if !event.tool.is_empty() && !event.text("callSummary").is_empty() {
-            summaries.entry(event.tool.as_str()).or_insert(event.text("callSummary"));
+    if full {
+        add_tool_phases(&events, &mut spans);
+        // Invocation ids, not display labels, connect wait phases to their call.
+        let mut summaries = HashMap::new();
+        for event in &events {
+            if !event.tool.is_empty() && !event.text("callSummary").is_empty() {
+                summaries
+                    .entry(event.tool.as_str())
+                    .or_insert(event.text("callSummary"));
+            }
         }
-    }
-    for span in &mut spans {
-        if let Some(summary) = summaries.get(span.invocation.as_str()) {
-            span.facts["callSummary"] = json!(summary);
+        for span in &mut spans {
+            if let Some(summary) = summaries.get(span.invocation.as_str()) {
+                span.facts["callSummary"] = json!(summary);
+            }
+            // The recorded invocation id is what lets a reader line this interval up
+            // with the same call in the retained conversation.
+            if !span.invocation.is_empty() {
+                span.facts["toolCallId"] = json!(span.invocation);
+            }
         }
+        link_subagents(&mut turns, &mut spans, &mut coverage);
     }
-    link_subagents(&mut turns, &mut spans, &mut coverage);
     spans.sort_by(|a, b| (a.start_ms.or(a.end_ms), &a.id).cmp(&(b.start_ms.or(b.end_ms), &b.id)));
     turns.sort_by_key(|t| t.start_ms);
     let metrics = metrics(&spans);
@@ -378,17 +441,46 @@ pub fn analyze(session_id: &str, events: Vec<Event>, mut coverage: Coverage) -> 
         .filter(|s| !matches!(s.kind.as_str(), "permission" | "policy" | "phase"))
         .filter_map(|s| s.duration_ms)
         .max();
+    // A recorded time-to-first-token is the only honest basis for the metric;
+    // nothing here estimates one from stream boundaries.
+    let first_token_ms = events
+        .iter()
+        .filter(|event| event.data["is_subagent"] != true)
+        .find_map(|event| {
+            event.data["time_to_first_token_ms"]
+                .as_i64()
+                .filter(|value| *value >= 0 && *value <= 30 * 86400 * 1000)
+        });
     let summary = Summary {
         breakdown: super::breakdown::breakdown(&spans, &turns),
         id: session_id.into(),
-        provider: "qoder",
-        label: events.iter()
-            .find(|event| matches!(event.kind.as_str(), "input.prompt.submitted" | "input.prompt.received")
-                && !event.text("text_preview").trim().is_empty()
-                && event.data["is_subagent"] != true
-                && !turns.iter().any(|turn| turn.label == event.turn && turn.is_subagent))
-            .map(|event| label(&crate::privacy::redact_private_text(event.text("text_preview"))))
-            .unwrap_or_else(|| format!("Qoder · {}", &session_id[..session_id.len().min(8)])),
+        provider: provider.into(),
+        label: events
+            .iter()
+            .find(|event| {
+                matches!(
+                    event.kind.as_str(),
+                    "input.prompt.submitted" | "input.prompt.received"
+                ) && !event.text("text_preview").trim().is_empty()
+                    && event.data["is_subagent"] != true
+                    && !turns
+                        .iter()
+                        .any(|turn| turn.label == event.turn && turn.is_subagent)
+            })
+            .map(|event| {
+                label(&crate::privacy::redact_private_text(
+                    event.text("text_preview"),
+                ))
+            })
+            .unwrap_or_else(|| {
+                let tail = session_id.rsplit(':').next().unwrap_or(session_id);
+                let mut name = provider.chars();
+                let display = name
+                    .next()
+                    .map(|first| first.to_uppercase().collect::<String>() + name.as_str())
+                    .unwrap_or_default();
+                format!("{display} · {}", &tail[..tail.len().min(8)])
+            }),
         first_seen_ms: first,
         last_seen_ms: last,
         last_activity_ms: last_activity,
@@ -410,23 +502,32 @@ pub fn analyze(session_id: &str, events: Vec<Event>, mut coverage: Coverage) -> 
         findings,
         status: if coverage.partial() { "partial" } else { "ok" },
         coverage,
-        first_token_status: "unrecorded",
+        first_token_status: if first_token_ms.is_some() {
+            "recorded"
+        } else {
+            "unrecorded"
+        },
+        first_token_ms,
     };
     let total_spans = spans.len();
     // Summaries use the full bounded input; a large detail retains the longest
     // intervals first and states how many rows are omitted from the response.
-    if spans.len() > 4000 {
+    if full && spans.len() > 4000 {
         spans.sort_by_key(|s| std::cmp::Reverse(s.duration_ms.unwrap_or(i64::MAX)));
         spans.truncate(4000);
         spans.sort_by_key(|s| s.start_ms.or(s.end_ms));
+    }
+    if !full {
+        spans.clear();
+        turns.clear();
     }
     Detail {
         schema_version: 1,
         engine: "rust",
         session: summary,
+        omitted_spans: if full { total_spans - spans.len() } else { 0 },
+        total_spans: if full { total_spans } else { 0 },
         turns,
-        omitted_spans: total_spans - spans.len(),
-        total_spans,
         spans,
     }
 }

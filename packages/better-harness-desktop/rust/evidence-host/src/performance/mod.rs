@@ -4,6 +4,7 @@ mod analyze;
 mod breakdown;
 mod intervals;
 mod model;
+mod native;
 mod reader;
 mod source;
 

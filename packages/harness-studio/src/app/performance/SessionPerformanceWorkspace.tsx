@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft } from '@phosphor-icons/react/ArrowLeft';
 import { ArrowClockwise } from '@phosphor-icons/react/ArrowClockwise';
+import { ChatText } from '@phosphor-icons/react/ChatText';
 import { PerformanceSourceView } from './PerformanceSourceView.js';
+import { SessionTranscriptPane } from './SessionTranscriptPane.js';
 import { StorageReport } from './StorageReport.js';
 import { ToolbarActions } from '../shell/ToolbarActions.js';
 import { X } from '@phosphor-icons/react/X';
@@ -50,6 +52,7 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
   const [turnId, setTurnId] = useState('');
   const [kind, setKind] = useState('all');
   const [spanId, setSpanId] = useState<string>();
+  const [transcriptOpen, setTranscriptOpen] = useState(() => params().get('transcript') === 'open');
   const [sourceRecord, setSourceRecord] = useState<TimingEvidence>();
   const sourceOpener = useRef<HTMLElement | null>(null);
   const [page, setPage] = useState(0);
@@ -92,6 +95,18 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
   useEffect(() => { setSourceRecord(undefined); }, [spanId, detail]);
   const closeSource = (): void => { setSourceRecord(undefined); requestAnimationFrame(() => sourceOpener.current?.focus()); };
   const selectedSpan = detail?.spans.find(span => span.id === spanId);
+  // The recorded invocation id is the only key both projections share, so it is
+  // what makes a timing interval and a retained call the same observation.
+  const spansByCall = useMemo(() => {
+    const index = new Map<string, string>();
+    for (const span of detail?.spans ?? []) {
+      const call = span.facts.toolCallId;
+      if (typeof call === 'string' && call !== '' && !index.has(call)) index.set(call, span.id);
+    }
+    return index;
+  }, [detail]);
+  const activeCallId = typeof selectedSpan?.facts.toolCallId === 'string' ? selectedSpan.facts.toolCallId : undefined;
+  const toggleTranscript = (): void => setTranscriptOpen(open => { saveFilter('transcript', open ? '' : 'open'); return !open; });
   const start = selectedTurn?.startMs ?? detail?.session.firstSeenMs ?? 0;
   const end = selectedTurn?.endMs ?? detail?.session.lastActivityMs ?? detail?.session.lastSeenMs ?? start;
   const scale = Math.max(1, end - start);
@@ -106,8 +121,12 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
     const total = Math.max(1, Math.ceil(length / size));
     return total <= 1 ? null : <div className="performance-pager"><button disabled={index === 0} onClick={() => change(index - 1)}>{t('previous')}</button><span>{t('page', { page: index + 1, total })}</span><button disabled={index + 1 >= total} onClick={() => change(index + 1)}>{t('next')}</button></div>;
   }
-  return <><ToolbarActions><button className="performance-refresh" disabled={!catalog && !error} onClick={() => setRefresh(value => value + 1)} aria-label={t('refresh')}><ArrowClockwise aria-hidden="true" size={16} />{t('refresh')}</button></ToolbarActions>
-  <section ref={workspaceRef} style={{ '--performance-catalog-width': `${catalogWidth}px` } as CSSProperties} className={`performance-workspace${selection ? ' performance-has-session' : ''}${selectedSpan ? ' performance-has-evidence' : ''}${sourceRecord ? ' performance-has-source' : ''}${resizing ? ' performance-resizing' : ''}`} aria-label={t('title')}>
+  const transcriptShown = transcriptOpen && !!selectedId && !!detail;
+  return <><ToolbarActions>
+    <button className="performance-transcript-toggle" aria-pressed={transcriptOpen} disabled={!selectedId} onClick={toggleTranscript} aria-label={t('transcript')}><ChatText aria-hidden="true" size={16} />{t('transcript')}</button>
+    <button className="performance-refresh" disabled={!catalog && !error} onClick={() => setRefresh(value => value + 1)} aria-label={t('refresh')}><ArrowClockwise aria-hidden="true" size={16} />{t('refresh')}</button>
+  </ToolbarActions>
+  <section ref={workspaceRef} style={{ '--performance-catalog-width': `${catalogWidth}px` } as CSSProperties} className={`performance-workspace${selection ? ' performance-has-session' : ''}${selectedSpan ? ' performance-has-evidence' : ''}${sourceRecord ? ' performance-has-source' : ''}${transcriptShown ? ' performance-has-transcript' : ''}${resizing ? ' performance-resizing' : ''}`} aria-label={t('title')}>
     {error ? <p className="performance-state" role="alert">{t(error === 'unavailable' ? 'unavailable' : 'error')}</p> : !catalog ? <p className="performance-state" role="status">{t('loading')}</p> : <div className="performance-panes">
       <aside className="performance-catalog" aria-label={t('sessions')}>
         <div className="performance-filters"><input aria-label={t('search')} placeholder={t('search')} value={query} onChange={event => { setQuery(event.target.value); saveFilter('q', event.target.value); }} /><select aria-label={t('sort')} value={sort} onChange={event => { setSort(event.target.value); saveFilter('sort', event.target.value); }}><option value="longest">{t('longest')}</option><option value="recent">{t('recent')}</option></select>{providers.length > 0 && <select aria-label={t('provider')} value={providerFilter} onChange={event => { setProviderFilter(event.target.value); saveFilter('provider', event.target.value); }}><option value="all">{t('allProviders')}</option>{providers.map(provider => <option key={provider} value={provider}>{provider}</option>)}</select>}</div>
@@ -138,6 +157,13 @@ export default function SessionPerformanceWorkspace({ config, dateRange }: { con
           </details>
         </>}
       </main>
+      {transcriptShown && <SessionTranscriptPane
+        sessionId={selectedId}
+        {...(activeCallId === undefined ? {} : { activeToolCallId: activeCallId })}
+        linkedToolCallIds={new Set(spansByCall.keys())}
+        onSelectToolCall={id => { const span = spansByCall.get(id); if (span) selectSpan(span); }}
+        onClose={toggleTranscript}
+      />}
       {selectedSpan && <aside className="performance-evidence" aria-label={t('evidence')} tabIndex={-1} ref={evidenceRef} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeEvidence(); } }}>
         <div className="performance-toolbar"><h3>{t('evidence')}</h3><button aria-label={t('close')} onClick={closeEvidence}><X aria-hidden="true" size={15} /></button></div>
         <button className="performance-evidence-back" onClick={closeEvidence}><ArrowLeft aria-hidden="true" size={15} />{t('backDetail')}</button>

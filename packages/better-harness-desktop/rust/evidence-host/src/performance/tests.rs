@@ -265,16 +265,19 @@ fn reader_scopes_paths_redacts_labels_and_marks_corrupt_evidence() {
     let prompt = json!({"type":"input.prompt.submitted","ts":"2026-09-01T00:59:59Z","turn_id":"main","data":{"text_preview":"Fix startup\n  with api_key=secret1234567890"}});
     fs::write(dir.join("prompt.jsonl"), format!("{prompt}\n")).unwrap();
     let titled = analyze_params(&input).unwrap();
-    assert!(titled["session"]["label"].as_str().unwrap().starts_with("Fix startup with"));
+    assert!(titled["session"]["label"]
+        .as_str()
+        .unwrap()
+        .starts_with("Fix startup with"));
     assert!(!titled.to_string().contains("secret1234567890"));
     assert_eq!(
         detail["spans"][0]["evidence"][0]["source"],
         "1/segments/sample.jsonl"
     );
-    assert!(
-        analyze_params(&json!({"workspace":workspace,"qoderHome":home,"sessionId":"../sample"}))
-            .is_err()
-    );
+    assert!(analyze_params(
+        &json!({"workspace":workspace,"qoderHome":home,"sessionId":"../sample"})
+    )
+    .is_err());
     assert!(analyze_params(&json!({"workspace":workspace,"qoderHome":home,"unknown":1})).is_err());
     #[cfg(unix)]
     {
@@ -299,8 +302,16 @@ fn reader_scopes_paths_redacts_labels_and_marks_corrupt_evidence() {
     let source = analyze_params(&json!({"workspace":workspace,"qoderHome":home,"sessionId":"sample","source":{"source":"1/segments/sample.jsonl","line":2}})).unwrap();
     assert_eq!(source["startLine"], 1);
     assert_eq!(source["line"], 2);
-    assert!(source["content"].as_str().unwrap().contains("model.response.completed"));
-    for source in ["../segments/sample.jsonl", "1/segments/../sample.jsonl", "1/segments/C:\\sample.jsonl", "1/segments/linked.jsonl"] {
+    assert!(source["content"]
+        .as_str()
+        .unwrap()
+        .contains("model.response.completed"));
+    for source in [
+        "../segments/sample.jsonl",
+        "1/segments/../sample.jsonl",
+        "1/segments/C:\\sample.jsonl",
+        "1/segments/linked.jsonl",
+    ] {
         assert!(analyze_params(&json!({"workspace":workspace,"qoderHome":home,"sessionId":"sample","source":{"source":source,"line":1}})).is_err());
     }
     let tool_rows = [
@@ -308,9 +319,22 @@ fn reader_scopes_paths_redacts_labels_and_marks_corrupt_evidence() {
         json!({"type":"tool.shell.started","ts":"2026-09-01T01:00:05Z","tool_call_id":"one","data":{}}),
         json!({"type":"tool.execution.finished","ts":"2026-09-01T01:00:06Z","tool_call_id":"one","data":{"tool_name":"Bash"}}),
     ];
-    fs::write(dir.join("tool.jsonl"), tool_rows.iter().map(serde_json::Value::to_string).collect::<Vec<_>>().join("\n")).unwrap();
+    fs::write(
+        dir.join("tool.jsonl"),
+        tool_rows
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
     let calls = analyze_params(&input).unwrap();
-    let wait = calls["spans"].as_array().unwrap().iter().find(|s| s["kind"] == "dispatch").unwrap();
+    let wait = calls["spans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "dispatch")
+        .unwrap();
     assert_eq!(wait["facts"]["callSummary"], "git status --short");
     assert!(!calls.to_string().contains("never-return"));
     fs::remove_dir_all(root).unwrap();
@@ -374,13 +398,11 @@ fn fork_identity_links_child_and_ambiguous_containment_does_not_guess() {
             json!({"tool_name":"Agent"}),
         ),
     ]);
-    assert!(
-        ambiguous
-            .spans
-            .iter()
-            .filter(|s| s.kind == "subagent")
-            .all(|s| s.relationship.is_none())
-    );
+    assert!(ambiguous
+        .spans
+        .iter()
+        .filter(|s| s.kind == "subagent")
+        .all(|s| s.relationship.is_none()));
     assert_eq!(ambiguous.session.subagents.count, 2);
     assert_eq!(ambiguous.session.subagents.unlinked_count, 2);
     assert_eq!(ambiguous.session.subagents.unlinked_turn_count, 1);
@@ -523,12 +545,212 @@ fn storage_partition_and_each_drilldown_sum_exactly_without_overlap() {
 #[test]
 fn session_title_uses_first_main_user_prompt_and_falls_back_without_one() {
     let detail = analyze(vec![
-        event("model.request.started", 0, "main", "", json!({"text_preview":"MODEL INTERNAL"})),
+        event(
+            "model.request.started",
+            0,
+            "main",
+            "",
+            json!({"text_preview":"MODEL INTERNAL"}),
+        ),
         event("turn.started", 1, "child", "", json!({"is_subagent":true})),
-        event("input.prompt.received", 2, "child", "", json!({"text_preview":"CHILD TASK"})),
-        event("input.prompt.submitted", 3, "main", "", json!({"text_preview":"Fix the desktop startup"})),
-        event("input.prompt.received", 4, "main", "", json!({"text_preview":"A later request"})),
+        event(
+            "input.prompt.received",
+            2,
+            "child",
+            "",
+            json!({"text_preview":"CHILD TASK"}),
+        ),
+        event(
+            "input.prompt.submitted",
+            3,
+            "main",
+            "",
+            json!({"text_preview":"Fix the desktop startup"}),
+        ),
+        event(
+            "input.prompt.received",
+            4,
+            "main",
+            "",
+            json!({"text_preview":"A later request"}),
+        ),
     ]);
     assert_eq!(detail.session.label, "Fix the desktop startup");
     assert_eq!(analyze(vec![]).session.label, "Qoder · session-");
+}
+
+/// Claude and Codex transcripts must reach the same pairing rules Qoder uses,
+/// keep their own evidence, and refuse to invent an interval across a pause.
+#[test]
+fn native_transcripts_are_measured_by_the_same_rules_and_stay_namespaced() {
+    use std::fs;
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("perf-native-{}-{suffix}", std::process::id()));
+    let workspace = root.join("project");
+    fs::create_dir_all(&workspace).unwrap();
+    let workspace = crate::paths::normalize_workspace(workspace.to_str().unwrap());
+    let claude_home = root.join("claude");
+    let slug = crate::paths::claude_slug_variants(&workspace).remove(0);
+    let claude_dir = claude_home.join("projects").join(&slug);
+    fs::create_dir_all(&claude_dir).unwrap();
+    let rows = [
+        json!({"type":"user","sessionId":"sid","promptId":"p1","timestamp":"2026-09-08T10:00:00.000Z",
+            "message":{"role":"user","content":[{"type":"text","text":"Fix the startup"}]}}),
+        json!({"type":"attachment","timestamp":"2026-09-08T10:00:00.500Z"}),
+        json!({"type":"assistant","requestId":"req-1","timestamp":"2026-09-08T10:00:04.000Z",
+            "message":{"model":"claude-opus-5","stop_reason":"tool_use","usage":{"output_tokens":12},
+                "content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}]}}),
+        json!({"type":"user","timestamp":"2026-09-08T10:00:06.000Z","message":{"role":"user",
+            "content":[{"type":"tool_result","tool_use_id":"toolu_1","is_error":false}]}}),
+        // A session bridge between the tool result and the reply to it: the
+        // eight-hour gap is a pause, not a request.
+        json!({"type":"bridge-session","timestamp":"2026-09-08T10:00:07.000Z"}),
+        json!({"type":"assistant","requestId":"req-2","timestamp":"2026-09-08T18:00:00.000Z",
+            "message":{"model":"claude-opus-5","stop_reason":"end_turn","content":[{"type":"text","text":"done"}]}}),
+    ];
+    fs::write(
+        claude_dir.join("sid.jsonl"),
+        rows.iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+
+    let codex_home = root.join("codex");
+    let codex_dir = codex_home
+        .join("sessions")
+        .join("2026")
+        .join("09")
+        .join("08");
+    fs::create_dir_all(&codex_dir).unwrap();
+    let codex_rows = [
+        json!({"timestamp":"2026-09-08T10:00:00.000Z","type":"session_meta",
+            "payload":{"id":"cx1","session_id":"other-thread","cwd": workspace.to_string_lossy()}}),
+        json!({"timestamp":"2026-09-08T10:00:00.000Z","type":"event_msg",
+            "payload":{"type":"task_started","turn_id":"t1"}}),
+        json!({"timestamp":"2026-09-08T10:00:01.000Z","type":"event_msg","payload":{"type":"item_completed",
+            "turn_id":"t1","started_at_ms":1788_000_000_000i64,"completed_at_ms":1788_000_000_000i64,
+            "item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":
+                "You are running under harness revision hr_test.\nFollow these harness policies:\n- [coder/workspace-grounding] Stay in the workspace.\n\nShip the release"}]}}}),
+        json!({"timestamp":"2026-09-08T10:00:02.000Z","type":"response_item","payload":{"type":"custom_tool_call",
+            "name":"exec","call_id":"call_exec","id":"ctc_exec","arguments":"cargo test"}}),
+        json!({"timestamp":"2026-09-08T10:00:05.000Z","type":"response_item","payload":{"type":"custom_tool_call_output",
+            "call_id":"call_exec"}}),
+        json!({"timestamp":"2026-09-08T10:00:05.000Z","type":"event_msg","payload":{"type":"item_completed",
+            "turn_id":"t1","started_at_ms":1788_000_000_000i64,"completed_at_ms":1788_000_003_000i64,
+            "item":{"type":"CommandExecution","id":"exec-1","status":"completed",
+                "command":"['/bin/zsh','-lc','cargo test']","parsed_cmd":[{"type":"test"}]}}}),
+        json!({"timestamp":"2026-09-08T10:00:06.000Z","type":"response_item","payload":{"type":"function_call",
+            "name":"wait","call_id":"call_wait","id":"fc_wait"}}),
+        json!({"timestamp":"2026-09-08T10:00:08.000Z","type":"response_item","payload":{"type":"function_call_output",
+            "call_id":"call_wait"}}),
+        json!({"timestamp":"2026-09-08T10:00:20.000Z","type":"event_msg","payload":{"type":"task_complete",
+            "turn_id":"t1","duration_ms":20000,"time_to_first_token_ms":640}}),
+    ];
+    fs::write(
+        codex_dir.join("rollout-2026-09-08T10-00-00-cx1.jsonl"),
+        codex_rows
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+
+    let base = json!({"workspace": workspace.to_string_lossy(), "qoderHome": root.join("qoder").to_string_lossy(),
+        "claudeHome": claude_home.to_string_lossy(), "codexHome": codex_home.to_string_lossy()});
+    let mut catalog_params = base.clone();
+    catalog_params["maxSessions"] = json!(50);
+    let catalog = analyze_params(&catalog_params).unwrap();
+    let ids: Vec<_> = catalog["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(ids.contains(&"claude:sid".to_string()) && ids.contains(&"codex:cx1".to_string()));
+    assert!(!ids.contains(&"codex:other-thread".to_string()));
+    // Ranking is global: two native Sessions plus no Qoder still honour maxSessions.
+    catalog_params["maxSessions"] = json!(1);
+    let capped = analyze_params(&catalog_params).unwrap();
+    assert_eq!(capped["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(capped["coverage"]["discoveredSessions"], 2);
+    assert_eq!(capped["coverage"]["omittedSessions"], 1);
+
+    let mut claude_params = base.clone();
+    claude_params["sessionId"] = json!("claude:sid");
+    let claude = analyze_params(&claude_params).unwrap();
+    assert_eq!(claude["session"]["provider"], "claude");
+    assert_eq!(claude["session"]["label"], "Fix the startup");
+    let spans = claude["spans"].as_array().unwrap();
+    let tool = spans.iter().find(|s| s["kind"] == "tool").unwrap();
+    assert_eq!(tool["durationMs"], 2000);
+    assert_eq!(tool["facts"]["toolCallId"], "toolu_1");
+    let model: Vec<_> = spans.iter().filter(|s| s["kind"] == "model").collect();
+    // The first request is bounded by the prompt that triggered it; the second
+    // spans a bridge record, so it is reported unpaired instead of as 8 hours.
+    assert_eq!(model.iter().filter(|s| s["durationMs"] == 4000).count(), 1);
+    assert_eq!(
+        model.iter().filter(|s| s["durationMs"].is_null()).count(),
+        1
+    );
+    assert!(
+        claude["session"]["coverage"]["unpairedEvents"]
+            .as_i64()
+            .unwrap()
+            >= 1
+    );
+
+    let mut codex_params = base.clone();
+    codex_params["sessionId"] = json!("codex:cx1");
+    let codex = analyze_params(&codex_params).unwrap();
+    assert_eq!(codex["session"]["provider"], "codex");
+    assert_eq!(codex["session"]["label"], "Ship the release");
+    assert_eq!(codex["session"]["firstTokenStatus"], "recorded");
+    assert_eq!(codex["session"]["firstTokenMs"], 640);
+    assert_eq!(codex["turns"][0]["durationMs"], 20000);
+    let spans = codex["spans"].as_array().unwrap();
+    let shell = spans.iter().find(|s| s["kind"] == "shell").unwrap();
+    assert_eq!(shell["durationMs"], 3000);
+    assert_eq!(shell["label"], "test");
+    assert_eq!(spans.iter().filter(|s| s["kind"] == "shell").count(), 1);
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|s| s["kind"] == "tool" && s["label"] == "exec")
+            .count(),
+        0
+    );
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|s| s["kind"] == "tool" && s["label"] == "wait")
+            .count(),
+        1
+    );
+    assert_eq!(codex["session"]["id"], "codex:cx1");
+
+    // Evidence resolves back to the transcript it was read from, and only to it.
+    let line = claude["spans"].as_array().unwrap()[0]["evidence"][0]["line"].clone();
+    let mut source_params = claude_params.clone();
+    source_params["source"] = json!({"source":"1/transcript/sid.jsonl","line": line});
+    assert!(analyze_params(&source_params).unwrap()["content"].is_string());
+    for bad in [
+        "1/segments/sid.jsonl",
+        "2/transcript/sid.jsonl",
+        "1/transcript/other.jsonl",
+    ] {
+        source_params["source"] = json!({"source": bad, "line": 1});
+        assert!(analyze_params(&source_params).is_err());
+    }
+    for bad in ["claude:", ":sid", "claude:sid:extra", "claude:../sid"] {
+        let mut params = base.clone();
+        params["sessionId"] = json!(bad);
+        assert!(analyze_params(&params).is_err(), "{bad} must be rejected");
+    }
+    fs::remove_dir_all(&root).ok();
 }

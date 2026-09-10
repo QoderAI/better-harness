@@ -26,6 +26,9 @@ export const sessions: typeof enSessions = {
   inspectorTab: "检查器",
   catalogTab: "目录与对比",
   loadingInspector: "正在加载检查器工作台…",
+  transcript: {
+    revealTiming: "定位 {{name}} 的计时区间",
+  },
   detail: {
     aria: "会话详情：{{name}}",
     retained: "保留会话",

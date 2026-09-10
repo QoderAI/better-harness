@@ -22,7 +22,9 @@ export interface SessionTiming {
   turnCount: number; toolCount: number; retryCount: number; metrics: TimingMetric[];
   subagents: { count: number; timedCount: number; cumulativeMs: number | null; elapsedMs: number | null; maxMs: number | null; peakConcurrency: number; unlinkedCount: number; unlinkedTurnCount: number };
   findings: { code: string; spanId: string | null; durationMs: number | null; count: number; label: string }[];
-  coverage: TimingCoverage; status: string; firstTokenStatus: 'unrecorded';
+  coverage: TimingCoverage; status: string;
+  /** 'recorded' only when the Agent's own evidence states a time to first token. */
+  firstTokenStatus: 'unrecorded' | 'recorded'; firstTokenMs?: number | null;
 }
 export interface PerformanceCatalog {
   schemaVersion: 1; engine: 'rust'; provider: string; status: string; sessions: SessionTiming[];
@@ -42,7 +44,10 @@ function timingPart(v: unknown): boolean {
     && array(v.calls, 80, c => object(c) && text(c.spanId) && text(c.label) && count(c.durationMs));
 }
 function summary(v: unknown): boolean {
-  if (!object(v) || !text(v.id) || !text(v.label) || !text(v.provider) || v.firstTokenStatus !== 'unrecorded' || !text(v.status)) return false;
+  if (!object(v) || !text(v.id) || !text(v.label) || !text(v.provider) || !text(v.status)
+    || (v.firstTokenStatus !== 'unrecorded' && v.firstTokenStatus !== 'recorded')
+    || (v.firstTokenMs !== undefined && !nullableNumber(v.firstTokenMs))
+    || (v.firstTokenStatus === 'unrecorded' && (v.firstTokenMs ?? null) !== null)) return false;
   if (!['firstSeenMs','lastSeenMs','lastActivityMs','wallMs','completedTurnMs','timedUnionMs','unattributedTurnMs','longestMs'].every(k => nullableNumber(v[k]))
     || !['turnCount','toolCount','retryCount'].every(k => count(v[k]))) return false;
   const b = v.breakdown;

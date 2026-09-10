@@ -6,6 +6,10 @@ use serde_json::Value;
 pub struct PerformanceParams {
     pub workspace: String,
     pub qoder_home: Option<String>,
+    /// Server-owned roots for the non-Qoder transcript formats. Absent means the
+    /// platform default; a browser request can never supply one.
+    pub claude_home: Option<String>,
+    pub codex_home: Option<String>,
     pub session_id: Option<String>,
     pub max_sessions: Option<usize>,
     pub source: Option<SourceRequest>,
@@ -143,7 +147,7 @@ pub struct Finding {
 pub struct Summary {
     pub breakdown: super::breakdown::Breakdown,
     pub id: String,
-    pub provider: &'static str,
+    pub provider: String,
     pub label: String,
     pub first_seen_ms: Option<i64>,
     pub last_seen_ms: Option<i64>,
@@ -161,7 +165,9 @@ pub struct Summary {
     pub findings: Vec<Finding>,
     pub coverage: Coverage,
     pub status: &'static str,
+    /// "unrecorded" unless the transcript states a time-to-first-token itself.
     pub first_token_status: &'static str,
+    pub first_token_ms: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]

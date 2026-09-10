@@ -1,13 +1,16 @@
-use super::{Coverage, Event, Evidence, PerformanceParams, analyze};
-use crate::paths::{normalize_workspace, qoder_slug_variants};
+use super::native;
+use super::{analyze, Coverage, Detail, Event, Evidence, PerformanceParams, Summary};
+use crate::paths::{expand_home, normalize_workspace, qoder_slug_variants};
 use crate::platforms::qoder::qoder_home;
 use crate::time::millis;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{
+    cmp::Reverse,
     collections::BTreeMap,
     fs,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
@@ -18,11 +21,18 @@ const MAX_LINE_BYTES: usize = 1024 * 1024;
 const MAX_FILES: usize = 128;
 const MAX_DIRECTORIES: usize = 2_000;
 
+/// Route by the namespace the Session id carries. A bare id is a Qoder
+/// execution log; `claude:`/`codex:` name a retained transcript read by the
+/// matching native reader. A catalog request asks all three.
 pub fn read(params: PerformanceParams) -> Result<Value, String> {
     if params.workspace.trim().is_empty() {
         return Err("workspace-required".into());
     }
-    if params.session_id.as_deref().is_some_and(|id| !valid_id(id)) {
+    if params
+        .session_id
+        .as_deref()
+        .is_some_and(|id| !valid_request_id(id))
+    {
         return Err("invalid-session-id".into());
     }
     if params.source.is_some() && params.session_id.is_none() {
@@ -32,14 +42,224 @@ pub fn read(params: PerformanceParams) -> Result<Value, String> {
     if !workspace.is_dir() {
         return Err("workspace-unavailable".into());
     }
+    match params
+        .session_id
+        .as_deref()
+        .and_then(native::split_namespace)
+    {
+        Some((provider, _)) if native_provider(provider) => {
+            return native_detail(&params, &workspace);
+        }
+        Some(_) => return Err("session-timing-not-found".into()),
+        None => {}
+    }
+    if params.session_id.is_none() {
+        return catalog(&params, &workspace);
+    }
+    qoder(&params, &workspace)
+}
+
+pub fn native_provider(provider: &str) -> bool {
+    matches!(provider, native::claude::PROVIDER | native::codex::PROVIDER)
+}
+
+enum Ranked {
+    Qoder {
+        id: String,
+        paths: Vec<PathBuf>,
+    },
+    Native {
+        provider: &'static str,
+        transcript: native::Transcript,
+    },
+}
+
+/// The catalog spans every provider this host can measure. Rank by observed
+/// mtime, then analyse only the global cap — not 200 rows per provider.
+fn catalog(params: &PerformanceParams, workspace: &Path) -> Result<Value, String> {
+    let limit = params.max_sessions.unwrap_or(200).clamp(1, 500);
+    let (home, qoder_sessions, mut unreadable, directory_limit) = list_qoder(params, workspace)?;
+    let mut ranked: Vec<(Option<SystemTime>, Ranked)> = qoder_sessions
+        .into_iter()
+        .map(|(id, paths, modified)| (modified, Ranked::Qoder { id, paths }))
+        .collect();
+    for provider in [native::claude::PROVIDER, native::codex::PROVIDER] {
+        for transcript in native_transcripts(params, workspace, provider) {
+            ranked.push((
+                transcript.modified,
+                Ranked::Native {
+                    provider,
+                    transcript,
+                },
+            ));
+        }
+    }
+    ranked.sort_by(|left, right| right.0.cmp(&left.0));
+    let discovered = ranked.len();
+    ranked.truncate(limit);
+    let omitted = discovered.saturating_sub(ranked.len());
+    let mut sessions = Vec::new();
+    let mut remaining = MAX_CATALOG_BYTES;
+    let mut partial = omitted > 0 || directory_limit || unreadable > 0;
+    for (_, entry) in ranked {
+        let summary = match entry {
+            Ranked::Qoder { id, paths } => {
+                if remaining == 0 {
+                    partial = true;
+                    continue;
+                }
+                let (events, coverage, bytes) =
+                    read_events(&home, &paths, remaining.min(MAX_SESSION_BYTES));
+                remaining = remaining.saturating_sub(bytes);
+                if coverage.unreadable_files > 0 {
+                    unreadable += 1;
+                }
+                analyze::summarize(&id, events, coverage)
+            }
+            Ranked::Native {
+                provider,
+                transcript,
+            } => {
+                let summary = native_summary_for(provider, &transcript, params);
+                if summary.coverage.unreadable_files > 0 {
+                    unreadable += 1;
+                }
+                summary
+            }
+        };
+        partial |= summary.status == "partial";
+        sessions.push(
+            serde_json::to_value(summary).map_err(|_| "performance-encode-failed".to_string())?,
+        );
+    }
+    sessions.sort_by(|left, right| {
+        let key = |value: &Value| {
+            (
+                Reverse(value["longestMs"].as_i64().unwrap_or(0)),
+                Reverse(value["lastActivityMs"].as_i64().unwrap_or(0)),
+                value["id"].as_str().unwrap_or("").to_string(),
+            )
+        };
+        key(left).cmp(&key(right))
+    });
+    Ok(json!({
+        "schemaVersion": 1, "engine": "rust", "provider": "multi",
+        "status": if sessions.is_empty() && unreadable == 0 { "no-evidence" }
+            else if omitted > 0 || directory_limit || unreadable > 0 || partial { "partial" } else { "ok" },
+        "sessions": sessions,
+        "coverage": { "discoveredSessions": discovered, "omittedSessions": omitted,
+            "directoryLimitReached": directory_limit, "unreadableDirectories": unreadable },
+    }))
+}
+
+fn native_home(params: &PerformanceParams, provider: &str) -> PathBuf {
+    let configured = if provider == native::claude::PROVIDER {
+        params.claude_home.as_deref()
+    } else {
+        params.codex_home.as_deref()
+    };
+    match configured {
+        Some(path) => expand_home(path),
+        None if provider == native::claude::PROVIDER => native::claude::home(),
+        None => native::codex::home(),
+    }
+}
+
+fn native_transcripts(
+    params: &PerformanceParams,
+    workspace: &Path,
+    provider: &str,
+) -> Vec<native::Transcript> {
+    let home = native_home(params, provider);
+    if provider == native::claude::PROVIDER {
+        native::claude::transcripts(&home, workspace)
+    } else {
+        native::codex::transcripts(&home, workspace)
+    }
+}
+
+fn native_events(
+    provider: &str,
+    transcript: &native::Transcript,
+    params: &PerformanceParams,
+) -> (Vec<Event>, Coverage) {
+    let home = native_home(params, provider);
+    let mut coverage = Coverage::default();
+    let mut events = if provider == native::claude::PROVIDER {
+        native::claude::events(0, &transcript.path, &home, &mut coverage)
+    } else {
+        native::codex::events(0, &transcript.path, &home, &mut coverage)
+    };
+    events
+        .sort_by(|a, b| (a.at, &a.evidence.source, a.seq).cmp(&(b.at, &b.evidence.source, b.seq)));
+    coverage.events = events.len();
+    (events, coverage)
+}
+
+fn native_detail_for(
+    provider: &str,
+    transcript: &native::Transcript,
+    params: &PerformanceParams,
+) -> Detail {
+    let (events, coverage) = native_events(provider, transcript, params);
+    let id = native::namespaced(provider, &transcript.id);
+    analyze::analyze_provider(&id, provider, events, coverage)
+}
+
+fn native_summary_for(
+    provider: &str,
+    transcript: &native::Transcript,
+    params: &PerformanceParams,
+) -> Summary {
+    let (events, coverage) = native_events(provider, transcript, params);
+    let id = native::namespaced(provider, &transcript.id);
+    analyze::summarize_provider(&id, provider, events, coverage)
+}
+
+/// One retained transcript, read only when the request names it.
+fn native_detail(params: &PerformanceParams, workspace: &Path) -> Result<Value, String> {
+    let session_id = params.session_id.as_deref().unwrap_or_default();
+    let (provider, id) = native::split_namespace(session_id).ok_or("invalid-session-id")?;
+    let transcript = native_transcripts(params, workspace, provider)
+        .into_iter()
+        .find(|transcript| transcript.id == id)
+        .ok_or("session-timing-not-found")?;
+    if let Some(source) = &params.source {
+        let home = native_home(params, provider);
+        return super::source::read_files(&home, &[transcript.path], source);
+    }
+    serde_json::to_value(native_detail_for(provider, &transcript, params))
+        .map_err(|_| "performance-encode-failed".into())
+}
+
+fn qoder_mtime(paths: &[PathBuf]) -> Option<SystemTime> {
+    paths
+        .iter()
+        .flat_map(|path| segment_paths(path).0)
+        .filter_map(|path| fs::metadata(path).ok()?.modified().ok())
+        .max()
+}
+
+fn list_qoder(
+    params: &PerformanceParams,
+    workspace: &Path,
+) -> Result<
+    (
+        PathBuf,
+        Vec<(String, Vec<PathBuf>, Option<SystemTime>)>,
+        usize,
+        bool,
+    ),
+    String,
+> {
     let home = params
         .qoder_home
-        .map(PathBuf::from)
+        .as_deref()
+        .map(expand_home)
         .unwrap_or_else(qoder_home);
-    let limit = params.max_sessions.unwrap_or(200).clamp(1, 500);
     let mut dirs: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
     let (mut unreadable, mut directory_limit) = (0, false);
-    for slug in qoder_slug_variants(&workspace) {
+    for slug in qoder_slug_variants(workspace) {
         let root = home.join("logs").join("sessions").join(slug);
         if !root.exists() {
             continue;
@@ -58,13 +278,6 @@ pub fn read(params: PerformanceParams) -> Result<Value, String> {
             if !valid_id(&id) || !entry.file_type().is_ok_and(|t| t.is_dir()) {
                 continue;
             }
-            if params
-                .session_id
-                .as_ref()
-                .is_some_and(|wanted| wanted != &id)
-            {
-                continue;
-            }
             if dirs.len() >= MAX_DIRECTORIES && !dirs.contains_key(&id) {
                 directory_limit = true;
                 continue;
@@ -72,63 +285,45 @@ pub fn read(params: PerformanceParams) -> Result<Value, String> {
             dirs.entry(id).or_default().push(entry.path());
         }
     }
+    let sessions = dirs
+        .into_iter()
+        .map(|(id, paths)| {
+            let modified = qoder_mtime(&paths);
+            (id, paths, modified)
+        })
+        .collect();
+    Ok((home, sessions, unreadable, directory_limit))
+}
+
+fn qoder(params: &PerformanceParams, workspace: &Path) -> Result<Value, String> {
+    let (home, sessions, _, _) = list_qoder(params, workspace)?;
+    let wanted = params
+        .session_id
+        .as_ref()
+        .ok_or("session-timing-not-found")?;
+    let paths = sessions
+        .into_iter()
+        .find(|(id, _, _)| id == wanted)
+        .map(|(_, paths, _)| paths)
+        .ok_or("session-timing-not-found")?;
     if let Some(source) = &params.source {
-        let paths = dirs.get(params.session_id.as_ref().unwrap()).ok_or("source-not-found")?;
-        return super::source::read(&home, paths, source);
+        return super::source::read_segments(&home, &paths, source);
     }
-    let mut selected: Vec<_> = dirs.into_iter().collect();
-    let discovered = selected.len();
-    // Rotation/continued sessions change segment mtimes, not necessarily the
-    // parent directory mtime. Rank bounded source files before selecting.
-    selected.sort_by_cached_key(|(id, paths)| {
-        let modified = paths
-            .iter()
-            .flat_map(|p| segment_paths(p).0)
-            .filter_map(|p| fs::metadata(p).ok()?.modified().ok())
-            .max();
-        (std::cmp::Reverse(modified), id.clone())
-    });
-    selected.truncate(limit);
-    let mut sessions = Vec::new();
-    let mut remaining = MAX_CATALOG_BYTES;
-    for (id, paths) in selected {
-        if remaining == 0 {
-            break;
+    let (events, coverage, _) = read_events(&home, &paths, MAX_SESSION_BYTES);
+    let detail = analyze::analyze(wanted, events, coverage);
+    serde_json::to_value(detail).map_err(|_| "performance-encode-failed".into())
+}
+
+/// A requested Session id may carry one provider namespace. Both halves stay
+/// within the same character set a path component is allowed to use, so a
+/// namespaced id can never widen what a reader may reach.
+fn valid_request_id(id: &str) -> bool {
+    match native::split_namespace(id) {
+        Some((provider, rest)) => {
+            provider.len() <= 32 && valid_id(provider) && valid_id(rest) && !id.contains("::")
         }
-        let (events, coverage, bytes) =
-            read_events(&home, &paths, remaining.min(MAX_SESSION_BYTES));
-        remaining = remaining.saturating_sub(bytes);
-        let mut detail = analyze::analyze(&id, events, coverage);
-        if params.session_id.is_some() {
-            return serde_json::to_value(detail).map_err(|_| "performance-encode-failed".into());
-        }
-        // The catalog only needs the top-level partition. Drilldown calls are
-        // returned on explicit detail reads, keeping the catalog frame bounded.
-        for segment in &mut detail.session.breakdown.segments {
-            segment.parts.clear();
-            segment.call_parts.clear();
-        }
-        sessions.push(detail.session);
+        None => valid_id(id),
     }
-    if params.session_id.is_some() {
-        return Err("session-timing-not-found".into());
-    }
-    sessions.sort_by_key(|s| {
-        (
-            std::cmp::Reverse(s.longest_ms),
-            std::cmp::Reverse(s.last_activity_ms),
-            s.id.clone(),
-        )
-    });
-    let omitted = discovered.saturating_sub(sessions.len());
-    Ok(json!({
-        "schemaVersion": 1, "engine": "rust", "provider": "qoder",
-        "status": if sessions.is_empty() && unreadable == 0 { "no-evidence" }
-            else if omitted > 0 || directory_limit || unreadable > 0 || sessions.iter().any(|s| s.coverage.partial()) { "partial" } else { "ok" },
-        "sessions": sessions,
-        "coverage": { "discoveredSessions": discovered, "omittedSessions": omitted,
-            "directoryLimitReached": directory_limit, "unreadableDirectories": unreadable },
-    }))
 }
 
 fn valid_id(id: &str) -> bool {
@@ -298,9 +493,14 @@ fn read_events(home: &Path, dirs: &[PathBuf], budget: u64) -> (Vec<Event>, Cover
                 // Never promote model prompts or tool-output previews.
                 if matches!(kind, "input.prompt.submitted" | "input.prompt.received") {
                     if let Some(preview) = raw["data"]["text_preview"].as_str() {
-                        let safe = crate::privacy::redact_private_text(&crate::privacy::prepare_prompt_text(preview));
+                        let safe = crate::privacy::redact_private_text(
+                            &crate::privacy::prepare_prompt_text(preview),
+                        );
                         let title = safe.split_whitespace().collect::<Vec<_>>().join(" ");
-                        data.insert("text_preview".into(), title.chars().take(160).collect::<String>().into());
+                        data.insert(
+                            "text_preview".into(),
+                            title.chars().take(160).collect::<String>().into(),
+                        );
                     }
                 }
                 for key in [

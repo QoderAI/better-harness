@@ -24,6 +24,9 @@ export const sessions = {
   inspectorTab: "Inspector",
   catalogTab: "Catalog & Compare",
   loadingInspector: "Loading Inspector workbench…",
+  transcript: {
+    revealTiming: "Reveal the timing interval for {{name}}",
+  },
   detail: {
     aria: "Session detail: {{name}}",
     retained: "Retained Session",

@@ -53,6 +53,15 @@ it('preserves nested project route and rejects unsupported schema shapes', () =>
   expect(isPerformanceResult(empty, false)).toBe(true);
   expect(isPerformanceResult({ ...empty, sessions: [{}] }, false)).toBe(false);
   expect(isPerformanceResult({ ...empty, engine: 'javascript' }, false)).toBe(false);
+  const timed = { breakdown: { totalMs: 1, activityTotalMs: 1, segments: [] },
+    id: 'claude:x', provider: 'claude', label: 'x', firstSeenMs: 1, lastSeenMs: 1, lastActivityMs: 1,
+    wallMs: 1, completedTurnMs: null, timedUnionMs: null, unattributedTurnMs: null, longestMs: 1,
+    turnCount: 0, toolCount: 0, retryCount: 0, metrics: [], findings: [], firstTokenStatus: 'unrecorded',
+    subagents: { count: 0, timedCount: 0, cumulativeMs: null, elapsedMs: null, maxMs: null, peakConcurrency: 0, unlinkedCount: 0, unlinkedTurnCount: 0 },
+    coverage: { files: 0, events: 0, invalidLines: 0, invalidTimestamps: 0, unreadableFiles: 0, truncated: false, unpairedEvents: 0, ambiguousPairs: 0, clockConflicts: 0 },
+    status: 'ok' };
+  expect(isPerformanceResult({ ...empty, provider: 'multi', sessions: Array.from({ length: 500 }, (_, i) => ({ ...timed, id: `claude:x${i}` })) }, false)).toBe(true);
+  expect(isPerformanceResult({ ...empty, provider: 'multi', sessions: Array.from({ length: 501 }, (_, i) => ({ ...timed, id: `claude:x${i}` })) }, false)).toBe(false);
 });
 it('reports an older native host as unavailable', async () => { const { url, headers } = await start({ provider: async () => { throw new Error('unknown method sessions.performance'); } }); expect((await fetch(url, { headers })).status).toBe(503); });
 
@@ -88,16 +97,54 @@ it('reports the native source scan limit without returning a log', async () => {
   expect(response.status).toBe(413);
 });
 
-it('allows provider-prefixed session ids and returns no-evidence for non-Qoder providers', async () => {
-  const workspaceSession = {
-    summary: { id: 'codex:abc123', savedAt: '2026-09-08T10:00:00.000Z', prompt: 'Codex fixture', status: 'observed', toolCallCount: 0, provider: 'codex' },
-    debugger: { id: 'codex:abc123', name: 'codex:abc123', agent: 'codex', protocol: 'codex', connection: 'observed', mode: 'Retained run', startedAt: '10:00:00', finishedAt: '10:00:00', events: [] },
+function fixtureSession(id: string, provider: string) {
+  return {
+    summary: { id, savedAt: '2026-09-08T10:00:00.000Z', prompt: `${provider} fixture`, status: 'observed', toolCallCount: 0, provider },
+    debugger: { id, name: id, agent: provider, protocol: provider, connection: 'observed', mode: 'Retained run', startedAt: '10:00:00', finishedAt: '10:00:00', events: [] },
   };
-  const { url, headers } = await start({ workspaceSessions: [workspaceSession] });
-  const detail = await (await fetch(`${url}/codex:abc123`, { headers })).json();
+}
+
+// The browser sends one percent-encoded path segment, so a provider-namespaced
+// id only reaches the reader if the route decodes it.
+it('reads a provider-prefixed session id exactly as the browser encodes it', async () => {
+  const asked: Record<string, unknown>[] = [];
+  const detail = { schemaVersion: 1, engine: 'rust', totalSpans: 0, omittedSpans: 0, turns: [], spans: [],
+    session: { breakdown: { totalMs: 4200, activityTotalMs: 4200, segments: [] },
+      id: 'claude:abc123', provider: 'claude', label: 'Fix the startup', firstSeenMs: 1, lastSeenMs: 2, lastActivityMs: 2,
+      wallMs: 4200, completedTurnMs: null, timedUnionMs: null, unattributedTurnMs: null, longestMs: 4200,
+      turnCount: 1, toolCount: 0, retryCount: 0, metrics: [], findings: [], firstTokenStatus: 'recorded', firstTokenMs: 640,
+      subagents: { count: 0, timedCount: 0, cumulativeMs: null, elapsedMs: null, maxMs: null, peakConcurrency: 0, unlinkedCount: 0, unlinkedTurnCount: 0 },
+      coverage: { files: 1, events: 4, invalidLines: 0, invalidTimestamps: 0, unreadableFiles: 0, truncated: false, unpairedEvents: 0, ambiguousPairs: 0, clockConflicts: 0 },
+      status: 'ok' } };
+  const { url, headers } = await start({
+    provider: async params => { asked.push(params); return detail as unknown as Record<string, unknown>; },
+    workspaceSessions: [fixtureSession('claude:abc123', 'claude')],
+  });
+  const response = await fetch(`${url}/${encodeURIComponent('claude:abc123')}`, { headers });
+  expect(response.status).toBe(200);
+  expect((await response.json()).session.breakdown.totalMs).toBe(4200);
+  expect(asked.at(-1)?.sessionId).toBe('claude:abc123');
+});
+
+it('states no timing evidence for an agent the native reader cannot read', async () => {
+  const { url, headers } = await start({ provider: async () => empty, workspaceSessions: [fixtureSession('cursor:abc123', 'cursor')] });
+  const detail = await (await fetch(`${url}/${encodeURIComponent('cursor:abc123')}`, { headers })).json();
   expect(detail.session.status).toBe('no-evidence');
-  expect(detail.session.provider).toBe('codex');
+  expect(detail.session.provider).toBe('cursor');
   expect(detail.session.lastActivityMs).toBeGreaterThan(0);
+});
+
+// A timed Agent whose transcript the reader cannot locate is still a Session
+// the reader can see; it must not read as a failed request.
+it('falls back to no-evidence when a timed session is missing from the native reader', async () => {
+  const { url, headers } = await start({
+    provider: async params => { if (params.sessionId) throw new Error('session-timing-not-found'); return empty; },
+    workspaceSessions: [fixtureSession('claude:gone123', 'claude')],
+  });
+  const response = await fetch(`${url}/${encodeURIComponent('claude:gone123')}`, { headers });
+  expect(response.status).toBe(200);
+  expect((await response.json()).session.status).toBe('no-evidence');
+  expect((await (await fetch(`${url}/${encodeURIComponent('claude:unknown9')}`, { headers })).json()).error).toBe('performance-analysis-failed');
 });
 
 it('does not duplicate Qoder workspace sessions in the performance catalog', async () => {

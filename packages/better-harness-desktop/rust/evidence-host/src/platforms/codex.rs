@@ -64,12 +64,7 @@ fn probe(workspace: &Path, path: &Path) -> Option<Candidate> {
     if !cwd_matches(workspace, cwd) {
         return None;
     }
-    let session_id = first_record
-        .pointer("/payload/id")
-        .and_then(Value::as_str)
-        .or_else(|| first_record.get("session_id").and_then(Value::as_str))
-        .map(str::to_string)
-        .unwrap_or_else(|| fallback_id(path));
+    let session_id = session_id_from_record(&first_record, path);
     Some(Candidate {
         path: path.to_path_buf(),
         session_id,
@@ -88,7 +83,31 @@ fn read_session(workspace: &Path, candidate: &Candidate) -> Option<SessionSummar
     ))
 }
 
-fn fallback_id(path: &Path) -> String {
+/// Session identity used by both discovery and timing, so a Performance row
+/// can be opened from the Sessions list. `payload.id` is the rollout id;
+/// `payload.session_id` can name an earlier thread after resume.
+pub fn session_id_from_record(record: &Value, path: &Path) -> String {
+    record
+        .pointer("/payload/id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .or_else(|| {
+            record
+                .pointer("/payload/session_id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+        })
+        .or_else(|| {
+            record
+                .get("session_id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+        })
+        .map(str::to_string)
+        .unwrap_or_else(|| fallback_id(path))
+}
+
+pub fn fallback_id(path: &Path) -> String {
     let stem = path
         .file_stem()
         .and_then(|name| name.to_str())
