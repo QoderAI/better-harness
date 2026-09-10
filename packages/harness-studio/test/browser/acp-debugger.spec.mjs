@@ -459,8 +459,8 @@ test("shows shared assistant chunks in Debugger and Compare before completion", 
     await expect(page.locator(".debugger-status")).not.toContainText("Run finished");
     await page.getByRole("button", { name: "Continue stream allow_once" }).click();
     await expect(message.locator(".streaming-message")).toHaveText(["stream in two chunks", "fixture:stream-first", ":stream-last"]);
-    await expect(page.locator(".acp-turn-status")).toHaveText("Ready");
-    await page.getByRole("button", { name: "Close session", exact: true }).click();
+    // Leaving the Debugger ends the run: the composer caption, including its
+    // status label and close control, was retired with the simplified composer.
     await page.goto(`${server.url}/#/compare`);
     await page.getByRole("textbox", { name: "What should these Agents do?" }).fill("stream in two lanes");
     await page.getByRole("button", { name: /^Choose Agents/ }).click();
@@ -511,8 +511,7 @@ test.describe("ACP over the macOS NSXPC service", () => {
       await page.getByRole("button", { name: "Run", exact: true }).click();
       await page.getByRole("button", { name: "Allow once allow_once" }).click();
       await expect(page.getByText("fixture:allow-once", { exact: true })).toBeVisible();
-      await expect(page.locator(".acp-turn-status")).toHaveText("Ready");
-    await page.getByRole("button", { name: "Close session", exact: true }).click();
+      // The composer caption was retired, so the run is ended by leaving the Debugger.
       // The debugger's raw ACP panel is what proves frames crossed the XPC hop.
       await expect(page.getByText("session/prompt").first()).toBeVisible();
 

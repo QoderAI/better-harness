@@ -63,7 +63,7 @@ test('cancel keeps welcome usable; opening and reloading enters the project dire
   await page.reload();
   await expect(page.locator('.studio-project-switcher')).toContainText('Scope fixture');
   await expect(page.locator('.studio-welcome')).toHaveCount(0);
-  await expect(page.locator('.studio-project-views [aria-current="page"]')).toHaveText('Sessions');
+  await expect(page.locator('.studio-project-views [aria-current="page"]')).toHaveText('Overview');
   expect(studio.pickerCalls).toBe(2);
 });
 

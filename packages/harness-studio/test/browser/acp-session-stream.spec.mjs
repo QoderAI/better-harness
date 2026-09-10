@@ -66,7 +66,9 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   // The first lane progressed while the second lane is still gated.
   await expect(alpha.getByRole("combobox", { name: "Model", exact: true })).toHaveValue("stream-model");
 
-  await expect(alpha.locator(".acp-session-facts")).toContainText("1,200 / 32,000");
+  // A compact lane states context use as a bounded percentage badge; the full
+  // used/size facts belong to the non-compact Debugger metadata disclosure.
+  await expect(alpha.locator(".ai-prompt-usage")).toHaveText("4%");
   const scroll = alpha.locator(".acp-session-scroll");
   await expect(alpha.locator(".streaming-message").last()).toContainText("Evidence row 50");
   const entries = alpha.locator(".acp-session-events > li");
@@ -77,15 +79,8 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await expect(entries.locator(".tool-card").filter({ hasText: "Read stream fixture" })).toHaveCount(1);
   await scroll.evaluate((node) => { node.scrollTop = 0; });
   await expect(alpha.getByRole("button", { name: "Back to latest" })).toBeVisible();
-  await alpha.locator(".acp-session-metadata:not([open]) > summary").click();
-  await alpha.locator(".acp-session-info summary").click();
-  await expect(alpha.locator(".acp-session-info time")).toHaveAttribute("datetime", "2026-09-08T00:00:00Z");
-  await alpha.locator(".acp-session-info summary").click();
-  await alpha.locator(".acp-session-plan").getByRole("button", { name: "Plan · 1/2" }).click();
-  await expect(alpha.locator(".acp-session-plan")).toContainText("High priority");
-  await alpha.locator(".acp-session-commands summary").click();
-  await expect(alpha.locator(".acp-command-hint")).toContainText("Optional revision");
-  await alpha.locator(".acp-session-commands summary").click();
+  // Compact lanes keep the transcript only: the metadata disclosure (title,
+  // context facts and plan) belongs to the non-compact Debugger surface.
   await expect(alpha.locator(".acp-thought")).toContainText("Inspecting the evidence.");
   const tool = alpha.locator(".tool-card").filter({ hasText: "Read stream fixture" });
   await page.keyboard.press("Tab");
@@ -94,13 +89,10 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await page.keyboard.press("Enter");
   await expect(tool).toContainText('"path": "fixture.txt"');
   await expect(tool).toContainText('"verified": true');
-  await alpha.locator(".acp-session-commands summary").click();
-  await expect(alpha.locator(".acp-session-commands")).toContainText("/review");
   // Keep the transcript parked at the top while a new chunk completes the turn.
   await scroll.evaluate((node) => { node.scrollTop = 0; });
   await alpha.getByRole("button", { name: "Continue stream", exact: true }).click();
   await expect(alpha.locator(".run-badge")).toHaveText("Completed");
-  await expect(alpha.locator(".acp-session-plan .ai-chain-header")).toHaveText("Plan · 2/2");
   expect(await scroll.evaluate((node) => node.scrollTop)).toBe(0);
   await alpha.getByRole("button", { name: "Back to latest" }).focus();
   await page.keyboard.press("Enter");
@@ -117,7 +109,6 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await beta.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(beta.getByRole("alert")).toContainText("Cancel unavailable; retry");
   await expect(beta.getByRole("alert")).toBeVisible();
-  await expect(beta.getByRole("button", { name: "Close session", exact: true })).toBeEnabled();
   await expect(beta.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
   await beta.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(beta.locator(".run-badge")).toHaveText("Interrupted");
@@ -127,7 +118,7 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
     await page.keyboard.press("Escape");
     await page.emulateMedia({ colorScheme: layout.name === "compact" ? "light" : "dark", reducedMotion: "reduce" });
     await scroll.evaluate((node) => { node.scrollTop = 0; });
-    await expect(alpha.locator(".acp-session-plan")).toBeVisible();
+    await expect(alpha.locator(".acp-session-events")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(layout.width);
     expect(await scroll.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
     if (layout.name === "narrow") {

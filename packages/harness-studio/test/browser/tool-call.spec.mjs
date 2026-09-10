@@ -706,11 +706,14 @@ test("renders the shell, local workspace intake, and empty compare surfaces at a
     await assertRenderedContract(page);
     await page.screenshot({ path: testInfo.outputPath(`landing-${layout.name}.png`) });
 
-    // The View list is one roving tab stop that starts at the current View, so
-    // Customizations above it does not take the tab stop from Sessions.
+    // The View list is one roving tab stop that starts at the current View row,
+    // so the Sessions group rows keep the tab stop instead of losing it to the
+    // group toggle or Customizations below.
     const views = page.getByRole("navigation", { name: "Studio View navigation" });
     if (layout.name === "wide") {
-      await views.getByRole("button", { name: /^Sessions/ }).focus();
+      await views.getByRole("button", { name: /^Overview/ }).focus();
+      await page.keyboard.press("ArrowDown");
+      await expect(views.getByRole("button", { name: /^Performance/ })).toBeFocused();
       await page.keyboard.press("ArrowDown");
       await expect(views.getByRole("button", { name: /^Commits/ })).toBeFocused();
     } else {
@@ -719,7 +722,7 @@ test("renders the shell, local workspace intake, and empty compare surfaces at a
       await page.emulateMedia({ reducedMotion: "no-preference" });
       const toggle = page.getByRole("button", { name: "Open Studio navigation" });
       await toggle.click();
-      await expect(views.getByRole("button", { name: /^Sessions/ })).toBeFocused();
+      await expect(views.getByRole("button", { name: /^Overview/ })).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(toggle).toBeFocused();
     }

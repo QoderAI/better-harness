@@ -50,7 +50,7 @@ test('compact activity preserves streaming expansion, visible failures, permissi
   await expect(alpha.getByText('The source review is complete.', { exact: false })).toBeVisible();
   const beta = page.locator('.live-compare-lane').nth(1);
   await beta.getByRole('button', { name: 'Finish activity', exact: true }).click();
-  await expect(beta.locator('.acp-turn-status')).toHaveText('Ready');
+  await expect(beta.locator('.acp-composer textarea')).toBeVisible();
   for (const theme of ['light', 'dark']) for (const layout of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' }); await page.setViewportSize(layout);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

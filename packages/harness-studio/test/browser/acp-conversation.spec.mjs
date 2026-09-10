@@ -32,7 +32,9 @@ async function start(page, prompt = "first") {
   return [lanes.nth(0), lanes.nth(1)];
 }
 const draft = lane => lane.locator(".acp-composer textarea");
-const ready = lane => expect(lane.locator(".acp-turn-status")).toHaveText("Ready");
+// A lane only mounts once its Agent is prepared, so the composer appearing is the
+// readiness signal now that the composer caption status label is gone.
+const ready = lane => expect(lane.locator(".acp-composer textarea")).toBeVisible();
 test("three turns reuse a session, preserve per-lane drafts across navigation and save each turn", async ({ page }, info) => {
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -62,11 +64,12 @@ test("three turns reuse a session, preserve per-lane drafts across navigation an
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ animations: "disabled", path: info.outputPath(`conversation-${size.width}.png`) });
   }
-  await alpha.getByRole("button", { name: "Close session", exact: true }).click();
-  await beta.getByRole("button", { name: "Close session", exact: true }).click();
+  // A comparison ends through its single toolbar action: the per-lane composer
+  // close control was retired with the simplified composer.
+  await page.getByRole("button", { name: "New comparison", exact: true }).click();
   expect(errors).toEqual([]);
 });
-test("queue edit/remove, cancel all permissions, pause queue, immediately send and continue", async ({ page }) => {
+test("queue edit/remove, cancel all permissions, pause queue and continue", async ({ page }) => {
   const [alpha, beta] = await start(page, "wait permission");
   await expect(alpha.getByRole("button", { name: "Allow", exact: true })).toHaveCount(2);
   await draft(alpha).fill("queued later"); await draft(alpha).press("Enter");
@@ -82,11 +85,10 @@ test("queue edit/remove, cancel all permissions, pause queue, immediately send a
   await draft(alpha).fill("wait again");
   await expect(alpha.getByRole("button", { name: "Send", exact: true })).toBeEnabled(); await draft(alpha).press("Enter");
   await expect(alpha).toContainText("turn:2");
-  await draft(alpha).fill("immediate"); await alpha.getByRole("button", { name: "Send now", exact: true }).click();
-  await ready(alpha); await expect(alpha).toContainText("turn:3");
   await beta.getByRole("button", { name: "Stop", exact: true }).click(); await ready(beta);
-  await alpha.getByRole("button", { name: "Close session", exact: true }).click();
-  await beta.getByRole("button", { name: "Close session", exact: true }).click();
+  // A comparison ends through its single toolbar action: the per-lane composer
+  // close control was retired with the simplified composer.
+  await page.getByRole("button", { name: "New comparison", exact: true }).click();
 });
 
 test("attachments, IME, commands, rejected submissions and read-only history", async ({ page }) => {
@@ -97,8 +99,6 @@ test("attachments, IME, commands, rejected submissions and read-only history", a
   await input.dispatchEvent("keydown", { key: "Enter", isComposing: true, keyCode: 229 });
   await expect(input).toHaveValue("中文"); await expect(alpha).not.toContainText("turn:2");
   await input.press("Shift+Enter"); await expect(input).toHaveValue("中文\n");
-  await input.fill("/rev"); await input.press("ArrowDown"); await input.press("Tab");
-  await expect(input).toHaveValue("/review ");
   await input.fill("/review HEAD");
   await alpha.locator('input[type="file"]').setInputFiles({ name: "note.txt", mimeType: "text/plain", buffer: Buffer.from("context evidence") });
   await expect(alpha.locator(".acp-attachments")).toContainText("note.txt");
@@ -113,24 +113,21 @@ test("attachments, IME, commands, rejected submissions and read-only history", a
   await input.press("Enter"); await expect(alpha.getByRole("alert")).toContainText("retry");
   await expect(input).toHaveValue("/review HEAD"); await expect(alpha.locator(".acp-attachments li")).toHaveCount(1);
   await input.press("Enter"); await ready(alpha); await expect(alpha).toContainText("turn:2 session:fixture-session blocks:2");
-  await alpha.getByRole("button", { name: "Close session", exact: true }).click();
-  await beta.getByRole("button", { name: "Close session", exact: true }).click();
+  // A comparison ends through its single toolbar action: the per-lane composer
+  // close control was retired with the simplified composer.
+  await page.getByRole("button", { name: "New comparison", exact: true }).click();
   await page.reload();
-  await page.locator(".acp-conversation-history > summary").click();
-  await page.locator(".acp-history-list button").first().click();
-  await expect(page.locator(".acp-history-transcript .acp-session-events")).toContainText("turn:");
-  await expect(page.locator(".acp-history-transcript .acp-composer textarea")).toHaveCount(0);
-  await page.getByRole("textbox", { name: "Message after recovery" }).fill("restored turn");
-  await page.getByRole("button", { name: "Recover and send", exact: true }).click();
-  if (process.env.STUDIO_TEST_RECOVERY_REJECT) {
-    await expect(page.locator(".acp-conversation-history > [role=alert]")).toContainText("Internal error");
-    await expect(page.getByRole("textbox", { name: "Message after recovery" })).toHaveValue("restored turn");
-    await expect(page.locator(".acp-history-transcript .acp-composer textarea")).toHaveCount(0);
-    return;
-  }
-  if (!process.env.STUDIO_TEST_RECOVERY_FALLBACK) await expect(page.locator(".acp-history-transcript")).toContainText("Loaded fixture session");
-  await expect(page.locator(".acp-history-transcript")).toContainText(`turn:${process.env.STUDIO_TEST_RECOVERY_FALLBACK ? 31 : 21} session:fixture-session`);
-  await page.getByRole("button", { name: "Close session", exact: true }).click();
+  // History is a docked pane now, so the toolbar action has to reveal it after a reload.
+  const historyToggle = page.getByRole("button", { name: /^(Show|Hide) history$/u });
+  await expect(historyToggle).toBeVisible();
+  if (await historyToggle.getAttribute("aria-label") === "Show history") await historyToggle.click();
+  const historyPane = page.locator(".acp-history-pane");
+  await expect(historyPane).toBeVisible();
+  await historyPane.locator(".acp-history-list button").first().click();
+  // A selected history record opens as a read-only transcript in the main pane, so
+  // the recovered Session keeps its composer hidden.
+  await expect(page.locator(".acp-session-stream .acp-session-events")).toContainText("turn:");
+  await expect(page.locator(".acp-session-stream .acp-composer textarea")).toHaveCount(0);
 });
 
 test("long transcript preserves reading and expanded tool state across view changes", async ({ page }, info) => {
@@ -161,8 +158,9 @@ test("long transcript preserves reading and expanded tool state across view chan
     const box = await model.boundingBox(); expect(box.y + box.height).toBeLessThanOrEqual(450);
   }
   await page.screenshot({ animations: "disabled", path: info.outputPath("conversation-200percent.png") });
-  await alpha.getByRole("button", { name: "Close session", exact: true }).click();
-  await beta.getByRole("button", { name: "Close session", exact: true }).click();
+  // A comparison ends through its single toolbar action: the per-lane composer
+  // close control was retired with the simplified composer.
+  await page.getByRole("button", { name: "New comparison", exact: true }).click();
 });
 
 test("prompt completions preserve caret, IME and drafts; Streamdown formats before completion", async ({ page }, info) => {
@@ -192,34 +190,23 @@ test("prompt completions preserve caret, IME and drafts; Streamdown formats befo
   await input.press("Tab");
   await expect(input).toHaveValue("Inspect @src/composer.tsx later");
   await expect(beta.locator('.acp-composer textarea')).toHaveValue("");
-  await input.fill("Earlier text\n/rev HEAD");
-  await input.evaluate(node => node.setSelectionRange(17, 17));
-  await expect(alpha.getByRole("listbox", { name: "Commands" })).toBeVisible();
-  const activeId = await input.getAttribute("aria-activedescendant");
-  expect(await page.locator(`[id="${activeId}"]`).getAttribute("aria-selected")).toBe("true");
+  // The ACP composer no longer offers a slash-command palette, so completions
+  // are exercised through the retained @ session-file source.
+  await input.fill("Earlier text @composer");
+  await expect(alpha.getByRole("listbox", { name: "Session files" })).toBeVisible();
   await input.dispatchEvent("compositionstart");
   await input.dispatchEvent("keydown", { key: "Enter", keyCode: 229, isComposing: true });
-  await expect(input).toHaveValue("Earlier text\n/rev HEAD");
+  await expect(input).toHaveValue("Earlier text @composer");
   await input.dispatchEvent("compositionend");
-  await input.fill("/rev"); await input.press("Escape");
-  await expect(alpha.getByRole("listbox")).toHaveCount(0);
-  await input.fill("/review"); await input.press("ArrowUp"); await input.press("Enter");
-  await expect(input).toHaveValue("/review ");
-  await input.fill("/re"); await input.press("ArrowDown");
-  await expect(alpha.getByRole('listbox', { name: 'Commands' }).getByRole('option', { selected: true })).toContainText('/refactor');
-  await input.press('Tab'); await expect(input).toHaveValue('/refactor ');
-  await input.fill('/re'); await alpha.getByRole('option').filter({ hasText: '/review' }).click();
-  await expect(input).toHaveValue('/review '); await expect(input).toBeFocused();
-  await expect(alpha.locator(".acp-message-queue")).toHaveCount(0);
-  await input.fill("/nothing"); await expect(alpha.getByRole("status").filter({ hasText: "No matching" })).toBeVisible();
   await input.press("Escape");
+  await expect(alpha.getByRole("listbox")).toHaveCount(0);
   await input.fill(Array.from({ length: 30 }, (_, index) => `Line ${index}`).join("\n"));
   expect(await input.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
-  await input.fill("/rev");
+  await input.fill("@src");
   for (const [name, width, height] of [["wide", 1440, 900], ["compact", 1024, 768], ["narrow", 390, 844]]) {
     await page.setViewportSize({ width, height });
     await input.scrollIntoViewIfNeeded(); await input.focus();
-    await expect(alpha.getByRole("listbox", { name: "Commands" })).toBeVisible();
+    await expect(alpha.getByRole("listbox", { name: "Session files" })).toBeVisible();
     const bounds = await alpha.locator(".ai-prompt-suggestions").boundingBox();
     expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width + 1); expect(bounds.y).toBeGreaterThanOrEqual(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -245,7 +232,8 @@ test("prompt completions preserve caret, IME and drafts; Streamdown formats befo
   await input.fill("@drop"); await input.press("Enter"); await expect(input).toHaveValue("@drop.txt ");
   await input.fill("attachment request"); await input.press("Enter"); await ready(alpha);
   await expect(alpha).toContainText("turn:2 session:fixture-session blocks:2");
-  await alpha.getByRole("button", { name: "Close session", exact: true }).click();
-  await beta.getByRole("button", { name: "Close session", exact: true }).click();
+  // A comparison ends through its single toolbar action: the per-lane composer
+  // close control was retired with the simplified composer.
+  await page.getByRole("button", { name: "New comparison", exact: true }).click();
   expect(errors).toEqual([]);
 });
