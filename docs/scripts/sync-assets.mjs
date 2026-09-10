@@ -35,6 +35,10 @@ export function syncAssets({ repoRoot, siteRoot }) {
       to: join(siteRoot, "static", "img", "better-harness-architecture-en.svg"),
     },
     {
+      from: join(repoRoot, "assets", "logo.svg"),
+      to: join(siteRoot, "static", "img", "logo.svg"),
+    },
+    {
       from: join(repoRoot, "assets", "install", "codex-add-marketplace.jpg"),
       to: join(siteRoot, "static", "img", "codex-add-marketplace.jpg"),
     },

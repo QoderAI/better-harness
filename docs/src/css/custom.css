@@ -138,3 +138,326 @@ html[data-theme="dark"] {
     width: 9.5rem;
   }
 }
+
+/* Blog pages use a compact technical-editorial rhythm rather than Infima's
+   presentation-scale defaults. Keep document copy readable while letting the
+   title, metadata, and supporting navigation establish a clear hierarchy. */
+.blog-wrapper {
+  --bh-blog-text: #1d1d20;
+  --bh-blog-muted: #54545c;
+  --bh-blog-rule: rgba(15, 23, 42, 0.13);
+  --bh-blog-surface: #f4f6f8;
+  --bh-blog-link: #235c85;
+  --ifm-font-family-base: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ifm-heading-font-family: var(--ifm-font-family-base);
+  --ifm-font-size-base: 15px;
+  --ifm-line-height-base: 1.7;
+  color: var(--bh-blog-text);
+}
+
+html[data-theme="dark"].blog-wrapper {
+  --bh-blog-text: #f2f2f5;
+  --bh-blog-muted: #bebec9;
+  --bh-blog-rule: rgba(233, 240, 255, 0.16);
+  --bh-blog-surface: #24242a;
+  --bh-blog-link: #87c3ff;
+}
+
+.blog-wrapper main > header {
+  max-width: 44rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--bh-blog-rule);
+}
+
+.blog-wrapper main > header > h1 {
+  margin-bottom: 0.5rem;
+  color: var(--bh-blog-text);
+  font-size: clamp(1.5rem, 1.8vw, 1.75rem);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.016em;
+}
+
+.blog-wrapper main > header > p {
+  max-width: 40rem;
+  margin-bottom: 0;
+  color: var(--bh-blog-muted);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.blog-wrapper article.margin-bottom--xl {
+  margin-bottom: 0;
+  padding-block: 1.75rem;
+}
+
+/* The page header already carries the rule and rhythm above the first post. */
+.blog-wrapper article.margin-bottom--xl:first-child {
+  padding-top: 0;
+}
+
+.blog-wrapper article.margin-bottom--xl:last-child {
+  padding-bottom: 0;
+}
+
+.blog-wrapper article.margin-bottom--xl + article.margin-bottom--xl {
+  border-top: 1px solid var(--bh-blog-rule);
+}
+
+.blog-wrapper article > header > h1,
+.blog-wrapper article > header > h2 {
+  max-width: 44rem;
+  margin-bottom: 0.625rem;
+  color: var(--bh-blog-text);
+  font-size: clamp(1.375rem, 2.1vw, 1.75rem);
+  font-weight: 600;
+  line-height: 1.24;
+  letter-spacing: -0.018em;
+}
+
+.blog-wrapper article > header > h1 > a,
+.blog-wrapper article > header > h2 > a,
+.blog-wrapper article .markdown a,
+.blog-wrapper article footer a {
+  color: var(--bh-blog-link);
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
+
+.blog-wrapper article > header > h1 > a:hover,
+.blog-wrapper article > header > h2 > a:hover,
+.blog-wrapper article .markdown a:hover,
+.blog-wrapper article footer a:hover {
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 2px;
+}
+
+.blog-wrapper article > header > div,
+.blog-wrapper article time,
+.blog-wrapper article .avatar,
+.blog-wrapper article .avatar__intro {
+  color: var(--bh-blog-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+/* Infima reserves a fixed-height slot for author socials so names stay aligned
+   across a list. A single-author byline only gains an empty gap from it. */
+.blog-wrapper article .avatar__intro > div:empty {
+  display: none;
+}
+
+/* The synced repository logo (static/img/logo.svg) sits on a bordered disc, so
+   a byline reads as a named author instead of bare text. */
+.blog-wrapper article .avatar__photo-link {
+  display: inline-flex;
+  flex: none;
+  border-radius: 50%;
+}
+
+.blog-wrapper article .avatar__photo {
+  --ifm-avatar-photo-size: 2.25rem;
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid var(--bh-blog-rule);
+  border-radius: 50%;
+  background: var(--bh-blog-surface);
+  object-fit: contain;
+}
+
+.blog-wrapper article .avatar__name,
+.blog-wrapper article .avatar__name a,
+.blog-wrapper article .avatar__name a span {
+  color: var(--bh-blog-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* Docusaurus scales the author title with the heading it is attached to; keep
+   the byline caption at the documented metadata size in both contexts. */
+.blog-wrapper article .avatar__intro small {
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.blog-wrapper article .markdown {
+  max-width: 44rem;
+  color: var(--bh-blog-text);
+  font-size: 1rem;
+  line-height: 1.72;
+}
+
+.blog-wrapper article .markdown > p {
+  margin-bottom: 1rem;
+}
+
+.blog-wrapper article .markdown > h2,
+.blog-wrapper article .markdown > h3,
+.blog-wrapper article .markdown > h4 {
+  color: var(--bh-blog-text);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+.blog-wrapper article .markdown > h2 {
+  margin-top: 2.25rem;
+  font-size: clamp(1.25rem, 1.8vw, 1.5rem);
+  line-height: 1.32;
+}
+
+.blog-wrapper article .markdown > h3 {
+  margin-top: 1.75rem;
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+
+.blog-wrapper article .markdown blockquote {
+  margin-inline: 0;
+  padding: 0.125rem 0 0.125rem 1rem;
+  border-left: 2px solid var(--ifm-color-primary);
+  color: var(--bh-blog-muted);
+}
+
+.blog-wrapper article .markdown :not(pre) > code {
+  border: 1px solid var(--bh-blog-rule);
+  border-radius: 4px;
+  background: var(--bh-blog-surface);
+  color: inherit;
+  font-size: 0.875em;
+}
+
+.blog-wrapper article footer {
+  max-width: 44rem;
+  margin-top: 1.5rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--bh-blog-rule);
+  color: var(--bh-blog-muted);
+  font-size: 0.8125rem;
+}
+
+.blog-wrapper article footer ul {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+  vertical-align: middle;
+}
+
+.blog-wrapper article footer ul li {
+  margin: 0;
+}
+
+.blog-wrapper article footer ul a {
+  display: inline-flex;
+  min-height: 1.75rem;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--bh-blog-rule);
+  border-radius: 4px;
+  background: var(--bh-blog-surface);
+  color: var(--bh-blog-link);
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.blog-wrapper article footer ul a:hover {
+  border-color: var(--bh-blog-link);
+  background: color-mix(in srgb, var(--bh-blog-link) 8%, var(--bh-blog-surface));
+}
+
+.blog-wrapper article footer .text--right > a {
+  font-weight: 600;
+}
+
+.blog-wrapper main aside {
+  padding-inline-end: 1.5rem;
+  border-inline-end: 1px solid var(--bh-blog-rule);
+}
+
+.blog-wrapper main aside h2,
+.blog-wrapper main aside h3 {
+  margin-bottom: 1rem;
+  color: var(--bh-blog-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.blog-wrapper main aside ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.blog-wrapper main aside li + li {
+  margin-top: 0.75rem;
+}
+
+.blog-wrapper main aside a {
+  color: var(--bh-blog-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  text-decoration: none;
+}
+
+.blog-wrapper main aside a:hover {
+  color: var(--bh-blog-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
+
+.blog-wrapper a:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 3px;
+}
+
+@media (min-width: 1081px) {
+  /* The list column absorbs the unused width next to the sidebar, but stops at a
+     bounded measure so wide viewports do not stretch the text. */
+  .blog-list-page .container.margin-vert--lg > .row > .col--7 {
+    flex: 1 1 auto;
+    max-width: 46rem;
+  }
+}
+
+@media (max-width: 1080px) {
+  .blog-wrapper main aside {
+    margin-bottom: 1.5rem;
+    padding: 0 0 1.25rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--bh-blog-rule);
+  }
+}
+
+@media (max-width: 759px) {
+  .blog-wrapper {
+    --ifm-font-size-base: 16px;
+  }
+
+  .blog-wrapper main > header {
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.875rem;
+  }
+
+  .blog-wrapper article.margin-bottom--xl {
+    padding-block: 1.25rem;
+  }
+
+  .blog-wrapper article > header > h1,
+  .blog-wrapper article > header > h2 {
+    font-size: 1.375rem;
+  }
+
+  .blog-wrapper article footer .text--right {
+    margin-top: 0.75rem;
+    text-align: left;
+  }
+}
