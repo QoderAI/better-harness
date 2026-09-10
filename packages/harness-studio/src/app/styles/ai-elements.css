@@ -84,11 +84,7 @@
 .ai-prompt-input :is(button, select):focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .ai-prompt-button[data-tooltip]:is(:hover, :focus-visible)::after { content: attr(data-tooltip); position: absolute; z-index: 12; bottom: calc(100% + var(--space-sm)); left: 0; width: max-content; max-width: 15rem; padding: var(--space-xs) var(--space-sm); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); box-shadow: var(--shadow-popover); color: var(--color-text); font-size: var(--type-meta-size); pointer-events: none; }
 .ai-prompt-usage { font-size: var(--type-meta-size); color: var(--color-text-subtle); padding-inline: var(--space-xs); }
-.acp-composer-caption { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-xs) var(--space-sm); padding: 0 var(--space-md) var(--space-sm); color: var(--color-text-subtle); font-size: var(--type-meta-size); }
-.acp-composer-caption button { min-height: var(--toolbar-target); padding: 0 var(--space-xs); border: 0; background: transparent; color: var(--color-text-muted); font-size: var(--type-meta-size); }
-.acp-composer-caption button:hover { background: var(--color-surface-hover); }
-.acp-composer-caption .acp-turn-status { margin: 0; }
-.ai-prompt-key-hint { margin-inline-start: auto; }
+
 .ai-prompt-tools .acp-config-toolbar { display: contents; }
 .ai-prompt-tools .acp-setting-compact select { max-width: 14ch; color: var(--color-text-muted); padding-inline: var(--space-xs); font-size: var(--type-meta-size); }
 .ai-prompt-tools .acp-session-settings { position: static; padding: 0; border: 0; }
@@ -121,9 +117,9 @@
 .ai-message-response [data-streamdown=table-wrapper] { max-width: 100%; overflow-x: auto; }
 .ai-message-response :is(th, td) { padding: var(--space-xs) var(--space-sm); }
 @media (prefers-reduced-motion: reduce) { .ai-prompt-spinner { animation: none; } }
-@media (max-width: 1080px) { .ai-prompt-key-hint { display: none; } }
+
 @media (max-width: 760px) {
-  .ai-prompt-input .ai-prompt-button, .ai-prompt-input .ai-prompt-submit, .ai-prompt-tools select, .acp-composer-caption button { min-width: var(--touch-target); min-height: var(--touch-target); }
+  .ai-prompt-input .ai-prompt-button, .ai-prompt-input .ai-prompt-submit, .ai-prompt-tools select { min-width: var(--touch-target); min-height: var(--touch-target); }
   .ai-prompt-input .ai-prompt-submit { width: var(--touch-target); height: var(--touch-target); }
   .ai-prompt-suggestions-heading > span { display: none; }
   .ai-prompt-tools .acp-setting-compact select { max-width: 14ch; }

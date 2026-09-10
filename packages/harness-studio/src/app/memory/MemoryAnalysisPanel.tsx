@@ -82,7 +82,7 @@ export function MemoryAnalysisPanel({ snapshot, entry, agents, maxBytes, onClose
       {(!state.runId || state.acp.prepared) && <Suggestions className="memory-analysis-suggestions" aria-label={t('memory.analysisSuggestions')}>
         {(['review', 'conflicts'] as const).map(kind => <Suggestion key={kind} suggestion={t(`memory.suggestions.${kind}.prompt`)} disabled={sending} onClick={value => { setDraft(value); input.current?.focus(); }}>{t(`memory.suggestions.${kind}.label`)}</Suggestion>)}
       </Suggestions>}
-      {active && state.conversation && !state.acp.prepared && actions ? <AcpComposer key={state.runId} compact sessionLabel={agents.find(agent => agent.id === agentId)?.label} onCloseSession={stop} context={context} state={state} actions={actions} agentId={agentId} toolbar={<AcpSessionSettings session={state.acp} runId={state.runId} active={active} actions={actions} agentId={agentId} />} /> : <div className="acp-composer">
+      {active && state.conversation && !state.acp.prepared && actions ? <AcpComposer key={state.runId} compact sessionLabel={agents.find(agent => agent.id === agentId)?.label} context={context} state={state} actions={actions} agentId={agentId} toolbar={<AcpSessionSettings session={state.acp} runId={state.runId} active={active} actions={actions} agentId={agentId} />} /> : <div className="acp-composer">
         <PromptInput onSubmit={event => { event.preventDefault(); void sendInitial(); }}>
           {context && <PromptInputHeader>{context}</PromptInputHeader>}
           <PromptInputTextarea ref={input} rows={3} aria-label={t('memory.analysisInput')} placeholder={t('memory.analysisPlaceholder')} value={draft} maxLength={8192} onValueChange={setDraft} />

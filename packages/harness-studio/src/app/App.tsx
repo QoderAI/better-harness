@@ -672,7 +672,7 @@ export function App(): React.JSX.Element {
       </div>
       {area === "debugger" ? <footer className="studio-status-bar"><strong>{activeProject?.label}</strong><div id="studio-debugger-status" /></footer> : <StatusBar
         scope={area === "memory" || area === "memory-sources" ? t('area.memory') : activeProject?.label ?? (sources.length > 0 ? t("contextBar.configuredSources") : t("statusBar.noProject"))}
-        status={area === "memory-sources" || area === "memory" ? t("memory.readonly") : dateRange.preset !== "all" && (area === "sessions" || area === "artifacts") ? "" : current.status}
+        status={area === "memory-sources" || area === "memory" ? t("memory.readonly") : dateRange.preset !== "all" && (area === "sessions" || area === "artifacts" || area === "compare") ? "" : current.status}
         config={config}
         dateRange={dateRange}
       />}

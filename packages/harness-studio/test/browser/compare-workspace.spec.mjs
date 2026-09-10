@@ -40,7 +40,6 @@ test('compact activity preserves streaming expansion, visible failures, permissi
   await expect(alpha.locator('.acp-thought')).toContainText('Inspect the source');
   await expect(alpha.locator('.tool-card')).toHaveCount(5);
   await alpha.getByRole('button', { name: 'Finish activity', exact: true }).click();
-  await expect(alpha.locator('.acp-turn-status')).toHaveText('Ready');
   await expect(activity).toHaveAttribute('aria-expanded', 'true');
   await expect(alpha.locator('.tool-card')).toHaveCount(6);
   await expect(activity).not.toContainText('running'); await expect(activity).toContainText('1 failed');
@@ -59,14 +58,6 @@ test('compact activity preserves streaming expansion, visible failures, permissi
     const bounds = await activity.boundingBox(); expect(bounds.x + bounds.width).toBeLessThanOrEqual(layout.width);
     await page.screenshot({ animations: 'disabled', path: info.outputPath(`compact-activity-${theme}-${layout.width}.png`) });
   }
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.locator('.compare-files > summary').click();
-  const row = page.locator('.compare-files tbody tr').filter({ hasText: 'src/shared.ts' });
-  await row.getByRole('button', { name: /Alpha ACP/ }).click();
-  await expect(activity).toHaveAttribute('aria-expanded', 'true');
-  const tool = alpha.locator('.ai-tool-header').filter({ hasText: 'Read conversation evidence' });
-  await expect(tool).toBeFocused(); await expect(tool).toHaveAttribute('aria-expanded', 'true');
-  await page.screenshot({ animations: 'disabled', path: info.outputPath('compact-activity-expanded.png') });
   expect(errors).toEqual([]);
 });
 
@@ -97,8 +88,6 @@ test('bottom composer, resizable conversations and linked file outcomes work acr
   for (const name of ['Alpha ACP', 'Beta ACP']) await page.getByRole('menuitemcheckbox', { name: new RegExp(name) }).click();
   await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Run 2 Agents' }).click();
   const lanes = page.locator('.live-compare-lane'), alpha = lanes.nth(0), beta = lanes.nth(1);
-  await expect(alpha.locator('.acp-turn-status')).toHaveText('Ready');
-  await expect(beta.locator('.acp-turn-status')).toHaveText('Ready');
   const pathSummary = alpha.locator('.acp-activity-path').filter({ hasText: 'src/shared.ts' });
   await expect(pathSummary).toBeVisible(); expect((await pathSummary.boundingBox()).width).toBeGreaterThan(20);
   await beta.locator('textarea').fill('Private beta draft');
@@ -116,35 +105,10 @@ test('bottom composer, resizable conversations and linked file outcomes work acr
   expect(Math.abs((await alpha.boundingBox()).width - resized)).toBeLessThan(2);
   await expect(beta.locator('textarea')).toHaveValue('Private beta draft');
   await sash.dblclick(); expect(Math.abs((await alpha.boundingBox()).width - (await beta.boundingBox()).width)).toBeLessThan(2);
-  await page.locator('.compare-files > summary').click();
-  const row = page.locator('.compare-files tbody tr').filter({ hasText: 'src/shared.ts' });
-  await expect(row).toHaveCount(1); await expect(row).toContainText('Completed'); await expect(row).toContainText('Failed');
-  await expect(page.locator('.compare-files tbody tr').filter({ hasText: 'src/beta-only.ts' })).toContainText('Not observed');
-  await row.getByRole('button', { name: /Beta ACP/ }).click();
-  const betaTool = beta.locator('.ai-tool-header').filter({ hasText: 'Read conversation evidence' });
-  await expect(betaTool).toBeFocused(); await expect(betaTool).toHaveAttribute('aria-expanded', 'true');
-  await expect.poll(async () => {
-    const header = await betaTool.boundingBox(), transcript = await beta.locator('.acp-session-scroll').boundingBox();
-    return header.y >= transcript.y && header.y + header.height <= transcript.y + transcript.height;
-  }).toBe(true);
-  await expect(alpha.locator('.acp-activity-header')).toHaveAttribute('aria-expanded', 'false');
   await expect(beta.locator('textarea')).toHaveValue('Private beta draft');
-  for (const theme of ['light', 'dark']) for (const layout of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
-    await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' }); await page.setViewportSize(layout);
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    const bounds = await page.locator('.live-compare-lanes').boundingBox(); expect(bounds.height).toBeGreaterThan(200);
-    if (layout.width === 390) {
-      await expect(sash).toBeHidden();
-      const result = await row.getByRole('button', { name: /Beta ACP/ }).boundingBox();
-      expect(result.x + result.width).toBeLessThanOrEqual(390);
-    }
-    await page.screenshot({ animations: 'disabled', path: info.outputPath(`compare-files-${theme}-${layout.width}.png`) });
-  }
   await page.setViewportSize({ width: 1440, height: 900 });
   await alpha.locator('textarea').fill('wait for cancellation'); await alpha.locator('textarea').press('Enter');
-  await expect(alpha.locator('.acp-turn-status')).toHaveText('Generating');
   await alpha.getByRole('button', { name: 'Stop', exact: true }).click();
-  await expect(alpha.locator('.acp-turn-status')).toHaveText('Ready');
   expect(errors).toEqual([]);
 });
 
@@ -164,7 +128,6 @@ test('one Agent runs, streams and accepts a follow-up across layouts', async ({ 
   await page.getByRole('button', { name: 'Run 1 Agent', exact: true }).click();
   const lane = page.locator('.live-compare-lane');
   await expect(lane).toHaveCount(1);
-  await expect(lane.locator('.acp-turn-status')).toHaveText('Ready');
   for (const layout of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(layout);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -174,7 +137,6 @@ test('one Agent runs, streams and accepts a follow-up across layouts', async ({ 
   }
   await lane.locator('textarea').fill('Continue inspecting');
   await lane.locator('textarea').press('Enter');
-  await expect(lane.locator('.acp-turn-status')).toHaveText('Ready');
   await expect(lane).toContainText('Continue inspecting');
   expect(errors).toEqual([]);
 });

@@ -1,4 +1,3 @@
-import { CompareFiles } from "./run/CompareFiles.js";
 import { ResizableComparePanes } from "./run/ResizableComparePanes.js";
 import { PromptInput, PromptInputFooter, PromptInputTextarea, PromptInputTools } from "./components/ai-elements/prompt-input.js";
 import { AcpSessionSettings } from "./run/AcpSessionSettings.js";
@@ -87,7 +86,6 @@ export function CompareLiveView(props: {
   const launchBusy = useRef(false);
   const [preparationRevision, setPreparationRevision] = useState(0);
   const [queuedLaunch, setQueuedLaunch] = useState<string>();
-  const [reveal, setReveal] = useState<{ laneKey: string; id: string; token: number }>();
   const [closeError, setCloseError] = useState<string>();
   const [historyWidth, setHistoryWidth] = useSessionOwnedState(`${owner}:history-width`, HISTORY_WIDTH_DEFAULT);
   const [historyOpen, setHistoryOpen] = useSessionOwnedState(`${owner}:history-open`, false);
@@ -301,14 +299,12 @@ export function CompareLiveView(props: {
             ? <AcpSessionStream compact showComposer={false} state={historyView.state} prompt={historyView.prompt} />
             : <div className="live-compare-empty" aria-hidden="true" />
           : <>
-            <CompareFiles owner={owner} lanes={comparison.lanes.map((lane) => ({ ...lane, label: labelFor(lane.agentId) }))}
-              onReveal={(laneKey, id) => setReveal((previous) => ({ laneKey, id, token: (previous?.token ?? 0) + 1 }))} />
             <ResizableComparePanes owner={owner} panes={comparison.lanes.map((lane, index) => ({
               key: lane.key, label: labelFor(lane.agentId), content: <LiveLane
                 labeled={comparison.lanes.length > 1}
                 side={t("live.laneAgent", { index: index + 1 })}
                 label={labelFor(lane.agentId)} run={lane} prompt={comparison.prompt}
-                revealTool={reveal?.laneKey === lane.key ? reveal : undefined}
+                revealTool={undefined}
                 onCancel={() => cancel(lane.key)}
                 onDecide={(requestId, optionId) => decide(lane.key, requestId, optionId)} />,
             }))} />

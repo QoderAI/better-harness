@@ -13,7 +13,7 @@ import { X } from "@phosphor-icons/react/X";
 import { PromptInput, PromptInputButton, PromptInputFooter, PromptInputHeader, PromptInputSubmit, PromptInputTextarea, PromptInputTools } from "../components/ai-elements/prompt-input.js";
 import type { PromptSuggestion } from "../components/ai-elements/prompt-input-model.js";
 
-export function AcpComposer({ state, actions, context, toolbar, compact = false, sessionLabel, onCloseSession, agentId }: { state: HarnessRunState; actions: AcpSessionActions; context?: ReactNode; toolbar?: ReactNode; compact?: boolean; sessionLabel?: string; onCloseSession?: () => Promise<void>; agentId?: string }): React.JSX.Element {
+export function AcpComposer({ state, actions, context, toolbar, compact = false, sessionLabel, agentId }: { state: HarnessRunState; actions: AcpSessionActions; context?: ReactNode; toolbar?: ReactNode; compact?: boolean; sessionLabel?: string; agentId?: string }): React.JSX.Element {
   const { t } = useTranslation("run");
   const key = `acp-draft:${state.runId}`;
   const [draft, setDraft] = useState(() => { try { return localStorage.getItem(key) ?? ""; } catch { return ""; } });
@@ -115,12 +115,6 @@ export function AcpComposer({ state, actions, context, toolbar, compact = false,
           <PromptInputSubmit label={submitLabel} state={editing ? "save" : generating ? "queue" : "send"} pending={pending || loading} disabled={pending || loading || closed || (!draft.trim() && !attachments.length)} />
         </div>
       </PromptInputFooter>
-      <div className="acp-composer-caption"><span className="acp-turn-status" role="status">{t(`conversation.status.${conversation.status}`)}</span>
-        {sessionLabel && <span className="acp-composer-agent-label">{sessionLabel}</span>}
-        <span className="ai-prompt-key-hint" hidden={compact}>{t("conversation.inputKeys")}</span>
-        {generating && (!!draft.trim() || attachments.length > 0) && <button type="button" disabled={pending || loading} onClick={() => void send(true)}>{t("conversation.sendNow")}</button>}
-        {!closed && (onCloseSession || (!compact && (!generating || error !== undefined || conversation.status === "cancelling"))) && <button type="button" disabled={pending} onClick={() => void act(onCloseSession ?? (() => actions.execute({ action: "close" })))}>{t("conversation.close")}</button>}
-      </div>
     </PromptInput>
     {conversation.turns.at(-1)?.error && <p className="acp-setting-error" role="alert">{conversation.turns.at(-1)?.error}</p>}
     {conversation.turns.at(-1)?.stopReason && !["end_turn", "error"].includes(conversation.turns.at(-1)!.stopReason!) && <p className="acp-session-notice">{t("conversation.turnStopped", { reason: conversation.turns.at(-1)!.stopReason })}</p>}
