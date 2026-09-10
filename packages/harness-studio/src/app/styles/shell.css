@@ -9,15 +9,16 @@
   color: var(--color-text-muted);
 }
 
+/* The same tile the empty workspace draws: the brand mark carries its own
+   gradient, so a filled primary tile would swallow the green end of it. */
 .studio-loading-mark {
   width: var(--pane-header-height);
   height: var(--pane-header-height);
   display: grid;
   place-items: center;
-  border: 1px solid var(--color-primary);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-xs);
-  color: var(--color-on-primary);
-  background: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .studio-loading p { margin: 0; }
