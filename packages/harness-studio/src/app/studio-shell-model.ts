@@ -63,6 +63,10 @@ export interface StudioConfig {
   workspaceDiscoveryEnabled: boolean;
   workspaceConnected: boolean;
   workspaceScanRequired?: boolean;
+  /** The observation window the loaded workspace was discovered for. */
+  workspaceWindow?: { fromMs?: number; toMs?: number };
+  /** Sessions inside that window the bounded scan could not return. */
+  workspaceOmittedCount?: number;
   projectExecutionEnabled: boolean;
   activeProjectId?: string;
   projectRevision?: number;

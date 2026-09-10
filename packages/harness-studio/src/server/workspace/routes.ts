@@ -16,7 +16,7 @@ import { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, normalize, posix, resolve, win32 } from "node:path";
 import { IMPORT_SESSION_TTL_MS, MAX_IMPORT_BYTES, MAX_IMPORT_SESSIONS, respondJson, sameOriginRequest } from "../http-utils.js";
-import { HarnessStudioServerOptions, HarnessStudioState, StoredStudioProject, StoredWorkspaceSession, StudioWorkspace, StudioWorkspaceSession, WorkspaceImportSession } from "../studio-types.js";
+import { HarnessStudioServerOptions, HarnessStudioState, StoredStudioProject, StoredWorkspaceSession, StudioObservationWindow, StudioWorkspace, StudioWorkspaceSession, WorkspaceImportSession } from "../studio-types.js";
 import { saveStoredProjects } from "./project-store.js";
 
 export const MAX_WORKSPACE_FILES = 512;
@@ -99,7 +99,7 @@ export async function openWorkspace(
       respondJson(response, 429, { error: `Studio remembers at most ${MAX_STUDIO_PROJECTS} Projects. Remove one before opening another.` });
       return;
     }
-    const workspace = await discoverWorkspace(options, workspacePath);
+    const workspace = await discoverWorkspace(options, workspacePath, requestedWindow(new URL(request.url ?? "/", "http://localhost")));
     const projectId = existing?.[0] ?? `project_${randomUUID().replaceAll("-", "")}`;
     const project: StoredStudioProject = {
       descriptor: descriptorForWorkspace(projectId, "local", workspace),
@@ -128,9 +128,9 @@ export async function openWorkspace(
   }
 }
 
-async function discoverWorkspace(options: HarnessStudioServerOptions, workspacePath: string): Promise<StudioWorkspace> {
+async function discoverWorkspace(options: HarnessStudioServerOptions, workspacePath: string, window?: StudioObservationWindow): Promise<StudioWorkspace> {
   if (options.workspaceSessionProvider === undefined) throw new Error("Workspace discovery is unavailable.");
-  const discovered = await options.workspaceSessionProvider.discover(workspacePath);
+  const discovered = await options.workspaceSessionProvider.discover(workspacePath, window);
   const sessions = new Map<string, StoredWorkspaceSession>();
   for (const candidate of discovered.sessions.slice(0, MAX_WORKSPACE_SESSIONS)) {
     const normalized = normalizeDiscoveredWorkspaceSession(candidate);
@@ -152,10 +152,23 @@ async function discoverWorkspace(options: HarnessStudioServerOptions, workspaceP
   const customizationUsage = normalizeCustomizationUsage(discovered.customizationUsage);
   const gitRoot = await resolveGitRepositoryRoot(workspacePath);
   const artifactObservations = await collectWorkspaceArtifactObservations(workspacePath, [...sessions.values()]);
+  // What the reader cannot see has to be counted where it was actually left
+  // out: the bounded scan drops far more than de-duplication does, so reporting
+  // only the de-duplication difference told a reader nothing was withheld.
+  //
+  // Only the provider knows how many Sessions the requested window really held,
+  // so only its own coverage report can answer this. The answer is a floor:
+  // each platform is ranked under its own bound before the window counts what
+  // survived, which is why readers are told "at least" this many. Per-platform discovery
+  // counts are deliberately not used as a stand-in: they count everything a
+  // platform saw, which under a narrow window would name a shortfall that is
+  // not in the window at all.
+  const scanOmitted = boundedNonNegativeInteger(discovered.coverage?.omitted);
   return {
     label: portableProjectLabel(discovered.label),
     sessionCount: sessions.size,
-    omittedCount: Math.max(0, discovered.sessions.length - sessions.size),
+    omittedCount: scanOmitted + Math.max(0, discovered.sessions.length - sessions.size),
+    ...(window === undefined ? {} : { window }),
     sessions,
     providers,
     ...(inspectorReport === undefined ? {} : { inspectorReport, inputTrace }),
@@ -222,6 +235,27 @@ function sameNativePath(left: string, right: string): boolean {
     : normalizedLeft === normalizedRight;
 }
 
+/**
+ * The observation window a request is asking about.
+ *
+ * Bounds arrive as instants the browser resolved from its own calendar. Only a
+ * finite, ordered pair is honoured; anything else reads as no window at all
+ * rather than as a window that silently excludes everything.
+ */
+export function requestedWindow(url: URL): StudioObservationWindow | undefined {
+  const bound = (name: string): number | undefined => {
+    const raw = url.searchParams.get(name);
+    if (raw === null || !/^[0-9]{1,15}$/u.test(raw)) return undefined;
+    const value = Number(raw);
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  };
+  const fromMs = bound("fromMs");
+  const toMs = bound("toMs");
+  if (fromMs === undefined && toMs === undefined) return undefined;
+  if (fromMs !== undefined && toMs !== undefined && fromMs > toMs) return undefined;
+  return { ...(fromMs === undefined ? {} : { fromMs }), ...(toMs === undefined ? {} : { toMs }) };
+}
+
 export function serveProjectCatalog(response: ServerResponse, state: HarnessStudioState): void {
   respondJson(response, 200, {
     kind: STUDIO_PROJECT_CATALOG_KIND,
@@ -285,6 +319,7 @@ export async function activateProject(
   state: HarnessStudioState,
   projectId: string,
   scanAll = false,
+  window?: StudioObservationWindow,
 ): Promise<void> {
   if (!sameOriginRequest(request)) {
     respondJson(response, 403, { error: "Cross-origin Project changes are not allowed." });
@@ -307,7 +342,7 @@ export async function activateProject(
       const workspacePath = await realpath(project.localDirectory!);
       if (!sameNativePath(workspacePath, project.localDirectory!)) throw new Error("The Project directory identity changed.");
       if (!(await stat(workspacePath)).isDirectory()) throw new Error("The Project directory is unavailable.");
-      workspace = await discoverWorkspace(options, workspacePath);
+      workspace = await discoverWorkspace(options, workspacePath, window);
       if (scanAll && options.customizationCollector !== undefined) {
         customizationAnalysis = validateStudioCustomizationAnalysis(
           await options.customizationCollector.analyze(workspacePath), [workspacePath],

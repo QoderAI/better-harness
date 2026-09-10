@@ -4,25 +4,36 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::model::{
-    tool_family, truncate_prompt, Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall,
+    tool_family, truncate_prompt, Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall, Window,
 };
-use crate::paths::{claude_slug_variants, cwd_matches, home_dir, paths_from_value};
+use crate::paths::{claude_slug_variants, cwd_matches, home_dir, modified_ms, paths_from_value};
 use crate::time::normalize_timestamp;
 
 pub fn claude_home() -> PathBuf {
     home_dir().join(".claude")
 }
 
-pub fn discover(workspace: &Path, max_sessions: usize) -> Result<Vec<SessionSummary>, String> {
-    discover_from(&claude_home(), workspace, max_sessions)
+pub fn discover(
+    workspace: &Path,
+    max_sessions: usize,
+    window: Window,
+) -> Result<Vec<SessionSummary>, String> {
+    discover_from(&claude_home(), workspace, max_sessions, window)
 }
 
+/// Rank transcripts before reading any of them.
+///
+/// A transcript holds the whole conversation, so reading one is expensive and
+/// reading every one to then discard most of them is the expensive part of
+/// opening a Project. Modification time orders them without opening them, so
+/// only the transcripts that can answer this window are read.
 pub fn discover_from(
     home: &Path,
     workspace: &Path,
     max_sessions: usize,
+    window: Window,
 ) -> Result<Vec<SessionSummary>, String> {
-    let mut sessions = Vec::new();
+    let mut candidates: Vec<(Option<i64>, PathBuf)> = Vec::new();
     for slug in claude_slug_variants(workspace) {
         let root = home.join("projects").join(slug);
         if !root.is_dir() {
@@ -36,13 +47,20 @@ pub fn discover_from(
             if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
                 continue;
             }
-            if let Some(session) = read_session(workspace, &path) {
-                sessions.push(session);
+            let modified = modified_ms(&path);
+            if !window.may_hold(modified) {
+                continue;
             }
+            candidates.push((modified, path));
         }
     }
+    candidates.sort_by(|left, right| right.0.cmp(&left.0));
+    candidates.truncate(max_sessions);
+    let mut sessions: Vec<SessionSummary> = candidates
+        .into_iter()
+        .filter_map(|(_, path)| read_session(workspace, &path))
+        .collect();
     sessions.sort_by(|left, right| right.last_seen.cmp(&left.last_seen));
-    sessions.truncate(max_sessions);
     Ok(sessions)
 }
 

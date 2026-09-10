@@ -3,9 +3,12 @@ import {
   STUDIO_DEFAULT_DATE_RANGE,
   activityTimestamp,
   artifactsInDateRange,
+  dateRangeBounds,
   dateRangeInverted,
   localDayKey,
   resolveDateRange,
+  windowCovers,
+  windowMatches,
   withinDateRange,
 } from "../src/app/date-range.js";
 
@@ -21,9 +24,40 @@ const ON_NOW_DAY = new Date(2026, 8, 8, 3, 22, 0).toISOString();
 const MONTHS_EARLIER = new Date(2026, 6, 1, 0, 0, 0).toISOString();
 
 describe("studio date range", () => {
-  it("opens on everything, so a fresh launch never hides retained history", () => {
-    expect(STUDIO_DEFAULT_DATE_RANGE.preset).toBe("all");
-    expect(withinDateRange("2019-01-01T00:00:00.000Z", STUDIO_DEFAULT_DATE_RANGE)).toBe(true);
+  // Discovery is bounded, so "everything" could only ever be answered with the
+  // newest page of everything. A stated window is the honest form: it says what
+  // it covers and reaches every Session inside it.
+  it("opens on a window it can answer completely, and says which one", () => {
+    expect(STUDIO_DEFAULT_DATE_RANGE.preset).toBe("last30");
+    expect(withinDateRange(ON_NOW_DAY, STUDIO_DEFAULT_DATE_RANGE, NOW)).toBe(true);
+    expect(withinDateRange("2019-01-01T00:00:00.000Z", STUDIO_DEFAULT_DATE_RANGE, NOW)).toBe(false);
+    expect(withinDateRange("2019-01-01T00:00:00.000Z", { preset: "all" })).toBe(true);
+  });
+
+  it("resolves local days into instants a server can compare without a timezone", () => {
+    const bounds = dateRangeBounds({ preset: "last30" }, NOW);
+    expect(new Date(bounds.fromMs!)).toEqual(new Date(2026, 7, 10, 0, 0, 0, 0));
+    expect(new Date(bounds.toMs!)).toEqual(new Date(2026, 8, 8, 23, 59, 59, 999));
+    expect(dateRangeBounds({ preset: "all" })).toEqual({});
+  });
+
+  // Narrowing is a filter over rows already in hand; widening asks about
+  // Sessions that were never scanned and has to reach the server again.
+  // A shortfall counted for one window says nothing about a narrower one.
+  it("only recognizes the window a scan actually answered", () => {
+    const loaded = dateRangeBounds({ preset: "last7" }, NOW);
+    expect(windowMatches(loaded, dateRangeBounds({ preset: "last7" }, NOW))).toBe(true);
+    expect(windowMatches(loaded, dateRangeBounds({ preset: "today" }, NOW))).toBe(false);
+    expect(windowMatches(undefined, dateRangeBounds({ preset: "all" }))).toBe(true);
+    expect(windowMatches(undefined, dateRangeBounds({ preset: "last7" }, NOW))).toBe(false);
+  });
+
+  it("knows when a window can be answered from what is already loaded", () => {
+    const loaded = dateRangeBounds({ preset: "last30" }, NOW);
+    expect(windowCovers(loaded, dateRangeBounds({ preset: "today" }, NOW))).toBe(true);
+    expect(windowCovers(loaded, dateRangeBounds({ preset: "last7" }, NOW))).toBe(true);
+    expect(windowCovers(loaded, dateRangeBounds({ preset: "all" }))).toBe(false);
+    expect(windowCovers(undefined, dateRangeBounds({ preset: "all" }))).toBe(true);
   });
 
   it("resolves each preset to inclusive local days", () => {

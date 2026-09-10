@@ -1,5 +1,42 @@
 use serde::{Deserialize, Serialize};
 
+/// The observation window a reader is asking about, as absolute instants.
+///
+/// The window is chosen in local calendar days, but only the browser knows the
+/// reader's clock, so it resolves the days and sends instants. Nothing here
+/// guesses a timezone.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Window {
+    pub from_ms: Option<i64>,
+    pub to_ms: Option<i64>,
+}
+
+impl Window {
+    pub fn is_open(&self) -> bool {
+        self.from_ms.is_none() && self.to_ms.is_none()
+    }
+    /// Does a stated activity instant fall inside the window? An unrecorded
+    /// instant is kept: a window must narrow a catalog, never silently drop a
+    /// Session whose time could not be read.
+    pub fn contains(&self, at_ms: Option<i64>) -> bool {
+        let Some(at) = at_ms else { return true };
+        self.from_ms.is_none_or(|from| at >= from) && self.to_ms.is_none_or(|to| at <= to)
+    }
+    /// Can a file last written at `modified_ms` still hold in-window activity?
+    ///
+    /// A Session is never newer than the file that records it, so a file
+    /// written before the window opened cannot contain one. The upper bound is
+    /// deliberately not applied: an unrelated later write must not hide a
+    /// Session that really did end inside the window. One day of slack absorbs
+    /// clock skew between the recorded instants and the filesystem.
+    pub fn may_hold(&self, modified_ms: Option<i64>) -> bool {
+        let (Some(from), Some(modified)) = (self.from_ms, modified_ms) else {
+            return true;
+        };
+        modified >= from - 86_400_000
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderStatus {
     pub platform: String,

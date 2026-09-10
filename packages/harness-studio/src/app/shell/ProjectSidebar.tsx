@@ -83,6 +83,8 @@ export function ProjectSidebar(props: {
   onCloseNavigation: () => void;
   /** The Studio-wide observation window every "observe" View reads. */
   dateRange: StudioDateRange;
+  /** Sessions inside the window the bounded scan could not return. */
+  omittedCount?: number;
   onDateRangeChange: (range: StudioDateRange) => void;
   /** Rendered as the sidebar's last row: appearance and language live here. */
   settings: ReactNode;
@@ -364,7 +366,7 @@ export function ProjectSidebar(props: {
     {/* The Project says where to look; this says when. Both scope every View
         below, which is why neither is one of the rows. Scanning is an action on
         that scope rather than part of it, so it lives in the toolbar. */}
-    <DateRangeFilter range={props.dateRange} onChange={props.onDateRangeChange} />
+    <DateRangeFilter range={props.dateRange} omittedCount={props.omittedCount} onChange={props.onDateRangeChange} />
 
     <nav aria-label={t("sidebar.navAria")} onKeyDown={onNavigationKeyDown}>
       <section

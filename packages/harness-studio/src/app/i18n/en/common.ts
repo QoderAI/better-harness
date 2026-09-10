@@ -170,6 +170,7 @@ export const common = {
     to: "To",
     inverted: "The start is after the end.",
     summaryAll: "Every retained day",
+    omitted: "At least {{count}} more in this window than the bounded scan returned. Narrow it to reach them.",
     summaryDay: "{{day}}",
     summarySpan: "{{from}} → {{to}}",
     summaryFrom: "From {{from}}",

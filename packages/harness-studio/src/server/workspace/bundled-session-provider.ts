@@ -1,8 +1,8 @@
-import type { StudioWorkspaceDiscovery, StudioWorkspaceSessionProvider } from "../studio-types.js";
+import type { StudioObservationWindow, StudioWorkspaceDiscovery, StudioWorkspaceSessionProvider } from "../studio-types.js";
 
 interface BundledWorkspaceRuntime {
   createInspectorWorkspaceSessionProvider(): {
-    discover(workspacePath: string): Promise<StudioWorkspaceDiscovery>;
+    discover(workspacePath: string, window?: StudioObservationWindow): Promise<StudioWorkspaceDiscovery>;
   };
 }
 
@@ -13,10 +13,10 @@ interface BundledWorkspaceRuntime {
 export function createBundledInspectorWorkspaceSessionProvider(): StudioWorkspaceSessionProvider {
   let runtime: Promise<BundledWorkspaceRuntime> | undefined;
   return {
-    async discover(workspacePath) {
+    async discover(workspacePath, window) {
       runtime ??= import(new URL("../runtime/inspector-workspace-runtime.mjs", import.meta.url).href) as Promise<BundledWorkspaceRuntime>;
       const provider = (await runtime).createInspectorWorkspaceSessionProvider();
-      return await provider.discover(workspacePath);
+      return await provider.discover(workspacePath, window);
     },
   };
 }

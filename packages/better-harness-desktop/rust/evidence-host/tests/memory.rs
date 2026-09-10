@@ -3,19 +3,25 @@ use serde_json::json;
 use std::{
     fs,
     path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 struct Home(PathBuf);
 impl Home {
     fn new() -> Self {
+        // Tests run in parallel and a clock read is not a unique name: two
+        // threads that start inside one tick would share a home and then count
+        // each other's documents. A counter cannot collide.
+        static NEXT: AtomicU64 = AtomicU64::new(0);
         let p = std::env::temp_dir().join(format!(
-            "memory-{}-{}",
+            "memory-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&p).unwrap();
         Self(fs::canonicalize(p).unwrap())

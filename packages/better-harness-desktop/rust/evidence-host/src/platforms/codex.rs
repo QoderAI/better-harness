@@ -5,30 +5,41 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::model::{
-    evidence_excerpt, tool_family, Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall,
+    evidence_excerpt, tool_family, Dialogue, Prompt, SessionSummary, ToolActivity, ToolCall, Window,
 };
-use crate::paths::{cwd_matches, home_dir, paths_from_text, tool_paths, walk_jsonl};
+use crate::paths::{cwd_matches, home_dir, modified_ms, paths_from_text, tool_paths, walk_jsonl};
 use crate::time::normalize_timestamp;
 
 pub fn codex_home() -> PathBuf {
     home_dir().join(".codex")
 }
 
-pub fn discover(workspace: &Path, max_sessions: usize) -> Result<Vec<SessionSummary>, String> {
-    discover_from(&codex_home(), workspace, max_sessions)
+pub fn discover(
+    workspace: &Path,
+    max_sessions: usize,
+    window: Window,
+) -> Result<Vec<SessionSummary>, String> {
+    discover_from(&codex_home(), workspace, max_sessions, window)
 }
 
 pub fn discover_from(
     home: &Path,
     workspace: &Path,
     max_sessions: usize,
+    window: Window,
 ) -> Result<Vec<SessionSummary>, String> {
     let root = home.join("sessions");
     if !root.is_dir() {
         return Ok(vec![]);
     }
     let mut candidates = Vec::new();
+    // Rollouts for every Project share one directory, so most of this walk
+    // belongs to other workspaces or to older windows. Modification time rules
+    // those out before a rollout is opened at all.
     for path in walk_jsonl(&root, 4, 20_000) {
+        if !window.may_hold(modified_ms(&path)) {
+            continue;
+        }
         if let Some(candidate) = probe(workspace, &path) {
             candidates.push(candidate);
         }

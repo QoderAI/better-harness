@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createLineFramer } from "@qoder-ai/harness/exec";
-import type { StudioWorkspaceDiscovery, StudioWorkspaceSessionProvider } from "../studio-types.js";
+import type { StudioObservationWindow, StudioWorkspaceDiscovery, StudioWorkspaceSessionProvider } from "../studio-types.js";
 
 export const EVIDENCE_HOST_PROTOCOL_VERSION = "evidence-rust-1.0.0+jsonl-v1";
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;
@@ -25,6 +25,8 @@ export interface RustEvidenceHost {
     maxSessions?: number;
     includeToolTrace?: boolean;
     includeDialogue?: boolean;
+    fromMs?: number;
+    toMs?: number;
   }): Promise<Record<string, unknown>>;
   observe(params: { workspace: string; sessions: unknown[] }): Promise<Record<string, unknown>>;
   discoverMemory(params: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -229,7 +231,19 @@ export function createRustEvidenceHost(options: RustEvidenceHostOptions): RustEv
 interface BundledRuntime {
   createInspectorWorkspaceSessionProvider(options?: {
     collect?: (input: Record<string, unknown>) => Promise<{ sessions: unknown[]; providers: unknown[] }>;
-  }): { discover(workspacePath: string): Promise<StudioWorkspaceDiscovery> };
+  }): { discover(workspacePath: string, window?: StudioObservationWindow): Promise<StudioWorkspaceDiscovery> };
+}
+
+/** A bounded coverage report, or nothing when the host did not state one. */
+function scanCoverage(value: unknown): StudioWorkspaceDiscovery["coverage"] {
+  if (!record(value)) return undefined;
+  const bounded = (candidate: unknown): number | undefined =>
+    Number.isSafeInteger(candidate) && Number(candidate) >= 0 ? Number(candidate) : undefined;
+  const inWindow = bounded(value.inWindow);
+  const included = bounded(value.included);
+  const omitted = bounded(value.omitted);
+  if (inWindow === undefined || included === undefined || omitted === undefined) return undefined;
+  return { inWindow, included, omitted, windowed: value.windowed === true };
 }
 
 /**
@@ -241,12 +255,14 @@ export function createRustEvidenceWorkspaceSessionProvider(
 ): StudioWorkspaceSessionProvider {
   let runtime: Promise<BundledRuntime> | undefined;
   return {
-    async discover(workspacePath: string) {
+    async discover(workspacePath: string, window?: StudioObservationWindow) {
       const collected = await host.discover({
         workspace: workspacePath,
         maxSessions: 100,
         includeToolTrace: true,
         includeDialogue: true,
+        ...(window?.fromMs === undefined ? {} : { fromMs: window.fromMs }),
+        ...(window?.toMs === undefined ? {} : { toMs: window.toMs }),
       });
       runtime ??= import(new URL("../runtime/inspector-workspace-runtime.mjs", import.meta.url).href) as Promise<BundledRuntime>;
       const provider = (await runtime).createInspectorWorkspaceSessionProvider({
@@ -255,7 +271,12 @@ export function createRustEvidenceWorkspaceSessionProvider(
           providers: Array.isArray(collected.providers) ? collected.providers : [],
         }),
       });
-      return await provider.discover(workspacePath);
+      const discovery = await provider.discover(workspacePath, window);
+      // Only the native host knows what its bounded scan left out; the
+      // repository runtime only reshapes what it was handed. The host is
+      // untrusted input like any other, so the counts are bounded here.
+      const coverage = scanCoverage(collected.coverage);
+      return { ...discovery, ...(coverage === undefined ? {} : { coverage }) };
     },
   };
 }

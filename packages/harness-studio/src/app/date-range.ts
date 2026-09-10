@@ -30,13 +30,72 @@ export const STUDIO_DATE_RANGE_PRESETS: readonly StudioDateRangePreset[] = [
 ];
 
 /**
- * Studio opens on everything it retained.
+ * Studio opens on the last thirty days.
  *
- * A narrower default would hide a reader's own history behind a control they
- * had not touched yet, which is the opposite of what this window is for: it
- * narrows on request, it never silently withholds.
+ * The window used to default to everything, on the principle that Studio should
+ * never silently withhold a reader's own history. Scanning is bounded, though,
+ * so "everything" was answered with the newest page of it and the rest was
+ * withheld anyway — under a label that said otherwise. A stated window is the
+ * honest form of the same principle: it says what it covers, it reaches every
+ * Session inside it, and widening it is one click away.
  */
-export const STUDIO_DEFAULT_DATE_RANGE: StudioDateRange = { preset: "all" };
+export const STUDIO_DEFAULT_DATE_RANGE: StudioDateRange = { preset: "last30" };
+
+/**
+ * The window as absolute instants, for a reader that cannot see a calendar.
+ *
+ * Days are local, so only this side can resolve them: `from` opens at local
+ * midnight and `to` closes at the last instant of its own local day.
+ */
+export function dateRangeBounds(range: StudioDateRange, now?: Date): { fromMs?: number; toMs?: number } {
+  const window = resolveDateRange(range, now);
+  if (window.preset === "all") return {};
+  const dayStart = (key: string): number | undefined => {
+    const [year, month, day] = key.split("-").map(Number);
+    if (year === undefined || month === undefined || day === undefined) return undefined;
+    const at = new Date(year, month - 1, day);
+    return Number.isNaN(at.getTime()) ? undefined : at.getTime();
+  };
+  const fromMs = window.from === undefined ? undefined : dayStart(window.from);
+  const toStart = window.to === undefined ? undefined : dayStart(window.to);
+  return {
+    ...(fromMs === undefined ? {} : { fromMs }),
+    ...(toStart === undefined ? {} : { toMs: toStart + 86_400_000 - 1 }),
+  };
+}
+
+/**
+ * Is everything the requested window asks for already loaded?
+ *
+ * Narrowing is free — the reader is asking for a subset of rows already in
+ * hand. Widening is not: rows outside the loaded window were never scanned, so
+ * the answer has to be fetched rather than filtered.
+ */
+export function windowCovers(
+  loaded: { fromMs?: number; toMs?: number } | undefined,
+  requested: { fromMs?: number; toMs?: number },
+): boolean {
+  if (loaded === undefined) return true;
+  if (loaded.fromMs !== undefined && (requested.fromMs === undefined || requested.fromMs < loaded.fromMs)) return false;
+  if (loaded.toMs !== undefined && (requested.toMs === undefined || requested.toMs > loaded.toMs)) return false;
+  return true;
+}
+
+/**
+ * Is this exactly the window that was loaded?
+ *
+ * A shortfall counted for one window says nothing about a narrower one. After
+ * narrowing, the rows on screen are a filtered subset of what was already
+ * scanned, so the loaded window's count no longer describes what the reader
+ * selected and must not be shown against it.
+ */
+export function windowMatches(
+  loaded: { fromMs?: number; toMs?: number } | undefined,
+  requested: { fromMs?: number; toMs?: number },
+): boolean {
+  return (loaded?.fromMs ?? undefined) === (requested.fromMs ?? undefined)
+    && (loaded?.toMs ?? undefined) === (requested.toMs ?? undefined);
+}
 
 /** `YYYY-MM-DD` for a local calendar day, without a UTC round trip. */
 export function localDayKey(value: Date): string {

@@ -21,6 +21,15 @@ import { attributeSessionToolName } from "./tool-attribution.mjs";
 import { normalizeToolActivity } from "./tool-activity.mjs";
 
 export const DEFAULT_MAX_SESSIONS = 20;
+/**
+ * The most Sessions a caller may ask this collector to rank.
+ *
+ * The default stays small because most callers want a recent sample. A caller
+ * that narrows by an observation window needs more than it will show, though:
+ * it has to see how many Sessions the window really held before it can say how
+ * many it left out.
+ */
+export const MAX_SESSION_SCAN = 500;
 export const MAX_COMPACTION_EVENTS_PER_SESSION = 64;
 const MAX_PROMPTS_PER_SESSION = 8;
 const MAX_FILES_PER_SESSION = 400;
@@ -41,7 +50,7 @@ function timestampMillis(value) {
 export function boundedMaxSessions(value, fallback = DEFAULT_MAX_SESSIONS) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.min(100, Math.max(1, Math.trunc(parsed)));
+  return Math.min(MAX_SESSION_SCAN, Math.max(1, Math.trunc(parsed)));
 }
 
 function repoRelativePath(filePath, repoRoot) {

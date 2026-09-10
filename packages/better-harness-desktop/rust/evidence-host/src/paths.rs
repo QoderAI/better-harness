@@ -520,3 +520,10 @@ mod tests {
         assert_eq!(encode_dsh_session_id("a/b"), "a~002Fb");
     }
 }
+
+/// Filesystem modification time as epoch milliseconds, when it can be read.
+pub fn modified_ms(path: &Path) -> Option<i64> {
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    let since = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    i64::try_from(since.as_millis()).ok()
+}

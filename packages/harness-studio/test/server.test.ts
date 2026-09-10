@@ -276,6 +276,7 @@ describe("harness-studio server", () => {
       workspaceWorkbenchEnabled: false,
       workspaceDiscoveryEnabled: false,
       workspaceScanRequired: false,
+      workspaceOmittedCount: 0,
       workspaceConnected: false,
       projectRevision: 0,
       projectExecutionEnabled: false,

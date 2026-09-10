@@ -25,6 +25,15 @@ function safeDetail(value) {
 }
 
 const MAX_SESSIONS = 100;
+/**
+ * Candidates to rank before the window narrows them.
+ *
+ * The collector truncates to whatever it is asked for, so asking it for exactly
+ * what is shown would make the window a filter over an already-cut list — and
+ * would leave this provider unable to say how many Sessions the window really
+ * held.
+ */
+const MAX_CANDIDATES = MAX_SESSIONS * 5;
 const MAX_COMMITS = 50;
 
 /**
@@ -40,7 +49,7 @@ export function createInspectorWorkspaceSessionProvider({
   platforms = SUPPORTED_SESSION_PROVIDERS,
 } = {}) {
   return {
-    async discover(workspacePath) {
+    async discover(workspacePath, window) {
       let repoRoot = workspacePath;
       let commits = [];
       let gitHistoryAvailable = false;
@@ -64,12 +73,20 @@ export function createInspectorWorkspaceSessionProvider({
         workspace: workspacePath,
         repoRoot,
         platforms,
-        maxSessions: MAX_SESSIONS,
+        maxSessions: MAX_CANDIDATES,
+        ...(window?.fromMs === undefined ? {} : { fromMs: window.fromMs }),
+        ...(window?.toMs === undefined ? {} : { toMs: window.toMs }),
         includeToolTrace: true,
         includeDialogue: true,
         includeCustomizationUsage: true,
       });
-      const sessionsWithCheckpoints = attachCheckpointFactsToSessions(sessions.map(privacySafeSession), checkpointResolution.checkpoints);
+      // The collector does not know about the window, so it is applied here.
+      // Both providers must narrow the same way: the browser decides whether a
+      // window is already loaded from what the server says it scanned, and a
+      // provider that quietly returned everything would make that answer wrong.
+      const inWindow = withinWindow(sessions, window);
+      const included = inWindow.slice(0, MAX_SESSIONS);
+      const sessionsWithCheckpoints = attachCheckpointFactsToSessions(included.map(privacySafeSession), checkpointResolution.checkpoints);
       const correlated = correlate(commits, sessionsWithCheckpoints);
       const filesByCommit = new Map(commits.map((commit) => [commit.hash, commit.files]));
       const correlation = {
@@ -109,6 +126,12 @@ export function createInspectorWorkspaceSessionProvider({
         // catalog states what is configured; this states what was observed.
         customizationUsage: aggregateCustomizationUsage(sessionsWithCheckpoints),
         sessions: sessionsWithCheckpoints.map(projectInspectorSession).filter(Boolean),
+        coverage: {
+          inWindow: inWindow.length,
+          included: included.length,
+          omitted: Math.max(0, inWindow.length - included.length),
+          windowed: window?.fromMs !== undefined || window?.toMs !== undefined,
+        },
         providers: providers.map((provider) => ({
           provider: provider.platform,
           status: provider.status,
@@ -119,6 +142,27 @@ export function createInspectorWorkspaceSessionProvider({
       };
     },
   };
+}
+
+/**
+ * Sessions whose observed activity falls inside the window, newest first.
+ *
+ * A Session with no readable instant is kept: a window narrows a catalog, it
+ * never deletes evidence whose time could not be read.
+ */
+function withinWindow(sessions, window) {
+  const at = (session) => {
+    const value = Date.parse(session?.lastSeen ?? session?.firstSeen ?? "");
+    return Number.isFinite(value) ? value : null;
+  };
+  const kept = sessions.filter((session) => {
+    const observed = at(session);
+    if (observed === null) return true;
+    if (window?.fromMs !== undefined && observed < window.fromMs) return false;
+    if (window?.toMs !== undefined && observed > window.toMs) return false;
+    return true;
+  });
+  return kept.sort((left, right) => (at(right) ?? 0) - (at(left) ?? 0));
 }
 
 async function loadWorkspaceFeatureTree(repoRoot) {

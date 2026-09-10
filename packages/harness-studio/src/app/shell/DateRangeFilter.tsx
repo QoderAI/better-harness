@@ -18,6 +18,8 @@ import {
  */
 export function DateRangeFilter(props: {
   range: StudioDateRange;
+  /** Sessions this window holds that the bounded scan could not return. */
+  omittedCount?: number;
   onChange: (range: StudioDateRange) => void;
 }): React.JSX.Element {
   const { t } = useTranslation("common");
@@ -73,6 +75,11 @@ export function DateRangeFilter(props: {
     {inverted
       ? <p id={errorId} className="studio-date-range-summary status-warning" role="alert">{t("dateRange.inverted")}</p>
       : props.range.preset !== "custom" && props.range.preset !== "all" && <p className="studio-date-range-summary">{summary(resolved, t)}</p>}
+    {/* Scanning is bounded, so a window can hold more than it can return. The
+        shortfall belongs beside the control that sets it: this is the one place
+        a reader can act on it, by narrowing until the window is answered whole. */}
+    {props.omittedCount !== undefined && props.omittedCount > 0
+      && <p className="studio-date-range-omitted">{t("dateRange.omitted", { count: props.omittedCount })}</p>}
   </div>;
 }
 

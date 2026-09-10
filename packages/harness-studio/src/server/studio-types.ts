@@ -55,14 +55,27 @@ export interface StudioWorkspaceProviderDiagnostic {
 export interface StudioWorkspaceDiscovery {
   label: string;
   sessions: StudioWorkspaceSession[];
+  /** What the bounded scan left out of the requested window. */
+  coverage?: { inWindow: number; included: number; omitted: number; windowed: boolean };
   providers?: StudioWorkspaceProviderDiagnostic[];
   /** Privacy-filtered Inspector workbench projection for this workspace. */
   inspectorReport?: Record<string, unknown>;
   /** Observed Skill and MCP Server invocations, per Host. Absent when unsupported. */
   customizationUsage?: CustomizationUsageV1;
 }
+/**
+ * The observation window a discovery answers, as absolute instants.
+ *
+ * The window is chosen in local calendar days by the reader, so only the
+ * browser can resolve it; the server carries instants and never guesses a
+ * timezone. An absent bound is open.
+ */
+export interface StudioObservationWindow {
+  fromMs?: number;
+  toMs?: number;
+}
 export interface StudioWorkspaceSessionProvider {
-  discover(workspacePath: string): Promise<StudioWorkspaceDiscovery>;
+  discover(workspacePath: string, window?: StudioObservationWindow): Promise<StudioWorkspaceDiscovery>;
 }
 export interface HarnessStudioServerOptions {
   /** Server-owned Qoder log root; browser requests cannot override it. */
@@ -211,6 +224,8 @@ export interface StudioWorkspace {
   scanRequired?: boolean;
   sessionCount: number;
   omittedCount: number;
+  /** The window this workspace was discovered for; absent means everything. */
+  window?: StudioObservationWindow;
   sessions: Map<string, StoredWorkspaceSession>;
   providers: StudioWorkspaceProviderDiagnostic[];
   inspectorReport?: Record<string, unknown>;

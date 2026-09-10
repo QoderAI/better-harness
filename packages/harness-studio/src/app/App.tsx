@@ -26,9 +26,13 @@ import {
 import type { DebuggerSession } from "../contracts/debugger-session.js";
 import { isStudioProjectCatalog, type StudioProjectCatalog, type StudioProjectDescriptor } from "../contracts/studio-project.js";
 import { ProjectSidebar } from "./shell/ProjectSidebar.js";
+import { BrandMark } from "./shell/BrandMark.js";
 import {
   STUDIO_DATE_RANGE_PRESETS,
   STUDIO_DEFAULT_DATE_RANGE,
+  dateRangeBounds,
+  windowCovers,
+  windowMatches,
   withinDateRange,
   type StudioDateRange,
 } from "./date-range.js";
@@ -461,7 +465,7 @@ export function App(): React.JSX.Element {
     setProjectOpening(true);
     setProjectFailure(undefined);
     try {
-      const response = await fetch("api/projects/open", { method: "POST" });
+      const response = await fetch(`api/projects/open${windowQuery(dateRange)}`, { method: "POST" });
       if (!response.ok) throw new Error(await studioApiError(response));
       const result = await response.json() as { opened?: boolean; cancelled?: boolean; project?: StudioProjectDescriptor };
       if (result.cancelled || result.opened !== true) return;
@@ -484,7 +488,7 @@ export function App(): React.JSX.Element {
     setProjectOpening(true);
     setProjectFailure(undefined);
     try {
-      const response = await fetch(`api/projects/${encodeURIComponent(projectId)}/activate`, { method: "POST" });
+      const response = await fetch(`api/projects/${encodeURIComponent(projectId)}/activate${windowQuery(dateRange)}`, { method: "POST" });
       if (!response.ok) throw new Error(await studioApiError(response));
       await workspaceChanged();
       closeNavigation();
@@ -507,7 +511,7 @@ export function App(): React.JSX.Element {
     setProjectScanning(true);
     setProjectFailure(undefined);
     try {
-      const response = await fetch(`api/projects/${encodeURIComponent(activeProjectId)}/scan`, { method: "POST" });
+      const response = await fetch(`api/projects/${encodeURIComponent(activeProjectId)}/scan${windowQuery(dateRange)}`, { method: "POST" });
       if (!response.ok) throw new Error(await studioApiError(response));
       await workspaceChanged();
     } catch (error) {
@@ -517,6 +521,15 @@ export function App(): React.JSX.Element {
       setProjectOpening(false);
     }
   }
+
+  // Discovery is bounded by the window it ran for, so narrowing is a filter the
+  // browser can apply to rows it already holds, while widening asks about
+  // Sessions that were never scanned. Only the second needs the server again.
+  useEffect(() => {
+    if (activeProjectId === undefined || projectOpening || config?.workspaceScanRequired !== false) return;
+    if (windowCovers(config.workspaceWindow, dateRangeBounds(dateRange))) return;
+    void scanStudioProject();
+  }, [dateRange, activeProjectId, config?.workspaceWindow, config?.workspaceScanRequired, projectOpening]);
 
   async function removeStudioProject(projectId: string): Promise<void> {
     if (projectOpening) return;
@@ -555,10 +568,10 @@ export function App(): React.JSX.Element {
   const customizationCatalog = useCustomizationCatalog(config?.customizationAnalysisEnabled === true, config?.customizationAnalyzed === true, workspaceRevision, customizationAnalyzed);
 
   if (config === undefined) {
-    return <main className="studio-loading"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><p>{t("loading")}</p></main>;
+    return <main className="studio-loading"><span className="studio-loading-mark"><BrandMark size={18} /></span><p>{t("loading")}</p></main>;
   }
   if (configFailure !== null) {
-    return <main className="studio-loading" role="alert"><span className="studio-loading-mark"><GitBranch aria-hidden="true" size={18} weight="bold" /></span><strong>{t("config.failed")}</strong><p>{configFailure}</p><button className="primary" type="button" onClick={() => { setConfig(undefined); setConfigFailure(null); setBootstrapRevision((revision) => revision + 1); }}>{t("config.retry")}</button></main>;
+    return <main className="studio-loading" role="alert"><span className="studio-loading-mark"><BrandMark size={18} /></span><strong>{t("config.failed")}</strong><p>{configFailure}</p><button className="primary" type="button" onClick={() => { setConfig(undefined); setConfigFailure(null); setBootstrapRevision((revision) => revision + 1); }}>{t("config.retry")}</button></main>;
   }
 
   const availableCompareSurfaces = compareSurfaces(config);
@@ -631,6 +644,7 @@ export function App(): React.JSX.Element {
       onCollapseSidebar={() => { setSidebarCollapsed(true); navigationToggleRef.current?.focus(); }}
       onCloseNavigation={() => { setNavigationOpen(false); navigationToggleRef.current?.focus(); }}
       dateRange={dateRange}
+      omittedCount={windowMatches(config?.workspaceWindow, dateRangeBounds(dateRange)) ? config?.workspaceOmittedCount : undefined}
       onDateRangeChange={setDateRange}
       settings={<SettingsMenu theme={theme} onTheme={chooseTheme} />}
     />
@@ -655,7 +669,7 @@ export function App(): React.JSX.Element {
       </header>
       <div className={`studio-surface studio-surface-${area}`}>
         {(area === "memory" || area === "memory-sources") && <MemoryView dateRange={dateRange} />}
-        {showWelcome ? <WorkspaceWelcome onWorkspaceChanged={async () => {
+        {showWelcome ? <WorkspaceWelcome dateRange={dateRange} onWorkspaceChanged={async () => {
           const projectId = await workspaceChanged();
           globalThis.history.replaceState(null, "", shellHash({ area, ...(projectId === undefined ? {} : { projectId }) }));
         }} /> : config.workspaceScanRequired && !["memory", "memory-sources", "debugger", "compare"].includes(area) ? <EmptyWorkspace eyebrow={activeProject?.label ?? ""} title={t("sidebar.scanPendingTitle")} detail={t("sidebar.scanPendingDetail")} action={canScanProject ? { label: projectScanning ? t("sidebar.scanning") : t("sidebar.scanProject"), onClick: () => void scanStudioProject(), disabled: projectOpening } : undefined} /> : <>
@@ -681,14 +695,14 @@ export function App(): React.JSX.Element {
   </StudioThemeContext.Provider>;
 }
 
-function WorkspaceWelcome(props: { onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
+function WorkspaceWelcome(props: { dateRange: StudioDateRange; onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
   const { t } = useTranslation("workspace");
   return <section className="studio-welcome" aria-labelledby="studio-welcome-title">
     <div className="studio-welcome-content">
-      <GitBranch aria-hidden="true" size={32} />
+      <BrandMark size={32} />
       <h2 id="studio-welcome-title">{t("welcome.heading")}</h2>
       <p>{t("welcome.description")}</p>
-      <ProjectFolderControls onWorkspaceChanged={props.onWorkspaceChanged} />
+      <ProjectFolderControls dateRange={props.dateRange} onWorkspaceChanged={props.onWorkspaceChanged} />
       <dl>{(["customizations", "sessions", "artifacts"] as const).map((view) => <div key={view}>
         <dt>{t(`common:area.${view}`)}</dt><dd>{t(`welcome.${view}`)}</dd>
       </div>)}</dl>
@@ -1182,7 +1196,7 @@ function sessionArtifactContext(value: unknown, sessionId: string): SessionArtif
   };
 }
 
-function ProjectFolderControls(props: { autoFocus?: boolean; onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
+function ProjectFolderControls(props: { autoFocus?: boolean; dateRange: StudioDateRange; onWorkspaceChanged: () => Promise<void> }): React.JSX.Element {
   const { t } = useTranslation("workspace");
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<"idle" | "choosing" | "discovering" | "opening">("idle");
@@ -1208,7 +1222,7 @@ function ProjectFolderControls(props: { autoFocus?: boolean; onWorkspaceChanged:
       }
     })();
     try {
-      const opened = await fetch("api/projects/open", { method: "POST" });
+      const opened = await fetch(`api/projects/open${windowQuery(props.dateRange)}`, { method: "POST" });
       if (!opened.ok) throw new Error(await studioApiError(opened));
       const result = await opened.json() as { opened?: boolean; cancelled?: boolean };
       if (result.cancelled || result.opened !== true) {
@@ -1237,6 +1251,20 @@ function ProjectFolderControls(props: { autoFocus?: boolean; onWorkspaceChanged:
     {busy && <span className="workspace-open-progress" role="status" aria-live="polite"><i aria-hidden="true" /><small>{progressMessage}</small></span>}
     {failure !== undefined && <small className="workspace-folder-error" role="alert">{failure}</small>}
   </div>;
+}
+
+/**
+ * The window a scan should answer, on the request that starts it.
+ *
+ * Discovery is bounded, so which Sessions exist at all depends on the window;
+ * it cannot be applied afterwards by the reader's browser.
+ */
+function windowQuery(range: StudioDateRange): string {
+  const bounds = dateRangeBounds(range);
+  const query = new URLSearchParams();
+  if (bounds.fromMs !== undefined) query.set("fromMs", String(bounds.fromMs));
+  if (bounds.toMs !== undefined) query.set("toMs", String(bounds.toMs));
+  return query.size === 0 ? "" : `?${query}`;
 }
 
 function formatSessionTime(value: string, locale: string): string {
@@ -1431,7 +1459,7 @@ function ProjectScanAction(props: { scanRequired: boolean; scanning: boolean; di
 }
 
 function EmptyWorkspace(props: { eyebrow: string; title: string; detail: string; command?: string; action?: { label: string; onClick: () => void; disabled?: boolean } }): React.JSX.Element {
-  return <main className="empty-workspace"><span><GitBranch aria-hidden="true" size={22} /></span><small>{props.eyebrow}</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" disabled={props.action.disabled} onClick={props.action.onClick}>{props.action.label}</button>}{props.command && <code>{props.command}</code>}</main>;
+  return <main className="empty-workspace"><span><BrandMark size={22} /></span><small>{props.eyebrow}</small><h1>{props.title}</h1><p>{props.detail}</p>{props.action && <button className="primary" type="button" disabled={props.action.disabled} onClick={props.action.onClick}>{props.action.label}</button>}{props.command && <code>{props.command}</code>}</main>;
 }
 
 // The surface switcher navigates between separate top-level views (each its own

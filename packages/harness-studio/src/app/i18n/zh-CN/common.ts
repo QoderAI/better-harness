@@ -172,6 +172,7 @@ export const common: typeof enCommon = {
     to: "至",
     inverted: "起始日期晚于结束日期。",
     summaryAll: "全部留存的日期",
+    omitted: "该窗口内至少还有 {{count}} 条超出本次有界扫描。缩小窗口即可覆盖完整。",
     summaryDay: "{{day}}",
     summarySpan: "{{from}} → {{to}}",
     summaryFrom: "{{from}} 起",

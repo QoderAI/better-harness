@@ -11,6 +11,7 @@ use harness_evidence_host::paths::{
 use harness_evidence_host::platforms::{
     augment, claude, codex, copilot, cursor, dsh, grok, harness_run, kimi, pi, qwen, workbuddy,
 };
+use harness_evidence_host::model::Window;
 use harness_evidence_host::wire::HOST_PROTOCOL_VERSION;
 use serde_json::{json, Value};
 
@@ -90,7 +91,7 @@ fn codex_fixture_is_discovered() {
         ),
     )
     .unwrap();
-    let sessions = codex::discover_from(&home, &workspace, 10).unwrap();
+    let sessions = codex::discover_from(&home, &workspace, 10, Window::default()).unwrap();
     fs::remove_dir_all(&workspace).ok();
     fs::remove_dir_all(&home).ok();
     assert_eq!(sessions.len(), 1);
@@ -126,7 +127,7 @@ fn claude_fixture_is_discovered() {
         ),
     )
     .unwrap();
-    let sessions = claude::discover_from(&home, &workspace, 10).unwrap();
+    let sessions = claude::discover_from(&home, &workspace, 10, Window::default()).unwrap();
     fs::remove_dir_all(&workspace).ok();
     fs::remove_dir_all(&home).ok();
     assert_eq!(sessions.len(), 1);

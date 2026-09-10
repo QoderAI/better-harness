@@ -269,6 +269,15 @@
 
 .studio-date-range-summary.status-warning { color: var(--color-warning); }
 
+/* A shortfall the reader can act on, not an error: it reads as a note under the
+   control that causes it, in the same muted voice as the resolved span. */
+.studio-date-range-omitted {
+  margin: var(--space-xs) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+
 .studio-project-switcher > button {
   width: 100%;
   min-width: 0;

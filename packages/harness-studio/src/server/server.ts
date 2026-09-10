@@ -41,6 +41,7 @@ import { effectiveAcpAgentProfiles, publicAcpAgentProfiles, resolveAcpAgent } fr
 import {
   abortWorkspaceImport,
   activateProject,
+  requestedWindow,
   analyzeWorkspaceCustomizations,
   analyzeWorkspaceIntent,
   cleanupWorkspaceImports,
@@ -283,6 +284,8 @@ async function route(
       workspaceDiscoveryEnabled: options.workspaceSessionProvider !== undefined,
       workspaceConnected: state.workspace !== undefined,
       workspaceScanRequired: state.workspace?.scanRequired === true,
+      ...(state.workspace?.window === undefined ? {} : { workspaceWindow: state.workspace.window }),
+      workspaceOmittedCount: state.workspace?.omittedCount ?? 0,
       projectExecutionEnabled: state.workspace?.localDirectory !== undefined,
       activeProjectId: state.activeProjectId,
       projectRevision: state.projectRevision,
@@ -313,7 +316,7 @@ async function route(
   const projectActivation = url.pathname.match(/^\/api\/projects\/([^/]+)\/(activate|refresh|scan)$/);
   if (request.method === "POST" && projectActivation !== null) {
     const projectId = decodeRouteComponent(response, projectActivation[1]!);
-    if (projectId !== undefined) await activateProject(request, response, options, state, projectId, projectActivation[2] !== "activate");
+    if (projectId !== undefined) await activateProject(request, response, options, state, projectId, projectActivation[2] !== "activate", requestedWindow(url));
     return;
   }
   const projectRemoval = url.pathname.match(/^\/api\/projects\/([^/]+)$/);

@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::model::{evidence_excerpt, tool_family, Prompt, SessionSummary, ToolActivity, ToolCall};
+use crate::model::{
+    evidence_excerpt, tool_family, Prompt, SessionSummary, ToolActivity, ToolCall, Window,
+};
 use crate::paths::{home_dir, qoder_slug_variants, tool_paths};
 use crate::time::{millis, normalize_timestamp};
 
@@ -11,14 +13,19 @@ pub fn qoder_home() -> PathBuf {
     home_dir().join(".qoder")
 }
 
-pub fn discover(workspace: &Path, max_sessions: usize) -> Result<Vec<SessionSummary>, String> {
-    discover_from(&qoder_home(), workspace, max_sessions)
+pub fn discover(
+    workspace: &Path,
+    max_sessions: usize,
+    window: Window,
+) -> Result<Vec<SessionSummary>, String> {
+    discover_from(&qoder_home(), workspace, max_sessions, window)
 }
 
 pub fn discover_from(
     home: &Path,
     workspace: &Path,
     max_sessions: usize,
+    window: Window,
 ) -> Result<Vec<SessionSummary>, String> {
     let mut dirs = Vec::new();
     for slug in qoder_slug_variants(workspace) {
@@ -34,6 +41,9 @@ pub fn discover_from(
                 continue;
             }
             let path = entry.path();
+            if !window.may_hold(crate::paths::modified_ms(&path)) {
+                continue;
+            }
             let modified = fs::metadata(&path).and_then(|meta| meta.modified()).ok();
             dirs.push((
                 modified,
