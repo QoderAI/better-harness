@@ -7,7 +7,7 @@ import { test } from "vitest";
 import { runAgentLint } from "../../../scripts/agent-lint/index.mjs";
 import { buildUsageSummary } from "../../../scripts/session-analysis/usage-summary.mjs";
 import { buildDailyUsageActivity } from "../../../scripts/session-analysis/daily-usage.mjs";
-import { createTaskEvidencePacket } from "../../../scripts/task-evidence-upload/index.mjs";
+import { createTaskEvidencePacket, validateTaskEvidencePacket } from "../../../scripts/task-evidence-upload/index.mjs";
 import { dashboardProjectOptions, selectDashboardProject } from "../components/usage-dashboard.tsx";
 import { buildDashboardModel } from "../lib/dashboard-model.ts";
 
@@ -230,6 +230,48 @@ test("dashboard projects values built by the real scripts", async () => {
     });
     assert.equal(Object.hasOwn(model.overview, "cost"), false);
     assert.equal(Object.hasOwn(model.overview, "autonomy"), false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("a stored packet with a partial links object does not break the Dashboard projection", async () => {
+  // The upload contract admits a `links` object that omits some of its arrays, so
+  // the projection cannot dereference all three unconditionally.
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "harness-ui-partial-links-"));
+  try {
+    const packet = createTaskEvidencePacket(packetInput(), {
+      workspace,
+      workspaceLabel: "fixture",
+      now: new Date("2026-09-01T12:00:00.000Z"),
+    });
+    const stored = { ...packet, links: { commitRefs: packet.links.commitRefs } };
+    // Reachability: the read path admits this shape, so the projection has to
+    // cope with it rather than relying on validation to reject it.
+    assert.doesNotThrow(() => validateTaskEvidencePacket(stored));
+
+    const model = buildDashboardModel({
+      ...baseInput([]),
+      evidenceDeliveries: {
+        items: [{
+          organization: "acme-engineering",
+          endpoint: "https://harness.example.test/evidence",
+          acceptedAt: "2026-09-01T12:05:00.000Z",
+          receiptState: "accepted",
+          packetDigest: "a".repeat(64),
+          packetBytes: 512,
+          packet: stored,
+        }],
+        total: 1,
+        truncated: false,
+      },
+    });
+
+    assert.deepEqual(model.evidenceDeliveries.items[0].links, {
+      sessionRefs: [],
+      commitRefs: packet.links.commitRefs,
+      artifactRefs: [],
+    });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
