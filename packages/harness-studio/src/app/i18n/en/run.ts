@@ -155,6 +155,14 @@ export const run = {
   toggleTree: "Toggle Execution Tree",
   toggleInspector: "Toggle State Inspector",
   newLiveRun: "New live run",
+  placement: {
+    aria: "Where this run executes",
+    host: "This Mac",
+    hostDetail: "Run the Agent on this machine, as Studio always has.",
+    box: "microVM",
+    localNotBoxable: "The local Qoder harness runs in this Studio process; it has no guest to run in.",
+    boxDetail: "Run the Agent inside a disposable Linux microVM. The Project is mounted at /workspace, so edits are real while commands stay in the VM. The Agent is installed on first use and the box is reused afterwards.",
+  },
   controlsAria: "Session debugger controls",
   controls: {
     previousStop: "Previous Stop",

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  choiceRunnable,
   liveAgentChoices,
   liveRunEndpoint,
   LOCAL_AGENT_CHOICE,
+  placementAvailable,
   resolveLiveAgentChoice,
 } from "../src/app/run/live-agent-choices.js";
 
@@ -74,5 +76,45 @@ describe("live run Agent choices", () => {
   it("has no ACP target when the host disabled the ACP stream", () => {
     const choices = liveAgentChoices({ localRunEnabled: true, acpEnabled: true, agents: CATALOG, labels: LABELS });
     expect(liveRunEndpoint(choices[1]!, { run: "/api/runs/stream" })).toBeUndefined();
+  });
+});
+
+// A box installs the Agent itself, so the two placements disagree about which
+// Agents can run: qodercli is installed here but has no Linux build, and Pi is
+// absent here but installs in the guest.
+const BOX_CATALOG = [
+  { id: "qodercli", label: "Qoder CLI", available: true, detail: "Available", boxAvailable: false, boxDetail: "qodercli ships only as a macOS arm64 binary; a box runs Linux." },
+  { id: "pi", label: "Pi ACP", available: false, detail: "pi-acp is not installed.", boxAvailable: true, boxDetail: "Runs in a node:20-slim microVM" },
+];
+
+describe("live run placement", () => {
+  const choices = liveAgentChoices({ localRunEnabled: true, acpEnabled: true, agents: BOX_CATALOG, labels: LABELS });
+
+  it("carries each Agent's box verdict separately from its host availability", () => {
+    expect(choices.find((choice) => choice.value === "acp:qodercli")).toMatchObject({ available: true, boxAvailable: false });
+    expect(choices.find((choice) => choice.value === "acp:pi")).toMatchObject({ available: false, boxAvailable: true });
+  });
+
+  it("runs in a box only what the box can start, and never the local harness", () => {
+    expect(choiceRunnable(choices[0]!, "host")).toBe(true);
+    expect(choiceRunnable(choices[0]!, "box")).toBe(false);
+    expect(choiceRunnable(choices[1]!, "box")).toBe(false);
+    expect(choiceRunnable(choices[2]!, "box")).toBe(true);
+    expect(placementAvailable(choices)).toBe(true);
+    expect(placementAvailable(liveAgentChoices({ localRunEnabled: true, acpEnabled: true, agents: CATALOG, labels: LABELS }))).toBe(false);
+  });
+
+  it("moves the selection to a boxable Agent when the placement changes under it", () => {
+    // The reader had the host default selected; switching to a box must land on
+    // an Agent the box can start rather than fail later at the server.
+    expect(resolveLiveAgentChoice(choices, "acp:qodercli", "host")?.value).toBe("acp:qodercli");
+    expect(resolveLiveAgentChoice(choices, "acp:qodercli", "box")?.value).toBe("acp:pi");
+  });
+
+  it("asks for a box placement in the query, and stays silent for a host run", () => {
+    const endpoints = { run: "/api/runs/stream", acp: "/api/acp/runs/stream" };
+    expect(liveRunEndpoint(choices[2]!, endpoints, "box")).toBe("/api/acp/runs/stream?agent=pi&placement=box");
+    expect(liveRunEndpoint(choices[2]!, endpoints, "host")).toBe("/api/acp/runs/stream?agent=pi");
+    expect(liveRunEndpoint(choices[2]!, endpoints)).toBe("/api/acp/runs/stream?agent=pi");
   });
 });

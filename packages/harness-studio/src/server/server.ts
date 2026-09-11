@@ -22,7 +22,7 @@ import {
 } from "./workspace/source-catalog.js";
 import { createCheckpointHistoryCatalogAdapter } from "./query/checkpoint-history.js";
 import { discoverArtifactProviderRuntime } from "./artifacts/registry/artifact-provider-discovery.js";
-import type { HarnessStudioServerOptions, HarnessStudioState } from "./studio-types.js";
+import type { AcpAgentPlacement, HarnessStudioServerOptions, HarnessStudioState, StudioAcpAgentOptions } from "./studio-types.js";
 import { decodeRouteComponent, respondJson, sameOriginRequest } from "./http-utils.js";
 import { assertStudioBindAddressAllowed } from "./bind-policy.js";
 import { streamHarnessRun } from "./run-stream.js";
@@ -37,7 +37,7 @@ import {
   decideAcpPermission,
   ensureAcpRun,
 } from "./acp-runs.js";
-import { effectiveAcpAgentProfiles, publicAcpAgentProfiles, resolveAcpAgent } from "./acp-agent-catalog.js";
+import { acpAgentInBox, effectiveAcpAgentProfiles, publicAcpAgentProfiles } from "./acp-agent-catalog.js";
 import {
   abortWorkspaceImport,
   activateProject,
@@ -673,13 +673,46 @@ async function route(
         turnOffset = Number(record.snapshot.turns.at(-1)?.turnId.split(":").at(-1)) || record.snapshot.turns.length;
       } catch (error) { respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) }); return; }
     }
-    const acpAgent = requestedAgentId === null || requestedAgentId === "__default"
-      ? options.acpAgent
-        ?? effectiveAcpAgentProfiles(options).find((profile) => profile.agent !== undefined)!.agent!
-      : resolveAcpAgent(options, requestedAgentId);
-    if (acpAgent === undefined) {
-      respondJson(response, 400, { error: `ACP Agent '${requestedAgentId}' is not an available Studio Agent.` });
-      return;
+    // `placement=box` runs the Agent inside a microVM instead of on this
+    // machine. The ACP host is unchanged either way: only the command it spawns
+    // differs, so placement is resolved here and nowhere else.
+    const placement: AcpAgentPlacement = url.searchParams.get("placement") === "box" ? "box" : "host";
+    const profiles = effectiveAcpAgentProfiles(options);
+    const defaulting = requestedAgentId === null || requestedAgentId === "__default";
+    const selected = defaulting
+      ? placement === "box"
+        // A box run cannot default to the host Agent, which is usually not
+        // boxable; it defaults to the first Agent that has a recipe. Local
+        // installation is not required — the box installs the Agent itself.
+        ? profiles.find((profile) => profile.box !== undefined)
+        : profiles.find((profile) => profile.agent === options.acpAgent)
+          ?? profiles.find((profile) => profile.agent !== undefined)
+      : profiles.find((profile) => profile.id === requestedAgentId);
+    let acpAgent: StudioAcpAgentOptions | undefined;
+    if (placement === "box") {
+      if (options.boxExecExecutable === undefined) {
+        respondJson(response, 400, { error: "This Studio build has no microVM shim staged." });
+        return;
+      }
+      if (selected?.box === undefined) {
+        respondJson(response, 400, {
+          error: defaulting
+            ? "No ACP Agent in this Studio can run inside a microVM."
+            : selected?.boxUnavailableReason ?? `ACP Agent '${requestedAgentId}' has no microVM recipe.`,
+        });
+        return;
+      }
+      acpAgent = acpAgentInBox(selected.agent, selected.box, {
+        shim: options.boxExecExecutable,
+        cwd: runtimeOptions.cwd ?? process.cwd(),
+        label: selected.label,
+      });
+    } else {
+      acpAgent = selected?.agent;
+      if (acpAgent === undefined) {
+        respondJson(response, 400, { error: `ACP Agent '${requestedAgentId}' is not an available Studio Agent.` });
+        return;
+      }
     }
     // A prepared Compare session receives its real prompt only after its inline
     // configuration has been reviewed. The validated request remains the source

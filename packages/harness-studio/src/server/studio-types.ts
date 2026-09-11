@@ -143,6 +143,12 @@ export interface HarnessStudioServerOptions {
    */
   acpHostExecutable?: string;
   /**
+   * Staged `harness-box-exec` shim. When present, an ACP run may place its
+   * Agent inside a microVM; when absent, every run stays on the host and the
+   * browser is told so rather than offered a placement it cannot honour.
+   */
+  boxExecExecutable?: string;
+  /**
    * Which ACP host `acpHostExecutable` is. `"nsxpc"` means it is the macOS
    * `harness-acp-client` bridge to a launchd-managed service; `"stdio"` (default)
    * means the `harness-acp-host` driver spoken to directly. Set by the desktop
@@ -200,7 +206,40 @@ export interface StudioAcpAgentProfile {
   /** Omitted when the known Agent or its ACP bridge is unavailable on this host. */
   agent?: StudioAcpAgentOptions;
   unavailableReason?: string;
+  /** How this Agent installs inside a microVM. Omitted when it cannot. */
+  box?: AcpBoxRecipe;
+  /** Why a box cannot host it. Present exactly when `box` is absent. */
+  boxUnavailableReason?: string;
 }
+/**
+ * Installing an ACP Agent inside a microVM.
+ *
+ * A box runs Linux, so a recipe exists only for Agents with a portable
+ * distribution. The host-side executable is irrelevant: what matters is what
+ * lands on the guest's PATH.
+ */
+export interface AcpBoxRecipe {
+  /** OCI image the box boots. */
+  image: string;
+  /** Packages installed on first use, then cached with the box itself. */
+  packages: readonly string[];
+  /** Shell test deciding whether provisioning is still needed. */
+  probe: string;
+  /** The ACP server's command inside the guest. */
+  command: string;
+  args?: readonly string[];
+  /** Egress the Agent needs, beyond the registry that installs it. */
+  allowNet: readonly string[];
+  /**
+   * Whether Studio applies the lane model or keeps the Agent's own default.
+   *
+   * A property of the recipe rather than of the host Agent: what runs in the
+   * guest is `command`, which may not be installed on this machine at all.
+   */
+  modelPolicy: "lane" | "agent-default";
+}
+/** Where a live run's Agent process executes. */
+export type AcpAgentPlacement = "host" | "box";
 export interface ArtifactImportSession {
   directory: string;
   fileCount: number;

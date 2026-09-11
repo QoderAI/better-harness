@@ -729,6 +729,44 @@
 .connection-dot.status-error { background: var(--color-danger); }
 .debugger-top-actions { display: flex; align-items: center; gap: var(--space-xs); }
 .debugger-top-actions > button { min-width: var(--toolbar-target); padding-inline: var(--space-sm); display: inline-flex; align-items: center; gap: var(--space-xs); }
+/* Placement is a segmented control, not a toggle: which of the two is active
+   should be readable without inferring it from an icon's state. */
+.run-placement {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-subtle);
+}
+.run-placement > button {
+  min-width: auto;
+  min-height: calc(var(--toolbar-target) - 6px);
+  padding-inline: var(--space-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--color-text-muted);
+}
+.run-placement > button:hover { background: var(--color-surface-hover); }
+.run-placement > button.selected {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+.live-composer-placement {
+  padding: 1px var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--type-meta-size);
+  font-style: normal;
+}
 .saved-runs { position: relative; }
 .saved-runs > button { min-width: var(--toolbar-target); padding-inline: var(--space-sm); display: inline-flex; align-items: center; gap: var(--space-xs); }
 .saved-runs-panel {

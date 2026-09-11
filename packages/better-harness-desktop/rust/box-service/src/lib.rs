@@ -12,9 +12,46 @@ pub mod wire;
 #[cfg(target_os = "macos")]
 pub mod xpc;
 
+use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::json;
+
+/// Make `mke2fs` reachable before the runtime needs it.
+///
+/// BoxLite shells out to `mke2fs` to build a guest rootfs and finds it on
+/// `PATH`. Two things conspire against that here: a process launched by the
+/// desktop app inherits launchd's `PATH`, not a shell's, and Homebrew keeps
+/// e2fsprogs keg-only so its binaries are not on `PATH` even in a terminal.
+///
+/// Worse than absent is wrong: `android-platform-tools` installs a *different*
+/// `mke2fs` under the same name, and BoxLite dies on it with
+/// `mke2fs failed with exit code None` — an empty diagnostic, because the
+/// process never got far enough to have an exit code. The known-good locations
+/// are therefore **prepended**, so a real e2fsprogs wins over a shadowing one.
+pub fn ensure_tooling_path() {
+    const CANDIDATES: [&str; 4] = [
+        "/opt/homebrew/opt/e2fsprogs/sbin",
+        "/usr/local/opt/e2fsprogs/sbin",
+        "/opt/homebrew/sbin",
+        "/sbin",
+    ];
+    let current = std::env::var("PATH").unwrap_or_default();
+    // Prepended unconditionally, even when already present: a directory that
+    // sits *after* the shadowing one would otherwise still lose.
+    let mut prefix: Vec<String> = CANDIDATES
+        .into_iter()
+        .filter(|candidate| Path::new(candidate).join("mke2fs").is_file())
+        .map(str::to_string)
+        .collect();
+    if prefix.is_empty() {
+        return;
+    }
+    prefix.push(current);
+    // SAFETY: called once at startup, before any thread that reads the
+    // environment is spawned.
+    unsafe { std::env::set_var("PATH", prefix.join(":")) };
+}
 
 use crate::runtime::BoxHost;
 use crate::wire::{

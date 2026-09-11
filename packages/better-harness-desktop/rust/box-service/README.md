@@ -1,11 +1,20 @@
 # Rust Box Service (POC)
 
-**Status: proof of concept.** Not wired into `scripts/rust.mjs`, `service-host.mjs`,
-or any Studio route — the bundle used for the NSXPC run below was assembled by
-hand. Everything in [What was actually verified](#what-was-actually-verified)
-was run on this machine; everything else is design, not a claim.
+**Status: partly shipped.** `harness-box-exec` is built by `scripts/rust.mjs`,
+staged into `dist/native`, and used by the Debugger's placement control — see
+[`docs/specs/2026-09-11-debugger-microvm-placement.md`](../../../../docs/specs/2026-09-11-debugger-microvm-placement.md).
 
-Spec: [`docs/specs/2026-09-10-boxlite-microvm-xpc-poc.md`](../../../../docs/specs/2026-09-10-boxlite-microvm-xpc-poc.md).
+The **NSXPC service** (`harness-box-xpc` / `harness-box-client` / the
+`harness-box-host` driver) remains a proof of concept: it works, and the bundle
+below was assembled by this crate's own `bundle.mjs` rather than by
+`nsxpc-bundle.mjs`. Nothing in Studio talks to it yet, because the
+driver-singleton question below is unanswered.
+
+Everything in [What was actually verified](#what-was-actually-verified) was run
+on this machine; everything else is design, not a claim.
+
+Specs: [POC](../../../../docs/specs/2026-09-10-boxlite-microvm-xpc-poc.md) ·
+[Debugger placement](../../../../docs/specs/2026-09-11-debugger-microvm-placement.md).
 
 [BoxLite](https://github.com/boxlite-ai/boxlite) 0.10.0 hosted as a fourth
 capability service, alongside `oxc-service`, `acp-host` and `evidence-host`. A
@@ -45,12 +54,19 @@ machine `/opt/homebrew/bin/mke2fs` was a symlink into the
 `android-platform-tools` cask, not e2fsprogs. BoxLite invokes it to build the
 guest rootfs and it died with `mke2fs failed with exit code None` — an empty
 diagnostic, because the process never got far enough to have an exit code. Any
-machine with Android platform-tools installed hits this. If the service is ever
-productionised it should resolve `mke2fs` by absolute path rather than trusting
-`PATH`.
+machine with Android platform-tools installed hits this.
+
+Both binaries now fix this at **runtime** rather than trusting the environment:
+`ensure_tooling_path` prepends the known-good e2fsprogs locations before the
+runtime is built. Prepends, not appends — a shadowing `mke2fs` earlier on `PATH`
+would otherwise still win. This also covers being launched by the desktop app,
+which inherits launchd's `PATH` rather than a shell's. Verified by creating and
+booting a fresh box under `PATH=/usr/bin:/bin:/usr/sbin:/sbin`.
+
+The *build* still needs `protoc` on `PATH` yourself:
 
 ```bash
-PATH="/opt/homebrew/opt/e2fsprogs/sbin:$PATH" cargo +1.96.0 build --release
+cargo +1.96.0 build --release
 ```
 
 ## Wire contract
@@ -131,8 +147,18 @@ harness-box-exec --box debugger --image node:20-slim \
   -- pi-acp
 ```
 
-Studio's side is then one substitution in `acp-agent-catalog.ts`: the profile's
-`executable` becomes `harness-box-exec` and the box flags prepend its `args`.
+Studio does exactly this today. The Debugger's placement control sends
+`placement=box` on the run request; `acp-agent-catalog.ts` holds a per-Agent
+recipe (image, packages, probe, guest command, egress) and `acpAgentInBox`
+rewrites the Agent into the argv above. `harness-acp-host` was not touched.
+
+Two consequences worth knowing:
+
+- **One box per Project**, named from the Project path, so a second session
+  reattaches in under a second instead of re-installing.
+- **One box run at a time.** Each run owns its own runtime and BoxLite locks its
+  home directory, so a second concurrent box run exits with *"Only one microVM
+  run can be active at a time"*. Lifting that is the driver-singleton question.
 
 ### `pi` and `pi-acp` are different programs
 
@@ -204,11 +230,14 @@ Two rows carry the argument. The ACP one: `harness-acp-host` was not modified,
 and would not need to be. The NSXPC one: the runtime works from inside a signed
 XPC service bundle, which was the risk this POC existed to test.
 
-Still open: a driver singleton (see above), `mke2fs` resolved by absolute path
-rather than `PATH` — an XPC service inherits launchd's `PATH`, not a shell's,
-and the fresh-box test above only passed because the ext4 image was already
-cached — and whether ACP's own `fs`/terminal services should read the host or
-the box.
+Since resolved: `mke2fs` is now prepended at runtime by `ensure_tooling_path`,
+and a fresh box was created and booted under a launchd-shaped `PATH` to prove
+it.
+
+Still open: a driver singleton (see above), and whether ACP's own `fs` and
+terminal services should read the host or the box. The singleton limit is
+visible to readers today — a second concurrent box run exits with *"Only one
+microVM run can be active at a time"* rather than a raw lock error.
 
 ## Probes
 

@@ -11,25 +11,30 @@
 //!
 //! ```text
 //!  Studio ── acp-host ── harness-box-exec ─┬─ boxlite runtime
-//!            (unchanged)   (stdio proxy)   └─ microVM: pi --mode rpc
+//!            (unchanged)   (stdio proxy)   └─ microVM: pi-acp
 //! ```
+//!
+//! The guest command must be a real ACP server. `pi --mode rpc` is *not* one —
+//! that flag selects an output format — which is why the recipe installs the
+//! separate `pi-acp` adapter.
 //!
 //! # Provisioning is cached, not repeated
 //!
-//! The agent CLI is installed on first use and the box is kept afterwards, so
-//! the second session skips the ~70 s npm install that the first one paid.
+//! The agent is installed on first use and the box is kept afterwards, so the
+//! second session skips the ~96 s npm install that the first one paid.
 //!
 //! ```bash
 //! harness-box-exec --box debugger --image node:20-slim \
-//!   --mount /path/to/project:/workspace \
-//!   --provision 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent' \
-//!   --probe 'pi --version' \
-//!   -- pi --mode rpc --provider anthropic --model "$MODEL"
+//!   --mount /path/to/project:/workspace --workdir /workspace \
+//!   --allow-net registry.npmjs.org --allow-net api.anthropic.com \
+//!   --provision 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent pi-acp' \
+//!   --probe 'command -v pi-acp' \
+//!   -- pi-acp
 //! ```
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use boxlite::runtime::options::VolumeSpec;
 use boxlite::{BoxCommand, BoxOptions, BoxliteRuntime, NetworkSpec, RootfsSpec};
@@ -48,6 +53,10 @@ struct Options {
     provision: Vec<String>,
     probe: Option<String>,
     keep: bool,
+    /// Upper bound on boot plus provisioning. Nothing upstream has a timeout,
+    /// so this is the only thing standing between a stalled pull and a Studio
+    /// that waits forever.
+    start_deadline: Duration,
     agent: Vec<String>,
 }
 
@@ -55,7 +64,7 @@ fn usage() -> ! {
     eprintln!(
         "usage: harness-box-exec [--box NAME] [--image IMAGE] [--mount HOST:GUEST[:ro]] \
          [--env K=V] [--allow-net HOST] [--workdir DIR] [--memory-mib N] [--disk-gb N] \
-         [--provision CMD] [--probe CMD] [--keep] -- AGENT ARGS..."
+         [--provision CMD] [--probe CMD] [--start-timeout SECONDS] [--keep] -- AGENT ARGS..."
     );
     std::process::exit(2);
 }
@@ -73,6 +82,9 @@ fn parse() -> Options {
         provision: Vec::new(),
         probe: None,
         keep: true,
+        // Generous: a cold run pulls a Node image and installs the Agent, which
+        // was measured at ~96 s on a fast connection and is mostly network.
+        start_deadline: Duration::from_secs(900),
         agent: Vec::new(),
     };
     let mut args = std::env::args().skip(1);
@@ -98,6 +110,12 @@ fn parse() -> Options {
             "--disk-gb" => options.disk_size_gb = value().parse().ok(),
             "--provision" => options.provision.push(value()),
             "--probe" => options.probe = Some(value()),
+            "--start-timeout" => {
+                options.start_deadline = value()
+                    .parse()
+                    .map(Duration::from_secs)
+                    .unwrap_or_else(|_| usage())
+            }
             "--keep" => options.keep = true,
             "--no-keep" => options.keep = false,
             _ => usage(),
@@ -166,13 +184,89 @@ async fn run(
     Ok((result.exit_code, output))
 }
 
+/// Bring a box to the point where the Agent can launch: created, booted, and
+/// provisioned.
+///
+/// Failures come back as a reader-facing sentence rather than a raw error. The
+/// ACP host retains this process's stderr as connection diagnostics, so this
+/// text is what someone sees in Studio when a run refuses to start — it should
+/// name the likely cause, not just the layer that failed.
+async fn prepare(
+    runtime: &BoxliteRuntime,
+    box_options: BoxOptions,
+    options: &Options,
+    started: Instant,
+) -> Result<boxlite::LiteBox, String> {
+    let (litebox, created) = runtime
+        .get_or_create(box_options, Some(options.name.clone()))
+        .await
+        .map_err(|error| format!("The microVM could not be created: {error}"))?;
+    litebox.start().await.map_err(|error| {
+        format!(
+            "The microVM could not start: {error}. This needs hardware virtualization, \
+             and a first run must be able to pull '{}'.",
+            options.image,
+        )
+    })?;
+    eprintln!(
+        "[box-exec] box {} ({}) ready in {:?}",
+        options.name,
+        if created { "new" } else { "reused" },
+        started.elapsed()
+    );
+
+    // Provision only when the probe says the tool is missing. On a reused box
+    // this is one cheap command instead of a re-install.
+    let needs_provision = match &options.probe {
+        Some(probe) => {
+            run(&litebox, probe)
+                .await
+                .map_err(|error| format!("The microVM did not answer a command: {error}"))?
+                .0
+                != 0
+        }
+        None => created,
+    };
+    if needs_provision {
+        for step in &options.provision {
+            eprintln!("[box-exec] provisioning: {step}");
+            let (code, _) = run(&litebox, step)
+                .await
+                .map_err(|error| format!("Installing the Agent failed to run: {error}"))?;
+            if code != 0 {
+                return Err(format!(
+                    "Installing the Agent in the microVM failed (exit {code}). The box needs \
+                     network access to the package registry; check the run's egress allow-list.",
+                ));
+            }
+        }
+        eprintln!("[box-exec] provisioned in {:?}", started.elapsed());
+    }
+    Ok(litebox)
+}
+
 #[tokio::main]
 async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     let options = parse();
     let started = Instant::now();
+    // Spawned by Studio, so the inherited PATH is launchd's, not a shell's.
+    harness_box_host::ensure_tooling_path();
     eprintln!("[box-exec] boxlite {}", boxlite::VERSION);
 
-    let runtime = BoxliteRuntime::with_defaults()?;
+    // BoxLite locks its home directory to one runtime, and each run owns its
+    // own, so a second concurrent box run cannot start. The raw error names a
+    // directory and a lock; the reader needs the rule instead.
+    let runtime = match BoxliteRuntime::with_defaults() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!(
+                "[box-exec] Only one microVM run can be active at a time. \
+                 Finish or cancel the other run, then start this one again."
+            );
+            eprintln!("[box-exec] {error}");
+            return Ok(ExitCode::from(1));
+        }
+    };
     let box_options = BoxOptions {
         memory_mib: options.memory_mib,
         disk_size_gb: options.disk_size_gb,
@@ -186,34 +280,31 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         auto_delete: if options.keep { Some(0) } else { None },
         ..Default::default()
     };
-    let (litebox, created) = runtime
-        .get_or_create(box_options, Some(options.name.clone()))
-        .await?;
-    litebox.start().await?;
-    eprintln!(
-        "[box-exec] box {} ({}) ready in {:?}",
-        options.name,
-        if created { "new" } else { "reused" },
-        started.elapsed()
-    );
-
-    // Provision only when the probe says the tool is missing. On a reused box
-    // this is one cheap command instead of a re-install.
-    let needs_provision = match &options.probe {
-        Some(probe) => run(&litebox, probe).await?.0 != 0,
-        None => created,
-    };
-    if needs_provision {
-        for step in &options.provision {
-            eprintln!("[box-exec] provisioning: {step}");
-            let (code, _) = run(&litebox, step).await?;
-            if code != 0 {
-                eprintln!("[box-exec] provisioning failed with exit {code}");
-                return Ok(ExitCode::from(1));
-            }
+    // One deadline over the whole slow half — pulling an image, building a
+    // rootfs, installing packages over the network. The ACP host has no timeout
+    // of its own; it waits for the Agent's first frame. Without this, a stalled
+    // pull would leave Studio waiting with nothing to show.
+    let litebox = match tokio::time::timeout(
+        options.start_deadline,
+        prepare(&runtime, box_options, &options, started),
+    )
+    .await
+    {
+        Ok(Ok(litebox)) => litebox,
+        Ok(Err(reason)) => {
+            eprintln!("[box-exec] {reason}");
+            return Ok(ExitCode::from(1));
         }
-        eprintln!("[box-exec] provisioned in {:?}", started.elapsed());
-    }
+        Err(_) => {
+            eprintln!(
+                "[box-exec] The microVM was not ready within {:?}. A first run pulls the '{}' image \
+                 and installs the Agent, which needs network access; raise --start-timeout if this \
+                 machine is simply slow.",
+                options.start_deadline, options.image,
+            );
+            return Ok(ExitCode::from(1));
+        }
+    };
 
     let mut command = BoxCommand::new(options.agent[0].clone()).args(&options.agent[1..]);
     for (key, value) in &options.env {

@@ -23,6 +23,8 @@ import { CheckCircle } from "@phosphor-icons/react/CheckCircle";
 import { ClipboardText } from "@phosphor-icons/react/ClipboardText";
 import { Clock } from "@phosphor-icons/react/Clock";
 import { ClockCounterClockwise } from "@phosphor-icons/react/ClockCounterClockwise";
+import { Cube } from "@phosphor-icons/react/Cube";
+import { Desktop } from "@phosphor-icons/react/Desktop";
 import { Code } from "@phosphor-icons/react/Code";
 import { Database } from "@phosphor-icons/react/Database";
 import { Eye } from "@phosphor-icons/react/Eye";
@@ -98,7 +100,9 @@ import {
   isAcpChoice,
   liveAgentChoices,
   liveRunEndpoint,
+  placementAvailable,
   resolveLiveAgentChoice,
+  type LiveRunPlacement,
 } from "./live-agent-choices.js";
 import type { StudioAcpAgentOption } from "../studio-shell-model.js";
 import { SAMPLE_DEBUGGER_SESSION } from "./sample-debugger-session.js";
@@ -251,7 +255,12 @@ export function RunView({
     ...(acpAgents === undefined ? {} : { agents: acpAgents }),
     labels: { local: t("composer.qoderOption"), defaultAcp: t("composer.acpOption", { agent: agentLabel }) },
   }), [acpAgents, acpEndpoint, agentLabel, localRunEnabled, t]);
-  const selectedAgent = resolveLiveAgentChoice(agentChoices, requestedAgent);
+  // Placement is a session preference, not a per-run one: a reader who moved the
+  // Debugger into a microVM means it for the next prompt too.
+  const [placement, setPlacement] = useSessionOwnedState<LiveRunPlacement>(`${owner}:placement`, "host");
+  const boxOffered = useMemo(() => placementAvailable(agentChoices), [agentChoices]);
+  const effectivePlacement: LiveRunPlacement = boxOffered ? placement : "host";
+  const selectedAgent = resolveLiveAgentChoice(agentChoices, requestedAgent, effectivePlacement);
   const viewState = state;
   const viewPrompt = submittedPrompt;
   const liveTimeline = useMemo(() => timelineItems(viewState), [viewState, viewState.timelineRevision]);
@@ -326,7 +335,11 @@ export function RunView({
 
   const start = useCallback(async (connect = false) => {
     if (busy.current || prompt.trim().length === 0 || selectedAgent === undefined) return;
-    const endpoint = liveRunEndpoint(selectedAgent, { run: runEndpoint, ...(acpEndpoint === undefined ? {} : { acp: acpEndpoint }) });
+    const endpoint = liveRunEndpoint(
+      selectedAgent,
+      { run: runEndpoint, ...(acpEndpoint === undefined ? {} : { acp: acpEndpoint }) },
+      effectivePlacement,
+    );
     if (endpoint === undefined) return;
     busy.current = true;
     const promptText = prompt.trim();
@@ -387,7 +400,7 @@ export function RunView({
         // Saving is best-effort evidence retention; the live view already holds the run.
       }
     }
-  }, [acpEndpoint, project, prompt, refreshRuns, runEndpoint, selectedAgent]);
+  }, [acpEndpoint, effectivePlacement, project, prompt, refreshRuns, runEndpoint, selectedAgent]);
 
   const cancelLiveRun = useCallback(async (): Promise<void> => {
     if (activeRuntime !== "acp" || state.runId === undefined) return;
@@ -404,7 +417,26 @@ export function RunView({
   const runMode = saved ? t("mode.savedRun") : live ? t("mode.liveWithStatus", { status: liveRunStatusLabel(viewState, t) }) : retainedSession.mode;
   const liveObservation = liveObservationCopy(viewState, t);
 
-  const actions = <div className="debugger-top-actions">{navigation}{live && activeRuntime === "acp" && state.status === "running" && !state.conversation && !state.connection ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />{t("cancelRun")}</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-label={t("savedRuns")} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>{t("savedRuns")}{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label={t("savedRuns")}>{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>{t("backToLive")}</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">{t("noSavedRuns")}</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{t("savedRunMeta", { count: run.toolCallCount, time: run.savedAt.slice(0, 19).replace("T", " ") })}</span></button>)}</div>}</div><button type="button" className="new-run" aria-label={t("newLiveRun")} title={t("newLiveRun")} onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" /><span>{t("newLiveRun")}</span></button></div>;
+  // Placement belongs beside the run controls rather than inside the Agent
+  // picker: it is a property of the next run, and the same Agent can answer on
+  // this machine or inside a VM. Hidden entirely when no Agent has a recipe, so
+  // the control never offers a placement the server would reject.
+  const placementControl = boxOffered
+    ? <div className="run-placement" role="group" aria-label={t("placement.aria")}>
+        {(["host", "box"] as const).map((option) => <button
+          key={option}
+          type="button"
+          className={effectivePlacement === option ? "selected" : ""}
+          aria-pressed={effectivePlacement === option}
+          title={t(option === "box" ? "placement.boxDetail" : "placement.hostDetail")}
+          onClick={() => setPlacement(option)}
+        >
+          {option === "box" ? <Cube size={14} /> : <Desktop size={14} />}
+          <span>{t(option === "box" ? "placement.box" : "placement.host")}</span>
+        </button>)}
+      </div>
+    : null;
+  const actions = <div className="debugger-top-actions">{navigation}{placementControl}{live && activeRuntime === "acp" && state.status === "running" && !state.conversation && !state.connection ? <button type="button" className="cancel-live-run" onClick={() => void cancelLiveRun()}><XCircle size={15} />{t("cancelRun")}</button> : null}<div className="saved-runs"><button type="button" onClick={() => { setRunsPanelOpen((value) => !value); void refreshRuns(); }} aria-label={t("savedRuns")} aria-expanded={runsPanelOpen} aria-haspopup="true"><ClockCounterClockwise size={15} /><span>{t("savedRuns")}{savedRuns.length > 0 ? ` (${savedRuns.length})` : ""}</span></button>{runsPanelOpen && <div className="saved-runs-panel" role="menu" aria-label={t("savedRuns")}>{saved && <button type="button" role="menuitem" className="saved-runs-live" onClick={() => { setSavedRun(null); setRetainedSession(SAMPLE_DEBUGGER_SESSION); setSurfaceMode("live"); setRunsPanelOpen(false); }}>{t("backToLive")}</button>}{savedRuns.length === 0 ? <p className="saved-runs-empty">{t("noSavedRuns")}</p> : savedRuns.map((run) => <button type="button" role="menuitem" key={run.id} className={savedRun?.id === run.id ? "selected" : ""} onClick={() => void openSavedRun(run.id)}><strong title={run.prompt}>{run.prompt}</strong><span><em className={`run-badge status-${run.status}`}>{run.status}</em>{t("savedRunMeta", { count: run.toolCallCount, time: run.savedAt.slice(0, 19).replace("T", " ") })}</span></button>)}</div>}</div><button type="button" className="new-run" aria-label={t("newLiveRun")} title={t("newLiveRun")} onClick={() => setComposerOpen(true)}><Plus size={14} weight="bold" /><span>{t("newLiveRun")}</span></button></div>;
   const status = <div className="debugger-status" role="status"><span className={`status-dot status-${viewState.status}`} aria-hidden="true" /><span>{live ? liveObservation.title : runMode}</span><span>{t("live.retainedEvents", { count: live ? liveTimeline.length : retainedSession.events.length })}</span>{live && liveTimeline.length > 0 && <div className="debugger-status-track">{liveBins.map((bin) => <span key={bin.index} className={`timeline-segment kind-${bin.kind}`} title={t("live.binEvents", { count: bin.count })} />)}</div>}{embedded && !live && <nav className="debugger-status-cursor" aria-label={t("minimap.aria")}>{retainedSession.events.map((event, index) => <button key={event.id} type="button" aria-label={t("minimap.segmentAria", { phase: event.phase, title: event.title })} title={event.title} aria-current={event.id === cursor.eventId ? "true" : undefined} onClick={() => selectCursor({ eventId: event.id })}>{index + 1}</button>)}</nav>}</div>;
   return <section className={`debugger-shell${embedded ? " embedded-debugger" : ""}${live ? " live-debugger" : ""}`}>
     {embedded ? <ToolbarActions>{actions}</ToolbarActions> : <header className="debugger-topbar"><strong>{t("title.liveRun")}</strong>{actions}</header>}
@@ -435,7 +467,7 @@ export function RunView({
     {!embedded && !live && <TimelineMinimap session={retainedSession} cursor={cursor} onSelect={selectCursor} />}
     {!embedded && status}
 
-{composerOpen && <LiveRunComposer projectLabel={project?.label} agents={agentChoices} selectedAgent={selectedAgent} prompt={prompt} running={state.status === "running"} onAgent={setRequestedAgent} onPrompt={setPrompt} onClose={() => setComposerOpen(false)} onRun={() => void start()} onChooseSession={selectedAgent && isAcpChoice(selectedAgent) ? () => void start(true) : undefined} />}
+{composerOpen && <LiveRunComposer projectLabel={project?.label} agents={agentChoices} selectedAgent={selectedAgent} placement={effectivePlacement} prompt={prompt} running={state.status === "running"} onAgent={setRequestedAgent} onPrompt={setPrompt} onClose={() => setComposerOpen(false)} onRun={() => void start()} onChooseSession={selectedAgent && isAcpChoice(selectedAgent) ? () => void start(true) : undefined} />}
   </section>;
 }
 

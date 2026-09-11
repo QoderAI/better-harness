@@ -24,6 +24,10 @@ const nativeExecutable = nativeIndex >= 0 ? path.resolve(process.argv[nativeInde
   : path.join(repositoryRoot, "packages", "better-harness-desktop", "dist", "native", `harness-evidence-host${process.platform === "win32" ? ".exe" : ""}`);
 const { createRustEvidenceHost } = await import(path.join(packageRoot, "dist", "server", "workspace", "rust-evidence-provider.js"));
 const performanceHost = existsSync(nativeExecutable) ? createRustEvidenceHost({ executable: nativeExecutable }) : undefined;
+// The desktop app stages the microVM shim; a dev Studio reads it from the same
+// place so the Debugger's placement control can be exercised without packaging.
+const { discoverAcpAgentProfiles } = await import(path.join(packageRoot, "dist", "server", "acp-agent-catalog.js"));
+const boxExecutable = path.join(repositoryRoot, "packages", "better-harness-desktop", "dist", "native", "harness-box-exec");
 const started = await startHarnessStudioServer({
   appDir: path.join(packageRoot, "dist", "app"),
   port,
@@ -34,6 +38,10 @@ const started = await startHarnessStudioServer({
     args: acpAgentArgs,
     label: process.env.BETTER_HARNESS_ACP_AGENT_LABEL || "Codex ACP",
   },
+  // The whole catalog, not just the default: placement needs to know which
+  // Agents have a recipe, including ones absent from this machine.
+  acpAgents: await discoverAcpAgentProfiles(),
+  ...(existsSync(boxExecutable) ? { boxExecExecutable: boxExecutable } : {}),
   customizationCollector: createBundledAgentCustomizationCollector(),
   ...(intentAnalysisEnabled ? { intentAnalyzer: createQoderCliIntentAnalyzer({ pluginRoot: repositoryRoot }) } : {}),
 });

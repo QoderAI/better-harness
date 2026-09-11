@@ -157,6 +157,14 @@ export const run: typeof enRun = {
   toggleTree: "切换执行树",
   toggleInspector: "切换状态检查器",
   newLiveRun: "新建实时运行",
+  placement: {
+    aria: "本次运行的执行位置",
+    host: "本机",
+    hostDetail: "在本机运行 Agent，与 Studio 一直以来的方式相同。",
+    box: "微虚拟机",
+    localNotBoxable: "本地 Qoder harness 运行在 Studio 进程内，没有可供运行的虚拟机环境。",
+    boxDetail: "在一次性的 Linux 微虚拟机中运行 Agent。项目挂载在 /workspace，因此改动是真实的，而命令执行留在虚拟机内。Agent 在首次使用时安装，之后复用同一个 box。",
+  },
   controlsAria: "会话调试器控件",
   controls: {
     previousStop: "上一个停止点",

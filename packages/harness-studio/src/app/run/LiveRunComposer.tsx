@@ -1,7 +1,7 @@
 import { PromptInput, PromptInputFooter, PromptInputTextarea } from "../components/ai-elements/prompt-input.js";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import type { LiveAgentChoice } from "./live-agent-choices.js";
+import { choiceRunnable, isAcpChoice, type LiveAgentChoice, type LiveRunPlacement } from "./live-agent-choices.js";
 
 /** Owns dialog layout and focus; RunView continues to own the draft and launch. */
 export function LiveRunComposer(props: {
@@ -15,8 +15,11 @@ export function LiveRunComposer(props: {
   onClose: () => void;
   onRun: () => void;
   onChooseSession?: () => void;
+  /** Where this run will execute. Decides which Agents the picker can offer. */
+  placement?: LiveRunPlacement;
 }): React.JSX.Element {
   const { t } = useTranslation("run");
+  const placement = props.placement ?? "host";
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const canRun = !props.running && props.prompt.trim().length > 0 && props.selectedAgent !== undefined;
@@ -43,12 +46,25 @@ export function LiveRunComposer(props: {
       const bounds = event.currentTarget.getBoundingClientRect();
       if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) props.onClose();
     }}>
-      <header><h2 id="live-composer-title">{t("composer.title")}</h2>{props.projectLabel && <span title={props.projectLabel}>{props.projectLabel}</span>}</header>
+      <header><h2 id="live-composer-title">{t("composer.title")}</h2>{placement === "box" && <em className="live-composer-placement">{t("placement.box")}</em>}{props.projectLabel && <span title={props.projectLabel}>{props.projectLabel}</span>}</header>
     <PromptInput onSubmit={(event) => { event.preventDefault(); if (canRun) props.onRun(); }}>
       <PromptInputTextarea ref={input} value={props.prompt} aria-label={t("composer.promptLabel")} placeholder={t("composer.promptPlaceholder")} onValueChange={props.onPrompt} rows={4} />
       <PromptInputFooter><label className="live-composer-agent"><span>{t("composer.agent")}</span>
         <select value={props.selectedAgent?.value ?? ""} onChange={(event) => props.onAgent(event.target.value)}>
-          {props.agents.map((choice) => <option key={choice.value} value={choice.value} disabled={!choice.available} title={choice.detail}>{choice.available ? choice.label : t("composer.agentUnavailable", { agent: choice.label })}</option>)}
+          {props.agents.map((choice) => {
+            // In a box, every verdict is the box's. Falling back to the host
+            // detail would tell a reader that a boxable Agent "is not
+            // installed" — true of this machine, irrelevant to the guest.
+            const runnable = choiceRunnable(choice, placement);
+            const detail = placement !== "box"
+              ? choice.detail
+              : isAcpChoice(choice)
+                ? choice.boxDetail ?? choice.detail
+                : t("placement.localNotBoxable");
+            return <option key={choice.value} value={choice.value} disabled={!runnable} title={detail}>
+              {runnable ? choice.label : t("composer.agentUnavailable", { agent: choice.label })}
+            </option>;
+          })}
         </select>
       </label>{props.onChooseSession && <button type="button" disabled={!canRun} onClick={props.onChooseSession}>{t("connection.title")}</button>}<button type="button" onClick={props.onClose}>{t("composer.cancel")}</button><button type="submit" className="primary" disabled={!canRun}>{t("composer.run")}</button></PromptInputFooter>
     </PromptInput>

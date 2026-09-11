@@ -25,6 +25,9 @@ const FLUSH_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // Before the runtime is built: it shells out to mke2fs on first rootfs
+    // build, and an XPC service inherits launchd's PATH rather than a shell's.
+    harness_box_host::ensure_tooling_path();
     let (outbound, mut queue) = mpsc::channel::<String>(OUTBOUND_CAPACITY);
     let writer = tokio::spawn(async move {
         let mut out = tokio::io::stdout();

@@ -27,6 +27,13 @@ export interface StudioAcpAgentOption {
   label: string;
   available: boolean;
   detail: string;
+  /**
+   * Whether this Agent can run inside a microVM instead of on this machine.
+   * Independent of `available`: a box installs the Agent itself, so one may be
+   * boxable without being installed here, or installed here without a recipe.
+   */
+  boxAvailable?: boolean;
+  boxDetail?: string;
 }
 
 /** Retained Session count for one Agent (Coding Agent / ACP client) in the active Project. */

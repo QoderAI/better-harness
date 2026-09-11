@@ -8,7 +8,7 @@ import { runWalnutBootstrapCli } from "./providers/walnut/cli.js";
 import { runArtifactProviderCli } from "./artifacts/registry/artifact-provider-cli.js";
 import { createBundledAgentCustomizationCollector } from "./customization-collector.js";
 import { loadArtifactProviderModules } from "./artifacts/registry/artifact-provider-modules.js";
-import { discoverAcpAgentProfiles } from "./acp-agent-catalog.js";
+import { discoverAcpAgentProfiles, findExecutable } from "./acp-agent-catalog.js";
 import { createBundledInspectorWorkspaceSessionProvider } from "./workspace/bundled-session-provider.js";
 import type { StudioAcpAgentOptions } from "./studio-types.js";
 
@@ -348,6 +348,10 @@ export async function runHarnessStudioCli(argv: string[], io: HarnessStudioCliIo
   const preferredAcpAgent = explicitAcpAgent === undefined
     ? acpAgents.find((profile) => profile.agent !== undefined)?.agent
     : acpAgents.find((profile) => profile.agent?.command === explicitAcpAgent.command)?.agent ?? explicitAcpAgent;
+  // The microVM shim is discovered the same way an Agent is, so a CLI Studio
+  // offers the placement whenever `harness-box-exec` is reachable and stays
+  // host-only when it is not. The desktop app passes its staged path instead.
+  const boxExecExecutable = await findExecutable("harness-box-exec");
   let artifactProviders;
   try {
     artifactProviders = await loadArtifactProviderModules(
@@ -375,6 +379,7 @@ export async function runHarnessStudioCli(argv: string[], io: HarnessStudioCliIo
       ...(parsed.runtime !== undefined ? { runtimeId: parsed.runtime } : {}),
       ...(preferredAcpAgent === undefined ? {} : { acpAgent: preferredAcpAgent }),
       ...(acpAgents.length === 0 ? {} : { acpAgents }),
+      ...(boxExecExecutable === undefined ? {} : { boxExecExecutable }),
       ...(parsed.runs !== undefined ? { runDirectory: resolve(parsed.runs) } : {}),
       ...(parsed.artifacts !== undefined ? { artifactDirectory: resolve(parsed.artifacts) } : {}),
       ...(parsed.canvasViewers !== undefined ? { canvasViewerRoot: resolve(parsed.canvasViewers) } : {}),

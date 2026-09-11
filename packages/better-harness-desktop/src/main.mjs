@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, BrowserWindow, dialog, Menu, nativeTheme, session, utilityProcess } from 'electron';
 import { randomBytes } from 'node:crypto';
@@ -31,6 +32,23 @@ function fail(error) {
  * so the renderer is told which edge to reserve rather than guessing from the
  * user agent.
  */
+/**
+ * Locate the staged microVM shim, when this build has one.
+ *
+ * `scripts/rust.mjs` skips `box-service` where BoxLite cannot be compiled, so a
+ * missing binary is an ordinary outcome. Returning nothing keeps the start
+ * contract honest: Studio only offers a microVM placement it can actually run.
+ */
+function boxExecOptions() {
+  if (process.platform === 'win32') return {};
+  const executable = join(
+    app.isPackaged ? process.resourcesPath : fileURLToPath(new URL('../dist', import.meta.url)),
+    'native',
+    'harness-box-exec',
+  );
+  return existsSync(executable) ? { boxExecExecutable: executable } : {};
+}
+
 function windowChrome() {
   if (process.platform === 'darwin') {
     return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 19 } };
@@ -147,6 +165,10 @@ else {
       evidenceHostExecutable: process.platform === 'darwin'
         ? join(app.isPackaged ? join(process.resourcesPath, '..') : fileURLToPath(new URL('../dist/native/Harness Evidence.app/Contents', import.meta.url)), 'MacOS', 'harness-evidence-client')
         : join(app.isPackaged ? process.resourcesPath : fileURLToPath(new URL('../dist', import.meta.url)), 'native', process.platform === 'win32' ? 'harness-evidence-host.exe' : 'harness-evidence-host'),
+      // The microVM shim is built only where BoxLite can be compiled, so its
+      // absence is normal rather than an error: Studio then hides the placement
+      // instead of offering a run it cannot start.
+      ...boxExecOptions(),
       async pickDirectory() {
         if (!window || window.isDestroyed()) throw new Error('No active Studio window');
         const result = await dialog.showOpenDialog(window, { title: 'Open a Project in Harness Studio', properties: ['openDirectory'] });

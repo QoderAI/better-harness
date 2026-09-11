@@ -47,7 +47,9 @@ async function stop() {
 port.on('message', async (data) => {
   try {
     if (isMessage(data, 'start') && !starting && !stopping) {
-      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || (data.esbuildExecutable !== undefined && (typeof data.esbuildExecutable !== 'string' || data.esbuildTransport !== 'nsxpc' || process.platform !== 'darwin')) || typeof data.oxcExecutable !== 'string' || typeof data.acpHostExecutable !== 'string' || typeof data.evidenceHostExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport) || !['stdio', 'nsxpc'].includes(data.acpHostTransport) || !['stdio', 'nsxpc'].includes(data.evidenceHostTransport)) {
+      // `boxExecExecutable` is optional: builds without BoxLite omit it, and
+      // Studio then offers no microVM placement. A wrong type is still a fault.
+      if (typeof data.token !== 'string' || data.token.length !== 64 || typeof data.dataDirectory !== 'string' || (data.esbuildExecutable !== undefined && (typeof data.esbuildExecutable !== 'string' || data.esbuildTransport !== 'nsxpc' || process.platform !== 'darwin')) || (data.boxExecExecutable !== undefined && typeof data.boxExecExecutable !== 'string') || typeof data.oxcExecutable !== 'string' || typeof data.acpHostExecutable !== 'string' || typeof data.evidenceHostExecutable !== 'string' || !['stdio', 'nsxpc'].includes(data.oxcTransport) || !['stdio', 'nsxpc'].includes(data.acpHostTransport) || !['stdio', 'nsxpc'].includes(data.evidenceHostTransport)) {
         throw new Error('Invalid Studio startup contract');
       }
       starting = true;
@@ -108,6 +110,7 @@ port.on('message', async (data) => {
         artifactLinkerFactory,
         acpHostExecutable: data.acpHostExecutable,
         acpHostTransport: data.acpHostTransport,
+        ...(data.boxExecExecutable === undefined ? {} : { boxExecExecutable: data.boxExecExecutable }),
         acpAgents,
         harnessMode: 'workspace-default',
         appDir: defaultAppDir(), host: '127.0.0.1', port: 0, accessToken: data.token,

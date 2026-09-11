@@ -9,7 +9,7 @@ export function desktopEsbuildOptions({ platform, contentsDirectory }) {
 }
 
 /** Owns one child. No generic method dispatch or renderer IPC surface. */
-export function connectStudioService(child, { token, dataDirectory, oxcExecutable, oxcTransport = 'stdio', esbuildExecutable, esbuildTransport = 'stdio', acpHostExecutable, acpHostTransport = 'stdio', evidenceHostExecutable, evidenceHostTransport = 'stdio', pickDirectory, onFailure, startupTimeout = 30_000, shutdownTimeout = 5_000 }) {
+export function connectStudioService(child, { token, dataDirectory, oxcExecutable, oxcTransport = 'stdio', esbuildExecutable, esbuildTransport = 'stdio', acpHostExecutable, acpHostTransport = 'stdio', evidenceHostExecutable, evidenceHostTransport = 'stdio', boxExecExecutable, pickDirectory, onFailure, startupTimeout = 30_000, shutdownTimeout = 5_000 }) {
   let ready = false;
   let stopping = false;
   let exited = false;
@@ -57,7 +57,7 @@ export function connectStudioService(child, { token, dataDirectory, oxcExecutabl
       else if (!stopping) onFailure(new Error(`Studio service exited unexpectedly (${code})`));
     });
   });
-  child.postMessage(message('start', { token, dataDirectory, oxcExecutable, oxcTransport, esbuildExecutable, esbuildTransport, acpHostExecutable, acpHostTransport, evidenceHostExecutable, evidenceHostTransport }));
+  child.postMessage(message('start', { token, dataDirectory, oxcExecutable, oxcTransport, esbuildExecutable, esbuildTransport, acpHostExecutable, acpHostTransport, evidenceHostExecutable, evidenceHostTransport, boxExecExecutable }));
   return {
     started,
     stop() {
