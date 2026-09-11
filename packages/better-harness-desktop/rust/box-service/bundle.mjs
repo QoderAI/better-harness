@@ -18,6 +18,13 @@ const desktop = resolve(crate, '..', '..');
 const serviceId = 'com.qoder.harness-studio.box';
 const appPath = join(desktop, 'dist', 'native', 'Harness Box.app');
 
+// `ServiceType: User` rather than the `Application` the sibling services use.
+// BoxLite locks its home directory to one runtime, and `Application` gives each
+// calling process its own service instance — which would mean one runtime per
+// caller, and every caller after the first failing to start. `User` gives this
+// login session a single instance for every connection to share. Measured:
+// three concurrent clients report one servicePid under `User` and three under
+// `Application`.
 const plist = (body) => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>${body}</dict></plist>\n`;
@@ -48,7 +55,7 @@ await writeFile(join(service, 'Info.plist'), plist(`
 <key>CFBundleExecutable</key><string>harness-box-xpc</string>
 <key>CFBundlePackageType</key><string>XPC!</string>
 <key>CFBundleVersion</key><string>1</string>
-<key>XPCService</key><dict><key>ServiceType</key><string>Application</string></dict>`));
+<key>XPCService</key><dict><key>ServiceType</key><string>User</string></dict>`));
 await writeFile(join(contents, 'Info.plist'), plist(`
 <key>CFBundleIdentifier</key><string>${serviceId}-development</string>
 <key>CFBundleExecutable</key><string>harness-box-client</string>

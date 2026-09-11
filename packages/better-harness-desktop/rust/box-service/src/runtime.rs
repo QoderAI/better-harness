@@ -50,6 +50,11 @@ use crate::wire::{
 struct ExecHandle {
     execution: Arc<boxlite::Execution>,
     stdin: Mutex<Option<boxlite::ExecStdin>>,
+    /// Which connection started it, so a dropped connection takes its own
+    /// commands with it and nobody else's. Boxes are deliberately *not* scoped
+    /// this way: they are shared by name so a second session reuses the first's
+    /// install.
+    connection: Option<u64>,
 }
 
 pub struct BoxHost {
@@ -86,8 +91,8 @@ impl BoxHost {
         })
     }
 
-    async fn emit(&self, event: HostEvent) {
-        if let Ok(line) = encode_event(&event) {
+    async fn emit(&self, connection: Option<u64>, event: HostEvent) {
+        if let Ok(line) = encode_event(connection, &event) {
             let _ = self.events.send(line).await;
         }
     }
@@ -150,16 +155,19 @@ impl BoxHost {
         }))
     }
 
-    pub async fn start(&self, name: &str) -> Result<Value> {
+    pub async fn start(&self, name: &str, connection: Option<u64>) -> Result<Value> {
         let litebox = self.lookup(name).await?;
         let started = Instant::now();
         litebox.start().await?;
         let elapsed = started.elapsed().as_millis() as u64;
-        self.emit(HostEvent::BoxState {
-            box_id: litebox.id().to_string(),
-            state: "running".into(),
-            elapsed_ms: Some(elapsed),
-        })
+        self.emit(
+            connection,
+            HostEvent::BoxState {
+                box_id: litebox.id().to_string(),
+                state: "running".into(),
+                elapsed_ms: Some(elapsed),
+            },
+        )
         .await;
         Ok(json!({ "boxId": litebox.id().to_string(), "bootMs": elapsed }))
     }
@@ -167,7 +175,11 @@ impl BoxHost {
     /// Run one command. Returns as soon as the command is *launched*; output and
     /// the exit code arrive as events, so a long-lived agent is the normal case
     /// rather than a special one.
-    pub async fn exec(self: &Arc<Self>, params: ExecParams) -> Result<Value> {
+    pub async fn exec(
+        self: &Arc<Self>,
+        params: ExecParams,
+        connection: Option<u64>,
+    ) -> Result<Value> {
         let litebox = self.lookup(&params.name).await?;
         let mut command = BoxCommand::new(params.command.clone()).args(params.args.clone());
         for (key, value) in &params.env {
@@ -200,6 +212,7 @@ impl BoxHost {
             Arc::new(ExecHandle {
                 execution: execution.clone(),
                 stdin: Mutex::new(stdin),
+                connection,
             }),
         );
 
@@ -208,11 +221,14 @@ impl BoxHost {
             let id = exec_id.clone();
             tokio::spawn(async move {
                 while let Some(line) = stream.next().await {
-                    host.emit(HostEvent::Output {
-                        exec_id: id.clone(),
-                        stream: OutputStream::Stdout,
-                        data: line,
-                    })
+                    host.emit(
+                        connection,
+                        HostEvent::Output {
+                            exec_id: id.clone(),
+                            stream: OutputStream::Stdout,
+                            data: line,
+                        },
+                    )
                     .await;
                 }
             });
@@ -222,11 +238,14 @@ impl BoxHost {
             let id = exec_id.clone();
             tokio::spawn(async move {
                 while let Some(line) = stream.next().await {
-                    host.emit(HostEvent::Output {
-                        exec_id: id.clone(),
-                        stream: OutputStream::Stderr,
-                        data: line,
-                    })
+                    host.emit(
+                        connection,
+                        HostEvent::Output {
+                            exec_id: id.clone(),
+                            stream: OutputStream::Stderr,
+                            data: line,
+                        },
+                    )
                     .await;
                 }
             });
@@ -239,11 +258,14 @@ impl BoxHost {
                 Ok(result) => (result.exit_code, result.error_message),
                 Err(error) => (-1, Some(error.to_string())),
             };
-            host.emit(HostEvent::Exit {
-                exec_id: id.clone(),
-                exit_code,
-                error_message,
-            })
+            host.emit(
+                connection,
+                HostEvent::Exit {
+                    exec_id: id.clone(),
+                    exit_code,
+                    error_message,
+                },
+            )
             .await;
             host.execs.lock().await.remove(&id);
         });
@@ -299,14 +321,17 @@ impl BoxHost {
         Ok(json!({ "ok": true }))
     }
 
-    pub async fn stop(&self, name: &str) -> Result<Value> {
+    pub async fn stop(&self, name: &str, connection: Option<u64>) -> Result<Value> {
         let litebox = self.lookup(name).await?;
         litebox.stop().await?;
-        self.emit(HostEvent::BoxState {
-            box_id: litebox.id().to_string(),
-            state: "stopped".into(),
-            elapsed_ms: None,
-        })
+        self.emit(
+            connection,
+            HostEvent::BoxState {
+                box_id: litebox.id().to_string(),
+                state: "stopped".into(),
+                elapsed_ms: None,
+            },
+        )
         .await;
         Ok(json!({ "ok": true }))
     }
@@ -329,6 +354,29 @@ impl BoxHost {
                 }))
                 .collect::<Vec<_>>()
         ))
+    }
+
+    /// Kill what one connection left running, without touching anyone else's.
+    ///
+    /// Boxes deliberately survive: they are named per Project and shared, so the
+    /// next session reuses the install this one paid for. Commands do not — a
+    /// dropped connection has nobody left to read their output, and an agent
+    /// waiting on a stdin that will never be written is just a stuck VM.
+    pub async fn close_connection(&self, connection: u64) -> Result<Value> {
+        let doomed: Vec<(String, Arc<ExecHandle>)> = self
+            .execs
+            .lock()
+            .await
+            .iter()
+            .filter(|(_, handle)| handle.connection == Some(connection))
+            .map(|(id, handle)| (id.clone(), handle.clone()))
+            .collect();
+        let closed = doomed.len();
+        for (id, handle) in doomed {
+            let _ = handle.execution.kill().await;
+            self.execs.lock().await.remove(&id);
+        }
+        Ok(json!({ "ok": true, "closed": closed }))
     }
 
     /// Drop every box this driver started. Called on `shutdown` so a Studio quit

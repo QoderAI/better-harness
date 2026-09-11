@@ -106,25 +106,31 @@ the `box.create` reply that would have created it.
 economy of the thing — the second Debugger session skips the install the first
 one paid for.
 
-## One runtime per BOXLITE_HOME
+## One runtime per BOXLITE_HOME — resolved
 
 BoxLite locks its home directory: *"Only one runtime instance can use a
 BOXLITE_HOME directory at a time."* This is the one place the service cannot
 copy `acp-host`, which spawns a driver per XPC connection — a second box driver
 would fail to start rather than share.
 
-Three ways out, in preference order:
+Resolved by option 1 of the three the POC listed: **one driver, shared by every
+connection, replies routed by `connectionId`.** See
+[`docs/specs/2026-09-11-box-driver-singleton.md`](../../../../docs/specs/2026-09-11-box-driver-singleton.md).
 
-1. **One driver for every connection.** The XPC service holds a single driver
-   and multiplexes connections onto it. Keeps the cache and the warm boxes;
-   costs a connection id in the frame envelope.
-2. **The XPC service holds the runtime itself**, dropping the driver child.
-   Simplest, but the service stops being a thin transport and the hypervisor
-   entitlement lands directly on it.
-3. **A `BOXLITE_HOME` per driver.** Works today, throws away the shared image
-   cache and every warm box — which is most of the value.
+Two things make it work:
 
-Nothing here is decided. It is the first thing to decide.
+- The bundle is **`ServiceType: User`**, not `Application`. `Application` gives
+  each calling *process* its own service instance — measured: three concurrent
+  clients, three service pids, two of them dead on arrival. `User` gives the
+  login session one instance to share.
+- Requests are stamped with a `connectionId` by the service, and the driver
+  echoes it on replies and stamps it on events. Boxes stay shared by name;
+  commands belong to the connection that started them, and a dropped connection
+  reaps only its own.
+
+**This does not yet make concurrent boxed runs work.** `harness-box-exec` still
+holds a runtime of its own, so two Debugger runs in a box still collide. Moving
+the shim onto this service is the next slice.
 
 ## Putting the Debugger in a box
 

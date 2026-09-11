@@ -9,13 +9,22 @@
 //! No virtualization logic lives here. The driver is unmodified — this file is
 //! the same transport shell as `evidence-host`'s, deliberately.
 //!
-//! # What differs from the other services
+//! # One driver, many connections
 //!
-//! The driver child owns microVMs, not just parsed bytes. Reaping it is
-//! therefore load-bearing rather than tidy: the existing `reap_driver` path,
-//! which closes stdin and then kills after a grace period, is what stops a
-//! dropped connection from stranding a running VM. Killing the process is
-//! sufficient because BoxLite is daemonless — the VMs are its children.
+//! The other three services run a driver per connection. This one cannot:
+//! BoxLite locks `BOXLITE_HOME` to a single runtime, so a second driver would
+//! fail to start and every caller after the first would get nothing. Instead
+//! there is one shared driver, requests are stamped with a `connectionId` on
+//! the way in, and replies and events are routed back by that id.
+//!
+//! Two consequences shape this file:
+//!
+//! - The bundle must be `ServiceType: User`. `Application` gives each calling
+//!   *process* its own service instance, which puts us back to one runtime per
+//!   caller however carefully this file is written.
+//! - A dropped connection must not reap the driver, the way the sibling
+//!   services do — that would kill another session's agent. It sends
+//!   `connection.close` instead, and only a dead driver reaches `reap_driver`.
 //!
 //! # Entitlements are not our problem
 //!
@@ -26,15 +35,17 @@
 //! the driver needs an entitlement of its own — verified by booting a VM through
 //! this transport under a plain `codesign --sign -` bundle.
 
+use std::collections::HashMap;
 use std::io::{self, BufRead, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use block2::RcBlock;
 use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::{AnyObject, AnyProtocol, ProtocolObject};
-use objc2::{AnyThread, DefinedClass, Message, define_class, msg_send};
+use objc2::{AnyThread, DefinedClass, define_class, msg_send};
 use objc2_foundation::{
     NSData, NSObject, NSObjectProtocol, NSString, NSXPCConnection, NSXPCInterface, NSXPCListener,
     NSXPCListenerDelegate,
@@ -59,9 +70,6 @@ fn client_interface() -> Retained<NSXPCInterface> {
     unsafe { NSXPCInterface::interfaceWithProtocol(&*harness_box_client_protocol()) }
 }
 
-struct SendConn(Retained<NSXPCConnection>);
-unsafe impl Send for SendConn {}
-
 struct SendProxy(Retained<AnyObject>);
 unsafe impl Send for SendProxy {}
 
@@ -70,10 +78,39 @@ struct DriverProcess {
     stdin: ChildStdin,
 }
 
-type SharedDriver = Arc<Mutex<Option<DriverProcess>>>;
+/// The one driver every connection shares.
+///
+/// This is the single place this service cannot copy `acp-host`, which spawns a
+/// driver per connection. BoxLite locks its home directory — *"Only one
+/// BoxliteRuntime can use a BOXLITE_HOME directory at a time"* — so a second
+/// driver would fail to start rather than share, and every connection after the
+/// first would get nothing. One driver, many connections, replies routed by id.
+///
+/// The service bundle is `ServiceType: User` for the same reason: `Application`
+/// gives each calling process its own service instance, which would put us back
+/// to one runtime per caller no matter what this file does.
+static DRIVER: LazyLock<Mutex<Option<DriverProcess>>> = LazyLock::new(|| Mutex::new(None));
 
-fn reap_driver(shared: &SharedDriver) {
-    let Some(mut owned) = shared
+/// Where each connection's replies and events go.
+static CLIENTS: LazyLock<Mutex<HashMap<u64, SendProxy>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
+
+/// Tear the shared driver down and tell every connection why.
+///
+/// Only reached when the driver itself is gone or unusable. A single connection
+/// dropping never gets here — that sends `connection.close` instead, so one
+/// caller leaving cannot take another's agent with it.
+fn reap_driver(reason: &str) {
+    let clients: Vec<SendProxy> = {
+        let mut guard = CLIENTS.lock().unwrap_or_else(|poison| poison.into_inner());
+        guard.drain().map(|(_, proxy)| proxy).collect()
+    };
+    for proxy in &clients {
+        fail_bridge(&proxy.0, reason);
+    }
+    let Some(mut owned) = DRIVER
         .lock()
         .unwrap_or_else(|poison| poison.into_inner())
         .take()
@@ -97,10 +134,54 @@ fn reap_driver(shared: &SharedDriver) {
     });
 }
 
+/// Write one already-framed line to the shared driver.
+fn write_to_driver(line: &[u8]) -> bool {
+    let mut guard = DRIVER.lock().unwrap_or_else(|poison| poison.into_inner());
+    match guard.as_mut() {
+        Some(driver) => driver.stdin.write_all(line).is_ok() && driver.stdin.flush().is_ok(),
+        None => false,
+    }
+}
+
+/// Stamp the caller's identity onto a request.
+///
+/// The caller cannot do this itself — it does not know which connection it is —
+/// and the driver needs it to address replies and to know whose commands to
+/// reap. A frame that is not a JSON object is rejected rather than forwarded,
+/// because an unaddressed reply would be delivered to the wrong reader.
+fn address_frame(frame: &[u8], connection: u64) -> Option<Vec<u8>> {
+    let mut value: serde_json::Value = serde_json::from_slice(frame).ok()?;
+    value
+        .as_object_mut()?
+        .insert("connectionId".into(), serde_json::Value::from(connection));
+    let mut line = serde_json::to_vec(&value).ok()?;
+    line.push(b'\n');
+    Some(line)
+}
+
+/// Request id used for the service's own `connection.close`.
+///
+/// Out at the top of the range so it cannot collide with a caller's ids, which
+/// start at 1. The reply is discarded — by the time it arrives the connection
+/// is already unregistered.
+const CLOSE_REQUEST_ID: u32 = u32::MAX;
+
+/// Stop reading for one connection and reap only what it started.
+fn close_connection(connection: u64) {
+    CLIENTS
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .remove(&connection);
+    let frame = format!(
+        "{{\"version\":1,\"id\":{CLOSE_REQUEST_ID},\"method\":\"connection.close\",\"connectionId\":{connection}}}\n"
+    );
+    write_to_driver(frame.as_bytes());
+}
+
 define_class!(
     #[unsafe(super = NSObject)]
     #[name = "HarnessBoxSession"]
-    #[ivars = SharedDriver]
+    #[ivars = u64]
     struct BoxSession;
 
     unsafe impl NSObjectProtocol for BoxSession {}
@@ -108,24 +189,26 @@ define_class!(
     impl BoxSession {
         #[unsafe(method(sendFrame:))]
         fn send_frame(&self, frame: &NSData) {
+            let connection = *self.ivars();
             if frame.len() > MAX_REQUEST_BYTES {
-                reap_driver(self.ivars());
+                // One caller's oversized frame is that caller's problem; the
+                // shared driver and every other connection keep going.
+                close_connection(connection);
                 return;
             }
             let bytes = frame.to_vec();
-            let mut guard = self
-                .ivars()
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner());
-            let broken = match guard.as_mut() {
-                Some(driver) => {
-                    driver.stdin.write_all(&bytes).is_err() || driver.stdin.flush().is_err()
-                }
-                None => false,
+            // The bridge opens with a bare newline to prove the channel works.
+            // There is nothing to address and nothing for the driver to answer,
+            // so it is dropped rather than treated as a malformed request.
+            if bytes.iter().all(u8::is_ascii_whitespace) {
+                return;
+            }
+            let Some(addressed) = address_frame(&bytes, connection) else {
+                close_connection(connection);
+                return;
             };
-            drop(guard);
-            if broken {
-                reap_driver(self.ivars());
+            if !write_to_driver(&addressed) {
+                reap_driver("the box driver is not accepting requests");
             }
         }
     }
@@ -133,13 +216,13 @@ define_class!(
 
 impl Drop for BoxSession {
     fn drop(&mut self) {
-        reap_driver(self.ivars());
+        close_connection(*self.ivars());
     }
 }
 
 impl BoxSession {
-    fn new(shared: SharedDriver) -> Retained<Self> {
-        let this = Self::alloc().set_ivars(shared);
+    fn new(connection: u64) -> Retained<Self> {
+        let this = Self::alloc().set_ivars(connection);
         unsafe { msg_send![super(this), init] }
     }
 }
@@ -165,7 +248,15 @@ define_class!(
     }
 );
 
-fn accept_connection(connection: &NSXPCConnection) -> io::Result<()> {
+/// Start the shared driver if it is not already running.
+///
+/// Idempotent and serialised by the `DRIVER` lock, so several connections
+/// arriving at once still produce exactly one driver — which is the whole point.
+fn ensure_driver() -> io::Result<()> {
+    let mut guard = DRIVER.lock().unwrap_or_else(|poison| poison.into_inner());
+    if guard.is_some() {
+        return Ok(());
+    }
     let driver_path = std::env::current_exe()?
         .parent()
         .map(|dir| dir.join(DRIVER_BIN))
@@ -183,27 +274,37 @@ fn accept_connection(connection: &NSXPCConnection) -> io::Result<()> {
         })?;
     let stdin = child.stdin.take().expect("stdin was piped");
     let stdout = child.stdout.take().expect("stdout was piped");
-    let shared: SharedDriver = Arc::new(Mutex::new(Some(DriverProcess { child, stdin })));
+    *guard = Some(DriverProcess { child, stdin });
+    drop(guard);
+    std::thread::spawn(move || pump_driver_stdout(stdout));
+    Ok(())
+}
+
+fn accept_connection(connection: &NSXPCConnection) -> io::Result<()> {
+    ensure_driver()?;
+    let id = NEXT_CONNECTION.fetch_add(1, Ordering::Relaxed);
 
     connection.setExportedInterface(Some(&host_interface()));
-    let session = BoxSession::new(shared.clone());
+    let session = BoxSession::new(id);
     unsafe { connection.setExportedObject(Some(&session)) };
     connection.setRemoteObjectInterface(Some(&client_interface()));
 
-    let handler_shared = shared.clone();
-    let invalidation = RcBlock::new(move || reap_driver(&handler_shared));
+    // Invalidation reaps this connection's commands, never the shared driver.
+    let invalidation = RcBlock::new(move || close_connection(id));
     connection.setInvalidationHandler(Some(&invalidation));
     connection.resume();
 
     let proxy: Retained<AnyObject> = connection.remoteObjectProxy();
+    CLIENTS
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .insert(id, SendProxy(proxy.clone()));
+    // Delivered directly rather than routed: the caller has to learn it is on
+    // NSXPC before it has sent anything for the driver to answer.
     deliver_frame(
         &proxy,
         transport_proof(std::process::id(), connection.processIdentifier()).as_bytes(),
     );
-
-    let pump_conn = SendConn(connection.retain());
-    let pump_proxy = SendProxy(proxy);
-    std::thread::spawn(move || pump_driver_stdout(pump_conn, pump_proxy, stdout, shared));
     Ok(())
 }
 
@@ -216,13 +317,14 @@ fn deliver_frame(proxy: &AnyObject, line: &[u8]) {
     });
 }
 
-fn pump_driver_stdout(
-    connection: SendConn,
-    proxy: SendProxy,
-    stdout: ChildStdout,
-    shared: SharedDriver,
-) {
-    let proxy = proxy.0;
+/// Read the shared driver's output and hand each frame to the connection it
+/// belongs to.
+///
+/// One reader for one driver: the frames of many callers are interleaved here,
+/// and `connectionId` is what separates them again. A frame naming no live
+/// connection is dropped rather than broadcast — delivering one caller's box
+/// output to another is worse than losing it.
+fn pump_driver_stdout(stdout: ChildStdout) {
     let mut reader = io::BufReader::new(stdout);
     let reason = loop {
         let mut line = Vec::new();
@@ -235,13 +337,32 @@ fn pump_driver_stdout(
             Ok(_) if line.len() > MAX_FRAME_BYTES => {
                 break "the box driver emitted an oversized frame";
             }
-            Ok(_) => deliver_frame(&proxy, &line),
+            Ok(_) => route_frame(&line),
             Err(_) => break "reading the box driver's output failed",
         }
     };
-    fail_bridge(&proxy, reason);
-    connection.0.invalidate();
-    reap_driver(&shared);
+    reap_driver(reason);
+}
+
+fn route_frame(line: &[u8]) {
+    let Some(connection) = frame_connection(line) else {
+        return;
+    };
+    // Cloned out from under the lock: delivery is a cross-process call and has
+    // no business holding the routing table while it runs.
+    let proxy = CLIENTS
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .get(&connection)
+        .map(|client| client.0.clone());
+    if let Some(proxy) = proxy {
+        deliver_frame(&proxy, line);
+    }
+}
+
+fn frame_connection(line: &[u8]) -> Option<u64> {
+    let value: serde_json::Value = serde_json::from_slice(line).ok()?;
+    value.get("connectionId")?.as_u64()
 }
 
 fn fail_bridge(proxy: &AnyObject, reason: &str) {

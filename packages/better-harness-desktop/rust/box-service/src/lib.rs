@@ -1,10 +1,17 @@
 //! microVM capability service for Better Harness Desktop.
 //!
 //! Fourth in the same family as `oxc-service`, `acp-host` and `evidence-host`:
-//! a stdio JSONL driver, an NSXPC service that runs one driver per connection,
-//! and a bridge Studio spawns in the driver's place on macOS.
+//! a stdio JSONL driver, an NSXPC service, and a bridge Studio spawns in the
+//! driver's place on macOS.
 //!
 //! What it adds is a place to put an agent that is not this machine.
+//!
+//! It differs from its three siblings in one structural way: they run a driver
+//! per connection, and this one cannot. BoxLite locks its home directory to a
+//! single runtime, so there is exactly one driver and every connection shares
+//! it. Requests carry a `connectionId` so replies and events find their way
+//! back, and `connection.close` reaps one caller's commands without touching
+//! anyone else's. See `xpc.rs`.
 
 pub mod runtime;
 pub mod wire;
@@ -64,50 +71,79 @@ use crate::wire::{
 /// every VM it is holding.
 pub async fn dispatch(host: &Arc<BoxHost>, frame: RequestFrame) -> Result<String, String> {
     let id = frame.id;
+    let at = frame.connection_id;
     match frame.method.as_str() {
-        "host.describe" => encode_ok(id, host.describe()),
+        "host.describe" => encode_ok(id, at, host.describe()),
         "box.create" => match parse::<BoxCreateParams>(&frame) {
-            Ok(params) => reply(id, "create-failed", host.create(params).await),
-            Err(message) => encode_error(id, "bad-params", message),
+            Ok(params) => reply(id, at, "create-failed", host.create(params).await),
+            Err(message) => encode_error(id, at, "bad-params", message),
         },
         "box.start" => match parse::<BoxRefParams>(&frame) {
-            Ok(params) => reply(id, "start-failed", host.start(&params.name).await),
-            Err(message) => encode_error(id, "bad-params", message),
+            Ok(params) => reply(id, at, "start-failed", host.start(&params.name, at).await),
+            Err(message) => encode_error(id, at, "bad-params", message),
         },
         "box.exec" => match parse::<ExecParams>(&frame) {
-            Ok(params) => reply(id, "exec-failed", host.exec(params).await),
-            Err(message) => encode_error(id, "bad-params", message),
+            Ok(params) => reply(id, at, "exec-failed", host.exec(params, at).await),
+            Err(message) => encode_error(id, at, "bad-params", message),
         },
         "exec.stdin" => match parse::<ExecStdinParams>(&frame) {
-            Ok(params) => reply(id, "stdin-failed", host.stdin(params).await),
-            Err(message) => encode_error(id, "bad-params", message),
+            Ok(params) => reply(id, at, "stdin-failed", host.stdin(params).await),
+            Err(message) => encode_error(id, at, "bad-params", message),
         },
         "exec.kill" => match parse::<ExecRefParams>(&frame) {
             Ok(params) => reply(
                 id,
+                at,
                 "kill-failed",
                 host.kill(&params.exec_id, params.signal).await,
             ),
-            Err(message) => encode_error(id, "bad-params", message),
+            Err(message) => encode_error(id, at, "bad-params", message),
         },
         "box.stop" => match parse::<BoxRefParams>(&frame) {
-            Ok(params) => reply(id, "stop-failed", host.stop(&params.name).await),
-            Err(message) => encode_error(id, "bad-params", message),
+            Ok(params) => reply(id, at, "stop-failed", host.stop(&params.name, at).await),
+            Err(message) => encode_error(id, at, "bad-params", message),
         },
         "box.remove" => match parse::<BoxRefParams>(&frame) {
             Ok(params) => reply(
                 id,
+                at,
                 "remove-failed",
                 host.remove(&params.name, params.force).await,
             ),
-            Err(message) => encode_error(id, "bad-params", message),
+            Err(message) => encode_error(id, at, "bad-params", message),
         },
-        "box.list" => reply(id, "list-failed", host.list().await),
-        "shutdown" => {
-            host.shutdown().await;
-            encode_ok(id, json!({ "status": "shutting-down" }))
-        }
-        other => encode_error(id, "unknown-method", format!("unknown method {other}")),
+        "box.list" => reply(id, at, "list-failed", host.list().await),
+        // Sent by the XPC service when a connection goes away.
+        "connection.close" => match at {
+            Some(connection) => reply(
+                id,
+                at,
+                "close-failed",
+                host.close_connection(connection).await,
+            ),
+            None => encode_error(
+                id,
+                at,
+                "bad-params",
+                "connection.close needs a connectionId".into(),
+            ),
+        },
+        "shutdown" => match at {
+            // One driver serves every connection, so a caller may only end its
+            // own work. Tearing down shared boxes on one caller's say-so would
+            // stop another session's agent mid-turn.
+            Some(connection) => reply(
+                id,
+                at,
+                "close-failed",
+                host.close_connection(connection).await,
+            ),
+            None => {
+                host.shutdown().await;
+                encode_ok(id, at, json!({ "status": "shutting-down" }))
+            }
+        },
+        other => encode_error(id, at, "unknown-method", format!("unknown method {other}")),
     }
 }
 
@@ -117,11 +153,12 @@ fn parse<T: serde::de::DeserializeOwned>(frame: &RequestFrame) -> Result<T, Stri
 
 fn reply(
     id: u32,
+    connection: Option<u64>,
     code: &str,
     outcome: anyhow::Result<serde_json::Value>,
 ) -> Result<String, String> {
     match outcome {
-        Ok(value) => encode_ok(id, value),
-        Err(error) => encode_error(id, code, error.to_string()),
+        Ok(value) => encode_ok(id, connection, value),
+        Err(error) => encode_error(id, connection, code, error.to_string()),
     }
 }

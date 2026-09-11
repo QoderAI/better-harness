@@ -59,14 +59,16 @@ async fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        let shutting_down = frame.method == "shutdown";
+        // Only a direct stdio caller can end the process; over XPC the driver is
+        // shared and `shutdown` means "close my connection" instead.
+        let shutting_down = frame.method == "shutdown" && frame.connection_id.is_none();
         let host = host.clone();
         let outbound = outbound.clone();
         let task = tokio::spawn(async move {
             let reply = harness_box_host::dispatch(&host, frame.clone())
                 .await
                 .unwrap_or_else(|error| {
-                    encode_error(frame.id, "encode-failed", error)
+                    encode_error(frame.id, frame.connection_id, "encode-failed", error)
                         .unwrap_or_else(|_| String::from("{\"version\":1,\"id\":0}\n"))
                 });
             let _ = outbound.send(reply).await;

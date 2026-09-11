@@ -17,13 +17,21 @@ pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 pub const HOST_PROTOCOL_VERSION: &str = "box-rust-0.1.0+jsonl-v1";
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RequestFrame {
     pub version: u32,
     pub id: u32,
     pub method: String,
     #[serde(default)]
     pub params: Value,
+    /// Which XPC connection asked, when the driver is shared.
+    ///
+    /// BoxLite locks its home directory to one runtime, so one driver serves
+    /// every connection and its replies have to find their way back. The XPC
+    /// service stamps this on the way in; a driver spoken to directly over
+    /// stdio leaves it absent and is simply the only caller.
+    #[serde(default)]
+    pub connection_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,28 +78,39 @@ pub fn parse_request_frame(line: &str) -> Result<RequestFrame, FrameError> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResponseFrame {
     pub version: u32,
     pub id: u32,
+    /// Echoed so the XPC service can route this back without tracking ids.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_id: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<Value>,
 }
 
-pub fn encode_ok(id: u32, result: Value) -> Result<String, String> {
+pub fn encode_ok(id: u32, connection: Option<u64>, result: Value) -> Result<String, String> {
     encode(&ResponseFrame {
         version: WIRE_VERSION,
         id,
+        connection_id: connection,
         result: Some(result),
         error: None,
     })
 }
 
-pub fn encode_error(id: u32, code: &str, message: String) -> Result<String, String> {
+pub fn encode_error(
+    id: u32,
+    connection: Option<u64>,
+    code: &str,
+    message: String,
+) -> Result<String, String> {
     encode(&ResponseFrame {
         version: WIRE_VERSION,
         id,
+        connection_id: connection,
         result: None,
         error: Some(serde_json::json!({ "code": code, "message": message })),
     })
@@ -143,12 +162,17 @@ pub enum OutputStream {
     Stderr,
 }
 
-pub fn encode_event(event: &HostEvent) -> Result<String, String> {
-    let mut line = serde_json::to_string(&serde_json::json!({
-        "version": WIRE_VERSION,
-        "event": event,
-    }))
-    .map_err(|error| error.to_string())?;
+/// Encode one event for the connection that caused it.
+///
+/// Events are unsolicited, so unlike a reply there is no request id to route by
+/// — the connection has to be named explicitly or the output of one caller's
+/// box would be delivered to another's.
+pub fn encode_event(connection: Option<u64>, event: &HostEvent) -> Result<String, String> {
+    let mut frame = serde_json::json!({ "version": WIRE_VERSION, "event": event });
+    if let Some(connection) = connection {
+        frame["connectionId"] = serde_json::json!(connection);
+    }
+    let mut line = serde_json::to_string(&frame).map_err(|error| error.to_string())?;
     if line.len() > MAX_FRAME_BYTES {
         return Err("event-limit".into());
     }
