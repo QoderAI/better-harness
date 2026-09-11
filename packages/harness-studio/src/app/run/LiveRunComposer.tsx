@@ -47,6 +47,11 @@ export function LiveRunComposer(props: {
       if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) props.onClose();
     }}>
       <header><h2 id="live-composer-title">{t("composer.title")}</h2>{placement === "box" && <em className="live-composer-placement">{t("placement.box")}</em>}{props.projectLabel && <span title={props.projectLabel}>{props.projectLabel}</span>}</header>
+    {/* A first boxed run pulls an image and installs the Agent with no progress
+        to show for it. Saying so up front is the honest version of a progress
+        bar Studio cannot yet draw: the shim owns that work, and its state does
+        not reach here. */}
+    {placement === "box" && <p className="live-composer-hint">{t("placement.firstRunHint")}</p>}
     <PromptInput onSubmit={(event) => { event.preventDefault(); if (canRun) props.onRun(); }}>
       <PromptInputTextarea ref={input} value={props.prompt} aria-label={t("composer.promptLabel")} placeholder={t("composer.promptPlaceholder")} onValueChange={props.onPrompt} rows={4} />
       <PromptInputFooter><label className="live-composer-agent"><span>{t("composer.agent")}</span>

@@ -62,6 +62,10 @@ placement that fails when they use it.
   guest that will not boot, an Agent install that fails — when a run starts,
   then it ends with a sentence naming the likely cause and the Agent's own
   process exits non-zero rather than hanging.
+- **AC-11** Given the placement is `microVM`, when the live-run composer opens,
+  then it states that a first run in this Project prepares the guest, can take
+  minutes with no visible progress, and that later runs reuse it. A host run
+  shows no such line.
 - **AC-10** Given preparation that never completes, when the deadline passes,
   then the run fails saying so and names `--start-timeout`, and that sentence
   reaches the caller as the reason `connection.open` failed. The deadline is set
@@ -167,10 +171,19 @@ replace a specific explanation with a generic "request timed out" from two
 layers up — while this process kept running. Losing that race on purpose is what
 keeps the diagnosis where the cause is known.
 
-What this slice does **not** do is report progress. A first boxed run in a
-Project spends ~96 s installing the Agent with no indication beyond the run
-sitting in `running`. Streaming box state into the Debugger is follow-up work;
-the box host already emits `boxState` events for it.
+What this slice does **not** do is report progress, and the composer says so
+rather than pretending otherwise: choosing `microVM` shows a line explaining
+that a first run in this Project prepares the guest, can take minutes with no
+visible progress, and that later runs reuse it.
+
+That is expectation management, not a progress bar, because a real one has no
+clean route today. The shim owns the slow work and its stderr reaches the ACP
+host only as failure diagnostics — `AgentDiagnostics` retains a tail and uses it
+in `explain`, never on the success path. Streaming it properly would mean a new
+event through four contracts (acp-host wire → `AcpRustExecutor` → run event →
+UI). The cheaper and better route is for Studio to read `boxState` from
+`box-service`, which already emits it — and that is gated on the same
+driver-singleton decision as everything else.
 
 ### `mke2fs`, resolved rather than hoped for
 
@@ -196,6 +209,8 @@ Local macOS 26.6.2, Apple M4 Pro, Rust 1.96.0, BoxLite 0.10.0, 2026-09-11.
 | AC-8 | With one driver holding the lock, a second shim exited 1 with *"Only one microVM run can be active at a time. Finish or cancel the other run…"* above BoxLite's raw lock error. |
 | AC-9 | `--image nonexistent-registry-xyz/nope:latest` exited 1 with the registry's own failure plus *"This needs hardware virtualization, and a first run must be able to pull…"*. A failing install returns the exit code and points at the egress allow-list. |
 | AC-10 | `--start-timeout 1` against an unprepared `node:20-slim` exited 1 with *"The microVM was not ready within 1s… raise --start-timeout if this machine is simply slow."* Driving the real `harness-acp-host` with that shim returned it verbatim as the `connection.open` error, under `ACP initialize failed: Incoming transport closed` — so the reader gets the cause, not just the symptom. Default deadline is 480 s, under the executor's 600 s. |
+
+| AC-11 | With `microVM` selected, the composer renders the first-run line above the prompt, beside a `microVM` chip, with `Pi ACP` already selected. i18n resource tests keep the English and Chinese keys in step. |
 
 Verified live in a running Studio (dev server, Project bound, Debugger open):
 the placement control renders beside `Saved runs`, switching to `microVM` moved

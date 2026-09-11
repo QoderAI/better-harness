@@ -758,6 +758,12 @@
   border: 1px solid var(--color-border);
   color: var(--color-text);
 }
+.live-composer-hint {
+  margin: 0 0 var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: var(--type-meta-size);
+  line-height: 1.5;
+}
 .live-composer-placement {
   padding: 1px var(--space-xs);
   border: 1px solid var(--color-border);

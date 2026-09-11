@@ -161,6 +161,7 @@ export const run = {
     hostDetail: "Run the Agent on this machine, as Studio always has.",
     box: "microVM",
     localNotBoxable: "The local Qoder harness runs in this Studio process; it has no guest to run in.",
+    firstRunHint: "A first run in this Project prepares the microVM — pulling the image and installing the Agent — which can take a few minutes with no visible progress. Later runs reuse it and start in about a second.",
     boxDetail: "Run the Agent inside a disposable Linux microVM. The Project is mounted at /workspace, so edits are real while commands stay in the VM. The Agent is installed on first use and the box is reused afterwards.",
   },
   controlsAria: "Session debugger controls",
