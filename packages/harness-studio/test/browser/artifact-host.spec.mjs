@@ -1137,12 +1137,13 @@ test("persists the explicit Studio theme and keeps core contrast accessible", as
       return (light + 0.05) / (dark + 0.05);
     };
     const body = getComputedStyle(document.body);
-    const primaryEl = document.querySelector("button.primary, button.new-run, .studio-project-views > button[aria-current='page']");
-    if (!(primaryEl instanceof Element)) throw new Error("no primary-fill control");
-    const primary = getComputedStyle(primaryEl);
+    // The primary fill's contrast contract is its own foreground token on its
+    // own fill. Resolving the pair keeps this independent of whether the current
+    // surface happens to render a primary control.
+    const resolve = (token) => { const sample = document.createElement("span"); sample.style.color = `var(${token})`; document.body.append(sample); const color = getComputedStyle(sample).color; sample.remove(); return color; };
     return {
       body: ratio(body.color, body.backgroundColor),
-      primary: ratio(primary.color, primary.backgroundColor),
+      primary: ratio(resolve("--color-on-primary"), resolve("--color-primary")),
     };
   });
 

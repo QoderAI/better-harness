@@ -132,9 +132,20 @@ function ReactInspector({ report, sharedDateRange = false, dateRange }: { report
   const byCommit = useMemo(() => new Map(commits.map((commit) => [commit.hash, commit])), [commits]);
   const rangeDays = useMemo(() => filterDaysToRange(days, sharedDateRange ? dateRange : undefined, sessions, commits), [days, sharedDateRange, dateRange, sessions, commits]);
   const items = useMemo(() => {
-    const scoped = itemsForScope(scope, sharedDateRange ? rangeDays : days, bySession);
-    return sharedDateRange ? scoped.filter((item) => item.session !== undefined || commitsFor(item, byCommit).length > 0) : scoped;
-  }, [sharedDateRange, rangeDays, days, scope, bySession, byCommit]);
+    if (!sharedDateRange) return itemsForScope(scope, days, bySession);
+    // The shared window scopes this View: every retained day contributes its
+    // Sessions and commits, so widening the window reveals that history again
+    // instead of leaving the workbench on the single day the picker last held.
+    const scoped = new Map<string, Item>();
+    for (const day of rangeDays) {
+      for (const id of day.sessionIds ?? []) {
+        const session = bySession.get(id);
+        if (session && !scoped.has(`session:${id}`)) scoped.set(`session:${id}`, { session, date: day });
+      }
+      if (day.commitHashes?.length && !scoped.has(`commits:${day.date}`)) scoped.set(`commits:${day.date}`, { date: day, commitHashes: day.commitHashes });
+    }
+    return [...scoped.values()];
+  }, [sharedDateRange, rangeDays, days, scope, bySession]);
   const itemSessions = [...new Map(items.filter((item) => item.session).map((item) => [item.session!.sessionId, item.session!])).values()];
   const itemCommits = new Set(items.flatMap((item) => commitsFor(item, byCommit).map((commit) => commit.hash)));
   const workspaceName = report.workspace?.name ?? "workspace";

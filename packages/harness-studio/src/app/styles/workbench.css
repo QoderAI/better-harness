@@ -1535,6 +1535,10 @@
 
 @media (max-width: 1080px) {
   .artifact-workspace { grid-template-columns: minmax(216px, 232px) minmax(248px, 280px) minmax(0, 1fr); }
+  /* The compact grid drops the two sash columns, so the sashes must leave the
+     grid too: left in the flow they auto-place into the first row and push the
+     panes into a second row, squeezing the preview into one narrow cell. */
+  .artifact-workspace > .studio-pane-sash { display: none; }
   .artifact-shared-workspace { grid-template: minmax(0, 1fr) minmax(220px, 38%) / minmax(0, 1fr); }
   .artifact-collaboration-pane { border-top: 1px solid var(--color-border); border-left: 0; }
 }
