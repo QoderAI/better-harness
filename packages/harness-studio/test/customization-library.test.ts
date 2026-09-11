@@ -14,13 +14,6 @@ it("deduplicates shared Agent edges and never guesses an unassigned source", () 
   expect(filterCustomizationRows(rows, "instructions", "unassigned").map(row => row.id)).toEqual(["unassigned"]);
   expect(filterCustomizationRows(rows, "skills", "all")).toEqual([]);
 });
-it("links tools through discovery registrations and preserves stale evidence", () => {
-  const catalog = fixture();
-  catalog.registrations.push({ kind: "mcp-server-registration", id: "server", definitionId: "mcp", hostId: "qoder", scope: "project", alias: "server", transport: { kind: "unknown" }, enablement: "enabled", environmentKeys: [], headerNames: [], validation: { status: "valid", diagnostics: [] }, source });
-  catalog.runtimeObservations.push({ kind: "mcp-server-discovery", id: "discovery", registrationId: "server", status: "succeeded", evidenceSource: "host-cache", freshness: "expired", catalog: [{ kind: "mcp-tool", id: "tool", discoveryId: "discovery", name: "lookup", descriptorDigest: "sha256:a" }] });
-  expect(filterCustomizationRows(customizationLibraryRows(catalog), "tools", "qoder")).toEqual([expect.objectContaining({ name: "lookup", hosts: ["qoder"], evidence: "expired" })]);
-  expect(filterCustomizationRows(customizationLibraryRows(catalog), "tools", "codex")).toEqual([]);
-});
 it("describes the Agent dimension as rows: All, every observed Host, and only a real unassigned bucket", () => {
   const catalog = fixture();
   catalog.hosts = [
@@ -93,7 +86,7 @@ it("matches a Host's namespaced invocation name and never invents a zero", () =>
 
 it("only claims a category is observable when a rule exists for it", () => {
   expect(["skills", "mcp"].map(customizationUsageObservable)).toEqual([true, true]);
-  expect(["plugins", "instructions", "agents", "hooks", "tools", "commands"].map(customizationUsageObservable)).toEqual([false, false, false, false, false, false]);
+  expect(["plugins", "instructions", "agents", "hooks", "commands"].map(customizationUsageObservable)).toEqual([false, false, false, false, false]);
 });
 
 it("navigates the catalog by kind alone, with a real category as the default landing row", () => {

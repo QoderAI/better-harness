@@ -22,7 +22,6 @@ import {
   type HostExposureV1,
   type InstructionDefinitionV1,
   type McpServerDefinitionV1,
-  type McpServerDiscoveryV1,
   type McpServerRegistrationV1,
   type McpTransportDefinitionV1,
   type PluginInstallationV1,
@@ -482,32 +481,6 @@ async function addMcpRegistrations(
       ...(packageId === undefined ? {} : { contributedByPackageId: packageId }),
     };
     accumulator.registrations.set(registrationId, registration);
-
-    if (number(item.toolCount) !== undefined || number(item.resourceCount) !== undefined || item.runtimeEvidence !== undefined || item.sourceKind === "runtime-mcp") {
-      const discoveryId = customizationId("mcp-discovery", [registrationId, record(item.runtimeEvidence)?.path ?? privateSource]);
-      const toolNames = stringArray(item.toolNames).map((name) => safeText(name, "")).filter(Boolean);
-      const discovery: McpServerDiscoveryV1 = {
-        kind: "mcp-server-discovery",
-        id: discoveryId,
-        registrationId,
-        status: "partial",
-        evidenceSource: "host-cache",
-        freshness: "unknown",
-        serverInfo: { name: alias, trust: "self-reported" },
-        capabilities: {
-          ...(number(item.toolCount) === undefined ? {} : { tools: {} }),
-          ...(number(item.resourceCount) === undefined ? {} : { resources: {} }),
-        },
-        catalog: toolNames.map((name) => ({
-          kind: "mcp-tool" as const,
-          id: customizationId("mcp-tool", [registrationId, name]),
-          discoveryId,
-          name,
-          descriptorDigest: customizationRevision({ registrationId, name }),
-        })),
-      };
-      accumulator.runtimeObservations.set(discoveryId, discovery);
-    }
   }
 }
 

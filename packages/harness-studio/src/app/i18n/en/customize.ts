@@ -18,7 +18,6 @@ export const customize = {
   "entryCount_other": "{{count}} entries",
   "noEntries": "No entries in this category for the selected Agent.",
   "noMatches": "No entries match this filter.",
-  "toolsBoundary": "Retained MCP tool descriptors only. Their freshness does not prove the server is currently connected.",
   "cols": {
     "name": "Name",
     "category": "Category",
@@ -48,7 +47,6 @@ export const customize = {
     "instructions": "Instructions",
     "agents": "Agents",
     "hooks": "Hooks",
-    "tools": "Tools",
     "commands": "Commands"
   },
   "scopes": {

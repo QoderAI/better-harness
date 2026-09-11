@@ -22,7 +22,6 @@ import { PuzzlePiece } from "@phosphor-icons/react/PuzzlePiece";
 import { Robot } from "@phosphor-icons/react/Robot";
 import { SidebarSimple } from "@phosphor-icons/react/SidebarSimple";
 import { Terminal } from "@phosphor-icons/react/Terminal";
-import { Wrench } from "@phosphor-icons/react/Wrench";
 import { X } from "@phosphor-icons/react/X";
 import type { StudioProjectDescriptor } from "../../contracts/studio-project.js";
 import type { StudioDateRange } from "../date-range.js";
@@ -49,7 +48,6 @@ const CATEGORY_ICONS: Record<CustomizationCategory, Icon> = {
   instructions: BookOpen,
   agents: Robot,
   hooks: Lightning,
-  tools: Wrench,
   commands: Terminal,
 };
 

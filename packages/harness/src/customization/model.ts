@@ -204,18 +204,6 @@ export interface McpServerRegistrationV1 {
   contributedByPackageId?: string;
 }
 
-export interface McpToolDescriptorV1 {
-  kind: "mcp-tool";
-  id: string;
-  discoveryId: string;
-  name: string;
-  title?: string;
-  description?: string;
-  descriptorDigest: CustomizationDigest;
-  inputSchema?: unknown;
-  outputSchema?: unknown;
-}
-
 export interface HostCollectionObservationV1 {
   kind: "host-collection";
   id: string;
@@ -226,27 +214,7 @@ export interface HostCollectionObservationV1 {
   counts: { packages: number; definitions: number; registrations: number };
 }
 
-export interface McpServerDiscoveryV1 {
-  kind: "mcp-server-discovery";
-  id: string;
-  registrationId: string;
-  status: "succeeded" | "partial" | "failed";
-  evidenceSource: "live-rpc" | "host-cache" | "host-state";
-  observedAt?: string;
-  freshness: "current" | "within-ttl" | "expired" | "unknown";
-  protocolVersion?: string;
-  serverInfo?: { name?: string; version?: string; trust: "self-reported" };
-  capabilities?: {
-    tools?: { listChanged?: boolean };
-    resources?: { listChanged?: boolean; subscribe?: boolean };
-    prompts?: { listChanged?: boolean };
-  };
-  catalog: McpToolDescriptorV1[];
-}
-
-export type RuntimeObservationV1 =
-  | HostCollectionObservationV1
-  | McpServerDiscoveryV1;
+export type RuntimeObservationV1 = HostCollectionObservationV1;
 
 export interface CustomizationCatalogV1 {
   kind: typeof CUSTOMIZATION_CATALOG_KIND;

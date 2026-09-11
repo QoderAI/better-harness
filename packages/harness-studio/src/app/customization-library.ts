@@ -1,7 +1,7 @@
 import type { CustomizationCatalogV1 } from "@qoder-ai/harness/customization";
 import type { CustomizationUsageV1 } from "../contracts/customization-usage.js";
 
-export const CUSTOMIZATION_CATEGORIES = ["plugins", "mcp", "skills", "instructions", "agents", "hooks", "tools", "commands"] as const;
+export const CUSTOMIZATION_CATEGORIES = ["plugins", "mcp", "skills", "instructions", "agents", "hooks", "commands"] as const;
 export type CustomizationCategory = typeof CUSTOMIZATION_CATEGORIES[number];
 
 /**
@@ -39,11 +39,6 @@ export function customizationLibraryRows(catalog: CustomizationCatalogV1): Custo
     const installations = catalog.installations.filter((item) => item.packageId === pkg.id);
     if (installations.length === 0) rows.push({ id: pkg.id, category: "plugins", name: pkg.manifest.displayName ?? pkg.manifest.name, description: pkg.manifest.description, hosts: [], source: pkg.source.logicalPath, scope: pkg.source.scope, evidence: pkg.validation.status });
     for (const item of installations) rows.push({ id: item.id, category: "plugins", name: pkg.manifest.displayName ?? pkg.manifest.name, description: pkg.manifest.description, hosts: [item.hostId], source: item.source.logicalPath, scope: item.scope, evidence: item.enablement });
-  }
-  for (const discovery of catalog.runtimeObservations) {
-    if (discovery.kind !== "mcp-server-discovery") continue;
-    const registration = catalog.registrations.find((item) => item.id === discovery.registrationId);
-    for (const tool of discovery.catalog) rows.push({ id: `${discovery.id}:${tool.id}`, category: "tools", name: tool.title ?? tool.name, description: tool.description, hosts: registration === undefined ? [] : [registration.hostId], source: registration?.source.logicalPath, scope: registration?.scope ?? "unknown", evidence: discovery.freshness });
   }
   return rows.sort((left, right) => left.name.localeCompare(right.name));
 }

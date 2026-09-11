@@ -93,13 +93,9 @@ describe("Studio customization collector", () => {
               envKeys: ["API_TOKEN"],
               directSecretEnvKeys: ["API_TOKEN"],
               enabled: true,
-              toolCount: 1,
-              toolNames: ["list_events"],
-              resourceCount: 0,
               statusGroup: "connected",
               filePath: files.mcpConfig,
               evidence: { path: files.mcpConfig },
-              runtimeEvidence: { path: join(files.root, "cache", "SERVER_METADATA.json") },
             }],
           },
         };
@@ -123,12 +119,6 @@ describe("Studio customization collector", () => {
     expect(result.catalog.installations).toHaveLength(1);
     expect(result.catalog.registrations).toHaveLength(1);
     expect(result.catalog.registrations[0]).toMatchObject({ alias: "schedule", enablement: "enabled" });
-    expect(result.catalog.runtimeObservations.find((item) => item.kind === "mcp-server-discovery")).toMatchObject({
-      evidenceSource: "host-cache",
-      freshness: "unknown",
-      status: "partial",
-      catalog: [{ kind: "mcp-tool", name: "list_events" }],
-    });
 
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain(files.root);
@@ -144,8 +134,7 @@ describe("Studio customization collector", () => {
       "hook",
       "mcp-server-definition",
     ].includes(definition.kind))).toBe(true);
-    expect(result.catalog.runtimeObservations.every((observation) =>
-      observation.kind === "host-collection" || observation.kind === "mcp-server-discovery")).toBe(true);
+    expect(result.catalog.runtimeObservations.every((observation) => observation.kind === "host-collection")).toBe(true);
     expect(serialized).toContain("Workspace/.agents/skills/review/SKILL.md");
     expect(serialized).toContain("Claude customization collection failed");
     expect(serialized).toContain("collector runtime failed unexpectedly");

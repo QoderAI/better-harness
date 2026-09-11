@@ -238,7 +238,6 @@ export function CustomizationView(props: {
       <div className="customization-notices">
         {props.failure !== undefined && <p role="alert">{props.failure}</p>}
         {busyState && analysis !== undefined && <p role="status">{t("loadingCatalog")}</p>}
-        {category === "tools" && <p>{t("library.toolsBoundary")}</p>}
         {usageColumn && <p>{t("library.usage.boundary", { count: usage.observedSessions, from: usage.window.from?.slice(0, 10) ?? "—", to: usage.window.to?.slice(0, 10) ?? "—" })}</p>}
         {analysis?.catalog.runtimeObservations.map((item) => item.kind === "host-collection" && item.message !== undefined && (agent === "all" || agent === item.hostId)
           ? <p key={item.id} role={item.status === "error" ? "alert" : "status"}>{hostLabel(item.hostId)}: {item.message}</p>

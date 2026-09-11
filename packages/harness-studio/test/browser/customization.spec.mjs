@@ -132,6 +132,8 @@ test("browses the catalog as a docked View with sidebar kinds and Agent rows", a
   // a bare route lands on a real kind rather than an aggregate list.
   await expect(kind("Customizations")).toHaveAttribute("aria-expanded", "true");
   await expect(kind("Plugins")).toHaveAttribute("aria-current", "page");
+  // The Tools kind is retired: it is neither a catalog row nor a route.
+  await expect(kind("Tools")).toHaveCount(0);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(entries).toHaveAttribute("aria-busy", "true");
   releaseInitialLoad();
@@ -171,8 +173,6 @@ test("browses the catalog as a docked View with sidebar kinds and Agent rows", a
   await expect(entries).toContainText("No entries in this category");
   await filters.getByRole("button", { name: /^Codex/ }).click();
   await expect(table).toContainText("Review Plugin");
-  await kind("Tools").click();
-  await expect(entries).toContainText("Retained MCP tool descriptors only");
 
   // Selecting a row updates the provenance pane; it does not open anything.
   await filters.getByRole("button", { name: "All Agents" }).click();

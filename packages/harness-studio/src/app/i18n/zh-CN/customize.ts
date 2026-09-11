@@ -20,7 +20,6 @@ export const customize: typeof enCustomize = {
   "entryCount_other": "{{count}} 项",
   "noEntries": "所选 Agent 在此类别中没有条目。",
   "noMatches": "没有条目匹配当前筛选。",
-  "toolsBoundary": "仅展示已保留的 MCP 工具描述。新鲜度不代表服务当前已连接。",
   "cols": {
     "name": "名称",
     "category": "类别",
@@ -50,7 +49,6 @@ export const customize: typeof enCustomize = {
     "instructions": "指令",
     "agents": "Agents",
     "hooks": "钩子",
-    "tools": "工具",
     "commands": "命令"
   },
   "scopes": {
