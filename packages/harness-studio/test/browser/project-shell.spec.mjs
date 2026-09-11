@@ -116,20 +116,23 @@ test("switches one shared View workbench between remembered Projects", async ({ 
   await expect(page).toHaveURL(new RegExp(`#\/projects\/${descriptorB.id}\/sessions$`, "u"));
   await expect(page.getByLabel(`${labelB} Views`)).toBeVisible();
   await expect(page.getByLabel(`${labelA} Views`)).toHaveCount(0);
-  await expect(page.locator(".studio-status-scope")).toContainText("2 sessions");
+  // The shared workbench follows the active Project: the retained Session rows
+  // are named for the Project they belong to.
+  await expect(page.getByText(`${labelB} Session 2`, { exact: true })).toBeVisible();
 
   await selectProject(page, labelA);
   await expect(activeProjectName(page)).toHaveText(labelA);
   await expect(page).toHaveURL(new RegExp(`#\/projects\/${descriptorA.id}\/sessions$`, "u"));
   await expect(page.getByLabel(`${labelA} Views`)).toBeVisible();
-  await expect(page.locator(".studio-status-scope")).toContainText("1 session");
+  await expect(page.getByText(`${labelA} Session 1`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`${labelB} Session 1`, { exact: true })).toHaveCount(0);
 
   await page.goBack();
   await expect(activeProjectName(page)).toHaveText(labelB);
-  await expect(page.locator(".studio-status-scope")).toContainText("2 sessions");
+  await expect(page.getByText(`${labelB} Session 2`, { exact: true })).toBeVisible();
   await page.goForward();
   await expect(activeProjectName(page)).toHaveText(labelA);
-  await expect(page.locator(".studio-status-scope")).toContainText("1 session");
+  await expect(page.getByText(`${labelA} Session 1`, { exact: true })).toBeVisible();
 
   // The roving tab stop still covers the View rows only: the Project moved to the
   // switcher, and each group contributes one collapse toggle before its rows, so
@@ -150,7 +153,7 @@ test("switches one shared View workbench between remembered Projects", async ({ 
   await expect(navigation.getByRole("button", { name: "Sessions", exact: true })).toBeFocused();
   expect(await page.locator(".studio-primary-nav nav button").evaluateAll((buttons) => buttons.filter((button) => button.tabIndex === 0).length)).toBe(1);
 
-  await expect(navigation.getByRole("button")).toHaveCount(18);
+  await expect(navigation.getByRole("button")).toHaveCount(17);
   await expect(page.locator(".studio-context-title")).toHaveText("Sessions");
 
   for (const layout of layouts) {

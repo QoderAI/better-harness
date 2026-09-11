@@ -153,7 +153,9 @@ test("scopes file navigation, list and preview with the sidebar date window", as
   await page.goto(`${studio.url}/#/artifacts`);
   const window = page.getByRole("combobox", { name: "Observation window" });
   const rows = page.locator(".artifact-rows > button");
-  await expect(window).toHaveValue("all");
+  // The default window is the last thirty days; both fixture Sessions fall inside
+  // it, so the full catalog shows before the reader narrows the window.
+  await expect(window).toHaveValue("last30");
   await expect(rows).toHaveCount(4);
   await window.selectOption("today");
   await expect(rows).toHaveCount(0);

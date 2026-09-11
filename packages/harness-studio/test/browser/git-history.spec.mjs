@@ -105,6 +105,9 @@ test("browses refs, commits, changed files, and patches across Studio layouts", 
   // starting point rather than whatever the runner's OS reports.
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto(`${studio.url}/#/commits`);
+  // The fixture backdates all but the newest commits, so the full history is in
+  // scope only after widening the observation window past its thirty-day default.
+  await page.getByLabel("Observation window").selectOption("all");
   // One title: the window toolbar names the View, and the workbench opens with
   // panes only. The branch, the filter, and Refresh join that toolbar.
   await expect(page.getByRole("main", { name: "Commit history" })).toBeVisible();
@@ -328,6 +331,9 @@ test("reaches a window that sits deeper in the history, and names one it cannot 
     const rows = page.locator(".git-commit-rows > button");
     const emptyWindow = page.locator(".git-empty-window");
     const window = page.getByLabel("Observation window");
+    // Every fixture commit predates the default thirty-day window, so the whole
+    // history is only in scope once the window is widened to everything.
+    await window.selectOption("all");
     await expect(rows.first()).toContainText("chore: archived 46");
 
     // The active Project's whole history predates `Today`. The window cannot be

@@ -83,10 +83,12 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
     // The fixture withholds completion until Stop, proving a visible first chunk.
     await panel.getByRole('button', { name: 'Stop', exact: true }).click();
     await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
-    await expect(panel.locator('.ai-prompt-input .acp-turn-status')).toHaveText('Ready');
+    // The simplified composer retired the turn-status caption and the Close
+    // control; the transcript states the stop and the follow-up composer stays.
+    await expect(panel).toContainText('Turn stopped: cancelled');
     await expect(panel.locator('.memory-analysis-composer > .acp-composer-caption')).toHaveCount(0);
-    await expect(panel.locator('.ai-prompt-input').getByRole('button', { name: 'Close session', exact: true })).toBeVisible();
-    await expect(panel.locator('.ai-prompt-input .acp-composer-agent-label')).toHaveText('Fixture ACP');
+    await expect(panel.locator('.ai-prompt-input .ai-prompt-textarea')).toBeVisible();
+    await expect(panel.getByRole('combobox', { name: 'Model', exact: true })).toBeVisible();
     await expect(panel.locator('.ai-prompt-key-hint')).toBeHidden();
     await draft.fill('third'); await draft.press('Enter');
     await expect(panel.locator('.streaming-message').last()).toContainText('turn:3 session:fixture-session');
@@ -111,7 +113,9 @@ for (const layout of [{ name: 'wide', width: 1440, height: 900 }, { name: 'compa
       return getComputedStyle(node).color === expected;
     })).toBe(true);
     await page.screenshot({ animations: "disabled", path: info.outputPath(`memory-acp-dark-${layout.name}.png`) });
-    await panel.getByRole('button', { name: 'Close session', exact: true }).click();
+    // Closing the analysis releases the session; reopening offers connection again.
+    await panel.getByRole('button', { name: 'Close analysis' }).click();
+    await page.getByRole('button', { name: 'AI analysis', exact: true }).click();
     await expect(panel.getByRole('button', { name: 'Connect Agent', exact: true })).toBeVisible();
     await panel.getByRole('button', { name: 'Close analysis' }).focus(); await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'AI analysis', exact: true })).toBeFocused();

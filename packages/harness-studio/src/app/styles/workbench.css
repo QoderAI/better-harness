@@ -1827,6 +1827,10 @@
    rather than to the summary, so a fourth Agent's disclosure cannot open off the
    viewport at narrow widths. Geometry comes from `.ai-prompt-tools`. */
 .live-compare-composer .acp-settings-fields { position: absolute; z-index: 70; box-sizing: border-box; max-width: min(26rem, 100%); max-height: 45dvh; overflow: auto; padding: var(--space-md); border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-panel); box-shadow: var(--shadow-popover); }
+/* A session decision (authentication or session choice) is a modality that needs
+   room for its list and actions, so it takes its own bounded row inside the
+   composer instead of crowding the Agent chip. */
+.live-compare-connection { flex-basis: 100%; min-width: 0; max-height: 38dvh; overflow: auto; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-panel); }
 /* A prerequisite is a compact part of the command row and never claims a
    separate line; a settled Agent states its own status on its own control. */
 .live-compare-note { min-width: 0; flex: 0 1 auto; max-width: min(20rem, 100%); margin: 0; display: flex; align-items: center; gap: var(--space-xs); color: var(--color-text-muted); font-size: var(--type-meta-size); }

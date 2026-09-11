@@ -92,12 +92,13 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   // Keep the transcript parked at the top while a new chunk completes the turn.
   await scroll.evaluate((node) => { node.scrollTop = 0; });
   await alpha.getByRole("button", { name: "Continue stream", exact: true }).click();
-  await expect(alpha.locator(".run-badge")).toHaveText("Completed");
+  // A live lane states completion through its transcript; the run badge that
+  // summarized status was retired from live lanes.
+  await expect(alpha.locator(".streaming-message").last()).toContainText("stream:complete");
   expect(await scroll.evaluate((node) => node.scrollTop)).toBe(0);
   await alpha.getByRole("button", { name: "Back to latest" }).focus();
   await page.keyboard.press("Enter");
   await expect(scroll).toBeFocused();
-  await expect(alpha.locator(".streaming-message").last()).toContainText("stream:complete");
   await expect.poll(() => scroll.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight)).toBeLessThanOrEqual(24);
   // A failed cancel is visible and retryable; the sibling stays finished.
   let cancels = 0;
@@ -111,7 +112,8 @@ test("compares rich ACP streams with isolated retryable decisions, stable readin
   await expect(beta.getByRole("alert")).toBeVisible();
   await expect(beta.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
   await beta.getByRole("button", { name: "Stop", exact: true }).click();
-  await expect(beta.locator(".run-badge")).toHaveText("Interrupted");
+  // The retired run badge is replaced by the transcript stating the stop.
+  await expect(beta).toContainText("Turn stopped: cancelled");
   await expect(beta.locator(".acp-permission-gate")).toHaveCount(0);
   for (const layout of layouts) {
     await page.setViewportSize(layout);

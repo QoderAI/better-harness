@@ -21,6 +21,7 @@ import {
 } from "./run/run-store.js";
 import { streamRun } from "./run/stream-run.js";
 import { AcpSessionStream } from "./run/AcpSessionStream.js";
+import { AcpConnectionPanel } from "./run/AcpConnectionPanel.js";
 import { AcpConversationHistory, loadAcpConversation } from "./run/AcpConversationHistory.js";
 import { postAcpRunAction } from "./run/acp-run-actions.js";
 import { ToolbarActions } from "./shell/ToolbarActions.js";
@@ -374,6 +375,25 @@ export function CompareLiveView(props: {
                 aria-label={t("live.removeChosenAgent", { agent: labelFor(agentId) })}
                 onClick={() => setChosen((current) => current.filter((candidate) => candidate !== agentId))}
               ><X aria-hidden="true" size={11} /></button>
+            </div>;
+          })}
+          {/* An Agent that needs a session decision before it can answer states
+              that decision in the input region it already owns. Preparation
+              cannot finish without it, so Run would otherwise never unlock. */}
+          {chosen.map((agentId) => {
+            const lane = prepared.find((candidate) => candidate.agentId === agentId);
+            if (lane?.state.connection == null) return null;
+            return <div
+              className="live-compare-connection"
+              key={`connection-${agentId}`}
+              role="group"
+              aria-label={t("live.agentSettingsAria", { agent: labelFor(agentId) })}
+            >
+              <AcpConnectionPanel
+                connection={lane.state.connection}
+                actions={createAcpSessionActions(lane.runId)}
+                runId={lane.runId}
+              />
             </div>;
           })}
           {chosen.length > 1 && <SharedTreeNote />}

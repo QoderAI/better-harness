@@ -64,7 +64,7 @@ for (const theme of ["light", "dark"]) for (const layout of layouts) {
       expect(viewNames).toEqual([
         "Sessions", "Overview", "Performance", "Commits",
         "Artifacts", "Debugger", "Compare", "Memory",
-        "Customizations", "Plugins", "MCP Servers", "Skills", "Instructions", "Agents", "Hooks", "Tools", "Commands",
+        "Customizations", "Plugins", "MCP Servers", "Skills", "Instructions", "Agents", "Hooks", "Commands",
       ]);
       await expect(page.getByRole("button", { name: "Show or hide Sessions views", includeHidden: true })).toHaveAttribute("aria-expanded", "true");
 

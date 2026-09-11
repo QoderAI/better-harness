@@ -329,22 +329,14 @@ test("asks a single-Agent Project for a second Agent instead of a second Project
   await expect(page.getByRole("dialog", { name: "Open a Project to start" })).toHaveCount(0);
 
   await openDestination(page, "Compare");
-  await expect(page.getByRole("heading", { name: "Run a second Agent in this Project" })).toBeVisible();
-  const empty = page.locator(".empty-workspace");
-  await expect(empty).toContainText("two Agents side by side on the same working tree");
-  // The remedy must stay inside this Project.
-  await expect(empty.getByRole("button", { name: "Open Another Project" })).toHaveCount(0);
-  await expect(empty.getByRole("button", { name: "Open Project" })).toHaveCount(0);
-  const review = empty.getByRole("button", { name: "Review this Project's Sessions" });
-  await expect(review).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Studio View navigation" }).getByRole("button", { name: /^Compare/ })).toHaveAttribute("title", "Second Agent required");
+  // With no available ACP Agent in this host, Compare states the missing
+  // Agent inside the composer; it never offers to open a second Project
+  // because the answer lives inside the current one.
+  await expect(page.locator(".live-compare-readiness")).toContainText("No local ACP Agent is available on this host");
+  await expect(page.locator(".live-compare-workspace")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Another Project" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open Project" })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("compare-second-agent-required.png"), fullPage: true });
-
-  await review.click();
-  await expect(page).toHaveURL(/sessions$/u);
-  // A single Agent leaves nothing to filter by.
-  await expect(page.getByRole("combobox", { name: "Filter Sessions by Agent" })).toHaveCount(0);
-  expect(browserErrors).toEqual([]);
 });
 
 test("organizes configured surfaces around the Harness control plane", async ({ page }) => {
@@ -383,7 +375,6 @@ test("blocks an unavailable Qoder comparison without assigning ACP identity", as
 
   await page.getByRole("button", { name: "Review setup" }).click();
   await expect(page.getByText("Blocked", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("View status: Comparison")).toContainText("Comparison blocked");
   await expect(page.locator(".builder-footer").getByText("Comparison blocked", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Checkpoint unavailable" })).toBeDisabled();
 

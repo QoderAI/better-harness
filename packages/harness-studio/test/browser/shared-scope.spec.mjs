@@ -71,13 +71,17 @@ test('Sessions loads and recomputes the shared range in Inspector, preserving th
   const errors = collectErrors(page);
   await page.setViewportSize(layouts[0]);
   await openProject(page);
+  const range = page.getByRole('combobox', { name: 'Observation window' });
+  // The default window is the last thirty days, so the archived fixture Session
+  // stays out of scope until the reader widens the window to everything.
+  await expect(range).toHaveValue('last30');
+  await range.selectOption('all');
   await expect(page.locator('.workbench-list > article')).toHaveCount(2);
   await expect(page.getByRole('tab', { name: 'Date', exact: true })).toHaveCount(0);
   await expect(page.locator('.studio-status-bar')).toContainText('2 sessions');
   let release;
   const blocked = new Promise(resolve => { release = resolve; });
   await page.route('**/api/sessions', async route => { await blocked; await route.continue(); }, { times: 1 });
-  const range = page.getByRole('combobox', { name: 'Observation window' });
   await range.selectOption('today');
   await expect(page.locator('.studio-surface-sessions [aria-busy="true"]')).toBeVisible();
   await checkLayout(page, testInfo, 'sessions-loading');
@@ -106,9 +110,12 @@ test('Artifacts refreshes all panes, clears empty previews, and ignores a supers
   const errors = collectErrors(page);
   await page.setViewportSize(layouts[0]);
   await openProject(page, 'artifacts');
+  const range = page.getByRole('combobox', { name: 'Observation window' });
+  // Widen past the default thirty-day window so the archived fixture Artifact is
+  // in scope before the range recomputation this test exercises.
+  await range.selectOption('all');
   await expect(page.locator('.artifact-rows > button')).toHaveCount(2);
   await expect(page.getByRole('tab', { name: 'Date', exact: true })).toHaveCount(0);
-  const range = page.getByRole('combobox', { name: 'Observation window' });
   let release;
   const blocked = new Promise(resolve => { release = resolve; });
   await page.route('**/api/artifacts', async route => { const response = await route.fetch(); await blocked; await route.fulfill({ response }); }, { times: 1 });
@@ -140,9 +147,11 @@ for (const view of ['sessions', 'artifacts']) {
   test(`${view} recovers a failed range load with Retry`, async ({ page }) => {
     await page.setViewportSize(layouts[0]);
     await openProject(page, view);
+    const range = page.getByRole('combobox', { name: 'Observation window' });
+    await range.selectOption('all');
     await expect(page.locator(view === 'sessions' ? '.workbench-list > article' : '.artifact-rows > button')).toHaveCount(2);
     await page.route(`**/api/${view}`, route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Temporary fixture failure' }) }), { times: 1 });
-    await page.getByRole('combobox', { name: 'Observation window' }).selectOption('today');
+    await range.selectOption('today');
     const retry = page.getByRole('button', { name: 'Retry', exact: true });
     await expect(retry).toBeVisible();
     await retry.click();
@@ -156,5 +165,7 @@ test('Inspector retry reattaches its workbench after a failed report load', asyn
   await openProject(page);
   await expect(page.locator('.inspector-fallback-shell')).toBeVisible();
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(page.locator('.workbench-list > article')).toHaveCount(2);
+  // The workbench reattaches on the default thirty-day window, which holds the
+  // retained fixture Session and excludes the archived one.
+  await expect(page.locator('.workbench-list > article')).toHaveCount(1);
 });

@@ -24,12 +24,16 @@ import { planElementState } from "./ai-elements-adapter.js";
 import { defaultAcpConfigValue, loadAcpAgentPreferences, saveAcpAgentPreferences } from "./acp-session-preferences.js";
 
 /** A host-independent view: callers own launch, routing and permission authority. */
-export function AcpSessionStream({ state, prompt, failure, onPermission, actions, permissionClassName = "", compact = false, showComposer = true, revealTool, contextEvidence, agentId }: {
+export function AcpSessionStream({ state, prompt, failure, onPermission, actions, permissionClassName = "", compact = false, showComposer = true, autoStart = true, revealTool, contextEvidence, agentId }: {
   revealTool?: { id: string; token: number };
   contextEvidence?: React.ReactNode;
   state: HarnessRunState;
   compact?: boolean;
   showComposer?: boolean;
+  /** A surface that owns its own start action (for example the Memory analysis
+   * composer) opts out, so preparation never sends a prompt the reader has not
+   * reviewed. */
+  autoStart?: boolean;
   actions?: AcpSessionActions;
   prompt: string;
   failure?: string;
@@ -47,7 +51,7 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
   const session = state.acp;
 
   useEffect(() => {
-    if (!session.prepared || state.conversation || !actions || autoConfigured) return;
+    if (!autoStart || !session.prepared || state.conversation || !actions || autoConfigured) return;
     const needsConfig = (session.config?.length ?? 0) > 0 || (session.modes?.length ?? 0) > 0;
     if (!needsConfig) {
       setAutoConfigured(true);
@@ -75,7 +79,7 @@ export function AcpSessionStream({ state, prompt, failure, onPermission, actions
       saveAcpAgentPreferences(agentId, session.config ?? [], session.mode);
       try { await actions.execute({ action: "start" }); } catch (error) { setStartError(String(error)); }
     })();
-  }, [session.prepared, state.conversation, actions, session.config, session.modes, session.mode, agentId, autoConfigured]);
+  }, [autoStart, session.prepared, state.conversation, actions, session.config, session.modes, session.mode, agentId, autoConfigured]);
 
   if (state.connection && state.status === "running" && actions && state.runId) return <AcpConnectionPanel key={state.runId} runId={state.runId} connection={state.connection} actions={actions} />;
 

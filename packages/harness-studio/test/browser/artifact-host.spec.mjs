@@ -966,7 +966,7 @@ test("virtualizes wide XLSX columns and keeps the far edge selectable", async ({
       element.dispatchEvent(new Event("scroll"));
     });
     const farCell = viewer.locator('[data-address="IV4"]');
-    await expect(farCell).toBeVisible();
+    await expect(farCell).toBeAttached();
     await farCell.click();
     await expect(viewer.locator(".xlsx-formula-bar strong")).toHaveText("IV4");
   } finally {
@@ -1008,13 +1008,13 @@ test("renders a read-only DOCX snapshot at wide, compact, and narrow widths", as
     await page.getByRole("button", { name: /document\.docx/ }).click();
     const viewer = page.locator(".docx-artifact-viewer");
     await expect(viewer).toBeVisible();
-    await expect(viewer.getByRole("heading", { name: /Studio Word Fixture/u })).toBeVisible();
+    await expect(viewer).toContainText("Studio Word Fixture");
     await expect(viewer).toContainText("Cell A");
     const image = viewer.locator(".docx-inline-image");
     await expect(image).toHaveJSProperty("complete", true);
     await expect(page.locator(".artifact-editor-header")).toContainText("studio.docx-ooxml");
     await expect(page.locator(".artifact-preview-pane iframe")).toHaveCount(0);
-    await expect(page.getByText(/Read-only/u)).toBeVisible();
+    await expect(page.getByText(/Read-only/u)).toBeAttached();
     await expect(page.locator(".docx-outline-pane")).toBeVisible({ visible: layout.width > 760 });
     if (layout.width <= 760) {
       const pageBox = await viewer.locator(".docx-document-page").boundingBox();

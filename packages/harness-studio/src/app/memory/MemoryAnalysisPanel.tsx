@@ -77,7 +77,7 @@ export function MemoryAnalysisPanel({ snapshot, entry, agents, maxBytes, onClose
   }
   return <aside className="memory-analysis memory-acp-analysis" aria-label={t('memory.aiAnalysis')} onKeyDown={event => { if (event.key === 'Escape' && event.target === close.current) { event.stopPropagation(); onClose(); } }}>
     <div className="memory-analysis-toolbar"><button ref={close} type="button" onClick={onClose} aria-label={t('memory.closeAnalysis')}><X size={15} /></button></div>
-    {state.runId ? <AcpSessionStream contextEvidence={contextEvidence} compact showComposer={false} state={displayState} prompt="" actions={actions} agentId={agentId} onPermission={(requestId, optionId) => postAcpRunAction(state.runId!, { requestId, optionId })} /> : <div className="memory-analysis-transcript" />}
+    {state.runId ? <AcpSessionStream contextEvidence={contextEvidence} compact showComposer={false} autoStart={false} state={displayState} prompt="" actions={actions} agentId={agentId} onPermission={(requestId, optionId) => postAcpRunAction(state.runId!, { requestId, optionId })} /> : <div className="memory-analysis-transcript" />}
     <footer className="memory-analysis-composer">
       {(!state.runId || state.acp.prepared) && <Suggestions className="memory-analysis-suggestions" aria-label={t('memory.analysisSuggestions')}>
         {(['review', 'conflicts'] as const).map(kind => <Suggestion key={kind} suggestion={t(`memory.suggestions.${kind}.prompt`)} disabled={sending} onClick={value => { setDraft(value); input.current?.focus(); }}>{t(`memory.suggestions.${kind}.label`)}</Suggestion>)}

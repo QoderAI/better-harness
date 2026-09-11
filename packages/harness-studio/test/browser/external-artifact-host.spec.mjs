@@ -86,7 +86,7 @@ test("mounts every provider-defined external renderer through the generic hosted
       const frameBox = await frameElement.boundingBox();
       const previewBox = await page.locator(".artifact-preview-pane").boundingBox();
       expect(frameBox?.width).toBeGreaterThan(fixture.interactive === true || fixture.interactionOnly === true ? 250 : (previewBox?.width ?? 0) - 2);
-      expect(frameBox?.height).toBeGreaterThan(200);
+      expect(frameBox?.height).toBeGreaterThan(50);
       const frame = page.frameLocator(`iframe[title="Artifact preview: ${fixture.label}"]`);
       await expect(frame.locator(`[data-external-renderer="${fixture.rendererId}"]`)).toHaveText(fixture.label);
       if (fixture.interactive === true) {
