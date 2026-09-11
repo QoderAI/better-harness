@@ -1,6 +1,7 @@
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+export const boxServiceId = 'com.qoder.harness-studio.box';
 export const serviceId = 'com.qoder.harness-studio.oxc';
 export const acpServiceId = 'com.qoder.harness-studio.acp';
 export const evidenceServiceId = 'com.qoder.harness-studio.evidence';
@@ -28,6 +29,38 @@ export async function installEsbuildXpc(appPath, binaryDirectory, { development 
   if (development) await writeFile(join(contents, 'Info.plist'), plist(`
 <key>CFBundleIdentifier</key><string>${esbuildServiceId}.development</string>
 <key>CFBundleExecutable</key><string>harness-esbuild-client</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSUIElement</key><true/>`));
+}
+
+/**
+ * The microVM service. Alone among these it is `ServiceType: User`.
+ *
+ * BoxLite locks its home directory to one runtime, and `Application` gives each
+ * calling *process* its own service instance — which would mean one runtime per
+ * caller and every caller after the first failing to start. `User` gives this
+ * login session a single instance for every connection to share, which is what
+ * lets two Debugger runs sit in boxes at once.
+ */
+export async function installBoxXpc(appPath, binaryDirectory, { development = false } = {}) {
+  const contents = join(appPath, 'Contents');
+  const service = join(contents, 'XPCServices', `${boxServiceId}.xpc`, 'Contents');
+  await mkdir(join(contents, 'MacOS'), { recursive: true });
+  await mkdir(join(service, 'MacOS'), { recursive: true });
+  await cp(join(binaryDirectory, 'harness-box-client'), join(contents, 'MacOS', 'harness-box-client'));
+  await cp(join(binaryDirectory, 'harness-box-xpc'), join(service, 'MacOS', 'harness-box-xpc'));
+  // The service resolves the driver beside its own executable.
+  await cp(join(binaryDirectory, 'harness-box-host'), join(service, 'MacOS', 'harness-box-host'));
+  await writeFile(join(service, 'Info.plist'), plist(`
+<key>CFBundleIdentifier</key><string>${boxServiceId}</string>
+<key>CFBundleExecutable</key><string>harness-box-xpc</string>
+<key>CFBundlePackageType</key><string>XPC!</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>XPCService</key><dict><key>ServiceType</key><string>User</string></dict>`));
+  if (development) await writeFile(join(contents, 'Info.plist'), plist(`
+<key>CFBundleIdentifier</key><string>${boxServiceId}-development</string>
+<key>CFBundleExecutable</key><string>harness-box-client</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSUIElement</key><true/>`));

@@ -13,6 +13,7 @@
 //! back, and `connection.close` reaps one caller's commands without touching
 //! anyone else's. See `xpc.rs`.
 
+pub mod backend;
 pub mod runtime;
 pub mod wire;
 

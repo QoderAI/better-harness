@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { cp, mkdir } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { installNsxpc, installAcpXpc, installEvidenceXpc } from './nsxpc-bundle.mjs';
+import { installNsxpc, installAcpXpc, installBoxXpc, installEvidenceXpc } from './nsxpc-bundle.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const test = process.argv.includes('--test');
@@ -47,8 +47,13 @@ if (!test) {
   await stage('harness-acp-host');
   await stage('harness-evidence-host');
   // Studio spawns the shim directly in an Agent's place, so it is a plain
-  // staged executable rather than an NSXPC bundle.
-  if (box) await stage('harness-box-exec');
+  // staged executable. The driver beside it is the off-macOS fallback; on macOS
+  // the shim prefers the bundled bridge staged below, which reaches the one
+  // shared driver and so allows concurrent boxed runs.
+  if (box) {
+    await stage('harness-box-exec');
+    await stage('harness-box-host');
+  }
 }
 
 if (!test && process.platform === 'darwin') {
@@ -69,4 +74,14 @@ if (!test && process.platform === 'darwin') {
   const evidenceApp = join(root, 'dist', 'native', 'Harness Evidence.app');
   await installEvidenceXpc(evidenceApp, binaries, { development: true });
   execFileSync('codesign', ['--force', '--sign', '-', '--deep', evidenceApp], { stdio: 'inherit' });
+  if (box) {
+    for (const binary of ['harness-box-client', 'harness-box-xpc']) {
+      await cp(join(binaries, binary), join(root, 'dist', 'native', binary));
+    }
+    const boxApp = join(root, 'dist', 'native', 'Harness Box.app');
+    await installBoxXpc(boxApp, binaries, { development: true });
+    // No entitlements file: BoxLite ad-hoc signs its own shim with the
+    // hypervisor one, so neither this service nor its driver needs one.
+    execFileSync('codesign', ['--force', '--sign', '-', '--deep', boxApp], { stdio: 'inherit' });
+  }
 }

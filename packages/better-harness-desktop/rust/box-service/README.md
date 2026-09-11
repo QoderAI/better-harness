@@ -1,20 +1,14 @@
-# Rust Box Service (POC)
+# Rust Box Service
 
-**Status: partly shipped.** `harness-box-exec` is built by `scripts/rust.mjs`,
-staged into `dist/native`, and used by the Debugger's placement control — see
-[`docs/specs/2026-09-11-debugger-microvm-placement.md`](../../../../docs/specs/2026-09-11-debugger-microvm-placement.md).
-
-The **NSXPC service** (`harness-box-xpc` / `harness-box-client` / the
-`harness-box-host` driver) remains a proof of concept: it works, and the bundle
-below was assembled by this crate's own `bundle.mjs` rather than by
-`nsxpc-bundle.mjs`. Nothing in Studio talks to it yet, because the
-driver-singleton question below is unanswered.
-
-Everything in [What was actually verified](#what-was-actually-verified) was run
-on this machine; everything else is design, not a claim.
+**Status: shipped.** `scripts/rust.mjs` builds the crate and stages the shim,
+the driver, the bridge and a signed `Harness Box.app`; the Debugger's placement
+control runs Agents through it. Everything in
+[What was actually verified](#what-was-actually-verified) was run on this
+machine; everything else is design, not a claim.
 
 Specs: [POC](../../../../docs/specs/2026-09-10-boxlite-microvm-xpc-poc.md) ·
-[Debugger placement](../../../../docs/specs/2026-09-11-debugger-microvm-placement.md).
+[Debugger placement](../../../../docs/specs/2026-09-11-debugger-microvm-placement.md) ·
+[Driver singleton](../../../../docs/specs/2026-09-11-box-driver-singleton.md).
 
 [BoxLite](https://github.com/boxlite-ai/boxlite) 0.10.0 hosted as a fourth
 capability service, alongside `oxc-service`, `acp-host` and `evidence-host`. A
@@ -29,15 +23,15 @@ agent still edits the user's real files through a mount.
 ## Why this shape
 
 BoxLite is daemonless: the VMs are children of whatever process holds the
-runtime. That maps onto the existing `acp-host` layout exactly — the XPC service
-runs one unmodified `harness-box-host` driver per connection, the driver owns
-the runtime, and the established `reap_driver` path is what stops a dropped
-connection from stranding a VM. No new transport was invented for this.
+runtime. The transport is `evidence-host`'s, unchanged — except for the one
+thing BoxLite's home-directory lock forces, which is that there is exactly *one*
+driver and every connection shares it.
 
 ```text
- Studio (Node)                  launchd service
- ────────────                   ──────────────
+ caller (shim, Studio)          launchd service, ServiceType: User
+ ────────────────────           ─────────────────────────────────
  harness-box-client <NSXPC> harness-box-xpc <stdio> harness-box-host ── microVMs
+                                  (one driver, connections multiplexed)
 ```
 
 ## Build prerequisites (verified, and both are sharp edges)
@@ -128,9 +122,9 @@ Two things make it work:
   commands belong to the connection that started them, and a dropped connection
   reaps only its own.
 
-**This does not yet make concurrent boxed runs work.** `harness-box-exec` still
-holds a runtime of its own, so two Debugger runs in a box still collide. Moving
-the shim onto this service is the next slice.
+Concurrent boxed runs work as a result: `harness-box-exec` is a client of this
+service rather than a runtime of its own. Two runs started together each get
+their Agent answered, sharing the Project's box.
 
 ## Putting the Debugger in a box
 
@@ -140,9 +134,14 @@ with **no change to the ACP host at all** — only a command that looks like an
 agent from outside and is a microVM inside. That is `harness-box-exec`:
 
 ```text
- Studio ── acp-host ── harness-box-exec ─┬─ boxlite runtime
-           (unchanged)  (stdio proxy)    └─ microVM: the agent
+ Studio ── acp-host ── harness-box-exec ── harness-box-client ─┐
+           (unchanged)  (stdio proxy)       (NSXPC bridge)     │
+                                       one shared driver ── microVM: the agent
 ```
+
+The shim holds no runtime of its own — it is a client of this service, which is
+what lets two runs coexist. It finds the bundled bridge beside itself, so Studio
+passes no extra path.
 
 ```bash
 harness-box-exec --box debugger --image node:20-slim \
@@ -162,9 +161,10 @@ Two consequences worth knowing:
 
 - **One box per Project**, named from the Project path, so a second session
   reattaches in under a second instead of re-installing.
-- **One box run at a time.** Each run owns its own runtime and BoxLite locks its
-  home directory, so a second concurrent box run exits with *"Only one microVM
-  run can be active at a time"*. Lifting that is the driver-singleton question.
+- **Concurrent runs share one driver.** The shim speaks this service's protocol
+  instead of embedding BoxLite, so two runs coexist. Falling back to the stdio
+  driver — off macOS, or in a test — still allows only one at a time, and says
+  so.
 
 ### `pi` and `pi-acp` are different programs
 
@@ -231,6 +231,8 @@ API key was used anywhere below.
 | The shim's stdio bridging | A JSON-RPC line survives host → box → host intact; stdout carries only protocol bytes, diagnostics go to stderr |
 | **A real ACP handshake inside the box** | `pi-acp` 0.0.33 answered `initialize` with its capabilities — box reused in **0.82 s**, `pi-acp` installed in **4.3 s**, reply at **4.49 s** |
 | **The same, over NSXPC** | Three processes (`client` → `xpc` → `driver`), transport proof emitted, then a VM booted in **1.75 s** and ran a command with output streaming back as events. A fresh `alpine` box booted in **2.6 s** |
+| One driver, many connections | Three concurrent clients reported one `servicePid` and one `driverPid`, each got its own reply back by id, each saw only its own command's output in a shared box, and a five-line command survived two other connections opening and closing during it |
+| **Two boxed Agent runs at once** | Both answered `initialize` from `pi-acp` 0.0.33, reusing one box, ready in ~2.1 s each. Before the driver became shared the second would have failed on the BOXLITE_HOME lock |
 
 Two rows carry the argument. The ACP one: `harness-acp-host` was not modified,
 and would not need to be. The NSXPC one: the runtime works from inside a signed

@@ -76,8 +76,12 @@ placement that fails when they use it.
 ## Non-goals
 
 - **Concurrent box runs.** BoxLite locks its home directory to one runtime, and
-  each run currently owns its own. AC-8 makes that legible rather than removing
-  it; removing it needs the driver-singleton decision the POC left open.
+  each run owned its own when this shipped, so AC-8 made the limit legible
+  rather than removing it. **Since resolved** by
+  [`2026-09-11-box-driver-singleton.md`](2026-09-11-box-driver-singleton.md):
+  the shim is now a client of one shared driver, and concurrent boxed runs work.
+  AC-8's message survives for the stdio-driver fallback, which still owns a
+  runtime.
 - qodercli, Codex ACP, or a custom `--acp-agent` inside a box. The first has no
   Linux build, the second has no public package, and Studio will not guess an
   install recipe for the third.

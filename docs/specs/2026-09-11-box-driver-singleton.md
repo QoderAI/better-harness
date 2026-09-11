@@ -3,7 +3,7 @@
 ## Traceability
 
 - Spec ID: box-driver-singleton
-- Status: Implemented (infrastructure); the shim does not use it yet
+- Status: Implemented — concurrent boxed runs work
 - Request: resolve the driver-singleton question left open by the BoxLite POC,
   taking the recommended option
 - Builds on: [`2026-09-10-boxlite-microvm-xpc-poc.md`](2026-09-10-boxlite-microvm-xpc-poc.md),
@@ -25,11 +25,14 @@ Debugger's placement feature sidesteps it by giving each run its own shim with
 its own runtime, which is why only one boxed run can be active at a time.
 
 The POC listed three ways out and recommended the first: **one driver, shared by
-every connection, with replies routed by connection id.** This implements it.
+every connection, with replies routed by connection id.** This implements it,
+and then moves the shim onto it so concurrent boxed runs actually work.
 
-What it does not do is make concurrent boxed runs work — `harness-box-exec`
-still owns a runtime of its own. This is the floor that change will stand on,
-verified independently so that change is about the shim and nothing else.
+The shim change turned out to be a simplification rather than an addition.
+`harness-box-exec` embedded BoxLite, which is what gave every run a runtime of
+its own; it now speaks the host's JSONL protocol instead. Direct and shared
+stopped being two designs and became one client with two possible backends —
+and the binary went from 84 MB to 1.0 MB, because it no longer links a VMM.
 
 ## Acceptance Scenarios
 
@@ -46,12 +49,17 @@ verified independently so that change is about the shim and nothing else.
   hanging on a pipe that will never answer again.
 - **AC-6** Given a caller sends `shutdown` over a shared driver, then it ends
   only that caller's work. A direct stdio caller keeps the old meaning.
+- **AC-7** Given two boxed Agent runs started at the same time, when each sends
+  `initialize`, then both are answered. Neither owns a runtime; both reach the
+  shared driver and share the Project's box.
+- **AC-8** Given no `--backend`, when the shim starts on macOS, then it picks
+  the bundled bridge — the only copy that can reach the shared service — and
+  falls back to the driver otherwise. Studio passes nothing.
 
 ## Non-goals
 
-- Changing `harness-box-exec` to use the service. That is the next slice, and
-  until it lands concurrent boxed runs still fail with the one-at-a-time message.
-- Any Studio-visible behaviour. Nothing in Studio talks to this service yet.
+- Studio-visible behaviour beyond runs no longer colliding. The placement
+  control, the Agent catalogue, and the composer are untouched.
 - Sharing a box's *commands* across connections. Boxes are shared by name on
   purpose; commands belong to whoever started them.
 - Windows and Linux, where there is no NSXPC transport.
@@ -103,6 +111,30 @@ The sibling services reap the driver when a connection drops, because the driver
 - `shutdown` from a shared caller is downgraded to `connection.close`. Letting
   one caller tear down shared boxes would stop another session's agent mid-turn.
 
+### The shim became a client
+
+`harness-box-exec` embedded BoxLite, so each run held a runtime and the second
+one could not start. It now speaks the same JSONL protocol as everything else,
+which collapses two designs into one:
+
+```text
+Studio ── acp-host ── harness-box-exec ── harness-box-client ─┐
+          (unchanged)  (stdio proxy)       (NSXPC bridge)     │
+                                     one shared driver ── microVM: pi-acp
+```
+
+Backend selection is the shim's own, so Studio passes nothing:
+
+1. `--backend`, when given;
+2. `Harness Box.app/Contents/MacOS/harness-box-client` beside the shim — the
+   bundled copy is the only one that reaches the service, since
+   `initWithServiceName:` resolves against the caller's bundle;
+3. `harness-box-host` beside the shim — correct off macOS and in tests, but it
+   owns a runtime, so one run at a time.
+
+`scripts/rust.mjs` stages the shim, the driver, the bridge and a signed
+`Harness Box.app`, all still skipped when `protoc` is absent.
+
 ## Test and Review Evidence
 
 Local macOS 26.6.2, Apple M4 Pro, BoxLite 0.10.0, 2026-09-11. Three concurrent
@@ -116,6 +148,8 @@ Local macOS 26.6.2, Apple M4 Pro, BoxLite 0.10.0, 2026-09-11. Three concurrent
 | AC-4 | A command emitting five lines over ten seconds completed `['A1'…'A5','exit0']` while two other connections opened and closed during it. |
 | AC-5 | `reap_driver` drains the routing table and calls `hostFailed:` on every proxy before reaping; reached only from the read loop's exit. |
 | AC-6 | `shutdown` with a `connectionId` routes to `close_connection`; the stdio driver still exits when the id is absent. |
+| AC-7 | Two `harness-box-exec` processes started together each received `pi-acp` 0.0.33's `initialize` response with its own request id, reusing one `harness-pi-probe` box, both ready in ~2.1 s. Before this change the second would have failed on the BOXLITE_HOME lock. |
+| AC-8 | With no `--backend`, both runs reported `box host: …/Harness Box.app/Contents/MacOS/harness-box-client`. The shim is 1.0 MB, down from 84 MB. |
 
 `cargo +1.96.0 fmt --check` and `clippy --release --all-targets`: clean, 0
 warnings. No leftover boxes after the runs.

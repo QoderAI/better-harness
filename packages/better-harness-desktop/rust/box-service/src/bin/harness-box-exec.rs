@@ -10,13 +10,22 @@
 //! inside. That is this binary.
 //!
 //! ```text
-//!  Studio ── acp-host ── harness-box-exec ─┬─ boxlite runtime
-//!            (unchanged)   (stdio proxy)   └─ microVM: pi-acp
+//!  Studio ── acp-host ── harness-box-exec ── harness-box-client ─┐
+//!            (unchanged)  (stdio proxy)       (NSXPC bridge)     │
+//!                                        one shared driver ── microVM: pi-acp
 //! ```
 //!
 //! The guest command must be a real ACP server. `pi --mode rpc` is *not* one —
 //! that flag selects an output format — which is why the recipe installs the
 //! separate `pi-acp` adapter.
+//!
+//! # This process owns no runtime
+//!
+//! It used to embed BoxLite, which made every run its own runtime; BoxLite locks
+//! `BOXLITE_HOME` to one, so a second boxed run could not start. Now it is a
+//! client of the box host, and concurrency is whatever the backend allows —
+//! `harness-box-client` reaches the one driver shared by the whole login
+//! session, so runs no longer collide.
 //!
 //! # Provisioning is cached, not repeated
 //!
@@ -33,18 +42,20 @@
 //! ```
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use boxlite::runtime::options::VolumeSpec;
-use boxlite::{BoxCommand, BoxOptions, BoxliteRuntime, NetworkSpec, RootfsSpec};
-use futures::StreamExt;
+use harness_box_host::backend::{Backend, Event};
+use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 struct Options {
     name: String,
     image: String,
-    mounts: Vec<VolumeSpec>,
+    backend: Option<PathBuf>,
+    mounts: Vec<Value>,
     env: BTreeMap<String, String>,
     allow_net: Vec<String>,
     working_dir: Option<String>,
@@ -53,18 +64,22 @@ struct Options {
     provision: Vec<String>,
     probe: Option<String>,
     keep: bool,
-    /// Upper bound on boot plus provisioning. Nothing upstream has a timeout,
-    /// so this is the only thing standing between a stalled pull and a Studio
-    /// that waits forever.
+    /// Upper bound on boot plus provisioning. Deliberately **under** the
+    /// caller's own bound: `AcpRustExecutor` fails any ACP host request after
+    /// 10 minutes, and `connection.open` is the request waiting for this
+    /// process to answer `initialize`. Overrunning it would hand the reader a
+    /// generic "request timed out" from two layers up while this process kept
+    /// going. Losing the race on purpose keeps the explanation here.
     start_deadline: Duration,
     agent: Vec<String>,
 }
 
 fn usage() -> ! {
     eprintln!(
-        "usage: harness-box-exec [--box NAME] [--image IMAGE] [--mount HOST:GUEST[:ro]] \
-         [--env K=V] [--allow-net HOST] [--workdir DIR] [--memory-mib N] [--disk-gb N] \
-         [--provision CMD] [--probe CMD] [--start-timeout SECONDS] [--keep] -- AGENT ARGS..."
+        "usage: harness-box-exec [--box NAME] [--image IMAGE] [--backend PATH] \
+         [--mount HOST:GUEST[:ro]] [--env K=V] [--allow-net HOST] [--workdir DIR] \
+         [--memory-mib N] [--disk-gb N] [--provision CMD] [--probe CMD] \
+         [--start-timeout SECONDS] [--keep] -- AGENT ARGS..."
     );
     std::process::exit(2);
 }
@@ -73,6 +88,7 @@ fn parse() -> Options {
     let mut options = Options {
         name: "harness-debugger".into(),
         image: "node:20-slim".into(),
+        backend: None,
         mounts: Vec::new(),
         env: BTreeMap::new(),
         allow_net: Vec::new(),
@@ -82,14 +98,6 @@ fn parse() -> Options {
         provision: Vec::new(),
         probe: None,
         keep: true,
-        // Generous for a cold run — pulling a Node image and installing the
-        // Agent was measured at ~96 s, and is mostly network — but deliberately
-        // **under** the caller's own bound. `AcpRustExecutor` fails any ACP host
-        // request after 10 minutes, and `connection.open` is the request that
-        // waits for this process to answer `initialize`. Overrunning it would
-        // hand the reader a generic "request timed out" from two layers up while
-        // this process kept going. Losing the race on purpose keeps the
-        // explanation here, where the actual cause is known.
         start_deadline: Duration::from_secs(480),
         agent: Vec::new(),
     };
@@ -104,6 +112,7 @@ fn parse() -> Options {
         match flag.as_str() {
             "--box" => options.name = value(),
             "--image" => options.image = value(),
+            "--backend" => options.backend = Some(PathBuf::from(value())),
             "--mount" => options.mounts.push(mount(&value())),
             "--env" => {
                 let pair = value();
@@ -134,90 +143,98 @@ fn parse() -> Options {
 }
 
 /// `HOST:GUEST` or `HOST:GUEST:ro`.
-fn mount(spec: &str) -> VolumeSpec {
+fn mount(spec: &str) -> Value {
     let parts: Vec<&str> = spec.split(':').collect();
     match parts.as_slice() {
-        [host, guest] => VolumeSpec {
-            managed_volume: None,
-            host_path: (*host).into(),
-            guest_path: (*guest).into(),
-            read_only: false,
-        },
-        [host, guest, mode] => VolumeSpec {
-            managed_volume: None,
-            host_path: (*host).into(),
-            guest_path: (*guest).into(),
-            read_only: *mode == "ro",
-        },
+        [host, guest] => json!({ "hostPath": host, "guestPath": guest }),
+        [host, guest, mode] => {
+            json!({ "hostPath": host, "guestPath": guest, "readOnly": *mode == "ro" })
+        }
         _ => usage(),
     }
 }
 
-/// Run one command to completion, returning its exit code and captured stdout.
+/// Where to find the box host.
 ///
-/// Provisioning output goes to *stderr*, never stdout: stdout is the ACP
-/// channel, and an npm log line landing there would be read as a malformed
-/// JSON-RPC frame.
-async fn run(
-    litebox: &boxlite::LiteBox,
-    shell: &str,
-) -> Result<(i32, String), Box<dyn std::error::Error>> {
-    let mut execution = litebox
-        .exec(BoxCommand::new("sh").args(["-c", shell]))
-        .await?;
-    let stdout = execution.stdout();
-    let stderr = execution.stderr();
-    let collected = tokio::spawn(async move {
-        let mut lines = Vec::new();
-        if let Some(mut stream) = stdout {
-            while let Some(line) = stream.next().await {
-                eprintln!("[box] {line}");
-                lines.push(line);
-            }
+/// Prefers the NSXPC bridge beside this executable, because that is the one
+/// backed by a shared driver and therefore the one that lets two runs coexist.
+/// Falls back to the driver itself, which is correct off macOS and in tests but
+/// allows only one run at a time.
+fn backend_path(options: &Options) -> Result<PathBuf, String> {
+    if let Some(explicit) = &options.backend {
+        return Ok(explicit.clone());
+    }
+    let directory = std::env::current_exe()
+        .map_err(|error| format!("locating this executable: {error}"))?
+        .parent()
+        .ok_or("this executable has no directory")?
+        .to_path_buf();
+    if cfg!(target_os = "macos") {
+        // The bridge only reaches the shared service from inside the bundle —
+        // `initWithServiceName:` resolves against the caller's bundle — so the
+        // staged copy in `.app/Contents/MacOS` is the one that buys concurrency.
+        // A bare copy beside us would connect to nothing.
+        let bundled = directory
+            .join("Harness Box.app/Contents/MacOS")
+            .join("harness-box-client");
+        if bundled.is_file() {
+            return Ok(bundled);
         }
-        lines.join("\n")
-    });
-    let drain = tokio::spawn(async move {
-        if let Some(mut stream) = stderr {
-            while let Some(line) = stream.next().await {
-                eprintln!("[box!] {line}");
-            }
-        }
-    });
-    let result = execution.wait().await?;
-    let output = collected.await.unwrap_or_default();
-    let _ = drain.await;
-    Ok((result.exit_code, output))
+    }
+    // The driver itself: correct, and the only option off macOS, but it owns a
+    // runtime — so one run at a time.
+    let driver = directory.join("harness-box-host");
+    if driver.is_file() {
+        return Ok(driver);
+    }
+    Err(format!(
+        "no box host beside {}; pass --backend",
+        directory.display()
+    ))
 }
 
-/// Bring a box to the point where the Agent can launch: created, booted, and
-/// provisioned.
+/// Bring a box to the point where the agent can launch.
 ///
 /// Failures come back as a reader-facing sentence rather than a raw error. The
 /// ACP host retains this process's stderr as connection diagnostics, so this
 /// text is what someone sees in Studio when a run refuses to start — it should
 /// name the likely cause, not just the layer that failed.
-async fn prepare(
-    runtime: &BoxliteRuntime,
-    box_options: BoxOptions,
-    options: &Options,
-    started: Instant,
-) -> Result<boxlite::LiteBox, String> {
-    let (litebox, created) = runtime
-        .get_or_create(box_options, Some(options.name.clone()))
+async fn prepare(backend: &Backend, options: &Options, started: Instant) -> Result<(), String> {
+    let created = backend
+        .call(
+            "box.create",
+            json!({
+                "name": options.name,
+                "image": options.image,
+                "cpus": Value::Null,
+                "memoryMib": options.memory_mib,
+                "diskSizeGb": options.disk_size_gb,
+                "workingDir": options.working_dir,
+                "env": options.env,
+                "mounts": options.mounts,
+                "allowNet": options.allow_net,
+            }),
+        )
         .await
         .map_err(|error| format!("The microVM could not be created: {error}"))?;
-    litebox.start().await.map_err(|error| {
-        format!(
-            "The microVM could not start: {error}. This needs hardware virtualization, \
-             and a first run must be able to pull '{}'.",
-            options.image,
-        )
-    })?;
+    let fresh = created
+        .get("created")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    backend
+        .call("box.start", json!({ "name": options.name }))
+        .await
+        .map_err(|error| {
+            format!(
+                "The microVM could not start: {error}. This needs hardware virtualization, \
+                 and a first run must be able to pull '{}'.",
+                options.image,
+            )
+        })?;
     eprintln!(
         "[box-exec] box {} ({}) ready in {:?}",
         options.name,
-        if created { "new" } else { "reused" },
+        if fresh { "new" } else { "reused" },
         started.elapsed()
     );
 
@@ -225,18 +242,19 @@ async fn prepare(
     // this is one cheap command instead of a re-install.
     let needs_provision = match &options.probe {
         Some(probe) => {
-            run(&litebox, probe)
+            backend
+                .run(&options.name, probe)
                 .await
                 .map_err(|error| format!("The microVM did not answer a command: {error}"))?
-                .0
                 != 0
         }
-        None => created,
+        None => fresh,
     };
     if needs_provision {
         for step in &options.provision {
             eprintln!("[box-exec] provisioning: {step}");
-            let (code, _) = run(&litebox, step)
+            let code = backend
+                .run(&options.name, step)
                 .await
                 .map_err(|error| format!("Installing the Agent failed to run: {error}"))?;
             if code != 0 {
@@ -248,129 +266,148 @@ async fn prepare(
         }
         eprintln!("[box-exec] provisioned in {:?}", started.elapsed());
     }
-    Ok(litebox)
+    Ok(())
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
+async fn main() -> ExitCode {
     let options = parse();
     let started = Instant::now();
-    // Spawned by Studio, so the inherited PATH is launchd's, not a shell's.
-    harness_box_host::ensure_tooling_path();
-    eprintln!("[box-exec] boxlite {}", boxlite::VERSION);
-
-    // BoxLite locks its home directory to one runtime, and each run owns its
-    // own, so a second concurrent box run cannot start. The raw error names a
-    // directory and a lock; the reader needs the rule instead.
-    let runtime = match BoxliteRuntime::with_defaults() {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!(
-                "[box-exec] Only one microVM run can be active at a time. \
-                 Finish or cancel the other run, then start this one again."
-            );
-            eprintln!("[box-exec] {error}");
-            return Ok(ExitCode::from(1));
+    let path = match backend_path(&options) {
+        Ok(path) => path,
+        Err(reason) => {
+            eprintln!("[box-exec] {reason}");
+            return ExitCode::from(1);
         }
     };
-    let box_options = BoxOptions {
-        memory_mib: options.memory_mib,
-        disk_size_gb: options.disk_size_gb,
-        working_dir: options.working_dir.clone(),
-        env: options.env.clone().into_iter().collect(),
-        rootfs: RootfsSpec::Image(options.image.clone()),
-        volumes: options.mounts.clone(),
-        network: NetworkSpec::Enabled {
-            allow_net: options.allow_net.clone(),
-        },
-        auto_delete: if options.keep { Some(0) } else { None },
-        ..Default::default()
+    let backend = match Backend::connect(&path).await {
+        Ok(backend) => Arc::new(backend),
+        Err(reason) => {
+            eprintln!("[box-exec] {reason}");
+            return ExitCode::from(1);
+        }
     };
-    // One deadline over the whole slow half — pulling an image, building a
-    // rootfs, installing packages over the network. The ACP host has no timeout
-    // of its own; it waits for the Agent's first frame. Without this, a stalled
-    // pull would leave Studio waiting with nothing to show.
-    let litebox = match tokio::time::timeout(
-        options.start_deadline,
-        prepare(&runtime, box_options, &options, started),
-    )
-    .await
-    {
-        Ok(Ok(litebox)) => litebox,
+    eprintln!("[box-exec] box host: {}", path.display());
+
+    // One deadline over the slow half — pulling an image, building a rootfs,
+    // installing packages. The ACP host has no timeout of its own; it waits for
+    // the agent's first frame. Without this a stalled pull would leave Studio
+    // waiting with nothing to show.
+    match tokio::time::timeout(options.start_deadline, prepare(&backend, &options, started)).await {
+        Ok(Ok(())) => {}
         Ok(Err(reason)) => {
             eprintln!("[box-exec] {reason}");
-            return Ok(ExitCode::from(1));
+            return ExitCode::from(1);
         }
         Err(_) => {
             eprintln!(
-                "[box-exec] The microVM was not ready within {:?}. A first run pulls the '{}' image \
-                 and installs the Agent, which needs network access; raise --start-timeout if this \
-                 machine is simply slow.",
+                "[box-exec] The microVM was not ready within {:?}. A first run pulls the '{}' \
+                 image and installs the Agent, which needs network access; raise --start-timeout \
+                 if this machine is simply slow.",
                 options.start_deadline, options.image,
             );
-            return Ok(ExitCode::from(1));
+            return ExitCode::from(1);
+        }
+    }
+
+    let launched = backend
+        .call(
+            "box.exec",
+            json!({
+                "name": options.name,
+                "command": options.agent[0],
+                "args": options.agent[1..],
+                "env": options.env,
+                "workingDir": options.working_dir,
+                "interactive": true,
+            }),
+        )
+        .await;
+    let exec_id = match launched
+        .as_ref()
+        .map(|value| value.get("execId").and_then(Value::as_str))
+    {
+        Ok(Some(id)) => id.to_string(),
+        Ok(None) => {
+            eprintln!("[box-exec] The box host did not name the Agent command.");
+            return ExitCode::from(1);
+        }
+        Err(reason) => {
+            eprintln!("[box-exec] The Agent could not start in the microVM: {reason}");
+            return ExitCode::from(1);
         }
     };
-
-    let mut command = BoxCommand::new(options.agent[0].clone()).args(&options.agent[1..]);
-    for (key, value) in &options.env {
-        command = command.env(key, value);
-    }
-    if let Some(dir) = &options.working_dir {
-        command = command.working_dir(dir);
-    }
-    let mut execution = litebox.exec(command).await?;
-    let mut agent_stdin = execution
-        .stdin()
-        .ok_or("the agent execution exposed no stdin")?;
-    let agent_stdout = execution.stdout();
-    let agent_stderr = execution.stderr();
     eprintln!("[box-exec] agent live at {:?}", started.elapsed());
 
-    // Guest stdout -> our stdout. The box yields whole lines and ACP frames are
-    // newline-delimited, so the terminator is re-added rather than guessed at.
-    let pump = tokio::spawn(async move {
-        let mut out = tokio::io::stdout();
-        if let Some(mut stream) = agent_stdout {
-            while let Some(line) = stream.next().await {
-                if out.write_all(line.as_bytes()).await.is_err()
-                    || out.write_all(b"\n").await.is_err()
-                    || out.flush().await.is_err()
+    // Our stdin -> the agent's, one whole line at a time. Framing stays with the
+    // host so a caller cannot half-write a JSON-RPC message.
+    let writer = {
+        let backend = backend.clone();
+        let exec_id = exec_id.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(tokio::io::stdin()).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if backend
+                    .call("exec.stdin", json!({ "execId": exec_id, "data": line }))
+                    .await
+                    .is_err()
                 {
                     return;
                 }
             }
-        }
-    });
-    let diagnostics = tokio::spawn(async move {
-        if let Some(mut stream) = agent_stderr {
-            while let Some(line) = stream.next().await {
-                eprintln!("[agent] {line}");
+            let _ = backend
+                .call(
+                    "exec.stdin",
+                    json!({ "execId": exec_id, "data": "", "close": true }),
+                )
+                .await;
+        })
+    };
+
+    // The agent's stdout -> ours, which is the ACP channel. Its stderr is
+    // diagnostics and must never land there.
+    let mut out = tokio::io::stdout();
+    let code = loop {
+        match backend.next_event().await {
+            Some(Event::Output {
+                exec_id: id,
+                stream,
+                data,
+            }) if id == exec_id => {
+                if stream == "stderr" {
+                    eprintln!("[agent] {}", data.trim_end());
+                    continue;
+                }
+                if out.write_all(data.as_bytes()).await.is_err() || out.flush().await.is_err() {
+                    break 0;
+                }
+            }
+            Some(Event::Exit {
+                exec_id: id,
+                exit_code,
+                error_message,
+            }) if id == exec_id => {
+                if let Some(message) = error_message {
+                    eprintln!("[box-exec] {message}");
+                }
+                break exit_code;
+            }
+            Some(_) => continue,
+            None => {
+                eprintln!("[box-exec] The box host exited while the Agent was running.");
+                break 1;
             }
         }
-    });
-
-    // Our stdin -> guest stdin, until the ACP host closes it.
-    let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        let mut frame = line.into_bytes();
-        frame.push(b'\n');
-        if agent_stdin.write_all(&frame).await.is_err() {
-            break;
-        }
-    }
-    agent_stdin.close();
-
-    let result = execution.wait().await?;
-    let _ = pump.await;
-    let _ = diagnostics.await;
+    };
+    writer.abort();
     eprintln!(
-        "[box-exec] agent exited {} after {:?}",
-        result.exit_code,
+        "[box-exec] agent exited {code} after {:?}",
         started.elapsed()
     );
     if !options.keep {
-        let _ = litebox.stop().await;
+        let _ = backend
+            .call("box.stop", json!({ "name": options.name }))
+            .await;
     }
-    Ok(ExitCode::from(result.exit_code.clamp(0, 255) as u8))
+    ExitCode::from(code.clamp(0, 255) as u8)
 }
