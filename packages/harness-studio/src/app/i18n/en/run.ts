@@ -269,6 +269,7 @@ export const run = {
     acpPermission: "ACP permission",
     toolCall: "Tool call {{id}}",
     observedState: "Observed state",
+    starting: "Starting",
     runId: "Run ID",
     threadId: "Thread ID",
     toolCalls: "Tool calls",

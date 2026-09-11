@@ -271,6 +271,7 @@ export const run: typeof enRun = {
     acpPermission: "ACP 权限",
     toolCall: "工具调用 {{id}}",
     observedState: "观测状态",
+    starting: "启动中",
     runId: "运行 ID",
     threadId: "线程 ID",
     toolCalls: "工具调用",

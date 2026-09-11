@@ -38,6 +38,14 @@ export interface HarnessRunState {
   timelineRevision: number;
   toolCallCount: number;
   warnings: string[];
+  /**
+   * The Agent's most recent startup line, while it is still starting.
+   *
+   * Deliberately the latest and not a list: this answers "what is it doing now",
+   * and an Agent installing itself into a microVM emits hundreds of npm lines
+   * that nobody wants retained. Cleared once the Agent is answering.
+   */
+  startupNotice?: string;
   protocolEvents: ObservedProtocolEvent[];
   pendingPermission?: AcpPendingPermission;
   pendingPermissions: AcpPendingPermission[];
@@ -101,8 +109,12 @@ export function applyHarnessRunEvent(
         timelineRevision: state.timelineRevision + 1,
       } : {}) };
     }
+    case "acp-agent-diagnostic":
+      return { ...sequenced, startupNotice: event.message };
     case "acp-connection-ready":
-      return { ...sequenced, connection: event.connection };
+      // The Agent is answering now, so whatever it said about starting up is
+      // finished business.
+      return { ...sequenced, connection: event.connection, startupNotice: undefined };
     case "acp-session-ready":
       return { ...sequenced, acp: { ...state.acp, sessionId: event.sessionId, controllable: true, prepared: event.prepared } };
     case "run-warning":

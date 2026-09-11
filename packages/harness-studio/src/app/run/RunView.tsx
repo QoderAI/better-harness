@@ -759,6 +759,12 @@ function LiveInspector({ state, runtime, agentLabel, project, onPermission }: { 
         {/* The bound Project is the run's own, not the sidebar's: a sidebar switch
             during a live run leaves this the only place naming what it ran in. */}
         <p className="live-observation-identity">{project && <span className="debugger-run-project" title={t("projectMeta", { label: project.label, revision: project.revision })}>{project.label}</span>}<strong>{agentLabel}</strong><span>{acp ? t("acpStream") : t("harnessStream")}</span></p>
+        {/* Only while the Agent is still starting. A boxed Agent installs itself
+            first, which takes minutes; this is the difference between "working"
+            and "hung" for anyone watching. */}
+        {state.startupNotice !== undefined && <p className="live-observation-startup" title={state.startupNotice}>
+          <span>{t("inspector.starting")}</span><code>{state.startupNotice}</code>
+        </p>}
         <ul className="observed-counters">
           <li><strong>{state.toolCallCount}</strong><span>{t("inspector.toolCalls")}</span></li>
           <li><strong>{state.warnings.length}</strong><span>{t("inspector.warnings")}</span></li>

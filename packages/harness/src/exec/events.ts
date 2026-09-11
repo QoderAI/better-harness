@@ -45,6 +45,15 @@ export type HarnessRunEvent =
   | { type: "acp-conversation-state"; snapshot: AcpConversationSnapshot }
   | { type: "acp-connection-ready"; connection: { error?: string; canListSessions: boolean; recovery?: "load" | "resume"; authMethods: Array<{ id: string; name: string; description?: string; type?: string }> } | null }
   | { type: "acp-session-ready"; sessionId: string; prepared: boolean }
+  /**
+   * One line of the Agent's own stderr, while it is starting.
+   *
+   * Not a warning and not an error: an Agent that installs itself into a
+   * microVM before it can answer takes minutes, and without this the run is
+   * indistinguishable from a hung one. Carries the Agent's text verbatim, so
+   * consumers should treat it as a status line to display, not as structure.
+   */
+  | { type: "acp-agent-diagnostic"; message: string }
   | { type: "run-started"; revisionId: string; host: string }
   | { type: "run-warning"; message: string }
   | { type: "message-started"; messageId: string; role?: "thought" | "user" }
@@ -105,6 +114,21 @@ export class HarnessRunEmitter {
       return;
     }
     this.deliver({ type: "run-warning", message });
+  }
+
+  /**
+   * Status text from the Agent while it starts.
+   *
+   * Deliberately not a warning: nothing is wrong, and a run that spends minutes
+   * installing an Agent into a microVM would otherwise report a wall of
+   * warnings for working normally. It is also not framed as a message, so it
+   * never interleaves with the transcript.
+   */
+  diagnostic(message: string): void {
+    if (this.currentPhase !== "running") {
+      return;
+    }
+    this.deliver({ type: "acp-agent-diagnostic", message });
   }
 
   endMessage(): void { this.closeOpenMessage(); }

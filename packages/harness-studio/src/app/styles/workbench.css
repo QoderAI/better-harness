@@ -758,6 +758,19 @@
   border: 1px solid var(--color-border);
   color: var(--color-text);
 }
+.live-observation-startup {
+  display: grid;
+  gap: 2px;
+  margin: var(--space-xs) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--type-meta-size);
+}
+.live-observation-startup > code {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--type-code-size);
+}
 .live-composer-hint {
   margin: 0 0 var(--space-sm);
   color: var(--color-text-muted);

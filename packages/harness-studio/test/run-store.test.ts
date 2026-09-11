@@ -111,4 +111,27 @@ describe("applyHarnessRunEvent", () => {
     expect(state.protocolEvents).toHaveLength(1);
     expect(state.protocolEvents[0]!.observedAt).toBe(stamped);
   });
+
+  it("shows the Agent's latest startup line, then drops it once the Agent answers", () => {
+    // A boxed Agent installs itself before it can answer, which takes minutes.
+    // The notice is the only thing separating that from a hung run.
+    let state = initialRunState();
+    for (const event of stream([
+      { type: "run-started", revisionId: "rev-1", host: "acp" },
+      { type: "acp-agent-diagnostic", message: "[box-exec] provisioning: npm install -g pi-acp" },
+    ])) state = applyHarnessRunEvent(state, event);
+    expect(state.startupNotice).toBe("[box-exec] provisioning: npm install -g pi-acp");
+
+    // Latest only: an npm install emits hundreds of lines and none are history.
+    for (const event of stream([{ type: "acp-agent-diagnostic", message: "[box-exec] agent live" }], 3)) {
+      state = applyHarnessRunEvent(state, event);
+    }
+    expect(state.startupNotice).toBe("[box-exec] agent live");
+    expect(state.warnings).toEqual([]);
+
+    for (const event of stream([{ type: "acp-connection-ready", connection: { canListSessions: false, authMethods: [] } }], 4)) {
+      state = applyHarnessRunEvent(state, event);
+    }
+    expect(state.startupNotice).toBeUndefined();
+  });
 });

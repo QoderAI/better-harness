@@ -414,7 +414,25 @@ pub enum HostEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
     },
+    /// One line of the Agent's stderr, as it happens.
+    ///
+    /// The same lines are retained in `AgentDiagnostics`, which explains a
+    /// failed handshake after the fact. This streams them instead, because an
+    /// Agent that takes minutes to become answerable — one preparing a microVM,
+    /// say — is indistinguishable from a hung one until it says otherwise.
+    ///
+    /// Stderr is not protocol and never becomes a `ProtocolFrame`. It is also
+    /// not redacted, for the same reason the retained tail is not: it is an
+    /// Agent's own diagnostic text, already shown on failure. Lines are capped
+    /// so one runaway writer cannot flood the channel.
+    AgentDiagnostic { connection_id: String, line: String },
 }
+
+/// Cap on one streamed stderr line.
+///
+/// Matches the spirit of the retained tail's byte ceiling: enough for a message
+/// a reader can act on, not enough for a stack dump to crowd out the stream.
+pub const MAX_DIAGNOSTIC_LINE_BYTES: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]

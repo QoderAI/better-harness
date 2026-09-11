@@ -542,6 +542,14 @@ class HostClient {
         this.emitPermissionProtocol(event, true);
         return;
       }
+      case "agent-diagnostic": {
+        // Status text, not evidence: it is not retained in the protocol trace
+        // and does not fail the run. The host has already bounded each line.
+        if (typeof event.line === "string" && event.line.length > 0) {
+          this.emitter.diagnostic(event.line);
+        }
+        return;
+      }
       case "protocol-frame": {
         const direction = event.direction;
         if (direction !== "Client → Agent" && direction !== "Agent → Client") return;

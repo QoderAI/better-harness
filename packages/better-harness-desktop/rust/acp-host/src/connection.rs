@@ -43,8 +43,8 @@ use crate::redact::redact;
 use crate::services::ClientServices;
 use crate::thread::{self, Change, ChunkKind, Thread};
 use crate::wire::{
-    ConfigOptionValue, ConnectionOpenParams, FrameDirection, HostEvent, PermissionOption,
-    TurnStatus,
+    ConfigOptionValue, ConnectionOpenParams, FrameDirection, HostEvent, MAX_DIAGNOSTIC_LINE_BYTES,
+    PermissionOption, TurnStatus,
 };
 
 /// Client identity reported in `initialize`.
@@ -116,6 +116,21 @@ const MAX_DIAGNOSTIC_LINES: usize = 40;
 /// Per-connection cap on retained Agent stderr bytes.
 const MAX_DIAGNOSTIC_BYTES: usize = 4 * 1024;
 
+/// Clip one streamed stderr line, on a character boundary.
+///
+/// The retained tail is bounded as a whole; a streamed line has to be bounded
+/// on its own, because nothing downstream aggregates before showing it.
+fn truncate_diagnostic(line: &str) -> String {
+    if line.len() <= MAX_DIAGNOSTIC_LINE_BYTES {
+        return line.to_string();
+    }
+    let mut end = MAX_DIAGNOSTIC_LINE_BYTES;
+    while end > 0 && !line.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &line[..end])
+}
+
 /// Grace period for the crate's stderr reader to deliver its last lines.
 ///
 /// stdout EOF is what fails the handshake, and stderr is drained by a separate
@@ -129,9 +144,12 @@ const DIAGNOSTIC_DRAIN_GRACE: Duration = Duration::from_millis(300);
 /// and [`protocol_frame`] deliberately drops stderr because it is not protocol.
 /// Without this, an Agent that rejects its own configuration and exits leaves
 /// `open` reporting `Incoming transport closed`, which names the symptom and not
-/// the cause. Bounded and never emitted as an event: it decorates the error the
-/// caller already receives, matching what the Node executor does with the same
-/// stream.
+/// the cause. Bounded, and it decorates the error the caller already receives,
+/// matching what the Node executor does with the same stream.
+///
+/// The same lines are *also* streamed as [`HostEvent::AgentDiagnostic`]. This
+/// tail answers "why did it fail"; the stream answers "is it still working",
+/// which an Agent spending minutes preparing a microVM cannot otherwise say.
 #[derive(Clone, Default)]
 pub struct AgentDiagnostics {
     lines: Arc<Mutex<VecDeque<String>>>,
@@ -311,6 +329,19 @@ impl AgentConnection {
                 // only channel that explains why a handshake died.
                 if matches!(direction, LineDirection::Stderr) {
                     tapped_diagnostics.push(line);
+                    // Streamed as well as retained: until the Agent answers
+                    // `initialize` this is the only thing that can tell a reader
+                    // it is working rather than wedged. Shed under pressure —
+                    // `try_send` on a full channel drops, and losing a progress
+                    // line is better than stalling the Agent's stdout to deliver
+                    // it.
+                    let trimmed = line.trim_end();
+                    if !trimmed.is_empty() {
+                        tap.try_send(HostEvent::AgentDiagnostic {
+                            connection_id: tapped_connection.clone(),
+                            line: truncate_diagnostic(trimmed),
+                        });
+                    }
                     return;
                 }
                 if let Some(event) = protocol_frame(&tapped_connection, line, direction) {
