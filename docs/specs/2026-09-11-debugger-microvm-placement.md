@@ -63,10 +63,11 @@ placement that fails when they use it.
   then it ends with a sentence naming the likely cause and the Agent's own
   process exits non-zero rather than hanging.
 - **AC-10** Given preparation that never completes, when the deadline passes,
-  then the run fails saying so and names `--start-timeout`. Nothing upstream
-  has a timeout — the ACP host waits for the Agent's first frame indefinitely —
-  so this deadline is the only thing between a stalled image pull and a Studio
-  that waits forever.
+  then the run fails saying so and names `--start-timeout`, and that sentence
+  reaches the caller as the reason `connection.open` failed. The deadline is set
+  below `AcpRustExecutor`'s own 10-minute request bound on purpose, so the
+  explanation comes from the layer that knows the cause rather than as a generic
+  "request timed out" from two layers up.
 
 ## Non-goals
 
@@ -153,11 +154,18 @@ Debugger waiting with nothing to show.
 | Agent install fails | The exit code, and a pointer at the egress allow-list |
 | Nothing completes | *"The microVM was not ready within {deadline}…"*, naming `--start-timeout` |
 
-Each is one deadline (`--start-timeout`, default 900 s) over create-boot-install
-and a non-zero exit, never a hang. The ACP host already retains an Agent's
-stderr as connection diagnostics, so these sentences are the text Studio shows
-when a run refuses to start — which is why they name a likely cause rather than
-the layer that failed.
+Each is one deadline over create-boot-install and a non-zero exit, never a hang.
+The ACP host already retains an Agent's stderr as connection diagnostics and
+attaches it to the failure, so these sentences are literally the text Studio
+shows when a run refuses to start — which is why they name a likely cause rather
+than the layer that failed.
+
+The deadline (`--start-timeout`) defaults to **480 s, deliberately under the
+600 s** `AcpRustExecutor` allows any ACP host request. `connection.open` is the
+request waiting for this process to answer `initialize`, so overrunning it would
+replace a specific explanation with a generic "request timed out" from two
+layers up — while this process kept running. Losing that race on purpose is what
+keeps the diagnosis where the cause is known.
 
 What this slice does **not** do is report progress. A first boxed run in a
 Project spends ~96 s installing the Agent with no indication beyond the run
@@ -187,7 +195,7 @@ Local macOS 26.6.2, Apple M4 Pro, Rust 1.96.0, BoxLite 0.10.0, 2026-09-11.
 | AC-7 | `harness-box-host` created, booted (2.7 s), ran a command in, and removed a fresh `alpine` box under `PATH=/usr/bin:/bin:/usr/sbin:/sbin`. |
 | AC-8 | With one driver holding the lock, a second shim exited 1 with *"Only one microVM run can be active at a time. Finish or cancel the other run…"* above BoxLite's raw lock error. |
 | AC-9 | `--image nonexistent-registry-xyz/nope:latest` exited 1 with the registry's own failure plus *"This needs hardware virtualization, and a first run must be able to pull…"*. A failing install returns the exit code and points at the egress allow-list. |
-| AC-10 | `--start-timeout 1` against an unprepared `node:20-slim` exited 1 with *"The microVM was not ready within 1s… raise --start-timeout if this machine is simply slow."* Default deadline is 900 s. |
+| AC-10 | `--start-timeout 1` against an unprepared `node:20-slim` exited 1 with *"The microVM was not ready within 1s… raise --start-timeout if this machine is simply slow."* Driving the real `harness-acp-host` with that shim returned it verbatim as the `connection.open` error, under `ACP initialize failed: Incoming transport closed` — so the reader gets the cause, not just the symptom. Default deadline is 480 s, under the executor's 600 s. |
 
 Verified live in a running Studio (dev server, Project bound, Debugger open):
 the placement control renders beside `Saved runs`, switching to `microVM` moved

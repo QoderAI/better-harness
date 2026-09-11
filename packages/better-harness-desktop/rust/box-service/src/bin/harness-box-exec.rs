@@ -82,9 +82,15 @@ fn parse() -> Options {
         provision: Vec::new(),
         probe: None,
         keep: true,
-        // Generous: a cold run pulls a Node image and installs the Agent, which
-        // was measured at ~96 s on a fast connection and is mostly network.
-        start_deadline: Duration::from_secs(900),
+        // Generous for a cold run — pulling a Node image and installing the
+        // Agent was measured at ~96 s, and is mostly network — but deliberately
+        // **under** the caller's own bound. `AcpRustExecutor` fails any ACP host
+        // request after 10 minutes, and `connection.open` is the request that
+        // waits for this process to answer `initialize`. Overrunning it would
+        // hand the reader a generic "request timed out" from two layers up while
+        // this process kept going. Losing the race on purpose keeps the
+        // explanation here, where the actual cause is known.
+        start_deadline: Duration::from_secs(480),
         agent: Vec::new(),
     };
     let mut args = std::env::args().skip(1);
