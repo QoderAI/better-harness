@@ -70,7 +70,7 @@ JSON object per line, `version` 1, positive u32 `id`, 4 MiB request and 16 MiB
 frame limits.
 
 ```json
-{"version":1,"id":1,"method":"box.create","params":{"name":"debugger","image":"node:20-slim","mounts":[{"hostPath":"/work/project","guestPath":"/workspace"}],"allowNet":["registry.npmjs.org","api.anthropic.com"]}}
+{"version":1,"id":1,"method":"box.create","params":{"name":"debugger","image":"node:20-slim","mounts":[{"hostPath":"/work/project","guestPath":"/work/project"}],"allowNet":["registry.npmjs.org","api.anthropic.com"]}}
 ```
 
 Methods: `host.describe`, `box.create`, `box.start`, `box.exec`, `exec.stdin`,
@@ -145,7 +145,7 @@ passes no extra path.
 
 ```bash
 harness-box-exec --box debugger --image node:20-slim \
-  --mount /work/project:/workspace --workdir /workspace \
+  --mount /work/project:/work/project --workdir /work/project \
   --allow-net registry.npmjs.org --allow-net api.anthropic.com \
   --probe 'command -v pi-acp' \
   --provision 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent pi-acp' \
@@ -184,7 +184,7 @@ So the run-pi guide and the Debugger want different commands in the same box:
 Three things follow from this design and only the first is implemented:
 
 1. **The agent's commands run in the VM; its edits land on the host.** The mount
-   makes `/workspace` the same bytes as the project directory, so `fs/*` results
+   mounts the Project at its own path, so `fs/*` results
    agree with what the agent sees. The blast radius of a bad `rm -rf` is the box.
 2. **Boxes managed by the service rather than by each shim.** `harness-box-exec`
    currently embeds its own runtime, so Studio cannot list or observe those

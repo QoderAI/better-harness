@@ -28,6 +28,11 @@ const performanceHost = existsSync(nativeExecutable) ? createRustEvidenceHost({ 
 // place so the Debugger's placement control can be exercised without packaging.
 const { discoverAcpAgentProfiles } = await import(path.join(packageRoot, "dist", "server", "acp-agent-catalog.js"));
 const boxExecutable = path.join(repositoryRoot, "packages", "better-harness-desktop", "dist", "native", "harness-box-exec");
+// The desktop app always runs ACP through the Rust host. Without this a dev
+// Studio silently takes the Node SDK path instead, which behaves differently in
+// ways worth catching here rather than after packaging — Agent startup
+// diagnostics, for one, only exist on the Rust side.
+const acpHostExecutable = path.join(repositoryRoot, "packages", "better-harness-desktop", "dist", "native", "harness-acp-host");
 const started = await startHarnessStudioServer({
   appDir: path.join(packageRoot, "dist", "app"),
   port,
@@ -42,6 +47,7 @@ const started = await startHarnessStudioServer({
   // Agents have a recipe, including ones absent from this machine.
   acpAgents: await discoverAcpAgentProfiles(),
   ...(existsSync(boxExecutable) ? { boxExecExecutable: boxExecutable } : {}),
+  ...(existsSync(acpHostExecutable) ? { acpHostExecutable, acpHostTransport: "stdio" } : {}),
   customizationCollector: createBundledAgentCustomizationCollector(),
   ...(intentAnalysisEnabled ? { intentAnalyzer: createQoderCliIntentAnalyzer({ pluginRoot: repositoryRoot }) } : {}),
 });

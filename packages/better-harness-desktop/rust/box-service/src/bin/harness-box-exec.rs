@@ -34,7 +34,7 @@
 //!
 //! ```bash
 //! harness-box-exec --box debugger --image node:20-slim \
-//!   --mount /path/to/project:/workspace --workdir /workspace \
+//!   --mount /path/to/project:/path/to/project --workdir /path/to/project \
 //!   --allow-net registry.npmjs.org --allow-net api.anthropic.com \
 //!   --provision 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent pi-acp' \
 //!   --probe 'command -v pi-acp' \
@@ -73,6 +73,10 @@ struct Options {
     start_deadline: Duration,
     agent: Vec<String>,
 }
+
+/// Default guest PATH, matching what a login shell in a Debian-family image
+/// gets. Notably includes `/usr/local/bin`, where `npm install -g` puts things.
+const GUEST_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 fn usage() -> ! {
     eprintln!(
@@ -310,6 +314,14 @@ async fn main() -> ExitCode {
         }
     }
 
+    // The Agent is exec'd directly, not through a shell, so it inherits no
+    // PATH unless one is set. A provisioning probe run via `sh -c` still works
+    // — the shell has a built-in default — which is why this is invisible until
+    // the Agent itself tries to spawn something. `pi-acp` starting `pi` failed
+    // with ENOENT on exactly this. Only filled in when the caller said nothing.
+    let mut env = options.env.clone();
+    env.entry("PATH".into())
+        .or_insert_with(|| GUEST_PATH.to_string());
     let launched = backend
         .call(
             "box.exec",
@@ -317,7 +329,7 @@ async fn main() -> ExitCode {
                 "name": options.name,
                 "command": options.agent[0],
                 "args": options.agent[1..],
-                "env": options.env,
+                "env": env,
                 "workingDir": options.working_dir,
                 "interactive": true,
             }),

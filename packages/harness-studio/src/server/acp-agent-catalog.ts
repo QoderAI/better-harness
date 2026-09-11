@@ -241,7 +241,16 @@ export function acpAgentInBox(
   input: { shim: string; cwd: string; label?: string; registry?: string },
 ): StudioAcpAgentOptions {
   const registry = input.registry ?? "registry.npmjs.org";
-  const guestRoot = "/workspace";
+  // The Project is mounted at its *own* path inside the guest, not at a tidy
+  // `/workspace`. ACP addresses everything by absolute host path — `session/new`
+  // passes `cwd`, and `fs/read_text_file` passes host paths that this Studio's
+  // fence resolves — so a guest that disagrees would need every one of them
+  // translated, in both directions, forever. Mounting at the same path makes
+  // the question not arise.
+  //
+  // It is not cosmetic: `pi-acp` failed to start because Node cannot spawn into
+  // a cwd that does not exist, and reported it as "pi not found".
+  const guestRoot = input.cwd;
   return {
     // `agent` is optional because host installation is irrelevant to a box: the
     // Agent that will run is `recipe.command`, installed in the guest. When the

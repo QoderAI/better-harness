@@ -164,7 +164,7 @@ export const run: typeof enRun = {
     box: "微虚拟机",
     localNotBoxable: "本地 Qoder harness 运行在 Studio 进程内，没有可供运行的虚拟机环境。",
     firstRunHint: "在此项目中首次运行会准备微虚拟机（拉取镜像并安装 Agent），可能需要几分钟且期间没有可见进度；之后的运行会复用它，约一秒即可启动。",
-    boxDetail: "在一次性的 Linux 微虚拟机中运行 Agent。项目挂载在 /workspace，因此改动是真实的，而命令执行留在虚拟机内。Agent 在首次使用时安装，之后复用同一个 box。",
+    boxDetail: "在一次性的 Linux 微虚拟机中运行 Agent。项目按原路径挂载，因此改动是真实的、文件引用也依然有效，而命令执行留在虚拟机内。Agent 在首次使用时安装，之后复用同一个 box。",
   },
   controlsAria: "会话调试器控件",
   controls: {

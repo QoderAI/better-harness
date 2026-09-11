@@ -42,8 +42,8 @@ placement that fails when they use it.
   here without a recipe, it is not. Box availability never consults host
   availability, because the box installs the Agent itself.
 - **AC-4** Given a `microVM` run, when it starts, then the ACP host spawns
-  `harness-box-exec` in the Agent's place with the Project bind-mounted at
-  `/workspace`, the Agent installed into the guest on first use, and egress
+  `harness-box-exec` in the Agent's place with the Project bind-mounted at its
+  own absolute path, the Agent installed into the guest on first use, and egress
   restricted to the registry plus the Agent's own provider hosts.
   `harness-acp-host` is unchanged.
 - **AC-5** Given a second run in the same Project, when it starts in a box, then
@@ -208,7 +208,7 @@ Local macOS 26.6.2, Apple M4 Pro, Rust 1.96.0, BoxLite 0.10.0, 2026-09-11.
 | --- | --- |
 | AC-1 | `placementAvailable` gates the control; covered by `live-agent-choices.test.ts` for both a catalog with a recipe and one without. |
 | AC-2/3 | `acp-agent-catalog.test.ts` asserts Pi is `available: false` but `boxAvailable: true` with nothing installed, qodercli the reverse with its own reason, and `choiceRunnable` refuses the local harness in a box. |
-| AC-4 | `acp-agent-catalog.test.ts` asserts the generated argv mounts `/work/better-harness:/workspace`, ends at `pi-acp`, installs both packages, and allows the registry plus `api.anthropic.com`. |
+| AC-4 | `acp-agent-catalog.test.ts` asserts the generated argv mounts `/work/better-harness:/work/better-harness` — the Project at its own path — ends at `pi-acp`, installs both packages, and allows the registry plus `api.anthropic.com`. |
 | AC-5 | `boxNameForWorkspace` is stable per path and distinct across paths. Measured live in the POC: reuse reattached in 0.82 s against a 96.6 s first install. |
 | AC-6 | `resolveLiveAgentChoice(choices, "acp:qodercli", "box")` moves to `acp:pi`. This caught a real defect: the first implementation required host availability in a box, which would have hidden every uninstalled-but-boxable Agent. |
 | AC-7 | `harness-box-host` created, booted (2.7 s), ran a command in, and removed a fresh `alpine` box under `PATH=/usr/bin:/bin:/usr/sbin:/sbin`. |

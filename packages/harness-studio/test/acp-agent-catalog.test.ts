@@ -96,7 +96,8 @@ describe("Studio ACP Agent catalog", () => {
 
     expect(placed.command).toBe("/native/harness-box-exec");
     expect(placed.args).toContain("--mount");
-    expect(placed.args).toContain("/work/better-harness:/workspace");
+    // Mounted at its own path, so ACP's absolute host paths stay valid in the guest.
+    expect(placed.args).toContain("/work/better-harness:/work/better-harness");
     expect(placed.args?.at(-1)).toBe("pi-acp");
     expect(placed.args?.join(" ")).toContain("npm install -g --ignore-scripts @earendil-works/pi-coding-agent pi-acp");
     // Egress is an allow-list, so the registry and the provider are both named.
