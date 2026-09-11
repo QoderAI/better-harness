@@ -57,7 +57,9 @@ placement that fails when they use it.
   launchd's `PATH` and Homebrew keeps e2fsprogs keg-only.
 - **AC-8** Given a run already executing in a box, when a second box run starts,
   then it fails with a sentence naming the one-at-a-time limit rather than a raw
-  lock error.
+  lock error. *(Superseded for the default path: since
+  [`box-driver-singleton`](2026-09-11-box-driver-singleton.md) both runs
+  succeed. This still governs the stdio-driver fallback, which owns a runtime.)*
 - **AC-9** Given a box that cannot be prepared — an image that will not pull, a
   guest that will not boot, an Agent install that fails — when a run starts,
   then it ends with a sentence naming the likely cause and the Agent's own
