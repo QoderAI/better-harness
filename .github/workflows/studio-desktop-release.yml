@@ -1,0 +1,96 @@
+name: Studio Desktop Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studio-desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  installers:
+    name: ${{ matrix.os }} installer
+    # A whole-repo Electron build is the expensive part of this pipeline; the
+    # timeout bounds a hung native compile instead of billing the 6h default.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: packages/better-harness-desktop/go/esbuild-service/go.mod
+          cache-dependency-path: packages/better-harness-desktop/go/esbuild-service/go.sum
+      - uses: dtolnay/rust-toolchain@1.96.0
+      # Reuse the cargo registry and the dist/rust target directory so a release
+      # only recompiles what changed since the previous tag.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/better-harness-desktop/dist/rust
+          key: ${{ runner.os }}-cargo-${{ hashFiles('packages/better-harness-desktop/rust/**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      # Electron and electron-builder downloads are hundreds of MB per run;
+      # these are the per-platform cache locations they use.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-electron-
+      - run: npm ci
+      # `dist` builds Harness and Studio, stages the production closure, compiles
+      # the native Rust/Go services for this runner's architecture, then drives
+      # electron-builder into the manifest's `dist/installers` directory.
+      - name: Build installers
+        run: npm run dist -w @qoder-ai/better-harness-desktop
+        env:
+          # Unsigned distribution: never discover a keychain identity in CI.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # A platform that produces no installer must fail the release instead of
+      # publishing an empty one.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: studio-installers-${{ matrix.os }}
+          path: packages/better-harness-desktop/dist/installers/*
+          if-no-files-found: error
+          # The release job consumes these inside the same run, so keep them
+          # short-lived instead of paying for a 90-day default.
+          retention-days: 7
+
+  release:
+    name: Publish release assets
+    needs: installers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
