@@ -3,6 +3,50 @@
 This file records notable public changes to Better Harness. Entries describe
 observable behavior and compatibility, not every internal refactor.
 
+## 0.7.0-alpha2 - 2026-09-12
+
+### Added
+
+- Harness Studio ships as a desktop application: an Electron shell hosts the
+  Studio server while OXC parsing, ACP agents, and evidence snapshots run in
+  Rust services reached over macOS NSXPC, or over supervised stdio processes on
+  Windows and Linux.
+
+- The Debugger can place a run inside a BoxLite microVM instead of the local
+  machine, reusing one shared driver so a crashed Agent fails only its own run.
+
+- Live Compare and the Debugger drive real ACP Agents through the Rust ACP host,
+  adding Session discovery, authentication, and retained conversations.
+
+- Performance reads model, token, and hook evidence into per-Session timing, and
+  a Memory workbench reads selected documents from a native Rust source.
+
+- The organization Dashboard makes its evidence joinable, retains decision and
+  asset evidence, and reports Skill and MCP execution outcomes.
+
+### Changed
+
+- The Studio shell was rebuilt around one docked workbench: Overview and Inputs
+  were retired, navigation groups into Sessions and Customization categories,
+  and one remembered date window scopes every View.
+
+- The desktop package is renamed from `harness-desktop` to
+  `better-harness-desktop`, and desktop staging prunes unused runtime files.
+
+- Artifact and Performance panes are resizable, and Compare configures its
+  Agents before a run instead of after it.
+
+### Fixed
+
+- ACP frames are budgeted by bytes rather than UTF-16 units, and a failing
+  native service client is isolated to its own request.
+
+- Session discovery and evidence snapshots handle Windows drive roots and
+  verbatim prefixes, and Windows temp cleanup retries after an ACP run.
+
+- Sidebar date filtering, commit-log paging, and Performance Session timing now
+  follow the selected observation window.
+
 ## 0.7.0-alpha1 - 2026-09-03
 
 ### Added
