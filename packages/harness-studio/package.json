@@ -68,7 +68,7 @@
     "fflate": "^0.8.3",
     "i18next": "^26.4.1",
     "oxc-parser": "0.147.0",
-    "oxc-transform": "0.147.0",
+    "oxc-transform": "0.149.0",
     "pdfjs-dist": "^6.3.289",
     "react": "19.2.8",
     "react-arborist": "^3.16.0",
