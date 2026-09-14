@@ -2132,12 +2132,22 @@
 
 /*
  * The structural reading. Each row keeps both revisions in their own column so
- * the two sides stay aligned; a run the engine flagged borrows the success or
- * danger role, which is the polarity the validation surfaces already use.
+ * the two sides stay aligned, with a change gutter between them; a run the
+ * engine flagged borrows the success or danger role, which is the polarity the
+ * validation surfaces already use, while the code itself keeps the syntax
+ * colours of every other Studio code surface.
  */
-.structural-diff { min-width: 0; }
-.structural-diff-summary { position: sticky; top: 0; display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); background: var(--color-surface-subtle); }
+.structural-diff { min-width: 0; min-height: 0; display: flex; flex-direction: column; --structural-marker-width: var(--space-lg); }
+/* The rows own the scroll so the summary and its change navigator stay reachable
+   while a long file scrolls under them. */
+.structural-diff-summary { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); background: var(--color-surface-subtle); }
 .structural-diff-summary strong { color: var(--color-text); font-weight: 500; }
+.structural-diff-nav { margin-left: auto; display: flex; align-items: center; gap: var(--space-xs); }
+.structural-diff-nav > span { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.structural-diff-nav button { width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid transparent; border-radius: var(--radius-xs); padding: 0; color: var(--color-text-muted); background: transparent; }
+.structural-diff-nav button:hover:not(:disabled) { border-color: var(--color-border-strong); color: var(--color-text); background: var(--color-surface-hover); }
+.structural-diff-nav button:disabled { opacity: .45; }
+.structural-diff-nav button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 /*
  * One grid for the whole file, so both revisions share one set of column
  * widths and stay aligned row for row. Rows are `display: contents` because a
@@ -2148,16 +2158,33 @@
  * wrapping mid-token is what makes a structural diff unreadable. A long line
  * scrolls inside its own side instead, so both revisions stay on screen.
  */
-.structural-diff-rows { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); font-family: var(--font-code); font-size: var(--type-code-size); line-height: var(--type-code-line); }
+.structural-diff-rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 1fr) var(--structural-marker-width) minmax(0, 1fr); align-content: start; font-family: var(--font-code); font-size: var(--type-code-size); line-height: var(--type-code-line); }
 .structural-diff-row { display: contents; }
 .structural-diff-side { display: flex; gap: var(--space-sm); min-width: 0; overflow-x: auto; padding-right: var(--space-sm); }
-.structural-diff-side[data-side="lhs"] { border-right: 1px solid var(--color-border); }
-.structural-diff-side[data-absent="true"] { background: var(--color-surface-subtle); }
 .structural-diff-number { flex: none; min-width: 5ch; padding: 0 var(--space-xs); color: var(--color-text-subtle); text-align: right; user-select: none; }
 .structural-diff-code { min-width: 0; white-space: pre; }
+/* A line the engine touched carries a polarity bar on its own side, so the
+   reader sees which revision changed before reading a token. The bar, not a
+   full band, because the band would sit under the run surfaces and flatten the
+   only fill that marks what actually changed inside the line. */
+.structural-diff-side[data-side="rhs"][data-change="added"],
+.structural-diff-side[data-side="rhs"][data-change="modified"] { box-shadow: inset 2px 0 var(--color-success); }
+.structural-diff-side[data-side="lhs"][data-change="removed"],
+.structural-diff-side[data-side="lhs"][data-change="modified"] { box-shadow: inset 2px 0 var(--color-danger); }
+/* The polarity colour is the fallback: a syntax token's own colour is inline and
+   wins, so a highlighted run reads as marked source rather than as one flat hue. */
 .structural-diff-run { border-radius: var(--radius-xs); padding: 0 1px; }
 .structural-diff-side[data-side="rhs"] .structural-diff-run { color: var(--color-success); background: var(--color-success-surface); }
 .structural-diff-side[data-side="lhs"] .structural-diff-run { color: var(--color-danger); background: var(--color-danger-surface); }
+/* A revision with no line here is hatched rather than merely tinted: an empty
+   tinted cell reads as an empty line, and an absent line is not a line. */
+.structural-diff-side[data-absent="true"] { background: repeating-linear-gradient(135deg, transparent 0 5px, var(--color-border) 5px 6px); }
+/* The change gutter: the file's change map, in place, between the revisions. */
+.structural-diff-marker { display: grid; place-items: center; border-inline: 1px solid var(--color-border); color: var(--color-text-subtle); font-size: var(--type-meta-size); user-select: none; }
+.structural-diff-marker[data-change="added"] { color: var(--color-success); background: var(--color-success-surface); }
+.structural-diff-marker[data-change="removed"] { color: var(--color-danger); background: var(--color-danger-surface); }
+.structural-diff-marker[data-change="modified"] { color: var(--color-warning); background: var(--color-warning-surface); }
+.structural-diff-marker[data-current="true"] { color: var(--color-primary); background: var(--color-primary-soft); box-shadow: inset 0 0 0 1px var(--color-primary); }
 .git-loading,
 .git-detail-empty,
 .git-diff-empty,
@@ -2214,7 +2241,10 @@
   .git-changed-files { grid-row: 2; border-right: 0; border-bottom: 1px solid var(--color-border); }
   .git-file-diff { grid-column: 1; grid-row: 3; min-height: 260px; }
   .structural-diff-rows { grid-template-columns: minmax(0, 1fr); }
-  .structural-diff-side[data-side="lhs"] { border-right: 0; border-bottom: 1px dashed var(--color-border); }
+  /* Stacked, the gutter has no "between" to sit in: the two revisions follow one
+     another, so the band and the line numbers carry the change instead. */
+  .structural-diff-marker { display: none; }
+  .structural-diff-side[data-side="lhs"] { border-bottom: 1px dashed var(--color-border); }
   .artifact-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--workbench-bar-height) minmax(0, 1fr); }
   .artifact-workspace > .studio-pane-sash { display: none; }
   .artifact-narrow-tabs { display: flex; border-bottom: 1px solid var(--color-border); background: var(--color-surface-subtle); }

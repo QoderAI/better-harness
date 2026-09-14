@@ -100,6 +100,11 @@ export const git: typeof enGit = {
     unavailable: "当前环境不支持结构化差异，改为显示文本补丁。",
     failed: "无法计算结构化差异。",
     label: "结构化差异：{{path}}",
+    navAria: "在变更区域之间跳转",
+    previousChange: "上一处变更",
+    nextChange: "下一处变更",
+    changes: "{{total}} 处变更",
+    changePosition: "第 {{index}} / {{total}} 处变更",
   },
   errors: {
     refsUnavailable: "Git 引用不可用。",

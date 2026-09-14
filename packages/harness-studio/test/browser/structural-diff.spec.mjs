@@ -159,24 +159,57 @@ for (const { name, width, height } of widths) {
     await expect(structural).toHaveAttribute("aria-pressed", "true");
     await expect(view.locator(".structural-diff-summary")).toContainText("TypeScript TSX");
 
-    // Only the added tokens are marked, and only ever on the newer side.
-    const novelRuns = view.locator('[data-novel="true"]');
-    await expect(novelRuns).toHaveCount(3);
+    // Only the added text is marked, and only ever on the newer side. Syntax
+    // highlighting can split one flagged run across token boundaries, so the
+    // assertion is on the concatenated novel text, not on the span count.
     await expect(view.locator('.structural-diff-side[data-side="lhs"] [data-novel="true"]')).toHaveCount(0);
-    const addedOn = (line, revision) => view.locator(`.structural-diff-row[data-line="${line}"] .structural-diff-side[data-side="${revision}"] [data-novel="true"]`);
+    const addedText = async (line, revision) => (await view
+      .locator(`.structural-diff-row[data-line="${line}"] .structural-diff-side[data-side="${revision}"] [data-novel="true"]`)
+      .allInnerTexts()).join("");
     // Line 1 gained a property; the rest of the signature is untouched.
-    await expect(addedOn(0, "rhs")).toHaveText(["; label", "string"]);
+    expect(await addedText(0, "rhs")).toBe("; labelstring");
     // Line 2 gained one attribute, so the whole line is not reported as rewritten.
-    await expect(addedOn(1, "rhs")).toHaveText([" data-label={props.label}"]);
+    expect(await addedText(1, "rhs")).toBe(" data-label={props.label}");
     // Line 3 is untouched on both sides.
-    await expect(addedOn(2, "rhs")).toHaveCount(0);
-    await expect(addedOn(2, "lhs")).toHaveCount(0);
+    await expect(view.locator('.structural-diff-row[data-line="2"] [data-novel="true"]')).toHaveCount(0);
 
     // Each side still renders its own full line: the segmentation is additive.
     const rhsLine = view.locator('.structural-diff-row[data-line="1"] .structural-diff-side[data-side="rhs"] .structural-diff-code');
     await expect(rhsLine).toHaveText(NEW_LINE);
     const lhsLine = view.locator('.structural-diff-row[data-line="1"] .structural-diff-side[data-side="lhs"] .structural-diff-code');
     await expect(lhsLine).toHaveText(OLD_LINE);
+
+    // The code is highlighted like every other Studio code surface: the
+    // unchanged text around the change carries syntax colour, not just the
+    // flagged runs. Before this it was plain text with only polarity colour.
+    await expect(view).toHaveAttribute("data-highlight-state", "highlighted");
+    const paletteSize = await view.locator(".structural-diff-code span[style*='color']").evaluateAll(
+      (spans) => new Set(spans.map((span) => span.style.color)).size,
+    );
+    expect(paletteSize).toBeGreaterThan(1);
+    // A flagged run keeps its polarity: the added attribute still reads as added
+    // even though its tokens now carry the theme's foreground.
+    const novelRun = view.locator('.structural-diff-row[data-line="1"] .structural-diff-side[data-side="rhs"] .structural-diff-run').first();
+    const runBackground = await novelRun.evaluate((node) => getComputedStyle(node).backgroundColor);
+    expect(runBackground).not.toBe("rgba(0, 0, 0, 0)");
+
+    // The change navigator moves by region, not by row, and wraps at both ends.
+    // The two changed lines are contiguous, so they are one region, not two.
+    const position = view.locator(".structural-diff-nav > span");
+    const next = view.getByRole("button", { name: "Next change" });
+    const previous = view.getByRole("button", { name: "Previous change" });
+    await expect(position).toHaveText("1 changed regions");
+    await next.click();
+    await expect(position).toHaveText("Change 1 of 1");
+    // A single region wraps onto itself rather than becoming unreachable.
+    await next.click();
+    await expect(position).toHaveText("Change 1 of 1");
+    await previous.click();
+    await expect(position).toHaveText("Change 1 of 1");
+    // The position is a live region, so the move is announced, not silent.
+    await expect(position).toHaveAttribute("aria-live", "polite");
+    // The marker column names the change kind on the changed rows.
+    await expect(view.locator('.structural-diff-marker[data-change="added"]')).toHaveCount(2);
 
     // The client asked for text; the engine is never handed a path to open.
     expect(recorded).toMatchObject({ path: "view.tsx" });

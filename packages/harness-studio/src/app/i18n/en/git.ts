@@ -98,6 +98,11 @@ export const git = {
     unavailable: "Structural diff is unavailable in this environment. Showing the textual patch.",
     failed: "The structural diff could not be computed.",
     label: "Structural diff: {{path}}",
+    navAria: "Move between changed regions",
+    previousChange: "Previous change",
+    nextChange: "Next change",
+    changes: "{{total}} changed regions",
+    changePosition: "Change {{index}} of {{total}}",
   },
   errors: {
     refsUnavailable: "Git refs are unavailable.",
