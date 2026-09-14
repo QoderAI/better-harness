@@ -61,7 +61,7 @@
     "@shikijs/langs": "^4.4.3",
     "@streamdown/cjk": "^1.0.3",
     "@tanstack/react-table": "^8.21.3",
-    "@tanstack/react-virtual": "^3.14.10",
+    "@tanstack/react-virtual": "^3.14.11",
     "beautiful-mermaid": "^1.1.3",
     "esbuild-wasm": "0.28.2",
     "fast-xml-parser": "^5.11.1",
