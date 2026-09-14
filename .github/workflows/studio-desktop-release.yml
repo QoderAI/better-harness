@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: packages/better-harness-desktop/go/esbuild-service/go.mod
           cache-dependency-path: packages/better-harness-desktop/go/esbuild-service/go.sum
