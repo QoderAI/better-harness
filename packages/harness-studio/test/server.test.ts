@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { request as httpRequest } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HarnessRunEmitter, loadSkillDeliveries, type HarnessExecutor, type HarnessExecutorFactory } from "@qoder-ai/harness/exec";
 import { HARNESS_RUN_REQUEST_KIND, type HarnessRunStreamEventV1 } from "@qoder-ai/harness/protocol";
 import { isArtifactCatalogResponse } from "../src/contracts/artifact.js";
@@ -17,6 +17,18 @@ import type { IntentCorrelationPacketV1 } from "../src/contracts/intent-correlat
 import type { CheckpointHistoryAdapter } from "../src/server/query/checkpoint-history.js";
 import { FIXTURE_VERDICT } from "./compare-model.test.js";
 import { decodeSseStream } from "./sse-test-utils.js";
+
+let beforeExperimentPreview: (() => Promise<void>) | undefined;
+vi.mock("../src/server/query/experiment-query.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/server/query/experiment-query.js")>();
+  return {
+    ...actual,
+    buildExperimentPreview: async (...args: Parameters<typeof actual.buildExperimentPreview>) => {
+      await beforeExperimentPreview?.();
+      return actual.buildExperimentPreview(...args);
+    },
+  };
+});
 
 const EXPERIMENT_MANIFEST = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -113,6 +125,7 @@ let started: StartedHarnessStudioServer | undefined;
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  beforeExperimentPreview = undefined;
   await started?.close();
   started = undefined;
   await Promise.all(tempDirs.splice(0).map((dir) => removeTempDir(dir)));
@@ -1315,6 +1328,250 @@ describe("harness-studio server", () => {
     });
     expect(emptyPrompt.status).toBe(400);
     expect(await emptyPrompt.json()).toMatchObject({ error: expect.stringContaining("non-empty") });
+  });
+
+  it("admits one owner for concurrent HTTP requests with the same experiment id", async () => {
+    const appDir = await makeAppDir();
+    let reachFirstPreflight!: () => void;
+    let reachSecondPreflight!: () => void;
+    let releaseFirstPreflight!: () => void;
+    const firstAtPreflight = new Promise<void>((resolvePromise) => { reachFirstPreflight = resolvePromise; });
+    const secondAtPreflight = new Promise<void>((resolvePromise) => { reachSecondPreflight = resolvePromise; });
+    const firstPreflightReleased = new Promise<void>((resolvePromise) => { releaseFirstPreflight = resolvePromise; });
+    let previewCalls = 0;
+    beforeExperimentPreview = async () => {
+      previewCalls += 1;
+      if (previewCalls === 1) {
+        reachFirstPreflight();
+        await firstPreflightReleased;
+      } else {
+        reachSecondPreflight();
+      }
+    };
+    let releaseRunners!: () => void;
+    const runnersReleased = new Promise<void>((resolvePromise) => { releaseRunners = resolvePromise; });
+    const signals: AbortSignal[] = [];
+    let runnerCalls = 0;
+    started = await startHarnessStudioServer({
+      appDir,
+      experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
+      experimentRunner: (options) => {
+        runnerCalls += 1;
+        signals.push(options.signal!);
+        return new Promise((resolvePromise, rejectPromise) => {
+          options.signal?.addEventListener("abort", () => rejectPromise(options.signal?.reason), { once: true });
+          void runnersReleased.then(() => resolvePromise({} as never));
+        });
+      },
+    });
+    const run = (): Promise<Response> => fetch(`${started!.url}/api/experiment/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ experimentId: "exp_single_owner" }),
+    });
+
+    const firstRequest = run();
+    await firstAtPreflight;
+    const secondRequest = run();
+    await Promise.race([
+      secondAtPreflight,
+      secondRequest.then((response) => expect(response.status).toBe(409)),
+    ]);
+    releaseFirstPreflight();
+    const responses = await Promise.all([firstRequest, secondRequest]);
+    const statuses = responses.map((response) => response.status);
+    const cancellation = await fetch(`${started.url}/api/experiment/runs/exp_single_owner`, { method: "DELETE" });
+    releaseRunners();
+    const bodies = await Promise.all(responses.map((response) => response.text()));
+
+    expect(statuses.toSorted()).toEqual([200, 409]);
+    expect(runnerCalls).toBe(1);
+    expect(cancellation.status).toBe(202);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(bodies[statuses.indexOf(200)]).toContain("\"type\":\"experiment-cancelled\"");
+    expect(bodies[statuses.indexOf(409)]).toContain("already running");
+
+    const retry = await run();
+    expect(retry.status).toBe(200);
+    await retry.text();
+    expect(runnerCalls).toBe(2);
+  });
+
+  it("releases ownership after preflight and synchronous or asynchronous runner failures", async () => {
+    const appDir = await makeAppDir();
+    let runnerCalls = 0;
+    started = await startHarnessStudioServer({
+      appDir,
+      experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
+      experimentRunner: () => {
+        runnerCalls += 1;
+        if (runnerCalls === 1) throw new Error("synchronous runner failure");
+        if (runnerCalls === 2) return Promise.reject(new Error("asynchronous runner failure"));
+        return Promise.resolve({} as never);
+      },
+    });
+    const run = (body: Record<string, unknown> = {}): Promise<Response> => fetch(`${started!.url}/api/experiment/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ experimentId: "exp_retry_owner", ...body }),
+    });
+
+    let previewAttempts = 0;
+    beforeExperimentPreview = async () => {
+      previewAttempts += 1;
+      if (previewAttempts === 1) throw new Error("controlled preview failure");
+    };
+    const failedPreview = await run();
+    expect(failedPreview.status).toBe(400);
+    expect(await failedPreview.json()).toMatchObject({ error: "controlled preview failure" });
+
+    const failedPreflight = await run({ agentIds: { "fresh-default": "invalid-for-qoder" } });
+    expect(failedPreflight.status).toBe(400);
+    expect(await failedPreflight.json()).toMatchObject({ error: expect.stringContaining("only for ACP-hosted") });
+    expect(runnerCalls).toBe(0);
+
+    const synchronousFailure = await run();
+    expect(await synchronousFailure.text()).toContain("synchronous runner failure");
+    const asynchronousFailure = await run();
+    expect(await asynchronousFailure.text()).toContain("asynchronous runner failure");
+    const retry = await run();
+    expect(retry.status).toBe(200);
+    await retry.text();
+    expect(runnerCalls).toBe(3);
+  });
+
+  it("runs different experiment ids concurrently", async () => {
+    const appDir = await makeAppDir();
+    let releaseRunners!: () => void;
+    const runnersReleased = new Promise<void>((resolvePromise) => { releaseRunners = resolvePromise; });
+    const startedIds: string[] = [];
+    started = await startHarnessStudioServer({
+      appDir,
+      experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
+      experimentRunner: async (options) => {
+        startedIds.push(options.experimentId!);
+        await runnersReleased;
+        return {} as never;
+      },
+    });
+    const run = (experimentId: string): Promise<Response> => fetch(`${started!.url}/api/experiment/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ experimentId }),
+    });
+
+    const responses = await Promise.all([run("exp_parallel_alpha"), run("exp_parallel_beta")]);
+    releaseRunners();
+    await Promise.all(responses.map((response) => response.text()));
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(startedIds.toSorted()).toEqual(["exp_parallel_alpha", "exp_parallel_beta"]);
+  });
+
+  it("cancels an experiment owner during preflight without starting its runner", async () => {
+    const appDir = await makeAppDir();
+    let reachPreflight!: () => void;
+    let releasePreflight!: () => void;
+    const atPreflight = new Promise<void>((resolvePromise) => { reachPreflight = resolvePromise; });
+    const preflightReleased = new Promise<void>((resolvePromise) => { releasePreflight = resolvePromise; });
+    beforeExperimentPreview = async () => {
+      reachPreflight();
+      await preflightReleased;
+    };
+    let runnerCalls = 0;
+    started = await startHarnessStudioServer({
+      appDir,
+      experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
+      experimentRunner: async () => {
+        runnerCalls += 1;
+        return {} as never;
+      },
+    });
+    const run = (): Promise<Response> => fetch(`${started!.url}/api/experiment/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ experimentId: "exp_cancel_preflight" }),
+    });
+
+    const pending = run();
+    await atPreflight;
+    const cancellation = await fetch(`${started.url}/api/experiment/runs/exp_cancel_preflight`, { method: "DELETE" });
+    releasePreflight();
+    const cancelled = await pending;
+
+    expect(cancellation.status).toBe(202);
+    expect(cancelled.status).toBe(409);
+    expect(runnerCalls).toBe(0);
+    beforeExperimentPreview = undefined;
+    const retry = await run();
+    expect(retry.status).toBe(200);
+    await retry.text();
+    expect(runnerCalls).toBe(1);
+  });
+
+  it("drops a disconnected preflight owner without starting its runner", async () => {
+    const appDir = await makeAppDir();
+    let reachPreflight!: () => void;
+    let releasePreflight!: () => void;
+    const atPreflight = new Promise<void>((resolvePromise) => { reachPreflight = resolvePromise; });
+    const preflightReleased = new Promise<void>((resolvePromise) => { releasePreflight = resolvePromise; });
+    beforeExperimentPreview = async () => {
+      reachPreflight();
+      await preflightReleased;
+    };
+    let runnerCalls = 0;
+    started = await startHarnessStudioServer({
+      appDir,
+      experimentManifestPath: EXPERIMENT_MANIFEST,
+      checkpointSourcePreview: READY_CHECKPOINT_SOURCE,
+      experimentRunner: async () => {
+        runnerCalls += 1;
+        return {} as never;
+      },
+    });
+    const responseClosed = new Promise<void>((resolvePromise) => {
+      started!.server.once("request", (_request, response) => response.once("close", resolvePromise));
+    });
+    const target = new URL(`${started.url}/api/experiment/runs`);
+    const body = JSON.stringify({ experimentId: "exp_disconnect_preflight" });
+    let clientRequest!: ReturnType<typeof httpRequest>;
+    const clientClosed = new Promise<void>((resolvePromise) => {
+      clientRequest = httpRequest({
+        hostname: target.hostname,
+        port: target.port,
+        path: target.pathname,
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(body)) },
+      });
+      clientRequest.once("error", () => undefined);
+      clientRequest.once("close", resolvePromise);
+      clientRequest.end(body);
+    });
+
+    await atPreflight;
+    clientRequest.destroy();
+    await Promise.all([clientClosed, responseClosed]);
+    releasePreflight();
+    beforeExperimentPreview = undefined;
+    let retry: Response | undefined;
+    await vi.waitFor(async () => {
+      const response = await fetch(`${started!.url}/api/experiment/runs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      if (response.status === 200) retry = response;
+      expect(response.status).toBe(200);
+    });
+
+    expect(retry).toBeDefined();
+    await retry!.text();
+    expect(runnerCalls).toBe(1);
   });
 
   it("blocks execution when the checkpoint source is unavailable", async () => {
