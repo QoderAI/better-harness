@@ -217,130 +217,141 @@ export async function streamExperiment(
     }
     promptOverride = body.prompt;
   }
+  const controller = new AbortController();
   if (experimentRuns.has(experimentId)) {
     respondJson(response, 409, { error: `Experiment '${experimentId}' is already running.` });
     return;
   }
-  let loadedManifest: Awaited<ReturnType<typeof loadHarnessExperimentManifest>>;
-  try {
-    loadedManifest = await loadHarnessExperimentManifest(manifestPath);
-  } catch (error) {
-    respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
-    return;
-  }
-  const experimentHost = loadedManifest.value.runtime.host;
-  try {
-    const preview = await buildExperimentPreview({
-      manifestPath,
-      trajectoryOverrides: state.trajectoryOverrides,
-      checkpointSourcePreview: state.lockReceipt === undefined ? options.checkpointSourcePreview : undefined,
-      lockReceipt: state.lockReceipt,
-      observedIndexes: state.observedIndexes,
-    });
-    const setup = experimentSetupForReadiness(preview);
-    if (!isExperimentRunnable(setup)) {
-      respondJson(response, 409, {
-        error: setup.checkpointSource.limitation ?? "The checkpoint source cannot create isolated fresh runs.",
-      });
-      return;
-    }
-  } catch (error) {
-    respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
-    return;
-  }
-  let agentSelections: Map<string, StudioAcpAgentOptions> | undefined;
-  let agentSelectionEvidence: Record<string, {
-    agentId: string;
-    agentLabel: string;
-    protocol: "acp-v1-stdio";
-    modelPolicy: "lane" | "agent-default";
-  }> | undefined;
-  if (experimentHost !== "acp" && body.agentIds !== undefined) {
-    respondJson(response, 400, { error: "agentIds is available only for ACP-hosted experiments." });
-    return;
-  }
-  if (experimentHost === "acp") {
-    try {
-      const selected = selectExperimentAcpAgents(
-        body.agentIds,
-        loadedManifest.value.lanes.filter((lane) => lane.origin === "execute").map((lane) => lane.id),
-        options,
-      );
-      agentSelections = selected.agents;
-      agentSelectionEvidence = selected.evidence;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      respondJson(response, message.includes("unavailable") || message.includes("no available") ? 409 : 400, { error: message });
-      return;
-    }
-  }
-  const controller = new AbortController();
   experimentRuns.set(experimentId, controller);
-  response.writeHead(200, {
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-  response.flushHeaders();
   const disconnect = (): void => {
     if (!response.writableEnded) controller.abort(new Error("Experiment stream disconnected."));
   };
   response.once("close", disconnect);
-  const sendPayload = (event: unknown): void => {
-    response.write(`event: experiment\ndata: ${JSON.stringify(event)}\n\n`);
-  };
-  const send = (event: ExperimentRunEvent): void => {
-    if (event.type !== "lane-event") {
-      sendPayload(event);
+  try {
+    let loadedManifest: Awaited<ReturnType<typeof loadHarnessExperimentManifest>>;
+    try {
+      loadedManifest = await loadHarnessExperimentManifest(manifestPath);
+    } catch (error) {
+      respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
       return;
     }
-    for (const canonical of canonicalToolEvents(event.event)) {
-      sendPayload({ ...event, event: canonical });
+    const experimentHost = loadedManifest.value.runtime.host;
+    try {
+      const preview = await buildExperimentPreview({
+        manifestPath,
+        trajectoryOverrides: state.trajectoryOverrides,
+        checkpointSourcePreview: state.lockReceipt === undefined ? options.checkpointSourcePreview : undefined,
+        lockReceipt: state.lockReceipt,
+        observedIndexes: state.observedIndexes,
+      });
+      const setup = experimentSetupForReadiness(preview);
+      if (!isExperimentRunnable(setup)) {
+        respondJson(response, 409, {
+          error: setup.checkpointSource.limitation ?? "The checkpoint source cannot create isolated fresh runs.",
+        });
+        return;
+      }
+    } catch (error) {
+      respondJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+      return;
     }
-  };
-  try {
-    const outputRoot = options.experimentOutputDirectory
-      ?? resolve(manifestPath, "..", ".harness-experiments");
-    const outputDirectory = resolve(outputRoot, experimentId);
-    await (options.experimentRunner ?? runHarnessExperiment)({
-      manifestPath,
-      outputDirectory,
-      experimentId,
-      ...(promptOverride === undefined ? {} : { promptOverride }),
-      ...(agentSelectionEvidence === undefined ? {} : { runtimeSelection: agentSelectionEvidence }),
-      signal: controller.signal,
-      ...(experimentHost === "acp"
-        ? {
-            executorFactory: acpExperimentExecutorFactory(
-              (laneId) => agentSelections!.get(laneId)!,
-              state,
-              {
-                ...(options.acpHostExecutable === undefined
-                  ? {}
-                  : { executable: options.acpHostExecutable }),
-                ...(options.acpHostTransport === undefined
-                  ? {}
-                  : { transport: options.acpHostTransport }),
-                ...(options.cwd === undefined ? {} : { allowRoots: [options.cwd] }),
-              },
-            ),
-          }
-        : {}),
-      onEvent: send,
+    let agentSelections: Map<string, StudioAcpAgentOptions> | undefined;
+    let agentSelectionEvidence: Record<string, {
+      agentId: string;
+      agentLabel: string;
+      protocol: "acp-v1-stdio";
+      modelPolicy: "lane" | "agent-default";
+    }> | undefined;
+    if (experimentHost !== "acp" && body.agentIds !== undefined) {
+      respondJson(response, 400, { error: "agentIds is available only for ACP-hosted experiments." });
+      return;
+    }
+    if (experimentHost === "acp") {
+      try {
+        const selected = selectExperimentAcpAgents(
+          body.agentIds,
+          loadedManifest.value.lanes.filter((lane) => lane.origin === "execute").map((lane) => lane.id),
+          options,
+        );
+        agentSelections = selected.agents;
+        agentSelectionEvidence = selected.evidence;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        respondJson(response, message.includes("unavailable") || message.includes("no available") ? 409 : 400, { error: message });
+        return;
+      }
+    }
+    if (controller.signal.aborted || response.destroyed) {
+      if (!response.destroyed) {
+        const reason = controller.signal.reason;
+        respondJson(response, 409, {
+          error: reason instanceof Error ? reason.message : "Experiment run was cancelled during preflight.",
+        });
+      }
+      return;
+    }
+    response.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     });
-  } catch (error) {
-    send({
-      type: controller.signal.aborted ? "experiment-cancelled" : "lane-failed",
-      experimentId,
-      laneId: null,
-      runId: null,
-      at: new Date().toISOString(),
-      detail: error instanceof Error ? error.message : String(error),
-    });
+    response.flushHeaders();
+    const sendPayload = (event: unknown): void => {
+      response.write(`event: experiment\ndata: ${JSON.stringify(event)}\n\n`);
+    };
+    const send = (event: ExperimentRunEvent): void => {
+      if (event.type !== "lane-event") {
+        sendPayload(event);
+        return;
+      }
+      for (const canonical of canonicalToolEvents(event.event)) {
+        sendPayload({ ...event, event: canonical });
+      }
+    };
+    try {
+      const outputRoot = options.experimentOutputDirectory
+        ?? resolve(manifestPath, "..", ".harness-experiments");
+      const outputDirectory = resolve(outputRoot, experimentId);
+      await (options.experimentRunner ?? runHarnessExperiment)({
+        manifestPath,
+        outputDirectory,
+        experimentId,
+        ...(promptOverride === undefined ? {} : { promptOverride }),
+        ...(agentSelectionEvidence === undefined ? {} : { runtimeSelection: agentSelectionEvidence }),
+        signal: controller.signal,
+        ...(experimentHost === "acp"
+          ? {
+              executorFactory: acpExperimentExecutorFactory(
+                (laneId) => agentSelections!.get(laneId)!,
+                state,
+                {
+                  ...(options.acpHostExecutable === undefined
+                    ? {}
+                    : { executable: options.acpHostExecutable }),
+                  ...(options.acpHostTransport === undefined
+                    ? {}
+                    : { transport: options.acpHostTransport }),
+                  ...(options.cwd === undefined ? {} : { allowRoots: [options.cwd] }),
+                },
+              ),
+            }
+          : {}),
+        onEvent: send,
+      });
+    } catch (error) {
+      send({
+        type: controller.signal.aborted ? "experiment-cancelled" : "lane-failed",
+        experimentId,
+        laneId: null,
+        runId: null,
+        at: new Date().toISOString(),
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
   } finally {
     response.removeListener("close", disconnect);
-    experimentRuns.delete(experimentId);
+    if (experimentRuns.get(experimentId) === controller) experimentRuns.delete(experimentId);
     response.end();
   }
 }
