@@ -118,7 +118,7 @@
     "@agentclientprotocol/sdk": "1.4.0",
     "@earendil-works/pi-coding-agent": "0.85.1",
     "@qoder-ai/qoder-agent-sdk": "1.0.32",
-    "@types/node": "26.4.0",
+    "@types/node": "26.6.1",
     "@types/semver": "7.8.0",
     "es-module-lexer": "2.3.2",
     "langium-cli": "4.4.0",
