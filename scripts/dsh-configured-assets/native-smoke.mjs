@@ -46,7 +46,7 @@ const DSH_PACKAGES = [
 // with ERESOLVE before any assertion runs.
 async function installNativeOwners(prefix) {
   const specs = [
-    "@deepseek-ai/cordis@4.0.2",
+    "@deepseek-ai/cordis@4.0.3",
     ...DSH_PACKAGES.map((packageName) => `${packageName}@${DSH_NATIVE_VERSION}`),
   ];
   const args = [

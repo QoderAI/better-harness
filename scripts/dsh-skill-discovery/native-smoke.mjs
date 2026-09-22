@@ -35,7 +35,7 @@ const DSH_PACKAGES = [
 // siblings declare, otherwise an upstream sibling release fails the install
 // with ERESOLVE before any assertion runs.
 async function installNativeOwners(prefix) {
-  const specs = ["@deepseek-ai/cordis@4.0.2", ...DSH_PACKAGES.map((entry) => `${entry}@${DSH_NATIVE_VERSION}`)];
+  const specs = ["@deepseek-ai/cordis@4.0.3", ...DSH_PACKAGES.map((entry) => `${entry}@${DSH_NATIVE_VERSION}`)];
   const args = [
     "install",
     "--prefix", prefix,
