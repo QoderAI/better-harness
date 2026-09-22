@@ -41,6 +41,8 @@ let studio;
 let emptyStudio;
 let selectedWorkspace;
 let artifactDirectory;
+const observationDay = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() - 2));
+const observationDate = observationDay.toISOString().slice(0, 10);
 
 test.beforeAll(async () => {
   artifactDirectory = await mkdtemp(join(tmpdir(), "studio-artifact-browser-"));
@@ -134,8 +136,8 @@ test.beforeAll(async () => {
     ],
   });
   const workspaceRecords = [
-    retainedRun("run_left", "2026-08-20T10:00:00.000Z", "Repair parser", ["Read", "Edit", "Bash"]),
-    retainedRun("run_right", "2026-08-20T11:00:00.000Z", "Repair renderer", ["Read", { name: "Edit", argsText: '{"path":"review.diff"}' }, "Bash"]),
+    retainedRun("run_left", `${observationDate}T10:00:00.000Z`, "Repair parser", ["Read", "Edit", "Bash"]),
+    retainedRun("run_right", `${observationDate}T11:00:00.000Z`, "Repair renderer", ["Read", { name: "Edit", argsText: '{"path":"review.diff"}' }, "Bash"]),
   ];
   // Session compare is a cross-Agent question inside one Project, so the two
   // fixture Sessions come from two different Agents in the same working tree.
@@ -1361,7 +1363,7 @@ test("opens a project workspace and compares Inspector-discovered Sessions", asy
   await filterDisclosure.getByRole("checkbox", { name: "File paths" }).check();
   await expect(usageSummary).toContainText(/Session processed\s*not derived/u);
   await expect(usageSummary).toContainText(/Latest observed context\s*40/u);
-  await expect(usageSummary.locator(".usage-summary-freshness")).toHaveText(/Static snapshot · observed through 2026-08-20 (10|11):00:02 UTC/u);
+  await expect(usageSummary.locator(".usage-summary-freshness")).toHaveText(new RegExp(`Static snapshot · observed through ${observationDate} (10|11):00:02 UTC`, "u"));
   await expect(usageSummary).toContainText("40 / 100");
   await filterSummary.click();
   await expect(filterDisclosure).not.toHaveAttribute("open", "");

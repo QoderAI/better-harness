@@ -10,6 +10,16 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 let studio;
 let workspace;
 
+/** A local noon this many days ago, so last-30-day windows do not rot with the calendar. */
+function daysAgo(days) {
+  const now = new Date();
+  const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - days, 12, 0, 0));
+  return { iso: date.toISOString(), key: date.toISOString().slice(0, 10) };
+}
+
+const recentObservation = daysAgo(2);
+const olderObservation = daysAgo(3);
+
 function debuggerSession(id, prompt, provider, resources) {
   return {
     id,
@@ -63,11 +73,11 @@ test.beforeAll(async () => {
   await writeFile(join(workspace, "unobserved.txt"), "must not enter the catalog\n", "utf8");
   const sessions = [
     {
-      summary: { id: "codex:new", savedAt: "2026-08-24T04:30:00.000Z", prompt: "Unify the Artifact workspace", status: "observed", toolCallCount: 3, provider: "Codex" },
+      summary: { id: "codex:new", savedAt: recentObservation.iso, prompt: "Unify the Artifact workspace", status: "observed", toolCallCount: 3, provider: "Codex" },
       debugger: debuggerSession("codex:new", "Unify the Artifact workspace", "Codex", ["outputs/diagram.svg", "outputs/report.md", "src/ordinary.tsx"]),
     },
     {
-      summary: { id: "qoder:older", savedAt: "2026-08-23T08:20:00.000Z", prompt: "Define the Artifact contract", status: "observed", toolCallCount: 1, provider: "Qoder" },
+      summary: { id: "qoder:older", savedAt: olderObservation.iso, prompt: "Define the Artifact contract", status: "observed", toolCallCount: 1, provider: "Qoder" },
       debugger: debuggerSession("qoder:older", "Define the Artifact contract", "Qoder", ["docs/contract.md"]),
     },
   ];
@@ -153,8 +163,8 @@ test("scopes file navigation, list and preview with the sidebar date window", as
   await page.goto(`${studio.url}/#/artifacts`);
   const window = page.getByRole("combobox", { name: "Observation window" });
   const rows = page.locator(".artifact-rows > button");
-  // The default window is the last thirty days; both fixture Sessions fall inside
-  // it, so the full catalog shows before the reader narrows the window.
+  // Both fixture Sessions are a few days old, inside the default last-30-day
+  // window, so the full catalog shows before the reader narrows it.
   await expect(window).toHaveValue("last30");
   await expect(rows).toHaveCount(4);
   await window.selectOption("today");
@@ -164,12 +174,12 @@ test("scopes file navigation, list and preview with the sidebar date window", as
   await window.selectOption("all");
   await expect(rows).toHaveCount(4);
   await window.selectOption("custom");
-  await page.getByLabel("From", { exact: true }).fill("2026-08-24");
-  await page.getByLabel("To", { exact: true }).fill("2026-08-24");
+  await page.getByLabel("From", { exact: true }).fill(recentObservation.key);
+  await page.getByLabel("To", { exact: true }).fill(recentObservation.key);
   await expect(rows).toHaveCount(3);
   await expect(page.locator(".artifact-file-tree")).not.toContainText("contract.md");
-  await expect(page.getByLabel("From", { exact: true })).toHaveValue("2026-08-24");
-  await expect(page.getByLabel("To", { exact: true })).toHaveValue("2026-08-24");
+  await expect(page.getByLabel("From", { exact: true })).toHaveValue(recentObservation.key);
+  await expect(page.getByLabel("To", { exact: true })).toHaveValue(recentObservation.key);
 });
 
 test("narrows the shared range by folder without changing catalog authority", async ({ page }) => {
