@@ -1,7 +1,8 @@
 import { entryModuleSource } from "./entry.js";
-import { build, type Message, type Plugin } from "esbuild-wasm";
+import type { Message, Plugin } from "esbuild-wasm";
 import type { Diagnostic } from "../contracts/index.js";
 import type { AllowedPackageResolver } from "./allowed-packages.js";
+import { loadEsbuild } from "./esbuild-host.js";
 
 /**
  * The esbuild Linker.
@@ -32,7 +33,7 @@ export async function linkArtifactBundle(input: LinkInput): Promise<LinkResult> 
   const rejectedPackages: string[] = [];
   let result;
   try {
-    result = await build({
+    result = await loadEsbuild().build({
       entryPoints: [LINK_ENTRY],
       bundle: true,
       write: false,

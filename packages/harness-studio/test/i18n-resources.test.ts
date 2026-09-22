@@ -48,7 +48,9 @@ describe("Studio i18n resource parity", () => {
       const zhKeys = new Set(leafEntries(zh[ns]!).map(([key]) => key));
       for (const key of enKeys) {
         if (key.endsWith("_other") && zhKeys.has(key)) {
-          expect(zhKeys.has(key.replace(/_other$/, "")), `${ns}.${key} pair`).toBe(true);
+          // i18next looks up `${stem}_one` first and falls back to the unsuffixed key.
+          const stem = key.slice(0, -"_other".length);
+          expect(zhKeys.has(`${stem}_one`) || zhKeys.has(stem), `${ns}.${key} pair`).toBe(true);
         }
       }
     }

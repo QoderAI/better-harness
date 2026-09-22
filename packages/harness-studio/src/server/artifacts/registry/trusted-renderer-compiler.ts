@@ -7,8 +7,8 @@
  * content stay untrusted data.
  */
 import { readFile, stat } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { basename } from "node:path";
+import { loadEsbuild } from "../../../agent-react/linker/esbuild-host.js";
 
 export interface CompiledTrustedRendererModule {
   code: string;
@@ -27,8 +27,8 @@ const rendererCache = new Map<string, CacheRecord>();
 let loaded: EsbuildTransform | undefined;
 let compileCount = 0;
 
-function loadEsbuild(): EsbuildTransform {
-  loaded ??= createRequire(import.meta.url)("esbuild-wasm") as EsbuildTransform;
+function loadTrustedEsbuild(): EsbuildTransform {
+  loaded ??= loadEsbuild() as EsbuildTransform;
   return loaded;
 }
 
@@ -49,7 +49,7 @@ export async function compileTrustedRendererModule(path: string): Promise<Compil
   if (cached !== undefined && cached.signature === signature) {
     return { code: cached.code, map: cached.map };
   }
-  const { transformSync } = loadEsbuild();
+  const { transformSync } = loadTrustedEsbuild();
   compileCount += 1;
   const result = transformSync(await readFile(path, "utf8"), {
     loader: "tsx",

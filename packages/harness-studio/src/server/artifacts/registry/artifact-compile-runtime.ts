@@ -5,7 +5,8 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build, type Message, type Plugin } from "esbuild-wasm";
+import type { Message, Plugin } from "esbuild-wasm";
+import { loadEsbuild } from "../../../agent-react/linker/esbuild-host.js";
 import {
   ARTIFACT_BUILD_SNAPSHOT_KIND,
   type ArtifactBuildDiagnostic,
@@ -201,7 +202,7 @@ async function compileArtifactRevision(
       };
     }
   } else try {
-    const result = await withCompileTimeout(build({
+    const result = await withCompileTimeout(loadEsbuild().build({
       absWorkingDir: root,
       entryPoints: ["artifact-runtime:entry"],
       bundle: true,

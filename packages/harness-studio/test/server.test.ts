@@ -277,6 +277,7 @@ describe("harness-studio server", () => {
       acpEnabled: false,
       acpRuntimeProfile: "acp-v1-stdio",
       acpAgents: [],
+      appsHostEnabled: false,
       runEnabled: false,
       artifactsEnabled: false,
       evidenceEnabled: true,

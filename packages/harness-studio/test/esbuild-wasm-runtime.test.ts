@@ -1,12 +1,14 @@
 import { posix, win32 } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildPreviewWithWasm, unpackedBuildInputPath } from "../src/server/artifacts/registry/esbuild-wasm-runtime.js";
+import { buildPreviewWithWasm, esbuildWorkerScript, unpackedBuildInputPath } from "../src/server/artifacts/registry/esbuild-wasm-runtime.js";
 
 describe('production packager process paths', () => {
   it('resolves the unpacked closure on POSIX, Windows drives and UNC roots', () => {
     for (const [paths, root] of [[posix, '/Applications/Studio.app/Contents/Resources'], [win32, 'C:\\Program Files\\Studio\\resources'], [win32, '\\\\server\\share\\Studio\\resources']] as const) {
       const module = paths.join(root, 'app.asar', 'node_modules', 'esbuild-wasm', 'lib', 'main.js');
-      expect(unpackedBuildInputPath(module, paths)).toBe(paths.join(root, 'app.asar.unpacked', 'node_modules', 'esbuild-wasm', 'lib', 'main.js'));
+      const unpacked = unpackedBuildInputPath(module, paths);
+      expect(unpacked).toBe(paths.join(root, 'app.asar.unpacked', 'node_modules', 'esbuild-wasm', 'lib', 'main.js'));
+      expect(esbuildWorkerScript(unpacked, paths)).toBe(paths.join(root, 'app.asar.unpacked', 'node_modules', 'esbuild-wasm', 'bin', 'esbuild'));
       const ordinary = paths.join(root, 'node_modules', 'esbuild-wasm', 'lib', 'main.js');
       expect(unpackedBuildInputPath(ordinary, paths)).toBe(ordinary);
     }
