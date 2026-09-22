@@ -18,7 +18,10 @@ await rm(staging, { recursive: true, force: true });
 await mkdir(staging, { recursive: true });
 await mkdir(tarballs, { recursive: true });
 const archives = [];
-for (const name of ['harness', 'harness-studio']) {
+// harness-studio-apps is a private workspace package and is not on the
+// registry. Pack it with the other local artifacts so Studio's dependency
+// resolves from this install instead of failing with a registry 404.
+for (const name of ['harness', 'harness-studio-apps', 'harness-studio']) {
   const packed = JSON.parse(run(['pack', '--ignore-scripts', '--json', '--pack-destination', tarballs], join(repository, 'packages', name)));
   archives.push(join(tarballs, packed[0].filename));
 }
@@ -29,7 +32,7 @@ await writeFile(join(staging, 'package.json'), JSON.stringify({
   author: "Qoder",
 }, null, 2));
 await cp(join(root, 'src'), join(staging, 'src'), { recursive: true });
-// Install only the two local public artifacts and their production closure.
+// Install only the local runtime artifacts and their production closure.
 // This avoids copying repository dev dependencies into the desktop distribution.
 process.stdout.write(run(['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', ...archives], staging));
 const pruned = await pruneDesktopRuntime(staging);
