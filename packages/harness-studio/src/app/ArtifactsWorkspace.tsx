@@ -207,11 +207,40 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
     active: narrowPane,
     onSelect: setNarrowPane,
   });
+  const artifacts = catalog?.artifacts ?? NO_ARTIFACTS;
+  // These stay above the indexing return. Calling them only after the catalog
+  // arrives changes the hook count and React unmounts the page.
+  useEffect(() => {
+    if (!props.config.appsHostEnabled) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("api/apps/file-viewer", { headers: { accept: "application/json" } });
+        if (!response.ok) return;
+        const record = await response.json() as { enabled?: boolean; manifest?: { ui?: { entry?: unknown } } };
+        // A disabled app's UI bundle is not served, so mounting it only 404s.
+        if (record.enabled !== true) return;
+        const entry = record.manifest?.ui?.entry;
+        if (!cancelled && typeof entry === "string" && entry !== "") setHostedFileViewer({ entry });
+      } catch {
+        // The built-in navigator stays the fallback.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [props.config.appsHostEnabled]);
+  const hostedFileViewerProps = useMemo(() => ({
+    artifacts: artifacts.map((artifact) => ({ id: artifact.id, label: artifact.label })),
+    scope,
+    labels: {
+      all: t("fileTree.all"),
+      treeAria: t("fileTree.aria"),
+      expand: t("fileTree.expandPrefix"),
+      collapse: t("fileTree.collapsePrefix"),
+    },
+  }), [artifacts, scope, t]);
 
   if (failure !== undefined) return <ArtifactEmpty title={t("empty.unreadableTitle")} detail={failure} onRetry={() => setCatalogRefresh((value) => value + 1)} />;
   if (props.config.artifactsEnabled && catalog === undefined) return <p className="artifact-status" role="status" aria-busy="true">{t("indexing")}</p>;
-
-  const artifacts = catalog?.artifacts ?? NO_ARTIFACTS;
   const navigation = catalog?.navigation;
   const omitted = catalog?.omitted ?? [];
   const activeObservations = active === undefined ? [] : observationsForArtifact(navigation, active.id);
@@ -248,39 +277,6 @@ export function ArtifactsWorkspace(props: { config: StudioConfig; dateRange: Stu
   const collaborationArtifact = activeIntentOutcome?.effect.kind === "steering" && activeIntentDestination !== undefined
     ? adoptedDestinationArtifact
     : adoptedDestinationArtifact ?? (active?.interaction === undefined ? undefined : active);
-  // The Files surface is hosted by the apps host whenever one is configured:
-  // the file-viewer component renders the tree, and the built-in navigator
-  // stays as the fallback for every other state (no host, no entry, a load
-  // that fails, or a host that never answers).
-  useEffect(() => {
-    if (!props.config.appsHostEnabled) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("api/apps/file-viewer", { headers: { accept: "application/json" } });
-        if (!response.ok) return;
-        const record = await response.json() as { manifest?: { ui?: { entry?: unknown } } };
-        const entry = record.manifest?.ui?.entry;
-        if (!cancelled && typeof entry === "string" && entry !== "") setHostedFileViewer({ entry });
-      } catch {
-        // The built-in navigator stays the fallback.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [props.config.appsHostEnabled]);
-
-  // Memoized because HostedComponent treats a new reference as new props.
-  const hostedFileViewerProps = useMemo(() => ({
-    artifacts: artifacts.map((artifact) => ({ id: artifact.id, label: artifact.label })),
-    scope,
-    labels: {
-      all: t("fileTree.all"),
-      treeAria: t("fileTree.aria"),
-      expand: t("fileTree.expandPrefix"),
-      collapse: t("fileTree.collapsePrefix"),
-    },
-  }), [artifacts, scope, t]);
-
   const selectScope = (next: ArtifactScope): void => {
     setScope(next);
     const ids = artifactIdsForScope(next, navigation, artifacts);
