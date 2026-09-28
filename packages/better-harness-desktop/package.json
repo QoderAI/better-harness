@@ -36,9 +36,9 @@
     "@qoder-ai/harness-studio-apps": "0.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "electron": "44.4.2",
-    "electron-builder": "26.15.3",
-    "@playwright/test": "^1.62.1"
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.qoder.harness-studio",
