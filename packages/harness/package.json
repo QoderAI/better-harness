@@ -94,7 +94,7 @@
   },
   "peerDependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",
-    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@earendil-works/pi-coding-agent": "^0.87.1",
     "@qoder-ai/qoder-agent-sdk": "^1.0.21"
   },
   "peerDependenciesMeta": {
@@ -116,7 +116,7 @@
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "1.4.0",
-    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
     "@qoder-ai/qoder-agent-sdk": "1.0.32",
     "@types/node": "26.6.1",
     "@types/semver": "7.8.0",
