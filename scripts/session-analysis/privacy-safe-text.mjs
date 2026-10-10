@@ -1,5 +1,5 @@
 const INJECTED_CONTEXT_PREFIX_RE = /^(?:#\s*AGENTS\.md instructions\b|<environment_context>|<skill>|#\s*Files mentioned by the user:)/iu;
-const INJECTED_XML_BLOCK_RE = /<(environment_context|skill|recommended_plugins|codex_internal_context|local-command-caveat|local-command-stdout|command-name|command-message|command-args)\b[^>]*>[\s\S]*?<\/\1>/giu;
+const INJECTED_XML_BLOCK_RE = /<(environment_context|skill|recommended_plugins|codex_internal_context|external_codex_apps_open_page|in-app-browser-context|local-command-caveat|local-command-stdout|command-name|command-message|command-args)\b[^>]*>[\s\S]*?<\/\1>/giu;
 const TURN_ABORTED_BLOCK_RE = /<turn_aborted\b[^>]*>[\s\S]*?<\/turn_aborted>/giu;
 const EMBEDDED_TRANSCRIPT_TAIL_RE = /\s+\[\d+\]\s+(?:user|assistant|system|developer|tool(?:\s+[a-z0-9_.-]+){0,4})\s*:\s[\s\S]*$/iu;
 const MARKDOWN_IMAGE_RE = /!\[[^\]\r\n]*\]\((?:<[^>\r\n]+>|[^)\r\n]+)\)/gu;
@@ -53,6 +53,12 @@ export function privacySafeUserInputText(value, { limit = 800 } = {}) {
   const prepared = prepareTaskInput(value);
   if (!prepared || isExcludedUserInput(prepared)) return null;
   return sanitizePrivateReviewText(prepared, { limit });
+}
+
+export function isContextOnlyUserInput(value) {
+  if (!String(value ?? "").trim()) return false;
+  const prepared = prepareTaskInput(value);
+  return !prepared || isExcludedUserInput(prepared);
 }
 
 export function sanitizePrivateReviewText(value, { limit = 800 } = {}) {

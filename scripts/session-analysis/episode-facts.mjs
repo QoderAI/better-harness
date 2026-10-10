@@ -880,7 +880,7 @@ function observedWorkPhase(event) {
   if (postOnly) return null;
   if (/^(?:read|readfile|grep|glob|search|find|listfiles)$/u.test(name)) return "inspect";
   if (/^(?:edit|multiedit|write|notebookedit|notebookwrite|apply_patch|searchreplace)$/u.test(name)) return "change";
-  if (/^(?:bash|exec_command|shell|terminal|runcommand)$/u.test(name)) return "execute";
+  if (/^(?:bash|exec|exec_command|shell|terminal|runcommand)$/u.test(name)) return "execute";
   return null;
 }
 
@@ -913,7 +913,7 @@ function observedProjectActivity(events) {
     const name = normalizedToolName(event);
     if (!name) continue;
     if (/^(?:read|readfile|grep|glob|search|find|listfiles)$/u.test(name)) reads += 1;
-    if (/^(?:read|readfile|grep|glob|search|find|listfiles|edit|multiedit|write|notebookedit|notebookwrite|apply_patch|searchreplace|bash|exec_command|skill)$/u.test(name)) {
+    if (/^(?:read|readfile|grep|glob|search|find|listfiles|edit|multiedit|write|notebookedit|notebookwrite|apply_patch|searchreplace|bash|exec|exec_command|skill)$/u.test(name)) {
       toolCalls += 1;
     }
   }

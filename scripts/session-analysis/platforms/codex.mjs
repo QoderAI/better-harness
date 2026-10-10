@@ -42,6 +42,7 @@ import {
   workspaceMatchScopeFromOptions,
 } from "../provider-runner.mjs";
 import { WORKSPACE_CWD_MATCH, classifyWorkspaceCwd } from "../workspace-match.mjs";
+import { isContextOnlyUserInput } from "../privacy-safe-text.mjs";
 
 const DEFAULT_LIMIT = 50;
 
@@ -681,15 +682,16 @@ function buildFacets(indexedSessions, detailedSessions, events) {
   };
 }
 
-async function firstJsonlRecord(filePath) {
+async function firstJsonlRecord(filePath, predicate = null) {
   let first = null;
   await forEachJsonLine(
     filePath,
     (raw) => {
+      if (predicate && !predicate(raw)) return;
       first = raw;
       return false;
     },
-    { maxLines: 1 },
+    predicate ? {} : { maxLines: 1 },
   );
   return first;
 }
@@ -862,17 +864,27 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
 
     for (const filePath of files) {
       const first = await firstJsonlRecord(filePath);
-      const timestamp = inferTimestamp(first);
+      let timestamp = inferTimestamp(first);
       const cwd = inferCwd(first);
       const planningScope = cwd && !isScopedWorkspaceMatch(cwd, scope) ? "user-global" : "workspace";
       if (planningScope === "user-global" && !scope.includeGlobalCapabilities) {
         continue;
       }
-      if (!withinTimeRange(timestamp, scope)) {
-        continue;
-      }
       const fallback = path.basename(filePath, ".jsonl").replace(/^rollout-\d{4}-\d{2}-\d{2}T[^-]+-/, "");
-      addSessionRef(sessions, inferSessionId(first, fallback), scope.workspace, {
+      const sessionId = inferSessionId(first, fallback);
+      if (scope.sessionId && sessionId !== scope.sessionId) continue;
+      if (!withinTimeRange(timestamp, scope)) {
+        // The header records creation, not the last activity of a resumed session.
+        const activity = await firstJsonlRecord(filePath, (raw) => {
+          const observedAt = inferTimestamp(raw);
+          return inferSessionId(raw, sessionId) === sessionId
+            && timestampMillis(observedAt) !== null
+            && withinTimeRange(observedAt, scope);
+        });
+        if (!activity) continue;
+        timestamp = inferTimestamp(activity);
+      }
+      addSessionRef(sessions, sessionId, scope.workspace, {
         kind,
         role: root.role,
         path: filePath,
@@ -886,8 +898,11 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
   }
 
   normalizeEvent(raw, sourceRef, options = {}) {
-    const type = inferType(raw);
     const text = messageText(raw);
+    const rawType = inferType(raw);
+    const type = rawType === "user" && isContextOnlyUserInput(text)
+      ? "context.user-input"
+      : rawType;
     const retainsDialogueText = ["user", "assistant", "last-prompt", "UserPromptSubmit"].includes(type);
     const event = {
       sessionId: inferSessionId(raw, sourceRef.sessionId),
