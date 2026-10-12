@@ -364,6 +364,11 @@ function inferLoadedSkillNames(raw) {
   return names;
 }
 
+function hasInputImage(raw) {
+  const message = raw?.message ?? raw?.content ?? raw?.payload?.message ?? raw?.payload?.content ?? null;
+  return Array.isArray(message) && message.some((item) => item?.type === "input_image");
+}
+
 function messageText(raw) {
   const message = raw?.message ?? raw?.content ?? raw?.payload?.message ?? raw?.payload?.content ?? null;
   if (typeof message === "string") {
@@ -900,7 +905,8 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
   normalizeEvent(raw, sourceRef, options = {}) {
     const text = messageText(raw);
     const rawType = inferType(raw);
-    const type = rawType === "user" && isContextOnlyUserInput(text)
+    const imageInput = rawType === "user" && hasInputImage(raw);
+    const type = rawType === "user" && !imageInput && isContextOnlyUserInput(text)
       ? "context.user-input"
       : rawType;
     const retainsDialogueText = ["user", "assistant", "last-prompt", "UserPromptSubmit"].includes(type);
@@ -969,7 +975,7 @@ export class CodexSessionAnalyzer extends SessionAnalyzer {
     const cwd = inferCwd(raw);
     if (cwd) event.cwd = cwd;
     if (type === "user" || type === "last-prompt" || type === "UserPromptSubmit") {
-      event.userPrompt = type === "UserPromptSubmit" || userText(raw).trim().length > 0;
+      event.userPrompt = type === "UserPromptSubmit" || imageInput || userText(raw).trim().length > 0;
     }
     if (isUserVisibleAssistantMessage(raw)) {
       event.userVisibleAssistantMessage = true;

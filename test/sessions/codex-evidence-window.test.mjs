@@ -109,6 +109,45 @@ test("Codex exec wrappers retain observed activity without inventing nested succ
   assert.equal(candidate.result.structuredCompletionObserved, undefined);
 });
 
+test.each([
+  ["image only", ""],
+  ["page context", pageContext],
+  ["browser context", browserContext],
+  ["combined context", `${pageContext}\n${browserContext}`],
+])("native image requests preserve task boundaries and omit image data: %s", (_name, context) => {
+  const analyzer = new CodexSessionAnalyzer();
+  const imageUrl = "https://example.invalid/private-design.png";
+  const user = (content) => ({ type: "message", role: "user", content });
+  const edit = (id) => ({ type: "custom_tool_call", name: "apply_patch", call_id: id,
+    input: "*** Begin Patch\n*** Update File: src/app.mjs\n@@\n-old\n+new\n*** End Patch" });
+  const rows = [
+    user([{ type: "input_text", text: "Repair alpha behavior" }]),
+    edit("first-edit"),
+    user([
+      ...(context ? [{ type: "input_text", text: context }] : []),
+      { type: "input_image", image_url: imageUrl },
+    ]),
+    edit("second-edit"),
+  ];
+  for (const textOptions of [{}, { includeUserText: true }, { includeContent: true }]) {
+    const events = rows.map((payload, index) => analyzer.normalizeEvent({ type: "response_item", payload,
+      timestamp: new Date(Date.parse(since) + index * 1000).toISOString(),
+    }, { kind: "codex-session-jsonl", sessionId: "native-image-task", line: index + 1 }, {
+      ...textOptions, includeCommandText: true,
+    }));
+    assert.equal(events[2].type, "user");
+    assert.equal(events[2].userPrompt, true);
+    assert.equal(privacySafeUserInputText(events[2].userText ?? events[2].content), null);
+    assert.equal(JSON.stringify(events).includes(imageUrl), false);
+    const result = buildTaskEpisodes(events, { platform: "codex", includeEpisodeFacts: true });
+    assert.equal(result.episodes.length, 2);
+    assert.deepEqual(result.episodes.map((episode) => episode.changeSets.map((change) => change.eventCount)), [[1], [1]]);
+    assert.deepEqual(result.episodeFacts.entries.map((entry) => entry.changes.edits),
+      textOptions.includeUserText || textOptions.includeContent ? [1] : []);
+    assert.equal(JSON.stringify(result).includes(imageUrl), false);
+  }
+});
+
 test("image-only user requests preserve task boundaries after privacy sanitization", () => {
   const analyzer = new CodexSessionAnalyzer();
   const source = { kind: "codex-session-jsonl", sessionId: "image-task" };
