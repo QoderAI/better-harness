@@ -137,7 +137,7 @@
   "dependencies": {
     "@vscode/tree-sitter-wasm": "0.3.1",
     "esbuild-wasm": "0.28.2",
-    "yaml": "2.9.0"
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "conventional-changelog-cli": "^5.0.0",
