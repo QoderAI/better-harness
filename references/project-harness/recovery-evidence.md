@@ -49,3 +49,11 @@ Return the actual effect, mechanism owner, entrypoint, permission boundary,
 before/after identity, exercise type, validation result, and precise blocker.
 Keep external or unsafe evidence `Unobserved`; do not downgrade it to `Missing`
 or substitute a matching filename.
+
+## Worked Example
+
+When the distinction between a connected rollback route and an observed
+recovery attempt is unclear, read
+[Reading Deployment Rollback Evidence](../../case-studies/project-harness/rollback-rehearsal-evidence.md).
+Its fictional receipts illustrate the inspection boundary without providing
+runtime evidence for a reviewed project.
