@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { test } from "vitest";
+import { test, vi } from "vitest";
 
 import { fileRoleFor } from "../../scripts/core-change-watch/common.mjs";
 import { analyzeChangeDrift } from "../../scripts/core-change-watch/change-drift.mjs";
@@ -21,6 +21,7 @@ function git(cwd, args, options = {}) {
     encoding: "utf8",
     stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     input: options.input,
+    env: { ...process.env, ...options.env },
   });
 
   if (result.status !== 0) {
@@ -64,6 +65,182 @@ async function makeRepo(files) {
   git(repo, ["commit", "-q", "-m", "initial"]);
   return repo;
 }
+
+const HISTORY_NOW = Date.parse("2026-10-15T12:00:00Z");
+
+async function makeDatedHistory(ages) {
+  const repo = await makeRepo({ "src/app.js": "export const value = 0;\n" });
+  for (const [index, days] of ages.entries()) {
+    await writeFixtureFile(repo, "src/app.js", `export const value = ${index};\n`);
+    git(repo, ["add", "."]);
+    const date = new Date(HISTORY_NOW - days * 86_400_000).toISOString();
+    git(repo, index === 0 ? ["commit", "--amend", "--no-edit", "-q"] : ["commit", "-q", "-m", `change ${index}`], {
+      env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+    });
+  }
+  return repo;
+}
+
+test("capped history windows cannot claim ready coverage (AC-1)", async () => {
+  const repo = await makeDatedHistory([150, 75, 10, 5, 1]);
+  const now = vi.spyOn(Date, "now").mockReturnValue(HISTORY_NOW);
+  try {
+    const pack = await buildEvidencePack({ cwd: repo, maxCommits: 3, baseRef: "HEAD" });
+    assert.deepEqual(pack.historyProfile.historyWindows.map((item) => item.analyzedCommits), [3, 3, 3]);
+    assert.equal(pack.reviewMatrix.find((item) => item.id === "history-window-coverage").status, "review");
+    assert.equal(pack.historyProfile.range.hasMoreCommits, true);
+    assert.equal(pack.historyProfile.range.shallow, false);
+    assert.equal(pack.historyProfile.range.oldestTimestamp, "2026-10-05T12:00:00.000Z");
+    assert.equal(pack.historyProfile.range.newestTimestamp, "2026-10-14T12:00:00.000Z");
+    assert.deepEqual(pack.historyProfile.historyWindows.map((item) => item.coverage.status), ["unknown", "capped", "capped"]);
+    assert.equal(pack.historyProfile.hotFiles[0].commits, 3);
+
+    const full = await buildEvidencePack({ cwd: repo, maxCommits: 10, baseRef: "HEAD" });
+    assert.deepEqual(full.historyProfile.historyWindows.map((item) => item.analyzedCommits), [3, 4, 5]);
+    assert.deepEqual(full.historyProfile.historyWindows.map((item) => item.coverage.status), ["complete", "complete", "complete"]);
+    assert.equal(full.reviewMatrix.find((item) => item.id === "history-window-coverage").status, "ready");
+  } finally {
+    now.mockRestore();
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("identical windows at exactly the commit cap remain complete (AC-2)", async () => {
+  const repo = await makeDatedHistory([10, 5, 1]);
+  const now = vi.spyOn(Date, "now").mockReturnValue(HISTORY_NOW);
+  try {
+    const pack = await buildEvidencePack({ cwd: repo, maxCommits: 3, baseRef: "HEAD" });
+    const history = pack.historyProfile;
+    assert.equal(history.range.analyzedCommits, 3);
+    assert.equal(history.range.hasMoreCommits, false);
+    assert.deepEqual(history.historyWindows.map((item) => item.coverage.status), ["complete", "complete", "complete"]);
+    assert.deepEqual(history.historyWindows[0].hotFiles, history.historyWindows[2].hotFiles);
+    assert.equal(pack.reviewMatrix.find((item) => item.id === "history-window-coverage").status, "ready");
+  } finally {
+    now.mockRestore();
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("non-monotonic dates cannot prove unscanned windows complete (AC-3)", async () => {
+  const repo = await makeDatedHistory([1, 200, 5, 2]);
+  const now = vi.spyOn(Date, "now").mockReturnValue(HISTORY_NOW);
+  try {
+    const unknown = await analyzeGitHistoryProfile({ cwd: repo, maxCommits: 2 });
+    assert.equal(unknown.range.hasMoreCommits, true);
+    assert.deepEqual(unknown.historyWindows.map((item) => item.coverage.status), ["unknown", "unknown", "unknown"]);
+    const capped = await analyzeGitHistoryProfile({ cwd: repo, maxCommits: 3 });
+    assert.deepEqual(capped.historyWindows.map((item) => item.coverage.status), ["capped", "capped", "capped"]);
+    assert.equal(capped.range.oldestTimestamp, "2026-03-29T12:00:00.000Z");
+    assert.equal(capped.range.newestTimestamp, "2026-10-13T12:00:00.000Z");
+    assert.equal(capped.range.analyzedCommits, 3);
+  } finally {
+    now.mockRestore();
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("empty history window interpretations describe the analyzed sample (AC-5)", async () => {
+  const repo = await makeDatedHistory([1, 200, 100]);
+  const now = vi.spyOn(Date, "now").mockReturnValue(HISTORY_NOW);
+  try {
+    for (const [maxCommits, status] of [[1, "unknown"], [2, "capped"]]) {
+      const history = await analyzeGitHistoryProfile({ cwd: repo, maxCommits, historyWindows: "30" });
+      const window = history.historyWindows[0];
+      assert.equal(window.analyzedCommits, 0);
+      assert.equal(window.coverage.status, status);
+      assert.equal(window.interpretation,
+        "recent window for spotting recent hotspots from bounded git history."
+        + " No commits were observed in the analyzed sample for this window."
+        + ` Coverage is ${status}; this horizon does not establish hotspot persistence.`);
+    }
+    const full = await analyzeGitHistoryProfile({ cwd: repo, maxCommits: 10, historyWindows: "30" });
+    assert.equal(full.historyWindows[0].analyzedCommits, 1);
+    assert.equal(full.historyWindows[0].coverage.status, "complete");
+  } finally {
+    now.mockRestore();
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("shallow Git history leaves window completeness unknown (AC-3)", async () => {
+  const repo = await makeDatedHistory([150, 75, 10, 5, 1]);
+  const cloneRoot = await mkdtemp(path.join(os.tmpdir(), "better-harness-shallow-"));
+  const clone = path.join(cloneRoot, "repo");
+  const now = vi.spyOn(Date, "now").mockReturnValue(HISTORY_NOW);
+  try {
+    git(repo, ["clone", "-q", "--no-local", "--depth=2", repo, clone]);
+    const pack = await buildEvidencePack({ cwd: clone, maxCommits: 10, baseRef: "HEAD" });
+    assert.equal(pack.historyProfile.range.shallow, true);
+    assert.equal(pack.historyProfile.range.hasMoreCommits, false);
+    assert.equal(pack.historyProfile.range.analyzedCommits, 2);
+    assert.deepEqual(pack.historyProfile.historyWindows.map((item) => item.coverage.status), ["unknown", "unknown", "unknown"]);
+    assert.equal(pack.reviewMatrix.find((item) => item.id === "history-window-coverage").status, "review");
+  } finally {
+    now.mockRestore();
+    await rm(cloneRoot, { recursive: true, force: true });
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("empty, skipped, and custom history windows report their evidence boundary (AC-4)", async () => {
+  const repo = await makeDatedHistory([150, 75, 10, 5, 1]);
+  const unborn = await mkdtemp(path.join(os.tmpdir(), "better-harness-unborn-"));
+  const now = vi.spyOn(Date, "now").mockReturnValue(HISTORY_NOW);
+  try {
+    git(unborn, ["init", "-q"]);
+    const history = await analyzeGitHistoryProfile({ cwd: unborn });
+    assert.equal(history.range.analyzedCommits, 0);
+    assert.equal(history.range.hasMoreCommits, false);
+    assert.equal(history.range.oldestTimestamp, null);
+    assert.equal(history.range.newestTimestamp, null);
+    assert.deepEqual(history.historyWindows.map((item) => item.coverage.status), ["complete", "complete", "complete"]);
+    await mkdir(path.join(repo, "unused"));
+    const empty = await buildEvidencePack({ cwd: repo, packageRelPath: "unused", baseRef: "HEAD" });
+    assert.equal(empty.historyProfile.range.analyzedCommits, 0);
+    assert.equal(empty.reviewMatrix.find((item) => item.id === "history-window-coverage").status, "review");
+
+    const skipped = await buildEvidencePack({ cwd: repo, noHistory: true, historyWindows: "7,120" });
+    assert.deepEqual(skipped.historyProfile.historyWindows.map((item) => item.days), [7, 120]);
+    assert.deepEqual(skipped.historyProfile.historyWindows.map((item) => item.coverage.status), ["skipped", "skipped"]);
+    assert.equal(skipped.historyProfile.range.hasMoreCommits, null);
+    assert.equal(skipped.historyProfile.range.shallow, null);
+    assert.equal(skipped.reviewMatrix.find((item) => item.id === "history-window-coverage").status, "review");
+
+    const custom = await buildEvidencePack({ cwd: repo, maxCommits: 10, historyWindows: "7", baseRef: "HEAD" });
+    assert.deepEqual(custom.historyProfile.historyWindows.map((item) => item.analyzedCommits), [2]);
+    assert.equal(custom.reviewMatrix.find((item) => item.id === "history-window-coverage").status, "ready");
+    const capped = await analyzeGitHistoryProfile({ cwd: repo, maxCommits: 3, historyWindows: "7,120" });
+    assert.deepEqual(capped.historyWindows.map((item) => item.coverage.status), ["unknown", "capped"]);
+  } finally {
+    now.mockRestore();
+    await rm(unborn, { recursive: true, force: true });
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("history coverage respects Git scope before file and language filters (AC-5)", async () => {
+  const repo = await makeDatedHistory([150, 75, 10, 5, 1]);
+  const now = vi.spyOn(Date, "now").mockReturnValue(HISTORY_NOW);
+  try {
+    const ignored = await analyzeGitHistoryProfile({ cwd: repo, maxCommits: 3, ignore: "src/**", languages: "python" });
+    assert.equal(ignored.range.hasMoreCommits, true);
+    assert.deepEqual(ignored.hotFiles, []);
+    assert.deepEqual(ignored.historyWindows.map((item) => item.coverage.status), ["unknown", "capped", "capped"]);
+
+    await writeFixtureFile(repo, "packages/widget/src/app.js", "export const widget = true;\n");
+    git(repo, ["add", "."]);
+    git(repo, ["commit", "-q", "-m", "add scoped package"]);
+    const scoped = await buildEvidencePack({ cwd: repo, packageRelPath: "packages/widget", maxCommits: 1, baseRef: "HEAD" });
+    assert.equal(scoped.historyProfile.range.hasMoreCommits, false);
+    assert.equal(scoped.historyProfile.range.analyzedCommits, 1);
+    assert.deepEqual(scoped.historyProfile.historyWindows.map((item) => item.coverage.status), ["complete", "complete", "complete"]);
+    assert.equal(scoped.reviewMatrix.find((item) => item.id === "history-window-coverage").status, "ready");
+  } finally {
+    now.mockRestore();
+    await rm(repo, { recursive: true, force: true });
+  }
+});
 
 test("project profile identifies language, manifest, source root, and entry signals", async () => {
   const repo = await makeRepo({

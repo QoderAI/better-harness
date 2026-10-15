@@ -79,7 +79,29 @@ segment; retain them only as bounded search leads.
 
 `historyProfile.confidence` describes whether the inspected commit count and
 time span are sufficient for hotspot ranking. It does not set final model or
-report confidence. For a readiness claim based on history:
+report confidence. Window completeness is separate:
+
+- `range.hasMoreCommits` reports whether a scoped cap + 1 probe found more
+  history; the extra commit never contributes hotspot statistics. Reaching
+  the cap alone, or identical hotspot arrays, does not prove missing history.
+- `range.oldestTimestamp` and `range.newestTimestamp` are the minimum/maximum
+  analyzed commit times, not a guarantee that all commits between them were
+  scanned. `range.shallow` records the local shallow-repository boundary.
+- Each window's `coverage.status` is `complete` when accessible scoped history
+  was exhausted in a non-shallow repository, `capped` when the next omitted
+  commit is in the window, or `unknown` when remaining/shallow history prevents
+  proof of completeness. An older next commit cannot prove that later
+  unscanned commits are older: Git timestamps need not be monotonic.
+- Coverage describes the Git scope/pathspec before file-ignore and language
+  filtering. `--no-history` emits `skipped` coverage and null range observations.
+- `history-window-coverage` is `ready` only with observed scoped commits and
+  complete coverage for every requested window, including custom horizons.
+  Empty, skipped, capped, or unknown history requires `review`. Trend labels
+  name requested horizons; capped/unknown windows do not independently prove
+  sustained or legacy activity. Low ranking confidence can coexist with
+  complete coverage.
+
+For a readiness claim based on history:
 
 - name the inspected window, such as the latest 30 commits or last 90 days;
 - open the commits or nearby specs, tests, release notes, or review artifacts

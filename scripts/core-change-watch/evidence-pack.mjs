@@ -395,10 +395,17 @@ function buildReviewMatrix(projectProfile, historyProfile, coreAnalysis, diffImp
     ),
     matrixItem(
       "history-window-coverage",
-      "History uses 30/90/180 style windows with confidence notes",
-      historyProfile.historyWindows.length >= 3 && historyProfile.confidence ? "ready" : "review",
-      { windows: historyProfile.historyWindows.map((item) => item.days), confidence: historyProfile.confidence?.confidence ?? "unknown" },
-      "Low history confidence should downgrade hotspot certainty, not block source inspection.",
+      "Requested history windows have complete coverage with confidence notes",
+      historyProfile.range.analyzedCommits > 0
+        && historyProfile.historyWindows.length > 0
+        && historyProfile.historyWindows.every((item) => item.coverage.status === "complete")
+        && historyProfile.confidence ? "ready" : "review",
+      {
+        windows: historyProfile.historyWindows.map((item) => item.days),
+        coverage: historyProfile.historyWindows.map((item) => ({ days: item.days, ...item.coverage })),
+        confidence: historyProfile.confidence?.confidence ?? "unknown",
+      },
+      "Capped, unknown, skipped, or empty history needs review. Ranking confidence is separate from coverage and does not block source inspection.",
     ),
     matrixItem(
       "large-repo-safety",
@@ -492,13 +499,17 @@ export async function buildEvidencePack(options = {}) {
           days,
           since: null,
           analyzedCommits: 0,
+          coverage: { status: "skipped", reasons: ["History scan skipped by --no-history."] },
           trendLabel: days <= 30 ? "recent-hotspots" : days <= 90 ? "sustained-hotspots" : "legacy-or-long-range-hotspots",
           interpretation: "History scan skipped; this window is present for schema stability only.",
           hotFiles: [],
           supportingHotFiles: [],
           hotPaths: [],
         })),
-        range: { maxCommits: 0, analyzedCommits: 0, newest: null, oldest: null },
+        range: {
+          maxCommits: 0, analyzedCommits: 0, newest: null, oldest: null,
+          hasMoreCommits: null, shallow: null, newestTimestamp: null, oldestTimestamp: null,
+        },
       }
     : await analyzeGitHistoryProfile({
         cwd: repoRoot,

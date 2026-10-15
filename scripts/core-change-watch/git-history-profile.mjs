@@ -137,20 +137,27 @@ function collectHistoryStats(commits, allowedLanguages, analysisScope) {
   };
 }
 
-function historyWindows(commits, allowedLanguages, daysList, analysisScope) {
+function historyWindows(commits, allowedLanguages, daysList, analysisScope, nextCommit, shallow) {
   const nowSeconds = Math.floor(Date.now() / 1000);
   return daysList.map((days) => {
     const sinceSeconds = nowSeconds - days * 24 * 60 * 60;
     const windowCommits = commits.filter((commit) => commit.timestamp >= sinceSeconds);
     const stats = collectHistoryStats(windowCommits, allowedLanguages, analysisScope);
     const trend = trendForWindow(days, windowCommits.length);
+    const reasons = [];
+    if (nextCommit) reasons.push("Additional scoped commits exist beyond maxCommits; unscanned timestamps may fall in this window.");
+    if (shallow) reasons.push("Shallow history cannot establish complete window coverage.");
+    const status = nextCommit?.timestamp >= sinceSeconds ? "capped" : reasons.length > 0 ? "unknown" : "complete";
 
     return {
       days,
       since: new Date(sinceSeconds * 1000).toISOString(),
       analyzedCommits: windowCommits.length,
+      coverage: { status, reasons },
       trendLabel: trend.label,
-      interpretation: trend.interpretation,
+      interpretation: status === "complete"
+        ? trend.interpretation
+        : `${trend.interpretation} Coverage is ${status}; this horizon does not establish hotspot persistence.`,
       hotFiles: sortedHotFiles(stats.fileStats, 10),
       supportingHotFiles: sortedHotFiles(stats.supportingFileStats, 10),
       hotPaths: sortedCounts(stats.pathStats, 10).map((item) => ({
@@ -164,7 +171,7 @@ function historyWindows(commits, allowedLanguages, daysList, analysisScope) {
 function trendForWindow(days, analyzedCommits) {
   const horizon = days <= 30 ? "recent" : days <= 90 ? "sustained" : "long-range";
   const label = days <= 30 ? "recent-hotspots" : days <= 90 ? "sustained-hotspots" : "legacy-or-long-range-hotspots";
-  const emptySuffix = analyzedCommits === 0 ? " No commits landed in this window, so treat it as missing evidence." : "";
+  const emptySuffix = analyzedCommits === 0 ? " No commits were observed in the analyzed sample for this window." : "";
   return {
     label,
     interpretation: `${horizon} window for spotting ${label.replaceAll("-", " ")} from bounded git history.${emptySuffix}`,
@@ -231,7 +238,7 @@ export async function analyzeGitHistoryProfile(options = {}) {
   try {
     output = git(
       repoRoot,
-      ["log", `-${maxCommits}`, "--numstat", "--format=commit%x1f%H%x1f%ct%x1f%s", ...scopePathspecArgs(analysisScope)],
+      ["log", `-${maxCommits + 1}`, "--numstat", "--format=commit%x1f%H%x1f%ct%x1f%s", ...scopePathspecArgs(analysisScope)],
       { timeout: 30_000 },
     );
   } catch (error) {
@@ -249,8 +256,13 @@ export async function analyzeGitHistoryProfile(options = {}) {
     if (output === undefined) throw error;
   }
   const parsedCommits = parseLogWithNumstat(output, analysisScope);
-  const filteredHistory = applyCommitIgnores(parsedCommits, options.ignore);
+  // One extra commit proves whether the limit binds; it never contributes stats.
+  // An older next commit cannot prove completeness: Git timestamps need not be monotonic.
+  const nextCommit = parsedCommits[maxCommits];
+  const shallow = git(repoRoot, ["rev-parse", "--is-shallow-repository"]).trim() === "true";
+  const filteredHistory = applyCommitIgnores(parsedCommits.slice(0, maxCommits), options.ignore);
   const commits = filteredHistory.commits;
+  const timestamps = commits.map((commit) => commit.timestamp);
   const stats = collectHistoryStats(commits, allowedLanguages, analysisScope);
   const maxHotFiles = positiveInt(options.maxHotFiles, 40);
 
@@ -266,9 +278,13 @@ export async function analyzeGitHistoryProfile(options = {}) {
       analyzedCommits: commits.length,
       newest: commits[0]?.shortSha ?? null,
       oldest: commits.at(-1)?.shortSha ?? null,
+      hasMoreCommits: Boolean(nextCommit),
+      shallow,
+      newestTimestamp: timestamps.length > 0 ? new Date(Math.max(...timestamps) * 1000).toISOString() : null,
+      oldestTimestamp: timestamps.length > 0 ? new Date(Math.min(...timestamps) * 1000).toISOString() : null,
     },
     confidence: historyConfidence(commits, maxCommits),
-    historyWindows: historyWindows(commits, allowedLanguages, windowDays, analysisScope),
+    historyWindows: historyWindows(commits, allowedLanguages, windowDays, analysisScope, nextCommit, shallow),
     languageTouchCounts: sortedCounts(stats.languageStats, 12).map((item) => ({
       language: item.name,
       touches: item.count,
