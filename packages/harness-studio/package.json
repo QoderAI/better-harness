@@ -58,7 +58,7 @@
     "@qoder-ai/harness-studio-apps": "0.1.0",
     "@radix-ui/react-collapsible": "^1.1.21",
     "@shikijs/core": "^4.4.3",
-    "@shikijs/engine-javascript": "^4.4.3",
+    "@shikijs/engine-javascript": "^4.5.0",
     "@shikijs/langs": "^4.5.0",
     "@streamdown/cjk": "^1.0.3",
     "@tanstack/react-table": "^9.2.4",
