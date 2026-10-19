@@ -60,7 +60,7 @@
     "@shikijs/core": "^4.4.3",
     "@shikijs/engine-javascript": "^4.4.3",
     "@shikijs/langs": "^4.5.0",
-    "@streamdown/cjk": "^1.0.3",
+    "@streamdown/cjk": "^1.0.4",
     "@tanstack/react-table": "^9.2.4",
     "@tanstack/react-virtual": "^3.14.11",
     "@xterm/addon-fit": "^0.10.0",
