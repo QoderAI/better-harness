@@ -1,6 +1,9 @@
-import os from "node:os";
 import path from "node:path";
 
+import {
+  resolveQoderAssetHome,
+  resolveQoderSharedClientCacheRoot,
+} from "../../host-support/qoder-home.mjs";
 import { expandHome, normalizeWorkspace, pathExists } from "../../session-analysis/index.mjs";
 import { MANAGE_TABS } from "../constants.mjs";
 import {
@@ -31,50 +34,6 @@ import {
 } from "../core/items.mjs";
 
 const QODER_PLUGIN_MANIFEST = [".qoder-plugin", "plugin.json"];
-
-function defaultQoderHome() {
-  return path.join(os.homedir(), ".qoder");
-}
-
-function defaultQoderSharedClientCacheRoot() {
-  if (process.platform === "win32") {
-    const appData = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
-    return path.join(appData, "Qoder", "SharedClientCache");
-  }
-  if (process.platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Application Support", "Qoder", "SharedClientCache");
-  }
-  const xdgConfig = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config");
-  return path.join(xdgConfig, "Qoder", "SharedClientCache");
-}
-
-function looksLikeQoderAssetHome(candidate) {
-  const base = path.basename(String(candidate ?? "")).toLowerCase();
-  return base === ".qoder" || base === "qoder";
-}
-
-function resolveQoderAssetHome(options = {}) {
-  const explicit = options.qoderHome ?? options["qoder-home"];
-  if (explicit) return path.resolve(expandHome(explicit));
-  const environmentHome = process.env.QODER_HOME;
-  if (environmentHome && looksLikeQoderAssetHome(environmentHome)) {
-    return path.resolve(expandHome(environmentHome));
-  }
-  return defaultQoderHome();
-}
-
-function resolveQoderSharedClientCacheRoot(options = {}) {
-  const explicit =
-    options.qoderSharedClientCacheRoot ??
-    options["qoder-shared-client-cache-root"] ??
-    options.sharedClientCacheRoot;
-  if (explicit) return path.resolve(expandHome(explicit));
-  const environmentHome = process.env.QODER_HOME;
-  if (environmentHome && !looksLikeQoderAssetHome(environmentHome)) {
-    return path.resolve(expandHome(environmentHome));
-  }
-  return defaultQoderSharedClientCacheRoot();
-}
 
 export function qoderWorkspaceSlugs(workspace) {
   const expanded = expandHome(workspace ?? process.cwd());
@@ -149,7 +108,7 @@ function mergeQoderInstalledRecord(existing, next) {
 }
 
 async function readQoderInstalledPluginState(options = {}) {
-  const qoderHome = path.resolve(expandHome(options.qoderHome ?? defaultQoderHome()));
+  const qoderHome = resolveQoderAssetHome(options);
   const workspace = normalizeWorkspace(options.workspace ?? process.cwd());
   if (Array.isArray(options.qoderInstalledPluginRecords) || Array.isArray(options.installedPluginRecords)) {
     const records = (options.qoderInstalledPluginRecords ?? options.installedPluginRecords)

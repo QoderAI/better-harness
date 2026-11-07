@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { createCanvasPreviewServer } from "./canvas-preview-server.mjs";
 import { analyzeCanvasModuleBoundaries } from "./canvas-module-boundaries.mjs";
+import { resolveQoderAssetHome } from "../host-support/qoder-home.mjs";
 import { transformCanvasSource } from "./preview-support/canvas-transform.mjs";
 import {
   evaluateHarnessCanvasQuality,
@@ -630,7 +631,7 @@ function readSdkExports(declarationsPath) {
 }
 
 function qoderHome(env = process.env) {
-  return env.QODER_HOME ? path.resolve(env.QODER_HOME) : path.join(os.homedir(), ".qoder");
+  return resolveQoderAssetHome({ env });
 }
 
 function uniquePaths(values) {

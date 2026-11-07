@@ -13,7 +13,7 @@ export default defineHostProfile({
   displayName: "Qoder",
   provider: "qoder",
   inventoryHomeRoutes: [
-    { option: "qoderHome", relativePath: "", fallbackLabel: "~/.qoder" },
+    { option: "qoderHome", relativePath: "", fallbackLabel: "<provider-default:qoderHome>" },
     {
       option: "qoderSharedClientCacheRoot",
       relativePath: "SharedClientCache",

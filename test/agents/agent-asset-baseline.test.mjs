@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { onTestFinished, test } from "vitest";
 
+import { createDirectoryLink, skipWithoutFileLink } from "../support/path-links.mjs";
 import {
   ASSET_BASELINE_KIND,
   MAX_BASELINE_FINDINGS,
@@ -259,7 +260,7 @@ test("asset baseline canonicalizes direct configured scope before inventory coll
   const escape = path.join(workspace, "escape");
   try {
     await Promise.all([mkdir(dotted, { recursive: true }), mkdir(outside)]);
-    await symlink(outside, escape, "dir");
+    await createDirectoryLink(outside, escape);
 
     let received;
     const omitted = await collectAssetBaseline(
@@ -317,7 +318,8 @@ test("DSH baseline never advertises unsupported Memory collection", async () => 
   assert.equal(codex.scope.includeMemories, true);
 });
 
-test("asset baseline compacts finding, coverage, owner, and free-text paths to stable locators", async () => {
+test("asset baseline compacts finding, coverage, owner, and free-text paths to stable locators", async (t) => {
+  if (await skipWithoutFileLink(t)) return;
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-baseline-locators-"));
   onTestFinished(async () => {
     await rm(root, { recursive: true, force: true });

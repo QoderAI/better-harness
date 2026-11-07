@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { resolveQoderAssetHome } from "../host-support/qoder-home.mjs";
 import { expandHome, normalizeWorkspace, pathExists } from "../session-analysis/index.mjs";
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".mdc", ".markdown"]);
@@ -61,7 +62,7 @@ function ancestors(workspace) {
 
 async function qoderSources(options) {
   const workspace = normalizeWorkspace(options.workspace);
-  const home = path.resolve(expandHome(options.qoderHome ?? options["qoder-home"] ?? process.env.QODER_HOME ?? "~/.qoder"));
+  const home = resolveQoderAssetHome(options);
   const candidates = [];
   if (options.includeUserHome ?? options["include-user-home"]) {
     for (const filePath of await markdownFiles(path.join(home, "rules"), 4)) {

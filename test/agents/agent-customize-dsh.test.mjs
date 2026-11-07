@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { test } from "vitest";
+import { onTestFinished, test } from "vitest";
 
 import { MANAGE_TABS } from "../../scripts/agent-customize/constants.mjs";
 
@@ -365,9 +365,21 @@ test("DSH default privacy performs no ambient user/global filesystem reads", asy
 
 test("DSH user opt-in and explicit external roots obey distinct authorization boundaries", async () => {
   await withTempRoot("better-harness-dsh-authorized-", async (root) => {
+    const syntheticHome = path.join(root, "synthetic-home");
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    process.env.HOME = syntheticHome;
+    process.env.USERPROFILE = syntheticHome;
+    onTestFinished(() => {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousUserProfile;
+    });
+
     const { workspace } = await createRepository(root, ["workspace"]);
-    const dshHome = path.join(root, "synthetic-home", ".dsh");
-    const agentsHome = path.join(root, "synthetic-home", ".agents");
+    const dshHome = path.join(syntheticHome, ".dsh");
+    const agentsHome = path.join(syntheticHome, ".agents");
     const custom = path.join(root, "external", "custom");
     const customSibling = path.join(root, "external", "sibling");
     const bundled = path.join(root, "external", "bundled");

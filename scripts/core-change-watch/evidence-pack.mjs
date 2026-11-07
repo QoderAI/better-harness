@@ -110,7 +110,7 @@ function supportingFilesByRole(history, diff, role, currentPaths) {
   return actionFiles([...fromDiff, ...fromHistory], 8, currentPaths);
 }
 
-function buildFollowUpActions(core, diff, history, changeDrift, maxActions, currentPaths) {
+function buildFollowUpActions(core, diff, history, changeDrift, projectProfile, maxActions, currentPaths) {
   const actions = [];
   const topCoreFiles = actionFiles(core.candidates.slice(0, 4).flatMap((candidate) => [
     ...candidate.evidence.hotFiles,
@@ -201,7 +201,8 @@ function buildFollowUpActions(core, diff, history, changeDrift, maxActions, curr
     });
   }
 
-  if (testFiles.length > 0 || diff.reviewRecommended || topCoreFiles.length > 0) {
+  const gates = projectProfile.projectGates ?? [];
+  if (testFiles.length > 0 || gates.length > 0 || diff.reviewRecommended || topCoreFiles.length > 0) {
     actions.push({
       id: "validate-impact",
       type: "validation",
@@ -211,8 +212,11 @@ function buildFollowUpActions(core, diff, history, changeDrift, maxActions, curr
         ? "Diff impact requires attention because the change touches configured or detected core code."
         : testFiles.length > 0
           ? "Detected tests or fixtures can anchor validation."
-          : "Core candidates need focused validation after implementation changes.",
+          : gates.length > 0
+            ? "Project-owned validation gates were discovered from tracked manifests and Justfiles."
+            : "Core candidates need focused validation after implementation changes.",
       files: testFiles,
+      ...(gates.length > 0 ? { commands: gates } : {}),
       passCheck: "Relevant focused tests, build, lint, smoke, or caller/API checks pass or failures are reported with exact output.",
     });
   }
@@ -352,6 +356,7 @@ function summarizeAgentInstructions(projectProfile) {
     count: instructions.count,
     rootCount: instructions.rootCount,
     nestedCount: instructions.nestedCount,
+    carriers: instructions.carriers,
     suggestedMinimum: instructions.suggestedMinimum,
     suggestedAdditional: instructions.suggestedAdditional,
     sourceFilesPerInstruction: instructions.sourceFilesPerInstruction,
@@ -396,9 +401,19 @@ function buildReviewMatrix(projectProfile, historyProfile, coreAnalysis, diffImp
     matrixItem(
       "history-window-coverage",
       "History uses 30/90/180 style windows with confidence notes",
-      historyProfile.historyWindows.length >= 3 && historyProfile.confidence ? "ready" : "review",
-      { windows: historyProfile.historyWindows.map((item) => item.days), confidence: historyProfile.confidence?.confidence ?? "unknown" },
-      "Low history confidence should downgrade hotspot certainty, not block source inspection.",
+      historyProfile.historyWindows.length >= 3 &&
+        historyProfile.confidence &&
+        historyProfile.confidence.confidence !== "low" &&
+        historyProfile.historyWindows.every((item) => item.coverage === "complete")
+        ? "ready"
+        : "review",
+      {
+        windows: historyProfile.historyWindows.map((item) => item.days),
+        confidence: historyProfile.confidence?.confidence ?? "unknown",
+        truncatedWindows: historyProfile.historyWindows.filter((item) => item.truncated).map((item) => item.days),
+        coverage: historyProfile.historyWindows.map((item) => ({ days: item.days, status: item.coverage })),
+      },
+      "Low history confidence or a bounded-window truncation should downgrade hotspot certainty, not block source inspection. Raise --max-commits to complete the 30/90/180-day windows in an active repository.",
     ),
     matrixItem(
       "large-repo-safety",
@@ -492,6 +507,9 @@ export async function buildEvidencePack(options = {}) {
           days,
           since: null,
           analyzedCommits: 0,
+          commitLimit: 0,
+          truncated: false,
+          coverage: "skipped",
           trendLabel: days <= 30 ? "recent-hotspots" : days <= 90 ? "sustained-hotspots" : "legacy-or-long-range-hotspots",
           interpretation: "History scan skipped; this window is present for schema stability only.",
           hotFiles: [],
@@ -542,6 +560,7 @@ export async function buildEvidencePack(options = {}) {
     diffImpact,
     historyProfile,
     changeDrift,
+    projectProfile,
     maxFollowUpActions,
     currentPaths,
   );
@@ -562,6 +581,7 @@ export async function buildEvidencePack(options = {}) {
       topLanguages: projectProfile.languages.slice(0, 5).map((item) => item.language),
       projectInfo: summarizeProjectInfo(projectProfile),
       agentInstructions: summarizeAgentInstructions(projectProfile),
+      projectGates: projectProfile.projectGates,
       coreCandidates: coreAnalysis.summary,
       changedFiles: diffImpact.metrics.changedFiles,
       changedLines: diffImpact.metrics.changedLines,

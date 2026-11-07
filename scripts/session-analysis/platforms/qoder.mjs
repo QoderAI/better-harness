@@ -4,6 +4,7 @@ import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { resolveQoderSessionHome } from "../../host-support/qoder-home.mjs";
 import { SessionAnalyzer } from "../analyzer.mjs";
 import { parseArgs, parseBooleanFlag } from "../cli.mjs";
 import { forEachJsonLine, pathExists, readJson, walkFiles } from "../fs.mjs";
@@ -1109,7 +1110,7 @@ export class QoderSessionAnalyzer extends SessionAnalyzer {
     const workspaceMatchScope = workspaceMatchScopeFromOptions(options);
     const since = normalizeCliDate(options.since, false);
     const until = normalizeCliDate(options.until, true);
-    const home = path.resolve(expandHome(options.home ?? options["qoder-home"] ?? "~/.qoder"));
+    const home = resolveQoderSessionHome(options);
     const transcriptWorkspaces = [...new Set([
       workspace,
       workspaceMatchScope?.requestedWorkspace,

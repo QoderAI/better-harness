@@ -257,7 +257,7 @@ test("doctor reports every collector-resolved root and uses declared fallbacks o
     });
     assert.equal(failed.targets[0].inventory, "failed");
     assert.deepEqual(failed.targets[0].authorizedRoots, [
-      "~/.qoder",
+      "<provider-default:qoderHome>",
       "<platform-config>/Qoder/SharedClientCache",
     ]);
 

@@ -6,6 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { test } from "vitest";
 
+import { createDirectoryLink } from "../support/path-links.mjs";
 import {
   collectAgentInstructionGraph,
   runAgentLint,
@@ -1095,7 +1096,7 @@ test("agent-assets-review rejects a configured cwd that resolves outside workspa
       mkdir(outside, { recursive: true }),
       mkdir(dshHome, { recursive: true }),
     ]);
-    await symlink(outside, escape, "dir");
+    await createDirectoryLink(outside, escape);
     await assert.rejects(
       execFileAsync(process.execPath, [
         cliPath,

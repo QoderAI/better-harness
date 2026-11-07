@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { test } from "vitest";
 
+import { createDirectoryLink } from "../support/path-links.mjs";
 import {
   collectProviderInventory,
   collectQoderInventory,
@@ -22,10 +23,10 @@ async function writeJson(filePath, value) {
   await writeText(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function makeFixture() {
+async function makeFixture({ homeName = ".qoder" } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-agent-assets-"));
   const workspace = path.join(root, "workspace", "demo");
-  const qoderHome = path.join(root, ".qoder");
+  const qoderHome = path.join(root, homeName);
   const sharedCache = path.join(root, "SharedClientCache", "cache");
 
   await writeText(path.join(workspace, ".qoder", "rules", "always.md"), "# Always\n");
@@ -476,6 +477,32 @@ test("Qoder inventory separates a SharedClientCache QODER_HOME from ~/.qoder ass
   }
 });
 
+test("Qoder inventory discovers a default .qoder-cn home without an explicit flag", async () => {
+  const fixture = await makeFixture({ homeName: ".qoder-cn" });
+  const script = path.join(process.cwd(), "scripts/coding-agent-practices/inventory.mjs");
+  const env = {
+    ...process.env,
+    HOME: fixture.root,
+    USERPROFILE: fixture.root,
+  };
+  delete env.QODER_HOME;
+  try {
+    const { stdout } = await execFileAsync(process.execPath, [
+      script,
+      "qoder",
+      "--workspace",
+      fixture.workspace,
+      "--include-user-home",
+      "--json",
+    ], { env });
+    const result = JSON.parse(stdout);
+    assert.equal(result.scope.qoderHome, fixture.qoderHome);
+    assert.ok(result.summary.practiceCoverageRows.some((row) => row.surface === "Skills" && row.scopes.includes("Global")));
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("inventory CLI reports an unsupported platform with a usage hint", async () => {
   const script = path.join(process.cwd(), "scripts/coding-agent-practices/inventory.mjs");
   await assert.rejects(
@@ -761,7 +788,7 @@ test("direct provider inventory canonicalizes configured cwd before using inject
   };
   try {
     await Promise.all([mkdir(dotted, { recursive: true }), mkdir(outside)]);
-    await symlink(outside, escape, "dir");
+    await createDirectoryLink(outside, escape);
 
     const omitted = await collectProviderInventory({ platform: "dsh", workspace, inventory });
     assert.equal(omitted.scope.workspace, await realpath(workspace));

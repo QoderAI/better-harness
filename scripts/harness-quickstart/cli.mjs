@@ -27,7 +27,7 @@ hands off to the Better Harness skill, which synthesizes the report.
 
 Options:
   --cwd <dir>     Repository to inspect (default: current directory)
-  --qoder-home <dir>  Qoder data root for the session-source probe (default: ~/.qoder)
+  --qoder-home <dir>  Qoder data root for the session-source probe (default: ~/.qoder-cn then ~/.qoder)
   --no-sessions   Skip session probing and use the static Software Fluency route
   --json          Emit machine-readable evidence and handoff as JSON
   -h, --help      Print this help

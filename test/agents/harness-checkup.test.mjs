@@ -15,7 +15,10 @@ import {
 import { buildCheckupPlan } from "../../scripts/coding-agent-practices/checkup/plan.mjs";
 import { computePlanDigest } from "../../scripts/coding-agent-practices/checkup/plan.mjs";
 import { formatMarkdown } from "../../scripts/coding-agent-practices/checkup/cli.mjs";
-import { projectCheckupReportEvidence } from "../../scripts/coding-agent-practices/checkup/contract.mjs";
+import {
+  projectCheckupReportEvidence,
+  resolveProviderHome,
+} from "../../scripts/coding-agent-practices/checkup/contract.mjs";
 import { buildCheckupScan } from "../../scripts/coding-agent-practices/checkup/scan.mjs";
 import { runCheckupScan } from "../../scripts/coding-agent-practices/checkup/scan.mjs";
 import { collectQoderSourceResolution } from "../../scripts/coding-agent-practices/checkup/sources.mjs";
@@ -623,6 +626,44 @@ test("non-qoder plans never emit qodercli and provider-home binds to the explici
     ),
     /explicit provider/u,
   );
+});
+
+test("provider-home resolution picks the same Qoder home as the scan on a CN install", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "harness-checkup-provider-home-"));
+  const cnHome = path.join(root, ".qoder-cn");
+  const sharedCache = path.join(root, "Qoder", "SharedClientCache");
+  const previous = {
+    QODER_HOME: process.env.QODER_HOME,
+    HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+  };
+  const restore = () => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+
+  try {
+    await mkdir(path.join(cnHome, "audit"), { recursive: true });
+    delete process.env.QODER_HOME;
+    process.env.HOME = root;
+    process.env.USERPROFILE = root;
+    assert.equal(resolveProviderHome("qoder", {}), path.resolve(cnHome));
+
+    process.env.QODER_HOME = sharedCache;
+    assert.equal(resolveProviderHome("qoder", {}), path.resolve(cnHome));
+    assert.equal(
+      resolveSourceRef(
+        { base: "provider-home", relativePath: "settings.json" },
+        { workspace: root, provider: "qoder" },
+      ).filePath,
+      path.join(cnHome, "settings.json"),
+    );
+  } finally {
+    restore();
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("apply rejects qoder-cli mutations when plan.provider is not qoder", async () => {

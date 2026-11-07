@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { test } from "vitest";
 
+import { createDirectoryLink } from "../support/path-links.mjs";
 import {
   ASSET_INTEGRITY_PROFILE,
   normalizeAssetTitle,
@@ -288,7 +289,7 @@ test("public asset-integrity CLI rejects a configured cwd that resolves outside 
       mkdir(outside, { recursive: true }),
       mkdir(dshHome, { recursive: true }),
     ]);
-    await symlink(outside, escape, "dir");
+    await createDirectoryLink(outside, escape);
     const script = path.join(process.cwd(), "scripts", "better-harness.mjs");
     await assert.rejects(
       execFileAsync(process.execPath, [

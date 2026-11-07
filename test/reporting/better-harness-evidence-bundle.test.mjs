@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "vitest";
@@ -17,8 +18,10 @@ import {
 import { workspaceToClaudeSlugVariants } from "../../scripts/session-analysis/platforms/claude.mjs";
 import { collectAgentCustomize } from "../../scripts/harness-analysis/evidence-bundle/agent-customize.mjs";
 import { collectProjectHarness } from "../../scripts/harness-analysis/evidence-bundle/project-harness.mjs";
+import { analyzeHarnessEvidence } from "../../scripts/harness-analysis/report-run.mjs";
 import { EVIDENCE_BUNDLE_HELP } from "../../scripts/harness-analysis/evidence-bundle/cli.mjs";
 import { collectAssetBaseline } from "../../scripts/coding-agent-practices/asset-baseline.mjs";
+import { createDirectoryLink } from "../support/path-links.mjs";
 
 const NOW = new Date("2026-07-24T08:00:00.000Z");
 
@@ -203,6 +206,22 @@ function topologyResolution(workspace = ".", status = "complete") {
   });
 }
 
+function initializeGitWorkspace(workspace) {
+  const run = (args, env) => execFileSync("git", args, {
+    cwd: workspace,
+    stdio: "ignore",
+    env: env ? { ...process.env, ...env } : process.env,
+  });
+  run(["init", "-q"]);
+  run(["config", "user.email", "test@example.com"]);
+  run(["config", "user.name", "Test User"]);
+  run(["add", "."]);
+  run(["commit", "-q", "-m", "initial"], {
+    GIT_AUTHOR_DATE: "2026-07-20T09:00:00.000Z",
+    GIT_COMMITTER_DATE: "2026-07-20T09:00:00.000Z",
+  });
+}
+
 function dependencies(overrides = {}) {
   const population = Object.freeze({
     sessions: Object.freeze([{ sessionId: "eligible-session" }]),
@@ -258,7 +277,7 @@ test("evidence bundle v3 freezes canonical default, nested, and aliased cwd iden
   const nested = path.join(workspace, "packages", "api", "src with space", "\u5b50\u76ee\u5f55");
   const alias = path.join(workspace, "cwd-alias");
   await mkdir(nested, { recursive: true });
-  await symlink(nested, alias, "dir");
+  await createDirectoryLink(nested, alias);
 
   const omitted = freezeEvidenceBundleContext({ workspace }, NOW);
   const explicitWorkspace = freezeEvidenceBundleContext({ workspace, cwd: workspace }, NOW);
@@ -282,7 +301,7 @@ test("evidence bundle cwd validation fails closed before configured collection",
   await mkdir(workspace, { recursive: true });
   await mkdir(outside, { recursive: true });
   await writeFile(file, "not a directory\n");
-  await symlink(outside, escape, "dir");
+  await createDirectoryLink(outside, escape);
 
   for (const cwd of ["", `${workspace}\u0000invalid`, path.join(workspace, "missing"), file]) {
     assert.throws(
@@ -1086,6 +1105,8 @@ test("Claude population freeze and Session facts agree under one frozen topology
     const elsewhere = path.join(fixture, "elsewhere");
     const home = path.join(fixture, ".claude");
     await mkdir(workspace, { recursive: true });
+    await writeFile(path.join(workspace, "package.json"), "{}\n");
+    initializeGitWorkspace(workspace);
     const projectRoot = path.join(home, "projects", workspaceToClaudeSlugVariants(workspace)[0]);
     await mkdir(projectRoot, { recursive: true });
     const row = (sessionId, cwd, second) => JSON.stringify({
@@ -1123,6 +1144,27 @@ test("Claude population freeze and Session facts agree under one frozen topology
     assert.equal(lane.data.scope.eligibleSessions, population.binding.eligible.count);
     assert.equal(lane.data.scope.selectedSessions, population.binding.eligible.count);
     assert.doesNotMatch(JSON.stringify(lane.data), /clean-private|conflict-private/u);
+
+    const bundle = await collectEvidenceBundle({
+      workspace,
+      platform: "claude",
+      depth: "normal",
+      since: "2026-07-01T00:00:00.000Z",
+      until: "2026-07-24T08:00:00.000Z",
+      topology: resolution.topology,
+      analysisScope: resolution.analysisScope,
+      "claude-home": home,
+    }, dependencies({
+      resolveWorkspaceTopology: async () => resolution,
+      collectSessionPopulation,
+      collectSessionEvidence,
+      analyzeHarnessEvidence,
+    }));
+
+    assert.equal(bundle.lead.status, "available", JSON.stringify(bundle.lead.error));
+    assert.ok(bundle.lead.data.sessionBinding);
+    assert.equal(bundle.diagnostics.sessionPopulationBinding.status, "bound");
+    assert.equal(bundle.diagnostics.sessionPopulationBinding.leadObserved, true);
   } finally {
     await rm(fixture, { recursive: true, force: true });
   }

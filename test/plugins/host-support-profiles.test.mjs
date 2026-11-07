@@ -47,7 +47,7 @@ test("host-support profiles cover the canonical host set and aliases", () => {
     },
   ]);
   assert.deepEqual(getHostProfile("qoder").inventoryHomeRoutes, [
-    { option: "qoderHome", relativePath: "", fallbackLabel: "~/.qoder" },
+    { option: "qoderHome", relativePath: "", fallbackLabel: "<provider-default:qoderHome>" },
     {
       option: "qoderSharedClientCacheRoot",
       relativePath: "SharedClientCache",

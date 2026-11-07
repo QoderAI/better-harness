@@ -167,12 +167,17 @@ async function collectProjectRules(workspace, sourceLabel, claudeRoot = path.joi
       "claude-project",
     ],
     [path.join(workspace, "CLAUDE.local.md"), "CLAUDE.local.md", "claude-local", "claude-local"],
+    // Claude Code also reads a root AGENTS.md, so collect it alongside CLAUDE.md.
+    // See https://code.claude.com/docs/en/memory#agents-md.
+    [path.join(workspace, "AGENTS.md"), "AGENTS.md", "agents-md-compat", "agents-md-compat"],
   ];
   const files = [];
   const visited = new Set();
   for (const [filePath, name, sourceKind, precedence] of fileDefinitions) {
-    if (visited.has(filePath)) continue;
-    visited.add(filePath);
+    const resolvedPath = path.resolve(filePath);
+    const key = await realpath(resolvedPath).catch(() => resolvedPath);
+    if (visited.has(key)) continue;
+    visited.add(key);
     files.push(...await collectMarkdownFileRuleItem(filePath, "project", sourceLabel, workspace, {
       name,
       sourceKind,

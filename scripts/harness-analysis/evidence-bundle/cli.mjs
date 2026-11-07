@@ -30,6 +30,7 @@ Options:
   --evidence-limit <1-5>   Override the specialist evidence limit
   --include-user-home      Include authorized user/global asset metadata
   --include-memories       Include authorized Memory title metadata
+  --qoder-home <dir>       Qoder data root override
   --claude-home <dir>      Claude config root override
   --claude-state <file>    Claude state-file override
   --kimi-home <dir>        Kimi Code data root override

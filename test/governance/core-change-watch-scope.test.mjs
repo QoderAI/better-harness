@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "vitest";
@@ -20,6 +20,7 @@ import {
 } from "../../scripts/core-change-watch/common.mjs";
 import { buildEvidencePack } from "../../scripts/core-change-watch/evidence-pack.mjs";
 import { collectBoundedGitHistory } from "../../scripts/harness-analysis/learning-capture-evidence.mjs";
+import { createDirectoryLink } from "../support/path-links.mjs";
 import { scanTaskLoopRepositoryEvidence } from "../../scripts/harness-analysis/task-loop-repository-evidence.mjs";
 
 function runGit(cwd, args) {
@@ -87,7 +88,7 @@ test("analysis scope treats real-path aliases as one repository identity", async
   try {
     await mkdir(packageRoot, { recursive: true });
     runGit(repoRoot, ["init", "--quiet"]);
-    await symlink(repoRoot, repoLink, "dir");
+    await createDirectoryLink(repoRoot, repoLink);
 
     const scope = resolveAnalysisScope({
       repoRoot: repoLink,

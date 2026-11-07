@@ -100,6 +100,7 @@ Options:
                                   Session platform (default: qoder)
   --workspace <path>            Target workspace (required)
   --source <path>               Candidate report.source.json path (required)
+  --qoder-home <dir>            Qoder data root override
   --until <ISO timestamp>       Exclude later sessions
   --since <ISO timestamp>       Exclude earlier sessions
   --limit <n>                   Maximum selected sessions (default: ${DEFAULT_LIMIT})

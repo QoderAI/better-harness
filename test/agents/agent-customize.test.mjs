@@ -12,6 +12,7 @@ import {
   tabAvailableForScope,
 } from "../../scripts/agent-customize/index.mjs";
 import { pluginMetadataEvidencePath } from "../../scripts/agent-customize/core/items.mjs";
+import { createDirectoryLink } from "../support/path-links.mjs";
 import { collectKimiCustomizeInventory } from "../../scripts/agent-customize/providers/kimi.mjs";
 import { qoderWorkspaceSlugs } from "../../scripts/agent-customize/providers/qoder.mjs";
 import { collectProviderInventory as collectPracticeInventory } from "../../scripts/coding-agent-practices/inventory.mjs";
@@ -174,9 +175,9 @@ async function makeCursorFixture() {
   return { root, cursorHome, workspace };
 }
 
-async function makeQoderFixture() {
+async function makeQoderFixture({ homeName = "q" } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "bhq-"));
-  const qoderHome = path.join(root, "q");
+  const qoderHome = path.join(root, homeName);
   const sharedClientCacheRoot = path.join(root, "s");
   const workspace = path.join(root, "w");
 
@@ -1325,6 +1326,29 @@ test("Qoder inventory preserves current local scope and excludes explicit foreig
   }
 });
 
+test("Qoder provider honors QODER_HOME when no explicit home is passed", async () => {
+  const fixture = await makeQoderFixture({ homeName: ".qoder" });
+  const previous = process.env.QODER_HOME;
+
+  try {
+    process.env.QODER_HOME = fixture.qoderHome;
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "qoder",
+      workspace: fixture.workspace,
+    });
+
+    assert.equal(inventory.qoderHome, fixture.qoderHome);
+    assert.ok(
+      filterManageItems(inventory, { tab: "mcps", scopeKind: "user" })
+        .some((item) => item.name === "better-harness"),
+    );
+  } finally {
+    if (previous === undefined) delete process.env.QODER_HOME;
+    else process.env.QODER_HOME = previous;
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("Qoder provider collects configured MCPs and uses runtime metadata only as enrichment", async () => {
   const fixture = await makeQoderFixture();
 
@@ -1568,10 +1592,13 @@ test("Claude provider collects native scoped assets from settings, state, and in
       ["project-review"],
     );
     assert.deepEqual(
-      inventory.manage.rules.filter((item) => item.scope === "project").map((item) => item.name),
-      [".claude/CLAUDE.md", "CLAUDE.local.md", "CLAUDE.md", "security"],
+      inventory.manage.rules.filter((item) => item.scope === "project").map((item) => item.name).sort(),
+      [".claude/CLAUDE.md", "AGENTS.md", "CLAUDE.local.md", "CLAUDE.md", "security"].sort(),
     );
-    assert.equal(inventory.manage.rules.some((item) => item.name === "AGENTS.md"), false);
+    assert.equal(
+      inventory.manage.rules.find((item) => item.name === "AGENTS.md")?.sourceKind,
+      "agents-md-compat",
+    );
 
     const userHook = inventory.manage.hooks.find((hook) => hook.scope === "user");
     assert.ok(userHook);
@@ -3173,10 +3200,9 @@ test("Grok project skills dedupe when .grok/skills symlinks to .agents/skills", 
       "---\nname: shared-flow\ndescription: Shared SoT skill.\n---\n",
     );
     await mkdir(path.join(workspace, ".grok"), { recursive: true });
-    await symlink(
+    await createDirectoryLink(
       path.join(workspace, ".agents", "skills"),
       path.join(workspace, ".grok", "skills"),
-      "dir",
     );
 
     const inventory = await collectAgentCustomizeInventory({

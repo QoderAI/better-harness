@@ -90,8 +90,10 @@ the target journey, contract, evidence, governance, and DX-measurement system.
   cross-profile host-id and alias conflicts. `profile-builders.mjs` owns typed
   construction helpers for evidence, operations, surfaces, and steps rather
   than duplicating their invariants, and `profiles.mjs` only composes the
-  registry. Every provider-specific filesystem root read outside the selected
-  workspace must have an explicit `inventoryHomeRoutes` entry, including state
+  registry. `qoder-home.mjs` owns the shared Qoder asset/session home precedence
+  used by analysis and inventory consumers. Every provider-specific filesystem
+  root read outside the selected workspace must have an explicit
+  `inventoryHomeRoutes` entry, including state
   files, shared caches, and compatibility roots such as a user-level
   `.agents/` directory. Each primary and secondary route declares its provider
   option, an isolated path relative to `--host-home`, and a redacted safe

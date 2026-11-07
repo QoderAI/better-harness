@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -16,6 +16,7 @@ import {
 import { HOST_CAPABILITIES, hostIdsFor } from "../../scripts/host-support/index.mjs";
 import { renderCanvasTsx } from "../../scripts/harness-analysis/renderers/qoder-canvas.mjs";
 import { buildTaskLoopSourceCandidate } from "../../scripts/harness-analysis/task-loop-source.mjs";
+import { createDirectoryLink } from "../support/path-links.mjs";
 import { applyEpisodeReviews } from "../../scripts/harness-analysis/episode-evidence-review.mjs";
 import { projectTaskLoopFindings } from "../../scripts/harness-analysis/task-loop-report.mjs";
 
@@ -656,7 +657,7 @@ test("render canonicalizes both target and frozen topology workspace identities"
     const packageRoot = path.join(root, "packages", "a");
     const packageLink = path.join(root, "package-a-link");
     const findingsPath = path.join(root, "target.findings.json");
-    await symlink(packageRoot, packageLink, "dir");
+    await createDirectoryLink(packageRoot, packageLink);
     await writeJson(findingsPath, targetFindingData());
 
     await assert.rejects(

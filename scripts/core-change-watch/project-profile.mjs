@@ -53,7 +53,10 @@ const MANIFESTS = new Set([
   "requirements.txt",
 ]);
 
-const AGENT_INSTRUCTION_FILE = "AGENTS.md";
+const AGENT_INSTRUCTION_FILES = new Set(["AGENTS.md", "CLAUDE.md"]);
+const SCRATCH_DIRECTORIES = new Set([".cache", ".state", ".tmp", ".scratch", "coverage", "scratch", "temp", "tmp"]);
+const PROJECT_GATE_PATTERN = /^(?:build|check|ci|e2e|lint|smoke|test|type-?check|validate|verify)(?::.+)?$/iu;
+const NON_TERMINATING_GATE_SUFFIXES = new Set(["watch", "dev", "ui", "headed", "open"]);
 const SOURCE_FILES_PER_AGENT_INSTRUCTION = 250;
 const SIGNIFICANT_SOURCE_ROOT_FILES = 100;
 const SOURCE_LINE_METHOD = "tracked readable primary source files only; excludes tests, non-source assets, generated/dependency paths, and untracked files";
@@ -441,12 +444,19 @@ function isPathUnderScope(filePath, scope) {
   return normalizedScope === "." || normalized === normalizedScope || normalized.startsWith(`${normalizedScope}/`);
 }
 
+function isScratchDirectory(directory) {
+  return toPosix(directory)
+    .split("/")
+    .some((segment) => SCRATCH_DIRECTORIES.has(segment.toLowerCase()));
+}
+
 function agentInstructionFiles(trackedFiles, analysisScope) {
   return trackedFiles
-    .filter((filePath) => path.posix.basename(toPosix(filePath)) === AGENT_INSTRUCTION_FILE)
+    .filter((filePath) => AGENT_INSTRUCTION_FILES.has(path.posix.basename(toPosix(filePath))))
     .filter((filePath) => !isDependencyOrGenerated(filePath))
     .map((filePath) => ({
       path: toPosix(filePath),
+      carrier: path.posix.basename(toPosix(filePath)),
       scope: fromAnalysisRelativePath(
         instructionScope(toAnalysisRelativePath(filePath, analysisScope)),
         analysisScope,
@@ -478,53 +488,99 @@ function agentInstructionStatus(count, suggestedMinimum) {
   return "adequate";
 }
 
+function isProjectGateScript(name) {
+  if (!PROJECT_GATE_PATTERN.test(name)) {
+    return false;
+  }
+  const suffixes = String(name).toLowerCase().split(":").slice(1);
+  return !suffixes.some((suffix) => NON_TERMINATING_GATE_SUFFIXES.has(suffix));
+}
+
+function projectGates(manifests) {
+  const gates = [];
+  for (const manifest of manifests) {
+    if (manifest.kind !== "node" && manifest.kind !== "just") continue;
+    const prefix = manifest.kind === "node" ? path.posix.dirname(manifest.path) : ".";
+    for (const name of manifest.scripts ?? []) {
+      if (!isProjectGateScript(name)) continue;
+      const command = manifest.kind === "just"
+        ? ["just", name]
+        : ["npm", ...(prefix === "." ? [] : ["--prefix", prefix]), "run", name];
+      gates.push({
+        name,
+        kind: manifest.kind === "just" ? "just-recipe" : "package-script",
+        sourcePath: manifest.path,
+        command,
+      });
+    }
+  }
+  return gates
+    .sort((a, b) => a.sourcePath.localeCompare(b.sourcePath) || a.name.localeCompare(b.name))
+    .slice(0, 20);
+}
+
 function analyzeAgentInstructions({ trackedFiles, sourceRecords, sourceRoots, totals, analysisScope }) {
   const files = agentInstructionFiles(trackedFiles, analysisScope);
-  const nestedScopes = files.filter((item) => !item.targetRoot).map((item) => item.scope);
+  const instructionSourceRecords = sourceRecords.filter((source) => !isScratchDirectory(source.directory));
+  const instructionSourceFiles = instructionSourceRecords.length;
+  const uniqueScopes = [...new Set(files.map((file) => file.scope))];
+  const nestedScopes = [...new Set(files.filter((item) => !item.targetRoot).map((item) => item.scope))];
+  const rootScopes = new Set(files.filter((item) => item.targetRoot).map((item) => item.scope));
+  const carrierCounts = new Map();
   let sourceFilesUnderNestedInstructions = 0;
   const uncoveredSourceDirs = new Map();
+
+  for (const file of files) {
+    addCount(carrierCounts, file.carrier, 1);
+  }
 
   for (const source of sourceRecords) {
     const underNestedInstruction = nestedScopes.some((scope) => isPathUnderScope(source.path, scope));
     if (underNestedInstruction) {
       sourceFilesUnderNestedInstructions += 1;
-    } else {
+    } else if (!isScratchDirectory(source.directory)) {
       addCount(uncoveredSourceDirs, source.directory, 1);
     }
   }
 
-  const rootCount = files.filter((item) => item.targetRoot).length;
-  const nestedCount = files.length - rootCount;
-  const suggestedMinimum = suggestedInstructionMinimum(totals, sourceRoots);
-  const suggestedAdditional = Math.max(0, suggestedMinimum - files.length);
-  const status = agentInstructionStatus(files.length, suggestedMinimum);
+  const count = uniqueScopes.length;
+  const rootCount = rootScopes.size;
+  const nestedCount = count - rootCount;
+  const instructionSourceRoots = sourceRoots.filter((root) => !isScratchDirectory(root.path));
+  const suggestedMinimum = suggestedInstructionMinimum(
+    { ...totals, sourceFiles: instructionSourceFiles },
+    instructionSourceRoots,
+  );
+  const suggestedAdditional = Math.max(0, suggestedMinimum - count);
+  const status = agentInstructionStatus(count, suggestedMinimum);
   const reasons = [];
 
   if (rootCount > 0) {
-    reasons.push("root AGENTS.md present");
+    reasons.push("root agent instruction file present");
   }
   if (nestedCount > 0) {
-    reasons.push(`${nestedCount} nested AGENTS.md files provide module-local guidance`);
+    reasons.push(`${nestedCount} nested instruction scopes provide module-local guidance`);
   }
   if (status === "thin") {
-    reasons.push(`AGENTS.md count ${files.length} is below suggested minimum ${suggestedMinimum} for source scale`);
+    reasons.push(`instruction scope count ${count} is below suggested minimum ${suggestedMinimum} for source scale`);
   }
   if (status === "missing") {
-    reasons.push("no tracked AGENTS.md files found for a source-bearing repository");
+    reasons.push("no tracked AGENTS.md or CLAUDE.md files found for a source-bearing repository");
   }
   if (totals.sourceFiles >= SOURCE_FILES_PER_AGENT_INSTRUCTION && sourceFilesUnderNestedInstructions === 0) {
-    reasons.push("large source tree has no nested AGENTS.md coverage");
+    reasons.push("large source tree has no nested instruction coverage");
   }
 
   return {
-    count: files.length,
+    count,
     rootCount,
     nestedCount,
+    carriers: sortedCounts(carrierCounts, 4).map((item) => ({ name: item.name, files: item.count })),
     files: files.map(({ targetRoot: _targetRoot, ...file }) => file),
     status,
     suggestedMinimum,
     suggestedAdditional,
-    sourceFilesPerInstruction: files.length > 0 ? Math.ceil(totals.sourceFiles / files.length) : null,
+    sourceFilesPerInstruction: count > 0 ? Math.ceil(totals.sourceFiles / count) : null,
     sourceFilesUnderNestedInstructions,
     nestedSourceFileCoveragePercent: totals.sourceFiles > 0
       ? Math.round((sourceFilesUnderNestedInstructions / totals.sourceFiles) * 100)
@@ -757,6 +813,7 @@ export async function analyzeProjectProfile(options = {}) {
     }),
     languages,
     manifests: sortedManifests,
+    projectGates: projectGates(sortedManifests),
     frameworks,
     sourceRoots: sortedSourceRoots,
     entryCandidates: sortedEntryCandidates,

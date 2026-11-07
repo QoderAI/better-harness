@@ -41,6 +41,7 @@ function startBackend() {
     env: {
       ...process.env,
       HOME: HOME_DIR,
+      USERPROFILE: HOME_DIR,
       KIROCREW_HOME: HOME_DIR,
       KIROCREW_PROXY_SECRET: SECRET,
       PORT: String(PORT),
@@ -70,6 +71,16 @@ async function waitHealth(timeoutMs = 10000) {
 async function call(path) {
   const sig = signProxyRequest({ method: 'GET', target: path, body: Buffer.alloc(0), secret: SECRET })
   return fetch(`http://127.0.0.1:${PORT}${path}`, { headers: { 'X-KiroCrew-Proxy': sig } })
+}
+
+async function stopBackend(backend) {
+  if (backend.exitCode === null && backend.signalCode === null) {
+    const exited = new Promise((resolve) => backend.once('exit', resolve))
+    backend.kill('SIGTERM')
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 2000))])
+  }
+  backend.stdout?.destroy()
+  backend.stderr?.destroy()
 }
 
 const child = startBackend()
@@ -112,8 +123,8 @@ try {
   r = await call(`${BASE}/nope`)
   check('unknown route -> 404', r.status === 404, `got ${r.status}`)
 } finally {
-  child.kill('SIGTERM')
+  await stopBackend(child)
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURES`)
-process.exit(failures === 0 ? 0 : 1)
+process.exitCode = failures === 0 ? 0 : 1

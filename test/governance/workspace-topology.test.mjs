@@ -7,6 +7,7 @@ import { test } from "vitest";
 
 import { main as topologyMain, parseArgs as parseTopologyArgs } from "../../scripts/workspace-topology/cli.mjs";
 import { pathIdentityKey } from "../../scripts/workspace-topology/contract.mjs";
+import { createDirectoryLink, skipWithoutFileLink } from "../support/path-links.mjs";
 import {
   WORKSPACE_TOPOLOGY_KIND,
   findingTargetErrors,
@@ -31,7 +32,7 @@ test("configured cwd uses segment-aware canonical containment", async () => {
       mkdir(sibling, { recursive: true }),
       mkdir(outside, { recursive: true }),
     ]);
-    await symlink(outside, escape, "dir");
+    await createDirectoryLink(outside, escape);
 
     const canonicalWorkspace = await realpath(workspace);
     assert.deepEqual(resolveConfiguredCwd({ workspace }), {
@@ -459,7 +460,7 @@ test("workspace topology resolves a symlinked package through its real path", as
   });
   const links = await mkdtemp(path.join(os.tmpdir(), "better-harness-topology-links-"));
   const link = path.join(links, "app-link");
-  await symlink(path.join(repo, "packages/app"), link, "dir");
+  await createDirectoryLink(path.join(repo, "packages/app"), link);
 
   try {
     const result = await resolveWorkspaceTopology({ workspace: link });
@@ -731,7 +732,8 @@ test("workspace topology rejects a tracked manifest symlink to another manifest 
   }
 });
 
-test("workspace topology does not follow a tracked structural symlink outside the Git root", async () => {
+test("workspace topology does not follow a tracked structural symlink outside the Git root", async (t) => {
+  if (await skipWithoutFileLink(t)) return;
   const repo = await makeGitRepo({
     "package.json": JSON.stringify({ workspaces: ["packages/*"] }),
     "packages/app/package.json": JSON.stringify({ name: "app" }),

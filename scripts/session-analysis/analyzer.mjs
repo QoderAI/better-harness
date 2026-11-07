@@ -46,7 +46,7 @@ Options:
   --platform <${hostPipeList(DECLARED_SESSION_HOSTS)}>
                             Session host (default: qoder)
   --workspace <dir>         Workspace scope (default: current directory)
-  --qoder-home <dir>        Qoder data root (default: ~/.qoder)
+  --qoder-home <dir>        Qoder data root (default: ~/.qoder-cn then ~/.qoder)
   --codex-home <dir>        Codex data root (default: ~/.codex)
   --claude-home <dir>       Claude Code data root (default: ~/.claude)
   --augment-home <dir>      Augment/Auggie data root (default: ~/.augment)

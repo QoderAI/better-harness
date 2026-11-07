@@ -21,6 +21,7 @@ function git(cwd, args, options = {}) {
     encoding: "utf8",
     stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     input: options.input,
+    env: options.env ? { ...process.env, ...options.env } : process.env,
   });
 
   if (result.status !== 0) {
@@ -286,6 +287,34 @@ test("AGENTS instruction density uses file count instead of line count", async (
   }
 });
 
+test("project profile counts one instruction scope when AGENTS.md and CLAUDE.md share it", async () => {
+  const repo = await makeRepo({
+    "package.json": JSON.stringify({ name: "dual-carrier-instructions" }),
+    "AGENTS.md": "# Root agent rules\n",
+    "CLAUDE.md": "# Root Claude rules\n",
+    "src/AGENTS.md": "# Source agent rules\n",
+    "src/CLAUDE.md": "# Source Claude rules\n",
+    "src/app.ts": "export function app() { return true; }\n",
+  });
+
+  try {
+    const profile = await analyzeProjectProfile({ cwd: repo });
+
+    assert.equal(profile.agentInstructions.count, 2);
+    assert.equal(profile.agentInstructions.rootCount, 1);
+    assert.equal(profile.agentInstructions.nestedCount, 1);
+    assert.equal(profile.agentInstructions.files.length, 4);
+    assert.deepEqual(
+      profile.agentInstructions.carriers.map((item) => `${item.name}:${item.files}`),
+      ["AGENTS.md:2", "CLAUDE.md:2"],
+    );
+    assert.ok(profile.agentInstructions.files.some((item) => item.path === "CLAUDE.md" && item.scope === "."));
+    assert.ok(profile.agentInstructions.files.some((item) => item.path === "src/CLAUDE.md" && item.scope === "src"));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test("large root-only projects report thin AGENTS instruction density", async () => {
   const files = {
     "package.json": JSON.stringify({ name: "large-root-only" }),
@@ -294,21 +323,87 @@ test("large root-only projects report thin AGENTS instruction density", async ()
   for (let index = 0; index < 501; index += 1) {
     files[`src/module_${String(index).padStart(3, "0")}.ts`] = `export const value${index} = ${index};\n`;
   }
+  for (let index = 0; index < 20; index += 1) {
+    files[`tmp/generated_${String(index).padStart(2, "0")}.ts`] = `export const scratch${index} = ${index};\n`;
+  }
   const repo = await makeRepo(files);
 
   try {
     const profile = await analyzeProjectProfile({ cwd: repo, languages: "typescript" });
 
-    assert.equal(profile.totals.sourceFiles, 501);
+    assert.equal(profile.totals.sourceFiles, 521);
     assert.equal(profile.agentInstructions.count, 1);
     assert.equal(profile.agentInstructions.rootCount, 1);
     assert.equal(profile.agentInstructions.nestedCount, 0);
     assert.equal(profile.agentInstructions.status, "thin");
     assert.equal(profile.agentInstructions.suggestedMinimum, 3);
     assert.equal(profile.agentInstructions.suggestedAdditional, 2);
-    assert.equal(profile.agentInstructions.sourceFilesPerInstruction, 501);
+    assert.equal(profile.agentInstructions.sourceFilesPerInstruction, 521);
     assert.equal(profile.agentInstructions.sourceFilesUnderNestedInstructions, 0);
     assert.ok(profile.agentInstructions.suggestedScopes.some((item) => item.path === "src"));
+    assert.equal(profile.agentInstructions.suggestedScopes.some((item) => item.path.startsWith("tmp")), false);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("project-owned validation gates surface in the profile and validate-impact action", async () => {
+  const repo = await makeRepo({
+    "package.json": JSON.stringify({
+      name: "gated-project",
+      scripts: {
+        build: "node build.mjs",
+        custom: "node custom.mjs",
+        lint: "eslint .",
+        serve: "node server.mjs",
+        test: "node --test",
+        "test:unit": "node --test unit",
+        "test:watch": "node --test --watch",
+        "test:ui": "playwright test --ui",
+        "lint:dev": "node lint-dev.mjs",
+      },
+    }),
+    "justfile": [
+      "test:",
+      "  node --test",
+      "lint:",
+      "  eslint .",
+      "serve:",
+      "  node server.mjs",
+      "",
+    ].join("\n"),
+    "packages/api/package.json": JSON.stringify({
+      name: "api",
+      scripts: { test: "node --test", deploy: "node deploy.mjs" },
+    }),
+    "src/app.ts": "export function app() { return true; }\n",
+  });
+
+  try {
+    const profile = await analyzeProjectProfile({ cwd: repo });
+    const pack = await buildEvidencePack({ cwd: repo, baseRef: "HEAD", noHistory: true, maxFollowUpActions: 20 });
+
+    const discovered = profile.projectGates.map((gate) => `${gate.kind}:${gate.sourcePath}:${gate.name}`);
+    assert.deepEqual(discovered, [
+      "just-recipe:justfile:lint",
+      "just-recipe:justfile:test",
+      "package-script:package.json:build",
+      "package-script:package.json:lint",
+      "package-script:package.json:test",
+      "package-script:package.json:test:unit",
+      "package-script:packages/api/package.json:test",
+    ]);
+    assert.equal(discovered.some((gate) => /:custom$|:serve$|:deploy$/u.test(gate)), false);
+    assert.equal(discovered.some((gate) => /:test:watch$|:test:ui$|:lint:dev$/u.test(gate)), false);
+    assert.deepEqual(
+      profile.projectGates.find((gate) => gate.sourcePath === "packages/api/package.json")?.command,
+      ["npm", "--prefix", "packages/api", "run", "test"],
+    );
+    assert.deepEqual(pack.summary.projectGates, profile.projectGates);
+    const validation = pack.followUpActions.find((action) => action.id === "validate-impact");
+    assert.ok(validation);
+    assert.deepEqual(validation.commands, profile.projectGates);
+    assert.match(validation.reason, /Project-owned validation gates/u);
   } finally {
     await rm(repo, { recursive: true, force: true });
   }
@@ -413,6 +508,73 @@ test("history separates supporting hotspots and evidence pack emits follow-up ac
     assert.equal(filteredPack.summary.filtersApplied, true);
     assert.ok(filteredPack.filters.historyProfile.ignoredCount >= 1);
     assert.equal(filteredPack.historyProfile.supportingHotFiles.some((item) => item.role === "localization"), false);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("history windows read independent commit ranges and disclose bounded coverage", async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "better-harness-window-history-"));
+  git(repo, ["init", "-q"]);
+  git(repo, ["config", "user.email", "test@example.com"]);
+  git(repo, ["config", "user.name", "Test User"]);
+  const now = Date.now();
+  await writeFixtureFile(repo, "package.json", "{}\n");
+  await writeFixtureFile(repo, "src/recent.ts", "export const recent = 0;\n");
+  await writeFixtureFile(repo, "src/mid.ts", "export const mid = 0;\n");
+  await writeFixtureFile(repo, "src/old.ts", "export const old = 0;\n");
+  git(repo, ["add", "."]);
+  const initialDate = new Date(now - 300 * 24 * 60 * 60 * 1000).toISOString();
+  git(repo, ["commit", "-q", "-m", "initial"], {
+    env: { GIT_AUTHOR_DATE: initialDate, GIT_COMMITTER_DATE: initialDate },
+  });
+
+  try {
+    const groups = [
+      { offsetDays: 120, count: 5, file: "src/old.ts", label: "old" },
+      { offsetDays: 60, count: 3, file: "src/mid.ts", label: "mid" },
+      { offsetDays: 10, count: 4, file: "src/recent.ts", label: "recent" },
+    ];
+    let sequence = 0;
+    for (const group of groups) {
+      for (let index = 0; index < group.count; index += 1) {
+        const timestamp = new Date(
+          now - group.offsetDays * 24 * 60 * 60 * 1000 + index * 60 * 1000,
+        ).toISOString();
+        await writeFixtureFile(
+          repo,
+          group.file,
+          `export const value = "${group.label}-${index}-${sequence += 1}";\n`,
+        );
+        git(repo, ["add", "."]);
+        git(repo, ["commit", "-q", "-m", `${group.label} ${index}`], {
+          env: { GIT_AUTHOR_DATE: timestamp, GIT_COMMITTER_DATE: timestamp },
+        });
+      }
+    }
+
+    const history = await analyzeGitHistoryProfile({ cwd: repo, maxCommits: 50 });
+    const windows = Object.fromEntries(history.historyWindows.map((item) => [item.days, item]));
+
+    assert.deepEqual(history.historyWindows.map((item) => item.analyzedCommits), [4, 7, 12]);
+    assert.ok(windows[30].hotFiles.some((item) => item.path === "src/recent.ts"));
+    assert.equal(windows[30].hotFiles.some((item) => item.path === "src/old.ts"), false);
+    assert.ok(windows[180].hotFiles.some((item) => item.path === "src/old.ts"));
+    assert.ok(history.historyWindows.every((item) => item.coverage === "complete" && item.truncated === false));
+    assert.ok(history.historyWindows.every((item) => item.commitLimit === 50));
+
+    const bounded = await buildEvidencePack({ cwd: repo, baseRef: "HEAD", maxCommits: 3 });
+    const coverage = bounded.reviewMatrix.find((item) => item.id === "history-window-coverage");
+    assert.equal(bounded.historyProfile.confidence.confidence, "low");
+    assert.ok(bounded.historyProfile.historyWindows.every((item) => item.coverage === "truncated"));
+    assert.equal(coverage.status, "review");
+    assert.deepEqual(coverage.evidence.truncatedWindows, [30, 90, 180]);
+    assert.deepEqual(coverage.evidence.coverage.map((item) => item.status), ["truncated", "truncated", "truncated"]);
+
+    const exact = await analyzeGitHistoryProfile({ cwd: repo, maxCommits: 4, historyWindows: "30" });
+    assert.equal(exact.historyWindows[0].analyzedCommits, 4);
+    assert.equal(exact.historyWindows[0].truncated, false);
+    assert.equal(exact.historyWindows[0].coverage, "complete");
   } finally {
     await rm(repo, { recursive: true, force: true });
   }

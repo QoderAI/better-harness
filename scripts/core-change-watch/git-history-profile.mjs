@@ -137,11 +137,38 @@ function collectHistoryStats(commits, allowedLanguages, analysisScope) {
   };
 }
 
-function historyWindows(commits, allowedLanguages, daysList, analysisScope) {
+function readHistoryLog(repoRoot, commitLimit, analysisScope, sinceSeconds) {
+  const args = [
+    "log",
+    `-${commitLimit}`,
+    "--numstat",
+    "--format=commit%x1f%H%x1f%ct%x1f%s",
+  ];
+  if (sinceSeconds !== undefined) {
+    args.push(`--since=${new Date(sinceSeconds * 1000).toISOString()}`);
+  }
+  args.push(...scopePathspecArgs(analysisScope));
+  return parseLogWithNumstat(git(repoRoot, args, { timeout: 30_000 }), analysisScope);
+}
+
+function historyWindows(commits, allowedLanguages, daysList, analysisScope, {
+  repoRoot,
+  maxCommits,
+  ignore,
+  mainTruncated,
+}) {
   const nowSeconds = Math.floor(Date.now() / 1000);
   return daysList.map((days) => {
     const sinceSeconds = nowSeconds - days * 24 * 60 * 60;
-    const windowCommits = commits.filter((commit) => commit.timestamp >= sinceSeconds);
+    const oldestTimestamp = commits.at(-1)?.timestamp;
+    const scanCoversWindow = !mainTruncated
+      || (oldestTimestamp !== undefined && oldestTimestamp < sinceSeconds);
+    const windowParsed = scanCoversWindow
+      ? commits.filter((commit) => commit.timestamp >= sinceSeconds)
+      : readHistoryLog(repoRoot, maxCommits + 1, analysisScope, sinceSeconds);
+    const truncated = windowParsed.length > maxCommits;
+    const boundedParsed = truncated ? windowParsed.slice(0, maxCommits) : windowParsed;
+    const windowCommits = applyCommitIgnores(boundedParsed, ignore).commits;
     const stats = collectHistoryStats(windowCommits, allowedLanguages, analysisScope);
     const trend = trendForWindow(days, windowCommits.length);
 
@@ -149,6 +176,9 @@ function historyWindows(commits, allowedLanguages, daysList, analysisScope) {
       days,
       since: new Date(sinceSeconds * 1000).toISOString(),
       analyzedCommits: windowCommits.length,
+      commitLimit: maxCommits,
+      truncated,
+      coverage: truncated ? "truncated" : "complete",
       trendLabel: trend.label,
       interpretation: trend.interpretation,
       hotFiles: sortedHotFiles(stats.fileStats, 10),
@@ -171,7 +201,7 @@ function trendForWindow(days, analyzedCommits) {
   };
 }
 
-function historyConfidence(commits, maxCommits) {
+function historyConfidence(commits, maxCommits, truncated) {
   if (commits.length === 0) {
     return { confidence: "low", reasons: ["no commits were available in the bounded history scan"] };
   }
@@ -188,7 +218,7 @@ function historyConfidence(commits, maxCommits) {
   if (spanDays < 30) {
     reasons.push(`history span is only ${spanDays} days`);
   }
-  if (commits.length >= maxCommits) {
+  if (truncated) {
     reasons.push(`bounded at maxCommits=${maxCommits}`);
   }
   return {
@@ -227,13 +257,9 @@ export async function analyzeGitHistoryProfile(options = {}) {
   const maxCommits = positiveInt(options.maxCommits, DEFAULT_MAX_COMMITS);
   const windowDays = normalizeHistoryWindows(options.historyWindows);
   const allowedLanguages = new Set(normalizeLanguages(options.languages));
-  let output;
+  let parsedCommits;
   try {
-    output = git(
-      repoRoot,
-      ["log", `-${maxCommits}`, "--numstat", "--format=commit%x1f%H%x1f%ct%x1f%s", ...scopePathspecArgs(analysisScope)],
-      { timeout: 30_000 },
-    );
+    parsedCommits = readHistoryLog(repoRoot, maxCommits + 1, analysisScope);
   } catch (error) {
     // An unborn repository is a valid empty history. Every other Git failure,
     // including a malformed scope/pathspec, remains a hard coverage failure.
@@ -241,14 +267,17 @@ export async function analyzeGitHistoryProfile(options = {}) {
       git(repoRoot, ["rev-parse", "--verify", "HEAD"]);
     } catch (headError) {
       if (headError?.code === "GIT_COMMAND_FAILED") {
-        output = "";
+        parsedCommits = [];
       } else {
         throw error;
       }
     }
-    if (output === undefined) throw error;
+    if (parsedCommits === undefined) throw error;
   }
-  const parsedCommits = parseLogWithNumstat(output, analysisScope);
+  const mainTruncated = parsedCommits.length > maxCommits;
+  if (mainTruncated) {
+    parsedCommits = parsedCommits.slice(0, maxCommits);
+  }
   const filteredHistory = applyCommitIgnores(parsedCommits, options.ignore);
   const commits = filteredHistory.commits;
   const stats = collectHistoryStats(commits, allowedLanguages, analysisScope);
@@ -267,8 +296,13 @@ export async function analyzeGitHistoryProfile(options = {}) {
       newest: commits[0]?.shortSha ?? null,
       oldest: commits.at(-1)?.shortSha ?? null,
     },
-    confidence: historyConfidence(commits, maxCommits),
-    historyWindows: historyWindows(commits, allowedLanguages, windowDays, analysisScope),
+    confidence: historyConfidence(commits, maxCommits, mainTruncated),
+    historyWindows: historyWindows(commits, allowedLanguages, windowDays, analysisScope, {
+      repoRoot,
+      maxCommits,
+      ignore: options.ignore,
+      mainTruncated,
+    }),
     languageTouchCounts: sortedCounts(stats.languageStats, 12).map((item) => ({
       language: item.name,
       touches: item.count,

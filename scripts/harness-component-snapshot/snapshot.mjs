@@ -1,9 +1,9 @@
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import { collectAgentCustomizeInventory } from "../agent-customize/index.mjs";
-import { expandHome, isDirectory, normalizeWorkspace, pathExists } from "../session-analysis/index.mjs";
+import { resolveQoderAssetHome } from "../host-support/qoder-home.mjs";
+import { isDirectory, normalizeWorkspace, pathExists } from "../session-analysis/index.mjs";
 import {
   COMPONENT_KINDS,
   SNAPSHOT_KIND,
@@ -106,11 +106,7 @@ async function assertProjectReadBoundaries(readContext) {
 
 async function assertProjectDoesNotAliasQoderHome(readContext) {
   const { workspace } = readContext;
-  const environmentHome = process.env.QODER_HOME;
-  const environmentBase = path.basename(String(environmentHome ?? "")).toLowerCase();
-  const qoderHome = environmentHome && [".qoder", "qoder"].includes(environmentBase)
-    ? expandHome(environmentHome)
-    : path.join(os.homedir(), ".qoder");
+  const qoderHome = resolveQoderAssetHome();
   const [projectRoot, userRoot] = await Promise.all([
     canonicalPath(path.join(workspace, ".qoder")),
     canonicalPath(qoderHome),

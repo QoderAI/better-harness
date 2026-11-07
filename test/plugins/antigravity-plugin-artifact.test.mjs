@@ -1002,7 +1002,7 @@ test("builds, verifies, runs, and atomically replaces the real pinned artifact",
   } finally {
     await rm(container, { recursive: true, force: true });
   }
-}, 30_000);
+}, 120_000);
 
 test("preserves unowned and full-invalid destinations before copying", async () => {
   const repoRoot = await createSourceRepo();

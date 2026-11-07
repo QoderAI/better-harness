@@ -10,6 +10,7 @@ import {
   hostIdsFor,
   normalizedHostHomeOptions,
 } from "../../host-support/index.mjs";
+import { resolveQoderAssetHome } from "../../host-support/qoder-home.mjs";
 import { expandHome } from "../../session-analysis/index.mjs";
 
 export const CHECKUP_KIND = "harness-customization-checkup";
@@ -184,7 +185,7 @@ export function resolveProviderHome(provider, source = {}) {
   const env = process.env ?? {};
   const userHome = os.homedir();
   const defaults = {
-    qoder: env.QODER_HOME ?? path.join(userHome, ".qoder"),
+    qoder: resolveQoderAssetHome({ env }),
     codex: env.CODEX_HOME ?? path.join(userHome, ".codex"),
     cursor: env.CURSOR_HOME ?? path.join(userHome, ".cursor"),
     claude: env.CLAUDE_CONFIG_DIR ?? env.CLAUDE_HOME ?? path.join(userHome, ".claude"),

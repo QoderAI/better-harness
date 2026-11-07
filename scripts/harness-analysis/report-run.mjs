@@ -31,6 +31,7 @@ Options:
   --workspace <path>       Target workspace (required)
   --cwd <path>             Configured-practice cwd (default: workspace)
   --platform <name>        ${formatHostList(REPORT_PLATFORMS)} (default: qoder)
+  --qoder-home <dir>       Qoder data root override (default: ~/.qoder-cn then ~/.qoder)
   --language <locale>      en or zh-CN (default: en)
   --since <ISO timestamp>  Include sessions at or after the frozen window start
   --until <ISO timestamp>  Include sessions at or before the frozen window end

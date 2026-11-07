@@ -16,6 +16,10 @@ import {
 } from "../session-analysis/index.mjs";
 import { collectAgentCustomizeInventory } from "../agent-customize/index.mjs";
 import {
+  looksLikeQoderAssetHome,
+  resolveQoderAssetHome,
+} from "../host-support/qoder-home.mjs";
+import {
   getHostDescriptor,
   HOST_CAPABILITIES,
   hostHomeValue,
@@ -439,11 +443,8 @@ function publicScope(options = {}, dependencies = {}) {
   }, dependencies);
   const { workspace, cwd } = configuredScope;
   const environmentHome = process.env.QODER_HOME;
-  const environmentBase = path.basename(String(environmentHome ?? "")).toLowerCase();
-  const environmentIsAssetHome = environmentBase === ".qoder" || environmentBase === "qoder";
-  const qoderHome = path.resolve(expandHome(
-    options.qoderHome ?? options["qoder-home"] ?? (environmentIsAssetHome ? environmentHome : "~/.qoder"),
-  ));
+  const environmentIsAssetHome = looksLikeQoderAssetHome(environmentHome);
+  const qoderHome = resolveQoderAssetHome(options);
   const explicitSharedCache = options.sharedCache ?? options["shared-cache"];
   const sharedCache = explicitSharedCache
     ? path.resolve(expandHome(explicitSharedCache))

@@ -1,6 +1,9 @@
-import os from "node:os";
 import path from "node:path";
 
+import {
+  looksLikeQoderAssetHome,
+  resolveQoderAssetHome,
+} from "../../host-support/qoder-home.mjs";
 import { expandHome, pathExists } from "../../session-analysis/index.mjs";
 
 function resolved(value) {
@@ -30,8 +33,15 @@ export async function collectQoderSourceResolution(options = {}, inventory = {})
 
   const explicitHome = options.qoderHome;
   const environmentHome = process.env.QODER_HOME;
+  const environmentIsAssetHome = looksLikeQoderAssetHome(environmentHome);
   const inventoryHome = inventory.qoderHome;
-  const activeHome = resolved(explicitHome ?? environmentHome ?? inventoryHome ?? path.join(os.homedir(), ".qoder"));
+  const activeHome = explicitHome
+    ? resolved(explicitHome)
+    : environmentIsAssetHome
+      ? resolved(environmentHome)
+      : inventoryHome
+        ? resolved(inventoryHome)
+        : resolveQoderAssetHome();
   const workspace = path.resolve(options.workspace ?? process.cwd());
   const sharedRoot = inventory.sharedClientCacheRoot
     ? path.resolve(inventory.sharedClientCacheRoot)
@@ -81,7 +91,7 @@ export async function collectQoderSourceResolution(options = {}, inventory = {})
     state: "selected",
     activeHomeEvidence: explicitHome
       ? "explicit-option"
-      : environmentHome
+      : environmentIsAssetHome
         ? "environment"
         : inventoryHome
           ? "inventory-resolver"

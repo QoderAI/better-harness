@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, readlink, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "vitest";
 
+import { createDirectoryLink } from "../support/path-links.mjs";
 import { getHostProfile } from "../../scripts/host-support/index.mjs";
 import { runHarnessDoctor } from "../../scripts/harness-doctor/index.mjs";
 import {
@@ -761,7 +762,7 @@ test("status, plan, and verify do not mutate an isolated host home", async () =>
     await mkdir(hostHome, { recursive: true });
     await mkdir(workspace, { recursive: true });
     const workspaceLink = path.join(root, "workspace link ü");
-    await symlink(workspace, workspaceLink, "dir");
+    await createDirectoryLink(workspace, workspaceLink);
     await writeFile(path.join(hostHome, "keep.txt"), "user-owned\n");
     const before = await snapshotTree(root);
     await inspectPluginLifecycle({ host: "codex", hostHome, workspace: workspaceLink, env: { PATH: "" } });

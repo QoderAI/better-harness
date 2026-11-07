@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "vitest";
 
 import { createAnalyzer } from "../../scripts/session-analysis.mjs";
+import { defaultQoderHome, resolveQoderSessionHome } from "../../scripts/host-support/qoder-home.mjs";
 import {
   mergeQoderAssistantContextIntoResponses,
   QoderSessionAnalyzer,
@@ -660,10 +661,10 @@ test("privacy-safe user input summaries redact GitLab tokens and hierarchical UR
   }
 });
 
-async function makeQoderFixture() {
+async function makeQoderFixture({ homeName = ".qoder" } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-session-analysis-"));
   const workspace = path.join(root, "workspace", "better-harness");
-  const home = path.join(root, ".qoder");
+  const home = path.join(root, homeName);
   const slug = workspaceToQoderSlug(workspace);
   const sessionId = "session-a";
 
@@ -781,6 +782,107 @@ test("Qoder workspace slugs cover both Windows directory conventions", () => {
     ["e--projects-xp-gate", "e-projects-xp-gate"],
   );
   assert.equal(workspaceToQoderSlug(String.raw`e:\projects\xp-gate`), "e--projects-xp-gate");
+});
+
+test("Qoder session analysis honors QODER_HOME and prefers a default .qoder-cn home", async () => {
+  const fixture = await makeQoderFixture({ homeName: ".qoder-cn" });
+  const previous = {
+    QODER_HOME: process.env.QODER_HOME,
+    HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+  };
+  const restore = () => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+
+  try {
+    process.env.QODER_HOME = fixture.home;
+    assert.equal(resolveQoderSessionHome({}), path.resolve(fixture.home));
+    const fromEnvironment = await new QoderSessionAnalyzer().analyze({
+      workspace: fixture.workspace,
+      command: "sessions",
+    });
+    assert.ok(fromEnvironment.sessions.some((session) => session.sessionId === fixture.sessionId));
+
+    delete process.env.QODER_HOME;
+    process.env.HOME = fixture.root;
+    process.env.USERPROFILE = fixture.root;
+    assert.equal(defaultQoderHome(), path.resolve(fixture.home));
+    const fromDefault = await new QoderSessionAnalyzer().analyze({
+      workspace: fixture.workspace,
+      command: "sessions",
+    });
+    assert.ok(fromDefault.sessions.some((session) => session.sessionId === fixture.sessionId));
+  } finally {
+    restore();
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qoder session analysis ignores a QODER_HOME that points at the shared client cache", async () => {
+  const fixture = await makeQoderFixture({ homeName: ".qoder" });
+  const previous = {
+    QODER_HOME: process.env.QODER_HOME,
+    HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+  };
+  const restore = () => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+  const sharedCache = path.join(
+    fixture.root,
+    "Library",
+    "Application Support",
+    "Qoder",
+    "SharedClientCache",
+  );
+
+  try {
+    process.env.QODER_HOME = sharedCache;
+    process.env.HOME = fixture.root;
+    process.env.USERPROFILE = fixture.root;
+    assert.equal(resolveQoderSessionHome({}), path.resolve(fixture.home));
+    assert.equal(defaultQoderHome(), path.resolve(fixture.home));
+    const result = await new QoderSessionAnalyzer().analyze({
+      workspace: fixture.workspace,
+      command: "sessions",
+    });
+    assert.ok(result.sessions.some((session) => session.sessionId === fixture.sessionId));
+    assert.equal(result.scope.home, path.resolve(fixture.home));
+  } finally {
+    restore();
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qoder default home keeps the international home when both homes have session data", async () => {
+  const international = await makeQoderFixture({ homeName: ".qoder" });
+  const previousHome = process.env.HOME;
+  const previousUserProfile = process.env.USERPROFILE;
+  const previousQoderHome = process.env.QODER_HOME;
+  const cnHome = path.join(international.root, ".qoder-cn");
+
+  try {
+    await mkdir(path.join(cnHome, "audit"), { recursive: true });
+    delete process.env.QODER_HOME;
+    process.env.HOME = international.root;
+    process.env.USERPROFILE = international.root;
+    assert.equal(defaultQoderHome(), path.resolve(international.home));
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = previousUserProfile;
+    if (previousQoderHome === undefined) delete process.env.QODER_HOME;
+    else process.env.QODER_HOME = previousQoderHome;
+    await rm(international.root, { recursive: true, force: true });
+  }
 });
 
 test("Qoder analyzer scans every existing Windows workspace slug variant", async () => {
