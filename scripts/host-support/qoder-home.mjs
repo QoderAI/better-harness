@@ -1,9 +1,11 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 const QODER_ASSET_HOME_NAMES = new Set([".qoder", "qoder", ".qoder-cn", "qoder-cn"]);
-const QODER_SESSION_DIRECTORIES = ["audit", "logs"];
+const QODER_SESSION_DIRECTORIES = ["audit", path.join("logs", "sessions"), "projects", "sessions"];
+// logs/sessions/<slug>/<session>/segments/*.jsonl is the deepest layout.
+const QODER_SESSION_SCAN_DEPTH = 3;
 
 // Kept local because session-analysis re-exports the Qoder analyzer that
 // imports this module, and the refactor contract forbids deep imports.
@@ -22,8 +24,28 @@ export function looksLikeQoderAssetHome(candidate) {
   return QODER_ASSET_HOME_NAMES.has(path.basename(String(candidate ?? "")).toLowerCase());
 }
 
+function containsJsonl(directory, depth) {
+  let entries;
+  try {
+    entries = readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(".jsonl")) return true;
+  }
+  if (depth <= 0) return false;
+  return entries.some(
+    (entry) => entry.isDirectory() && containsJsonl(path.join(directory, entry.name), depth - 1),
+  );
+}
+
+// An empty or log-only directory is not session data; only a transcript file
+// in a root the analyzer reads counts, so it cannot mask a populated home.
 function hasQoderSessionData(home) {
-  return QODER_SESSION_DIRECTORIES.some((directory) => existsSync(path.join(home, directory)));
+  return QODER_SESSION_DIRECTORIES.some((directory) =>
+    containsJsonl(path.join(home, directory), QODER_SESSION_SCAN_DEPTH),
+  );
 }
 
 export function defaultQoderHome() {

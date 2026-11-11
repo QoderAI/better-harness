@@ -869,7 +869,9 @@ test("Qoder default home keeps the international home when both homes have sessi
   const cnHome = path.join(international.root, ".qoder-cn");
 
   try {
-    await mkdir(path.join(cnHome, "audit"), { recursive: true });
+    await writeJsonl(path.join(cnHome, "audit", "audit.jsonl"), [
+      { _event: "tool_use", _timestamp: "2026-06-18T10:00:00.000Z", session_id: "cn-session" },
+    ]);
     delete process.env.QODER_HOME;
     process.env.HOME = international.root;
     process.env.USERPROFILE = international.root;
@@ -882,6 +884,62 @@ test("Qoder default home keeps the international home when both homes have sessi
     if (previousQoderHome === undefined) delete process.env.QODER_HOME;
     else process.env.QODER_HOME = previousQoderHome;
     await rm(international.root, { recursive: true, force: true });
+  }
+});
+
+test("Qoder default home prefers .qoder-cn when .qoder only has an empty logs directory", async () => {
+  const fixture = await makeQoderFixture({ homeName: ".qoder-cn" });
+  const previousHome = process.env.HOME;
+  const previousUserProfile = process.env.USERPROFILE;
+  const previousQoderHome = process.env.QODER_HOME;
+
+  try {
+    await mkdir(path.join(fixture.root, ".qoder", "logs"), { recursive: true });
+    delete process.env.QODER_HOME;
+    process.env.HOME = fixture.root;
+    process.env.USERPROFILE = fixture.root;
+    assert.equal(defaultQoderHome(), path.resolve(fixture.home));
+    const result = await new QoderSessionAnalyzer().analyze({
+      workspace: fixture.workspace,
+      command: "sessions",
+    });
+    assert.equal(result.scope.home, path.resolve(fixture.home));
+    assert.ok(result.sessions.some((session) => session.sessionId === fixture.sessionId));
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = previousUserProfile;
+    if (previousQoderHome === undefined) delete process.env.QODER_HOME;
+    else process.env.QODER_HOME = previousQoderHome;
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("Qoder default home counts project transcripts as .qoder-cn session data", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-qoder-cn-projects-"));
+  const cnHome = path.join(root, ".qoder-cn");
+  const previousHome = process.env.HOME;
+  const previousUserProfile = process.env.USERPROFILE;
+  const previousQoderHome = process.env.QODER_HOME;
+
+  try {
+    await mkdir(path.join(root, ".qoder", "logs"), { recursive: true });
+    await writeJsonl(path.join(cnHome, "projects", "workspace-slug", "cn-session.jsonl"), [
+      { type: "user", sessionId: "cn-session", timestamp: "2026-06-18T10:00:00.000Z" },
+    ]);
+    delete process.env.QODER_HOME;
+    process.env.HOME = root;
+    process.env.USERPROFILE = root;
+    assert.equal(defaultQoderHome(), path.resolve(cnHome));
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = previousUserProfile;
+    if (previousQoderHome === undefined) delete process.env.QODER_HOME;
+    else process.env.QODER_HOME = previousQoderHome;
+    await rm(root, { recursive: true, force: true });
   }
 });
 
