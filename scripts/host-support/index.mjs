@@ -115,6 +115,15 @@ export const HOST_DESCRIPTORS = Object.freeze([
     sessionScopeTokens: [".grok", "grok"],
   }),
   descriptor({
+    id: "openclaw",
+    displayName: "OpenClaw",
+    aliases: ["Clawdbot", "Moltbot"],
+    capabilities: [
+      HOST_CAPABILITIES.AGENT_CUSTOMIZE,
+      HOST_CAPABILITIES.REPORT_RENDERING,
+    ],
+  }),
+  descriptor({
     id: "dsh",
     displayName: "DeepSeek Harness",
     aliases: ["DeepSeek Harness"],

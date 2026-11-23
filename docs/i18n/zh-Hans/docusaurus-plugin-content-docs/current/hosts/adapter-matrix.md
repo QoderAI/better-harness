@@ -13,7 +13,8 @@ Better Harness 运行在你现有的编码智能体内。宿主差异只进入�
 ## 支持层级
 
 Better Harness 当前声明了十个能力层宿主适配器，其中六个已有验证过的公开
-快速开始路径。Pi、Kimi Code、WorkBuddy 与 Grok 以适配器支持展示，因为它们的安装方式和端到端
+快速开始路径。Pi、Kimi Code、WorkBuddy 与 Grok 以适配器支持展示，OpenClaw 以部分
+适配器展示（仅已配置资产），因为它们的安装方式和端到端
 证据边界与这六个宿主不同。完整能力层事实源仍是
 [规范适配器矩阵](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)。
 
@@ -31,6 +32,7 @@ Better Harness 当前声明了十个能力层宿主适配器，其中六个已�
 | Kimi Code | 适配器支持 | 具备分析能力的源码本地宿主 | `.kimi-plugin/plugin.json` | 匹配工作区的 Kimi wire 转录 | 自包含 HTML + Markdown |
 | WorkBuddy | 适配器支持 | 具备分析能力的源码本地宿主 | 无；Skill 使用 WorkBuddy 自有路径 | 匹配工作区的 WorkBuddy JSONL 转录 | 自包含 HTML + Markdown |
 | Grok | 适配器支持 | 具备分析能力的源码本地宿主 | 无；Skill 使用 Grok 自有路径 | 匹配工作区的 Grok 会话目录（`updates.jsonl`） | 自包含 HTML + Markdown |
+| OpenClaw | 部分适配器 | 仅已配置资产；不声称安装、生命周期或会话证据 | 无；Skill 使用 OpenClaw 自有路径 | 无；实时会话保存在各 agent 的 SQLite 中 | 自包含 HTML + Markdown |
 
 `@qoder-ai/better-harness` npm 包含全部七个插件元数据根目录。生成的 Qoder
 运行时 bundle 只包含 Qoder shell。Pi 复用现有 `package.json` 中的安装元数据，
@@ -52,6 +54,7 @@ Cursor 在本机 help 合同过期期间保持安装不可用；Pi 持久化 sur
 证据的操作保持不可用，临时 session surface 的更新/移除不适用；WorkBuddy 返回
 `PLUGIN_LIFECYCLE_UNSUPPORTED`。Kimi Code 与 Grok 尚无经验证的原生生命周期
 合同，因此生命周期目标会以 `UNKNOWN_HOST` 拒绝它们，其适配器证据仍然可用。
+OpenClaw 同样没有生命周期 profile，也没有会话证据契约，只清点其已配置资产。
 在 ADR-0002 仍为 proposed 期间，shadow host profile 不替代规范适配器矩阵。
 
 ## 输出模式
@@ -60,7 +63,7 @@ Cursor 在本机 help 合同过期期间保持安装不可用；Pi 持久化 sur
   `canvas.json` 和 `report.canvas.tsx`。
 - **Cursor Canvas** —— 使用 `cursor/canvas`、原生 Context Window 证据和
   IDE actions 渲染同一份完整报告契约。
-- **HTML 可视化** —— 面向 Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok 的可移植契约，覆盖
+- **HTML 可视化** —— 面向 Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok/OpenClaw 的可移植契约，覆盖
   `findings.json`、`report.md` 和自包含的 `report.html`
   （见[示例报告](pathname:///demo/better-harness-report/)）。
 - **纯 Markdown** —— 无视觉版本。
@@ -109,6 +112,18 @@ Grok 的已配置资产、工作区匹配的会话证据与可移植 HTML 路由
 本仓库不提供 Grok 安装 Shell 或 npm 打包的宿主产物；安装方式是将 Skill 软链到
 `~/.grok/skills/better-harness`（或项目 `.grok/skills`）。在观察到完整交互式
 报告闭环冒烟验证前，Grok 仍不进入已验证快速开始集合。
+
+### OpenClaw {#openclaw}
+
+OpenClaw 的已配置资产由 `scripts/agent-customize/providers/openclaw.mjs` 清点，
+可移植 HTML 路由复用通用的 Better Harness 自有根目录。适配器把状态目录
+（`~/.openclaw` 或 `OPENCLAW_STATE_DIR`）与各 agent 工作区区分开，把当前请求的
+工作区归属到已配置的 agent，并从 JSON5 格式的 `openclaw.json` 读取 `mcp.servers`，
+同时清点托管技能、个人技能与每个 agent 的 workshop 技能。实时会话与转录保存在
+各 agent 的 SQLite 中，本仓库不解码宿主数据库；`openclaw sessions
+export-trajectory` 会写入它导出的工作区，因此不提供会话证据切片。本仓库不提供
+OpenClaw 安装 Shell、插件生命周期 profile 或 npm 打包的宿主产物，也尚未记录
+原生冒烟验证，因此 OpenClaw 保持为部分适配器，不进入已验证快速开始集合。
 
 ## 能力覆盖
 
