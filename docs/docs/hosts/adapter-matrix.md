@@ -14,11 +14,12 @@ host-neutral.
 ## Support levels
 
 Better Harness currently declares ten more complete capability-level host
-adapters, a partial Augment/Auggie session-only adapter, plus bounded DSH
+adapters, two partial adapters (Augment/Auggie session-only and OpenClaw
+configured-assets only), plus bounded DSH
 discovery, configured-assets, and session slices.
-Six have verified public Quickstart paths. Pi, Kimi Code, WorkBuddy, and Grok
-are visible as adapter support because their installation and end-to-end
-evidence boundaries differ from that six-host set. DSH has Verified
+Six have verified public Quickstart paths. Pi, Kimi Code, WorkBuddy, Grok, and
+OpenClaw are visible as adapter support because their installation and
+end-to-end evidence boundaries differ from that six-host set. DSH has Verified
 install/discovery for a qualified runtime/preset boundary plus developer-preview
 configured-assets and session-evidence contracts. It supports shared read-only
 Asset Practices, neutral Harness analysis, Evidence Bundles, and qualified
@@ -41,6 +42,7 @@ remains the complete capability-level source of truth.
 | Kimi Code | Adapter support | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | Workspace-matching Kimi wire transcripts | Self-contained HTML + Markdown |
 | WorkBuddy | Adapter support | Analysis-capable source-local host | None; skills use WorkBuddy-owned paths | Workspace-matching WorkBuddy JSONL transcripts | Self-contained HTML + Markdown |
 | Grok | Adapter support | Analysis-capable source-local host | None; skills use Grok-owned paths | Workspace-matching Grok session dirs (`updates.jsonl`) | Self-contained HTML + Markdown |
+| OpenClaw | Partial adapter | Configured assets only; no install, lifecycle, or session-evidence claim | None; skills use OpenClaw-owned paths | None; live sessions stay in per-agent SQLite | Self-contained HTML + Markdown |
 | DeepSeek Harness (DSH) | Verified install/discovery | Qualified headless/base and Web `standard`/`code`/`cordis`; shared read-only analysis over partial configured-assets and session evidence | `.dsh-plugin/cordis.patch.yml` Cordis bundle shell plus the local DSH Cordis policy; no lifecycle shell | DSH JSONL backend session format `0`: raw `.jsonl` and feature-detected `.jsonl.zstd` | Self-contained HTML + Markdown |
 
 The `@qoder-ai/better-harness` npm package includes all eight plugin metadata
@@ -69,7 +71,10 @@ contract is stale, persistent Pi operations without native evidence stay
 unavailable, transient Pi update/remove are not applicable, and WorkBuddy
 returns `PLUGIN_LIFECYCLE_UNSUPPORTED`. Kimi Code and Grok have no validated
 native lifecycle contract yet, so lifecycle targets reject them with
-`UNKNOWN_HOST` while their adapter evidence stays available. DSH likewise has
+`UNKNOWN_HOST` while their adapter evidence stays available. OpenClaw has no
+lifecycle profile and no session-evidence contract either, so lifecycle targets
+reject it with `UNKNOWN_HOST` and only its configured assets are inventoried.
+DSH likewise has
 no lifecycle profile: lifecycle targets reject it with `UNKNOWN_HOST`; its
 manually configured verified discovery and partial session evidence remain
 available. The shadow host profiles do not replace the canonical adapter matrix
@@ -82,7 +87,7 @@ lifecycle target.
   `canvas.json`, and `report.canvas.tsx`.
 - **Cursor Canvas** — the same complete report contract rendered with
   `cursor/canvas`, native Context Window evidence, and IDE actions.
-- **HTML visual** — portable Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok/DeepSeek Harness contract
+- **HTML visual** — portable Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok/OpenClaw/DeepSeek Harness contract
   covering `findings.json`, `report.md`, and a self-contained `report.html`
   (see the [sample report](pathname:///demo/better-harness-report/)).
 - **Markdown-only** — no visual companion.
@@ -165,6 +170,22 @@ npm-packaged host artifact; installation is a manual skill symlink into
 `~/.grok/skills/better-harness` (or project `.grok/skills`). Grok remains
 outside the verified Quickstart set until a complete interactive report-loop
 smoke is observed.
+
+### OpenClaw {#openclaw}
+
+OpenClaw configured assets are inventoried through
+`scripts/agent-customize/providers/openclaw.mjs`, and portable HTML routing
+reuses the generic Better Harness-owned root. The adapter keeps the state
+directory (`~/.openclaw` or `OPENCLAW_STATE_DIR`) apart from each agent
+workspace, attributes the requested workspace to a configured agent, and
+inventories `mcp.servers` from the JSON5 `openclaw.json` plus managed, personal,
+and per-agent workshop skills. Live sessions and transcripts live in per-agent
+SQLite, which this repository does not decode, and `openclaw sessions
+export-trajectory` writes into the workspace it exports, so no session-evidence
+slice ships. This repository does not ship an OpenClaw install shell, plugin
+lifecycle profile, or npm-packaged host artifact, and no native smoke has been
+recorded yet, so OpenClaw stays a partial adapter outside the verified
+Quickstart set.
 
 ### DeepSeek Harness (DSH) {#deepseek-harness-dsh}
 

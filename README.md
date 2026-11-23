@@ -384,12 +384,13 @@ Host differences remain explicit. Qoder Desktop is bundled, Cursor is
 session-only while its native command contract is being reconciled, Pi
 lifecycle commands without current native evidence remain manual or
 unavailable, and WorkBuddy has no managed Better Harness plugin lifecycle
-surface.
+surface. OpenClaw has neither a lifecycle profile nor a session-evidence
+contract, so only its configured assets are inventoried.
 
 ### More adapters
 
 Beyond the hosts above, Better Harness also supports Qwen Code, Pi, Kimi Code,
-WorkBuddy, and Grok. Their exact install, invocation, and
+WorkBuddy, Grok, and OpenClaw. Their exact install, invocation, and
 evidence boundaries live in the docs so this README stays focused:
 
 - **Qwen Code** — [installation guide](docs/docs/installation.mdx#qwen-code)
@@ -402,6 +403,9 @@ evidence boundaries live in the docs so this README stays focused:
   (`.kimi-plugin/plugin.json` plugin install).
 - **WorkBuddy** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#workbuddy).
 - **Grok** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#grok).
+- **OpenClaw** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#openclaw)
+  (partial adapter: configured assets only; live sessions stay in per-agent
+  SQLite, so no session evidence ships).
 
 Each produces a self-contained `report.html` with paired `report.md` and
 `findings.json`; missing or partial session evidence stays explicit.

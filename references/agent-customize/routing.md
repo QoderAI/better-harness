@@ -37,7 +37,9 @@ Route by ownership before choosing a vendor-specific feature:
   `platforms/codex.md`; for Qoder-specific feature taxonomy, then load
   `platforms/qoder.md`; for Copilot-specific operating practice, then load
   `platforms/copilot.md`; for Kimi-specific configured-asset scope, then load
-  `platforms/kimi.md`; for DSH filesystem Skills and cwd-sensitive
+  `platforms/kimi.md`; for OpenClaw state-directory and
+  agent-workspace separation, then load `platforms/openclaw.md`; for DSH
+  filesystem Skills and cwd-sensitive
   Instructions, then load `platforms/dsh.md`. For installed, user-home,
   settings screenshot, plugin
   cache, or memory scope, run the Global/User Asset Pass.

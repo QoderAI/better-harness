@@ -26,6 +26,7 @@ function usage() {
     `Provider home overrides: ${CUSTOMIZE_HOME_OPTIONS.slice(0, 4).join(", ")},`,
     `${CUSTOMIZE_HOME_OPTIONS.slice(4).join(", ")}, --claude-state, --codex-app-path, --qoder-shared-client-cache-root.`,
     "DSH configured-assets options: --cwd <path>, --include-user-home[=<boolean>].",
+    "OpenClaw storage options: --openclaw-home <state-dir>, --openclaw-config-path <file>.",
     "",
   ].join("\n");
 }
@@ -49,6 +50,10 @@ function summarize(inventory, options) {
     piHome: inventory.piHome,
     workbuddyHome: inventory.workbuddyHome,
     grokHome: inventory.grokHome,
+    openclawHome: inventory.openclawHome,
+    openclawConfigPath: inventory.openclawConfigPath,
+    openclawWorkspace: inventory.openclawWorkspace,
+    activeAgentId: inventory.activeAgentId,
     dshHome: inventory.dshHome,
     claudeStatePath: inventory.claudeStatePath,
     kimiHome: inventory.kimiHome,
@@ -94,12 +99,16 @@ async function main() {
     claudeStatePath: options["claude-state"] ?? options["claude-state-path"],
     codexAppPath: options["codex-app-path"],
     qoderSharedClientCacheRoot: options["qoder-shared-client-cache-root"] ?? options["shared-client-cache-root"],
+    openclawConfigPath: options["openclaw-config-path"],
     workspace: options.workspace,
     ...(options.provider === "dsh"
       ? {
           cwd: options.cwd,
           includeUserHome: parseBooleanFlag(options["include-user-home"] ?? false),
         }
+      : {}),
+    ...(options.provider === "openclaw" && options["include-user-home"] !== undefined
+      ? { includeUserHome: parseBooleanFlag(options["include-user-home"]) }
       : {}),
   });
   const payload =

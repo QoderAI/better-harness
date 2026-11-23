@@ -5,6 +5,7 @@ import { collectCursorCustomizeInventory } from "./cursor.mjs";
 import { collectGrokCustomizeInventory } from "./grok.mjs";
 import { collectPiCustomizeInventory } from "./pi.mjs";
 import { collectKimiCustomizeInventory } from "./kimi.mjs";
+import { collectOpenClawCustomizeInventory } from "./openclaw.mjs";
 import { collectQoderCustomizeInventory } from "./qoder.mjs";
 import { collectQwenCustomizeInventory } from "./qwen.mjs";
 import { collectWorkbuddyCustomizeInventory } from "./workbuddy.mjs";
@@ -34,6 +35,7 @@ export const PROVIDER_COLLECTORS = new Map([
   ["kimi", collectKimiCustomizeInventory],
   ["workbuddy", collectWorkbuddyCustomizeInventory],
   ["grok", collectGrokCustomizeInventory],
+  ["openclaw", collectOpenClawCustomizeInventory],
   ["dsh", collectDshCustomizeInventory],
 ]);
 

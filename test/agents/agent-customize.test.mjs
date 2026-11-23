@@ -3226,3 +3226,223 @@ test("Grok project skills dedupe when .grok/skills symlinks to .agents/skills", 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+async function makeOpenClawFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-openclaw-"));
+  const openclawHome = path.join(root, ".openclaw");
+  const workspacesRoot = path.join(root, "workspaces");
+  const mainWorkspace = path.join(workspacesRoot, "main");
+  const opsWorkspace = path.join(root, "ops-workspace");
+  const configPath = path.join(openclawHome, "openclaw.json");
+
+  // openclaw.json is JSON5: comments, bare keys, trailing commas, and
+  // single-quoted strings all appear in hand-edited configs.
+  await writeText(
+    configPath,
+    `{
+  // single-agent roster keeps the default workspace
+  mcp: {
+    /* remote servers carry transport instead of type */
+    servers: {
+      docs: { command: 'npx', args: ['-y', 'docs-mcp'], env: { DOCS_TOKEN: 'sk-live-0123456789abcdef' }, },
+      remote: { url: 'https://mcp.example.com/sse', transport: 'http' },
+      offline: { command: 'offline-mcp', enabled: false },
+    },
+  },
+  agents: {
+    defaults: { workspace: '${workspacesRoot}' },
+    entries: {
+      main: {},
+      ops: { workspace: '${opsWorkspace}' },
+    },
+  },
+}
+`,
+  );
+
+  await writeText(
+    path.join(openclawHome, "skills", "managed-a", "SKILL.md"),
+    "---\nname: managed-a\ndescription: Managed skill.\n---\n",
+  );
+  await writeText(
+    path.join(openclawHome, "agents", "main", "agent", "workshop-skills", "workshop-a", "SKILL.md"),
+    "---\nname: workshop-a\ndescription: Agent workshop skill.\n---\n",
+  );
+  await writeText(path.join(mainWorkspace, "AGENTS.md"), "# Main agent instructions\n");
+  await writeText(path.join(mainWorkspace, "SOUL.md"), "# Persona\n");
+  await writeText(
+    path.join(mainWorkspace, "skills", "local-a", "SKILL.md"),
+    "---\nname: local-a\ndescription: Workspace skill.\n---\n",
+  );
+  await writeText(
+    path.join(mainWorkspace, ".agents", "skills", "standard-a", "SKILL.md"),
+    "---\nname: standard-a\ndescription: Shared Agent Skills standard.\n---\n",
+  );
+  await writeText(path.join(mainWorkspace, "memory", "2026-11-23.md"), "Daily log entry.\n");
+  await writeText(
+    path.join(opsWorkspace, "skills", "ops-a", "SKILL.md"),
+    "---\nname: ops-a\ndescription: Ops workspace skill.\n---\n",
+  );
+
+  return { root, openclawHome, configPath, workspacesRoot, mainWorkspace, opsWorkspace };
+}
+
+test("OpenClaw inventory reads MCP servers, managed skills, and the active agent workspace", async () => {
+  const fixture = await makeOpenClawFixture();
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "openclaw",
+      openclawHome: fixture.openclawHome,
+      workspace: path.join(fixture.mainWorkspace, "projects", "site"),
+    });
+
+    assert.equal(inventory.provider, "openclaw");
+    assert.equal(inventory.openclawHome, fixture.openclawHome);
+    assert.equal(inventory.openclawConfigPath, fixture.configPath);
+    assert.equal(inventory.diagnostics.configParseState, "json5");
+    assert.equal(inventory.diagnostics.personalSkillsDir, null);
+    assert.equal(inventory.diagnostics.installedPluginState, "unsupported");
+    assert.deepEqual(inventory.plugins, []);
+    assert.equal(inventory.activeAgentId, "main");
+    assert.equal(inventory.openclawWorkspace, fixture.mainWorkspace);
+    assert.deepEqual(
+      inventory.diagnostics.agentWorkspaces.map((entry) => [entry.agentId, entry.source, entry.active]),
+      [["main", "defaults", true], ["ops", "entry", false]],
+    );
+
+    const userSkills = filterManageItems(inventory, { tab: "skills", scopeKind: "user" })
+      .map((item) => item.name)
+      .sort();
+    assert.deepEqual(userSkills, ["managed-a", "workshop-a"]);
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "project" }).map((item) => item.name).sort(),
+      ["local-a", "standard-a"],
+    );
+
+    const projectRules = filterManageItems(inventory, { tab: "rules", scopeKind: "project" })
+      .map((item) => item.name)
+      .sort();
+    assert.deepEqual(projectRules, ["AGENTS.md", "SOUL.md"]);
+
+    const mcps = filterManageItems(inventory, { tab: "mcps", scopeKind: "user" });
+    assert.equal(mcps.find((item) => item.name === "docs")?.enabled, true);
+    assert.equal(mcps.find((item) => item.name === "offline")?.enabled, false);
+    assert.equal(mcps.find((item) => item.name === "remote")?.type, "http");
+
+    // Credentials may be named but their values must never be serialized.
+    assert.doesNotMatch(JSON.stringify(inventory), /sk-live-[A-Za-z0-9]+/u);
+    assert.ok(inventory.unsupported.some((item) => /openclaw-agent\.sqlite/u.test(item)));
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("OpenClaw inventory attributes the requested workspace to its agent", async () => {
+  const fixture = await makeOpenClawFixture();
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "openclaw",
+      openclawHome: fixture.openclawHome,
+      workspace: fixture.opsWorkspace,
+    });
+    assert.equal(inventory.activeAgentId, "ops");
+    assert.equal(inventory.openclawWorkspace, fixture.opsWorkspace);
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "project" }).map((item) => item.name),
+      ["ops-a"],
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("OpenClaw inventory skips project scope outside any configured agent workspace", async () => {
+  const fixture = await makeOpenClawFixture();
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "openclaw",
+      openclawHome: fixture.openclawHome,
+      workspace: fixture.root,
+    });
+    assert.equal(inventory.activeAgentId, null);
+    assert.deepEqual(filterManageItems(inventory, { tab: "skills", scopeKind: "project" }), []);
+    assert.ok(inventory.unsupported.some((item) => /not a configured OpenClaw agent workspace/u.test(item)));
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("OpenClaw inventory without user-home authority reports workspace files only", async () => {
+  const fixture = await makeOpenClawFixture();
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "openclaw",
+      openclawHome: fixture.openclawHome,
+      workspace: fixture.mainWorkspace,
+      includeUserHome: false,
+    });
+    assert.equal(inventory.diagnostics.configPath, null);
+    assert.equal(inventory.diagnostics.configParseState, "skipped");
+    assert.deepEqual(inventory.diagnostics.agentWorkspaces, []);
+    assert.deepEqual(filterManageItems(inventory, { tab: "skills", scopeKind: "user" }), []);
+    assert.deepEqual(filterManageItems(inventory, { tab: "mcps", scopeKind: "user" }), []);
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "project" }).map((item) => item.name).sort(),
+      ["local-a", "standard-a"],
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("OpenClaw inventory reports a config it cannot parse instead of an empty one", async () => {
+  const fixture = await makeOpenClawFixture();
+  try {
+    await writeText(fixture.configPath, "{ agents: { defaults: { workspace: /srv/openclaw } } }\n");
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "openclaw",
+      openclawHome: fixture.openclawHome,
+      workspace: fixture.mainWorkspace,
+    });
+    assert.equal(inventory.diagnostics.configParseState, "invalid");
+    assert.equal(typeof inventory.diagnostics.configParseMessage, "string");
+    assert.deepEqual(filterManageItems(inventory, { tab: "mcps", scopeKind: "user" }), []);
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "project" }).map((item) => item.name).sort(),
+      ["local-a", "standard-a"],
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("agent-customize CLI honours --openclaw-home and --openclaw-config-path", async () => {
+  const fixture = await makeOpenClawFixture();
+  try {
+    const result = runAgentCustomizeCli([
+      "inventory",
+      "--provider",
+      "openclaw",
+      "--workspace",
+      fixture.mainWorkspace,
+      "--openclaw-home",
+      fixture.openclawHome,
+      "--openclaw-config-path",
+      fixture.configPath,
+    ]);
+    assert.equal(
+      result.status,
+      0,
+      JSON.stringify({ signal: result.signal, error: result.error?.code, stderr: result.stderr?.slice(0, 200) }),
+    );
+    const inventory = JSON.parse(result.stdout);
+    assert.equal(inventory.openclawHome, fixture.openclawHome);
+    assert.equal(inventory.openclawConfigPath, fixture.configPath);
+    assert.equal(inventory.activeAgentId, "main");
+    assert.notEqual(inventory.openclawHome, path.join(os.homedir(), ".openclaw"));
+    assert.ok(inventory.manage.skills.some((item) => item.name === "managed-a"));
+    assert.doesNotMatch(result.stdout, /sk-live-[A-Za-z0-9]+/u);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
