@@ -3234,6 +3234,8 @@ async function makeOpenClawFixture() {
   const mainWorkspace = path.join(workspacesRoot, "main");
   const opsWorkspace = path.join(root, "ops-workspace");
   const configPath = path.join(openclawHome, "openclaw.json");
+  // Windows temp paths carry backslashes, which a JSON5 string reads as escapes.
+  const asJson5String = (value) => value.replace(/\\/gu, "\\\\").replace(/'/gu, "\\'");
 
   // openclaw.json is JSON5: comments, bare keys, trailing commas, and
   // single-quoted strings all appear in hand-edited configs.
@@ -3250,10 +3252,10 @@ async function makeOpenClawFixture() {
     },
   },
   agents: {
-    defaults: { workspace: '${workspacesRoot}' },
+    defaults: { workspace: '${asJson5String(workspacesRoot)}' },
     entries: {
       main: {},
-      ops: { workspace: '${opsWorkspace}' },
+      ops: { workspace: '${asJson5String(opsWorkspace)}' },
     },
   },
 }

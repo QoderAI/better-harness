@@ -64,6 +64,13 @@ test("parseJson5Text reports text it cannot normalize instead of returning an em
   assert.equal(typeof result.message, "string");
 });
 
+test("parseJson5Text reads an escaped Windows path the way a config writer stores it", () => {
+  const text = String.raw`{ agents: { defaults: { workspace: 'C:\\Users\\dev\\.openclaw' } } }`;
+  const result = parseJson5Text(text);
+  assert.equal(result.format, "json5", result.message);
+  assert.equal(result.value.agents.defaults.workspace, String.raw`C:\Users\dev\.openclaw`);
+});
+
 test("stripTrailingCommas leaves arrays and nested closings intact", () => {
   assert.equal(stripTrailingCommas('{"a":[1,2,],"b":{"c":3,},}'), '{"a":[1,2],"b":{"c":3}}');
   assert.equal(stripTrailingCommas('{"a":"x,}"}'), '{"a":"x,}"}');
