@@ -13,7 +13,8 @@ Better Harness 运行在你现有的编码智能体内。宿主差异只进入�
 ## 支持层级
 
 Better Harness 当前声明了十个能力层宿主适配器，其中六个已有验证过的公开
-快速开始路径。Pi、Kimi Code、WorkBuddy 与 Grok 以适配器支持展示，因为它们的安装方式和端到端
+快速开始路径。Pi、Kimi Code、WorkBuddy 与 Grok 以适配器支持展示，BitFun 以部分
+适配器展示（仅已配置资产与会话证据），因为它们的安装方式和端到端
 证据边界与这六个宿主不同。完整能力层事实源仍是
 [规范适配器矩阵](https://github.com/QoderAI/better-harness/blob/main/docs/adapters/README.md)。
 
@@ -31,6 +32,7 @@ Better Harness 当前声明了十个能力层宿主适配器，其中六个已�
 | Kimi Code | 适配器支持 | 具备分析能力的源码本地宿主 | `.kimi-plugin/plugin.json` | 匹配工作区的 Kimi wire 转录 | 自包含 HTML + Markdown |
 | WorkBuddy | 适配器支持 | 具备分析能力的源码本地宿主 | 无；Skill 使用 WorkBuddy 自有路径 | 匹配工作区的 WorkBuddy JSONL 转录 | 自包含 HTML + Markdown |
 | Grok | 适配器支持 | 具备分析能力的源码本地宿主 | 无；Skill 使用 Grok 自有路径 | 匹配工作区的 Grok 会话目录（`updates.jsonl`） | 自包含 HTML + Markdown |
+| BitFun | 部分适配器 | 仅已配置资产与会话证据；不声称安装或生命周期 | 无；Skill 使用 OpenBitFun 自有路径 | `~/.openbitfun/projects/` 下匹配工作区的 BitFun 会话目录 | 自包含 HTML + Markdown |
 
 `@qoder-ai/better-harness` npm 包含全部七个插件元数据根目录。生成的 Qoder
 运行时 bundle 只包含 Qoder shell。Pi 复用现有 `package.json` 中的安装元数据，
@@ -50,7 +52,7 @@ better-harness doctor --platform all
 但不会执行。Qoder Desktop 保持内置分发，Codex Desktop 使用手工 UI 步骤；
 Cursor 在本机 help 合同过期期间保持安装不可用；Pi 持久化 surface 中缺少原生
 证据的操作保持不可用，临时 session surface 的更新/移除不适用；WorkBuddy 返回
-`PLUGIN_LIFECYCLE_UNSUPPORTED`。Kimi Code 与 Grok 尚无经验证的原生生命周期
+`PLUGIN_LIFECYCLE_UNSUPPORTED`。Kimi Code、Grok 与 BitFun 尚无经验证的原生生命周期
 合同，因此生命周期目标会以 `UNKNOWN_HOST` 拒绝它们，其适配器证据仍然可用。
 在 ADR-0002 仍为 proposed 期间，shadow host profile 不替代规范适配器矩阵。
 
@@ -60,7 +62,7 @@ Cursor 在本机 help 合同过期期间保持安装不可用；Pi 持久化 sur
   `canvas.json` 和 `report.canvas.tsx`。
 - **Cursor Canvas** —— 使用 `cursor/canvas`、原生 Context Window 证据和
   IDE actions 渲染同一份完整报告契约。
-- **HTML 可视化** —— 面向 Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok 的可移植契约，覆盖
+- **HTML 可视化** —— 面向 Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok/BitFun 的可移植契约，覆盖
   `findings.json`、`report.md` 和自包含的 `report.html`
   （见[示例报告](pathname:///demo/better-harness-report/)）。
 - **纯 Markdown** —— 无视觉版本。
@@ -109,6 +111,17 @@ Grok 的已配置资产、工作区匹配的会话证据与可移植 HTML 路由
 本仓库不提供 Grok 安装 Shell 或 npm 打包的宿主产物；安装方式是将 Skill 软链到
 `~/.grok/skills/better-harness`（或项目 `.grok/skills`）。在观察到完整交互式
 报告闭环冒烟验证前，Grok 仍不进入已验证快速开始集合。
+
+### BitFun {#bitfun}
+
+BitFun 的已配置资产、工作区匹配的会话证据与可移植 HTML 路由均已实现，输出复用
+通用的 Better Harness 自有根目录。适配器把产品 home（`~/.openbitfun` 或
+`OPENBITFUN_HOME`）、平台用户根目录与项目 `.openbitfun` 视为三套独立的存储。
+发现通过扫描 `projects/<runtime-key>/sessions/<session-id>/metadata.json` 并信任
+其中记录的工作区字段，而不重新实现宿主自有的 project key；形态未知的会话也会以
+显式元数据覆盖出现。本仓库不提供 BitFun 安装 Shell、插件生命周期 profile 或 npm
+打包的宿主产物，也尚未记录原生冒烟验证，因此 BitFun 保持为部分适配器，不进入
+已验证快速开始集合。
 
 ## 能力覆盖
 

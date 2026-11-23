@@ -81,8 +81,8 @@ better-harness harness-inspector render --workspace . --open
 
 可以使用 `--platform`、`--since`、`--until`、`--commits` 与
 `--max-sessions` 限定范围。`--platform all` 会从 Qoder、Codex、Claude Code、
-Cursor、Qwen Code、GitHub Copilot、Pi、Kimi Code、WorkBuddy 和 Grok 中发现
-证据，同时保留各 Provider 的证据缺口。
+Cursor、Qwen Code、GitHub Copilot、Pi、Kimi Code、WorkBuddy、Grok 和 BitFun 中
+发现证据，同时保留各 Provider 的证据缺口。
 
 可选的 `.better-harness/feature-tree.md` 用于声明经过评审的意图：
 

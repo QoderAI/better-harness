@@ -25,8 +25,8 @@ Commands:
 
   Project Evidence
     session-analysis         Collect and normalize Qoder, Codex, Claude, Augment, Cursor, Qwen,
-                             Copilot, Pi, Kimi, WorkBuddy, Grok, and DeepSeek Harness session
-                             evidence
+                             Copilot, Pi, Kimi, WorkBuddy, Grok, BitFun, and DeepSeek Harness
+                             session evidence
     commit-session-link      Correlate local git commits with discovered coding-agent sessions
                              and render a commit-view HTML report
     dependency-governance    Detect dependency governance files, automation, audit signals, and

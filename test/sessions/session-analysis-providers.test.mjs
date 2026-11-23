@@ -41,6 +41,12 @@ import {
   workspaceToGrokSessionDirName,
 } from "../../scripts/session-analysis/platforms/grok.mjs";
 import {
+  BitfunSessionAnalyzer,
+  bitfunTokenUsage,
+  bitfunTurnToEvents,
+  listBitfunTurnFiles,
+} from "../../scripts/session-analysis/platforms/bitfun.mjs";
+import {
   CopilotSessionAnalyzer,
   parseWorkspaceDescriptor,
 } from "../../scripts/session-analysis/platforms/copilot.mjs";
@@ -70,6 +76,7 @@ test("root dispatcher creates Claude and Cursor provider analyzers", async () =>
   assert.ok(await createAnalyzer("pi") instanceof PiSessionAnalyzer);
   assert.ok(await createAnalyzer("workbuddy") instanceof WorkbuddySessionAnalyzer);
   assert.ok(await createAnalyzer("grok") instanceof GrokSessionAnalyzer);
+  assert.ok(await createAnalyzer("bitfun") instanceof BitfunSessionAnalyzer);
   assert.ok(await createAnalyzer("dsh") instanceof DshSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("claude") instanceof ClaudeSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("augment") instanceof AugmentSessionAnalyzer);
@@ -79,6 +86,7 @@ test("root dispatcher creates Claude and Cursor provider analyzers", async () =>
   assert.ok(await createCapabilityAnalyzer("pi") instanceof PiSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("workbuddy") instanceof WorkbuddySessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("grok") instanceof GrokSessionAnalyzer);
+  assert.ok(await createCapabilityAnalyzer("bitfun") instanceof BitfunSessionAnalyzer);
   assert.ok(await createCapabilityAnalyzer("dsh") instanceof DshSessionAnalyzer);
   await assert.rejects(() => createAnalyzer("unknown-host"), /Unsupported session provider: unknown-host/u);
 });
@@ -2509,4 +2517,286 @@ test("Grok provider leaves usage unobserved when signals.json is missing", async
   const events = await analyzer.readSession(discovery.sessions[0], scope, {});
   assert.equal(events.filter((event) => event.type === "model.response.completed").length, 0);
   assert.ok(!events.some((event) => event.modelUsage && Object.values(event.modelUsage).every((value) => value === 0)));
+});
+
+const BITFUN_TURN_BASE = Date.parse("2026-07-19T10:00:00.000Z");
+
+async function writeBitfunSession(home, { projectKey, sessionId, metadata, turns = [] }) {
+  const sessionDir = path.join(home, "projects", projectKey, "sessions", sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(
+    path.join(sessionDir, "metadata.json"),
+    `${JSON.stringify({ schema_version: 1, metadata: { sessionId, ...metadata } }, null, 2)}\n`,
+  );
+  if (turns.length > 0) {
+    const turnsDir = path.join(sessionDir, "turns");
+    await mkdir(turnsDir, { recursive: true });
+    for (const [index, turn] of turns.entries()) {
+      await writeFile(
+        path.join(turnsDir, `turn-${String(index).padStart(4, "0")}.json`),
+        `${JSON.stringify({ schema_version: 1, turn }, null, 2)}\n`,
+      );
+    }
+  }
+  return sessionDir;
+}
+
+function bitfunTurnFixture({ sessionId, turnIndex, timestamp, kind = "user_dialog", extra = {} }) {
+  return {
+    turnId: `turn-${turnIndex}`,
+    turnIndex,
+    sessionId,
+    timestamp,
+    kind,
+    userMessage: { id: `user-${turnIndex}`, content: `Request ${turnIndex}`, timestamp },
+    modelRounds: [],
+    finishReason: "stop",
+    status: "completed",
+    ...extra,
+  };
+}
+
+test("BitFun provider discovers local workspace sessions and expands turn evidence", async () => {
+  const root = await fixtureRoot("session-bitfun-provider-");
+  const home = path.join(root, ".openbitfun");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+  const projectKey = "0123456789abcdef01234567";
+
+  const interactiveTurn = {
+    ...bitfunTurnFixture({ sessionId, turnIndex: 0, timestamp: BITFUN_TURN_BASE }),
+    userMessage: { id: "user-0", content: "Implement the BitFun adapter", timestamp: BITFUN_TURN_BASE },
+    modelRounds: [{
+      id: "round-0",
+      turnId: "turn-0",
+      roundIndex: 0,
+      timestamp: BITFUN_TURN_BASE + 1_000,
+      effectiveModelName: "claude-sonnet-4",
+      status: "completed",
+      textItems: [{ content: "Plan the change." }],
+      thinkingItems: [{ content: "consider the contract" }],
+      toolItems: [
+        {
+          id: "ti-1",
+          toolName: "ExecCommand",
+          toolCall: { id: "call-1", input: { command: "npm test" } },
+          startTime: BITFUN_TURN_BASE + 2_000,
+          endTime: BITFUN_TURN_BASE + 3_000,
+          toolResult: { success: true, resultForAssistant: "ok", error: null },
+        },
+        {
+          id: "ti-2",
+          toolName: "Read",
+          toolCall: { id: "call-2", input: { file_path: path.join(workspace, "src", "app.mjs") } },
+          startTime: BITFUN_TURN_BASE + 4_000,
+          endTime: BITFUN_TURN_BASE + 4_500,
+          toolResult: { success: false, error: "ENOENT" },
+        },
+      ],
+    }],
+    tokenUsage: { inputTokens: 1200, outputTokens: 300, cachedTokens: 100 },
+  };
+  const compactionTurn = bitfunTurnFixture({
+    sessionId,
+    turnIndex: 1,
+    timestamp: BITFUN_TURN_BASE + 5_000,
+    kind: "manual_compaction",
+  });
+  const errorTurn = bitfunTurnFixture({
+    sessionId,
+    turnIndex: 2,
+    timestamp: BITFUN_TURN_BASE + 6_000,
+    extra: { status: "error", error: "provider timeout" },
+  });
+
+  await writeBitfunSession(home, {
+    projectKey,
+    sessionId,
+    metadata: {
+      workspacePath: workspace,
+      workspaceHostname: "localhost",
+      sessionKind: "standard",
+      modelName: "claude-sonnet-4",
+      createdAt: BITFUN_TURN_BASE,
+      lastActiveAt: BITFUN_TURN_BASE + 6_000,
+    },
+    turns: [interactiveTurn, compactionTurn, errorTurn],
+  });
+
+  // Foreign workspace, prefix-only sibling, remote hostname, and a session with
+  // no workspace identity must all stay out of this workspace inventory.
+  await writeBitfunSession(home, {
+    projectKey: "ffffffffffffffffffffffff",
+    sessionId: "22222222-2222-4222-8222-222222222222",
+    metadata: { workspacePath: path.join(root, "workspace", "other"), createdAt: BITFUN_TURN_BASE },
+    turns: [bitfunTurnFixture({ sessionId: "22222222-2222-4222-8222-222222222222", turnIndex: 0, timestamp: BITFUN_TURN_BASE })],
+  });
+  await writeBitfunSession(home, {
+    projectKey: "eeeeeeeeeeeeeeeeeeeeeeee",
+    sessionId: "33333333-3333-4333-8333-333333333333",
+    metadata: { workspacePath: `${workspace}-extra`, createdAt: BITFUN_TURN_BASE },
+  });
+  await writeBitfunSession(home, {
+    projectKey: "dddddddddddddddddddddddd",
+    sessionId: "44444444-4444-4444-8444-444444444444",
+    metadata: { workspacePath: workspace, workspaceHostname: "build-01", createdAt: BITFUN_TURN_BASE },
+  });
+  await writeBitfunSession(home, {
+    projectKey: "cccccccccccccccccccccccc",
+    sessionId: "55555555-5555-4555-8555-555555555555",
+    metadata: { sessionKind: "standard", createdAt: BITFUN_TURN_BASE },
+  });
+
+  const analyzer = new BitfunSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sources", workspace, home });
+
+  assert.equal(discovery.scope.platform, "bitfun");
+  assert.deepEqual(discovery.sources.map((source) => source.kind), ["bitfun-session-store"]);
+  assert.deepEqual(discovery.sessions.map((session) => session.sessionId), [sessionId]);
+  const [session] = discovery.sessions;
+  assert.equal(session.sessionKind, "standard");
+  assert.equal(session.isSubagent, false);
+  assert.equal(session.model, "claude-sonnet-4");
+  assert.deepEqual(
+    [...session.sourceKinds].sort(),
+    ["bitfun-session-metadata", "bitfun-session-turns"],
+  );
+
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(session, scope, {
+    includeCommandText: true,
+    includeUserText: true,
+  });
+
+  const userEvents = events.filter((event) => event.type === "user");
+  assert.equal(userEvents.length, 2);
+  assert.equal(userEvents[0].userText, "Implement the BitFun adapter");
+
+  const assistantEvents = events.filter((event) => event.type === "assistant");
+  assert.equal(assistantEvents.length, 1);
+  assert.equal(assistantEvents[0].userVisibleAssistantMessage, true);
+  assert.equal(assistantEvents[0].model, "claude-sonnet-4");
+
+  const calls = events.filter((event) => event.type === "tool.call");
+  assert.deepEqual(calls.map((event) => event.toolName), ["ExecCommand", "Read"]);
+  assert.deepEqual(calls.map((event) => event.toolInvocationId), ["call-1", "call-2"]);
+  assert.equal(calls[0].commandText, "npm test");
+  assert.equal(calls[1].filePath, path.join(workspace, "src", "app.mjs"));
+
+  const results = events.filter((event) => event.type === "tool.result");
+  assert.deepEqual(results.map((event) => event.success), [true, false]);
+  assert.deepEqual(results.map((event) => event.hasError), [false, true]);
+
+  const usage = events.filter((event) => event.type === "model.response.completed");
+  assert.equal(usage.length, 1);
+  assert.deepEqual(usage[0].modelUsage, {
+    inputTokens: 1200,
+    outputTokens: 300,
+    cacheReadInputTokens: 100,
+  });
+
+  assert.ok(events.some((event) => event.type === "metadata.thinking"));
+  assert.ok(events.some((event) => event.type === "metadata.turn_kind"
+    && event.turnKind === "manual_compaction"));
+  assert.ok(events.some((event) => event.type === "metadata.turn_error"));
+  const metadataSession = events.find((event) => event.type === "metadata.session");
+  assert.equal(metadataSession.summary, "standard session");
+
+  const facts = await analyzer.analyze({ command: "facts", workspace, home, limit: 1 });
+  assert.equal(facts.scope.platform, "bitfun");
+  const serialized = JSON.stringify(facts);
+  assert.doesNotMatch(serialized, new RegExp(sessionId, "u"));
+  assert.equal(serialized.includes(home), false);
+  assert.equal(serialized.includes(workspace), false);
+});
+
+test("BitFun sessions without turns stay discoverable with metadata-only coverage", async () => {
+  const root = await fixtureRoot("session-bitfun-metadata-only-");
+  const home = path.join(root, ".openbitfun");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "66666666-6666-4666-8666-666666666666";
+  await writeBitfunSession(home, {
+    projectKey: "abcdefabcdefabcdefabcdef",
+    sessionId,
+    metadata: { workspacePath: workspace, createdAt: BITFUN_TURN_BASE, lastActiveAt: BITFUN_TURN_BASE },
+  });
+
+  const analyzer = new BitfunSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sessions", workspace, home });
+  assert.deepEqual(discovery.sessions.map((session) => session.sessionId), [sessionId]);
+  assert.deepEqual(discovery.sessions[0].sourceKinds, ["bitfun-session-metadata"]);
+
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope);
+  assert.deepEqual(events.map((event) => event.type), ["metadata.session"]);
+});
+
+test("BitFun turn reads honour the workspace preflight budget", async () => {
+  const root = await fixtureRoot("session-bitfun-preflight-");
+  const home = path.join(root, ".openbitfun");
+  const workspace = path.join(root, "workspace", "project");
+  const sessionId = "77777777-7777-4777-8777-777777777777";
+  await writeBitfunSession(home, {
+    projectKey: "123412341234123412341234",
+    sessionId,
+    metadata: { workspacePath: workspace, createdAt: BITFUN_TURN_BASE, lastActiveAt: BITFUN_TURN_BASE },
+    turns: [
+      bitfunTurnFixture({ sessionId, turnIndex: 0, timestamp: BITFUN_TURN_BASE }),
+      bitfunTurnFixture({ sessionId, turnIndex: 1, timestamp: BITFUN_TURN_BASE + 1_000, kind: "manual_compaction" }),
+      bitfunTurnFixture({ sessionId, turnIndex: 2, timestamp: BITFUN_TURN_BASE + 2_000 }),
+    ],
+  });
+
+  const analyzer = new BitfunSessionAnalyzer();
+  const discovery = await analyzer.analyze({ command: "sessions", workspace, home });
+  const scope = await analyzer.resolveScope({ workspace, home });
+  const events = await analyzer.readSession(discovery.sessions[0], scope, {
+    workspacePreflightMaxLines: 1,
+  });
+  assert.equal(events.filter((event) => event.type === "user").length, 1);
+  assert.equal(events.some((event) => event.type === "metadata.turn_kind"), false);
+
+  const unbounded = await analyzer.readSession(discovery.sessions[0], scope);
+  assert.equal(unbounded.filter((event) => event.type === "user").length, 2);
+  assert.ok(unbounded.some((event) => event.type === "metadata.turn_kind"));
+});
+
+test("BitFun turn normalization keeps sparse usage and unknown turn kinds explicit", async () => {
+  const sourceRef = {
+    kind: "bitfun-session-turns",
+    path: "/tmp/turn-0000.json",
+    sessionId: "88888888-8888-4888-8888-888888888888",
+  };
+
+  assert.equal(bitfunTokenUsage({}), null);
+  assert.deepEqual(bitfunTokenUsage({ input_tokens: 5, cached_tokens: 2 }), {
+    inputTokens: 5,
+    cacheReadInputTokens: 2,
+  });
+
+  const events = bitfunTurnToEvents(
+    {
+      turnIndex: 3,
+      kind: "local_command",
+      timestamp: BITFUN_TURN_BASE,
+      tokenUsage: { mystery: 1 },
+    },
+    sourceRef,
+  );
+  assert.deepEqual(events.map((event) => event.type), ["metadata.turn_kind", "metadata.token_usage"]);
+  assert.equal(events[0].turnKind, "local_command");
+});
+
+test("BitFun turn files list in host persistence order and ignore foreign names", async () => {
+  const root = await fixtureRoot("session-bitfun-turn-files-");
+  const turnsDir = path.join(root, "turns");
+  await mkdir(turnsDir, { recursive: true });
+  for (const name of ["turn-0002.json", "turn-0000.json", "notes.json", "turn-abcd.json"]) {
+    await writeFile(path.join(turnsDir, name), "{}\n");
+  }
+  assert.deepEqual(
+    (await listBitfunTurnFiles(turnsDir)).map((filePath) => path.basename(filePath)),
+    ["turn-0000.json", "turn-0002.json"],
+  );
+  assert.deepEqual(await listBitfunTurnFiles(path.join(root, "absent")), []);
 });
