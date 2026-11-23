@@ -38,7 +38,7 @@ opening only the candidate sessions needed to explain a surprising aggregate.
 Command and user text flags are also local-only and must not be used for broad
 transcript dumps.
 
-Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, `copilot`, `pi`, `kimi`, `workbuddy`, and `grok`. Do not invent
+Supported platforms: `qoder`, `codex`, `claude`, `cursor`, `qwen`, `copilot`, `pi`, `kimi`, `workbuddy`, `grok`, and `bitfun`. Do not invent
 unsupported platform names.
 Always pass the absolute target workspace and load the matching Platform Notes
 before interpreting source roots or workspace bindings.
@@ -371,3 +371,25 @@ zero-filled. The `GROK_HOME` environment variable relocates the data root.
 Route configured Grok skills, hooks, MCP servers in `config.toml`, installed
 plugins, and project `.grok` assets through `../agent-customize/global-assets.md`;
 configured presence does not prove use.
+
+### BitFun
+
+For BitFun, the analyzer scans `~/.openbitfun/projects/<runtime-key>/sessions/<session-id>/`
+and reads the authoritative `metadata.json` (`schema_version` plus a `metadata`
+object). The runtime project key is a host-owned hash, so discovery trusts the
+recorded `workspacePath`, `projectWorkspacePath`, or
+`executionTarget.rootPath` instead of reimplementing the key derivation;
+sessions whose `workspaceHostname` is present and not `localhost` are remote and
+stay out of local evidence. Turns are persisted one file per turn as
+`turns/turn-%04d.json`; the zero-padded name is the host's own order, and
+`index.json` is rebuildable cache rather than evidence. `OPENBITFUN_HOME`
+relocates the data root.
+
+Treat turn timestamps, per-turn `tokenUsage` (`inputTokens`, `outputTokens`,
+`cachedTokens`), tool items, and tool results as provider-labelled coverage.
+Usage fields that are absent stay unobserved instead of becoming zero, and
+reasoning, compaction, error, and unknown turn kinds degrade to bounded
+`metadata.*` events rather than disappearing. Session titles are never
+summarized. Route configured BitFun skills, user agents, `config/app.json` MCP
+servers, hooks, project `.openbitfun` assets, and instruction files through
+`../agent-customize/global-assets.md`; configured presence does not prove use.

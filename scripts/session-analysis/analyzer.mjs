@@ -57,6 +57,7 @@ Options:
   --kimi-home <dir>         Kimi Code data root (default: ~/.kimi-code)
   --workbuddy-home <dir>    WorkBuddy data root (default: ~/.workbuddy)
   --grok-home <dir>         Grok CLI data root (default: ~/.grok or $GROK_HOME)
+  --bitfun-home <dir>       BitFun data root (default: ~/.openbitfun or $OPENBITFUN_HOME)
   --dsh-home <dir>          DeepSeek Harness data root (default: ~/.dsh or $DSH_HOME)
   --include-cache           Include optional Qoder cache evidence
   --include-global-capabilities
@@ -261,6 +262,7 @@ const PLATFORM_MODULES = Object.freeze({
   kimi: { load: () => import("./platforms/kimi.mjs"), analyzer: "KimiSessionAnalyzer" },
   workbuddy: { load: () => import("./platforms/workbuddy.mjs"), analyzer: "WorkbuddySessionAnalyzer" },
   grok: { load: () => import("./platforms/grok.mjs"), analyzer: "GrokSessionAnalyzer" },
+  bitfun: { load: () => import("./platforms/bitfun.mjs"), analyzer: "BitfunSessionAnalyzer" },
   dsh: { load: () => import("./platforms/dsh.mjs"), analyzer: "DshSessionAnalyzer" },
   "harness-run": { load: () => import("./platforms/harness-run.mjs"), analyzer: "HarnessRunSessionAnalyzer" },
 });
@@ -341,7 +343,7 @@ export async function main(argv = process.argv.slice(2), dependencies = {}) {
       ...eventOptions,
       ...claudeOptions,
       "",
-      "Options: --augment-home <dir> overrides the Augment/Auggie data root (default: ~/.augment); --kimi-home <dir> overrides the Kimi Code data root (default: ~/.kimi-code); --workbuddy-home <dir> overrides the WorkBuddy data root (default: ~/.workbuddy); --grok-home <dir> overrides the Grok data root (default: ~/.grok or $GROK_HOME); --dsh-home <dir> overrides the DeepSeek Harness data root (default: ~/.dsh or $DSH_HOME).",
+      "Options: --augment-home <dir> overrides the Augment/Auggie data root (default: ~/.augment); --kimi-home <dir> overrides the Kimi Code data root (default: ~/.kimi-code); --workbuddy-home <dir> overrides the WorkBuddy data root (default: ~/.workbuddy); --grok-home <dir> overrides the Grok data root (default: ~/.grok or $GROK_HOME); --bitfun-home <dir> overrides the BitFun data root (default: ~/.openbitfun or $OPENBITFUN_HOME); --dsh-home <dir> overrides the DeepSeek Harness data root (default: ~/.dsh or $DSH_HOME).",
       "",
       "Use facts --debug only for local diagnosis; it exposes raw session ids and must not be passed to report agents.",
     ].join("\n") + "\n");

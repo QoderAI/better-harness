@@ -3226,3 +3226,172 @@ test("Grok project skills dedupe when .grok/skills symlinks to .agents/skills", 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+async function makeBitfunFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-bitfun-"));
+  const bitfunHome = path.join(root, ".openbitfun");
+  const bitfunUserRoot = path.join(root, "user-root");
+  const bitfunUserSkillsDir = path.join(root, "user-skills");
+  const workspace = path.join(root, "workspace");
+
+  await writeText(
+    path.join(bitfunUserSkillsDir, "release-notes", "SKILL.md"),
+    "---\nname: release-notes\ndescription: Drain the release checklist.\n---\n",
+  );
+  // Builtin host skills must never surface as user-configured assets.
+  await writeText(
+    path.join(bitfunUserSkillsDir, ".system", "builtin-helper", "SKILL.md"),
+    "---\nname: builtin-helper\ndescription: Host-owned builtin skill.\n---\n",
+  );
+  await writeText(
+    path.join(bitfunUserRoot, "agents", "reviewer.md"),
+    "---\nname: reviewer\ndescription: Review diffs.\n---\n",
+  );
+  await writeJson(path.join(bitfunUserRoot, "config", "hooks.json"), {
+    hooks: {
+      PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "git status --short" }] }],
+    },
+  });
+  // BitFun stores MCP servers as snake_case mcp_servers wrapping mcpServers.
+  await writeJson(path.join(bitfunUserRoot, "config", "app.json"), {
+    mcp_servers: {
+      mcpServers: {
+        docs: {
+          command: "npx",
+          args: ["-y", "docs-mcp"],
+          env: { DOCS_TOKEN: "sk-live-0123456789abcdef" },
+        },
+        disabled_search: { command: "search-mcp", enabled: false },
+      },
+    },
+  });
+
+  await writeText(
+    path.join(workspace, ".openbitfun", "skills", "project-flow", "SKILL.md"),
+    "---\nname: project-flow\ndescription: Project workflow.\n---\n",
+  );
+  await writeText(path.join(workspace, ".openbitfun", "rules", "team.md"), "# Team rules\n\nUse pnpm.\n");
+  await writeJson(path.join(workspace, ".openbitfun", "config", "hooks.json"), {
+    hooks: { PostToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "npm run lint" }] }] },
+  });
+  await writeText(
+    path.join(workspace, ".agents", "skills", "shared-standard", "SKILL.md"),
+    "---\nname: shared-standard\ndescription: Shared Agent Skills standard.\n---\n",
+  );
+  await writeText(path.join(workspace, "AGENTS.md"), "# BitFun Project Instructions\n");
+  await writeText(path.join(workspace, "CLAUDE.md"), "# Compatibility Instructions\n");
+
+  return { root, bitfunHome, bitfunUserRoot, bitfunUserSkillsDir, workspace };
+}
+
+test("BitFun inventory collects native skills, MCP servers, hooks, rules, and subagents", async () => {
+  const fixture = await makeBitfunFixture();
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "bitfun",
+      bitfunHome: fixture.bitfunHome,
+      bitfunUserRoot: fixture.bitfunUserRoot,
+      bitfunUserSkillsDir: fixture.bitfunUserSkillsDir,
+      workspace: fixture.workspace,
+    });
+
+    assert.equal(inventory.provider, "bitfun");
+    assert.equal(inventory.bitfunHome, fixture.bitfunHome);
+    assert.equal(inventory.bitfunUserRoot, fixture.bitfunUserRoot);
+    assert.equal(inventory.diagnostics.installedPluginState, "unsupported");
+    assert.deepEqual(inventory.plugins, []);
+    assert.equal(
+      inventory.diagnostics.appConfigPath,
+      path.join(fixture.bitfunUserRoot, "config", "app.json"),
+    );
+
+    const userSkills = filterManageItems(inventory, { tab: "skills", scopeKind: "user" })
+      .map((item) => item.name);
+    assert.ok(userSkills.includes("release-notes"));
+    assert.ok(!userSkills.includes("builtin-helper"));
+    assert.deepEqual(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "project" }).map((item) => item.name).sort(),
+      ["project-flow", "shared-standard"],
+    );
+
+    const userMcps = filterManageItems(inventory, { tab: "mcps", scopeKind: "user" });
+    assert.ok(userMcps.some((item) => item.name === "docs" && item.enabled !== false));
+    assert.equal(userMcps.find((item) => item.name === "disabled_search")?.enabled, false);
+
+    assert.ok(
+      filterManageItems(inventory, { tab: "agents", scopeKind: "user" }).some((item) => item.name === "reviewer"),
+    );
+    assert.ok(
+      filterManageItems(inventory, { tab: "hooks", scopeKind: "user" }).some((item) =>
+        item.evidence?.path?.includes("hooks.json")),
+    );
+    assert.ok(
+      filterManageItems(inventory, { tab: "hooks", scopeKind: "project" }).some((item) =>
+        item.evidence?.path?.includes(path.join(".openbitfun", "config"))),
+    );
+
+    const projectRules = filterManageItems(inventory, { tab: "rules", scopeKind: "project" })
+      .map((item) => item.name ?? item.label);
+    assert.ok(projectRules.some((name) => /team/iu.test(String(name))));
+    assert.ok(projectRules.some((name) => /AGENTS\.md/u.test(String(name))));
+    assert.ok(projectRules.some((name) => /CLAUDE\.md/u.test(String(name))));
+
+    // Credentials may be named but their values must never be serialized.
+    assert.doesNotMatch(JSON.stringify(inventory), /sk-live-[A-Za-z0-9]+/u);
+    assert.ok(inventory.unsupported.some((item) => /plugin packages/u.test(item)));
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("BitFun inventory without user-home authority keeps project scope only", async () => {
+  const fixture = await makeBitfunFixture();
+  try {
+    const inventory = await collectAgentCustomizeInventory({
+      provider: "bitfun",
+      bitfunHome: fixture.bitfunHome,
+      bitfunUserRoot: fixture.bitfunUserRoot,
+      bitfunUserSkillsDir: fixture.bitfunUserSkillsDir,
+      workspace: fixture.workspace,
+      includeUserHome: false,
+    });
+    assert.equal(inventory.diagnostics.appConfigPath, null);
+    assert.equal(inventory.diagnostics.builtinUserSkillsDir, null);
+    assert.deepEqual(filterManageItems(inventory, { tab: "skills", scopeKind: "user" }), []);
+    assert.deepEqual(filterManageItems(inventory, { tab: "mcps", scopeKind: "user" }), []);
+    assert.ok(
+      filterManageItems(inventory, { tab: "skills", scopeKind: "project" })
+        .some((item) => item.name === "project-flow"),
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("agent-customize CLI honours --bitfun-home and isolates BitFun user storage", async () => {
+  const fixture = await makeBitfunFixture();
+  try {
+    const result = runAgentCustomizeCli([
+      "inventory",
+      "--provider",
+      "bitfun",
+      "--workspace",
+      fixture.workspace,
+      "--bitfun-home",
+      fixture.bitfunHome,
+      "--bitfun-user-root",
+      fixture.bitfunUserRoot,
+      "--bitfun-user-skills-dir",
+      fixture.bitfunUserSkillsDir,
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const inventory = JSON.parse(result.stdout);
+    assert.equal(inventory.bitfunHome, fixture.bitfunHome);
+    assert.equal(inventory.bitfunUserRoot, fixture.bitfunUserRoot);
+    assert.notEqual(inventory.bitfunHome, path.join(os.homedir(), ".openbitfun"));
+    assert.ok(inventory.manage.mcps.some((item) => item.name === "docs"));
+    assert.doesNotMatch(result.stdout, /sk-live-[A-Za-z0-9]+/u);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});

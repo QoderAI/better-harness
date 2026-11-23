@@ -92,8 +92,8 @@ The default output is:
 
 Useful bounds include `--platform`, `--since`, `--until`, `--commits`, and
 `--max-sessions`. `--platform all` discovers evidence across Qoder, Codex,
-Claude Code, Cursor, Qwen Code, GitHub Copilot, Pi, Kimi Code, WorkBuddy, and
-Grok, while preserving provider-specific gaps.
+Claude Code, Cursor, Qwen Code, GitHub Copilot, Pi, Kimi Code, WorkBuddy, Grok,
+and BitFun, while preserving provider-specific gaps.
 
 An optional `.better-harness/feature-tree.md` supplies reviewed intent:
 

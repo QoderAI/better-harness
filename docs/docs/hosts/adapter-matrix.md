@@ -14,10 +14,11 @@ host-neutral.
 ## Support levels
 
 Better Harness currently declares ten more complete capability-level host
-adapters, a partial Augment/Auggie session-only adapter, plus bounded DSH
+adapters, two partial adapters (Augment/Auggie session-only and BitFun
+configured-assets plus session evidence), and bounded DSH
 discovery, configured-assets, and session slices.
-Six have verified public Quickstart paths. Pi, Kimi Code, WorkBuddy, and Grok
-are visible as adapter support because their installation and end-to-end
+Six have verified public Quickstart paths. Pi, Kimi Code, WorkBuddy, Grok, and
+BitFun are visible as adapter support because their installation and end-to-end
 evidence boundaries differ from that six-host set. DSH has Verified
 install/discovery for a qualified runtime/preset boundary plus developer-preview
 configured-assets and session-evidence contracts. It supports shared read-only
@@ -41,6 +42,7 @@ remains the complete capability-level source of truth.
 | Kimi Code | Adapter support | Analysis-capable source-local host | `.kimi-plugin/plugin.json` | Workspace-matching Kimi wire transcripts | Self-contained HTML + Markdown |
 | WorkBuddy | Adapter support | Analysis-capable source-local host | None; skills use WorkBuddy-owned paths | Workspace-matching WorkBuddy JSONL transcripts | Self-contained HTML + Markdown |
 | Grok | Adapter support | Analysis-capable source-local host | None; skills use Grok-owned paths | Workspace-matching Grok session dirs (`updates.jsonl`) | Self-contained HTML + Markdown |
+| BitFun | Partial adapter | Configured-assets and session evidence only; no install or lifecycle claim | None; skills use OpenBitFun-owned paths | Workspace-matching BitFun session dirs under `~/.openbitfun/projects/` | Self-contained HTML + Markdown |
 | DeepSeek Harness (DSH) | Verified install/discovery | Qualified headless/base and Web `standard`/`code`/`cordis`; shared read-only analysis over partial configured-assets and session evidence | `.dsh-plugin/cordis.patch.yml` Cordis bundle shell plus the local DSH Cordis policy; no lifecycle shell | DSH JSONL backend session format `0`: raw `.jsonl` and feature-detected `.jsonl.zstd` | Self-contained HTML + Markdown |
 
 The `@qoder-ai/better-harness` npm package includes all eight plugin metadata
@@ -67,8 +69,8 @@ steps without executing them. Qoder Desktop remains bundled, Codex Desktop uses
 manual UI steps, Cursor installation stays unavailable while its local help
 contract is stale, persistent Pi operations without native evidence stay
 unavailable, transient Pi update/remove are not applicable, and WorkBuddy
-returns `PLUGIN_LIFECYCLE_UNSUPPORTED`. Kimi Code and Grok have no validated
-native lifecycle contract yet, so lifecycle targets reject them with
+returns `PLUGIN_LIFECYCLE_UNSUPPORTED`. Kimi Code, Grok, and BitFun have no
+validated native lifecycle contract yet, so lifecycle targets reject them with
 `UNKNOWN_HOST` while their adapter evidence stays available. DSH likewise has
 no lifecycle profile: lifecycle targets reject it with `UNKNOWN_HOST`; its
 manually configured verified discovery and partial session evidence remain
@@ -82,7 +84,7 @@ lifecycle target.
   `canvas.json`, and `report.canvas.tsx`.
 - **Cursor Canvas** — the same complete report contract rendered with
   `cursor/canvas`, native Context Window evidence, and IDE actions.
-- **HTML visual** — portable Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok/DeepSeek Harness contract
+- **HTML visual** — portable Claude Code/Codex/Qwen/Copilot/Pi/Kimi Code/WorkBuddy/Grok/BitFun/DeepSeek Harness contract
   covering `findings.json`, `report.md`, and a self-contained `report.html`
   (see the [sample report](pathname:///demo/better-harness-report/)).
 - **Markdown-only** — no visual companion.
@@ -165,6 +167,20 @@ npm-packaged host artifact; installation is a manual skill symlink into
 `~/.grok/skills/better-harness` (or project `.grok/skills`). Grok remains
 outside the verified Quickstart set until a complete interactive report-loop
 smoke is observed.
+
+### BitFun {#bitfun}
+
+BitFun configured assets and workspace-matched session evidence are implemented,
+and portable HTML routing reuses the generic Better Harness-owned root. The
+adapter treats the product home (`~/.openbitfun` or `OPENBITFUN_HOME`), the
+platform user root, and the project `.openbitfun` directory as separate storage
+families. Discovery scans
+`projects/<runtime-key>/sessions/<session-id>/metadata.json` and trusts its
+recorded workspace fields instead of reimplementing the host-owned project key;
+sessions of unknown shape still appear with explicit metadata coverage. This
+repository does not ship a BitFun install shell, plugin lifecycle profile, or
+npm-packaged host artifact, and no native smoke has been recorded yet, so BitFun
+stays a partial adapter outside the verified Quickstart set.
 
 ### DeepSeek Harness (DSH) {#deepseek-harness-dsh}
 

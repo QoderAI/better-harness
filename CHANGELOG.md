@@ -7,6 +7,13 @@ observable behavior and compatibility, not every internal refactor.
 
 ### Added
 
+- BitFun (OpenBitFun) joins as a partial source-local host: a configured-asset
+  provider covers user skills, agents, `config/app.json` MCP servers, hooks, and
+  project `.openbitfun` plus `.agents` assets, and a session-evidence adapter
+  reads `~/.openbitfun/projects/*/sessions/*/` metadata and turn files with
+  `--bitfun-home`/`OPENBITFUN_HOME` overrides. No install shell, plugin
+  lifecycle, or native smoke claim ships with it.
+
 - DeepSeek Harness now ships a host shell bundle entry so
   `dsh plugin --profile <name> add @qoder-ai/better-harness` registers skill
   discovery and the explicit-only policy automatically, replacing the manual

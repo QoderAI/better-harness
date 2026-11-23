@@ -39,8 +39,8 @@ invocation, and report-output steps. Better Harness does not use one universal
 entrypoint across every host.
 
 This README shows inline setup for the most common hosts. Additional supported
-hosts (Qwen Code, Pi, Kimi Code, WorkBuddy, and Grok) keep their steps and
-boundaries in the [installation guide](docs/docs/installation.mdx) and the
+hosts (Qwen Code, Pi, Kimi Code, WorkBuddy, Grok, and BitFun) keep their steps
+and boundaries in the [installation guide](docs/docs/installation.mdx) and the
 [public Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md); see
 [More adapters](#more-adapters). README placement is a display choice, not a
 support-level claim.
@@ -384,12 +384,14 @@ Host differences remain explicit. Qoder Desktop is bundled, Cursor is
 session-only while its native command contract is being reconciled, Pi
 lifecycle commands without current native evidence remain manual or
 unavailable, and WorkBuddy has no managed Better Harness plugin lifecycle
-surface.
+surface. BitFun likewise has no lifecycle profile: lifecycle targets reject it
+with `UNKNOWN_HOST`, while its configured-asset and session evidence stay
+available.
 
 ### More adapters
 
 Beyond the hosts above, Better Harness also supports Qwen Code, Pi, Kimi Code,
-WorkBuddy, and Grok. Their exact install, invocation, and
+WorkBuddy, Grok, and BitFun. Their exact install, invocation, and
 evidence boundaries live in the docs so this README stays focused:
 
 - **Qwen Code** — [installation guide](docs/docs/installation.mdx#qwen-code)
@@ -402,6 +404,9 @@ evidence boundaries live in the docs so this README stays focused:
   (`.kimi-plugin/plugin.json` plugin install).
 - **WorkBuddy** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#workbuddy).
 - **Grok** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#grok).
+- **BitFun** — [Host Adapter Matrix](docs/docs/hosts/adapter-matrix.md#bitfun)
+  (partial adapter: configured assets and session evidence only; skills install
+  into the OpenBitFun user skills dir).
 
 Each produces a self-contained `report.html` with paired `report.md` and
 `findings.json`; missing or partial session evidence stays explicit.

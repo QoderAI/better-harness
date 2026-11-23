@@ -26,6 +26,7 @@ function usage() {
     `Provider home overrides: ${CUSTOMIZE_HOME_OPTIONS.slice(0, 4).join(", ")},`,
     `${CUSTOMIZE_HOME_OPTIONS.slice(4).join(", ")}, --claude-state, --codex-app-path, --qoder-shared-client-cache-root.`,
     "DSH configured-assets options: --cwd <path>, --include-user-home[=<boolean>].",
+    "BitFun storage options: --bitfun-user-root <dir>, --bitfun-user-skills-dir <dir>.",
     "",
   ].join("\n");
 }
@@ -49,6 +50,9 @@ function summarize(inventory, options) {
     piHome: inventory.piHome,
     workbuddyHome: inventory.workbuddyHome,
     grokHome: inventory.grokHome,
+    bitfunHome: inventory.bitfunHome,
+    bitfunUserRoot: inventory.bitfunUserRoot,
+    bitfunUserSkillsDir: inventory.bitfunUserSkillsDir,
     dshHome: inventory.dshHome,
     claudeStatePath: inventory.claudeStatePath,
     kimiHome: inventory.kimiHome,
@@ -94,6 +98,8 @@ async function main() {
     claudeStatePath: options["claude-state"] ?? options["claude-state-path"],
     codexAppPath: options["codex-app-path"],
     qoderSharedClientCacheRoot: options["qoder-shared-client-cache-root"] ?? options["shared-client-cache-root"],
+    bitfunUserRoot: options["bitfun-user-root"],
+    bitfunUserSkillsDir: options["bitfun-user-skills-dir"],
     workspace: options.workspace,
     ...(options.provider === "dsh"
       ? {

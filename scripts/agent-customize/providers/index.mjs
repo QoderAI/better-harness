@@ -1,3 +1,4 @@
+import { collectBitfunCustomizeInventory } from "./bitfun.mjs";
 import { collectClaudeCustomizeInventory } from "./claude.mjs";
 import { collectCodexCustomizeInventory } from "./codex.mjs";
 import { collectCopilotCustomizeInventory } from "./copilot.mjs";
@@ -34,6 +35,7 @@ export const PROVIDER_COLLECTORS = new Map([
   ["kimi", collectKimiCustomizeInventory],
   ["workbuddy", collectWorkbuddyCustomizeInventory],
   ["grok", collectGrokCustomizeInventory],
+  ["bitfun", collectBitfunCustomizeInventory],
   ["dsh", collectDshCustomizeInventory],
 ]);
 

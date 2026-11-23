@@ -115,6 +115,17 @@ export const HOST_DESCRIPTORS = Object.freeze([
     sessionScopeTokens: [".grok", "grok"],
   }),
   descriptor({
+    id: "bitfun",
+    displayName: "BitFun",
+    aliases: ["OpenBitFun"],
+    capabilities: [
+      HOST_CAPABILITIES.SESSION_ANALYSIS,
+      HOST_CAPABILITIES.AGENT_CUSTOMIZE,
+      HOST_CAPABILITIES.REPORT_RENDERING,
+    ],
+    sessionScopeTokens: [".openbitfun", "openbitfun"],
+  }),
+  descriptor({
     id: "dsh",
     displayName: "DeepSeek Harness",
     aliases: ["DeepSeek Harness"],
