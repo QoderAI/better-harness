@@ -27,6 +27,7 @@ import {
   titleCase,
   workspaceSourceLabel,
 } from "../core/items.mjs";
+import { collectCodexProjectTomlAssets } from "./codex-toml.mjs";
 
 const CODEX_PLUGIN_MANIFEST = [".codex-plugin", "plugin.json"];
 const CODEX_REMOTE_INSTALL_FILE = ".codex-remote-plugin-install.json";
@@ -274,15 +275,20 @@ async function collectCodexUserPrimitives(codexHome) {
 
 async function collectCodexWorkspacePrimitives(workspace) {
   const sourceLabel = await workspaceSourceLabel(workspace);
-  const project = mergePrimitiveSets(
-    await Promise.all(
-      [".codex", ".agents"].map((directory) =>
-        collectWorkspaceRootPrimitives(path.join(workspace, directory), sourceLabel, workspace),
+  const [project, tomlAssets] = await Promise.all([
+    mergePrimitiveSets(
+      await Promise.all(
+        [".codex", ".agents"].map((directory) =>
+          collectWorkspaceRootPrimitives(path.join(workspace, directory), sourceLabel, workspace),
+        ),
       ),
     ),
-  );
+    collectCodexProjectTomlAssets(path.join(workspace, ".codex"), sourceLabel, workspace),
+  ]);
   return {
     ...project,
+    subagents: [...project.subagents, ...tomlAssets.subagents].sort(sortByName),
+    mcps: [...project.mcps, ...tomlAssets.mcps].sort(sortByName),
     rules: [
       ...project.rules,
       ...(await collectRuleSources([
