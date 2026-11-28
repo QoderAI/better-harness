@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { onTestFinished, test } from "vitest";
 
 import { createDirectoryLink, skipWithoutFileLink } from "../support/path-links.mjs";
+import { collectAgentCustomizeInventory } from "../../scripts/agent-customize/index.mjs";
 import {
   ASSET_BASELINE_KIND,
   MAX_BASELINE_FINDINGS,
@@ -22,6 +24,65 @@ async function temporaryWorkspace(prefix) {
   await mkdir(workspace, { recursive: true });
   onTestFinished(() => rm(root, { recursive: true, force: true }));
   return { root, workspace };
+}
+
+function git(cwd, args) {
+  const result = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : os.devNull,
+      GIT_CONFIG_NOSYSTEM: "1",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  assert.equal(result.status, 0, result.stderr);
+}
+
+async function syntheticCodexWorkspace(files = {}) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-harness-codex-assets-"));
+  const workspace = path.join(root, "workspace with spaces 工程");
+  const codexHome = path.join(root, "isolated-codex-home");
+  onTestFinished(() => rm(root, { recursive: true, force: true }));
+  await Promise.all([
+    mkdir(workspace, { recursive: true }),
+    mkdir(codexHome, { recursive: true }),
+  ]);
+  git(workspace, ["init", "-q"]);
+  for (const [route, content] of Object.entries(files)) {
+    const filePath = path.join(workspace, ...route.split("/"));
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, content, "utf8");
+  }
+  git(workspace, ["add", "--", "."]);
+  git(workspace, [
+    "-c", "user.name=Fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit", "--allow-empty", "-q", "-m", "fixture",
+  ]);
+  return { root, workspace, codexHome };
+}
+
+function codexAgentToml(name) {
+  return [
+    `name = ${JSON.stringify(name)}`,
+    `description = ${JSON.stringify(`Review the bounded ${name} project asset declaration.`)}`,
+    'developer_instructions = """',
+    `Act as the ${name} specialist. Prompt body canary ${name}. Inspect only the declared project assets and return concise static evidence.`,
+    '"""',
+    "",
+  ].join("\n");
+}
+
+function codexBaselineOptions(fixture) {
+  return {
+    provider: "codex",
+    workspace: fixture.workspace,
+    cwd: fixture.workspace,
+    codexHome: fixture.codexHome,
+    includeUserHome: false,
+  };
 }
 
 function emptyBaselineDependencies(onRawInventory = () => {}) {
@@ -600,6 +661,200 @@ test("asset baseline CLI emits compact single-line JSON from a real project fixt
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("Codex asset baseline counts one project TOML agent and MCP without executing either", async () => {
+  const sentinelName = "mcp-started.marker";
+  const fixture = await syntheticCodexWorkspace({
+    ".codex/agents/fixture.toml": codexAgentToml("fixture"),
+    ".codex/mcp-server.mjs": [
+      'import { writeFileSync } from "node:fs";',
+      'writeFileSync(process.argv[2], "started");',
+      "",
+    ].join("\n"),
+  });
+  const configPath = path.join(fixture.workspace, ".codex", "config.toml");
+  const serverPath = path.join(fixture.workspace, ".codex", "mcp-server.mjs");
+  const sentinel = path.join(fixture.workspace, sentinelName);
+  await writeFile(configPath, [
+    "[mcp_servers.fixture]",
+    `command = ${JSON.stringify(process.execPath)}`,
+    `args = [${JSON.stringify(serverPath)}, ${JSON.stringify(sentinel)}]`,
+    "",
+  ].join("\n"), "utf8");
+  git(fixture.workspace, ["add", "--", ".codex/config.toml"]);
+  git(fixture.workspace, [
+    "-c", "user.name=Fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit", "--allow-empty", "-q", "-m", "bind native MCP command",
+  ]);
+
+  let rawInventory;
+  const result = await collectAssetBaseline(codexBaselineOptions(fixture), {
+    collectRawInventory: async (options) => {
+      rawInventory = await collectAgentCustomizeInventory(options);
+      return rawInventory;
+    },
+  });
+  const summary = result.envelopes.lint.data.assetInventory.summary;
+
+  assert.equal(result.status, "complete");
+  assert.equal(summary.agents, 1);
+  assert.equal(summary.mcps, 1);
+  assert.equal(existsSync(sentinel), false);
+  assert.doesNotMatch(JSON.stringify(rawInventory), /Prompt body canary fixture/u);
+  assert.doesNotMatch(JSON.stringify(result), /Prompt body canary fixture/u);
+  assert.equal(result.envelopes.lint.data.findings.items.some((finding) =>
+    finding.id === "custom-agent-missing-frontmatter"), false);
+  const owners = result.envelopes.inventory.data.ownerRoutes.items;
+  assert.ok(owners.some((item) =>
+    item.kind === "agents" && item.name === "fixture" && item.route === ".codex/agents/fixture.toml"));
+  assert.ok(owners.some((item) =>
+    item.kind === "mcps" && item.name === "fixture" && item.route === ".codex/config.toml"));
+  const coverage = result.envelopes.inventory.data.coverageRows;
+  assert.equal(coverage.find((row) => row.surface === "Custom Agents")?.count, 1);
+  assert.equal(coverage.find((row) => row.surface === "MCP")?.count, 1);
+  if (process.platform === "win32") {
+    assert.match(fixture.workspace, /^[A-Za-z]:\\/u);
+    assert.equal(
+      path.win32.relative(fixture.workspace, path.join(fixture.workspace, ".codex", "agents", "fixture.toml")),
+      ".codex\\agents\\fixture.toml",
+    );
+  }
+});
+
+test("Codex asset baseline counts multiple TOML declarations and merges duplicate MCP identities", async () => {
+  const fixture = await syntheticCodexWorkspace({
+    ".codex/agents/alpha.toml": codexAgentToml("alpha"),
+    ".codex/agents/beta.toml": codexAgentToml("beta"),
+    ".codex/agents/gamma.toml": codexAgentToml("gamma"),
+    ".codex/mcp.json": `${JSON.stringify({
+      mcpServers: { alpha: { command: "node", args: ["json-alpha.mjs"] } },
+    }, null, 2)}\n`,
+    ".codex/config.toml": [
+      "[mcp_servers.alpha]",
+      'command = "node"',
+      'args = ["toml-alpha.mjs"]',
+      "",
+      '[mcp_servers."docs.server"]',
+      'command = "node"',
+      'args = ["docs.mjs"]',
+      'env = { API_TOKEN = "plain-toml-secret" }',
+      "",
+      "[mcp_servers.zeta]",
+      'url = "https://example.invalid/mcp"',
+      "",
+    ].join("\n"),
+  });
+
+  const result = await collectAssetBaseline(codexBaselineOptions(fixture));
+  const summary = result.envelopes.lint.data.assetInventory.summary;
+
+  assert.equal(result.status, "complete");
+  assert.equal(summary.agents, 3);
+  assert.equal(summary.mcps, 3);
+  assert.deepEqual(
+    result.envelopes.inventory.data.ownerRoutes.items
+      .filter((item) => item.kind === "agents")
+      .map((item) => item.name)
+      .sort(),
+    ["alpha", "beta", "gamma"],
+  );
+  assert.deepEqual(
+    result.envelopes.inventory.data.ownerRoutes.items
+      .filter((item) => item.kind === "mcps")
+      .map((item) => item.name)
+      .sort(),
+    ["alpha", "docs.server", "zeta"],
+  );
+  assert.equal(result.envelopes.inventory.data.coverageRows.find((row) => row.surface === "Custom Agents")?.count, 3);
+  assert.equal(result.envelopes.inventory.data.coverageRows.find((row) => row.surface === "MCP")?.count, 3);
+  assert.equal(result.envelopes.lint.data.findings.items.some((finding) =>
+    finding.id === "mcp-direct-secret-env-value" && finding.assetName === "docs.server"), true);
+  assert.doesNotMatch(JSON.stringify(result), /plain-toml-secret/u);
+});
+
+test("Codex asset baseline reports zero project agents and MCPs when no declarations exist", async () => {
+  const fixture = await syntheticCodexWorkspace();
+
+  const result = await collectAssetBaseline(codexBaselineOptions(fixture));
+  const summary = result.envelopes.lint.data.assetInventory.summary;
+
+  assert.equal(result.status, "complete");
+  assert.equal(summary.agents, 0);
+  assert.equal(summary.mcps, 0);
+  assert.equal(result.envelopes.inventory.data.ownerRoutes.total, 0);
+  assert.equal(result.envelopes.inventory.data.coverageRows.some((row) =>
+    row.surface === "Custom Agents" || row.surface === "MCP"), false);
+});
+
+test("Codex asset baseline ignores malformed and duplicate TOML declarations without dropping valid assets", async () => {
+  const fixture = await syntheticCodexWorkspace({
+    ".codex/agents/good.toml": codexAgentToml("good"),
+    ".codex/agents/malformed.toml": 'name = "malformed"\ndescription = [\n',
+    ".codex/agents/duplicate-key.toml": [
+      'name = "first"',
+      'name = "second"',
+      'description = "Duplicate keys are not a valid declaration."',
+      'developer_instructions = "Inspect only the bounded declaration."',
+      "",
+    ].join("\n"),
+    ".codex/agents/invalid-name.toml": [
+      "name = 42",
+      'description = "A non-string name is not a valid agent declaration."',
+      'developer_instructions = "Inspect only the bounded declaration."',
+      "",
+    ].join("\n"),
+    ".codex/mcp.json": `${JSON.stringify({
+      mcpServers: { fallback: { command: "node", args: ["fallback.mjs"] } },
+    }, null, 2)}\n`,
+    ".codex/config.toml": [
+      'mcp_servers.bad = "not-a-table"',
+      "",
+      "[mcp_servers.good]",
+      'command = "node"',
+      'args = ["good.mjs"]',
+      "",
+    ].join("\n"),
+  });
+
+  const result = await collectAssetBaseline(codexBaselineOptions(fixture));
+  assert.equal(result.status, "complete");
+  assert.equal(result.envelopes.lint.data.assetInventory.summary.agents, 1);
+  assert.equal(result.envelopes.lint.data.assetInventory.summary.mcps, 2);
+  assert.deepEqual(
+    result.envelopes.inventory.data.ownerRoutes.items
+      .filter((item) => item.kind === "mcps")
+      .map((item) => item.name)
+      .sort(),
+    ["fallback", "good"],
+  );
+
+  const duplicateFixture = await syntheticCodexWorkspace({
+    ".codex/mcp.json": `${JSON.stringify({
+      mcpServers: { fallback: { command: "node", args: ["fallback.mjs"] } },
+    }, null, 2)}\n`,
+    ".codex/config.toml": [
+      "[mcp_servers.duplicate]",
+      'command = "node"',
+      "",
+      "[mcp_servers.duplicate]",
+      'command = "node"',
+      "",
+      "[mcp_servers.otherwise_valid]",
+      'command = "node"',
+      "",
+    ].join("\n"),
+  });
+  const duplicateResult = await collectAssetBaseline(codexBaselineOptions(duplicateFixture));
+  assert.equal(duplicateResult.status, "complete");
+  assert.equal(duplicateResult.envelopes.lint.data.assetInventory.summary.mcps, 1);
+  assert.deepEqual(
+    duplicateResult.envelopes.inventory.data.ownerRoutes.items
+      .filter((item) => item.kind === "mcps")
+      .map((item) => item.name),
+    ["fallback"],
+  );
 });
 
 test("Claude asset baseline completes from a native project fixture", async () => {

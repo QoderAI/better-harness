@@ -1354,8 +1354,22 @@ async function reviewCustomAgentAsset(agent, graph, provider) {
   if (!filePath) return findings;
   const raw = await readFile(filePath, "utf8").catch(() => "");
   if (!raw) return findings;
-  const profile = parseAgentFrontmatter(raw);
+  const tomlAgent = agent.sourceKind === "codex-toml" || agent.format === "toml";
+  const profile = tomlAgent
+    ? {
+        present: true,
+        valid: true,
+        source: "",
+        metadata: { name: agent.name, description: agent.description ?? "" },
+        body: "",
+      }
+    : parseAgentFrontmatter(raw);
   const file = relativeAssetPath(graph.workspace, filePath);
+  const promptLength = tomlAgent
+    ? (Number.isInteger(agent.developerInstructionsLength) && agent.developerInstructionsLength >= 0
+      ? agent.developerInstructionsLength
+      : 0)
+    : profile.body.length;
 
   if (!profile.present) {
     findings.push(customAgentFinding(
@@ -1433,7 +1447,7 @@ async function reviewCustomAgentAsset(agent, graph, provider) {
       "Name the focused task, when to delegate it, and the expected result in one concise sentence.",
     ));
   }
-  if (!profile.body) {
+  if (!promptLength) {
     findings.push(customAgentFinding(
       agent,
       graph,
@@ -1442,7 +1456,7 @@ async function reviewCustomAgentAsset(agent, graph, provider) {
       `${file} has no system-prompt body.`,
       "Add a focused role, workflow boundary, expected output, and important limitations.",
     ));
-  } else if (profile.body.length < 40) {
+  } else if (promptLength < 40) {
     findings.push(customAgentFinding(
       agent,
       graph,
@@ -1452,7 +1466,7 @@ async function reviewCustomAgentAsset(agent, graph, provider) {
       "State the focused role, expected output, and important limits explicitly.",
     ));
   }
-  if (profile.body.length > 30_000) {
+  if (promptLength > 30_000) {
     findings.push(customAgentFinding(
       agent,
       graph,
@@ -1463,8 +1477,8 @@ async function reviewCustomAgentAsset(agent, graph, provider) {
     ));
   }
 
-  const declaresTools = /^tools\s*:/imu.test(profile.source);
-  if (!declaresTools || tools.some((tool) => ["*", "all"].includes(tool.toLowerCase()))) {
+  const declaresTools = tomlAgent || /^tools\s*:/imu.test(profile.source);
+  if (!tomlAgent && (!declaresTools || tools.some((tool) => ["*", "all"].includes(tool.toLowerCase())))) {
     findings.push(customAgentFinding(
       agent,
       graph,
